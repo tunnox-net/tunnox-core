@@ -119,6 +119,60 @@ func (ps *PackageStream) ReadExact(length int) ([]byte, error) {
 	return result, nil
 }
 
+// ReadExactZeroCopy 零拷贝读取指定长度的字节
+// 返回零拷贝缓冲区和清理函数，调用方负责调用清理函数
+func (ps *PackageStream) ReadExactZeroCopy(length int) (*utils.ZeroCopyBuffer, error) {
+	if err := ps.readLock(); err != nil {
+		return nil, err
+	}
+	defer ps.transLock.Unlock()
+
+	// 从内存池获取缓冲区
+	buffer := ps.bufferMgr.Allocate(length)
+
+	totalRead := 0
+
+	// 循环读取，直到读取到指定长度的数据
+	for totalRead < length {
+		// 检查上下文是否已取消
+		select {
+		case <-ps.Ctx().Done():
+			ps.bufferMgr.Release(buffer)
+			return nil, ps.Ctx().Err()
+		default:
+		}
+
+		// 读取剩余的数据
+		n, err := ps.reader.Read(buffer[totalRead:])
+		totalRead += n
+
+		// 如果遇到错误且不是EOF，或者已经读取完毕，则返回
+		if err != nil {
+			if err == io.EOF && totalRead == length {
+				// 读取完毕且达到指定长度，返回成功
+				return utils.NewZeroCopyBuffer(buffer[:totalRead], ps.bufferMgr.GetPool()), nil
+			}
+			// 其他错误或EOF但未达到指定长度，返回错误
+			ps.bufferMgr.Release(buffer)
+			return nil, err
+		}
+
+		// 如果没有读取到任何数据，可能是阻塞，继续尝试
+		if n == 0 {
+			// 检查是否已经读取了部分数据
+			if totalRead > 0 {
+				// 已经读取了部分数据，但无法继续读取，返回部分数据
+				ps.bufferMgr.Release(buffer)
+				return nil, errors.ErrUnexpectedEOF
+			}
+			// 没有读取到任何数据，可能是阻塞，继续尝试
+			continue
+		}
+	}
+
+	return utils.NewZeroCopyBuffer(buffer[:totalRead], ps.bufferMgr.GetPool()), nil
+}
+
 // WriteExact 写入指定长度的字节，直到写完为止
 // 如果写入的字节数不足指定长度，会继续写入直到达到指定长度或遇到错误
 func (ps *PackageStream) WriteExact(data []byte) error {

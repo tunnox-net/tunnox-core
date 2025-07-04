@@ -115,3 +115,43 @@ func (bm *BufferManager) ReadIntoBuffer(reader io.Reader, size int) ([]byte, err
 func (bm *BufferManager) GetPool() *BufferPool {
 	return bm.pool
 }
+
+// ZeroCopyBuffer 零拷贝缓冲区，避免不必要的内存拷贝
+type ZeroCopyBuffer struct {
+	data   []byte
+	pool   *BufferPool
+	closed bool
+}
+
+// NewZeroCopyBuffer 创建零拷贝缓冲区
+func NewZeroCopyBuffer(data []byte, pool *BufferPool) *ZeroCopyBuffer {
+	return &ZeroCopyBuffer{
+		data: data,
+		pool: pool,
+	}
+}
+
+// Data 获取底层数据（只读）
+func (zcb *ZeroCopyBuffer) Data() []byte {
+	return zcb.data
+}
+
+// Length 获取数据长度
+func (zcb *ZeroCopyBuffer) Length() int {
+	return len(zcb.data)
+}
+
+// Close 关闭缓冲区，归还内存
+func (zcb *ZeroCopyBuffer) Close() {
+	if !zcb.closed && zcb.pool != nil {
+		zcb.pool.Put(zcb.data)
+		zcb.closed = true
+	}
+}
+
+// Copy 创建数据的副本（当需要修改数据时使用）
+func (zcb *ZeroCopyBuffer) Copy() []byte {
+	result := make([]byte, len(zcb.data))
+	copy(result, zcb.data)
+	return result
+}
