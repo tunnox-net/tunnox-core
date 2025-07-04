@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 	"tunnox-core/internal/packet"
-	io2 "tunnox-core/internal/stream/io"
+	io2 "tunnox-core/internal/stream"
 )
 
 func TestHeartbeatOnly(t *testing.T) {

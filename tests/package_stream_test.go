@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 	"tunnox-core/internal/packet"
-	io2 "tunnox-core/internal/stream/io"
+	io2 "tunnox-core/internal/stream"
 )
 
 // ==================== 基本数据包读写测试 ====================

@@ -7,7 +7,7 @@ import (
 	"io"
 	"testing"
 	"time"
-	io2 "tunnox-core/internal/stream/io"
+	io2 "tunnox-core/internal/stream"
 )
 
 func TestGzipReader(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"time"
-	"tunnox-core/internal/stream/io"
+	"tunnox-core/internal/stream"
 )
 
 func main() {
@@ -38,7 +38,7 @@ func basicExample() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := io.NewPackageStream(reader, writer, ctx)
+	stream := stream.NewPackageStream(reader, writer, ctx)
 	defer stream.Close()
 
 	// 读取指定长度的数据
@@ -77,7 +77,7 @@ func largeDataExample() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := io.NewPackageStream(reader, writer, ctx)
+	stream := stream.NewPackageStream(reader, writer, ctx)
 	defer stream.Close()
 
 	// 读取大数据
@@ -116,7 +116,7 @@ func concurrentExample() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := io.NewPackageStream(reader, writer, ctx)
+	stream := stream.NewPackageStream(reader, writer, ctx)
 	defer stream.Close()
 
 	// 并发读取
@@ -153,7 +153,7 @@ func contextCancellationExample() {
 	// 创建PackageStream
 	ctx, cancel := context.WithCancel(context.Background())
 
-	stream := io.NewPackageStream(reader, writer, ctx)
+	stream := stream.NewPackageStream(reader, writer, ctx)
 	defer stream.Close()
 
 	// 启动一个goroutine来取消上下文

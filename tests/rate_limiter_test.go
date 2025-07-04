@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-	io2 "tunnox-core/internal/stream/io"
+	io2 "tunnox-core/internal/stream"
 )
 
 // 生成测试数据，至少几KB大小

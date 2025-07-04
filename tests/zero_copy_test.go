@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 	"time"
-	streamio "tunnox-core/internal/stream/io"
+	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
 
@@ -89,7 +89,7 @@ func TestPackageStream_ReadExactZeroCopy(t *testing.T) {
 
 	// 创建PackageStream
 	ctx := context.Background()
-	ps := streamio.NewPackageStream(reader, nil, ctx)
+	ps := stream.NewPackageStream(reader, nil, ctx)
 	defer ps.Close()
 
 	// 使用零拷贝读取
@@ -120,7 +120,7 @@ func TestPackageStream_ReadExactZeroCopy_LargeData(t *testing.T) {
 
 	// 创建PackageStream
 	ctx := context.Background()
-	ps := streamio.NewPackageStream(reader, nil, ctx)
+	ps := stream.NewPackageStream(reader, nil, ctx)
 	defer ps.Close()
 
 	// 分块读取
@@ -153,7 +153,7 @@ func TestTokenBucket_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// 创建令牌桶，速率1000字节/秒
-	tb, err := streamio.NewTokenBucket(1000, ctx)
+	tb, err := stream.NewTokenBucket(1000, ctx)
 	if err != nil {
 		t.Fatalf("Failed to create token bucket: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestTokenBucket_RateLimit(t *testing.T) {
 	ctx := context.Background()
 
 	// 创建令牌桶，速率100字节/秒
-	tb, err := streamio.NewTokenBucket(100, ctx)
+	tb, err := stream.NewTokenBucket(100, ctx)
 	if err != nil {
 		t.Fatalf("Failed to create token bucket: %v", err)
 	}
@@ -201,7 +201,7 @@ func TestTokenBucket_SetRate(t *testing.T) {
 	ctx := context.Background()
 
 	// 创建令牌桶，初始速率100字节/秒
-	tb, err := streamio.NewTokenBucket(100, ctx)
+	tb, err := stream.NewTokenBucket(100, ctx)
 	if err != nil {
 		t.Fatalf("Failed to create token bucket: %v", err)
 	}
@@ -234,13 +234,13 @@ func TestTokenBucket_InvalidRate(t *testing.T) {
 	ctx := context.Background()
 
 	// 测试零速率
-	_, err := streamio.NewTokenBucket(0, ctx)
+	_, err := stream.NewTokenBucket(0, ctx)
 	if err == nil {
 		t.Error("Expected error for zero rate")
 	}
 
 	// 测试负速率
-	_, err = streamio.NewTokenBucket(-100, ctx)
+	_, err = stream.NewTokenBucket(-100, ctx)
 	if err == nil {
 		t.Error("Expected error for negative rate")
 	}
@@ -250,7 +250,7 @@ func TestTokenBucket_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// 创建令牌桶
-	tb, err := streamio.NewTokenBucket(100, ctx)
+	tb, err := stream.NewTokenBucket(100, ctx)
 	if err != nil {
 		t.Fatalf("Failed to create token bucket: %v", err)
 	}
@@ -289,7 +289,7 @@ func BenchmarkZeroCopyBuffer_Allocation(b *testing.B) {
 
 func BenchmarkTokenBucket_WaitForTokens(b *testing.B) {
 	ctx := context.Background()
-	tb, _ := streamio.NewTokenBucket(1000000, ctx) // 1MB/s
+	tb, _ := stream.NewTokenBucket(1000000, ctx) // 1MB/s
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
