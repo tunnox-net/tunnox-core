@@ -1,4 +1,4 @@
-package idgen
+package cloud
 
 import (
 	"crypto/rand"

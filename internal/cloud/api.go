@@ -63,6 +63,19 @@ type CloudControlAPI interface {
 	GetTrafficStats(ctx context.Context, timeRange string) ([]*TrafficDataPoint, error)       // 获取流量统计图表数据
 	GetConnectionStats(ctx context.Context, timeRange string) ([]*ConnectionDataPoint, error) // 获取连接数统计图表数据
 
+	// 连接管理接口
+	RegisterConnection(ctx context.Context, mappingId string, connInfo *ConnectionInfo) error
+	UnregisterConnection(ctx context.Context, connId string) error
+	GetConnections(ctx context.Context, mappingId string) ([]*ConnectionInfo, error)
+	GetClientConnections(ctx context.Context, clientId string) ([]*ConnectionInfo, error)
+	UpdateConnectionStats(ctx context.Context, connId string, bytesSent, bytesReceived int64) error
+
+	// JWT Token管理接口
+	GenerateJWTToken(ctx context.Context, clientId string) (*JWTTokenInfo, error)
+	RefreshJWTToken(ctx context.Context, refreshToken string) (*JWTTokenInfo, error)
+	ValidateJWTToken(ctx context.Context, token string) (*JWTTokenInfo, error)
+	RevokeJWTToken(ctx context.Context, token string) error
+
 	// 搜索和过滤接口
 	SearchUsers(ctx context.Context, keyword string) ([]*User, error)               // 搜索用户
 	SearchClients(ctx context.Context, keyword string) ([]*Client, error)           // 搜索客户端

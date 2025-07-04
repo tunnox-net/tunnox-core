@@ -1,4 +1,4 @@
-package storage
+package cloud
 
 import (
 	"context"
@@ -50,8 +50,11 @@ type Storage interface {
 
 // MemoryStorage 内存存储实现
 type MemoryStorage struct {
-	data map[string]*storageItem
-	mu   sync.RWMutex
+	data           map[string]*storageItem
+	mu             sync.RWMutex
+	cleanupTicker  *time.Ticker
+	cleanupStop    chan struct{}
+	cleanupRunning bool
 }
 
 type storageItem struct {
@@ -62,7 +65,8 @@ type storageItem struct {
 // NewMemoryStorage 创建新的内存存储
 func NewMemoryStorage() *MemoryStorage {
 	return &MemoryStorage{
-		data: make(map[string]*storageItem),
+		data:        make(map[string]*storageItem),
+		cleanupStop: make(chan struct{}),
 	}
 }
 
@@ -383,8 +387,54 @@ func (m *MemoryStorage) CleanupExpired(ctx context.Context) error {
 	return nil
 }
 
+// StartCleanup 启动定时清理协程
+func (m *MemoryStorage) StartCleanup(interval time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.cleanupRunning {
+		return
+	}
+
+	m.cleanupTicker = time.NewTicker(interval)
+	m.cleanupRunning = true
+
+	go func() {
+		for {
+			select {
+			case <-m.cleanupTicker.C:
+				ctx := context.Background()
+				if err := m.CleanupExpired(ctx); err != nil {
+					// 记录错误但不中断清理
+					// 这里可以添加日志记录
+				}
+			case <-m.cleanupStop:
+				return
+			}
+		}
+	}()
+}
+
+// StopCleanup 停止定时清理协程
+func (m *MemoryStorage) StopCleanup() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.cleanupRunning {
+		return
+	}
+
+	if m.cleanupTicker != nil {
+		m.cleanupTicker.Stop()
+	}
+	close(m.cleanupStop)
+	m.cleanupRunning = false
+}
+
 // Close 关闭存储
 func (m *MemoryStorage) Close() error {
+	m.StopCleanup()
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

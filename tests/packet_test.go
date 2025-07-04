@@ -141,14 +141,14 @@ func TestCommandPacketWithDifferentTypes(t *testing.T) {
 func TestInitPacketWithEmptyFields(t *testing.T) {
 	// 测试空字段的InitPacket
 	initPacket := packet.InitPacket{
-		ConnType:  conn.ServiceControl,
+		ConnType:  conn.ClientControl,
 		ClientId:  "",
 		SecretKey: "",
 	}
 
 	// 验证字段值
-	if initPacket.ConnType != conn.ServiceControl {
-		t.Errorf("Expected ConnType %v, got %v", conn.ServiceControl, initPacket.ConnType)
+	if initPacket.ConnType != conn.ClientControl {
+		t.Errorf("Expected ConnType %v, got %v", conn.ClientControl, initPacket.ConnType)
 	}
 
 	if initPacket.ClientId != "" {

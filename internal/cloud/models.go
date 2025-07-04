@@ -101,6 +101,11 @@ type Client struct {
 	IPAddress string       `json:"ip_address"` // 客户端IP地址
 	Version   string       `json:"version"`    // 客户端版本
 	Type      ClientType   `json:"type"`       // 客户端类型
+
+	// JWT Token管理
+	JWTToken       string     `json:"jwt_token"`        // 当前有效的JWT Token
+	TokenExpiresAt *time.Time `json:"token_expires_at"` // Token过期时间
+	RefreshToken   string     `json:"refresh_token"`    // 用于刷新Token的凭证
 }
 
 type ClientType string
@@ -137,8 +142,8 @@ type PortMapping struct {
 	SourcePort     int           `json:"source_port"`      // 源端口
 	TargetHost     string        `json:"target_host"`      // 目标主机
 	TargetPort     int           `json:"target_port"`      // 目标端口
-	Status         MappingStatus `json:"status"`           // 映射状态
 	Config         MappingConfig `json:"config"`           // 映射配置
+	Status         MappingStatus `json:"status"`           // 映射状态
 	CreatedAt      time.Time     `json:"created_at"`       // 创建时间
 	UpdatedAt      time.Time     `json:"updated_at"`       // 更新时间
 	LastActive     *time.Time    `json:"last_active"`      // 最后活跃时间
@@ -181,6 +186,26 @@ type TrafficStats struct {
 	BytesSent     int64 `json:"bytes_sent"`     // 发送字节数
 	BytesReceived int64 `json:"bytes_received"` // 接收字节数
 	Connections   int64 `json:"connections"`    // 连接数
+}
+
+// ConnectionInfo 连接信息
+type ConnectionInfo struct {
+	ConnId        string    `json:"conn_id"`        // 连接ID
+	MappingId     string    `json:"mapping_id"`     // 所属映射ID
+	SourceIP      string    `json:"source_ip"`      // 源IP地址
+	EstablishedAt time.Time `json:"established_at"` // 建立时间
+	LastActivity  time.Time `json:"last_activity"`  // 最后活动时间
+	BytesSent     int64     `json:"bytes_sent"`     // 发送字节数
+	BytesReceived int64     `json:"bytes_received"` // 接收字节数
+	Status        string    `json:"status"`         // 连接状态
+}
+
+// JWTTokenInfo JWT Token信息
+type JWTTokenInfo struct {
+	Token        string    `json:"token"`
+	RefreshToken string    `json:"refresh_token"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	ClientId     string    `json:"client_id"`
 }
 
 type Node struct {

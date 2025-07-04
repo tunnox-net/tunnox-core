@@ -8,7 +8,6 @@ import (
 func TestConnTypeConstants(t *testing.T) {
 	// 测试所有连接类型常量
 	expectedTypes := map[conn.Type]string{
-		conn.ServiceControl:     "ServiceControl",
 		conn.ClientControl:      "ClientControl",
 		conn.ServerControlReply: "ServerControlReply",
 		conn.DataTransfer:       "DataTransfer",
@@ -29,7 +28,6 @@ func TestConnTypeString(t *testing.T) {
 		connType conn.Type
 		expected string
 	}{
-		{"ServiceControl", conn.ServiceControl, "ServiceControl"},
 		{"ClientControl", conn.ClientControl, "ClientControl"},
 		{"ServerControlReply", conn.ServerControlReply, "ServerControlReply"},
 		{"DataTransfer", conn.DataTransfer, "DataTransfer"},
@@ -54,7 +52,6 @@ func TestConnTypeIsControl(t *testing.T) {
 		connType conn.Type
 		expected bool
 	}{
-		{"ServiceControl", conn.ServiceControl, true},
 		{"ClientControl", conn.ClientControl, true},
 		{"ServerControlReply", conn.ServerControlReply, true},
 		{"DataTransfer", conn.DataTransfer, false},
@@ -78,7 +75,6 @@ func TestConnTypeIsData(t *testing.T) {
 		connType conn.Type
 		expected bool
 	}{
-		{"ServiceControl", conn.ServiceControl, false},
 		{"ClientControl", conn.ClientControl, false},
 		{"ServerControlReply", conn.ServerControlReply, false},
 		{"DataTransfer", conn.DataTransfer, true},
@@ -102,7 +98,6 @@ func TestConnTypeIsReply(t *testing.T) {
 		connType conn.Type
 		expected bool
 	}{
-		{"ServiceControl", conn.ServiceControl, false},
 		{"ClientControl", conn.ClientControl, false},
 		{"ServerControlReply", conn.ServerControlReply, true},
 		{"DataTransfer", conn.DataTransfer, false},
@@ -122,11 +117,10 @@ func TestConnTypeIsReply(t *testing.T) {
 func TestConnTypeValues(t *testing.T) {
 	// 测试连接类型的数值
 	expectedValues := map[conn.Type]byte{
-		conn.ServiceControl:     1,
-		conn.ClientControl:      2,
-		conn.ServerControlReply: 3,
-		conn.DataTransfer:       4,
-		conn.DataTransferReply:  5,
+		conn.ClientControl:      1,
+		conn.ServerControlReply: 2,
+		conn.DataTransfer:       3,
+		conn.DataTransferReply:  4,
 	}
 
 	for connType, expectedValue := range expectedValues {
@@ -199,7 +193,6 @@ func TestConnInfoIsControl(t *testing.T) {
 		connType conn.Type
 		expected bool
 	}{
-		{"ServiceControl", conn.ServiceControl, true},
 		{"ClientControl", conn.ClientControl, true},
 		{"ServerControlReply", conn.ServerControlReply, true},
 		{"DataTransfer", conn.DataTransfer, false},
@@ -224,7 +217,6 @@ func TestConnInfoIsData(t *testing.T) {
 		connType conn.Type
 		expected bool
 	}{
-		{"ServiceControl", conn.ServiceControl, false},
 		{"ClientControl", conn.ClientControl, false},
 		{"ServerControlReply", conn.ServerControlReply, false},
 		{"DataTransfer", conn.DataTransfer, true},
@@ -249,7 +241,6 @@ func TestConnInfoIsReply(t *testing.T) {
 		connType conn.Type
 		expected bool
 	}{
-		{"ServiceControl", conn.ServiceControl, false},
 		{"ClientControl", conn.ClientControl, false},
 		{"ServerControlReply", conn.ServerControlReply, true},
 		{"DataTransfer", conn.DataTransfer, false},
@@ -336,7 +327,7 @@ func TestConnInfoClearPair(t *testing.T) {
 func TestConnInfoWithEmptyFields(t *testing.T) {
 	// 测试空字段的连接信息
 	connInfo := conn.Info{
-		Type:       conn.ServiceControl,
+		Type:       conn.ClientControl,
 		ConnId:     "",
 		NodeId:     "",
 		SourceId:   "",
@@ -345,8 +336,8 @@ func TestConnInfoWithEmptyFields(t *testing.T) {
 	}
 
 	// 验证字段值
-	if connInfo.Type != conn.ServiceControl {
-		t.Errorf("Expected Type %v, got %v", conn.ServiceControl, connInfo.Type)
+	if connInfo.Type != conn.ClientControl {
+		t.Errorf("Expected Type %v, got %v", conn.ClientControl, connInfo.Type)
 	}
 
 	if connInfo.ConnId != "" {
@@ -371,15 +362,15 @@ func TestConnInfoWithEmptyFields(t *testing.T) {
 
 	// 验证方法调用
 	if connInfo.IsControl() != true {
-		t.Error("ServiceControl should be control type")
+		t.Error("ClientControl should be control type")
 	}
 
 	if connInfo.IsData() != false {
-		t.Error("ServiceControl should not be data type")
+		t.Error("ClientControl should not be data type")
 	}
 
 	if connInfo.IsReply() != false {
-		t.Error("ServiceControl should not be reply type")
+		t.Error("ClientControl should not be reply type")
 	}
 
 	if connInfo.HasPair() != false {
@@ -389,10 +380,6 @@ func TestConnInfoWithEmptyFields(t *testing.T) {
 
 func TestConnTypeComparison(t *testing.T) {
 	// 测试连接类型比较
-	if conn.ServiceControl >= conn.ClientControl {
-		t.Error("ServiceControl should be less than ClientControl")
-	}
-
 	if conn.ClientControl >= conn.ServerControlReply {
 		t.Error("ClientControl should be less than ServerControlReply")
 	}

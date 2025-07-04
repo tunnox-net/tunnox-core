@@ -5,33 +5,27 @@ import "fmt"
 type Type byte
 
 const (
-	// ServiceControl 服务端到服务端的指令连接
-	// 用于集群中服务端之间的控制指令通信
-	ServiceControl Type = 1
-
 	// ClientControl 客户端到服务端的指令连接
 	// 用于客户端向服务端发送控制指令
-	ClientControl Type = 2
+	ClientControl Type = 1
 
 	// ServerControlReply 跨服务端指令转发通道
 	// 当客户端a连到服务端A，客户端b连到服务端B时
 	// a和b之间的通信需要A和B之间的指令转发
-	ServerControlReply Type = 3
+	ServerControlReply Type = 2
 
 	// DataTransfer 客户端间数据传输通道
 	// 同一服务端内的客户端可以直接透传数据
-	DataTransfer Type = 4
+	DataTransfer Type = 3
 
 	// DataTransferReply 跨服务端数据传输通道
 	// 类似ServerControlReply，但用于数据而非指令
-	DataTransferReply Type = 5
+	DataTransferReply Type = 4
 )
 
 // String 返回连接类型的字符串表示
 func (ct Type) String() string {
 	switch ct {
-	case ServiceControl:
-		return "ServiceControl"
 	case ClientControl:
 		return "ClientControl"
 	case ServerControlReply:
@@ -47,7 +41,7 @@ func (ct Type) String() string {
 
 // IsControl 判断是否为控制类连接
 func (ct Type) IsControl() bool {
-	return ct == ServiceControl || ct == ClientControl || ct == ServerControlReply
+	return ct == ClientControl || ct == ServerControlReply
 }
 
 // IsData 判断是否为数据类连接
