@@ -27,6 +27,11 @@ type AcceptPacket struct {
 	AuthCode string
 }
 
+type TransferPacket struct {
+	PacketType    Type
+	CommandPacket *CommandPacket
+}
+
 type CommandPacket struct {
 	CommandType CommandType
 	Token       string
