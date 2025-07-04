@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"time"
-	"tunnox-core/internal/io"
+	"tunnox-core/internal/stream/io"
 )
 
 func main() {
@@ -179,4 +179,4 @@ func contextCancellationExample() {
 	} else {
 		fmt.Printf("写入成功: %s\n", string(writeData))
 	}
-} 
+}

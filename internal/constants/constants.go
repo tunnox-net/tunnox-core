@@ -1,4 +1,4 @@
-package utils
+package constants
 
 // 网络相关常量
 const (

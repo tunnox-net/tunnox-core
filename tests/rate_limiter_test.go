@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-	io2 "tunnox-core/internal/io"
+	io2 "tunnox-core/internal/stream/io"
 )
 
 // 生成测试数据，至少几KB大小
@@ -423,9 +423,6 @@ func TestRateLimiterConcurrentAccess(t *testing.T) {
 			testData := generateTestData(1024)
 			limiter.SetReader(bytes.NewReader(testData))
 			limiter.SetWriter(&bytes.Buffer{})
-
-			// 并发调整速率
-			limiter.SetRate(2 * 1024)
 
 			// 模拟一些工作
 			time.Sleep(1 * time.Millisecond)

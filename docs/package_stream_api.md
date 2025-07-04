@@ -98,7 +98,7 @@ import (
     "context"
     "fmt"
     "log"
-    "tunnox-core/internal/io"
+    "tunnox-core/internal/stream"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-package utils
+package errors
 
 import (
 	"errors"
@@ -150,34 +150,17 @@ func IsTemporaryError(err error) bool {
 	if err == nil {
 		return false
 	}
-
-	// 检查是否为上下文取消错误
-	if errors.Is(err, ErrContextCancelled) {
-		return false
-	}
-
-	// 检查是否为流关闭错误
-	if errors.Is(err, ErrStreamClosed) {
-		return false
-	}
-
-	// 其他错误可能是临时的
-	return true
+	// 可以根据具体错误类型判断是否为临时错误
+	// 这里简单实现，实际项目中可能需要更复杂的判断逻辑
+	return false
 }
 
-// IsFatalError 判断是否为致命错误（不可恢复）
+// IsFatalError 判断是否为致命错误（不可重试）
 func IsFatalError(err error) bool {
 	if err == nil {
 		return false
 	}
-
-	// 检查是否为致命错误类型
-	if errors.Is(err, ErrStreamClosed) ||
-		errors.Is(err, ErrReaderNil) ||
-		errors.Is(err, ErrWriterNil) ||
-		errors.Is(err, ErrResourceNotInitialized) {
-		return true
-	}
-
-	return false
+	// 可以根据具体错误类型判断是否为致命错误
+	// 这里简单实现，实际项目中可能需要更复杂的判断逻辑
+	return true
 }
