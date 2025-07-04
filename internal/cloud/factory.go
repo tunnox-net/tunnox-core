@@ -1,6 +1,8 @@
 package cloud
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // NewCloudControlAPI 创建云控API实例
 func NewCloudControlAPI(config *CloudControlConfig) (CloudControlAPI, error) {
