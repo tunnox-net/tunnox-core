@@ -254,7 +254,7 @@ func (b *BuiltInCloudControl) ValidateToken(ctx context.Context, token string) (
 }
 
 // CreateUser 创建用户
-func (b *BuiltInCloudControl) CreateUser(ctx context.Context, username, email string, userType UserType) (*User, error) {
+func (b *BuiltInCloudControl) CreateUser(ctx context.Context, username, email string) (*User, error) {
 	userID, err := b.idGen.GenerateTerminalID()
 	if err != nil {
 		return nil, fmt.Errorf("generate user ID failed: %w", err)
@@ -266,7 +266,7 @@ func (b *BuiltInCloudControl) CreateUser(ctx context.Context, username, email st
 		Username:  username,
 		Email:     email,
 		Status:    UserStatusActive,
-		Type:      userType,
+		Type:      UserTypeRegistered,
 		CreatedAt: now,
 		UpdatedAt: now,
 		Plan:      UserPlanFree,

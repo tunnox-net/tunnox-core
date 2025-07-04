@@ -17,7 +17,7 @@ type CloudControlAPI interface {
 	ValidateToken(ctx context.Context, token string) (*AuthResponse, error)
 
 	// 用户管理
-	CreateUser(ctx context.Context, username, email string, userType UserType) (*User, error) // 创建用户，服务端分配用户ID
+	CreateUser(ctx context.Context, username, email string) (*User, error) // 创建用户，服务端分配用户ID
 	GetUser(ctx context.Context, userID string) (*User, error)
 	UpdateUser(ctx context.Context, user *User) error
 	DeleteUser(ctx context.Context, userID string) error
