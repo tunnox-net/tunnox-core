@@ -32,7 +32,7 @@ func (r *GzipReader) Read(p []byte) (n int, err error) {
 
 func (r *GzipReader) onClose() {
 	if r.gzipReader != nil {
-		r.gzipReader.Close()
+		_ = r.gzipReader.Close()
 		r.gzipReader = nil
 	}
 }
@@ -58,7 +58,7 @@ func (w *GzipWriter) Write(p []byte) (n int, err error) {
 
 func (w *GzipWriter) onClose() {
 	if w.gzipWriter != nil {
-		w.gzipWriter.Close()
+		_ = w.gzipWriter.Close()
 		w.gzipWriter = nil
 	}
 }
