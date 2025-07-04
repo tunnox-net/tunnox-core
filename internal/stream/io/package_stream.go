@@ -17,11 +17,16 @@ type PackageStream struct {
 	reader    io.Reader
 	writer    io.Writer
 	transLock sync.Mutex
+	bufferMgr *utils.BufferManager
 	utils.Dispose
 }
 
 func NewPackageStream(reader io.Reader, writer io.Writer, parentCtx context.Context) *PackageStream {
-	stream := &PackageStream{reader: reader, writer: writer}
+	stream := &PackageStream{
+		reader:    reader,
+		writer:    writer,
+		bufferMgr: utils.NewBufferManager(),
+	}
 	stream.SetCtx(parentCtx, nil)
 	return stream
 }
@@ -52,7 +57,7 @@ func (ps *PackageStream) writeLock() error {
 	return nil
 }
 
-// ReadExact 读取指定长度的字节，直到读完为止
+// ReadExact 读取指定长度的字节，使用内存池优化
 // 如果读取的字节数不足指定长度，会继续读取直到达到指定长度或遇到错误
 func (ps *PackageStream) ReadExact(length int) ([]byte, error) {
 	if err := ps.readLock(); err != nil {
@@ -60,8 +65,10 @@ func (ps *PackageStream) ReadExact(length int) ([]byte, error) {
 	}
 	defer ps.transLock.Unlock()
 
-	// 创建指定长度的缓冲区
-	buffer := make([]byte, length)
+	// 从内存池获取缓冲区
+	buffer := ps.bufferMgr.Allocate(length)
+	defer ps.bufferMgr.Release(buffer)
+
 	totalRead := 0
 
 	// 循环读取，直到读取到指定长度的数据
@@ -81,26 +88,35 @@ func (ps *PackageStream) ReadExact(length int) ([]byte, error) {
 		if err != nil {
 			if err == io.EOF && totalRead == length {
 				// 读取完毕且达到指定长度，返回成功
-				return buffer, nil
+				// 创建新的切片，避免内存池中的数据被修改
+				result := make([]byte, totalRead)
+				copy(result, buffer[:totalRead])
+				return result, nil
 			}
 			// 其他错误或EOF但未达到指定长度，返回错误
-			return buffer[:totalRead], err
+			result := make([]byte, totalRead)
+			copy(result, buffer[:totalRead])
+			return result, err
 		}
 
 		// 如果没有读取到任何数据，可能是阻塞，继续尝试
-		// 但是对于 bytes.Buffer，如果 n == 0 且没有错误，说明没有更多数据
 		if n == 0 {
 			// 检查是否已经读取了部分数据
 			if totalRead > 0 {
 				// 已经读取了部分数据，但无法继续读取，返回部分数据
-				return buffer[:totalRead], errors.ErrUnexpectedEOF
+				result := make([]byte, totalRead)
+				copy(result, buffer[:totalRead])
+				return result, errors.ErrUnexpectedEOF
 			}
 			// 没有读取到任何数据，可能是阻塞，继续尝试
 			continue
 		}
 	}
 
-	return buffer, nil
+	// 创建新的切片，避免内存池中的数据被修改
+	result := make([]byte, totalRead)
+	copy(result, buffer[:totalRead])
+	return result, nil
 }
 
 // WriteExact 写入指定长度的字节，直到写完为止
@@ -141,9 +157,11 @@ func (ps *PackageStream) WriteExact(data []byte) error {
 	return nil
 }
 
-// readPacketType 读取包类型
+// readPacketType 读取包类型，使用内存池
 func (ps *PackageStream) readPacketType() (packet.Type, error) {
-	typeBuffer := make([]byte, constants.PacketTypeSize)
+	typeBuffer := ps.bufferMgr.Allocate(constants.PacketTypeSize)
+	defer ps.bufferMgr.Release(typeBuffer)
+
 	n, err := ps.reader.Read(typeBuffer)
 	if err != nil {
 		return 0, errors.NewStreamError("read_packet_type", "failed to read packet type", err)
@@ -154,9 +172,11 @@ func (ps *PackageStream) readPacketType() (packet.Type, error) {
 	return packet.Type(typeBuffer[0]), nil
 }
 
-// readPacketBodySize 读取包体大小
+// readPacketBodySize 读取包体大小，使用内存池
 func (ps *PackageStream) readPacketBodySize() (uint32, error) {
-	sizeBuffer := make([]byte, constants.PacketBodySizeBytes)
+	sizeBuffer := ps.bufferMgr.Allocate(constants.PacketBodySizeBytes)
+	defer ps.bufferMgr.Release(sizeBuffer)
+
 	n, err := ps.reader.Read(sizeBuffer)
 	if err != nil {
 		return 0, errors.NewStreamError("read_packet_body_size", "failed to read packet body size", err)
@@ -167,9 +187,11 @@ func (ps *PackageStream) readPacketBodySize() (uint32, error) {
 	return binary.BigEndian.Uint32(sizeBuffer), nil
 }
 
-// readPacketBody 读取包体数据
+// readPacketBody 读取包体数据，使用内存池
 func (ps *PackageStream) readPacketBody(bodySize uint32) ([]byte, error) {
-	bodyData := make([]byte, int(bodySize))
+	bodyData := ps.bufferMgr.Allocate(int(bodySize))
+	defer ps.bufferMgr.Release(bodyData)
+
 	totalRead := 0
 	for totalRead < int(bodySize) {
 		n, err := ps.reader.Read(bodyData[totalRead:])
@@ -178,7 +200,11 @@ func (ps *PackageStream) readPacketBody(bodySize uint32) ([]byte, error) {
 		}
 		totalRead += n
 	}
-	return bodyData, nil
+
+	// 创建新的切片，避免内存池中的数据被修改
+	result := make([]byte, totalRead)
+	copy(result, bodyData[:totalRead])
+	return result, nil
 }
 
 // decompressData 解压数据
