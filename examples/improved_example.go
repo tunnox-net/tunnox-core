@@ -44,7 +44,7 @@ func factoryExample() {
 	defer stream.Close()
 
 	// 创建限速读取器
-	rateReader := factory.NewRateLimiterReader(reader, 1024, ctx)
+	rateReader, _ := factory.NewRateLimiterReader(reader, 1024, ctx)
 	defer rateReader.Close()
 
 	// 创建压缩写入器
