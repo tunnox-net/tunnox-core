@@ -7,15 +7,15 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-type Stream struct {
+type PackageStream struct {
 	reader    io.Reader
 	writer    io.Writer
 	transLock sync.Mutex
 	utils.Dispose
 }
 
-func NewStream(reader io.Reader, writer io.Writer, parentCtx context.Context) *Stream {
-	stream := &Stream{reader: reader, writer: writer}
+func NewPackageStream(reader io.Reader, writer io.Writer, parentCtx context.Context) *PackageStream {
+	stream := &PackageStream{reader: reader, writer: writer}
 	stream.SetCtx(parentCtx, nil)
 	return stream
 }

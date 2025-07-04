@@ -11,7 +11,7 @@ import (
 
 func TestNewStream(t *testing.T) {
 	// 准备测试数据
-	testData := []byte("Hello, this is a test for Stream!")
+	testData := []byte("Hello, this is a test for PackageStream!")
 
 	var buf bytes.Buffer
 	reader := bytes.NewReader(testData)
@@ -21,17 +21,17 @@ func TestNewStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := io2.NewStream(reader, writer, ctx)
+	stream := io2.NewPackageStream(reader, writer, ctx)
 	defer stream.Close()
 
 	// 验证Stream创建成功
 	if stream == nil {
-		t.Fatal("Stream should not be nil")
+		t.Fatal("PackageStream should not be nil")
 	}
 
 	// 验证Stream未关闭
 	if stream.IsClosed() {
-		t.Error("New Stream should not be closed")
+		t.Error("New PackageStream should not be closed")
 	}
 }
 
@@ -47,7 +47,7 @@ func TestStreamClose(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := io2.NewStream(reader, writer, ctx)
+	stream := io2.NewPackageStream(reader, writer, ctx)
 
 	// 关闭Stream
 	stream.Close()
@@ -57,7 +57,7 @@ func TestStreamClose(t *testing.T) {
 
 	// 验证已关闭
 	if !stream.IsClosed() {
-		t.Error("Stream should be closed after calling Close()")
+		t.Error("PackageStream should be closed after calling Close()")
 	}
 }
 
@@ -73,7 +73,7 @@ func TestStreamConcurrentAccess(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := io2.NewStream(reader, writer, ctx)
+	stream := io2.NewPackageStream(reader, writer, ctx)
 	defer stream.Close()
 
 	// 并发访问Stream
@@ -97,7 +97,7 @@ func TestStreamConcurrentAccess(t *testing.T) {
 
 	// 验证Stream仍然可用
 	if stream.IsClosed() {
-		t.Error("Stream should not be closed after concurrent access")
+		t.Error("PackageStream should not be closed after concurrent access")
 	}
 }
 
@@ -112,7 +112,7 @@ func TestStreamContextCancellation(t *testing.T) {
 	// 创建Stream
 	ctx, cancel := context.WithCancel(context.Background())
 
-	stream := io2.NewStream(reader, writer, ctx)
+	stream := io2.NewPackageStream(reader, writer, ctx)
 
 	// 取消上下文
 	cancel()
@@ -122,7 +122,7 @@ func TestStreamContextCancellation(t *testing.T) {
 
 	// 验证Stream已关闭
 	if !stream.IsClosed() {
-		t.Error("Stream should be closed after context cancellation")
+		t.Error("PackageStream should be closed after context cancellation")
 	}
 }
 
@@ -138,17 +138,17 @@ func TestStreamWithNilOnClose(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := io2.NewStream(reader, writer, ctx)
+	stream := io2.NewPackageStream(reader, writer, ctx)
 	defer stream.Close()
 
 	// 验证Stream创建成功
 	if stream == nil {
-		t.Fatal("Stream should not be nil even with nil onClose")
+		t.Fatal("PackageStream should not be nil even with nil onClose")
 	}
 
 	// 验证Stream未关闭
 	if stream.IsClosed() {
-		t.Error("New Stream should not be closed")
+		t.Error("New PackageStream should not be closed")
 	}
 }
 
@@ -164,7 +164,7 @@ func TestStreamMultipleClose(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := io2.NewStream(reader, writer, ctx)
+	stream := io2.NewPackageStream(reader, writer, ctx)
 
 	// 多次调用Close
 	stream.Close()
@@ -176,7 +176,7 @@ func TestStreamMultipleClose(t *testing.T) {
 
 	// 验证已关闭
 	if !stream.IsClosed() {
-		t.Error("Stream should be closed after calling Close()")
+		t.Error("PackageStream should be closed after calling Close()")
 	}
 }
 
@@ -195,16 +195,16 @@ func TestStreamWithLargeData(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := io2.NewStream(reader, writer, ctx)
+	stream := io2.NewPackageStream(reader, writer, ctx)
 	defer stream.Close()
 
 	// 验证Stream创建成功
 	if stream == nil {
-		t.Fatal("Stream should not be nil with large data")
+		t.Fatal("PackageStream should not be nil with large data")
 	}
 
 	// 验证Stream未关闭
 	if stream.IsClosed() {
-		t.Error("New Stream should not be closed")
+		t.Error("New PackageStream should not be closed")
 	}
 }
