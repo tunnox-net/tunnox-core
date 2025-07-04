@@ -106,6 +106,7 @@ type Client struct {
 	JWTToken       string     `json:"jwt_token"`        // 当前有效的JWT Token
 	TokenExpiresAt *time.Time `json:"token_expires_at"` // Token过期时间
 	RefreshToken   string     `json:"refresh_token"`    // 用于刷新Token的凭证
+	TokenID        string     `json:"token_id"`         // Token唯一标识，用于撤销
 }
 
 type ClientType string
@@ -206,6 +207,7 @@ type JWTTokenInfo struct {
 	RefreshToken string    `json:"refresh_token"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	ClientId     string    `json:"client_id"`
+	TokenID      string    `json:"token_id"` // Token唯一标识，用于撤销
 }
 
 type Node struct {

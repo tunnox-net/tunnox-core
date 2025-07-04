@@ -93,8 +93,8 @@ func (g *IDGenerator) GenerateSecretKey() (string, error) {
 	return string(key), nil
 }
 
-// GenerateUserID 生成用户ID
-func (g *IDGenerator) GenerateUserID() (string, error) {
+// GenerateTerminalID 生成用户ID
+func (g *IDGenerator) GenerateTerminalID() (string, error) {
 	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 	userID := make([]byte, 16)
 

@@ -124,6 +124,21 @@ func TestBuiltInCloudControl_JWTTokenManagement(t *testing.T) {
 		if newTokenInfo.ClientId != client.ID {
 			t.Errorf("Expected client ID %s, got %s", client.ID, newTokenInfo.ClientId)
 		}
+
+		// 新token也能通过校验
+		validTokenInfo, err := api.ValidateJWTToken(ctx, newTokenInfo.Token)
+		if err != nil {
+			t.Fatalf("ValidateJWTToken for refreshed token failed: %v", err)
+		}
+		if validTokenInfo.ClientId != client.ID {
+			t.Errorf("Expected client ID %s, got %s", client.ID, validTokenInfo.ClientId)
+		}
+
+		// 旧token已失效
+		_, err = api.ValidateJWTToken(ctx, tokenInfo.Token)
+		if err == nil {
+			t.Error("Expected old token to be revoked after refresh")
+		}
 	})
 }
 
@@ -230,7 +245,6 @@ func TestBuiltInCloudControl_AuthenticationWithJWT(t *testing.T) {
 			t.Fatalf("GenerateJWTToken failed: %v", err)
 		}
 
-		// 使用 JWT token 认证
 		authReq := &cloud.AuthRequest{
 			ClientID:  client.ID,
 			AuthCode:  client.AuthCode,
@@ -262,19 +276,29 @@ func TestBuiltInCloudControl_AuthenticationWithJWT(t *testing.T) {
 		}
 
 		// 生成 JWT token
-		_, err = api.GenerateJWTToken(ctx, client.ID)
+		tokenInfo, err := api.GenerateJWTToken(ctx, client.ID)
 		if err != nil {
 			t.Fatalf("GenerateJWTToken failed: %v", err)
 		}
 
-		// 验证 token
-		authResp, err := api.ValidateToken(ctx, "test_token")
+		// 先将客户端设置为在线状态
+		err = api.UpdateClientStatus(ctx, client.ID, cloud.ClientStatusOnline, "test_node_1")
+		if err != nil {
+			t.Fatalf("UpdateClientStatus failed: %v", err)
+		}
+
+		// 验证有效 token
+		authResp, err := api.ValidateToken(ctx, tokenInfo.Token)
 		if err != nil {
 			t.Fatalf("ValidateToken failed: %v", err)
 		}
 
 		if !authResp.Success {
 			t.Errorf("Expected token validation success, got: %s", authResp.Message)
+		}
+
+		if authResp.Client != nil && authResp.Client.ID != client.ID {
+			t.Errorf("Expected client ID %s, got %s", client.ID, authResp.Client.ID)
 		}
 
 		// 验证无效 token

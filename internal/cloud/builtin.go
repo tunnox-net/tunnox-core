@@ -16,13 +16,15 @@ type BuiltInCloudControl struct {
 	clientRepo    *ClientRepository
 	mappingRepo   *PortMappingRepository
 	nodeRepo      *NodeRepository
+	jwtManager    *JWTManager
 	cleanupTicker *time.Ticker
 	done          chan bool
 }
 
 // NewBuiltInCloudControl 创建新的内置云控
 func NewBuiltInCloudControl(config *CloudControlConfig) *BuiltInCloudControl {
-	storage := NewRepository(NewMemoryStorage())
+	memoryStorage := NewMemoryStorage()
+	storage := NewRepository(memoryStorage)
 
 	return &BuiltInCloudControl{
 		config:        config,
@@ -31,6 +33,7 @@ func NewBuiltInCloudControl(config *CloudControlConfig) *BuiltInCloudControl {
 		clientRepo:    NewClientRepository(storage),
 		mappingRepo:   NewPortMappingRepository(storage),
 		nodeRepo:      NewNodeRepository(storage),
+		jwtManager:    NewJWTManager(config, memoryStorage),
 		cleanupTicker: time.NewTicker(5 * time.Minute), // 每5分钟清理一次
 		done:          make(chan bool),
 	}
@@ -52,7 +55,7 @@ func (b *BuiltInCloudControl) NodeRegister(ctx context.Context, req *NodeRegiste
 	nodeID := req.NodeID
 	if nodeID == "" {
 		// 生成节点ID
-		generatedID, err := b.idGen.GenerateUserID()
+		generatedID, err := b.idGen.GenerateTerminalID()
 		if err != nil {
 			return nil, fmt.Errorf("generate node ID failed: %w", err)
 		}
@@ -173,11 +176,24 @@ func (b *BuiltInCloudControl) Authenticate(ctx context.Context, req *AuthRequest
 	node, _ := b.nodeRepo.GetNode(ctx, req.NodeID)
 
 	// 生成JWT Token
-	jwtInfo, err := b.GenerateJWTToken(ctx, client.ID)
+	jwtInfo, err := b.jwtManager.GenerateTokenPair(ctx, client)
 	if err != nil {
 		return &AuthResponse{
 			Success: false,
 			Message: "Failed to generate JWT token",
+		}, nil
+	}
+
+	// 更新客户端Token信息
+	client.JWTToken = jwtInfo.TokenID
+	client.TokenExpiresAt = &jwtInfo.ExpiresAt
+	client.RefreshToken = jwtInfo.RefreshToken
+	client.UpdatedAt = time.Now()
+
+	if err := b.clientRepo.SaveClient(ctx, client); err != nil {
+		return &AuthResponse{
+			Success: false,
+			Message: "Failed to update client token",
 		}, nil
 	}
 
@@ -194,7 +210,7 @@ func (b *BuiltInCloudControl) Authenticate(ctx context.Context, req *AuthRequest
 // ValidateToken 验证令牌
 func (b *BuiltInCloudControl) ValidateToken(ctx context.Context, token string) (*AuthResponse, error) {
 	// 使用JWT Token验证
-	jwtInfo, err := b.ValidateJWTToken(ctx, token)
+	claims, err := b.jwtManager.ValidateAccessToken(ctx, token)
 	if err != nil {
 		return &AuthResponse{
 			Success: false,
@@ -202,7 +218,7 @@ func (b *BuiltInCloudControl) ValidateToken(ctx context.Context, token string) (
 		}, nil
 	}
 
-	client, err := b.clientRepo.GetClient(ctx, jwtInfo.ClientId)
+	client, err := b.clientRepo.GetClient(ctx, claims.ClientID)
 	if err != nil {
 		return &AuthResponse{
 			Success: false,
@@ -217,6 +233,14 @@ func (b *BuiltInCloudControl) ValidateToken(ctx context.Context, token string) (
 		}, nil
 	}
 
+	// 验证Token ID是否匹配
+	if client.JWTToken != claims.ID {
+		return &AuthResponse{
+			Success: false,
+			Message: "Token has been revoked",
+		}, nil
+	}
+
 	node, _ := b.nodeRepo.GetNode(ctx, client.NodeID)
 
 	return &AuthResponse{
@@ -224,14 +248,14 @@ func (b *BuiltInCloudControl) ValidateToken(ctx context.Context, token string) (
 		Token:     token,
 		Client:    client,
 		Node:      node,
-		ExpiresAt: jwtInfo.ExpiresAt,
+		ExpiresAt: claims.ExpiresAt.Time,
 		Message:   "Token is valid",
 	}, nil
 }
 
 // CreateUser 创建用户
 func (b *BuiltInCloudControl) CreateUser(ctx context.Context, username, email string, userType UserType) (*User, error) {
-	userID, err := b.idGen.GenerateUserID()
+	userID, err := b.idGen.GenerateTerminalID()
 	if err != nil {
 		return nil, fmt.Errorf("generate user ID failed: %w", err)
 	}
@@ -884,91 +908,128 @@ func (b *BuiltInCloudControl) GenerateJWTToken(ctx context.Context, clientId str
 		return nil, err
 	}
 
-	// 简单实现：生成Token
-	token := fmt.Sprintf("jwt_%s_%d", clientId, time.Now().Unix())
-	refreshToken := fmt.Sprintf("refresh_%s_%d", clientId, time.Now().Unix())
-	expiresAt := time.Now().Add(24 * time.Hour)
-
-	// 更新客户端Token信息
-	client.JWTToken = token
-	client.TokenExpiresAt = &expiresAt
-	client.RefreshToken = refreshToken
-	client.UpdatedAt = time.Now()
-
-	if err := b.clientRepo.SaveClient(ctx, client); err != nil {
+	jwtInfo, err := b.jwtManager.GenerateTokenPair(ctx, client)
+	if err != nil {
 		return nil, err
 	}
 
-	return &JWTTokenInfo{
-		Token:        token,
-		RefreshToken: refreshToken,
-		ExpiresAt:    expiresAt,
-		ClientId:     clientId,
-	}, nil
+	// 更新客户端Token信息
+	client.JWTToken = jwtInfo.TokenID
+	client.TokenExpiresAt = &jwtInfo.ExpiresAt
+	client.RefreshToken = jwtInfo.RefreshToken
+	client.UpdatedAt = time.Now()
+
+	if err := b.clientRepo.SaveClient(ctx, client); err != nil {
+		return nil, fmt.Errorf("failed to update client token: %w", err)
+	}
+
+	return jwtInfo, nil
 }
 
 // RefreshJWTToken 刷新JWT Token
 func (b *BuiltInCloudControl) RefreshJWTToken(ctx context.Context, refreshToken string) (*JWTTokenInfo, error) {
-	// 简单实现：根据refreshToken查找客户端并生成新Token
-	clients, err := b.clientRepo.ListUserClients(ctx, "")
+	// 验证刷新Token并获取客户端ID
+	refreshClaims, err := b.jwtManager.ValidateRefreshToken(ctx, refreshToken)
+	if err != nil {
+		return nil, fmt.Errorf("invalid refresh token: %w", err)
+	}
+
+	// 获取客户端
+	client, err := b.clientRepo.GetClient(ctx, refreshClaims.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("client not found: %w", err)
+	}
+
+	// 验证Token ID是否匹配
+	if client.JWTToken != refreshClaims.TokenID {
+		return nil, fmt.Errorf("token ID mismatch")
+	}
+
+	// 生成新的Token对
+	jwtInfo, err := b.jwtManager.GenerateTokenPair(ctx, client)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, client := range clients {
-		if client.RefreshToken == refreshToken {
-			return b.GenerateJWTToken(ctx, client.ID)
-		}
+	// 更新客户端Token信息
+	client.JWTToken = jwtInfo.TokenID
+	client.TokenExpiresAt = &jwtInfo.ExpiresAt
+	client.RefreshToken = jwtInfo.RefreshToken
+	client.UpdatedAt = time.Now()
+
+	if err := b.clientRepo.SaveClient(ctx, client); err != nil {
+		return nil, fmt.Errorf("failed to update client token: %w", err)
 	}
 
-	return nil, fmt.Errorf("invalid refresh token")
+	return jwtInfo, nil
 }
 
 // ValidateJWTToken 验证JWT Token
 func (b *BuiltInCloudControl) ValidateJWTToken(ctx context.Context, token string) (*JWTTokenInfo, error) {
-	// 简单实现：根据token查找客户端
-	clients, err := b.clientRepo.ListUserClients(ctx, "")
+	// 验证访问Token
+	claims, err := b.jwtManager.ValidateAccessToken(ctx, token)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, client := range clients {
-		if client.JWTToken == token {
-			if client.TokenExpiresAt != nil && time.Now().After(*client.TokenExpiresAt) {
-				return nil, fmt.Errorf("token expired")
-			}
-
-			return &JWTTokenInfo{
-				Token:        client.JWTToken,
-				RefreshToken: client.RefreshToken,
-				ExpiresAt:    *client.TokenExpiresAt,
-				ClientId:     client.ID,
-			}, nil
-		}
+	// 获取客户端
+	client, err := b.clientRepo.GetClient(ctx, claims.ClientID)
+	if err != nil {
+		return nil, fmt.Errorf("client not found: %w", err)
 	}
 
-	return nil, fmt.Errorf("invalid token")
+	// 验证Token ID是否匹配
+	if client.JWTToken != claims.ID {
+		return nil, fmt.Errorf("token has been revoked")
+	}
+
+	return &JWTTokenInfo{
+		Token:        token,
+		RefreshToken: client.RefreshToken,
+		ExpiresAt:    claims.ExpiresAt.Time,
+		ClientId:     claims.ClientID,
+		TokenID:      claims.ID,
+	}, nil
 }
 
 // RevokeJWTToken 撤销JWT Token
 func (b *BuiltInCloudControl) RevokeJWTToken(ctx context.Context, token string) error {
-	// 简单实现：清除客户端Token信息
-	clients, err := b.clientRepo.ListUserClients(ctx, "")
+	// 验证Token并获取客户端ID
+	claims, err := b.jwtManager.ValidateAccessToken(ctx, token)
 	if err != nil {
-		return err
+		return fmt.Errorf("invalid token: %w", err)
 	}
 
-	for _, client := range clients {
-		if client.JWTToken == token {
-			client.JWTToken = ""
-			client.TokenExpiresAt = nil
-			client.RefreshToken = ""
-			client.UpdatedAt = time.Now()
-			return b.clientRepo.SaveClient(ctx, client)
+	// 获取客户端
+	client, err := b.clientRepo.GetClient(ctx, claims.ClientID)
+	if err != nil {
+		return fmt.Errorf("client not found: %w", err)
+	}
+
+	// 验证Token ID是否匹配
+	if client.JWTToken != claims.ID {
+		return fmt.Errorf("token has already been revoked")
+	}
+
+	// 撤销缓存中的Token
+	if err := b.jwtManager.cache.RevokeAccessToken(ctx, token); err != nil {
+		return fmt.Errorf("revoke access token from cache failed: %w", err)
+	}
+
+	// 撤销缓存中的刷新Token
+	if client.RefreshToken != "" {
+		if err := b.jwtManager.cache.RevokeRefreshToken(ctx, client.RefreshToken); err != nil {
+			return fmt.Errorf("revoke refresh token from cache failed: %w", err)
 		}
 	}
 
-	return fmt.Errorf("token not found")
+	// 清除客户端Token信息
+	client.JWTToken = ""
+	client.TokenExpiresAt = nil
+	client.RefreshToken = ""
+	client.UpdatedAt = time.Now()
+
+	return b.clientRepo.SaveClient(ctx, client)
 }
 
 // Close 关闭内置云控
