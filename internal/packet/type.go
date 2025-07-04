@@ -28,13 +28,3 @@ func (t Type) IsCompressed() bool {
 func (t Type) IsEncrypted() bool {
 	return t&Encrypted != 0
 }
-
-// HasCompression 检查包是否包含压缩标志
-func (t Type) HasCompression() bool {
-	return t&Compressed != 0
-}
-
-// HasEncryption 检查包是否包含加密标志
-func (t Type) HasEncryption() bool {
-	return t&Encrypted != 0
-}

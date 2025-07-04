@@ -32,7 +32,7 @@ func (ps *PackageStream) readLock() error {
 	ps.transLock.Lock()
 	if ps.reader == nil {
 		ps.transLock.Unlock()
-		return io.ErrClosedPipe
+		return utils.ErrReaderNil
 	}
 	return nil
 }
@@ -40,12 +40,12 @@ func (ps *PackageStream) readLock() error {
 // writeLock 获取写入锁并检查状态
 func (ps *PackageStream) writeLock() error {
 	if ps.IsClosed() {
-		return io.ErrClosedPipe
+		return utils.ErrStreamClosed
 	}
 	ps.transLock.Lock()
 	if ps.writer == nil {
 		ps.transLock.Unlock()
-		return io.ErrClosedPipe
+		return utils.ErrWriterNil
 	}
 	return nil
 }
@@ -91,7 +91,7 @@ func (ps *PackageStream) ReadExact(length int) ([]byte, error) {
 			// 检查是否已经读取了部分数据
 			if totalRead > 0 {
 				// 已经读取了部分数据，但无法继续读取，返回部分数据
-				return buffer[:totalRead], io.ErrUnexpectedEOF
+				return buffer[:totalRead], utils.ErrUnexpectedEOF
 			}
 			// 没有读取到任何数据，可能是阻塞，继续尝试
 			continue
@@ -139,6 +139,60 @@ func (ps *PackageStream) WriteExact(data []byte) error {
 	return nil
 }
 
+// readPacketType 读取包类型
+func (ps *PackageStream) readPacketType() (packet.Type, error) {
+	typeBuffer := make([]byte, utils.PacketTypeSize)
+	n, err := ps.reader.Read(typeBuffer)
+	if err != nil {
+		return 0, utils.NewStreamError("read_packet_type", "failed to read packet type", err)
+	}
+	if n != utils.PacketTypeSize {
+		return 0, utils.ErrUnexpectedEOF
+	}
+	return packet.Type(typeBuffer[0]), nil
+}
+
+// readPacketBodySize 读取包体大小
+func (ps *PackageStream) readPacketBodySize() (uint32, error) {
+	sizeBuffer := make([]byte, utils.PacketBodySizeBytes)
+	n, err := ps.reader.Read(sizeBuffer)
+	if err != nil {
+		return 0, utils.NewStreamError("read_packet_body_size", "failed to read packet body size", err)
+	}
+	if n != utils.PacketBodySizeBytes {
+		return 0, utils.ErrUnexpectedEOF
+	}
+	return binary.BigEndian.Uint32(sizeBuffer), nil
+}
+
+// readPacketBody 读取包体数据
+func (ps *PackageStream) readPacketBody(bodySize uint32) ([]byte, error) {
+	bodyData := make([]byte, int(bodySize))
+	totalRead := 0
+	for totalRead < int(bodySize) {
+		n, err := ps.reader.Read(bodyData[totalRead:])
+		if err != nil {
+			return nil, utils.NewStreamError("read_packet_body", "failed to read packet body", err)
+		}
+		totalRead += n
+	}
+	return bodyData, nil
+}
+
+// decompressData 解压数据
+func (ps *PackageStream) decompressData(compressedData []byte) ([]byte, error) {
+	gzipReader := NewGzipReader(bytes.NewReader(compressedData), ps.Ctx())
+	defer gzipReader.Close()
+
+	var decompressedData bytes.Buffer
+	_, err := io.Copy(&decompressedData, gzipReader)
+	if err != nil {
+		return nil, utils.NewCompressionError("decompress", "decompression failed", err)
+	}
+
+	return decompressedData.Bytes(), nil
+}
+
 // ReadPacket 读取整个数据包，返回读取的字节数
 func (ps *PackageStream) ReadPacket() (*packet.TransferPacket, int, error) {
 	if err := ps.readLock(); err != nil {
@@ -148,18 +202,12 @@ func (ps *PackageStream) ReadPacket() (*packet.TransferPacket, int, error) {
 
 	totalBytes := 0
 
-	// 读取包类型字节 - 直接读取，不调用 ReadExact 避免死锁
-	typeBuffer := make([]byte, 1)
-	n, err := ps.reader.Read(typeBuffer)
+	// 读取包类型字节
+	packetType, err := ps.readPacketType()
 	if err != nil {
 		return nil, totalBytes, err
 	}
-	if n != 1 {
-		return nil, totalBytes, io.ErrUnexpectedEOF
-	}
-	totalBytes += 1
-
-	packetType := packet.Type(typeBuffer[0])
+	totalBytes += utils.PacketTypeSize
 
 	// 如果是心跳包，直接返回
 	if packetType.IsHeartbeat() {
@@ -171,51 +219,33 @@ func (ps *PackageStream) ReadPacket() (*packet.TransferPacket, int, error) {
 
 	// 如果是JsonCommand包，读取数据体大小和数据体
 	if packetType.IsJsonCommand() {
-		// 读取4字节的数据体大小 - 直接读取
-		sizeBuffer := make([]byte, 4)
-		n, err := ps.reader.Read(sizeBuffer)
+		// 读取数据体大小
+		bodySize, err := ps.readPacketBodySize()
 		if err != nil {
 			return nil, totalBytes, err
 		}
-		if n != 4 {
-			return nil, totalBytes, io.ErrUnexpectedEOF
-		}
-		totalBytes += 4
+		totalBytes += utils.PacketBodySizeBytes
 
-		bodySize := binary.BigEndian.Uint32(sizeBuffer)
-
-		// 读取数据体 - 直接读取
-		bodyData := make([]byte, int(bodySize))
-		totalRead := 0
-		for totalRead < int(bodySize) {
-			n, err := ps.reader.Read(bodyData[totalRead:])
-			if err != nil {
-				return nil, totalBytes, err
-			}
-			totalRead += n
+		// 读取数据体
+		bodyData, err := ps.readPacketBody(bodySize)
+		if err != nil {
+			return nil, totalBytes, err
 		}
 		totalBytes += len(bodyData)
 
 		// 如果数据被压缩，需要解压
 		if packetType.IsCompressed() {
-			// 使用gzip_rewriter解压
-			gzipReader := NewGzipReader(bytes.NewReader(bodyData), ps.Ctx())
-			defer gzipReader.Close()
-
-			var decompressedData bytes.Buffer
-			_, err = io.Copy(&decompressedData, gzipReader)
+			bodyData, err = ps.decompressData(bodyData)
 			if err != nil {
 				return nil, totalBytes, err
 			}
-
-			bodyData = decompressedData.Bytes()
 		}
 
 		// 解析 CommandPacket
 		var commandPacket packet.CommandPacket
 		err = json.Unmarshal(bodyData, &commandPacket)
 		if err != nil {
-			return nil, totalBytes, err
+			return nil, totalBytes, utils.NewPacketError("json_unmarshal", "failed to unmarshal command packet", err)
 		}
 
 		return &packet.TransferPacket{
@@ -229,6 +259,44 @@ func (ps *PackageStream) ReadPacket() (*packet.TransferPacket, int, error) {
 		PacketType:    packetType,
 		CommandPacket: nil,
 	}, totalBytes, nil
+}
+
+// compressData 压缩数据
+func (ps *PackageStream) compressData(data []byte) ([]byte, error) {
+	var compressedData bytes.Buffer
+	gzipWriter := NewGzipWriter(&compressedData, ps.Ctx())
+
+	_, err := gzipWriter.Write(data)
+	if err != nil {
+		gzipWriter.Close()
+		return nil, utils.NewCompressionError("compress", "compression failed", err)
+	}
+
+	// 确保所有数据都写入并关闭
+	gzipWriter.Close()
+
+	return compressedData.Bytes(), nil
+}
+
+// writeRateLimitedData 限速写入数据
+func (ps *PackageStream) writeRateLimitedData(data []byte, rateLimitBytesPerSecond int64) error {
+	// 使用限速写入器
+	rateLimitedWriter, err := NewRateLimiterWriter(ps.writer, rateLimitBytesPerSecond, ps.Ctx())
+	if err != nil {
+		return utils.NewStreamError("write_rate_limited", "failed to create rate limited writer", err)
+	}
+	defer rateLimitedWriter.Close()
+
+	// 分块写入，确保所有数据都被写入
+	totalWritten := 0
+	for totalWritten < len(data) {
+		n, err := rateLimitedWriter.Write(data[totalWritten:])
+		if err != nil {
+			return utils.NewStreamError("write_rate_limited", "rate limited write failed", err)
+		}
+		totalWritten += n
+	}
+	return nil
 }
 
 // WritePacket 写入整个数据包，返回写入的字节数
@@ -249,9 +317,9 @@ func (ps *PackageStream) WritePacket(pkt *packet.TransferPacket, useCompression 
 	typeByte := []byte{byte(packetType)}
 	_, err := ps.writer.Write(typeByte)
 	if err != nil {
-		return totalBytes, err
+		return totalBytes, utils.NewStreamError("write_packet_type", "failed to write packet type", err)
 	}
-	totalBytes += 1
+	totalBytes += utils.PacketTypeSize
 
 	// 如果是心跳包，写入完成
 	if packetType.IsHeartbeat() {
@@ -263,55 +331,37 @@ func (ps *PackageStream) WritePacket(pkt *packet.TransferPacket, useCompression 
 		// 将 CommandPacket 序列化为 JSON 字节数据
 		bodyData, err := json.Marshal(pkt.CommandPacket)
 		if err != nil {
-			return totalBytes, err
+			return totalBytes, utils.NewPacketError("json_marshal", "failed to marshal command packet", err)
 		}
 
 		// 如果需要压缩，先压缩数据
 		if useCompression {
-			var compressedData bytes.Buffer
-			gzipWriter := NewGzipWriter(&compressedData, ps.Ctx())
-
-			_, err = gzipWriter.Write(bodyData)
+			bodyData, err = ps.compressData(bodyData)
 			if err != nil {
-				gzipWriter.Close()
 				return totalBytes, err
 			}
-
-			// 确保所有数据都写入并关闭
-			gzipWriter.Close()
-
-			bodyData = compressedData.Bytes()
 		}
 
-		// 写入数据体大小（4字节）
-		sizeBuffer := make([]byte, 4)
+		// 写入数据体大小
+		sizeBuffer := make([]byte, utils.PacketBodySizeBytes)
 		binary.BigEndian.PutUint32(sizeBuffer, uint32(len(bodyData)))
 		_, err = ps.writer.Write(sizeBuffer)
 		if err != nil {
-			return totalBytes, err
+			return totalBytes, utils.NewStreamError("write_packet_body_size", "failed to write packet body size", err)
 		}
-		totalBytes += 4
+		totalBytes += utils.PacketBodySizeBytes
 
 		// 写入数据体，根据限速参数决定是否使用限速
 		if rateLimitBytesPerSecond > 0 {
-			// 使用限速写入器
-			rateLimitedWriter := NewRateLimiterWriter(ps.writer, rateLimitBytesPerSecond, ps.Ctx())
-			defer rateLimitedWriter.Close()
-
-			// 分块写入，确保所有数据都被写入
-			totalWritten := 0
-			for totalWritten < len(bodyData) {
-				n, err := rateLimitedWriter.Write(bodyData[totalWritten:])
-				if err != nil {
-					return totalBytes, err
-				}
-				totalWritten += n
+			err = ps.writeRateLimitedData(bodyData, rateLimitBytesPerSecond)
+			if err != nil {
+				return totalBytes, err
 			}
 		} else {
 			// 直接写入，不限速
 			_, err = ps.writer.Write(bodyData)
 			if err != nil {
-				return totalBytes, err
+				return totalBytes, utils.NewStreamError("write_packet_body", "failed to write packet body", err)
 			}
 		}
 		totalBytes += len(bodyData)
