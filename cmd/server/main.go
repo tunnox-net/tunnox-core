@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,9 +13,24 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+// ProtocolConfig 协议配置
+type ProtocolConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Port    int    `yaml:"port"`
+	Host    string `yaml:"host"`
+}
+
+// ServerConfig 服务器配置
+type ServerConfig struct {
+	Host      string                    `yaml:"host"`
+	Port      int                       `yaml:"port"`
+	Protocols map[string]ProtocolConfig `yaml:"protocols"`
+}
+
 // AppConfig 应用配置
 type AppConfig struct {
-	Log utils.LogConfig `json:"log" yaml:"log"`
+	Server ServerConfig    `yaml:"server"`
+	Log    utils.LogConfig `yaml:"log"`
 }
 
 // Server 服务器结构
@@ -53,6 +69,68 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 	return server
 }
 
+// setupProtocolAdapters 设置协议适配器
+func (s *Server) setupProtocolAdapters() error {
+	// 创建 ConnectionSession
+	session := &protocol.ConnectionSession{}
+	session.SetCtx(s.Ctx(), nil)
+
+	// 创建并注册所有启用的协议适配器
+	protocols := s.config.Server.Protocols
+	registeredCount := 0
+
+	// TCP 适配器
+	if tcpConfig, exists := protocols["tcp"]; exists && tcpConfig.Enabled {
+		tcpAdapter := protocol.NewTcpAdapter(s.Ctx(), session)
+		addr := fmt.Sprintf("%s:%d", tcpConfig.Host, tcpConfig.Port)
+		if err := tcpAdapter.ListenFrom(addr); err != nil {
+			return fmt.Errorf("failed to configure TCP adapter: %v", err)
+		}
+		s.protocolMgr.Register(tcpAdapter)
+		utils.Infof("TCP adapter configured on %s", addr)
+		registeredCount++
+	}
+
+	// WebSocket 适配器
+	if wsConfig, exists := protocols["websocket"]; exists && wsConfig.Enabled {
+		wsAdapter := protocol.NewWebSocketAdapter(s.Ctx(), session)
+		addr := fmt.Sprintf("%s:%d", wsConfig.Host, wsConfig.Port)
+		if err := wsAdapter.ListenFrom(addr); err != nil {
+			return fmt.Errorf("failed to configure WebSocket adapter: %v", err)
+		}
+		s.protocolMgr.Register(wsAdapter)
+		utils.Infof("WebSocket adapter configured on %s", addr)
+		registeredCount++
+	}
+
+	// UDP 适配器
+	if udpConfig, exists := protocols["udp"]; exists && udpConfig.Enabled {
+		udpAdapter := protocol.NewUdpAdapter(s.Ctx(), session)
+		addr := fmt.Sprintf("%s:%d", udpConfig.Host, udpConfig.Port)
+		if err := udpAdapter.ListenFrom(addr); err != nil {
+			return fmt.Errorf("failed to configure UDP adapter: %v", err)
+		}
+		s.protocolMgr.Register(udpAdapter)
+		utils.Infof("UDP adapter configured on %s", addr)
+		registeredCount++
+	}
+
+	// QUIC 适配器
+	if quicConfig, exists := protocols["quic"]; exists && quicConfig.Enabled {
+		quicAdapter := protocol.NewQuicAdapter(s.Ctx(), session)
+		addr := fmt.Sprintf("%s:%d", quicConfig.Host, quicConfig.Port)
+		if err := quicAdapter.ListenFrom(addr); err != nil {
+			return fmt.Errorf("failed to configure QUIC adapter: %v", err)
+		}
+		s.protocolMgr.Register(quicAdapter)
+		utils.Infof("QUIC adapter configured on %s", addr)
+		registeredCount++
+	}
+
+	utils.Infof("Total %d protocol adapters registered", registeredCount)
+	return nil
+}
+
 // onClose 资源释放回调
 func (s *Server) onClose() {
 	// 优雅关闭协议适配器
@@ -68,29 +146,38 @@ func (s *Server) onClose() {
 
 // Start 启动服务器
 func (s *Server) Start() error {
-	utils.Info("Starting protocol adapters...")
+	utils.Info("Starting tunnox-core server...")
+
+	// 设置协议适配器
+	if err := s.setupProtocolAdapters(); err != nil {
+		return fmt.Errorf("failed to setup protocol adapters: %v", err)
+	}
 
 	// 启动所有协议适配器
 	if s.protocolMgr != nil {
+		utils.Info("Starting all protocol adapters...")
 		if err := s.protocolMgr.StartAll(s.Ctx()); err != nil {
-			return err
+			return fmt.Errorf("failed to start protocol adapters: %v", err)
 		}
+		utils.Info("All protocol adapters started successfully")
+	} else {
+		utils.Warn("Protocol manager is nil")
 	}
 
-	utils.Info("Protocol adapters started successfully")
+	utils.Info("Tunnox-core server started successfully")
 	return nil
 }
 
 // Stop 停止服务器
 func (s *Server) Stop() error {
-	utils.Info("Shutting down protocol adapters...")
+	utils.Info("Shutting down tunnox-core server...")
 
 	// 关闭协议适配器
 	if s.protocolMgr != nil {
 		s.protocolMgr.CloseAll()
 	}
 
-	utils.Info("Protocol adapters shutdown completed")
+	utils.Info("Tunnox-core server shutdown completed")
 	return nil
 }
 
@@ -108,6 +195,32 @@ func (s *Server) WaitForShutdown() {
 // getDefaultConfig 获取默认配置
 func getDefaultConfig() *AppConfig {
 	return &AppConfig{
+		Server: ServerConfig{
+			Host: "0.0.0.0",
+			Port: 8080,
+			Protocols: map[string]ProtocolConfig{
+				"tcp": {
+					Enabled: true,
+					Port:    8080,
+					Host:    "0.0.0.0",
+				},
+				"websocket": {
+					Enabled: true,
+					Port:    8081,
+					Host:    "0.0.0.0",
+				},
+				"udp": {
+					Enabled: true,
+					Port:    8082,
+					Host:    "0.0.0.0",
+				},
+				"quic": {
+					Enabled: true,
+					Port:    8083,
+					Host:    "0.0.0.0",
+				},
+			},
+		},
 		Log: utils.LogConfig{
 			Level:  constants.LogLevelInfo,
 			Format: constants.LogFormatText,
