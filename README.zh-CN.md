@@ -86,13 +86,13 @@ docs/         # 文档
 
 ## 开发进度
 
-✅ Dispose树型资源管理体系，所有核心结构体已纳入Dispose树
-✅ ProtocolAdapter接口与BaseAdapter实现，支持多协议适配
-✅ TcpAdapter实现，支持TCP端口监听与连接管理
-✅ ProtocolManager实现，统一注册、启动、关闭所有协议适配器
-✅ ConnectionSession分层包处理与CommandType分发设计
-✅ 云控核心（用户、客户端、端口映射、节点、认证等）初步实现
-✅ 单元测试体系完善，Dispose、Repository等关键模块测试100%通过
+✅ Dispose树型资源管理体系，所有核心结构体已纳入Dispose树  
+✅ ProtocolAdapter接口与BaseAdapter实现，支持多协议适配  
+✅ TcpAdapter实现，支持TCP端口监听与连接管理  
+✅ ProtocolManager实现，统一注册、启动、关闭所有协议适配器  
+✅ ConnectionSession分层包处理与CommandType分发设计  
+✅ 云控核心（用户、客户端、端口映射、节点、认证等）初步实现  
+✅ 单元测试体系完善，Dispose、Repository等关键模块测试100%通过  
 
 ⏳ **核心功能**
 - ConnectionSession命令处理器优化（map[CommandType]Handler）

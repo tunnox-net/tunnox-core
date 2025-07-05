@@ -86,12 +86,12 @@ docs/         # Documentation
 
 ## Development Progress
 
-✅ Dispose tree resource management, all core structs included
-✅ ProtocolAdapter interface & BaseAdapter, multi-protocol ready
-✅ TcpAdapter, TCP port listening & connection management
-✅ ProtocolManager, unified registration/start/close
-✅ ConnectionSession, layered packet handling & CommandType dispatch
-✅ Cloud control core (user, client, mapping, node, auth, etc.)
+✅ Dispose tree resource management, all core structs included  
+✅ ProtocolAdapter interface & BaseAdapter, multi-protocol ready  
+✅ TcpAdapter, TCP port listening & connection management  
+✅ ProtocolManager, unified registration/start/close  
+✅ ConnectionSession, layered packet handling & CommandType dispatch  
+✅ Cloud control core (user, client, mapping, node, auth, etc.)  
 ✅ Unit test system, 100% pass for Dispose, Repository, etc.
 
 ⏳ **Core Features**
