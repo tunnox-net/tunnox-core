@@ -21,7 +21,7 @@ import (
 
 // QuicStreamWrapper QUIC流包装器，实现io.Reader和io.Writer接口
 type QuicStreamWrapper struct {
-	stream quic.Stream
+	stream *quic.Stream
 }
 
 // Read 实现io.Reader接口
@@ -206,7 +206,7 @@ func (q *QuicAdapter) handleStream(stream *quic.Stream) {
 
 	// 调用ConnectionSession.AcceptConnection处理连接
 	if q.session != nil {
-		wrapper := &QuicStreamWrapper{stream: *stream}
+		wrapper := &QuicStreamWrapper{stream: stream}
 		q.session.AcceptConnection(wrapper, wrapper)
 	} else {
 		// 如果没有session，使用默认的echo处理
