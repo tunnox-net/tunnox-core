@@ -84,11 +84,11 @@ func (w *RateLimiterWriter) Write(p []byte) (n int, err error) {
 
 // onClose 资源释放
 func (r *RateLimiterReader) onClose() {
-	// 读取器通常不需要特殊清理，但可以在这里添加日志或其他清理逻辑
+	// no-op
 }
 
 func (w *RateLimiterWriter) onClose() {
-	// 写入器通常不需要特殊清理，但可以在这里添加日志或其他清理逻辑
+	// no-op
 }
 
 // NewRateLimiterReader 创建限速读取器
@@ -219,7 +219,7 @@ func (r *RateLimiter) Write(p []byte) (n int, err error) {
 
 // onClose 资源释放
 func (r *RateLimiter) onClose() {
-	// 限速器通常不需要特殊清理，但可以在这里添加日志或其他清理逻辑
+	// no-op
 }
 
 // SetRate 设置速率（仅对Reader和Writer有效）

@@ -146,6 +146,7 @@ func WrapErrorf(err error, format string, args ...interface{}) error {
 }
 
 // IsTemporaryError 判断是否为临时错误（可重试）
+// 实际项目中可根据错误类型扩展自定义判断逻辑
 func IsTemporaryError(err error) bool {
 	if err == nil {
 		return false
@@ -156,6 +157,7 @@ func IsTemporaryError(err error) bool {
 }
 
 // IsFatalError 判断是否为致命错误（不可重试）
+// 实际项目中可根据错误类型扩展自定义判断逻辑
 func IsFatalError(err error) bool {
 	if err == nil {
 		return false

@@ -2,6 +2,8 @@ package cloud
 
 import "time"
 
+// 说明：本文件为云控相关常量，通用常量请放在internal/constants/constants.go，避免重复。
+
 // 键值前缀常量，用于标准化Repository的键值命名空间
 const (
 	// 基础前缀

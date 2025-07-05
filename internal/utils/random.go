@@ -153,3 +153,13 @@ func formatUUID(bytes []byte) string {
 		bytes[8], bytes[9],
 		bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15])
 }
+
+// ContainsString 判断字符串切片中是否包含指定字符串
+func ContainsString(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}

@@ -825,8 +825,7 @@ func (b *BuiltInCloudControl) GetAnonymousMappings(ctx context.Context) ([]*Port
 
 // CleanupExpiredAnonymous 清理过期的匿名数据
 func (b *BuiltInCloudControl) CleanupExpiredAnonymous(ctx context.Context) error {
-	// 这里可以实现更复杂的清理逻辑
-	// 目前依赖存储层的自动过期机制
+	// no-op: 依赖存储层的自动过期机制
 	return nil
 }
 

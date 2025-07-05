@@ -2,10 +2,10 @@ package cloud
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/base64"
 	"fmt"
 	"time"
+
+	"tunnox-core/internal/utils"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -188,7 +188,7 @@ func (m *JWTManager) ValidateAccessToken(ctx context.Context, tokenString string
 	}
 
 	// 验证受众
-	if !contains(claims.Audience, "tunnox-client") {
+	if !utils.ContainsString(claims.Audience, "tunnox-client") {
 		return nil, fmt.Errorf("invalid audience")
 	}
 
@@ -270,7 +270,7 @@ func (m *JWTManager) ValidateRefreshToken(ctx context.Context, refreshTokenStrin
 	}
 
 	// 验证受众
-	if !contains(claims.Audience, "tunnox-refresh") {
+	if !utils.ContainsString(claims.Audience, "tunnox-refresh") {
 		return nil, fmt.Errorf("invalid audience")
 	}
 
@@ -313,19 +313,8 @@ func (m *JWTManager) RefreshAccessToken(ctx context.Context, refreshTokenString 
 
 // generateTokenID 生成Token ID
 func (m *JWTManager) generateTokenID() (string, error) {
-	bytes := make([]byte, 32)
-	if _, err := rand.Read(bytes); err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(bytes), nil
+	return utils.GenerateRandomString(32)
 }
 
 // contains 检查字符串切片是否包含指定字符串
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
+// 已移到utils包
