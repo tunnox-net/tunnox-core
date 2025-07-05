@@ -85,7 +85,7 @@ func (b *BuiltInCloudControl) NodeRegister(ctx context.Context, req *NodeRegiste
 
 			if existingNode != nil {
 				// 节点已存在，释放ID并重试
-				b.idGen.ReleaseNodeID(ctx, generatedID)
+				_ = b.idGen.ReleaseNodeID(ctx, generatedID)
 				utils.Warnf("Node ID %s already exists, retrying...", generatedID)
 				continue
 			}
@@ -114,7 +114,7 @@ func (b *BuiltInCloudControl) NodeRegister(ctx context.Context, req *NodeRegiste
 	if err := b.nodeRepo.CreateNode(ctx, node); err != nil {
 		// 如果保存失败，释放ID
 		if req.NodeID == "" {
-			b.idGen.ReleaseNodeID(ctx, nodeID)
+			_ = b.idGen.ReleaseNodeID(ctx, nodeID)
 		}
 		utils.LogOperation(OperationCreate, "node", nodeID, false, err)
 		return nil, NewStorageError("save node")
@@ -123,9 +123,9 @@ func (b *BuiltInCloudControl) NodeRegister(ctx context.Context, req *NodeRegiste
 	// 添加到节点列表
 	if err := b.nodeRepo.AddNodeToList(ctx, node); err != nil {
 		// 如果添加到列表失败，删除节点并释放ID
-		b.nodeRepo.DeleteNode(ctx, nodeID)
+		_ = b.nodeRepo.DeleteNode(ctx, nodeID)
 		if req.NodeID == "" {
-			b.idGen.ReleaseNodeID(ctx, nodeID)
+			_ = b.idGen.ReleaseNodeID(ctx, nodeID)
 		}
 		utils.LogOperation(OperationCreate, "node list", nodeID, false, err)
 		return nil, NewStorageError("add node to list")
@@ -149,7 +149,7 @@ func (b *BuiltInCloudControl) NodeUnregister(ctx context.Context, req *NodeUnreg
 	// 获取节点信息，用于释放ID
 	if node, err := b.nodeRepo.GetNode(ctx, req.NodeID); err == nil && node != nil {
 		// 释放节点ID
-		b.idGen.ReleaseNodeID(ctx, req.NodeID)
+		_ = b.idGen.ReleaseNodeID(ctx, req.NodeID)
 	}
 
 	return b.nodeRepo.DeleteNode(ctx, req.NodeID)
@@ -303,7 +303,7 @@ func (b *BuiltInCloudControl) CreateUser(ctx context.Context, username, email st
 
 		if existingUser != nil {
 			// 用户已存在，释放ID并重试
-			b.idGen.ReleaseUserID(ctx, generatedID)
+			_ = b.idGen.ReleaseUserID(ctx, generatedID)
 			continue
 		}
 
@@ -336,14 +336,14 @@ func (b *BuiltInCloudControl) CreateUser(ctx context.Context, username, email st
 
 	if err := b.userRepo.CreateUser(ctx, user); err != nil {
 		// 如果保存失败，释放ID
-		b.idGen.ReleaseUserID(ctx, userID)
+		_ = b.idGen.ReleaseUserID(ctx, userID)
 		return nil, fmt.Errorf("save user failed: %w", err)
 	}
 
 	if err := b.userRepo.AddUserToList(ctx, user); err != nil {
 		// 如果添加到列表失败，删除用户并释放ID
-		b.userRepo.DeleteUser(ctx, userID)
-		b.idGen.ReleaseUserID(ctx, userID)
+		_ = b.userRepo.DeleteUser(ctx, userID)
+		_ = b.idGen.ReleaseUserID(ctx, userID)
 		return nil, fmt.Errorf("add user to list failed: %w", err)
 	}
 
@@ -367,7 +367,7 @@ func (b *BuiltInCloudControl) DeleteUser(ctx context.Context, userID string) err
 	user, err := b.userRepo.GetUser(ctx, userID)
 	if err == nil && user != nil {
 		// 释放用户ID
-		b.idGen.ReleaseUserID(ctx, userID)
+		_ = b.idGen.ReleaseUserID(ctx, userID)
 	}
 
 	return b.userRepo.DeleteUser(ctx, userID)
@@ -398,7 +398,7 @@ func (b *BuiltInCloudControl) CreateClient(ctx context.Context, userID, clientNa
 
 		if existingClient != nil {
 			// 客户端已存在，释放ID并重试
-			b.idGen.ReleaseClientID(ctx, generatedID)
+			_ = b.idGen.ReleaseClientID(ctx, generatedID)
 			continue
 		}
 
@@ -413,14 +413,14 @@ func (b *BuiltInCloudControl) CreateClient(ctx context.Context, userID, clientNa
 	authCode, err := b.idGen.GenerateAuthCode()
 	if err != nil {
 		// 如果生成认证码失败，释放客户端ID
-		b.idGen.ReleaseClientID(ctx, clientID)
+		_ = b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("generate auth code failed: %w", err)
 	}
 
 	secretKey, err := b.idGen.GenerateSecretKey()
 	if err != nil {
 		// 如果生成密钥失败，释放客户端ID
-		b.idGen.ReleaseClientID(ctx, clientID)
+		_ = b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("generate secret key failed: %w", err)
 	}
 
@@ -448,15 +448,15 @@ func (b *BuiltInCloudControl) CreateClient(ctx context.Context, userID, clientNa
 
 	if err := b.clientRepo.CreateClient(ctx, client); err != nil {
 		// 如果保存失败，释放客户端ID
-		b.idGen.ReleaseClientID(ctx, clientID)
+		_ = b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("save client failed: %w", err)
 	}
 
 	// 强制添加到用户列表（即使 userID 为空也加到匿名列表）
 	if err := b.clientRepo.AddClientToUser(ctx, userID, client); err != nil {
 		// 如果添加到用户失败，删除客户端并释放ID
-		b.clientRepo.DeleteClient(ctx, client.ID)
-		b.idGen.ReleaseClientID(ctx, clientID)
+		_ = b.clientRepo.DeleteClient(ctx, client.ID)
+		_ = b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("add client to user failed: %w", err)
 	}
 
@@ -482,7 +482,7 @@ func (b *BuiltInCloudControl) DeleteClient(ctx context.Context, clientID string)
 		// 解析客户端ID为int64并释放
 		var clientIDInt int64
 		if _, err := fmt.Sscanf(clientID, "%d", &clientIDInt); err == nil {
-			b.idGen.ReleaseClientID(ctx, clientIDInt)
+			_ = b.idGen.ReleaseClientID(ctx, clientIDInt)
 		}
 	}
 
@@ -550,7 +550,7 @@ func (b *BuiltInCloudControl) CreatePortMapping(ctx context.Context, mapping *Po
 
 		if existingMapping != nil {
 			// 端口映射已存在，释放ID并重试
-			b.idGen.ReleaseMappingID(ctx, generatedID)
+			_ = b.idGen.ReleaseMappingID(ctx, generatedID)
 			continue
 		}
 
@@ -569,15 +569,15 @@ func (b *BuiltInCloudControl) CreatePortMapping(ctx context.Context, mapping *Po
 
 	if err := b.mappingRepo.CreatePortMapping(ctx, mapping); err != nil {
 		// 如果保存失败，释放ID
-		b.idGen.ReleaseMappingID(ctx, mappingID)
+		_ = b.idGen.ReleaseMappingID(ctx, mappingID)
 		return nil, fmt.Errorf("save port mapping failed: %w", err)
 	}
 
 	if mapping.UserID != "" {
 		if err := b.mappingRepo.AddMappingToUser(ctx, mapping.UserID, mapping); err != nil {
 			// 如果添加到用户失败，删除端口映射并释放ID
-			b.mappingRepo.DeletePortMapping(ctx, mappingID)
-			b.idGen.ReleaseMappingID(ctx, mappingID)
+			_ = b.mappingRepo.DeletePortMapping(ctx, mappingID)
+			_ = b.idGen.ReleaseMappingID(ctx, mappingID)
 			return nil, fmt.Errorf("add mapping to user failed: %w", err)
 		}
 	}
@@ -607,7 +607,7 @@ func (b *BuiltInCloudControl) DeletePortMapping(ctx context.Context, mappingID s
 	mapping, err := b.mappingRepo.GetPortMapping(ctx, mappingID)
 	if err == nil && mapping != nil {
 		// 释放端口映射ID
-		b.idGen.ReleaseMappingID(ctx, mappingID)
+		_ = b.idGen.ReleaseMappingID(ctx, mappingID)
 	}
 
 	return b.mappingRepo.DeletePortMapping(ctx, mappingID)
@@ -649,7 +649,7 @@ func (b *BuiltInCloudControl) GenerateAnonymousCredentials(ctx context.Context) 
 
 		if existingClient != nil {
 			// 客户端已存在，释放ID并重试
-			b.idGen.ReleaseClientID(ctx, generatedID)
+			_ = b.idGen.ReleaseClientID(ctx, generatedID)
 			continue
 		}
 
@@ -664,14 +664,14 @@ func (b *BuiltInCloudControl) GenerateAnonymousCredentials(ctx context.Context) 
 	authCode, err := b.idGen.GenerateAuthCode()
 	if err != nil {
 		// 如果生成认证码失败，释放客户端ID
-		b.idGen.ReleaseClientID(ctx, clientID)
+		_ = b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("generate auth code failed: %w", err)
 	}
 
 	secretKey, err := b.idGen.GenerateSecretKey()
 	if err != nil {
 		// 如果生成密钥失败，释放客户端ID
-		b.idGen.ReleaseClientID(ctx, clientID)
+		_ = b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("generate secret key failed: %w", err)
 	}
 
@@ -699,15 +699,15 @@ func (b *BuiltInCloudControl) GenerateAnonymousCredentials(ctx context.Context) 
 
 	if err := b.clientRepo.CreateClient(ctx, client); err != nil {
 		// 如果保存失败，释放客户端ID
-		b.idGen.ReleaseClientID(ctx, clientID)
+		_ = b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("save anonymous client failed: %w", err)
 	}
 
 	// 添加到匿名列表
 	if err := b.clientRepo.AddClientToUser(ctx, "", client); err != nil {
 		// 如果添加到匿名列表失败，删除客户端并释放ID
-		b.clientRepo.DeleteClient(ctx, client.ID)
-		b.idGen.ReleaseClientID(ctx, clientID)
+		_ = b.clientRepo.DeleteClient(ctx, client.ID)
+		_ = b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("add anonymous client to list failed: %w", err)
 	}
 
@@ -758,7 +758,7 @@ func (b *BuiltInCloudControl) CreateAnonymousMapping(ctx context.Context, source
 
 		if existingMapping != nil {
 			// 端口映射已存在，释放ID并重试
-			b.idGen.ReleaseMappingID(ctx, generatedID)
+			_ = b.idGen.ReleaseMappingID(ctx, generatedID)
 			continue
 		}
 
@@ -793,15 +793,15 @@ func (b *BuiltInCloudControl) CreateAnonymousMapping(ctx context.Context, source
 
 	if err := b.mappingRepo.CreatePortMapping(ctx, mapping); err != nil {
 		// 如果保存失败，释放ID
-		b.idGen.ReleaseMappingID(ctx, mappingID)
+		_ = b.idGen.ReleaseMappingID(ctx, mappingID)
 		return nil, fmt.Errorf("save anonymous mapping failed: %w", err)
 	}
 
 	// 添加到匿名映射列表
 	if err := b.mappingRepo.AddMappingToUser(ctx, "", mapping); err != nil {
 		// 如果添加到匿名列表失败，删除映射并释放ID
-		b.mappingRepo.DeletePortMapping(ctx, mappingID)
-		b.idGen.ReleaseMappingID(ctx, mappingID)
+		_ = b.mappingRepo.DeletePortMapping(ctx, mappingID)
+		_ = b.idGen.ReleaseMappingID(ctx, mappingID)
 		return nil, fmt.Errorf("add anonymous mapping to list failed: %w", err)
 	}
 
@@ -1078,7 +1078,7 @@ func (b *BuiltInCloudControl) RegisterConnection(ctx context.Context, mappingId 
 	// 添加到映射连接列表
 	if err := b.connRepo.AddConnectionToMapping(ctx, mappingId, connInfo); err != nil {
 		// 如果添加到列表失败，删除连接
-		b.connRepo.DeleteConnection(ctx, connInfo.ConnId)
+		_ = b.connRepo.DeleteConnection(ctx, connInfo.ConnId)
 		return fmt.Errorf("add connection to mapping failed: %w", err)
 	}
 
