@@ -33,10 +33,10 @@ type RefreshTokenClaims struct {
 }
 
 // NewJWTManager 创建JWT管理器
-func NewJWTManager(config *CloudControlConfig, storage Storage) *JWTManager {
+func NewJWTManager(config *CloudControlConfig, repo *Repository) *JWTManager {
 	return &JWTManager{
 		config: config,
-		cache:  NewTokenCacheManager(storage),
+		cache:  NewTokenCacheManager(repo.GetStorage()),
 	}
 }
 
@@ -309,6 +309,12 @@ func (m *JWTManager) RefreshAccessToken(ctx context.Context, refreshTokenString 
 
 	// 生成新的Token对
 	return m.GenerateTokenPair(ctx, client)
+}
+
+// RevokeToken 撤销Token
+func (m *JWTManager) RevokeToken(ctx context.Context, tokenID string) error {
+	// 将Token ID加入黑名单
+	return m.cache.RevokeTokenByID(ctx, tokenID)
 }
 
 // generateTokenID 生成Token ID

@@ -31,20 +31,44 @@ const (
 	KeyPrefixTraffic    = "tunnox:traffic"
 	KeyPrefixConnection = "tunnox:connection"
 
+	// 连接管理相关键值前缀
+	KeyPrefixMappingConnections = "tunnox:mapping_connections"
+	KeyPrefixClientConnections  = "tunnox:client_connections"
+
 	// 认证相关键值前缀
 	KeyPrefixAuth  = "tunnox:auth"
 	KeyPrefixToken = "tunnox:token"
+
+	// ID管理相关键值前缀
+	KeyPrefixID = "tunnox:id"
+
+	// 配置管理相关键值前缀
+	KeyPrefixConfig = "tunnox:config"
+
+	// 清理管理相关键值前缀
+	KeyPrefixCleanup = "tunnox:cleanup"
 )
 
 // 时间相关常量
 const (
+	// 清理间隔
 	DefaultCleanupInterval = 5 * time.Minute
-	DefaultDataTTL         = 24 * time.Hour
-	DefaultUserDataTTL     = 0 // 用户数据不过期
-	DefaultClientDataTTL   = 24 * time.Hour
-	DefaultMappingDataTTL  = 24 * time.Hour
-	DefaultNodeDataTTL     = 24 * time.Hour
-	DefaultConnectionTTL   = 24 * time.Hour
+
+	// 数据过期时间
+	DefaultDataTTL        = 24 * time.Hour
+	DefaultUserDataTTL    = 0 // 用户数据不过期
+	DefaultClientDataTTL  = 24 * time.Hour
+	DefaultMappingDataTTL = 24 * time.Hour
+	DefaultNodeDataTTL    = 24 * time.Hour
+	DefaultConnectionTTL  = 24 * time.Hour
+
+	// JWT相关时间
+	DefaultJWTExpiration     = 24 * time.Hour
+	DefaultRefreshExpiration = 7 * 24 * time.Hour
+
+	// 锁超时时间
+	DefaultLockTimeout        = 30 * time.Second
+	DefaultCleanupLockTimeout = 5 * time.Minute
 )
 
 // 大小相关常量
@@ -80,14 +104,87 @@ var (
 
 // 配置相关常量
 const (
+	// 心跳和超时
 	DefaultHeartbeatInterval = 30 // 秒
 	DefaultMappingTimeout    = 30 // 秒
 	DefaultMappingRetryCount = 3
-	DefaultMaxAttempts       = 10
+
+	// 重试次数
+	DefaultMaxAttempts = 10
+
+	// 配置监听间隔
+	DefaultConfigWatchInterval = 30 * time.Second
 )
 
 // 连接相关常量
 const (
 	DefaultAutoReconnect     = true
 	DefaultEnableCompression = true
+)
+
+// 错误消息常量
+const (
+	ErrMsgAuthenticationFailed  = "authentication failed"
+	ErrMsgNodeNotFound          = "node not found"
+	ErrMsgClientNotFound        = "client not found"
+	ErrMsgUserNotFound          = "user not found"
+	ErrMsgMappingNotFound       = "port mapping not found"
+	ErrMsgConnectionNotFound    = "connection not found"
+	ErrMsgInvalidAuthCode       = "invalid auth code"
+	ErrMsgInvalidSecretKey      = "invalid secret key"
+	ErrMsgClientBlocked         = "client is blocked"
+	ErrMsgTokenInvalid          = "invalid token"
+	ErrMsgTokenExpired          = "token expired"
+	ErrMsgTokenRevoked          = "token has been revoked"
+	ErrMsgIDExhausted           = "failed to generate unique ID after maximum attempts"
+	ErrMsgEntityAlreadyExists   = "entity already exists"
+	ErrMsgEntityDoesNotExist    = "entity does not exist"
+	ErrMsgInvalidRequest        = "invalid request"
+	ErrMsgInternalError         = "internal server error"
+	ErrMsgStorageError          = "storage operation failed"
+	ErrMsgLockAcquisitionFailed = "failed to acquire lock"
+	ErrMsgCleanupTaskFailed     = "cleanup task failed"
+	ErrMsgConfigUpdateFailed    = "configuration update failed"
+)
+
+// 成功消息常量
+const (
+	SuccessMsgNodeRegistered         = "node registered successfully"
+	SuccessMsgNodeUnregistered       = "node unregistered successfully"
+	SuccessMsgHeartbeatReceived      = "heartbeat received"
+	SuccessMsgAuthentication         = "authentication successful"
+	SuccessMsgTokenValid             = "token is valid"
+	SuccessMsgUserCreated            = "user created successfully"
+	SuccessMsgUserUpdated            = "user updated successfully"
+	SuccessMsgUserDeleted            = "user deleted successfully"
+	SuccessMsgClientCreated          = "client created successfully"
+	SuccessMsgClientUpdated          = "client updated successfully"
+	SuccessMsgClientDeleted          = "client deleted successfully"
+	SuccessMsgMappingCreated         = "port mapping created successfully"
+	SuccessMsgMappingUpdated         = "port mapping updated successfully"
+	SuccessMsgMappingDeleted         = "port mapping deleted successfully"
+	SuccessMsgConnectionRegistered   = "connection registered successfully"
+	SuccessMsgConnectionUnregistered = "connection unregistered successfully"
+)
+
+// 日志相关常量
+// const (
+// 	LogLevelDebug   = "debug"
+// 	LogLevelInfo    = "info"
+// 	LogLevelWarning = "warning"
+// 	LogLevelError   = "error"
+// 	LogLevelFatal   = "fatal"
+// )
+
+// 操作类型常量
+const (
+	OperationCreate  = "create"
+	OperationRead    = "read"
+	OperationUpdate  = "update"
+	OperationDelete  = "delete"
+	OperationList    = "list"
+	OperationAuth    = "authenticate"
+	OperationLock    = "lock"
+	OperationUnlock  = "unlock"
+	OperationCleanup = "cleanup"
 )

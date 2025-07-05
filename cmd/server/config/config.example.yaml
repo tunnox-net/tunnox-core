@@ -1,0 +1,125 @@
+# Tunnox Core Server Configuration Example
+# 服务器配置文件示例 - 请复制为 config.yaml 并根据需要修改
+
+server:
+  # 服务器监听配置
+  host: "0.0.0.0"           # 监听地址
+  port: 8080                # 监听端口
+  read_timeout: 30          # 读取超时（秒）
+  write_timeout: 30         # 写入超时（秒）
+  idle_timeout: 60          # 空闲超时（秒）
+  
+  # 安全配置
+  cors:
+    allowed_origins: ["*"]  # 允许的源
+    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allowed_headers: ["Content-Type", "Authorization", "X-Request-ID"]
+    allow_credentials: true
+    max_age: 43200          # 预检请求缓存时间（秒）
+
+  # 限流配置
+  rate_limit:
+    enabled: true
+    requests_per_minute: 1000
+    burst_size: 100
+
+log:
+  # 日志级别: debug, info, warn, error, fatal, panic
+  level: "info"
+  
+  # 日志格式: json, text
+  format: "json"
+  
+  # 输出位置: stdout, stderr, file
+  output: "stdout"
+  
+  # 日志文件路径（当 output 为 file 时使用）
+  file: "logs/server.log"
+  
+  # 日志轮转配置
+  rotation:
+    max_size: 100    # 单个日志文件最大大小（MB）
+    max_age: 30      # 日志文件保留天数
+    max_backups: 10  # 保留的备份文件数量
+    compress: true   # 是否压缩备份文件
+
+cloud:
+  # 云控类型: built_in, external
+  type: "built_in"
+  
+  # 内置云控配置
+  built_in:
+    # JWT 配置
+    jwt_secret_key: "your-secret-key-change-this-in-production"
+    jwt_expiration: 3600        # JWT 过期时间（秒）
+    refresh_expiration: 604800  # 刷新令牌过期时间（秒）
+    jwt_issuer: "tunnox"
+    
+    # 数据清理配置
+    cleanup_interval: 300       # 清理间隔（秒）
+    data_ttl: 86400            # 数据生存时间（秒）
+    
+    # ID 生成配置
+    id_length: 16              # ID 长度
+    max_attempts: 10           # 最大重试次数
+
+  # 外部云控配置（当 type 为 external 时使用）
+  external:
+    api_endpoint: "http://localhost:8080"
+    api_key: ""
+    api_secret: ""
+    timeout: 30
+
+# 性能配置
+performance:
+  # 内存池配置
+  buffer_pool:
+    initial_size: 1000         # 初始缓冲区数量
+    max_size: 10000           # 最大缓冲区数量
+    buffer_size: 4096         # 缓冲区大小（字节）
+  
+  # 连接池配置
+  connection_pool:
+    max_connections: 1000     # 最大连接数
+    idle_timeout: 300         # 空闲超时（秒）
+    max_lifetime: 3600        # 最大生存时间（秒）
+
+# 监控配置
+monitoring:
+  # 指标收集
+  metrics:
+    enabled: true
+    port: 9090                # 指标端口
+    path: "/metrics"          # 指标路径
+  
+  # 健康检查
+  health_check:
+    enabled: true
+    interval: 30              # 检查间隔（秒）
+    timeout: 5                # 超时时间（秒）
+
+# 安全配置
+security:
+  # TLS 配置
+  tls:
+    enabled: false
+    cert_file: "certs/server.crt"
+    key_file: "certs/server.key"
+  
+  # 认证配置
+  auth:
+    # 管理员用户
+    admin:
+      username: "admin"
+      password: "admin123"    # 生产环境请使用强密码
+    
+    # API 密钥认证
+    api_keys:
+      enabled: false
+      keys: []                # API 密钥列表
+
+# 开发配置
+development:
+  debug: false               # 调试模式
+  hot_reload: false          # 热重载
+  profiling: false           # 性能分析 

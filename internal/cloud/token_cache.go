@@ -128,19 +128,53 @@ func (m *TokenCacheManager) RevokeRefreshToken(ctx context.Context, refreshToken
 
 // RevokeTokenByID 通过Token ID撤销所有相关Token
 func (m *TokenCacheManager) RevokeTokenByID(ctx context.Context, tokenID string) error {
-	// 这里可以实现更复杂的逻辑来查找和撤销所有相关的Token
-	// 目前简单实现，实际使用时可能需要维护Token ID到Token的映射
-	return nil
+	// 将Token ID加入黑名单
+	blacklistKey := fmt.Sprintf("%s:blacklist:%s", KeyPrefixToken, tokenID)
+
+	// 设置黑名单记录，过期时间设置为24小时（防止内存泄漏）
+	blacklistInfo := map[string]interface{}{
+		"token_id":   tokenID,
+		"revoked_at": time.Now().Unix(),
+		"reason":     "manual_revoke",
+	}
+
+	data, err := json.Marshal(blacklistInfo)
+	if err != nil {
+		return fmt.Errorf("marshal blacklist info failed: %w", err)
+	}
+
+	// 设置24小时过期时间
+	return m.storage.Set(ctx, blacklistKey, string(data), 24*time.Hour)
 }
 
 // IsTokenRevoked 检查Token是否被撤销
 func (m *TokenCacheManager) IsTokenRevoked(ctx context.Context, token string) (bool, error) {
+	// 首先检查Token是否存在
 	key := fmt.Sprintf("%s:access_token:%s", KeyPrefixToken, token)
 	exists, err := m.storage.Exists(ctx, key)
 	if err != nil {
 		return false, err
 	}
-	return !exists, nil
+
+	// 如果Token不存在，说明已被撤销
+	if !exists {
+		return true, nil
+	}
+
+	// 获取Token信息以检查Token ID
+	tokenInfo, err := m.GetAccessTokenInfo(ctx, token)
+	if err != nil {
+		return false, err
+	}
+
+	// 检查Token ID是否在黑名单中
+	blacklistKey := fmt.Sprintf("%s:blacklist:%s", KeyPrefixToken, tokenInfo.TokenID)
+	blacklisted, err := m.storage.Exists(ctx, blacklistKey)
+	if err != nil {
+		return false, err
+	}
+
+	return blacklisted, nil
 }
 
 // IsRefreshTokenRevoked 检查刷新Token是否被撤销

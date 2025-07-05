@@ -11,8 +11,20 @@ func NewCloudControlAPI(config *CloudControlConfig) (CloudControlAPI, error) {
 	}
 
 	if config.UseBuiltIn {
-		return nil, fmt.Errorf("built-in API not implemented yet")
+		return NewBuiltinCloudControl(config)
 	}
 
 	return nil, fmt.Errorf("REST API not implemented yet")
+}
+
+// NewBuiltinCloudControl 创建内置云控实例
+func NewBuiltinCloudControl(config *CloudControlConfig) (CloudControlAPI, error) {
+	if config == nil {
+		config = DefaultConfig()
+	}
+
+	builtin := NewBuiltInCloudControl(config)
+	builtin.Start()
+
+	return builtin, nil
 }

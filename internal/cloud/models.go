@@ -196,6 +196,7 @@ type ConnectionInfo struct {
 	SourceIP      string    `json:"source_ip"`      // 源IP地址
 	EstablishedAt time.Time `json:"established_at"` // 建立时间
 	LastActivity  time.Time `json:"last_activity"`  // 最后活动时间
+	UpdatedAt     time.Time `json:"updated_at"`     // 更新时间
 	BytesSent     int64     `json:"bytes_sent"`     // 发送字节数
 	BytesReceived int64     `json:"bytes_received"` // 接收字节数
 	Status        string    `json:"status"`         // 连接状态

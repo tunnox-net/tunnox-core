@@ -19,6 +19,11 @@ func NewRepository(storage Storage) *Repository {
 	}
 }
 
+// GetStorage 获取底层存储实例
+func (r *Repository) GetStorage() Storage {
+	return r.storage
+}
+
 // UserRepository 用户数据访问
 type UserRepository struct {
 	*Repository
@@ -508,4 +513,155 @@ func (r *NodeRepository) AddNodeToList(ctx context.Context, node *Node) error {
 
 	key := KeyPrefixNodeList
 	return r.storage.AppendToList(ctx, key, string(data))
+}
+
+// ConnectionRepository 连接数据访问
+type ConnectionRepository struct {
+	*Repository
+}
+
+// NewConnectionRepository 创建连接数据访问层
+func NewConnectionRepository(repo *Repository) *ConnectionRepository {
+	return &ConnectionRepository{Repository: repo}
+}
+
+// SaveConnection 保存连接信息（创建或更新）
+func (r *ConnectionRepository) SaveConnection(ctx context.Context, connInfo *ConnectionInfo) error {
+	data, err := json.Marshal(connInfo)
+	if err != nil {
+		return fmt.Errorf("marshal connection failed: %w", err)
+	}
+
+	key := fmt.Sprintf("%s:%s", KeyPrefixConnection, connInfo.ConnId)
+	return r.storage.Set(ctx, key, string(data), DefaultConnectionTTL)
+}
+
+// CreateConnection 创建新连接（仅创建，不允许覆盖）
+func (r *ConnectionRepository) CreateConnection(ctx context.Context, connInfo *ConnectionInfo) error {
+	// 检查连接是否已存在
+	existingConn, err := r.GetConnection(ctx, connInfo.ConnId)
+	if err == nil && existingConn != nil {
+		return fmt.Errorf("connection with ID %s already exists", connInfo.ConnId)
+	}
+
+	return r.SaveConnection(ctx, connInfo)
+}
+
+// UpdateConnection 更新连接（仅更新，不允许创建）
+func (r *ConnectionRepository) UpdateConnection(ctx context.Context, connInfo *ConnectionInfo) error {
+	// 检查连接是否存在
+	existingConn, err := r.GetConnection(ctx, connInfo.ConnId)
+	if err != nil || existingConn == nil {
+		return fmt.Errorf("connection with ID %s does not exist", connInfo.ConnId)
+	}
+
+	return r.SaveConnection(ctx, connInfo)
+}
+
+// GetConnection 获取连接信息
+func (r *ConnectionRepository) GetConnection(ctx context.Context, connID string) (*ConnectionInfo, error) {
+	key := fmt.Sprintf("%s:%s", KeyPrefixConnection, connID)
+	data, err := r.storage.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	connData, ok := data.(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid connection data type")
+	}
+
+	var connInfo ConnectionInfo
+	if err := json.Unmarshal([]byte(connData), &connInfo); err != nil {
+		return nil, fmt.Errorf("unmarshal connection failed: %w", err)
+	}
+
+	return &connInfo, nil
+}
+
+// DeleteConnection 删除连接
+func (r *ConnectionRepository) DeleteConnection(ctx context.Context, connID string) error {
+	key := fmt.Sprintf("%s:%s", KeyPrefixConnection, connID)
+	return r.storage.Delete(ctx, key)
+}
+
+// ListMappingConnections 列出映射的连接
+func (r *ConnectionRepository) ListMappingConnections(ctx context.Context, mappingID string) ([]*ConnectionInfo, error) {
+	key := fmt.Sprintf("%s:%s", KeyPrefixMappingConnections, mappingID)
+	data, err := r.storage.GetList(ctx, key)
+	if err != nil {
+		return []*ConnectionInfo{}, nil
+	}
+
+	var connections []*ConnectionInfo
+	for _, item := range data {
+		if connData, ok := item.(string); ok {
+			var connInfo ConnectionInfo
+			if err := json.Unmarshal([]byte(connData), &connInfo); err != nil {
+				continue
+			}
+			connections = append(connections, &connInfo)
+		}
+	}
+
+	return connections, nil
+}
+
+// ListClientConnections 列出客户端的连接
+func (r *ConnectionRepository) ListClientConnections(ctx context.Context, clientID string) ([]*ConnectionInfo, error) {
+	key := fmt.Sprintf("%s:%s", KeyPrefixClientConnections, clientID)
+	data, err := r.storage.GetList(ctx, key)
+	if err != nil {
+		return []*ConnectionInfo{}, nil
+	}
+
+	var connections []*ConnectionInfo
+	for _, item := range data {
+		if connData, ok := item.(string); ok {
+			var connInfo ConnectionInfo
+			if err := json.Unmarshal([]byte(connData), &connInfo); err != nil {
+				continue
+			}
+			connections = append(connections, &connInfo)
+		}
+	}
+
+	return connections, nil
+}
+
+// AddConnectionToMapping 添加连接到映射列表
+func (r *ConnectionRepository) AddConnectionToMapping(ctx context.Context, mappingID string, connInfo *ConnectionInfo) error {
+	data, err := json.Marshal(connInfo)
+	if err != nil {
+		return err
+	}
+
+	key := fmt.Sprintf("%s:%s", KeyPrefixMappingConnections, mappingID)
+	return r.storage.AppendToList(ctx, key, string(data))
+}
+
+// AddConnectionToClient 添加连接到客户端列表
+func (r *ConnectionRepository) AddConnectionToClient(ctx context.Context, clientID string, connInfo *ConnectionInfo) error {
+	data, err := json.Marshal(connInfo)
+	if err != nil {
+		return err
+	}
+
+	key := fmt.Sprintf("%s:%s", KeyPrefixClientConnections, clientID)
+	return r.storage.AppendToList(ctx, key, string(data))
+}
+
+// UpdateConnectionStats 更新连接统计
+func (r *ConnectionRepository) UpdateConnectionStats(ctx context.Context, connID string, bytesSent, bytesReceived int64) error {
+	connInfo, err := r.GetConnection(ctx, connID)
+	if err != nil {
+		return err
+	}
+
+	connInfo.BytesSent = bytesSent
+	connInfo.BytesReceived = bytesReceived
+	connInfo.LastActivity = time.Now()
+	connInfo.UpdatedAt = time.Now()
+
+	return r.UpdateConnection(ctx, connInfo)
 }
