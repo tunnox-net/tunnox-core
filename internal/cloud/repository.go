@@ -5,18 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"tunnox-core/internal/utils"
 )
 
 // Repository 数据访问层
 type Repository struct {
 	storage Storage
+	utils.Dispose
 }
 
 // NewRepository 创建新的数据访问层
 func NewRepository(storage Storage) *Repository {
-	return &Repository{
+	repo := &Repository{
 		storage: storage,
 	}
+	repo.Dispose.SetCtx(context.Background(), nil)
+	return repo
 }
 
 // GetStorage 获取底层存储实例
@@ -518,11 +523,20 @@ func (r *NodeRepository) AddNodeToList(ctx context.Context, node *Node) error {
 // ConnectionRepository 连接数据访问
 type ConnectionRepository struct {
 	*Repository
+	utils.Dispose
 }
 
 // NewConnectionRepository 创建连接数据访问层
 func NewConnectionRepository(repo *Repository) *ConnectionRepository {
-	return &ConnectionRepository{Repository: repo}
+	cr := &ConnectionRepository{Repository: repo}
+	cr.Dispose.SetCtx(context.Background(), cr.onClose)
+	return cr
+}
+
+func (cr *ConnectionRepository) onClose() {
+	if cr.Repository != nil {
+		cr.Repository.Dispose.Close()
+	}
 }
 
 // SaveConnection 保存连接信息（创建或更新）
