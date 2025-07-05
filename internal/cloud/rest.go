@@ -39,7 +39,7 @@ func (h *RESTHandler) RegisterRoutes(router *gin.Engine) {
 
 		// 需要认证的接口
 		users := v1.Group(constants.APIPathUsers)
-		users.Use(utils.AuthMiddleware(h.cloudControl))
+		users.Use(authMiddleware(h.cloudControl))
 		{
 			users.POST("/create", h.CreateUser)
 			users.GET("/list", h.ListUsers)
@@ -50,7 +50,7 @@ func (h *RESTHandler) RegisterRoutes(router *gin.Engine) {
 		}
 
 		clients := v1.Group(constants.APIPathClients)
-		clients.Use(utils.AuthMiddleware(h.cloudControl))
+		clients.Use(authMiddleware(h.cloudControl))
 		{
 			clients.POST("/create", h.CreateClient)
 			clients.GET("/list", h.ListClients)
@@ -62,7 +62,7 @@ func (h *RESTHandler) RegisterRoutes(router *gin.Engine) {
 		}
 
 		nodes := v1.Group(constants.APIPathNodes)
-		nodes.Use(utils.AuthMiddleware(h.cloudControl))
+		nodes.Use(authMiddleware(h.cloudControl))
 		{
 			nodes.POST("/register", h.RegisterNode)
 			nodes.POST("/unregister", h.UnregisterNode)
@@ -72,7 +72,7 @@ func (h *RESTHandler) RegisterRoutes(router *gin.Engine) {
 		}
 
 		mappings := v1.Group(constants.APIPathMappings)
-		mappings.Use(utils.AuthMiddleware(h.cloudControl))
+		mappings.Use(authMiddleware(h.cloudControl))
 		{
 			mappings.POST("/create", h.CreateMapping)
 			mappings.GET("/list", h.ListMappings)
@@ -83,7 +83,7 @@ func (h *RESTHandler) RegisterRoutes(router *gin.Engine) {
 		}
 
 		stats := v1.Group(constants.APIPathStats)
-		stats.Use(utils.AuthMiddleware(h.cloudControl))
+		stats.Use(authMiddleware(h.cloudControl))
 		{
 			stats.GET("/system", h.GetSystemStats)
 			stats.GET("/traffic", h.GetTrafficStats)
@@ -415,6 +415,10 @@ func (h *RESTHandler) RegisterNode(c *gin.Context) {
 		return
 	}
 
+	// 记录节点注册成功的详细信息
+	utils.Infof("节点注册API调用成功 - 请求地址: %s, 响应节点ID: %s, 成功状态: %t",
+		req.Address, resp.NodeID, resp.Success)
+
 	utils.SendCreated(c, resp)
 }
 
@@ -725,4 +729,40 @@ func (h *RESTHandler) getClientIP(c *gin.Context) string {
 
 	// 从RemoteAddr获取
 	return c.ClientIP()
+}
+
+// authMiddleware 认证中间件（本地实现，避免 import cycle）
+func authMiddleware(cloudControl CloudControlAPI) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader(constants.HTTPHeaderAuthorization)
+		if authHeader == "" {
+			c.JSON(401, gin.H{"error": "Authorization header required"})
+			c.Abort()
+			return
+		}
+
+		if len(authHeader) < 7 || authHeader[:7] != "Bearer " {
+			c.JSON(401, gin.H{"error": "Invalid authorization format"})
+			c.Abort()
+			return
+		}
+
+		token := authHeader[7:]
+		resp, err := cloudControl.ValidateToken(c.Request.Context(), token)
+		if err != nil || resp == nil || !resp.Success {
+			c.JSON(401, gin.H{"error": "Invalid or expired token"})
+			c.Abort()
+			return
+		}
+
+		if resp.Client != nil {
+			if resp.Client.UserID != "" {
+				c.Set("user_id", resp.Client.UserID)
+			}
+			if resp.Client.ID != "" {
+				c.Set("client_id", resp.Client.ID)
+			}
+		}
+		c.Next()
+	}
 }

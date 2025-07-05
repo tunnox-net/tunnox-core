@@ -137,6 +137,15 @@ func (b *BuiltInCloudControl) NodeRegister(ctx context.Context, req *NodeRegiste
 		"address": req.Address,
 	})
 
+	// 记录详细的节点注册信息
+	utils.Infof("云控节点注册成功 - 节点ID: %s, 节点名称: %s, 服务地址: %s, 版本: %s",
+		nodeID, node.Name, req.Address, req.Version)
+
+	// 记录元数据信息（如果有）
+	if len(req.Meta) > 0 {
+		utils.Infof("节点元数据: %+v", req.Meta)
+	}
+
 	return &NodeRegisterResponse{
 		NodeID:  nodeID,
 		Success: true,
@@ -1218,9 +1227,9 @@ func (b *BuiltInCloudControl) cleanupRoutine() {
 				// 清理过期的匿名映射
 				cleanupErr := b.CleanupExpiredAnonymous(ctx)
 				if cleanupErr != nil {
-					b.cleanupManager.CompleteCleanupTask(ctx, "stale_mappings", cleanupErr)
+					_ = b.cleanupManager.CompleteCleanupTask(ctx, "stale_mappings", cleanupErr)
 				} else {
-					b.cleanupManager.CompleteCleanupTask(ctx, "stale_mappings", nil)
+					_ = b.cleanupManager.CompleteCleanupTask(ctx, "stale_mappings", nil)
 				}
 				utils.LogCleanup("stale_mappings", 0, time.Since(startTime), cleanupErr)
 			} else if err != nil {

@@ -138,6 +138,12 @@ func (s *Server) Start() error {
 	addr := s.httpServer.Addr
 	utils.Infof(constants.LogMsgServerStarting, addr)
 
+	// 向云控注册节点
+	if err := s.registerNodeToCloud(); err != nil {
+		utils.Errorf("Failed to register node to cloud control: %v", err)
+		return err
+	}
+
 	// 启动服务器
 	go func() {
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -168,6 +174,35 @@ func (s *Server) Stop() error {
 	return nil
 }
 
+// registerNodeToCloud 向云控注册节点
+func (s *Server) registerNodeToCloud() error {
+	ctx := context.Background()
+
+	// 构建节点注册请求
+	req := &cloud.NodeRegisterRequest{
+		NodeID:  "", // 让云控自动分配节点ID
+		Address: fmt.Sprintf("%s:%d", s.config.Server.Host, s.config.Server.Port),
+		Version: "1.0.0", // 可以从配置或编译时信息获取
+		Meta: map[string]string{
+			"startup_time": time.Now().Format(time.RFC3339),
+			"server_type":  "tunnox-core",
+		},
+	}
+
+	// 调用云控注册节点
+	resp, err := s.cloudControl.NodeRegister(ctx, req)
+	if err != nil {
+		return fmt.Errorf("cloud control node registration failed: %w", err)
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("cloud control node registration failed: %s", resp.Message)
+	}
+
+	utils.Infof("服务器节点已成功注册到云控 - 节点ID: %s", resp.NodeID)
+	return nil
+}
+
 // WaitForShutdown 等待关闭信号
 func (s *Server) WaitForShutdown() {
 	// 创建信号通道
@@ -191,7 +226,7 @@ func getDefaultConfig() *AppConfig {
 		},
 		Log: utils.LogConfig{
 			Level:  constants.LogLevelInfo,
-			Format: constants.LogFormatJSON,
+			Format: constants.LogFormatText,
 			Output: constants.LogOutputStdout,
 		},
 	}

@@ -18,14 +18,10 @@ var Logger *logrus.Logger
 func init() {
 	Logger = logrus.New()
 
-	// 设置默认格式为JSON
-	Logger.SetFormatter(&logrus.JSONFormatter{
+	// 设置默认格式为文本格式
+	Logger.SetFormatter(&logrus.TextFormatter{
 		TimestampFormat: time.RFC3339,
-		FieldMap: logrus.FieldMap{
-			logrus.FieldKeyTime:  "timestamp",
-			logrus.FieldKeyLevel: "level",
-			logrus.FieldKeyMsg:   "message",
-		},
+		FullTimestamp:   true,
 	})
 
 	// 设置默认输出到stdout
@@ -59,7 +55,17 @@ func InitLogger(config *LogConfig) error {
 	}
 
 	// 设置日志格式
-	if config.Format == constants.LogFormatText {
+	if config.Format == constants.LogFormatJSON {
+		Logger.SetFormatter(&logrus.JSONFormatter{
+			TimestampFormat: time.RFC3339,
+			FieldMap: logrus.FieldMap{
+				logrus.FieldKeyTime:  "timestamp",
+				logrus.FieldKeyLevel: "level",
+				logrus.FieldKeyMsg:   "message",
+			},
+		})
+	} else {
+		// 默认使用文本格式
 		Logger.SetFormatter(&logrus.TextFormatter{
 			TimestampFormat: time.RFC3339,
 			FullTimestamp:   true,

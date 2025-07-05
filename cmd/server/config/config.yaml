@@ -28,7 +28,7 @@ log:
   level: "info"
   
   # 日志格式: json, text
-  format: "json"
+  format: "text"
   
   # 输出位置: stdout, stderr, file
   output: "stdout"
