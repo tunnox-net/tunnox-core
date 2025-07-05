@@ -1,24 +1,47 @@
 package cloud
 
 import (
-	"crypto/rand"
-	"encoding/binary"
 	"errors"
 	"sync"
+
+	"tunnox-core/internal/utils"
 )
 
-var ErrIDExhausted = errors.New("ID exhausted")
+// 错误定义
+var (
+	ErrIDExhausted = errors.New("ID exhausted")
+)
+
+// 常量定义
+const (
+	// ID生成相关常量
+	ClientIDMin     = int64(10000000)
+	ClientIDMax     = int64(99999999)
+	ClientIDLength  = 8
+	AuthCodeLength  = 6
+	SecretKeyLength = 32
+	NodeIDLength    = 16
+	UserIDLength    = 16
+	MappingIDLength = 12
+	MaxAttempts     = 100
+)
 
 // IDGenerator ID生成器
 type IDGenerator struct {
-	usedIDs map[int64]bool
-	mu      sync.RWMutex
+	usedIDs        map[int64]bool
+	usedNodeIDs    map[string]bool
+	usedUserIDs    map[string]bool
+	usedMappingIDs map[string]bool
+	mu             sync.RWMutex
 }
 
 // NewIDGenerator 创建新的ID生成器
 func NewIDGenerator() *IDGenerator {
 	return &IDGenerator{
-		usedIDs: make(map[int64]bool),
+		usedIDs:        make(map[int64]bool),
+		usedNodeIDs:    make(map[string]bool),
+		usedUserIDs:    make(map[string]bool),
+		usedMappingIDs: make(map[string]bool),
 	}
 }
 
@@ -27,27 +50,10 @@ func (g *IDGenerator) GenerateClientID() (int64, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// 生成范围：10000000 - 99999999
-	min := int64(10000000)
-	max := int64(99999999)
-
-	for attempts := 0; attempts < 100; attempts++ {
-		// 生成随机数
-		randomBytes := make([]byte, 8)
-		_, err := rand.Read(randomBytes)
+	for attempts := 0; attempts < MaxAttempts; attempts++ {
+		randomInt, err := utils.GenerateRandomInt64(ClientIDMin, ClientIDMax)
 		if err != nil {
 			return 0, err
-		}
-
-		// 转换为int64
-		randomInt := int64(binary.BigEndian.Uint64(randomBytes))
-
-		// 确保在范围内
-		rangeSize := max - min + 1
-		randomInt = min + (randomInt % rangeSize)
-		if randomInt < 0 {
-			randomInt = -randomInt
-			randomInt = min + (randomInt % rangeSize)
 		}
 
 		// 检查是否已使用
@@ -62,76 +68,81 @@ func (g *IDGenerator) GenerateClientID() (int64, error) {
 
 // GenerateAuthCode 生成认证码（类似TeamViewer的6位数字）
 func (g *IDGenerator) GenerateAuthCode() (string, error) {
-	// 生成6位随机数字
-	code := ""
-	for i := 0; i < 6; i++ {
-		randomByte := make([]byte, 1)
-		_, err := rand.Read(randomByte)
-		if err != nil {
-			return "", err
-		}
-		digit := int(randomByte[0]) % 10
-		code += string(rune('0' + digit))
-	}
-	return code, nil
+	return utils.GenerateRandomDigits(AuthCodeLength)
 }
 
 // GenerateSecretKey 生成密钥（32位随机字符串）
 func (g *IDGenerator) GenerateSecretKey() (string, error) {
-	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-	key := make([]byte, 32)
-
-	for i := range key {
-		randomByte := make([]byte, 1)
-		_, err := rand.Read(randomByte)
-		if err != nil {
-			return "", err
-		}
-		key[i] = charset[randomByte[0]%byte(len(charset))]
-	}
-
-	return string(key), nil
+	return utils.GenerateRandomString(SecretKeyLength)
 }
 
-// GenerateTerminalID 生成用户ID
-func (g *IDGenerator) GenerateTerminalID() (string, error) {
-	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-	userID := make([]byte, 16)
+// GenerateNodeID 生成节点ID
+func (g *IDGenerator) GenerateNodeID() (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	for i := range userID {
-		randomByte := make([]byte, 1)
-		_, err := rand.Read(randomByte)
+	for attempts := 0; attempts < MaxAttempts; attempts++ {
+		nodeID, err := utils.GenerateRandomString(NodeIDLength)
 		if err != nil {
 			return "", err
 		}
-		userID[i] = charset[randomByte[0]%byte(len(charset))]
+
+		// 检查是否已使用
+		if !g.usedNodeIDs[nodeID] {
+			g.usedNodeIDs[nodeID] = true
+			return nodeID, nil
+		}
 	}
 
-	return string(userID), nil
+	return "", ErrIDExhausted
+}
+
+// GenerateUserID 生成用户ID
+func (g *IDGenerator) GenerateUserID() (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for attempts := 0; attempts < MaxAttempts; attempts++ {
+		userID, err := utils.GenerateRandomString(UserIDLength)
+		if err != nil {
+			return "", err
+		}
+
+		// 检查是否已使用
+		if !g.usedUserIDs[userID] {
+			g.usedUserIDs[userID] = true
+			return userID, nil
+		}
+	}
+
+	return "", ErrIDExhausted
 }
 
 // GenerateMappingID 生成端口映射ID
 func (g *IDGenerator) GenerateMappingID() (string, error) {
-	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-	mappingID := make([]byte, 12)
+	g.mu.Lock()
+	defer g.mu.Unlock()
 
-	for i := range mappingID {
-		randomByte := make([]byte, 1)
-		_, err := rand.Read(randomByte)
+	for attempts := 0; attempts < MaxAttempts; attempts++ {
+		mappingID, err := utils.GenerateRandomString(MappingIDLength)
 		if err != nil {
 			return "", err
 		}
-		mappingID[i] = charset[randomByte[0]%byte(len(charset))]
+
+		// 检查是否已使用
+		if !g.usedMappingIDs[mappingID] {
+			g.usedMappingIDs[mappingID] = true
+			return mappingID, nil
+		}
 	}
 
-	return string(mappingID), nil
+	return "", ErrIDExhausted
 }
 
 // ReleaseClientID 释放客户端ID
 func (g *IDGenerator) ReleaseClientID(clientID int64) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-
 	delete(g.usedIDs, clientID)
 }
 
@@ -139,14 +150,54 @@ func (g *IDGenerator) ReleaseClientID(clientID int64) {
 func (g *IDGenerator) IsClientIDUsed(clientID int64) bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-
 	return g.usedIDs[clientID]
+}
+
+// ReleaseNodeID 释放节点ID
+func (g *IDGenerator) ReleaseNodeID(nodeID string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.usedNodeIDs, nodeID)
+}
+
+// IsNodeIDUsed 检查节点ID是否已使用
+func (g *IDGenerator) IsNodeIDUsed(nodeID string) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.usedNodeIDs[nodeID]
+}
+
+// ReleaseUserID 释放用户ID
+func (g *IDGenerator) ReleaseUserID(userID string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.usedUserIDs, userID)
+}
+
+// IsUserIDUsed 检查用户ID是否已使用
+func (g *IDGenerator) IsUserIDUsed(userID string) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.usedUserIDs[userID]
+}
+
+// ReleaseMappingID 释放端口映射ID
+func (g *IDGenerator) ReleaseMappingID(mappingID string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.usedMappingIDs, mappingID)
+}
+
+// IsMappingIDUsed 检查端口映射ID是否已使用
+func (g *IDGenerator) IsMappingIDUsed(mappingID string) bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.usedMappingIDs[mappingID]
 }
 
 // GetUsedCount 获取已使用的ID数量
 func (g *IDGenerator) GetUsedCount() int {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-
-	return len(g.usedIDs)
+	return len(g.usedIDs) + len(g.usedNodeIDs) + len(g.usedUserIDs) + len(g.usedMappingIDs)
 }

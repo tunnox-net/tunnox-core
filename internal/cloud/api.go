@@ -104,12 +104,12 @@ type CloudControlConfig struct {
 // DefaultConfig 返回默认配置
 func DefaultConfig() *CloudControlConfig {
 	return &CloudControlConfig{
-		APIEndpoint:       "http://localhost:8080/api",
+		APIEndpoint:       "http://localhost:8080",
 		Timeout:           30 * time.Second,
 		UseBuiltIn:        true,
-		JWTSecretKey:      "tunnox-default-secret-key-change-in-production",
-		JWTExpiration:     24 * time.Hour,
-		RefreshExpiration: 7 * 24 * time.Hour, // 7天
-		JWTIssuer:         "tunnox-cloud-control",
+		JWTSecretKey:      "your-secret-key",
+		JWTExpiration:     DefaultDataTTL,
+		RefreshExpiration: 7 * DefaultDataTTL, // 7天
+		JWTIssuer:         "tunnox",
 	}
 }

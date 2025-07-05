@@ -156,7 +156,7 @@ func (m *MemoryStorage) AppendToList(ctx context.Context, key string, value inte
 	if !exists {
 		m.data[key] = &storageItem{
 			value:      []interface{}{value},
-			expiration: time.Now().Add(24 * time.Hour), // 默认24小时
+			expiration: time.Now().Add(DefaultDataTTL),
 		}
 		return nil
 	}
@@ -164,7 +164,7 @@ func (m *MemoryStorage) AppendToList(ctx context.Context, key string, value inte
 	if time.Now().After(item.expiration) {
 		m.data[key] = &storageItem{
 			value:      []interface{}{value},
-			expiration: time.Now().Add(24 * time.Hour),
+			expiration: time.Now().Add(DefaultDataTTL),
 		}
 		return nil
 	}
@@ -215,14 +215,14 @@ func (m *MemoryStorage) SetHash(ctx context.Context, key string, field string, v
 	if !exists {
 		item = &storageItem{
 			value:      make(map[string]interface{}),
-			expiration: time.Now().Add(24 * time.Hour),
+			expiration: time.Now().Add(DefaultDataTTL),
 		}
 		m.data[key] = item
 	}
 
 	if time.Now().After(item.expiration) {
 		item.value = make(map[string]interface{})
-		item.expiration = time.Now().Add(24 * time.Hour)
+		item.expiration = time.Now().Add(DefaultDataTTL)
 	}
 
 	if hash, ok := item.value.(map[string]interface{}); ok {
@@ -321,14 +321,14 @@ func (m *MemoryStorage) IncrBy(ctx context.Context, key string, value int64) (in
 	if !exists {
 		item = &storageItem{
 			value:      int64(0),
-			expiration: time.Now().Add(24 * time.Hour),
+			expiration: time.Now().Add(DefaultDataTTL),
 		}
 		m.data[key] = item
 	}
 
 	if time.Now().After(item.expiration) {
 		item.value = int64(0)
-		item.expiration = time.Now().Add(24 * time.Hour)
+		item.expiration = time.Now().Add(DefaultDataTTL)
 	}
 
 	if counter, ok := item.value.(int64); ok {

@@ -29,7 +29,7 @@ func NewUserRepository(repo *Repository) *UserRepository {
 	return &UserRepository{Repository: repo}
 }
 
-// SaveUser 保存用户
+// SaveUser 保存用户（创建或更新）
 func (r *UserRepository) SaveUser(ctx context.Context, user *User) error {
 	data, err := json.Marshal(user)
 	if err != nil {
@@ -37,7 +37,29 @@ func (r *UserRepository) SaveUser(ctx context.Context, user *User) error {
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixUser, user.ID)
-	return r.storage.Set(ctx, key, string(data), 0) // 用户数据不过期
+	return r.storage.Set(ctx, key, string(data), DefaultUserDataTTL)
+}
+
+// CreateUser 创建新用户（仅创建，不允许覆盖）
+func (r *UserRepository) CreateUser(ctx context.Context, user *User) error {
+	// 检查用户是否已存在
+	existingUser, err := r.GetUser(ctx, user.ID)
+	if err == nil && existingUser != nil {
+		return fmt.Errorf("user with ID %s already exists", user.ID)
+	}
+
+	return r.SaveUser(ctx, user)
+}
+
+// UpdateUser 更新用户（仅更新，不允许创建）
+func (r *UserRepository) UpdateUser(ctx context.Context, user *User) error {
+	// 检查用户是否存在
+	existingUser, err := r.GetUser(ctx, user.ID)
+	if err != nil || existingUser == nil {
+		return fmt.Errorf("user with ID %s does not exist", user.ID)
+	}
+
+	return r.SaveUser(ctx, user)
 }
 
 // GetUser 获取用户
@@ -112,7 +134,7 @@ func NewClientRepository(repo *Repository) *ClientRepository {
 	return &ClientRepository{Repository: repo}
 }
 
-// SaveClient 保存客户端
+// SaveClient 保存客户端（创建或更新）
 func (r *ClientRepository) SaveClient(ctx context.Context, client *Client) error {
 	data, err := json.Marshal(client)
 	if err != nil {
@@ -120,8 +142,29 @@ func (r *ClientRepository) SaveClient(ctx context.Context, client *Client) error
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixClient, client.ID)
-	ttl := 24 * time.Hour // 客户端数据24小时过期
-	return r.storage.Set(ctx, key, string(data), ttl)
+	return r.storage.Set(ctx, key, string(data), DefaultClientDataTTL)
+}
+
+// CreateClient 创建新客户端（仅创建，不允许覆盖）
+func (r *ClientRepository) CreateClient(ctx context.Context, client *Client) error {
+	// 检查客户端是否已存在
+	existingClient, err := r.GetClient(ctx, client.ID)
+	if err == nil && existingClient != nil {
+		return fmt.Errorf("client with ID %s already exists", client.ID)
+	}
+
+	return r.SaveClient(ctx, client)
+}
+
+// UpdateClient 更新客户端（仅更新，不允许创建）
+func (r *ClientRepository) UpdateClient(ctx context.Context, client *Client) error {
+	// 检查客户端是否存在
+	existingClient, err := r.GetClient(ctx, client.ID)
+	if err != nil || existingClient == nil {
+		return fmt.Errorf("client with ID %s does not exist", client.ID)
+	}
+
+	return r.SaveClient(ctx, client)
 }
 
 // GetClient 获取客户端
@@ -210,7 +253,7 @@ func NewPortMappingRepository(repo *Repository) *PortMappingRepository {
 	return &PortMappingRepository{Repository: repo}
 }
 
-// SavePortMapping 保存端口映射
+// SavePortMapping 保存端口映射（创建或更新）
 func (r *PortMappingRepository) SavePortMapping(ctx context.Context, mapping *PortMapping) error {
 	data, err := json.Marshal(mapping)
 	if err != nil {
@@ -218,8 +261,29 @@ func (r *PortMappingRepository) SavePortMapping(ctx context.Context, mapping *Po
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixPortMapping, mapping.ID)
-	ttl := 24 * time.Hour // 映射数据24小时过期
-	return r.storage.Set(ctx, key, string(data), ttl)
+	return r.storage.Set(ctx, key, string(data), DefaultMappingDataTTL)
+}
+
+// CreatePortMapping 创建新端口映射（仅创建，不允许覆盖）
+func (r *PortMappingRepository) CreatePortMapping(ctx context.Context, mapping *PortMapping) error {
+	// 检查端口映射是否已存在
+	existingMapping, err := r.GetPortMapping(ctx, mapping.ID)
+	if err == nil && existingMapping != nil {
+		return fmt.Errorf("port mapping with ID %s already exists", mapping.ID)
+	}
+
+	return r.SavePortMapping(ctx, mapping)
+}
+
+// UpdatePortMapping 更新端口映射（仅更新，不允许创建）
+func (r *PortMappingRepository) UpdatePortMapping(ctx context.Context, mapping *PortMapping) error {
+	// 检查端口映射是否存在
+	existingMapping, err := r.GetPortMapping(ctx, mapping.ID)
+	if err != nil || existingMapping == nil {
+		return fmt.Errorf("port mapping with ID %s does not exist", mapping.ID)
+	}
+
+	return r.SavePortMapping(ctx, mapping)
 }
 
 // GetPortMapping 获取端口映射
@@ -353,7 +417,7 @@ func NewNodeRepository(repo *Repository) *NodeRepository {
 	return &NodeRepository{Repository: repo}
 }
 
-// SaveNode 保存节点
+// SaveNode 保存节点（创建或更新）
 func (r *NodeRepository) SaveNode(ctx context.Context, node *Node) error {
 	data, err := json.Marshal(node)
 	if err != nil {
@@ -361,8 +425,29 @@ func (r *NodeRepository) SaveNode(ctx context.Context, node *Node) error {
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixNode, node.ID)
-	ttl := 1 * time.Hour // 节点数据1小时过期
-	return r.storage.Set(ctx, key, string(data), ttl)
+	return r.storage.Set(ctx, key, string(data), DefaultNodeDataTTL)
+}
+
+// CreateNode 创建新节点（仅创建，不允许覆盖）
+func (r *NodeRepository) CreateNode(ctx context.Context, node *Node) error {
+	// 检查节点是否已存在
+	existingNode, err := r.GetNode(ctx, node.ID)
+	if err == nil && existingNode != nil {
+		return fmt.Errorf("node with ID %s already exists", node.ID)
+	}
+
+	return r.SaveNode(ctx, node)
+}
+
+// UpdateNode 更新节点（仅更新，不允许创建）
+func (r *NodeRepository) UpdateNode(ctx context.Context, node *Node) error {
+	// 检查节点是否存在
+	existingNode, err := r.GetNode(ctx, node.ID)
+	if err != nil || existingNode == nil {
+		return fmt.Errorf("node with ID %s does not exist", node.ID)
+	}
+
+	return r.SaveNode(ctx, node)
 }
 
 // GetNode 获取节点
