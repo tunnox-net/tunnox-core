@@ -1,14 +1,16 @@
 # tunnox-core
 
-高性能多协议隧道/中转/代理核心库，支持 TCP、WebSocket、UDP、QUIC 四种协议，统一业务处理入口，易于扩展。
+高性能多协议隧道/中转/代理核心库，适用于云原生和边缘场景。支持 TCP、WebSocket、UDP、QUIC 四种协议，统一业务处理入口，易于扩展，资源管理健全。
 
 ## 特性亮点
 
 - 🚀 **多协议支持**：TCP、WebSocket、UDP、QUIC
-- 🧩 **统一接口**：所有协议适配器实现 Adapter 接口，业务逻辑统一交由 ConnectionSession 处理
+- 🧩 **统一 Adapter 接口**：所有协议适配器实现 `Adapter` 接口
+- 🏗️ **Manager**：统一注册/启动/关闭所有适配器
+- 🧠 **ConnectionSession**：业务逻辑集中（开发中）
 - 🔒 **线程安全**：所有连接和流均为并发安全设计
 - 🔄 **易于扩展**：新增协议只需实现 Adapter 接口即可
-- 📦 **丰富的示例和文档**：docs/ 目录下有详细用法
+- 📦 **丰富的示例和文档**：详见 `docs/` 目录
 
 ## 快速上手
 
@@ -78,12 +80,27 @@ quic := protocol.NewQuicAdapter(ctx, nil)
 quic.ConnectTo("localhost:8083")
 ```
 
-### 3. 统一业务处理入口
+### 3. 统一业务处理入口（开发中）
 
 所有协议的连接最终都由 ConnectionSession 统一处理：
 ```go
 func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) {
-    // 业务逻辑在这里实现，与协议无关
+    // 业务逻辑在这里实现，与协议无关（当前开发中）
+}
+```
+
+## Adapter 接口
+
+```go
+type Adapter interface {
+    ConnectTo(serverAddr string) error
+    ListenFrom(serverAddr string) error
+    Start(ctx context.Context) error
+    Stop() error
+    Name() string
+    GetReader() io.Reader
+    GetWriter() io.Writer
+    Close()
 }
 ```
 
@@ -96,15 +113,36 @@ func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer)
 | UDP | 低 | 高 | 好 | 低 | 游戏、流媒体、DNS |
 | QUIC | 高 | 高 | 中等 | 低 | 现代Web、移动应用 |
 
+## 开发状态
+
+- ✅ **协议适配器**：TCP、WebSocket、UDP、QUIC 适配器已完全实现
+- ✅ **管理器**：协议管理器，统一注册/启动/关闭
+- ✅ **云控**：内置云控 API
+- 🔄 **ConnectionSession**：核心业务逻辑集成（开发中）
+- 🔄 **数据包流**：数据传输，支持压缩和限速
+
 ## 扩展性
 
 - 新增协议只需实现 Adapter 接口并注册即可
-- 业务逻辑完全复用，无需关心底层协议
+- 业务逻辑将完全复用，协议无关（ConnectionSession 完成后）
 
 ## 测试
 
 ```bash
 go test ./tests -v -run "Test.*Adapter"
+```
+
+## 目录结构
+
+```
+internal/
+  cloud/      # 云控核心：用户、客户端、映射、节点、认证、配置
+  protocol/   # 协议适配器、管理器、会话（开发中）
+  stream/     # 数据包流、压缩、限速
+  utils/      # Dispose树、缓冲池、工具
+cmd/server/   # 服务端入口点，包含配置
+tests/        # 单元测试
+docs/         # 文档
 ```
 
 ## 文档
@@ -189,7 +227,6 @@ internal/
   protocol/   # 协议适配器、管理器、会话
   stream/     # 包流、压缩、限速
   utils/      # Dispose树、内存池、工具
-examples/     # 使用示例
 cmd/server/   # 服务入口
  tests/       # 全量单元测试
 docs/         # 文档

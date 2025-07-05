@@ -1,14 +1,16 @@
 # tunnox-core
 
-High-performance multi-protocol tunnel/relay/proxy core library supporting TCP, WebSocket, UDP, and QUIC. Unified business logic entry, easy to extend.
+High-performance multi-protocol tunnel/relay/proxy core library for cloud-native and edge scenarios. Supports TCP, WebSocket, UDP, and QUIC. Unified business logic, easy extensibility, and robust resource management.
 
 ## Features
 
 - 🚀 **Multi-protocol support**: TCP, WebSocket, UDP, QUIC
-- 🧩 **Unified interface**: All protocol adapters implement the Adapter interface, business logic is handled by ConnectionSession
+- 🧩 **Unified Adapter interface**: All protocol adapters implement the `Adapter` interface
+- 🏗️ **Manager**: Unified registration/start/stop for all adapters
+- 🧠 **ConnectionSession**: Centralized business logic (in development)
 - 🔒 **Thread-safe**: All connections and streams are concurrency-safe
 - 🔄 **Easy extensibility**: Add new protocols by implementing the Adapter interface
-- 📦 **Rich examples and docs**: See the docs/ directory
+- 📦 **Rich examples and docs**: See the `docs/` directory
 
 ## Quick Start
 
@@ -78,12 +80,27 @@ quic := protocol.NewQuicAdapter(ctx, nil)
 quic.ConnectTo("localhost:8083")
 ```
 
-### 3. Unified business logic entry
+### 3. Unified business logic entry (In Development)
 
 All protocol connections are handled by ConnectionSession:
 ```go
 func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) {
-    // Business logic here, protocol-agnostic
+    // Business logic here, protocol-agnostic (currently in development)
+}
+```
+
+## Adapter Interface
+
+```go
+type Adapter interface {
+    ConnectTo(serverAddr string) error
+    ListenFrom(serverAddr string) error
+    Start(ctx context.Context) error
+    Stop() error
+    Name() string
+    GetReader() io.Reader
+    GetWriter() io.Writer
+    Close()
 }
 ```
 
@@ -96,15 +113,36 @@ func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer)
 | UDP        | Low         | High        | Good              | Low     | Games, streaming, DNS    |
 | QUIC       | High        | High        | Medium            | Low     | Modern web, mobile apps  |
 
+## Development Status
+
+- ✅ **Protocol Adapters**: TCP, WebSocket, UDP, QUIC adapters fully implemented
+- ✅ **Manager**: Protocol manager with unified registration/start/stop
+- ✅ **Cloud Control**: Built-in cloud control API
+- 🔄 **ConnectionSession**: Core business logic integration (in development)
+- 🔄 **Package Stream**: Data transport with compression and rate limiting
+
 ## Extensibility
 
 - Add new protocols by implementing and registering the Adapter interface
-- Business logic is fully reusable, protocol-agnostic
+- Business logic will be fully reusable, protocol-agnostic (once ConnectionSession is complete)
 
 ## Testing
 
 ```bash
 go test ./tests -v -run "Test.*Adapter"
+```
+
+## Directory Structure
+
+```
+internal/
+  cloud/      # Cloud control core: user, client, mapping, node, auth, config
+  protocol/   # Protocol adapters, manager, session (in development)
+  stream/     # Package stream, compression, rate limiter
+  utils/      # Dispose tree, buffer pool, helpers
+cmd/server/   # Server entry point with configuration
+ tests/       # Full unit test coverage
+docs/         # Documentation
 ```
 
 ## Documentation
@@ -189,7 +227,6 @@ internal/
   protocol/   # Protocol adapters, manager, session
   stream/     # Package stream, compression, rate limiter
   utils/      # Dispose tree, buffer pool, helpers
-examples/     # Usage examples
 cmd/server/   # Server entry
  tests/       # Full unit test coverage
 docs/         # Documentation

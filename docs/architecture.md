@@ -12,12 +12,13 @@ All components that require resource cleanup implement the `utils.Dispose` inter
 
 ```
 Server (Root)
-├── ProtocolManager
+├── Manager
 │   ├── TcpAdapter
-│   │   ├── ConnectionSession
-│   │   │   └── PackageStream
-│   │   └── ConnectionSession
-│   └── FutureAdapters (HTTP, WebSocket, etc.)
+│   ├── WebSocketAdapter
+│   ├── UdpAdapter
+│   └── QuicAdapter
+│       └── ConnectionSession
+│           └── PackageStream
 └── CloudControl
     ├── UserRepository
     ├── ClientRepository
@@ -36,12 +37,13 @@ Server (Root)
 The protocol layer is designed for extensibility and clean separation of concerns:
 
 ```
-ProtocolManager
-├── ProtocolAdapter Interface
+Manager
+├── Adapter Interface
 │   ├── BaseAdapter (common functionality)
 │   ├── TcpAdapter (TCP implementation)
-│   ├── HttpAdapter (future)
-│   └── WebSocketAdapter (future)
+│   ├── WebSocketAdapter (WebSocket implementation)
+│   ├── UdpAdapter (UDP implementation)
+│   └── QuicAdapter (QUIC implementation)
 ```
 
 **Key Features:**
@@ -65,22 +67,23 @@ ConnectionSession
 
 ### Protocol Layer
 
-#### ProtocolAdapter Interface
+#### Adapter Interface
 ```go
-type ProtocolAdapter interface {
+type Adapter interface {
+    ConnectTo(serverAddr string) error
+    ListenFrom(serverAddr string) error
     Start(ctx context.Context) error
-    Close() error
-    IsClosed() bool
-    SetCtx(parent context.Context, onClose func())
-    Ctx() context.Context
+    Stop() error
     Name() string
-    Addr() string
+    GetReader() io.Reader
+    GetWriter() io.Writer
+    Close()
 }
 ```
 
-#### TcpAdapter Implementation
+#### Example: TcpAdapter Implementation
 - Listens on specified TCP port
-- Creates ConnectionSession for each connection
+- Calls `session.AcceptConnection(conn, conn)` for each connection
 - Manages connection lifecycle
 - Integrates with Dispose tree
 
@@ -116,8 +119,8 @@ Each entity type has its own repository:
 ## Data Flow
 
 ### Connection Establishment
-1. Client connects to TcpAdapter
-2. TcpAdapter creates ConnectionSession
+1. Client connects to Adapter (TCP/WebSocket/UDP/QUIC)
+2. Adapter calls `session.AcceptConnection(reader, writer)`
 3. ConnectionSession creates PackageStream
 4. PackageStream handles data transport
 5. All components integrated into Dispose tree
@@ -138,15 +141,16 @@ Each entity type has its own repository:
 
 ### Error Types
 - **Connection Errors**: Network-related issues
-- **Protocol Errors**: Invalid packet format
-- **Business Errors**: Authentication, authorization
-- **System Errors**: Resource exhaustion, configuration
+- **Protocol Errors**: Adapter or stream errors
+- **Business Logic Errors**: Session/handler errors
 
-### Recovery Strategies
-- Automatic reconnection for transient errors
-- Graceful degradation for non-critical failures
-- Comprehensive logging for debugging
-- Circuit breaker pattern for stability
+### Error Handling Pattern
+
+```go
+if err := adapter.Start(ctx); err != nil {
+    // Handle error
+}
+```
 
 ## Performance Considerations
 
