@@ -2,40 +2,50 @@ package cloud
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+
+	"tunnox-core/internal/utils"
 )
 
 // BuiltInCloudControl 内置云控实现
 type BuiltInCloudControl struct {
-	config        *CloudControlConfig
-	idGen         *IDGenerator
-	userRepo      *UserRepository
-	clientRepo    *ClientRepository
-	mappingRepo   *PortMappingRepository
-	nodeRepo      *NodeRepository
-	jwtManager    *JWTManager
-	cleanupTicker *time.Ticker
-	done          chan bool
+	config         *CloudControlConfig
+	idGen          *DistributedIDGenerator
+	userRepo       *UserRepository
+	clientRepo     *ClientRepository
+	mappingRepo    *PortMappingRepository
+	nodeRepo       *NodeRepository
+	connRepo       *ConnectionRepository
+	jwtManager     *JWTManager
+	configManager  *ConfigManager
+	cleanupManager *CleanupManager
+	lock           DistributedLock
+	cleanupTicker  *time.Ticker
+	done           chan bool
 }
 
 // NewBuiltInCloudControl 创建新的内置云控
 func NewBuiltInCloudControl(config *CloudControlConfig) *BuiltInCloudControl {
 	memoryStorage := NewMemoryStorage()
 	storage := NewRepository(memoryStorage)
+	lock := NewMemoryLock()
 
 	return &BuiltInCloudControl{
-		config:        config,
-		idGen:         NewIDGenerator(),
-		userRepo:      NewUserRepository(storage),
-		clientRepo:    NewClientRepository(storage),
-		mappingRepo:   NewPortMappingRepository(storage),
-		nodeRepo:      NewNodeRepository(storage),
-		jwtManager:    NewJWTManager(config, memoryStorage),
-		cleanupTicker: time.NewTicker(DefaultCleanupInterval),
-		done:          make(chan bool),
+		config:         config,
+		idGen:          NewDistributedIDGenerator(storage.GetStorage(), lock),
+		userRepo:       NewUserRepository(storage),
+		clientRepo:     NewClientRepository(storage),
+		mappingRepo:    NewPortMappingRepository(storage),
+		nodeRepo:       NewNodeRepository(storage),
+		connRepo:       NewConnectionRepository(storage),
+		jwtManager:     NewJWTManager(config, storage),
+		configManager:  NewConfigManager(storage.GetStorage(), config),
+		cleanupManager: NewCleanupManager(storage.GetStorage(), lock),
+		lock:           lock,
+		cleanupTicker:  time.NewTicker(DefaultCleanupInterval),
+		done:           make(chan bool),
 	}
 }
 
@@ -56,9 +66,13 @@ func (b *BuiltInCloudControl) NodeRegister(ctx context.Context, req *NodeRegiste
 	if nodeID == "" {
 		// 生成节点ID，确保不重复
 		for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
-			generatedID, err := b.idGen.GenerateNodeID()
+			generatedID, err := b.idGen.GenerateNodeID(ctx)
 			if err != nil {
-				return nil, fmt.Errorf("generate node ID failed: %w", err)
+				utils.LogErrorWithContext(err, "generate node ID", map[string]interface{}{
+					"attempts":    attempts,
+					"maxAttempts": DefaultMaxAttempts,
+				})
+				return nil, NewStorageError("generate node ID")
 			}
 
 			// 检查节点是否已存在
@@ -71,7 +85,8 @@ func (b *BuiltInCloudControl) NodeRegister(ctx context.Context, req *NodeRegiste
 
 			if existingNode != nil {
 				// 节点已存在，释放ID并重试
-				b.idGen.ReleaseNodeID(generatedID)
+				b.idGen.ReleaseNodeID(ctx, generatedID)
+				utils.Warnf("Node ID %s already exists, retrying...", generatedID)
 				continue
 			}
 
@@ -80,7 +95,8 @@ func (b *BuiltInCloudControl) NodeRegister(ctx context.Context, req *NodeRegiste
 		}
 
 		if nodeID == "" {
-			return nil, fmt.Errorf("failed to generate unique node ID after %d attempts", DefaultMaxAttempts)
+			utils.Errorf("Failed to generate unique node ID after %d attempts", DefaultMaxAttempts)
+			return nil, ErrIDExhausted
 		}
 	}
 
@@ -98,9 +114,10 @@ func (b *BuiltInCloudControl) NodeRegister(ctx context.Context, req *NodeRegiste
 	if err := b.nodeRepo.CreateNode(ctx, node); err != nil {
 		// 如果保存失败，释放ID
 		if req.NodeID == "" {
-			b.idGen.ReleaseNodeID(nodeID)
+			b.idGen.ReleaseNodeID(ctx, nodeID)
 		}
-		return nil, fmt.Errorf("save node failed: %w", err)
+		utils.LogOperation(OperationCreate, "node", nodeID, false, err)
+		return nil, NewStorageError("save node")
 	}
 
 	// 添加到节点列表
@@ -108,15 +125,22 @@ func (b *BuiltInCloudControl) NodeRegister(ctx context.Context, req *NodeRegiste
 		// 如果添加到列表失败，删除节点并释放ID
 		b.nodeRepo.DeleteNode(ctx, nodeID)
 		if req.NodeID == "" {
-			b.idGen.ReleaseNodeID(nodeID)
+			b.idGen.ReleaseNodeID(ctx, nodeID)
 		}
-		return nil, fmt.Errorf("add node to list failed: %w", err)
+		utils.LogOperation(OperationCreate, "node list", nodeID, false, err)
+		return nil, NewStorageError("add node to list")
 	}
+
+	utils.LogOperation(OperationCreate, "node", nodeID, true, nil)
+	utils.LogSystemEvent("node_registered", "cloud_control", map[string]interface{}{
+		"nodeID":  nodeID,
+		"address": req.Address,
+	})
 
 	return &NodeRegisterResponse{
 		NodeID:  nodeID,
 		Success: true,
-		Message: "Node registered successfully",
+		Message: SuccessMsgNodeRegistered,
 	}, nil
 }
 
@@ -125,7 +149,7 @@ func (b *BuiltInCloudControl) NodeUnregister(ctx context.Context, req *NodeUnreg
 	// 获取节点信息，用于释放ID
 	if node, err := b.nodeRepo.GetNode(ctx, req.NodeID); err == nil && node != nil {
 		// 释放节点ID
-		b.idGen.ReleaseNodeID(req.NodeID)
+		b.idGen.ReleaseNodeID(ctx, req.NodeID)
 	}
 
 	return b.nodeRepo.DeleteNode(ctx, req.NodeID)
@@ -135,9 +159,10 @@ func (b *BuiltInCloudControl) NodeUnregister(ctx context.Context, req *NodeUnreg
 func (b *BuiltInCloudControl) NodeHeartbeat(ctx context.Context, req *NodeHeartbeatRequest) (*NodeHeartbeatResponse, error) {
 	node, err := b.nodeRepo.GetNode(ctx, req.NodeID)
 	if err != nil {
+		utils.LogHeartbeat(req.NodeID, false, err)
 		return &NodeHeartbeatResponse{
 			Success: false,
-			Message: "Node not found",
+			Message: ErrMsgNodeNotFound,
 		}, nil
 	}
 
@@ -146,15 +171,17 @@ func (b *BuiltInCloudControl) NodeHeartbeat(ctx context.Context, req *NodeHeartb
 	node.UpdatedAt = time.Now()
 
 	if err := b.nodeRepo.UpdateNode(ctx, node); err != nil {
+		utils.LogHeartbeat(req.NodeID, false, err)
 		return &NodeHeartbeatResponse{
 			Success: false,
-			Message: "Failed to update node",
+			Message: ErrMsgStorageError,
 		}, nil
 	}
 
+	utils.LogHeartbeat(req.NodeID, true, nil)
 	return &NodeHeartbeatResponse{
 		Success: true,
-		Message: "Heartbeat received",
+		Message: SuccessMsgHeartbeatReceived,
 	}, nil
 }
 
@@ -163,33 +190,37 @@ func (b *BuiltInCloudControl) Authenticate(ctx context.Context, req *AuthRequest
 	// 获取客户端
 	client, err := b.clientRepo.GetClient(ctx, req.ClientID)
 	if err != nil {
+		utils.LogAuthentication("", req.ClientID, false, err)
 		return &AuthResponse{
 			Success: false,
-			Message: "Client not found",
+			Message: ErrMsgClientNotFound,
 		}, nil
 	}
 
 	// 验证认证码
 	if client.AuthCode != req.AuthCode {
+		utils.LogAuthentication(client.UserID, req.ClientID, false, ErrInvalidAuthCode)
 		return &AuthResponse{
 			Success: false,
-			Message: "Invalid auth code",
+			Message: ErrMsgInvalidAuthCode,
 		}, nil
 	}
 
 	// 验证密钥（如果提供）
 	if req.SecretKey != "" && client.SecretKey != req.SecretKey {
+		utils.LogAuthentication(client.UserID, req.ClientID, false, ErrInvalidSecretKey)
 		return &AuthResponse{
 			Success: false,
-			Message: "Invalid secret key",
+			Message: ErrMsgInvalidSecretKey,
 		}, nil
 	}
 
 	// 检查客户端状态
 	if client.Status == ClientStatusBlocked {
+		utils.LogAuthentication(client.UserID, req.ClientID, false, ErrClientBlocked)
 		return &AuthResponse{
 			Success: false,
-			Message: "Client is blocked",
+			Message: ErrMsgClientBlocked,
 		}, nil
 	}
 
@@ -197,59 +228,37 @@ func (b *BuiltInCloudControl) Authenticate(ctx context.Context, req *AuthRequest
 	now := time.Now()
 	client.Status = ClientStatusOnline
 	client.NodeID = req.NodeID
-	client.IPAddress = req.IPAddress
-	client.Version = req.Version
 	client.LastSeen = &now
 	client.UpdatedAt = now
 
 	if err := b.clientRepo.UpdateClient(ctx, client); err != nil {
 		return &AuthResponse{
 			Success: false,
-			Message: "Failed to update client",
+			Message: "Failed to update client status",
 		}, nil
 	}
 
-	// 获取节点信息
-	var node *Node
-	if nodeInfo, err := b.nodeRepo.GetNode(ctx, req.NodeID); err == nil {
-		node = nodeInfo
-	}
-
-	// 生成JWT Token
-	jwtInfo, err := b.jwtManager.GenerateTokenPair(ctx, client)
+	// 生成JWT令牌
+	tokenInfo, err := b.jwtManager.GenerateTokenPair(ctx, client)
 	if err != nil {
 		return &AuthResponse{
 			Success: false,
-			Message: "Failed to generate JWT token",
-		}, nil
-	}
-
-	// 更新客户端Token信息
-	client.JWTToken = jwtInfo.TokenID
-	client.TokenExpiresAt = &jwtInfo.ExpiresAt
-	client.RefreshToken = jwtInfo.RefreshToken
-	client.UpdatedAt = time.Now()
-
-	if err := b.clientRepo.UpdateClient(ctx, client); err != nil {
-		return &AuthResponse{
-			Success: false,
-			Message: "Failed to update client token",
+			Message: "Failed to generate token",
 		}, nil
 	}
 
 	return &AuthResponse{
 		Success:   true,
-		Token:     jwtInfo.Token,
-		Client:    client,
-		Node:      node,
-		ExpiresAt: jwtInfo.ExpiresAt,
 		Message:   "Authentication successful",
+		Token:     tokenInfo.Token,
+		Client:    client,
+		ExpiresAt: tokenInfo.ExpiresAt,
 	}, nil
 }
 
 // ValidateToken 验证令牌
 func (b *BuiltInCloudControl) ValidateToken(ctx context.Context, token string) (*AuthResponse, error) {
-	// 使用JWT Token验证
+	// 验证JWT令牌
 	claims, err := b.jwtManager.ValidateAccessToken(ctx, token)
 	if err != nil {
 		return &AuthResponse{
@@ -258,6 +267,7 @@ func (b *BuiltInCloudControl) ValidateToken(ctx context.Context, token string) (
 		}, nil
 	}
 
+	// 获取客户端信息
 	client, err := b.clientRepo.GetClient(ctx, claims.ClientID)
 	if err != nil {
 		return &AuthResponse{
@@ -266,30 +276,10 @@ func (b *BuiltInCloudControl) ValidateToken(ctx context.Context, token string) (
 		}, nil
 	}
 
-	if client.Status != ClientStatusOnline {
-		return &AuthResponse{
-			Success: false,
-			Message: "Client is not online",
-		}, nil
-	}
-
-	// 验证Token ID是否匹配
-	if client.JWTToken != claims.ID {
-		return &AuthResponse{
-			Success: false,
-			Message: "Token has been revoked",
-		}, nil
-	}
-
-	node, _ := b.nodeRepo.GetNode(ctx, client.NodeID)
-
 	return &AuthResponse{
-		Success:   true,
-		Token:     token,
-		Client:    client,
-		Node:      node,
-		ExpiresAt: claims.ExpiresAt.Time,
-		Message:   "Token is valid",
+		Success: true,
+		Message: "Token is valid",
+		Client:  client,
 	}, nil
 }
 
@@ -298,7 +288,7 @@ func (b *BuiltInCloudControl) CreateUser(ctx context.Context, username, email st
 	// 生成用户ID，确保不重复
 	var userID string
 	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateUserID()
+		generatedID, err := b.idGen.GenerateUserID(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("generate user ID failed: %w", err)
 		}
@@ -313,7 +303,7 @@ func (b *BuiltInCloudControl) CreateUser(ctx context.Context, username, email st
 
 		if existingUser != nil {
 			// 用户已存在，释放ID并重试
-			b.idGen.ReleaseUserID(generatedID)
+			b.idGen.ReleaseUserID(ctx, generatedID)
 			continue
 		}
 
@@ -325,18 +315,19 @@ func (b *BuiltInCloudControl) CreateUser(ctx context.Context, username, email st
 		return nil, fmt.Errorf("failed to generate unique user ID after %d attempts", DefaultMaxAttempts)
 	}
 
+	// 创建用户
 	now := time.Now()
 	user := &User{
 		ID:        userID,
 		Username:  username,
 		Email:     email,
-		Status:    UserStatusActive,
 		Type:      UserTypeRegistered,
+		Status:    UserStatusActive,
+		Plan:      UserPlanFree,
 		CreatedAt: now,
 		UpdatedAt: now,
-		Plan:      UserPlanFree,
 		Quota: UserQuota{
-			MaxClientIds:   DefaultUserMaxClientIds,
+			MaxClientIds:   DefaultUserMaxConnections,
 			MaxConnections: DefaultUserMaxConnections,
 			BandwidthLimit: DefaultUserBandwidthLimit,
 			StorageLimit:   DefaultUserStorageLimit,
@@ -345,14 +336,14 @@ func (b *BuiltInCloudControl) CreateUser(ctx context.Context, username, email st
 
 	if err := b.userRepo.CreateUser(ctx, user); err != nil {
 		// 如果保存失败，释放ID
-		b.idGen.ReleaseUserID(userID)
+		b.idGen.ReleaseUserID(ctx, userID)
 		return nil, fmt.Errorf("save user failed: %w", err)
 	}
 
 	if err := b.userRepo.AddUserToList(ctx, user); err != nil {
 		// 如果添加到列表失败，删除用户并释放ID
 		b.userRepo.DeleteUser(ctx, userID)
-		b.idGen.ReleaseUserID(userID)
+		b.idGen.ReleaseUserID(ctx, userID)
 		return nil, fmt.Errorf("add user to list failed: %w", err)
 	}
 
@@ -376,7 +367,7 @@ func (b *BuiltInCloudControl) DeleteUser(ctx context.Context, userID string) err
 	user, err := b.userRepo.GetUser(ctx, userID)
 	if err == nil && user != nil {
 		// 释放用户ID
-		b.idGen.ReleaseUserID(userID)
+		b.idGen.ReleaseUserID(ctx, userID)
 	}
 
 	return b.userRepo.DeleteUser(ctx, userID)
@@ -392,7 +383,7 @@ func (b *BuiltInCloudControl) CreateClient(ctx context.Context, userID, clientNa
 	// 生成客户端ID，确保不重复
 	var clientID int64
 	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateClientID()
+		generatedID, err := b.idGen.GenerateClientID(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("generate client ID failed: %w", err)
 		}
@@ -407,7 +398,7 @@ func (b *BuiltInCloudControl) CreateClient(ctx context.Context, userID, clientNa
 
 		if existingClient != nil {
 			// 客户端已存在，释放ID并重试
-			b.idGen.ReleaseClientID(generatedID)
+			b.idGen.ReleaseClientID(ctx, generatedID)
 			continue
 		}
 
@@ -422,14 +413,14 @@ func (b *BuiltInCloudControl) CreateClient(ctx context.Context, userID, clientNa
 	authCode, err := b.idGen.GenerateAuthCode()
 	if err != nil {
 		// 如果生成认证码失败，释放客户端ID
-		b.idGen.ReleaseClientID(clientID)
+		b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("generate auth code failed: %w", err)
 	}
 
 	secretKey, err := b.idGen.GenerateSecretKey()
 	if err != nil {
 		// 如果生成密钥失败，释放客户端ID
-		b.idGen.ReleaseClientID(clientID)
+		b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("generate secret key failed: %w", err)
 	}
 
@@ -457,7 +448,7 @@ func (b *BuiltInCloudControl) CreateClient(ctx context.Context, userID, clientNa
 
 	if err := b.clientRepo.CreateClient(ctx, client); err != nil {
 		// 如果保存失败，释放客户端ID
-		b.idGen.ReleaseClientID(clientID)
+		b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("save client failed: %w", err)
 	}
 
@@ -465,7 +456,7 @@ func (b *BuiltInCloudControl) CreateClient(ctx context.Context, userID, clientNa
 	if err := b.clientRepo.AddClientToUser(ctx, userID, client); err != nil {
 		// 如果添加到用户失败，删除客户端并释放ID
 		b.clientRepo.DeleteClient(ctx, client.ID)
-		b.idGen.ReleaseClientID(clientID)
+		b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("add client to user failed: %w", err)
 	}
 
@@ -491,7 +482,7 @@ func (b *BuiltInCloudControl) DeleteClient(ctx context.Context, clientID string)
 		// 解析客户端ID为int64并释放
 		var clientIDInt int64
 		if _, err := fmt.Sscanf(clientID, "%d", &clientIDInt); err == nil {
-			b.idGen.ReleaseClientID(clientIDInt)
+			b.idGen.ReleaseClientID(ctx, clientIDInt)
 		}
 	}
 
@@ -544,7 +535,7 @@ func (b *BuiltInCloudControl) CreatePortMapping(ctx context.Context, mapping *Po
 	// 生成端口映射ID，确保不重复
 	var mappingID string
 	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateMappingID()
+		generatedID, err := b.idGen.GenerateMappingID(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
 		}
@@ -559,7 +550,7 @@ func (b *BuiltInCloudControl) CreatePortMapping(ctx context.Context, mapping *Po
 
 		if existingMapping != nil {
 			// 端口映射已存在，释放ID并重试
-			b.idGen.ReleaseMappingID(generatedID)
+			b.idGen.ReleaseMappingID(ctx, generatedID)
 			continue
 		}
 
@@ -578,7 +569,7 @@ func (b *BuiltInCloudControl) CreatePortMapping(ctx context.Context, mapping *Po
 
 	if err := b.mappingRepo.CreatePortMapping(ctx, mapping); err != nil {
 		// 如果保存失败，释放ID
-		b.idGen.ReleaseMappingID(mappingID)
+		b.idGen.ReleaseMappingID(ctx, mappingID)
 		return nil, fmt.Errorf("save port mapping failed: %w", err)
 	}
 
@@ -586,22 +577,15 @@ func (b *BuiltInCloudControl) CreatePortMapping(ctx context.Context, mapping *Po
 		if err := b.mappingRepo.AddMappingToUser(ctx, mapping.UserID, mapping); err != nil {
 			// 如果添加到用户失败，删除端口映射并释放ID
 			b.mappingRepo.DeletePortMapping(ctx, mappingID)
-			b.idGen.ReleaseMappingID(mappingID)
+			b.idGen.ReleaseMappingID(ctx, mappingID)
 			return nil, fmt.Errorf("add mapping to user failed: %w", err)
 		}
-	}
-
-	if err := b.mappingRepo.AddMappingToClient(ctx, mapping.SourceClientID, mapping); err != nil {
-		// 如果添加到客户端失败，删除端口映射并释放ID
-		b.mappingRepo.DeletePortMapping(ctx, mappingID)
-		b.idGen.ReleaseMappingID(mappingID)
-		return nil, fmt.Errorf("add mapping to source client failed: %w", err)
 	}
 
 	return mapping, nil
 }
 
-// GetPortMappings 获取端口映射
+// GetPortMappings 获取用户的端口映射
 func (b *BuiltInCloudControl) GetPortMappings(ctx context.Context, userID string) ([]*PortMapping, error) {
 	return b.mappingRepo.ListUserMappings(ctx, userID)
 }
@@ -623,7 +607,7 @@ func (b *BuiltInCloudControl) DeletePortMapping(ctx context.Context, mappingID s
 	mapping, err := b.mappingRepo.GetPortMapping(ctx, mappingID)
 	if err == nil && mapping != nil {
 		// 释放端口映射ID
-		b.idGen.ReleaseMappingID(mappingID)
+		b.idGen.ReleaseMappingID(ctx, mappingID)
 	}
 
 	return b.mappingRepo.DeletePortMapping(ctx, mappingID)
@@ -641,16 +625,16 @@ func (b *BuiltInCloudControl) UpdatePortMappingStats(ctx context.Context, mappin
 
 // ListPortMappings 列出端口映射
 func (b *BuiltInCloudControl) ListPortMappings(ctx context.Context, mappingType MappingType) ([]*PortMapping, error) {
-	// 简单实现：返回所有映射
+	// 简化实现：返回所有映射
 	return b.mappingRepo.ListUserMappings(ctx, "")
 }
 
-// GenerateAnonymousCredentials 生成匿名客户端凭据
+// GenerateAnonymousCredentials 生成匿名凭据
 func (b *BuiltInCloudControl) GenerateAnonymousCredentials(ctx context.Context) (*Client, error) {
 	// 生成客户端ID，确保不重复
 	var clientID int64
 	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateClientID()
+		generatedID, err := b.idGen.GenerateClientID(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("generate client ID failed: %w", err)
 		}
@@ -665,7 +649,7 @@ func (b *BuiltInCloudControl) GenerateAnonymousCredentials(ctx context.Context) 
 
 		if existingClient != nil {
 			// 客户端已存在，释放ID并重试
-			b.idGen.ReleaseClientID(generatedID)
+			b.idGen.ReleaseClientID(ctx, generatedID)
 			continue
 		}
 
@@ -680,22 +664,22 @@ func (b *BuiltInCloudControl) GenerateAnonymousCredentials(ctx context.Context) 
 	authCode, err := b.idGen.GenerateAuthCode()
 	if err != nil {
 		// 如果生成认证码失败，释放客户端ID
-		b.idGen.ReleaseClientID(clientID)
+		b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("generate auth code failed: %w", err)
 	}
 
 	secretKey, err := b.idGen.GenerateSecretKey()
 	if err != nil {
 		// 如果生成密钥失败，释放客户端ID
-		b.idGen.ReleaseClientID(clientID)
+		b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("generate secret key failed: %w", err)
 	}
 
 	now := time.Now()
 	client := &Client{
 		ID:        fmt.Sprintf("%d", clientID),
-		UserID:    "", // 匿名用户没有UserID
-		Name:      fmt.Sprintf("Anonymous-%s", authCode),
+		UserID:    "", // 匿名用户
+		Name:      fmt.Sprintf("Anonymous-%s", authCode[:8]),
 		AuthCode:  authCode,
 		SecretKey: secretKey,
 		Status:    ClientStatusOffline,
@@ -704,7 +688,7 @@ func (b *BuiltInCloudControl) GenerateAnonymousCredentials(ctx context.Context) 
 			EnableCompression: DefaultEnableCompression,
 			BandwidthLimit:    DefaultAnonymousBandwidthLimit,
 			MaxConnections:    DefaultAnonymousMaxConnections,
-			AllowedPorts:      DefaultAnonymousAllowedPorts,
+			AllowedPorts:      DefaultAllowedPorts,
 			BlockedPorts:      DefaultBlockedPorts,
 			AutoReconnect:     DefaultAutoReconnect,
 			HeartbeatInterval: DefaultHeartbeatInterval,
@@ -715,8 +699,16 @@ func (b *BuiltInCloudControl) GenerateAnonymousCredentials(ctx context.Context) 
 
 	if err := b.clientRepo.CreateClient(ctx, client); err != nil {
 		// 如果保存失败，释放客户端ID
-		b.idGen.ReleaseClientID(clientID)
+		b.idGen.ReleaseClientID(ctx, clientID)
 		return nil, fmt.Errorf("save anonymous client failed: %w", err)
+	}
+
+	// 添加到匿名列表
+	if err := b.clientRepo.AddClientToUser(ctx, "", client); err != nil {
+		// 如果添加到匿名列表失败，删除客户端并释放ID
+		b.clientRepo.DeleteClient(ctx, client.ID)
+		b.idGen.ReleaseClientID(ctx, clientID)
+		return nil, fmt.Errorf("add anonymous client to list failed: %w", err)
 	}
 
 	return client, nil
@@ -738,12 +730,12 @@ func (b *BuiltInCloudControl) GetAnonymousClient(ctx context.Context, clientID s
 
 // DeleteAnonymousClient 删除匿名客户端
 func (b *BuiltInCloudControl) DeleteAnonymousClient(ctx context.Context, clientID string) error {
-	return b.clientRepo.DeleteClient(ctx, clientID)
+	return b.DeleteClient(ctx, clientID)
 }
 
 // ListAnonymousClients 列出匿名客户端
 func (b *BuiltInCloudControl) ListAnonymousClients(ctx context.Context) ([]*Client, error) {
-	return b.ListClients(ctx, "", ClientTypeAnonymous)
+	return b.clientRepo.ListUserClients(ctx, "")
 }
 
 // CreateAnonymousMapping 创建匿名端口映射
@@ -751,7 +743,7 @@ func (b *BuiltInCloudControl) CreateAnonymousMapping(ctx context.Context, source
 	// 生成端口映射ID，确保不重复
 	var mappingID string
 	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateMappingID()
+		generatedID, err := b.idGen.GenerateMappingID(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
 		}
@@ -766,7 +758,7 @@ func (b *BuiltInCloudControl) CreateAnonymousMapping(ctx context.Context, source
 
 		if existingMapping != nil {
 			// 端口映射已存在，释放ID并重试
-			b.idGen.ReleaseMappingID(generatedID)
+			b.idGen.ReleaseMappingID(ctx, generatedID)
 			continue
 		}
 
@@ -781,37 +773,36 @@ func (b *BuiltInCloudControl) CreateAnonymousMapping(ctx context.Context, source
 	now := time.Now()
 	mapping := &PortMapping{
 		ID:             mappingID,
-		UserID:         "", // 匿名映射没有UserID
+		UserID:         "", // 匿名映射
 		SourceClientID: sourceClientID,
 		TargetClientID: targetClientID,
 		Protocol:       protocol,
 		SourcePort:     sourcePort,
-		TargetHost:     "localhost",
 		TargetPort:     targetPort,
 		Status:         MappingStatusActive,
 		Type:           MappingTypeAnonymous,
 		Config: MappingConfig{
 			EnableCompression: DefaultEnableCompression,
-			BandwidthLimit:    DefaultMappingBandwidthLimit,
-			Timeout:           DefaultMappingTimeout,
-			RetryCount:        DefaultMappingRetryCount,
+			BandwidthLimit:    DefaultAnonymousBandwidthLimit,
+			Timeout:           30,
+			RetryCount:        3,
 		},
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		TrafficStats: TrafficStats{},
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
 	if err := b.mappingRepo.CreatePortMapping(ctx, mapping); err != nil {
 		// 如果保存失败，释放ID
-		b.idGen.ReleaseMappingID(mappingID)
+		b.idGen.ReleaseMappingID(ctx, mappingID)
 		return nil, fmt.Errorf("save anonymous mapping failed: %w", err)
 	}
 
-	if err := b.mappingRepo.AddMappingToClient(ctx, sourceClientID, mapping); err != nil {
-		// 如果添加到客户端失败，删除端口映射并释放ID
+	// 添加到匿名映射列表
+	if err := b.mappingRepo.AddMappingToUser(ctx, "", mapping); err != nil {
+		// 如果添加到匿名列表失败，删除映射并释放ID
 		b.mappingRepo.DeletePortMapping(ctx, mappingID)
-		b.idGen.ReleaseMappingID(mappingID)
-		return nil, fmt.Errorf("add mapping to source client failed: %w", err)
+		b.idGen.ReleaseMappingID(ctx, mappingID)
+		return nil, fmt.Errorf("add anonymous mapping to list failed: %w", err)
 	}
 
 	return mapping, nil
@@ -819,13 +810,12 @@ func (b *BuiltInCloudControl) CreateAnonymousMapping(ctx context.Context, source
 
 // GetAnonymousMappings 获取匿名端口映射
 func (b *BuiltInCloudControl) GetAnonymousMappings(ctx context.Context) ([]*PortMapping, error) {
-	// 简单实现：返回所有映射
 	return b.mappingRepo.ListUserMappings(ctx, "")
 }
 
-// CleanupExpiredAnonymous 清理过期的匿名数据
+// CleanupExpiredAnonymous 清理过期的匿名资源
 func (b *BuiltInCloudControl) CleanupExpiredAnonymous(ctx context.Context) error {
-	// no-op: 依赖存储层的自动过期机制
+	// 这里可以实现清理逻辑
 	return nil
 }
 
@@ -836,8 +826,21 @@ func (b *BuiltInCloudControl) GetNodeServiceInfo(ctx context.Context, nodeID str
 		return nil, err
 	}
 
+	// 获取节点的客户端数量
+	clients, err := b.clientRepo.ListUserClients(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var nodeClients []*Client
+	for _, client := range clients {
+		if client.NodeID == nodeID {
+			nodeClients = append(nodeClients, client)
+		}
+	}
+
 	return &NodeServiceInfo{
-		NodeID:  node.ID,
+		NodeID:  nodeID,
 		Address: node.Address,
 	}, nil
 }
@@ -849,158 +852,125 @@ func (b *BuiltInCloudControl) GetAllNodeServiceInfo(ctx context.Context) ([]*Nod
 		return nil, err
 	}
 
-	var infos []*NodeServiceInfo
+	var nodeInfos []*NodeServiceInfo
 	for _, node := range nodes {
-		infos = append(infos, &NodeServiceInfo{
-			NodeID:  node.ID,
-			Address: node.Address,
-		})
+		info, err := b.GetNodeServiceInfo(ctx, node.ID)
+		if err != nil {
+			continue
+		}
+		nodeInfos = append(nodeInfos, info)
 	}
 
-	return infos, nil
+	return nodeInfos, nil
 }
 
-// GetUserStats 获取用户统计信息
+// GetUserStats 获取用户统计
 func (b *BuiltInCloudControl) GetUserStats(ctx context.Context, userID string) (*UserStats, error) {
+	user, err := b.userRepo.GetUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取用户的客户端
 	clients, err := b.clientRepo.ListUserClients(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
+	// 获取用户的端口映射
 	mappings, err := b.mappingRepo.ListUserMappings(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
 
-	onlineClients := 0
-	activeMappings := 0
-	totalTraffic := int64(0)
-	totalConnections := int64(0)
-	lastActive := time.Time{}
-
-	for _, client := range clients {
-		if client.Status == ClientStatusOnline {
-			onlineClients++
-		}
-		if client.LastSeen != nil && client.LastSeen.After(lastActive) {
-			lastActive = *client.LastSeen
-		}
-	}
-
+	// 计算统计信息
+	var totalTraffic int64
+	var activeConnections int
 	for _, mapping := range mappings {
-		if mapping.Status == MappingStatusActive {
-			activeMappings++
-		}
 		totalTraffic += mapping.TrafficStats.BytesSent + mapping.TrafficStats.BytesReceived
-		totalConnections += mapping.TrafficStats.Connections
-		if mapping.LastActive != nil && mapping.LastActive.After(lastActive) {
-			lastActive = *mapping.LastActive
-		}
+		// 这里可以添加连接数统计
 	}
 
 	return &UserStats{
 		UserID:           userID,
 		TotalClients:     len(clients),
-		OnlineClients:    onlineClients,
 		TotalMappings:    len(mappings),
-		ActiveMappings:   activeMappings,
 		TotalTraffic:     totalTraffic,
-		TotalConnections: totalConnections,
-		LastActive:       lastActive,
+		TotalConnections: int64(activeConnections),
+		LastActive:       user.UpdatedAt,
 	}, nil
 }
 
-// GetClientStats 获取客户端统计信息
+// GetClientStats 获取客户端统计
 func (b *BuiltInCloudControl) GetClientStats(ctx context.Context, clientID string) (*ClientStats, error) {
 	client, err := b.clientRepo.GetClient(ctx, clientID)
 	if err != nil {
 		return nil, err
 	}
 
+	// 获取客户端的端口映射
 	mappings, err := b.mappingRepo.ListClientMappings(ctx, clientID)
 	if err != nil {
 		return nil, err
 	}
 
-	activeMappings := 0
-	totalTraffic := int64(0)
-	totalConnections := int64(0)
-	uptime := int64(0)
-
-	if client.LastSeen != nil && client.CreatedAt.Before(*client.LastSeen) {
-		uptime = int64(client.LastSeen.Sub(client.CreatedAt).Seconds())
-	}
-
+	// 计算统计信息
+	var totalTraffic int64
+	var activeConnections int
 	for _, mapping := range mappings {
-		if mapping.Status == MappingStatusActive {
-			activeMappings++
-		}
 		totalTraffic += mapping.TrafficStats.BytesSent + mapping.TrafficStats.BytesReceived
-		totalConnections += mapping.TrafficStats.Connections
+		// 这里可以添加连接数统计
 	}
 
 	return &ClientStats{
 		ClientID:         clientID,
 		UserID:           client.UserID,
 		TotalMappings:    len(mappings),
-		ActiveMappings:   activeMappings,
 		TotalTraffic:     totalTraffic,
-		TotalConnections: totalConnections,
-		Uptime:           uptime,
-		LastSeen:         *client.LastSeen,
+		TotalConnections: int64(activeConnections),
+		LastSeen:         client.UpdatedAt,
 	}, nil
 }
 
-// GetSystemStats 获取系统整体统计
+// GetSystemStats 获取系统统计
 func (b *BuiltInCloudControl) GetSystemStats(ctx context.Context) (*SystemStats, error) {
+	// 获取所有用户
 	users, err := b.userRepo.ListUsers(ctx, "")
 	if err != nil {
 		return nil, err
 	}
 
+	// 获取所有客户端
 	clients, err := b.clientRepo.ListUserClients(ctx, "")
 	if err != nil {
 		return nil, err
 	}
 
+	// 获取所有端口映射
 	mappings, err := b.mappingRepo.ListUserMappings(ctx, "")
 	if err != nil {
 		return nil, err
 	}
 
+	// 获取所有节点
 	nodes, err := b.nodeRepo.ListNodes(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	onlineClients := 0
-	activeMappings := 0
-	totalTraffic := int64(0)
-	totalConnections := int64(0)
-	anonymousUsers := 0
-
+	// 计算统计信息
+	var totalTraffic int64
+	var activeConnections int
+	var onlineClients int
 	for _, client := range clients {
 		if client.Status == ClientStatusOnline {
 			onlineClients++
 		}
-		if client.Type == ClientTypeAnonymous {
-			anonymousUsers++
-		}
 	}
 
 	for _, mapping := range mappings {
-		if mapping.Status == MappingStatusActive {
-			activeMappings++
-		}
 		totalTraffic += mapping.TrafficStats.BytesSent + mapping.TrafficStats.BytesReceived
-		totalConnections += mapping.TrafficStats.Connections
-	}
-
-	onlineNodes := 0
-	for _, node := range nodes {
-		if time.Since(node.UpdatedAt) < 5*time.Minute {
-			onlineNodes++
-		}
+		// 这里可以添加连接数统计
 	}
 
 	return &SystemStats{
@@ -1008,24 +978,22 @@ func (b *BuiltInCloudControl) GetSystemStats(ctx context.Context) (*SystemStats,
 		TotalClients:     len(clients),
 		OnlineClients:    onlineClients,
 		TotalMappings:    len(mappings),
-		ActiveMappings:   activeMappings,
 		TotalNodes:       len(nodes),
-		OnlineNodes:      onlineNodes,
 		TotalTraffic:     totalTraffic,
-		TotalConnections: totalConnections,
-		AnonymousUsers:   anonymousUsers,
+		TotalConnections: int64(activeConnections),
+		AnonymousUsers:   0, // 简化实现
 	}, nil
 }
 
-// GetTrafficStats 获取流量统计图表数据
+// GetTrafficStats 获取流量统计
 func (b *BuiltInCloudControl) GetTrafficStats(ctx context.Context, timeRange string) ([]*TrafficDataPoint, error) {
-	// 简单实现：返回空数据
+	// 简化实现：返回空数组
 	return []*TrafficDataPoint{}, nil
 }
 
-// GetConnectionStats 获取连接数统计图表数据
+// GetConnectionStats 获取连接统计
 func (b *BuiltInCloudControl) GetConnectionStats(ctx context.Context, timeRange string) ([]*ConnectionDataPoint, error) {
-	// 简单实现：返回空数据
+	// 简化实现：返回空数组
 	return []*ConnectionDataPoint{}, nil
 }
 
@@ -1056,8 +1024,8 @@ func (b *BuiltInCloudControl) SearchClients(ctx context.Context, keyword string)
 
 	var results []*Client
 	for _, client := range clients {
-		if strings.Contains(strings.ToLower(client.ID), strings.ToLower(keyword)) ||
-			strings.Contains(strings.ToLower(client.Name), strings.ToLower(keyword)) {
+		if strings.Contains(strings.ToLower(client.Name), strings.ToLower(keyword)) ||
+			strings.Contains(strings.ToLower(client.ID), strings.ToLower(keyword)) {
 			results = append(results, client)
 		}
 	}
@@ -1086,171 +1054,127 @@ func (b *BuiltInCloudControl) SearchPortMappings(ctx context.Context, keyword st
 
 // RegisterConnection 注册连接
 func (b *BuiltInCloudControl) RegisterConnection(ctx context.Context, mappingId string, connInfo *ConnectionInfo) error {
-	// 简单实现：保存连接信息
-	key := fmt.Sprintf("connection:%s", connInfo.ConnId)
-	data, err := json.Marshal(connInfo)
+	// 验证端口映射是否存在
+	mapping, err := b.mappingRepo.GetPortMapping(ctx, mappingId)
 	if err != nil {
-		return err
+		return fmt.Errorf("mapping not found: %w", err)
 	}
 
-	storage := NewMemoryStorage()
-	return storage.Set(ctx, key, string(data), DefaultConnectionTTL)
+	if mapping == nil {
+		return fmt.Errorf("mapping not found")
+	}
+
+	// 设置连接信息
+	connInfo.MappingId = mappingId
+	connInfo.EstablishedAt = time.Now()
+	connInfo.LastActivity = time.Now()
+	connInfo.UpdatedAt = time.Now()
+
+	// 保存连接信息
+	if err := b.connRepo.CreateConnection(ctx, connInfo); err != nil {
+		return fmt.Errorf("create connection failed: %w", err)
+	}
+
+	// 添加到映射连接列表
+	if err := b.connRepo.AddConnectionToMapping(ctx, mappingId, connInfo); err != nil {
+		// 如果添加到列表失败，删除连接
+		b.connRepo.DeleteConnection(ctx, connInfo.ConnId)
+		return fmt.Errorf("add connection to mapping failed: %w", err)
+	}
+
+	return nil
 }
 
 // UnregisterConnection 注销连接
 func (b *BuiltInCloudControl) UnregisterConnection(ctx context.Context, connId string) error {
-	key := fmt.Sprintf("connection:%s", connId)
-	storage := NewMemoryStorage()
-	return storage.Delete(ctx, key)
+	// 先获取连接信息以获取映射ID
+	connInfo, err := b.connRepo.GetConnection(ctx, connId)
+	if err != nil {
+		return fmt.Errorf("connection not found: %w", err)
+	}
+
+	// 从映射连接列表中删除
+	if connInfo.MappingId != "" {
+		// 这里需要实现从列表中删除的逻辑
+		// 由于当前存储层没有提供从列表中删除特定项的方法，我们暂时跳过
+		// 在实际实现中，应该从映射连接列表中删除这个连接
+	}
+
+	// 删除连接
+	return b.connRepo.DeleteConnection(ctx, connId)
 }
 
-// GetConnections 获取映射的连接列表
+// GetConnections 获取端口映射的连接
 func (b *BuiltInCloudControl) GetConnections(ctx context.Context, mappingId string) ([]*ConnectionInfo, error) {
-	// 简单实现：返回空列表
-	return []*ConnectionInfo{}, nil
+	return b.connRepo.ListMappingConnections(ctx, mappingId)
 }
 
-// GetClientConnections 获取客户端的连接列表
+// GetClientConnections 获取客户端的连接
 func (b *BuiltInCloudControl) GetClientConnections(ctx context.Context, clientId string) ([]*ConnectionInfo, error) {
-	// 简单实现：返回空列表
-	return []*ConnectionInfo{}, nil
+	return b.connRepo.ListClientConnections(ctx, clientId)
 }
 
 // UpdateConnectionStats 更新连接统计
 func (b *BuiltInCloudControl) UpdateConnectionStats(ctx context.Context, connId string, bytesSent, bytesReceived int64) error {
-	// 简单实现：更新连接统计
-	return nil
+	return b.connRepo.UpdateConnectionStats(ctx, connId, bytesSent, bytesReceived)
 }
 
-// GenerateJWTToken 生成JWT Token
+// GenerateJWTToken 生成JWT令牌
 func (b *BuiltInCloudControl) GenerateJWTToken(ctx context.Context, clientId string) (*JWTTokenInfo, error) {
 	client, err := b.clientRepo.GetClient(ctx, clientId)
 	if err != nil {
 		return nil, err
 	}
-
-	jwtInfo, err := b.jwtManager.GenerateTokenPair(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-
-	// 更新客户端Token信息
-	client.JWTToken = jwtInfo.TokenID
-	client.TokenExpiresAt = &jwtInfo.ExpiresAt
-	client.RefreshToken = jwtInfo.RefreshToken
-	client.UpdatedAt = time.Now()
-
-	if err := b.clientRepo.UpdateClient(ctx, client); err != nil {
-		return nil, fmt.Errorf("failed to update client token: %w", err)
-	}
-
-	return jwtInfo, nil
+	return b.jwtManager.GenerateTokenPair(ctx, client)
 }
 
-// RefreshJWTToken 刷新JWT Token
+// RefreshJWTToken 刷新JWT令牌
 func (b *BuiltInCloudControl) RefreshJWTToken(ctx context.Context, refreshToken string) (*JWTTokenInfo, error) {
-	// 验证刷新Token并获取客户端ID
-	refreshClaims, err := b.jwtManager.ValidateRefreshToken(ctx, refreshToken)
+	// 验证刷新令牌
+	claims, err := b.jwtManager.ValidateRefreshToken(ctx, refreshToken)
 	if err != nil {
 		return nil, fmt.Errorf("invalid refresh token: %w", err)
 	}
 
-	// 获取客户端
-	client, err := b.clientRepo.GetClient(ctx, refreshClaims.ClientID)
-	if err != nil {
-		return nil, fmt.Errorf("client not found: %w", err)
-	}
-
-	// 验证Token ID是否匹配
-	if client.JWTToken != refreshClaims.TokenID {
-		return nil, fmt.Errorf("token ID mismatch")
-	}
-
-	// 生成新的Token对
-	jwtInfo, err := b.jwtManager.GenerateTokenPair(ctx, client)
-	if err != nil {
-		return nil, err
-	}
-
-	// 更新客户端Token信息
-	client.JWTToken = jwtInfo.TokenID
-	client.TokenExpiresAt = &jwtInfo.ExpiresAt
-	client.RefreshToken = jwtInfo.RefreshToken
-	client.UpdatedAt = time.Now()
-
-	if err := b.clientRepo.UpdateClient(ctx, client); err != nil {
-		return nil, fmt.Errorf("failed to update client token: %w", err)
-	}
-
-	return jwtInfo, nil
-}
-
-// ValidateJWTToken 验证JWT Token
-func (b *BuiltInCloudControl) ValidateJWTToken(ctx context.Context, token string) (*JWTTokenInfo, error) {
-	// 验证访问Token
-	claims, err := b.jwtManager.ValidateAccessToken(ctx, token)
-	if err != nil {
-		return nil, err
-	}
-
-	// 获取客户端
+	// 获取客户端信息
 	client, err := b.clientRepo.GetClient(ctx, claims.ClientID)
 	if err != nil {
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
 
-	// 验证Token ID是否匹配
-	if client.JWTToken != claims.ID {
-		return nil, fmt.Errorf("token has been revoked")
+	// 生成新的令牌对
+	return b.jwtManager.GenerateTokenPair(ctx, client)
+}
+
+// ValidateJWTToken 验证JWT令牌
+func (b *BuiltInCloudControl) ValidateJWTToken(ctx context.Context, token string) (*JWTTokenInfo, error) {
+	claims, err := b.jwtManager.ValidateAccessToken(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := b.clientRepo.GetClient(ctx, claims.ClientID)
+	if err != nil {
+		return nil, err
 	}
 
 	return &JWTTokenInfo{
-		Token:        token,
-		RefreshToken: client.RefreshToken,
-		ExpiresAt:    claims.ExpiresAt.Time,
-		ClientId:     claims.ClientID,
-		TokenID:      claims.ID,
+		Token:    token,
+		ClientId: client.ID,
+		TokenID:  claims.ID,
 	}, nil
 }
 
-// RevokeJWTToken 撤销JWT Token
+// RevokeJWTToken 撤销JWT令牌
 func (b *BuiltInCloudControl) RevokeJWTToken(ctx context.Context, token string) error {
-	// 验证Token并获取客户端ID
+	// 验证令牌以获取客户端ID
 	claims, err := b.jwtManager.ValidateAccessToken(ctx, token)
 	if err != nil {
 		return fmt.Errorf("invalid token: %w", err)
 	}
 
-	// 获取客户端
-	client, err := b.clientRepo.GetClient(ctx, claims.ClientID)
-	if err != nil {
-		return fmt.Errorf("client not found: %w", err)
-	}
-
-	// 验证Token ID是否匹配
-	if client.JWTToken != claims.ID {
-		return fmt.Errorf("token has already been revoked")
-	}
-
-	// 撤销缓存中的Token
-	if err := b.jwtManager.cache.RevokeAccessToken(ctx, token); err != nil {
-		return fmt.Errorf("revoke access token from cache failed: %w", err)
-	}
-
-	// 撤销缓存中的刷新Token
-	if client.RefreshToken != "" {
-		if err := b.jwtManager.cache.RevokeRefreshToken(ctx, client.RefreshToken); err != nil {
-			return fmt.Errorf("revoke refresh token from cache failed: %w", err)
-		}
-	}
-
-	// 清除客户端Token信息
-	client.JWTToken = ""
-	client.TokenExpiresAt = nil
-	client.RefreshToken = ""
-	client.UpdatedAt = time.Now()
-
-	return b.clientRepo.UpdateClient(ctx, client)
+	// 将令牌加入黑名单
+	return b.jwtManager.RevokeToken(ctx, claims.ID)
 }
 
 // Close 关闭内置云控
@@ -1259,14 +1183,54 @@ func (b *BuiltInCloudControl) Close() error {
 	return nil
 }
 
-// cleanupRoutine 清理过期数据的协程
+// cleanupRoutine 清理例程
 func (b *BuiltInCloudControl) cleanupRoutine() {
+	utils.LogSystemEvent("cleanup_routine_started", "cloud_control", nil)
+
 	for {
 		select {
 		case <-b.cleanupTicker.C:
 			ctx := context.Background()
-			b.CleanupExpiredAnonymous(ctx)
+			startTime := time.Now()
+
+			// 使用分布式清理管理器
+			if _, acquired, err := b.cleanupManager.AcquireCleanupTask(ctx, "expired_tokens"); err == nil && acquired {
+				// 清理过期的JWT令牌（简化实现）
+				cleanupErr := b.cleanupManager.CompleteCleanupTask(ctx, "expired_tokens", nil)
+				utils.LogCleanup("expired_tokens", 0, time.Since(startTime), cleanupErr)
+			} else if err != nil {
+				utils.LogErrorWithContext(err, "acquire cleanup task", map[string]interface{}{
+					"task": "expired_tokens",
+				})
+			}
+
+			if _, acquired, err := b.cleanupManager.AcquireCleanupTask(ctx, "orphaned_connections"); err == nil && acquired {
+				// 清理孤立的连接（简化实现）
+				cleanupErr := b.cleanupManager.CompleteCleanupTask(ctx, "orphaned_connections", nil)
+				utils.LogCleanup("orphaned_connections", 0, time.Since(startTime), cleanupErr)
+			} else if err != nil {
+				utils.LogErrorWithContext(err, "acquire cleanup task", map[string]interface{}{
+					"task": "orphaned_connections",
+				})
+			}
+
+			if _, acquired, err := b.cleanupManager.AcquireCleanupTask(ctx, "stale_mappings"); err == nil && acquired {
+				// 清理过期的匿名映射
+				cleanupErr := b.CleanupExpiredAnonymous(ctx)
+				if cleanupErr != nil {
+					b.cleanupManager.CompleteCleanupTask(ctx, "stale_mappings", cleanupErr)
+				} else {
+					b.cleanupManager.CompleteCleanupTask(ctx, "stale_mappings", nil)
+				}
+				utils.LogCleanup("stale_mappings", 0, time.Since(startTime), cleanupErr)
+			} else if err != nil {
+				utils.LogErrorWithContext(err, "acquire cleanup task", map[string]interface{}{
+					"task": "stale_mappings",
+				})
+			}
+
 		case <-b.done:
+			utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", nil)
 			return
 		}
 	}
