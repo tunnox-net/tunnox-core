@@ -224,9 +224,9 @@ func TestDisposeCloseWithoutSetCtx(t *testing.T) {
 	// 直接调用Close
 	dispose.Close()
 
-	// 验证未关闭（因为没有设置上下文）
-	if dispose.IsClosed() {
-		t.Error("Should not be closed when no context is set")
+	// 验证已关闭（无论是否设置上下文）
+	if !dispose.IsClosed() {
+		t.Error("Should be closed after Close() even if no context is set")
 	}
 }
 
