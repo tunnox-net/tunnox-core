@@ -106,11 +106,6 @@ func (u *UdpAdapter) ConnectTo(serverAddr string) error {
 // ListenFrom 设置UDP监听地址
 func (u *UdpAdapter) ListenFrom(listenAddr string) error {
 	u.SetAddr(listenAddr)
-	return nil
-}
-
-// Start 启动UDP服务器
-func (u *UdpAdapter) Start(ctx context.Context) error {
 	if u.Addr() == "" {
 		return fmt.Errorf("address not set")
 	}
@@ -133,6 +128,12 @@ func (u *UdpAdapter) Start(ctx context.Context) error {
 	return nil
 }
 
+// Start 启动UDP服务器
+func (u *UdpAdapter) Start(ctx context.Context) error {
+
+	return nil
+}
+
 // receiveLoop UDP接收循环
 func (u *UdpAdapter) receiveLoop() {
 	buffer := make([]byte, 65507) // UDP最大包大小
@@ -143,6 +144,12 @@ func (u *UdpAdapter) receiveLoop() {
 			if !u.IsClosed() {
 				utils.Errorf("UDP read error: %v", err)
 			}
+			utils.Infof("UDP adapter closed")
+			return
+		}
+
+		if u.IsClosed() {
+			utils.Warnf("TCP connection closed")
 			return
 		}
 
@@ -202,23 +209,7 @@ func (u *UdpVirtualConn) Write(p []byte) (n int, err error) {
 
 // Stop 停止UDP适配器
 func (u *UdpAdapter) Stop() error {
-	u.active = false
-	if u.conn != nil {
-		u.conn.Close()
-		u.conn = nil
-	}
-	u.connMutex.Lock()
-	if u.clientConn != nil {
-		u.clientConn.Close()
-		u.clientConn = nil
-	}
-	u.connMutex.Unlock()
-	u.streamMutex.Lock()
-	if u.stream != nil {
-		u.stream.Close()
-		u.stream = nil
-	}
-	u.streamMutex.Unlock()
+
 	return nil
 }
 
@@ -242,13 +233,23 @@ func (u *UdpAdapter) GetWriter() io.Writer {
 	return nil
 }
 
-// Close 关闭适配器
-func (u *UdpAdapter) Close() {
-	_ = u.Stop()
-	u.BaseAdapter.Close()
-}
-
 // onClose 关闭回调
 func (u *UdpAdapter) onClose() {
-	_ = u.Stop()
+	u.active = false
+	if u.conn != nil {
+		u.conn.Close()
+		u.conn = nil
+	}
+	u.connMutex.Lock()
+	if u.clientConn != nil {
+		u.clientConn.Close()
+		u.clientConn = nil
+	}
+	u.connMutex.Unlock()
+	u.streamMutex.Lock()
+	if u.stream != nil {
+		u.stream.Close()
+		u.stream = nil
+	}
+	u.streamMutex.Unlock()
 }

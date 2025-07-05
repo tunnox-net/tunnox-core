@@ -115,11 +115,6 @@ func (w *WebSocketAdapter) ConnectTo(serverAddr string) error {
 // ListenFrom 监听WebSocket连接
 func (w *WebSocketAdapter) ListenFrom(serverAddr string) error {
 	w.SetAddr(serverAddr)
-	return nil
-}
-
-// Start 启动WebSocket适配器
-func (w *WebSocketAdapter) Start(ctx context.Context) error {
 	if w.Addr() == "" {
 		return fmt.Errorf("address not set")
 	}
@@ -150,39 +145,31 @@ func (w *WebSocketAdapter) Start(ctx context.Context) error {
 				utils.Errorf("WebSocket server error: %v", err)
 			}
 		}
+		utils.Infof("WebSocket server goroutine exited on %s", host)
 	}()
+
+	// 监听上下文取消，优雅关闭服务器
+	go func() {
+		<-w.Ctx().Done()
+		if w.server != nil {
+			utils.Infof("Shutting down WebSocket server on %s", host)
+			if err := w.server.Shutdown(context.Background()); err != nil {
+				utils.Errorf("Failed to shutdown WebSocket server: %v", err)
+			}
+		}
+		utils.Infof("WebSocket shutdown goroutine exited on %s", host)
+	}()
+	return nil
+}
+
+// Start 启动WebSocket适配器
+func (w *WebSocketAdapter) Start(ctx context.Context) error {
 
 	return nil
 }
 
 // Stop 停止WebSocket适配器
 func (w *WebSocketAdapter) Stop() error {
-	w.active = false
-
-	// 关闭HTTP服务器
-	if w.server != nil {
-		if err := w.server.Shutdown(context.Background()); err != nil {
-			utils.Errorf("Failed to shutdown WebSocket server: %v", err)
-		}
-	}
-
-	// 关闭WebSocket连接
-	w.connMutex.Lock()
-	if w.conn != nil {
-		if err := w.conn.Close(); err != nil {
-			utils.Errorf("Failed to close WebSocket connection: %v", err)
-		}
-		w.conn = nil
-	}
-	w.connMutex.Unlock()
-
-	// 关闭数据流
-	w.streamMutex.Lock()
-	if w.stream != nil {
-		w.stream.Close()
-		w.stream = nil
-	}
-	w.streamMutex.Unlock()
 
 	return nil
 }
@@ -209,14 +196,6 @@ func (w *WebSocketAdapter) GetWriter() io.Writer {
 	return nil
 }
 
-// Close 关闭适配器
-func (w *WebSocketAdapter) Close() {
-	if err := w.Stop(); err != nil {
-		utils.Errorf("Failed to stop WebSocket adapter: %v", err)
-	}
-	w.BaseAdapter.Close()
-}
-
 // handleWebSocket 处理WebSocket连接
 func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *http.Request) {
 	// 升级HTTP连接为WebSocket
@@ -235,7 +214,15 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 	// 调用ConnectionSession.AcceptConnection处理连接
 	if w.session != nil {
 		wrapper := &WebSocketConnWrapper{conn: conn}
-		w.session.AcceptConnection(wrapper, wrapper)
+		go func() {
+			select {
+			case <-w.Ctx().Done():
+				utils.Infof("WebSocket handler goroutine exited for %s (context done)", conn.RemoteAddr())
+				return
+			default:
+				w.session.AcceptConnection(wrapper, wrapper)
+			}
+		}()
 	} else {
 		// 如果没有session，创建数据流并保持连接活跃
 		wrapper := &WebSocketConnWrapper{conn: conn}
@@ -245,6 +232,11 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 
 		// 保持连接活跃
 		go w.keepAlive()
+		go func() {
+			<-w.Ctx().Done()
+			utils.Infof("WebSocket default handler goroutine exited for %s (context done)", conn.RemoteAddr())
+			return
+		}()
 	}
 }
 
@@ -285,6 +277,7 @@ func (w *WebSocketAdapter) keepAlive() {
 			}
 			w.connMutex.RUnlock()
 		case <-w.Ctx().Done():
+			utils.Infof("WebSocket keepAlive goroutine exited")
 			return
 		}
 	}
@@ -292,7 +285,30 @@ func (w *WebSocketAdapter) keepAlive() {
 
 // onClose 关闭时的清理函数
 func (w *WebSocketAdapter) onClose() {
-	if err := w.Stop(); err != nil {
-		utils.Errorf("Failed to stop WebSocket adapter in onClose: %v", err)
+	w.active = false
+
+	// 关闭HTTP服务器
+	if w.server != nil {
+		if err := w.server.Shutdown(context.Background()); err != nil {
+			utils.Errorf("Failed to shutdown WebSocket server: %v", err)
+		}
 	}
+
+	// 关闭WebSocket连接
+	w.connMutex.Lock()
+	if w.conn != nil {
+		if err := w.conn.Close(); err != nil {
+			utils.Errorf("Failed to close WebSocket connection: %v", err)
+		}
+		w.conn = nil
+	}
+	w.connMutex.Unlock()
+
+	// 关闭数据流
+	w.streamMutex.Lock()
+	if w.stream != nil {
+		w.stream.Close()
+		w.stream = nil
+	}
+	w.streamMutex.Unlock()
 }

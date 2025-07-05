@@ -145,11 +145,6 @@ func (q *QuicAdapter) ConnectTo(serverAddr string) error {
 // ListenFrom 设置QUIC监听地址
 func (q *QuicAdapter) ListenFrom(listenAddr string) error {
 	q.SetAddr(listenAddr)
-	return nil
-}
-
-// Start 启动QUIC服务器
-func (q *QuicAdapter) Start(ctx context.Context) error {
 	if q.Addr() == "" {
 		return fmt.Errorf("address not set")
 	}
@@ -169,87 +164,88 @@ func (q *QuicAdapter) Start(ctx context.Context) error {
 // acceptLoop QUIC接受连接循环
 func (q *QuicAdapter) acceptLoop() {
 	for q.active {
-		conn, err := q.listener.Accept(context.Background())
+		// 使用带超时的Accept，以便能够响应上下文取消
+		acceptCtx, cancel := context.WithTimeout(q.Ctx(), 100*time.Millisecond)
+		conn, err := q.listener.Accept(acceptCtx)
+		cancel()
+
 		if err != nil {
-			if !q.IsClosed() {
+			if q.IsClosed() || q.Ctx().Err() != nil {
+				// 正常关闭，不记录错误
+				utils.Infof("QUIC acceptLoop goroutine exited (normal close)")
+				return
+			}
+			if err != context.DeadlineExceeded {
 				utils.Errorf("QUIC accept error: %v", err)
 			}
-			return
+			continue
 		}
 		go q.handleConnection(conn)
 	}
+	utils.Infof("QUIC acceptLoop goroutine exited (active=false)")
 }
 
 // handleConnection 处理QUIC连接
 func (q *QuicAdapter) handleConnection(conn *quic.Conn) {
+	defer func() {
+		utils.Infof("QUIC handleConnection goroutine exited for %s", conn.RemoteAddr())
+		conn.CloseWithError(0, "connection closed")
+	}()
 	utils.Infof("QUIC adapter handling connection from %s", conn.RemoteAddr())
 
-	// 接受流
 	for {
-		stream, err := conn.AcceptStream(context.Background())
-		if err != nil {
-			if !q.IsClosed() {
-				utils.Errorf("QUIC stream accept error: %v", err)
-			}
+		select {
+		case <-q.Ctx().Done():
+			utils.Infof("QUIC handleConnection goroutine exited for %s (context done)", conn.RemoteAddr())
 			return
-		}
+		default:
+			// 原有逻辑
+			streamCtx, cancel := context.WithTimeout(q.Ctx(), 100*time.Millisecond)
+			stream, err := conn.AcceptStream(streamCtx)
+			cancel()
 
-		// 为每个流创建独立的goroutine处理
-		go q.handleStream(stream)
+			if err != nil {
+				if q.IsClosed() || q.Ctx().Err() != nil {
+					utils.Infof("QUIC handleConnection stream accept exited (normal close)")
+					return
+				}
+				if err != context.DeadlineExceeded {
+					utils.Errorf("QUIC stream accept error: %v", err)
+				}
+				return
+			}
+			go q.handleStream(stream)
+		}
 	}
 }
 
 // handleStream 处理QUIC流
 func (q *QuicAdapter) handleStream(stream *quic.Stream) {
-	defer stream.Close()
+	defer func() {
+		utils.Infof("QUIC handleStream goroutine exited for stream %d", stream.StreamID())
+		stream.Close()
+	}()
 	utils.Infof("QUIC adapter handling stream %d", stream.StreamID())
 
-	// 调用ConnectionSession.AcceptConnection处理连接
-	if q.session != nil {
-		wrapper := &QuicStreamWrapper{stream: stream}
-		q.session.AcceptConnection(wrapper, wrapper)
-	} else {
-		// 如果没有session，使用默认的echo处理
-		ctx, cancel := context.WithCancel(q.Ctx())
-		defer cancel()
-		ps := sm.NewPackageStream(stream, stream, ctx)
-		defer ps.Close()
-
-		buf := make([]byte, 1024)
-		for {
-			n, err := ps.GetReader().Read(buf)
+	for {
+		select {
+		case <-q.Ctx().Done():
+			utils.Infof("QUIC handleStream goroutine exited for stream %d (context done)", stream.StreamID())
+			return
+		default:
+			// 原有逻辑
+			buf := make([]byte, 1024)
+			n, err := stream.Read(buf)
 			if err != nil {
 				break
 			}
 			if n > 0 {
-				if _, err := ps.GetWriter().Write(buf[:n]); err != nil {
+				if _, err := stream.Write(buf[:n]); err != nil {
 					break
 				}
 			}
 		}
 	}
-}
-
-// Stop 停止QUIC适配器
-func (q *QuicAdapter) Stop() error {
-	q.active = false
-	if q.listener != nil {
-		q.listener.Close()
-		q.listener = nil
-	}
-	q.connMutex.Lock()
-	if q.connection != nil {
-		q.connection.CloseWithError(0, "server shutdown")
-		q.connection = nil
-	}
-	q.connMutex.Unlock()
-	q.streamMutex.Lock()
-	if q.stream != nil {
-		q.stream.Close()
-		q.stream = nil
-	}
-	q.streamMutex.Unlock()
-	return nil
 }
 
 // GetReader 获取读取器
@@ -272,13 +268,23 @@ func (q *QuicAdapter) GetWriter() io.Writer {
 	return nil
 }
 
-// Close 关闭适配器
-func (q *QuicAdapter) Close() {
-	_ = q.Stop()
-	q.BaseAdapter.Close()
-}
-
 // onClose 关闭回调
 func (q *QuicAdapter) onClose() {
-	_ = q.Stop()
+	q.active = false
+	if q.listener != nil {
+		_ = q.listener.Close()
+		q.listener = nil
+	}
+	q.connMutex.Lock()
+	if q.connection != nil {
+		_ = q.connection.CloseWithError(0, "server shutdown")
+		q.connection = nil
+	}
+	q.connMutex.Unlock()
+	q.streamMutex.Lock()
+	if q.stream != nil {
+		q.stream.Close()
+		q.stream = nil
+	}
+	q.streamMutex.Unlock()
 }

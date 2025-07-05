@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+
+	"gopkg.in/yaml.v3"
 
 	"tunnox-core/internal/cloud"
 	"tunnox-core/internal/constants"
@@ -22,15 +26,26 @@ type ProtocolConfig struct {
 
 // ServerConfig 服务器配置
 type ServerConfig struct {
-	Host      string                    `yaml:"host"`
-	Port      int                       `yaml:"port"`
-	Protocols map[string]ProtocolConfig `yaml:"protocols"`
+	Host         string                    `yaml:"host"`
+	Port         int                       `yaml:"port"`
+	ReadTimeout  int                       `yaml:"read_timeout"`
+	WriteTimeout int                       `yaml:"write_timeout"`
+	IdleTimeout  int                       `yaml:"idle_timeout"`
+	Protocols    map[string]ProtocolConfig `yaml:"protocols"`
+}
+
+// CloudConfig 云控配置
+type CloudConfig struct {
+	Type     string                 `yaml:"type"`
+	BuiltIn  map[string]interface{} `yaml:"built_in"`
+	External map[string]interface{} `yaml:"external"`
 }
 
 // AppConfig 应用配置
 type AppConfig struct {
 	Server ServerConfig    `yaml:"server"`
 	Log    utils.LogConfig `yaml:"log"`
+	Cloud  CloudConfig     `yaml:"cloud"`
 }
 
 // ProtocolFactory 协议工厂
@@ -125,9 +140,7 @@ func (s *Server) setupProtocolAdapters() error {
 
 		// 配置监听地址
 		addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-		if err := adapter.ListenFrom(addr); err != nil {
-			return fmt.Errorf("failed to configure %s adapter on %s: %v", protocolName, addr, err)
-		}
+		adapter.SetAddr(addr)
 
 		// 注册到管理器
 		s.protocolMgr.Register(adapter)
@@ -178,7 +191,7 @@ func (s *Server) Start() error {
 	// 启动所有协议适配器
 	if s.protocolMgr != nil {
 		utils.Info("Starting all protocol adapters...")
-		if err := s.protocolMgr.StartAll(s.Ctx()); err != nil {
+		if err := s.protocolMgr.StartAll(); err != nil {
 			return fmt.Errorf("failed to start protocol adapters: %v", err)
 		}
 		utils.Info("All protocol adapters started successfully")
@@ -192,11 +205,23 @@ func (s *Server) Start() error {
 
 // Stop 停止服务器
 func (s *Server) Stop() error {
+	utils.Info("=== STOP METHOD CALLED ===")
 	utils.Info("Shutting down tunnox-core server...")
 
 	// 关闭协议适配器
 	if s.protocolMgr != nil {
 		s.protocolMgr.CloseAll()
+		utils.Info("All protocol manager is closed")
+	}
+
+	// 关闭云控制器
+	if s.cloudControl != nil {
+		utils.Info("Closing cloud control...")
+		if err := s.cloudControl.Close(); err != nil {
+			utils.Errorf("Failed to close cloud control: %v", err)
+		} else {
+			utils.Info("Cloud control closed successfully")
+		}
 	}
 
 	utils.Info("Tunnox-core server shutdown completed")
@@ -212,14 +237,118 @@ func (s *Server) WaitForShutdown() {
 	// 等待信号
 	<-quit
 	utils.Info("Received shutdown signal")
+
+	// 停止服务器
+	if err := s.Stop(); err != nil {
+		utils.Errorf("Failed to stop server: %v", err)
+		os.Exit(1)
+	}
+
+	// 确保所有资源都被清理
+	utils.Info("Cleaning up server resources...")
+	s.Dispose.Close()
+
+	utils.Info("Server shutdown completed, main goroutine exiting")
+}
+
+// loadConfig 加载配置文件
+func loadConfig(configPath string) (*AppConfig, error) {
+	// 如果配置文件不存在，使用默认配置
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		utils.Warnf("Config file %s not found, using default configuration", configPath)
+		return getDefaultConfig(), nil
+	}
+
+	// 读取配置文件
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read config file %s: %v", configPath, err)
+	}
+
+	// 解析YAML
+	var config AppConfig
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse config file %s: %v", configPath, err)
+	}
+
+	// 验证配置
+	if err := validateConfig(&config); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %v", err)
+	}
+
+	utils.Infof("Configuration loaded from %s", configPath)
+	return &config, nil
+}
+
+// validateConfig 验证配置
+func validateConfig(config *AppConfig) error {
+	// 验证服务器配置
+	if config.Server.Host == "" {
+		config.Server.Host = "0.0.0.0"
+	}
+	if config.Server.Port <= 0 {
+		config.Server.Port = 8080
+	}
+
+	// 验证协议配置
+	if config.Server.Protocols == nil {
+		config.Server.Protocols = make(map[string]ProtocolConfig)
+	}
+
+	// 设置默认协议配置
+	defaultProtocols := map[string]ProtocolConfig{
+		"tcp": {
+			Enabled: true,
+			Port:    8080,
+			Host:    "0.0.0.0",
+		},
+		"websocket": {
+			Enabled: true,
+			Port:    8081,
+			Host:    "0.0.0.0",
+		},
+		"udp": {
+			Enabled: true,
+			Port:    8082,
+			Host:    "0.0.0.0",
+		},
+		"quic": {
+			Enabled: true,
+			Port:    8083,
+			Host:    "0.0.0.0",
+		},
+	}
+
+	// 合并默认配置
+	for name, defaultConfig := range defaultProtocols {
+		if _, exists := config.Server.Protocols[name]; !exists {
+			config.Server.Protocols[name] = defaultConfig
+		}
+	}
+
+	// 验证日志配置
+	if config.Log.Level == "" {
+		config.Log.Level = constants.LogLevelInfo
+	}
+	if config.Log.Format == "" {
+		config.Log.Format = constants.LogFormatText
+	}
+	if config.Log.Output == "" {
+		config.Log.Output = constants.LogOutputStdout
+	}
+
+	return nil
 }
 
 // getDefaultConfig 获取默认配置
 func getDefaultConfig() *AppConfig {
 	return &AppConfig{
 		Server: ServerConfig{
-			Host: "0.0.0.0",
-			Port: 8080,
+			Host:         "0.0.0.0",
+			Port:         8080,
+			ReadTimeout:  30,
+			WriteTimeout: 30,
+			IdleTimeout:  60,
 			Protocols: map[string]ProtocolConfig{
 				"tcp": {
 					Enabled: true,
@@ -248,6 +377,9 @@ func getDefaultConfig() *AppConfig {
 			Format: constants.LogFormatText,
 			Output: constants.LogOutputStdout,
 		},
+		Cloud: CloudConfig{
+			Type: "built_in",
+		},
 	}
 }
 
@@ -260,8 +392,39 @@ func capitalize(s string) string {
 }
 
 func main() {
-	// 获取配置
-	config := getDefaultConfig()
+	// 解析命令行参数
+	var (
+		configPath = flag.String("config", "config.yaml", "Path to configuration file")
+		showHelp   = flag.Bool("help", false, "Show help information")
+	)
+	flag.Parse()
+
+	// 显示帮助信息
+	if *showHelp {
+		fmt.Println("Tunnox Core Server")
+		fmt.Println("Usage: server.exe [options]")
+		fmt.Println()
+		fmt.Println("Options:")
+		flag.PrintDefaults()
+		fmt.Println()
+		fmt.Println("Examples:")
+		fmt.Println("  server.exe                    # 使用当前目录下的 config.yaml")
+		fmt.Println("  server.exe -config ./my_config.yaml")
+		fmt.Println("  server.exe -config /path/to/config.yaml")
+		return
+	}
+
+	// 获取配置文件绝对路径
+	absConfigPath, err := filepath.Abs(*configPath)
+	if err != nil {
+		utils.Fatalf("Failed to resolve config path: %v", err)
+	}
+
+	// 加载配置
+	config, err := loadConfig(absConfigPath)
+	if err != nil {
+		utils.Fatalf("Failed to load configuration: %v", err)
+	}
 
 	// 创建服务器
 	server := NewServer(config, context.Background())
@@ -271,12 +434,6 @@ func main() {
 		utils.Fatalf("Failed to start server: %v", err)
 	}
 
-	// 等待关闭信号
+	// 等待关闭信号并处理关闭
 	server.WaitForShutdown()
-
-	// 停止服务器
-	if err := server.Stop(); err != nil {
-		utils.Errorf("Failed to stop server: %v", err)
-		os.Exit(1)
-	}
 }

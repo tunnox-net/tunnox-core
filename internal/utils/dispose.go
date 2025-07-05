@@ -43,8 +43,9 @@ func (c *Dispose) Close() {
 
 func (c *Dispose) closeLinksRun() {
 	if (c.closeLinks != nil) && (len(c.closeLinks) > 0) {
-		for _, closeLink := range c.closeLinks {
+		for i, closeLink := range c.closeLinks {
 			closeLink()
+			_ = i // 避免 linter 错误
 		}
 	}
 }

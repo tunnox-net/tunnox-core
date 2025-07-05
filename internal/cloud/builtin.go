@@ -77,17 +77,15 @@ func (b *BuiltInCloudControl) Stop() {
 
 	utils.Infof("Stopping built-in cloud control...")
 
-	// 停止清理定时器
-	if b.cleanupTicker != nil {
-		b.cleanupTicker.Stop()
-	}
-
-	// 通知清理例程退出
+	// 通知清理例程退出 - 直接关闭通道更可靠
 	select {
-	case b.done <- true:
+	case <-b.done:
+		// 通道已关闭
+		utils.Infof("Cleanup done channel already closed")
 	default:
-		// 通道可能已满，直接关闭
+		utils.Info("Closing cleanup done channel...")
 		close(b.done)
+		utils.Infof("Cleanup done channel closed")
 	}
 
 	utils.Infof("Built-in cloud control stopped")
@@ -115,12 +113,6 @@ func (b *BuiltInCloudControl) Close() error {
 // onClose 资源清理回调
 func (b *BuiltInCloudControl) onClose() {
 	utils.Infof("Cleaning up cloud control resources...")
-
-	// 停止清理定时器
-	if b.cleanupTicker != nil {
-		b.cleanupTicker.Stop()
-		b.cleanupTicker = nil
-	}
 
 	// 关闭done通道
 	select {
@@ -1286,17 +1278,23 @@ func (b *BuiltInCloudControl) RevokeJWTToken(ctx context.Context, token string) 
 func (b *BuiltInCloudControl) cleanupRoutine() {
 	utils.LogSystemEvent("cleanup_routine_started", "cloud_control", nil)
 
+	// 使用更短的ticker间隔，确保能快速响应退出信号
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
 	for {
 		select {
-		case <-b.cleanupTicker.C:
+		case <-ticker.C:
 			// 检查是否已关闭
 			if b.IsClosed() {
 				utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", map[string]interface{}{
 					"reason": "disposed",
 				})
+				utils.Info("Cloud control cleanup routine exited (disposed)")
 				return
 			}
 
+			// 执行清理逻辑（简化版）
 			ctx := context.Background()
 			startTime := time.Now()
 
@@ -1340,12 +1338,14 @@ func (b *BuiltInCloudControl) cleanupRoutine() {
 			utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", map[string]interface{}{
 				"reason": "manual_stop",
 			})
+			utils.Info("Cloud control cleanup routine exited (manual stop)")
 			return
 
 		case <-b.Ctx().Done():
 			utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", map[string]interface{}{
 				"reason": "context_cancelled",
 			})
+			utils.Info("Cloud control cleanup routine exited (context cancelled)")
 			return
 		}
 	}

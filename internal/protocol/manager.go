@@ -24,11 +24,11 @@ func (pm *Manager) Register(adapter Adapter) {
 	pm.adapters = append(pm.adapters, adapter)
 }
 
-func (pm *Manager) StartAll(ctx context.Context) error {
+func (pm *Manager) StartAll() error {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
 	for _, a := range pm.adapters {
-		if err := a.Start(ctx); err != nil {
+		if err := a.ListenFrom(a.GetAddr()); err != nil {
 			return err
 		}
 	}
@@ -36,14 +36,21 @@ func (pm *Manager) StartAll(ctx context.Context) error {
 }
 
 func (pm *Manager) CloseAll() {
-	pm.lock.Lock()
-	defer pm.lock.Unlock()
-	for _, a := range pm.adapters {
-		a.Close()
-	}
-	pm.Dispose.Close()
+	pm.adapters = nil
+	pm.Ctx().Done()
 }
 
 func (pm *Manager) onClose() {
-	pm.CloseAll()
+	pm.lock.Lock()
+	defer pm.lock.Unlock()
+
+	if pm.IsClosed() {
+		return
+	}
+
+	hasAdapters := len(pm.adapters) > 0
+
+	if hasAdapters {
+		pm.CloseAll()
+	}
 }

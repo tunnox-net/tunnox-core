@@ -45,9 +45,7 @@ func NewJWTManager(config *CloudControlConfig, repo *Repository) *JWTManager {
 
 // onClose 资源清理回调
 func (m *JWTManager) onClose() {
-	if m.cache != nil {
-		m.cache.Dispose.Close()
-	}
+
 }
 
 // GenerateTokenPair 生成Token对（访问Token + 刷新Token）

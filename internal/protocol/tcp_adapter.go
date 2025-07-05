@@ -55,10 +55,6 @@ func (t *TcpAdapter) ConnectTo(serverAddr string) error {
 
 func (t *TcpAdapter) ListenFrom(listenAddr string) error {
 	t.SetAddr(listenAddr)
-	return nil
-}
-
-func (t *TcpAdapter) Start(ctx context.Context) error {
 	if t.Addr() == "" {
 		return fmt.Errorf("address not set")
 	}
@@ -73,6 +69,11 @@ func (t *TcpAdapter) Start(ctx context.Context) error {
 	return nil
 }
 
+func (t *TcpAdapter) Start(ctx context.Context) error {
+
+	return nil
+}
+
 func (t *TcpAdapter) acceptLoop() {
 	for t.active {
 		conn, err := t.listener.Accept()
@@ -82,12 +83,18 @@ func (t *TcpAdapter) acceptLoop() {
 			}
 			return
 		}
+
+		if t.IsClosed() {
+			utils.Warnf("TCP connection closed")
+			return
+		}
+
 		go t.handleConn(conn)
 	}
 }
 
 func (t *TcpAdapter) handleConn(conn net.Conn) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	utils.Infof("TCP adapter handling connection from %s", conn.RemoteAddr())
 
 	// 调用ConnectionSession.AcceptConnection处理连接
@@ -115,27 +122,6 @@ func (t *TcpAdapter) handleConn(conn net.Conn) {
 	}
 }
 
-func (t *TcpAdapter) Stop() error {
-	t.active = false
-	if t.listener != nil {
-		t.listener.Close()
-		t.listener = nil
-	}
-	t.connMutex.Lock()
-	if t.conn != nil {
-		t.conn.Close()
-		t.conn = nil
-	}
-	t.connMutex.Unlock()
-	t.streamMutex.Lock()
-	if t.stream != nil {
-		t.stream.Close()
-		t.stream = nil
-	}
-	t.streamMutex.Unlock()
-	return nil
-}
-
 func (t *TcpAdapter) GetReader() io.Reader {
 	t.streamMutex.RLock()
 	defer t.streamMutex.RUnlock()
@@ -154,11 +140,25 @@ func (t *TcpAdapter) GetWriter() io.Writer {
 	return nil
 }
 
-func (t *TcpAdapter) Close() {
-	_ = t.Stop()
-	t.BaseAdapter.Close()
-}
-
 func (t *TcpAdapter) onClose() {
-	_ = t.Stop()
+	t.active = false
+	if t.listener != nil {
+		_ = t.listener.Close()
+		t.listener = nil
+	}
+	t.connMutex.Lock()
+	defer t.connMutex.Unlock()
+
+	if t.conn != nil {
+		_ = t.conn.Close()
+		t.conn = nil
+	}
+
+	t.streamMutex.Lock()
+	defer t.streamMutex.Unlock()
+	if t.stream != nil {
+		t.stream.Close()
+		t.stream = nil
+	}
+	utils.Infof("TCP adapter closed")
 }
