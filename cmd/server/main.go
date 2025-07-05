@@ -33,6 +33,34 @@ type AppConfig struct {
 	Log    utils.LogConfig `yaml:"log"`
 }
 
+// ProtocolFactory 协议工厂
+type ProtocolFactory struct {
+	session *protocol.ConnectionSession
+}
+
+// NewProtocolFactory 创建协议工厂
+func NewProtocolFactory(session *protocol.ConnectionSession) *ProtocolFactory {
+	return &ProtocolFactory{
+		session: session,
+	}
+}
+
+// CreateAdapter 创建协议适配器
+func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Context) (protocol.Adapter, error) {
+	switch protocolName {
+	case "tcp":
+		return protocol.NewTcpAdapter(ctx, pf.session), nil
+	case "websocket":
+		return protocol.NewWebSocketAdapter(ctx, pf.session), nil
+	case "udp":
+		return protocol.NewUdpAdapter(ctx, pf.session), nil
+	case "quic":
+		return protocol.NewQuicAdapter(ctx, pf.session), nil
+	default:
+		return nil, fmt.Errorf("unsupported protocol: %s", protocolName)
+	}
+}
+
 // Server 服务器结构
 type Server struct {
 	config       *AppConfig
@@ -75,60 +103,54 @@ func (s *Server) setupProtocolAdapters() error {
 	session := &protocol.ConnectionSession{}
 	session.SetCtx(s.Ctx(), nil)
 
+	// 创建协议工厂
+	factory := NewProtocolFactory(session)
+
+	// 获取启用的协议配置
+	enabledProtocols := s.getEnabledProtocols()
+	if len(enabledProtocols) == 0 {
+		utils.Warn("No protocols enabled in configuration")
+		return nil
+	}
+
 	// 创建并注册所有启用的协议适配器
-	protocols := s.config.Server.Protocols
-	registeredCount := 0
+	registeredProtocols := make([]string, 0, len(enabledProtocols))
 
-	// TCP 适配器
-	if tcpConfig, exists := protocols["tcp"]; exists && tcpConfig.Enabled {
-		tcpAdapter := protocol.NewTcpAdapter(s.Ctx(), session)
-		addr := fmt.Sprintf("%s:%d", tcpConfig.Host, tcpConfig.Port)
-		if err := tcpAdapter.ListenFrom(addr); err != nil {
-			return fmt.Errorf("failed to configure TCP adapter: %v", err)
+	for protocolName, config := range enabledProtocols {
+		// 创建适配器
+		adapter, err := factory.CreateAdapter(protocolName, s.Ctx())
+		if err != nil {
+			return fmt.Errorf("failed to create %s adapter: %v", protocolName, err)
 		}
-		s.protocolMgr.Register(tcpAdapter)
-		utils.Infof("TCP adapter configured on %s", addr)
-		registeredCount++
+
+		// 配置监听地址
+		addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
+		if err := adapter.ListenFrom(addr); err != nil {
+			return fmt.Errorf("failed to configure %s adapter on %s: %v", protocolName, addr, err)
+		}
+
+		// 注册到管理器
+		s.protocolMgr.Register(adapter)
+		registeredProtocols = append(registeredProtocols, protocolName)
+
+		utils.Infof("%s adapter configured on %s", capitalize(protocolName), addr)
 	}
 
-	// WebSocket 适配器
-	if wsConfig, exists := protocols["websocket"]; exists && wsConfig.Enabled {
-		wsAdapter := protocol.NewWebSocketAdapter(s.Ctx(), session)
-		addr := fmt.Sprintf("%s:%d", wsConfig.Host, wsConfig.Port)
-		if err := wsAdapter.ListenFrom(addr); err != nil {
-			return fmt.Errorf("failed to configure WebSocket adapter: %v", err)
-		}
-		s.protocolMgr.Register(wsAdapter)
-		utils.Infof("WebSocket adapter configured on %s", addr)
-		registeredCount++
-	}
-
-	// UDP 适配器
-	if udpConfig, exists := protocols["udp"]; exists && udpConfig.Enabled {
-		udpAdapter := protocol.NewUdpAdapter(s.Ctx(), session)
-		addr := fmt.Sprintf("%s:%d", udpConfig.Host, udpConfig.Port)
-		if err := udpAdapter.ListenFrom(addr); err != nil {
-			return fmt.Errorf("failed to configure UDP adapter: %v", err)
-		}
-		s.protocolMgr.Register(udpAdapter)
-		utils.Infof("UDP adapter configured on %s", addr)
-		registeredCount++
-	}
-
-	// QUIC 适配器
-	if quicConfig, exists := protocols["quic"]; exists && quicConfig.Enabled {
-		quicAdapter := protocol.NewQuicAdapter(s.Ctx(), session)
-		addr := fmt.Sprintf("%s:%d", quicConfig.Host, quicConfig.Port)
-		if err := quicAdapter.ListenFrom(addr); err != nil {
-			return fmt.Errorf("failed to configure QUIC adapter: %v", err)
-		}
-		s.protocolMgr.Register(quicAdapter)
-		utils.Infof("QUIC adapter configured on %s", addr)
-		registeredCount++
-	}
-
-	utils.Infof("Total %d protocol adapters registered", registeredCount)
+	utils.Infof("Successfully registered %d protocol adapters: %v", len(registeredProtocols), registeredProtocols)
 	return nil
+}
+
+// getEnabledProtocols 获取启用的协议配置
+func (s *Server) getEnabledProtocols() map[string]ProtocolConfig {
+	enabled := make(map[string]ProtocolConfig)
+
+	for name, config := range s.config.Server.Protocols {
+		if config.Enabled {
+			enabled[name] = config
+		}
+	}
+
+	return enabled
 }
 
 // onClose 资源释放回调
@@ -227,6 +249,14 @@ func getDefaultConfig() *AppConfig {
 			Output: constants.LogOutputStdout,
 		},
 	}
+}
+
+// capitalize 首字母大写
+func capitalize(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+	return string(s[0]&^32) + s[1:]
 }
 
 func main() {
