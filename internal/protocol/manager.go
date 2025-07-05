@@ -6,25 +6,25 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-type ProtocolManager struct {
+type Manager struct {
 	utils.Dispose
-	adapters []ProtocolAdapter
+	adapters []Adapter
 	lock     sync.Mutex
 }
 
-func NewProtocolManager(parentCtx context.Context) *ProtocolManager {
-	pm := &ProtocolManager{}
+func NewManager(parentCtx context.Context) *Manager {
+	pm := &Manager{}
 	pm.SetCtx(parentCtx, pm.onClose)
 	return pm
 }
 
-func (pm *ProtocolManager) Register(adapter ProtocolAdapter) {
+func (pm *Manager) Register(adapter Adapter) {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
 	pm.adapters = append(pm.adapters, adapter)
 }
 
-func (pm *ProtocolManager) StartAll(ctx context.Context) error {
+func (pm *Manager) StartAll(ctx context.Context) error {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
 	for _, a := range pm.adapters {
@@ -35,7 +35,7 @@ func (pm *ProtocolManager) StartAll(ctx context.Context) error {
 	return nil
 }
 
-func (pm *ProtocolManager) CloseAll() {
+func (pm *Manager) CloseAll() {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
 	for _, a := range pm.adapters {
@@ -44,6 +44,6 @@ func (pm *ProtocolManager) CloseAll() {
 	pm.Dispose.Close()
 }
 
-func (pm *ProtocolManager) onClose() {
+func (pm *Manager) onClose() {
 	pm.CloseAll()
 }

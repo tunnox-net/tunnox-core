@@ -679,3 +679,19 @@ func (r *ConnectionRepository) UpdateConnectionStats(ctx context.Context, connID
 
 	return r.UpdateConnection(ctx, connInfo)
 }
+
+// TouchClient 刷新客户端的LastSeen和延长过期时间
+func (r *ClientRepository) TouchClient(ctx context.Context, clientID string) error {
+	client, err := r.GetClient(ctx, clientID)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	client.LastSeen = &now
+	client.UpdatedAt = now
+	if err := r.SaveClient(ctx, client); err != nil {
+		return err
+	}
+	key := fmt.Sprintf("%s:%s", KeyPrefixClient, clientID)
+	return r.storage.SetExpiration(ctx, key, DefaultClientDataTTL)
+}

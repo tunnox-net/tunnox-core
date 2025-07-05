@@ -177,7 +177,7 @@ func main() {
     ctx := context.Background()
     
     // Create TCP adapter
-    tcpAdapter := protocol.NewTcpAdapter(":8080", ctx)
+    	tcpAdapter := protocol.NewTcpAdapter(ctx, nil)
     
     // Register with protocol manager
     pm := protocol.NewProtocolManager(ctx)

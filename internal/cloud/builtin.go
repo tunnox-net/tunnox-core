@@ -559,6 +559,15 @@ func (b *BuiltInCloudControl) CreateClient(ctx context.Context, userID, clientNa
 	return client, nil
 }
 
+func (b *BuiltInCloudControl) TouchClient(ctx context.Context, clientID string) {
+	client, err := b.clientRepo.GetClient(ctx, clientID)
+	if (err == nil) && (client != nil) {
+		client.UpdatedAt = time.Now()
+		_ = b.clientRepo.UpdateClient(ctx, client)
+		_ = b.clientRepo.TouchClient(ctx, clientID)
+	}
+}
+
 // GetClient 获取客户端
 func (b *BuiltInCloudControl) GetClient(ctx context.Context, clientID string) (*Client, error) {
 	return b.clientRepo.GetClient(ctx, clientID)

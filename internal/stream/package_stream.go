@@ -21,6 +21,14 @@ type PackageStream struct {
 	utils.Dispose
 }
 
+func (ps *PackageStream) GetReader() io.Reader {
+	return ps.reader
+}
+
+func (ps *PackageStream) GetWriter() io.Writer {
+	return ps.writer
+}
+
 func NewPackageStream(reader io.Reader, writer io.Writer, parentCtx context.Context) *PackageStream {
 	stream := &PackageStream{
 		reader:    reader,

@@ -2,28 +2,22 @@ package protocol
 
 import (
 	"context"
+	"io"
 	"tunnox-core/internal/utils"
 )
 
-// ProtocolAdapter 协议适配器统一接口
-// Start: 启动监听/服务
-// Close: 关闭并释放资源
-// Dispose: 支持树型资源管理
-// Name: 返回协议适配器名称
-// Addr: 返回监听地址
+// Adapter 协议适配器统一接口
 
-type ProtocolAdapter interface {
+type Adapter interface {
+	ConnectTo(serverAddr string) error
+	ListenFrom(serverAddr string) error
 	Start(ctx context.Context) error
-	Close() error
-	IsClosed() bool
-	SetCtx(parent context.Context, onClose func())
-	Ctx() context.Context
+	Stop() error
 	Name() string
-	Addr() string
+	GetReader() io.Reader
+	GetWriter() io.Writer
+	Close()
 }
-
-// BaseAdapter 提供Dispose树型管理的基础实现
-// 其它协议适配器可匿名嵌入
 
 type BaseAdapter struct {
 	utils.Dispose

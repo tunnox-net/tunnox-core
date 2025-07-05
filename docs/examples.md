@@ -27,7 +27,7 @@ func main() {
     pm := protocol.NewProtocolManager(ctx)
     
     // Create and register TCP adapter
-    tcpAdapter := protocol.NewTcpAdapter(":8080", ctx)
+    tcpAdapter := protocol.NewTcpAdapter(ctx, nil)
     pm.Register(tcpAdapter)
     
     // Start all adapters
@@ -75,7 +75,7 @@ func main() {
     pm := protocol.NewProtocolManager(ctx)
     
     // Create and register TCP adapter
-    tcpAdapter := protocol.NewTcpAdapter(":8080", ctx)
+    tcpAdapter := protocol.NewTcpAdapter(ctx, nil)
     pm.Register(tcpAdapter)
     
     // Start all adapters

@@ -26,6 +26,7 @@ type CloudControlAPI interface {
 	// 客户端管理
 	CreateClient(ctx context.Context, userID string, clientName string) (*Client, error) // 为指定用户创建客户端
 	GetClient(ctx context.Context, clientID string) (*Client, error)
+	TouchClient(ctx context.Context, clientID string)
 	UpdateClient(ctx context.Context, client *Client) error
 	DeleteClient(ctx context.Context, clientID string) error
 	UpdateClientStatus(ctx context.Context, clientID string, status ClientStatus, nodeID string) error

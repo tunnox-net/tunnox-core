@@ -2,7 +2,6 @@ package utils
 
 import (
 	"context"
-	"log"
 	"sync"
 )
 
@@ -12,6 +11,8 @@ type Dispose struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	onClose     func()
+	closeLinks  []func()
+	linkLock    sync.Mutex
 }
 
 func (c *Dispose) Ctx() context.Context {
@@ -37,17 +38,36 @@ func (c *Dispose) Close() {
 	if c.onClose != nil {
 		c.onClose()
 	}
+	c.closeLinksRun()
+}
+
+func (c *Dispose) closeLinksRun() {
+	if (c.closeLinks != nil) && (len(c.closeLinks) > 0) {
+		for _, closeLink := range c.closeLinks {
+			closeLink()
+		}
+	}
+}
+
+func (c *Dispose) AddCloseFunc(f func()) {
+	c.linkLock.Lock()
+	defer c.linkLock.Unlock()
+
+	if c.closeLinks == nil {
+		c.closeLinks = make([]func(), 0)
+	}
+	c.closeLinks = append(c.closeLinks, f)
 }
 
 func (c *Dispose) SetCtx(parent context.Context, onClose func()) {
 	if c.ctx != nil {
-		log.Println("[Warning] ctx already set")
+		Warn("ctx already set")
 		return
 	}
 
 	if parent != nil {
 		if c.ctx != nil && !c.closed {
-			log.Println("[Warning] context is not nil and context is not closed")
+			Warn("context is not nil and context is not closed")
 		}
 		c.onClose = onClose
 		c.ctx, c.cancel = context.WithCancel(parent)
@@ -61,6 +81,7 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func()) {
 				if !c.closed {
 					if c.onClose != nil {
 						c.onClose()
+						c.closeLinksRun()
 					}
 					c.closed = true
 				}

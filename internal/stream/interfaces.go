@@ -20,6 +20,10 @@ type PackageStreamer interface {
 	// WriteExact 写入指定长度的数据
 	WriteExact(data []byte) error
 
+	GetReader() io.Reader
+
+	GetWriter() io.Writer
+
 	// Close 关闭流
 	Close()
 }
