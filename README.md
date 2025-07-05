@@ -60,6 +60,14 @@ $ go test ./... -v
 
 ---
 
+## Documentation
+
+- [Architecture Design](docs/architecture.md) - Detailed architecture overview and design principles
+- [API Documentation](docs/api.md) - Complete API reference and interfaces
+- [Usage Examples](docs/examples.md) - Comprehensive code examples and best practices
+
+---
+
 ## Directory Structure
 
 ```
@@ -71,20 +79,80 @@ internal/
 examples/     # Usage examples
 cmd/server/   # Server entry
  tests/       # Full unit test coverage
+docs/         # Documentation
 ```
 
 ---
 
 ## Development Progress
 
-- [x] Dispose tree resource management, all core structs included
-- [x] ProtocolAdapter interface & BaseAdapter, multi-protocol ready
-- [x] TcpAdapter, TCP port listening & connection management
-- [x] ProtocolManager, unified registration/start/close
-- [x] ConnectionSession, layered packet handling & CommandType dispatch
-- [x] Cloud control core (user, client, mapping, node, auth, etc.)
-- [x] Unit test system, 100% pass for Dispose, Repository, etc.
-- [ ] TODO: More protocol adapters, config parameterization, API docs, continuous optimization
+✅ Dispose tree resource management, all core structs included
+✅ ProtocolAdapter interface & BaseAdapter, multi-protocol ready
+✅ TcpAdapter, TCP port listening & connection management
+✅ ProtocolManager, unified registration/start/close
+✅ ConnectionSession, layered packet handling & CommandType dispatch
+✅ Cloud control core (user, client, mapping, node, auth, etc.)
+✅ Unit test system, 100% pass for Dispose, Repository, etc.
+
+⏳ **Core Features**
+- ConnectionSession command-handler optimization (map[CommandType]Handler)
+- Complete packet processing pipeline with InitPacket/AcceptPacket support
+- User authentication and authorization flow implementation
+- Real-time connection monitoring and statistics
+
+⏳ **Protocol Adapters**
+- HTTP/HTTPS protocol adapter
+- WebSocket protocol adapter
+- UDP protocol adapter
+- Custom protocol adapter framework
+
+⏳ **Configuration & Management**
+- Configuration file support (YAML/JSON)
+- Environment variable configuration
+- Hot-reload configuration capability
+- Parameterized port and address configuration
+
+⏳ **Storage & Persistence**
+- Redis storage backend integration
+- PostgreSQL database support
+- Distributed storage with consistency
+- Data migration and backup tools
+
+⏳ **Security & Encryption**
+- TLS/SSL encryption support
+- End-to-end encryption for data transfer
+- Certificate management and validation
+- Rate limiting and DDoS protection
+
+⏳ **Monitoring & Observability**
+- Metrics collection (Prometheus format)
+- Distributed tracing (OpenTelemetry)
+- Health check endpoints
+- Performance monitoring dashboard
+
+⏳ **Scalability & Performance**
+- Load balancing across multiple nodes
+- Connection pooling optimization
+- Memory usage optimization
+- Performance benchmarking suite
+
+⏳ **API & Integration**
+- RESTful API endpoints
+- gRPC service interface
+- WebSocket API for real-time updates
+- SDK for multiple languages
+
+⏳ **Testing & Quality**
+- Integration test suite
+- Performance testing framework
+- Security testing (penetration tests)
+- End-to-end testing scenarios
+
+⏳ **Documentation & Examples**
+- Complete API documentation
+- Deployment guides
+- Troubleshooting guides
+- Production deployment examples
 
 ---
 

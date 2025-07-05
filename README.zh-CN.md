@@ -60,6 +60,14 @@ $ go test ./... -v
 
 ---
 
+## 文档
+
+- [架构设计](docs/architecture.md) - 详细的架构概述和设计原则
+- [API文档](docs/api.md) - 完整的API参考和接口说明
+- [使用示例](docs/examples.md) - 全面的代码示例和最佳实践
+
+---
+
 ## 目录结构
 
 ```
@@ -71,20 +79,80 @@ internal/
 examples/     # 使用示例
 cmd/server/   # 服务入口
  tests/       # 全量单元测试
+docs/         # 文档
 ```
 
 ---
 
 ## 开发进度
 
-- [x] Dispose树型资源管理体系，所有核心结构体已纳入Dispose树
-- [x] ProtocolAdapter接口与BaseAdapter实现，支持多协议适配
-- [x] TcpAdapter实现，支持TCP端口监听与连接管理
-- [x] ProtocolManager实现，统一注册、启动、关闭所有协议适配器
-- [x] ConnectionSession分层包处理与CommandType分发设计
-- [x] 云控核心（用户、客户端、端口映射、节点、认证等）初步实现
-- [x] 单元测试体系完善，Dispose、Repository等关键模块测试100%通过
-- [ ] 后续计划：扩展更多协议适配器、参数化配置、完善API文档、持续优化架构
+✅ Dispose树型资源管理体系，所有核心结构体已纳入Dispose树
+✅ ProtocolAdapter接口与BaseAdapter实现，支持多协议适配
+✅ TcpAdapter实现，支持TCP端口监听与连接管理
+✅ ProtocolManager实现，统一注册、启动、关闭所有协议适配器
+✅ ConnectionSession分层包处理与CommandType分发设计
+✅ 云控核心（用户、客户端、端口映射、节点、认证等）初步实现
+✅ 单元测试体系完善，Dispose、Repository等关键模块测试100%通过
+
+⏳ **核心功能**
+- ConnectionSession命令处理器优化（map[CommandType]Handler）
+- 完整的包处理流水线，支持InitPacket/AcceptPacket
+- 用户认证和授权流程实现
+- 实时连接监控和统计
+
+⏳ **协议适配器**
+- HTTP/HTTPS协议适配器
+- WebSocket协议适配器
+- UDP协议适配器
+- 自定义协议适配器框架
+
+⏳ **配置与管理**
+- 配置文件支持（YAML/JSON）
+- 环境变量配置
+- 热重载配置能力
+- 参数化端口和地址配置
+
+⏳ **存储与持久化**
+- Redis存储后端集成
+- PostgreSQL数据库支持
+- 分布式存储与一致性
+- 数据迁移和备份工具
+
+⏳ **安全与加密**
+- TLS/SSL加密支持
+- 端到端数据传输加密
+- 证书管理和验证
+- 限速和DDoS防护
+
+⏳ **监控与可观测性**
+- 指标收集（Prometheus格式）
+- 分布式追踪（OpenTelemetry）
+- 健康检查端点
+- 性能监控仪表板
+
+⏳ **可扩展性与性能**
+- 多节点负载均衡
+- 连接池优化
+- 内存使用优化
+- 性能基准测试套件
+
+⏳ **API与集成**
+- RESTful API端点
+- gRPC服务接口
+- WebSocket API实时更新
+- 多语言SDK
+
+⏳ **测试与质量**
+- 集成测试套件
+- 性能测试框架
+- 安全测试（渗透测试）
+- 端到端测试场景
+
+⏳ **文档与示例**
+- 完整API文档
+- 部署指南
+- 故障排除指南
+- 生产环境部署示例
 
 ---
 
