@@ -46,7 +46,7 @@ graph TD
 
 ```bash
 # 1. 克隆仓库
-$ git clone https://github.com/your-org/tunnox-core.git
+$ git clone https://github.com/tunnox-net/tunnox-core.git
 $ cd tunnox-core
 
 # 2. 安装依赖

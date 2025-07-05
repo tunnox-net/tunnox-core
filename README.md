@@ -46,7 +46,7 @@ graph TD
 
 ```bash
 # 1. Clone the repository
-$ git clone https://github.com/your-org/tunnox-core.git
+$ git clone https://github.com/tunnox-net/tunnox-core.git
 $ cd tunnox-core
 
 # 2. Install dependencies
