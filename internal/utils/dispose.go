@@ -19,23 +19,23 @@ func (c *Dispose) Ctx() context.Context {
 }
 
 func (c *Dispose) IsClosed() bool {
-	defer c.currentLock.Unlock()
 	c.currentLock.Lock()
+	defer c.currentLock.Unlock()
 	return c.closed
 }
 
 func (c *Dispose) Close() {
-	defer c.currentLock.Unlock()
 	c.currentLock.Lock()
-
-	if !c.closed {
-		if c.cancel != nil {
-			c.cancel()
-		}
-		if c.onClose != nil {
-			c.onClose()
-		}
-		c.closed = true
+	defer c.currentLock.Unlock()
+	if c.closed {
+		return
+	}
+	c.closed = true
+	if c.cancel != nil {
+		c.cancel()
+	}
+	if c.onClose != nil {
+		c.onClose()
 	}
 }
 
