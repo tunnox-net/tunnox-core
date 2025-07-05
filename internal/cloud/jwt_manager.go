@@ -14,6 +14,7 @@ import (
 type JWTManager struct {
 	config *CloudControlConfig
 	cache  *TokenCacheManager
+	utils.Dispose
 }
 
 // JWTClaims JWT声明
@@ -34,9 +35,18 @@ type RefreshTokenClaims struct {
 
 // NewJWTManager 创建JWT管理器
 func NewJWTManager(config *CloudControlConfig, repo *Repository) *JWTManager {
-	return &JWTManager{
+	manager := &JWTManager{
 		config: config,
 		cache:  NewTokenCacheManager(repo.GetStorage()),
+	}
+	manager.SetCtx(context.Background(), manager.onClose)
+	return manager
+}
+
+// onClose 资源清理回调
+func (m *JWTManager) onClose() {
+	if m.cache != nil {
+		m.cache.Dispose.Close()
 	}
 }
 
@@ -302,9 +312,9 @@ func (m *JWTManager) RefreshAccessToken(ctx context.Context, refreshTokenString 
 		return nil, fmt.Errorf("invalid refresh token: %w", err)
 	}
 
-	// 验证Token ID是否匹配
-	if refreshClaims.TokenID != client.JWTToken {
-		return nil, fmt.Errorf("token ID mismatch")
+	// 校验ClientID是否匹配
+	if refreshClaims.ClientID != client.ID {
+		return nil, fmt.Errorf("client ID mismatch")
 	}
 
 	// 生成新的Token对
@@ -324,3 +334,7 @@ func (m *JWTManager) generateTokenID() (string, error) {
 
 // contains 检查字符串切片是否包含指定字符串
 // 已移到utils包
+
+func (m *JWTManager) Cache() *TokenCacheManager {
+	return m.cache
+}

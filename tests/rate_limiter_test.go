@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 	io2 "tunnox-core/internal/stream"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // 生成测试数据，至少几KB大小
@@ -549,4 +552,53 @@ func TestRateLimiterPerformance(t *testing.T) {
 				tc.name, len(testData), actualSec, tc.expectedMinSec)
 		})
 	}
+}
+
+func TestRateLimiter_Dispose(t *testing.T) {
+	rl, err := io2.NewRateLimiter(1024, nil)
+	require.NoError(t, err)
+	assert.False(t, rl.IsClosed())
+
+	rl.Close()
+	assert.True(t, rl.IsClosed())
+
+	rl.Close()
+	assert.True(t, rl.IsClosed())
+}
+
+func TestRateLimiterReaderWriter_Dispose(t *testing.T) {
+	buf := bytes.NewBuffer(make([]byte, 0, 1024))
+	reader, err := io2.NewRateLimiterReader(buf, 1024, nil)
+	require.NoError(t, err)
+	writer, err := io2.NewRateLimiterWriter(io.Discard, 1024, nil)
+	require.NoError(t, err)
+
+	assert.False(t, reader.IsClosed())
+	assert.False(t, writer.IsClosed())
+
+	reader.Close()
+	writer.Close()
+	assert.True(t, reader.IsClosed())
+	assert.True(t, writer.IsClosed())
+}
+
+func TestRateLimiter_Dispose_Concurrent(t *testing.T) {
+	rl, err := io2.NewRateLimiter(1024, nil)
+	require.NoError(t, err)
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 10; i++ {
+			rl.Close()
+		}
+		done <- struct{}{}
+	}()
+	go func() {
+		for i := 0; i < 10; i++ {
+			rl.Close()
+		}
+		done <- struct{}{}
+	}()
+	<-done
+	<-done
+	assert.True(t, rl.IsClosed())
 }

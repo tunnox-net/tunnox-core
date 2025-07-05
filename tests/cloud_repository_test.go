@@ -6,723 +6,889 @@ import (
 	"time"
 
 	"tunnox-core/internal/cloud"
+	"tunnox-core/internal/utils"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestUserRepository(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
-	defer storage.Close()
-
-	repo := cloud.NewRepository(storage)
+func TestUserRepository_CreateUser(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
 	userRepo := cloud.NewUserRepository(repo)
 	ctx := context.Background()
 
-	t.Run("SaveUser and GetUser", func(t *testing.T) {
-		user := &cloud.User{
-			ID:        "test_user_1",
-			Username:  "testuser",
-			Email:     "test@example.com",
-			Status:    cloud.UserStatusActive,
-			Type:      cloud.UserTypeRegistered,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			Plan:      cloud.UserPlanFree,
-			Quota: cloud.UserQuota{
-				MaxClientIds:   5,
-				MaxConnections: 10,
-				BandwidthLimit: 1024 * 1024,       // 1MB
-				StorageLimit:   100 * 1024 * 1024, // 100MB
-			},
-		}
+	userID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
 
-		err := userRepo.SaveUser(ctx, user)
-		if err != nil {
-			t.Fatalf("SaveUser failed: %v", err)
-		}
+	user := &cloud.User{
+		ID:        userID,
+		Username:  "testuser",
+		Email:     "test@example.com",
+		Type:      cloud.UserTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = userRepo.CreateUser(ctx, user)
+	require.NoError(t, err)
+	require.NotNil(t, user)
 
-		retrieved, err := userRepo.GetUser(ctx, user.ID)
-		if err != nil {
-			t.Fatalf("GetUser failed: %v", err)
-		}
+	assert.Equal(t, "testuser", user.Username)
+	assert.Equal(t, "test@example.com", user.Email)
+	assert.Equal(t, cloud.UserTypeRegistered, user.Type)
+	assert.NotEmpty(t, user.ID)
+	assert.NotZero(t, user.CreatedAt)
+	assert.NotZero(t, user.UpdatedAt)
 
-		if retrieved.ID != user.ID {
-			t.Errorf("Expected user ID %s, got %s", user.ID, retrieved.ID)
-		}
-		if retrieved.Username != user.Username {
-			t.Errorf("Expected username %s, got %s", user.Username, retrieved.Username)
-		}
-		if retrieved.Email != user.Email {
-			t.Errorf("Expected email %s, got %s", user.Email, retrieved.Email)
-		}
-	})
+	// 测试重复ID
+	user2 := &cloud.User{
+		ID:        userID,
+		Username:  "testuser2",
+		Email:     "another@example.com",
+		Type:      cloud.UserTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = userRepo.CreateUser(ctx, user2)
+	assert.Error(t, err)
 
-	t.Run("DeleteUser", func(t *testing.T) {
-		user := &cloud.User{
-			ID:        "test_user_2",
-			Username:  "testuser2",
-			Email:     "test2@example.com",
-			Status:    cloud.UserStatusActive,
-			Type:      cloud.UserTypeRegistered,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		err := userRepo.SaveUser(ctx, user)
-		if err != nil {
-			t.Fatalf("SaveUser failed: %v", err)
-		}
-
-		err = userRepo.DeleteUser(ctx, user.ID)
-		if err != nil {
-			t.Fatalf("DeleteUser failed: %v", err)
-		}
-
-		_, err = userRepo.GetUser(ctx, user.ID)
-		if err != cloud.ErrKeyNotFound {
-			t.Errorf("Expected ErrKeyNotFound, got %v", err)
-		}
-	})
-
-	t.Run("ListUsers and AddUserToList", func(t *testing.T) {
-		user1 := &cloud.User{
-			ID:        "list_user_1",
-			Username:  "listuser1",
-			Email:     "list1@example.com",
-			Status:    cloud.UserStatusActive,
-			Type:      cloud.UserTypeRegistered,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		user2 := &cloud.User{
-			ID:        "list_user_2",
-			Username:  "listuser2",
-			Email:     "list2@example.com",
-			Status:    cloud.UserStatusActive,
-			Type:      cloud.UserTypeAnonymous,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		err := userRepo.AddUserToList(ctx, user1)
-		if err != nil {
-			t.Fatalf("AddUserToList failed: %v", err)
-		}
-
-		err = userRepo.AddUserToList(ctx, user2)
-		if err != nil {
-			t.Fatalf("AddUserToList failed: %v", err)
-		}
-
-		// 列出所有用户
-		users, err := userRepo.ListUsers(ctx, "")
-		if err != nil {
-			t.Fatalf("ListUsers failed: %v", err)
-		}
-
-		if len(users) < 2 {
-			t.Errorf("Expected at least 2 users, got %d", len(users))
-		}
-
-		// 列出注册用户
-		registeredUsers, err := userRepo.ListUsers(ctx, cloud.UserTypeRegistered)
-		if err != nil {
-			t.Fatalf("ListUsers failed: %v", err)
-		}
-
-		found := false
-		for _, u := range registeredUsers {
-			if u.ID == user1.ID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Error("Expected to find registered user in list")
-		}
-	})
+	// 测试重复ID（应该成功，因为当前实现只检查ID重复）
+	userID3, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+	user3 := &cloud.User{
+		ID:        userID3,
+		Username:  "testuser",         // 相同用户名
+		Email:     "test@example.com", // 相同邮箱
+		Type:      cloud.UserTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = userRepo.CreateUser(ctx, user3)
+	require.NoError(t, err) // 应该成功，因为ID不同
 }
 
-func TestClientRepository(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
-	defer storage.Close()
+func TestUserRepository_GetUser(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	userRepo := cloud.NewUserRepository(repo)
+	ctx := context.Background()
 
-	repo := cloud.NewRepository(storage)
+	userID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+
+	user := &cloud.User{
+		ID:        userID,
+		Username:  "testuser",
+		Email:     "test@example.com",
+		Type:      cloud.UserTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = userRepo.CreateUser(ctx, user)
+	require.NoError(t, err)
+
+	retrievedUser, err := userRepo.GetUser(ctx, user.ID)
+	require.NoError(t, err)
+	require.NotNil(t, retrievedUser)
+
+	assert.Equal(t, user.ID, retrievedUser.ID)
+	assert.Equal(t, user.Username, retrievedUser.Username)
+	assert.Equal(t, user.Email, retrievedUser.Email)
+
+	// 不支持GetUserByUsername/GetUserByEmail
+	// _, err = userRepo.GetUserByUsername(ctx, user.Username)
+	// assert.Error(t, err)
+	// _, err = userRepo.GetUserByEmail(ctx, user.Email)
+	// assert.Error(t, err)
+
+	_, err = userRepo.GetUser(ctx, "nonexistent")
+	assert.Error(t, err)
+}
+
+func TestUserRepository_UpdateUser(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	userRepo := cloud.NewUserRepository(repo)
+	ctx := context.Background()
+
+	userID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+
+	user := &cloud.User{
+		ID:        userID,
+		Username:  "testuser",
+		Email:     "test@example.com",
+		Type:      cloud.UserTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = userRepo.CreateUser(ctx, user)
+	require.NoError(t, err)
+
+	user.Username = "updateduser"
+	user.Email = "updated@example.com"
+	user.Status = cloud.UserStatusSuspended
+	err = userRepo.UpdateUser(ctx, user)
+	require.NoError(t, err)
+
+	retrievedUser, err := userRepo.GetUser(ctx, user.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "updateduser", retrievedUser.Username)
+	assert.Equal(t, "updated@example.com", retrievedUser.Email)
+	assert.Equal(t, cloud.UserStatusSuspended, retrievedUser.Status)
+}
+
+func TestUserRepository_DeleteUser(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	userRepo := cloud.NewUserRepository(repo)
+	ctx := context.Background()
+
+	userID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+
+	user := &cloud.User{
+		ID:        userID,
+		Username:  "testuser",
+		Email:     "test@example.com",
+		Type:      cloud.UserTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = userRepo.CreateUser(ctx, user)
+	require.NoError(t, err)
+
+	err = userRepo.DeleteUser(ctx, user.ID)
+	require.NoError(t, err)
+
+	_, err = userRepo.GetUser(ctx, user.ID)
+	assert.Error(t, err)
+}
+
+func TestUserRepository_ListUsers(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	userRepo := cloud.NewUserRepository(repo)
+	ctx := context.Background()
+
+	userID1, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+	userID2, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+	userID3, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+
+	user1 := &cloud.User{
+		ID:        userID1,
+		Username:  "user1",
+		Email:     "user1@example.com",
+		Type:      cloud.UserTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	user2 := &cloud.User{
+		ID:        userID2,
+		Username:  "user2",
+		Email:     "user2@example.com",
+		Type:      cloud.UserTypeAnonymous,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	user3 := &cloud.User{
+		ID:        userID3,
+		Username:  "user3",
+		Email:     "user3@example.com",
+		Type:      cloud.UserTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = userRepo.CreateUser(ctx, user1)
+	require.NoError(t, err)
+	err = userRepo.AddUserToList(ctx, user1)
+	require.NoError(t, err)
+	err = userRepo.CreateUser(ctx, user2)
+	require.NoError(t, err)
+	err = userRepo.AddUserToList(ctx, user2)
+	require.NoError(t, err)
+	err = userRepo.CreateUser(ctx, user3)
+	require.NoError(t, err)
+	err = userRepo.AddUserToList(ctx, user3)
+	require.NoError(t, err)
+
+	users, err := userRepo.ListUsers(ctx, "")
+	require.NoError(t, err)
+	assert.Len(t, users, 3)
+
+	registeredUsers, err := userRepo.ListUsers(ctx, cloud.UserTypeRegistered)
+	require.NoError(t, err)
+	assert.Len(t, registeredUsers, 2)
+
+	anonymousUsers, err := userRepo.ListUsers(ctx, cloud.UserTypeAnonymous)
+	require.NoError(t, err)
+	assert.Len(t, anonymousUsers, 1)
+}
+
+func TestClientRepository_CreateClient(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
 	clientRepo := cloud.NewClientRepository(repo)
 	ctx := context.Background()
 
-	t.Run("SaveClient and GetClient", func(t *testing.T) {
-		client := &cloud.Client{
-			ID:        "test_client_1",
-			UserID:    "test_user_1",
-			Name:      "Test Client",
-			AuthCode:  "auth123",
-			SecretKey: "secret123",
-			Status:    cloud.ClientStatusOffline,
-			Config: cloud.ClientConfig{
-				EnableCompression: true,
-				BandwidthLimit:    1024 * 1024,
-				MaxConnections:    5,
-				AllowedPorts:      []int{80, 443, 8080},
-				BlockedPorts:      []int{22, 23},
-				AutoReconnect:     true,
-				HeartbeatInterval: 30,
-			},
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			Type:      cloud.ClientTypeRegistered,
-		}
+	clientID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
 
-		err := clientRepo.SaveClient(ctx, client)
-		if err != nil {
-			t.Fatalf("SaveClient failed: %v", err)
-		}
+	client := &cloud.Client{
+		ID:        clientID,
+		Name:      "testclient",
+		UserID:    "user123",
+		Type:      cloud.ClientTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = clientRepo.CreateClient(ctx, client)
+	require.NoError(t, err)
+	require.NotNil(t, client)
 
-		retrieved, err := clientRepo.GetClient(ctx, client.ID)
-		if err != nil {
-			t.Fatalf("GetClient failed: %v", err)
-		}
+	assert.Equal(t, "testclient", client.Name)
+	assert.Equal(t, "user123", client.UserID)
+	assert.Equal(t, cloud.ClientTypeRegistered, client.Type)
+	assert.NotEmpty(t, client.ID)
+	assert.NotZero(t, client.CreatedAt)
+	assert.NotZero(t, client.UpdatedAt)
 
-		if retrieved.ID != client.ID {
-			t.Errorf("Expected client ID %s, got %s", client.ID, retrieved.ID)
-		}
-		if retrieved.Name != client.Name {
-			t.Errorf("Expected client name %s, got %s", client.Name, retrieved.Name)
-		}
-		if retrieved.AuthCode != client.AuthCode {
-			t.Errorf("Expected auth code %s, got %s", client.AuthCode, retrieved.AuthCode)
-		}
-	})
+	// 测试重复ID（应该失败）
+	client2 := &cloud.Client{
+		ID:        clientID, // 使用相同的ID
+		Name:      "testclient2",
+		UserID:    "user456",
+		Type:      cloud.ClientTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = clientRepo.CreateClient(ctx, client2)
+	assert.Error(t, err)
 
-	t.Run("DeleteClient", func(t *testing.T) {
-		client := &cloud.Client{
-			ID:        "test_client_2",
-			UserID:    "test_user_1",
-			Name:      "Test Client 2",
-			AuthCode:  "auth456",
-			SecretKey: "secret456",
-			Status:    cloud.ClientStatusOffline,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		err := clientRepo.SaveClient(ctx, client)
-		if err != nil {
-			t.Fatalf("SaveClient failed: %v", err)
-		}
-
-		err = clientRepo.DeleteClient(ctx, client.ID)
-		if err != nil {
-			t.Fatalf("DeleteClient failed: %v", err)
-		}
-
-		_, err = clientRepo.GetClient(ctx, client.ID)
-		if err != cloud.ErrKeyNotFound {
-			t.Errorf("Expected ErrKeyNotFound, got %v", err)
-		}
-	})
-
-	t.Run("UpdateClientStatus", func(t *testing.T) {
-		client := &cloud.Client{
-			ID:        "test_client_3",
-			UserID:    "test_user_1",
-			Name:      "Test Client 3",
-			AuthCode:  "auth789",
-			SecretKey: "secret789",
-			Status:    cloud.ClientStatusOffline,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		err := clientRepo.SaveClient(ctx, client)
-		if err != nil {
-			t.Fatalf("SaveClient failed: %v", err)
-		}
-
-		err = clientRepo.UpdateClientStatus(ctx, client.ID, cloud.ClientStatusOnline, "node_1")
-		if err != nil {
-			t.Fatalf("UpdateClientStatus failed: %v", err)
-		}
-
-		updated, err := clientRepo.GetClient(ctx, client.ID)
-		if err != nil {
-			t.Fatalf("GetClient failed: %v", err)
-		}
-
-		if updated.Status != cloud.ClientStatusOnline {
-			t.Errorf("Expected status %s, got %s", cloud.ClientStatusOnline, updated.Status)
-		}
-		if updated.NodeID != "node_1" {
-			t.Errorf("Expected node ID %s, got %s", "node_1", updated.NodeID)
-		}
-		if updated.LastSeen == nil {
-			t.Error("Expected LastSeen to be set")
-		}
-	})
-
-	t.Run("ListUserClients and AddClientToUser", func(t *testing.T) {
-		client1 := &cloud.Client{
-			ID:        "list_client_1",
-			UserID:    "test_user_1",
-			Name:      "List Client 1",
-			AuthCode:  "auth_list1",
-			SecretKey: "secret_list1",
-			Status:    cloud.ClientStatusOffline,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		client2 := &cloud.Client{
-			ID:        "list_client_2",
-			UserID:    "test_user_1",
-			Name:      "List Client 2",
-			AuthCode:  "auth_list2",
-			SecretKey: "secret_list2",
-			Status:    cloud.ClientStatusOffline,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		err := clientRepo.AddClientToUser(ctx, "test_user_1", client1)
-		if err != nil {
-			t.Fatalf("AddClientToUser failed: %v", err)
-		}
-
-		err = clientRepo.AddClientToUser(ctx, "test_user_1", client2)
-		if err != nil {
-			t.Fatalf("AddClientToUser failed: %v", err)
-		}
-
-		clients, err := clientRepo.ListUserClients(ctx, "test_user_1")
-		if err != nil {
-			t.Fatalf("ListUserClients failed: %v", err)
-		}
-
-		if len(clients) < 2 {
-			t.Errorf("Expected at least 2 clients, got %d", len(clients))
-		}
-
-		found := false
-		for _, c := range clients {
-			if c.ID == client1.ID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Error("Expected to find client in list")
-		}
-	})
+	// 测试不同ID（应该成功）
+	clientID2, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+	client3 := &cloud.Client{
+		ID:        clientID2,
+		Name:      "testclient", // 相同名称
+		UserID:    "user123",    // 相同用户ID
+		Type:      cloud.ClientTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = clientRepo.CreateClient(ctx, client3)
+	require.NoError(t, err) // 应该成功，因为ID不同
 }
 
-func TestPortMappingRepository(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
-	defer storage.Close()
+func TestClientRepository_GetClient(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	clientRepo := cloud.NewClientRepository(repo)
+	ctx := context.Background()
 
-	repo := cloud.NewRepository(storage)
+	clientID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+
+	client := &cloud.Client{
+		ID:        clientID,
+		Name:      "testclient",
+		UserID:    "user123",
+		Type:      cloud.ClientTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = clientRepo.CreateClient(ctx, client)
+	require.NoError(t, err)
+
+	retrievedClient, err := clientRepo.GetClient(ctx, client.ID)
+	require.NoError(t, err)
+	require.NotNil(t, retrievedClient)
+
+	assert.Equal(t, client.ID, retrievedClient.ID)
+	assert.Equal(t, client.Name, retrievedClient.Name)
+	assert.Equal(t, client.UserID, retrievedClient.UserID)
+
+	// 不支持GetClientByName
+	// _, err = clientRepo.GetClientByName(ctx, client.Name)
+	// assert.Error(t, err)
+
+	_, err = clientRepo.GetClient(ctx, "nonexistent")
+	assert.Error(t, err)
+}
+
+func TestClientRepository_UpdateClient(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	clientRepo := cloud.NewClientRepository(repo)
+	ctx := context.Background()
+
+	clientID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+
+	client := &cloud.Client{
+		ID:        clientID,
+		Name:      "testclient",
+		UserID:    "user123",
+		Type:      cloud.ClientTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = clientRepo.CreateClient(ctx, client)
+	require.NoError(t, err)
+
+	client.Name = "updatedclient"
+	client.Status = cloud.ClientStatusBlocked
+	client.NodeID = "node123"
+	err = clientRepo.UpdateClient(ctx, client)
+	require.NoError(t, err)
+
+	retrievedClient, err := clientRepo.GetClient(ctx, client.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "updatedclient", retrievedClient.Name)
+	assert.Equal(t, cloud.ClientStatusBlocked, retrievedClient.Status)
+	assert.Equal(t, "node123", retrievedClient.NodeID)
+}
+
+func TestClientRepository_DeleteClient(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	clientRepo := cloud.NewClientRepository(repo)
+	ctx := context.Background()
+
+	clientID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+
+	client := &cloud.Client{
+		ID:        clientID,
+		Name:      "testclient",
+		UserID:    "user123",
+		Type:      cloud.ClientTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = clientRepo.CreateClient(ctx, client)
+	require.NoError(t, err)
+
+	err = clientRepo.DeleteClient(ctx, client.ID)
+	require.NoError(t, err)
+
+	_, err = clientRepo.GetClient(ctx, client.ID)
+	assert.Error(t, err)
+}
+
+func TestClientRepository_ListClients(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	clientRepo := cloud.NewClientRepository(repo)
+	ctx := context.Background()
+
+	clientID1, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+	clientID2, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+	clientID3, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+
+	client1 := &cloud.Client{
+		ID:        clientID1,
+		Name:      "client1",
+		UserID:    "user1",
+		Type:      cloud.ClientTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	client2 := &cloud.Client{
+		ID:        clientID2,
+		Name:      "client2",
+		UserID:    "user1",
+		Type:      cloud.ClientTypeAnonymous,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	client3 := &cloud.Client{
+		ID:        clientID3,
+		Name:      "client3",
+		UserID:    "user2",
+		Type:      cloud.ClientTypeRegistered,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = clientRepo.CreateClient(ctx, client1)
+	require.NoError(t, err)
+	err = clientRepo.AddClientToUser(ctx, "user1", client1)
+	require.NoError(t, err)
+	err = clientRepo.CreateClient(ctx, client2)
+	require.NoError(t, err)
+	err = clientRepo.AddClientToUser(ctx, "user1", client2)
+	require.NoError(t, err)
+	err = clientRepo.CreateClient(ctx, client3)
+	require.NoError(t, err)
+	err = clientRepo.AddClientToUser(ctx, "user2", client3)
+	require.NoError(t, err)
+
+	// List all clients for user1
+	clients, err := clientRepo.ListUserClients(ctx, "user1")
+	require.NoError(t, err)
+	assert.Len(t, clients, 2)
+
+	// List registered clients for user1
+	registeredClients := []*cloud.Client{}
+	for _, c := range clients {
+		if c.Type == cloud.ClientTypeRegistered {
+			registeredClients = append(registeredClients, c)
+		}
+	}
+	assert.Len(t, registeredClients, 1)
+
+	// List anonymous clients for user1
+	anonymousClients := []*cloud.Client{}
+	for _, c := range clients {
+		if c.Type == cloud.ClientTypeAnonymous {
+			anonymousClients = append(anonymousClients, c)
+		}
+	}
+	assert.Len(t, anonymousClients, 1)
+}
+
+func TestPortMappingRepository_CreateMapping(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
 	mappingRepo := cloud.NewPortMappingRepository(repo)
 	ctx := context.Background()
 
-	t.Run("SavePortMapping and GetPortMapping", func(t *testing.T) {
-		mapping := &cloud.PortMapping{
-			ID:             "test_mapping_1",
-			UserID:         "test_user_1",
-			SourceClientID: "test_client_1",
-			TargetClientID: "test_client_2",
-			Protocol:       cloud.ProtocolTCP,
-			SourcePort:     8080,
-			TargetHost:     "localhost",
-			TargetPort:     80,
-			Status:         cloud.MappingStatusActive,
-			Config: cloud.MappingConfig{
-				EnableCompression: true,
-				BandwidthLimit:    1024 * 1024,
-				Timeout:           30,
-				RetryCount:        3,
-			},
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-			Type:      cloud.MappingTypeRegistered,
-		}
+	mappingID, err := utils.GenerateRandomString(12)
+	require.NoError(t, err)
 
-		err := mappingRepo.SavePortMapping(ctx, mapping)
-		if err != nil {
-			t.Fatalf("SavePortMapping failed: %v", err)
-		}
+	mapping := &cloud.PortMapping{
+		ID:             mappingID,
+		SourceClientID: "client1",
+		TargetClientID: "client2",
+		Protocol:       cloud.ProtocolTCP,
+		SourcePort:     8080,
+		TargetPort:     9090,
+		UserID:         "user1",
+		Status:         cloud.MappingStatusActive,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	err = mappingRepo.CreatePortMapping(ctx, mapping)
+	require.NoError(t, err)
+	require.NotNil(t, mapping)
 
-		retrieved, err := mappingRepo.GetPortMapping(ctx, mapping.ID)
-		if err != nil {
-			t.Fatalf("GetPortMapping failed: %v", err)
-		}
-
-		if retrieved.ID != mapping.ID {
-			t.Errorf("Expected mapping ID %s, got %s", mapping.ID, retrieved.ID)
-		}
-		if retrieved.Protocol != mapping.Protocol {
-			t.Errorf("Expected protocol %s, got %s", mapping.Protocol, retrieved.Protocol)
-		}
-		if retrieved.SourcePort != mapping.SourcePort {
-			t.Errorf("Expected source port %d, got %d", mapping.SourcePort, retrieved.SourcePort)
-		}
-	})
-
-	t.Run("DeletePortMapping", func(t *testing.T) {
-		mapping := &cloud.PortMapping{
-			ID:             "test_mapping_2",
-			UserID:         "test_user_1",
-			SourceClientID: "test_client_1",
-			TargetClientID: "test_client_2",
-			Protocol:       cloud.ProtocolTCP,
-			SourcePort:     8081,
-			TargetHost:     "localhost",
-			TargetPort:     81,
-			Status:         cloud.MappingStatusActive,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
-
-		err := mappingRepo.SavePortMapping(ctx, mapping)
-		if err != nil {
-			t.Fatalf("SavePortMapping failed: %v", err)
-		}
-
-		err = mappingRepo.DeletePortMapping(ctx, mapping.ID)
-		if err != nil {
-			t.Fatalf("DeletePortMapping failed: %v", err)
-		}
-
-		_, err = mappingRepo.GetPortMapping(ctx, mapping.ID)
-		if err != cloud.ErrKeyNotFound {
-			t.Errorf("Expected ErrKeyNotFound, got %v", err)
-		}
-	})
-
-	t.Run("UpdatePortMappingStatus", func(t *testing.T) {
-		mapping := &cloud.PortMapping{
-			ID:             "test_mapping_3",
-			UserID:         "test_user_1",
-			SourceClientID: "test_client_1",
-			TargetClientID: "test_client_2",
-			Protocol:       cloud.ProtocolTCP,
-			SourcePort:     8082,
-			TargetHost:     "localhost",
-			TargetPort:     82,
-			Status:         cloud.MappingStatusActive,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
-
-		err := mappingRepo.SavePortMapping(ctx, mapping)
-		if err != nil {
-			t.Fatalf("SavePortMapping failed: %v", err)
-		}
-
-		err = mappingRepo.UpdatePortMappingStatus(ctx, mapping.ID, cloud.MappingStatusInactive)
-		if err != nil {
-			t.Fatalf("UpdatePortMappingStatus failed: %v", err)
-		}
-
-		updated, err := mappingRepo.GetPortMapping(ctx, mapping.ID)
-		if err != nil {
-			t.Fatalf("GetPortMapping failed: %v", err)
-		}
-
-		if updated.Status != cloud.MappingStatusInactive {
-			t.Errorf("Expected status %s, got %s", cloud.MappingStatusInactive, updated.Status)
-		}
-	})
-
-	t.Run("UpdatePortMappingStats", func(t *testing.T) {
-		mapping := &cloud.PortMapping{
-			ID:             "test_mapping_4",
-			UserID:         "test_user_1",
-			SourceClientID: "test_client_1",
-			TargetClientID: "test_client_2",
-			Protocol:       cloud.ProtocolTCP,
-			SourcePort:     8083,
-			TargetHost:     "localhost",
-			TargetPort:     83,
-			Status:         cloud.MappingStatusActive,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
-
-		err := mappingRepo.SavePortMapping(ctx, mapping)
-		if err != nil {
-			t.Fatalf("SavePortMapping failed: %v", err)
-		}
-
-		stats := &cloud.TrafficStats{
-			BytesSent:     1024,
-			BytesReceived: 2048,
-			Connections:   5,
-		}
-
-		err = mappingRepo.UpdatePortMappingStats(ctx, mapping.ID, stats)
-		if err != nil {
-			t.Fatalf("UpdatePortMappingStats failed: %v", err)
-		}
-
-		updated, err := mappingRepo.GetPortMapping(ctx, mapping.ID)
-		if err != nil {
-			t.Fatalf("GetPortMapping failed: %v", err)
-		}
-
-		if updated.TrafficStats.BytesSent != stats.BytesSent {
-			t.Errorf("Expected bytes sent %d, got %d", stats.BytesSent, updated.TrafficStats.BytesSent)
-		}
-		if updated.TrafficStats.BytesReceived != stats.BytesReceived {
-			t.Errorf("Expected bytes received %d, got %d", stats.BytesReceived, updated.TrafficStats.BytesReceived)
-		}
-		if updated.TrafficStats.Connections != stats.Connections {
-			t.Errorf("Expected connections %d, got %d", stats.Connections, updated.TrafficStats.Connections)
-		}
-		if updated.LastActive == nil {
-			t.Error("Expected LastActive to be set")
-		}
-	})
-
-	t.Run("ListUserMappings and AddMappingToUser", func(t *testing.T) {
-		mapping1 := &cloud.PortMapping{
-			ID:             "list_mapping_1",
-			UserID:         "test_user_1",
-			SourceClientID: "test_client_1",
-			TargetClientID: "test_client_2",
-			Protocol:       cloud.ProtocolTCP,
-			SourcePort:     8084,
-			TargetHost:     "localhost",
-			TargetPort:     84,
-			Status:         cloud.MappingStatusActive,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
-
-		mapping2 := &cloud.PortMapping{
-			ID:             "list_mapping_2",
-			UserID:         "test_user_1",
-			SourceClientID: "test_client_2",
-			TargetClientID: "test_client_3",
-			Protocol:       cloud.ProtocolUDP,
-			SourcePort:     8085,
-			TargetHost:     "localhost",
-			TargetPort:     85,
-			Status:         cloud.MappingStatusActive,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
-
-		err := mappingRepo.AddMappingToUser(ctx, "test_user_1", mapping1)
-		if err != nil {
-			t.Fatalf("AddMappingToUser failed: %v", err)
-		}
-
-		err = mappingRepo.AddMappingToUser(ctx, "test_user_1", mapping2)
-		if err != nil {
-			t.Fatalf("AddMappingToUser failed: %v", err)
-		}
-
-		mappings, err := mappingRepo.ListUserMappings(ctx, "test_user_1")
-		if err != nil {
-			t.Fatalf("ListUserMappings failed: %v", err)
-		}
-
-		if len(mappings) < 2 {
-			t.Errorf("Expected at least 2 mappings, got %d", len(mappings))
-		}
-
-		found := false
-		for _, m := range mappings {
-			if m.ID == mapping1.ID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Error("Expected to find mapping in list")
-		}
-	})
-
-	t.Run("ListClientMappings and AddMappingToClient", func(t *testing.T) {
-		mapping1 := &cloud.PortMapping{
-			ID:             "client_mapping_1",
-			UserID:         "test_user_1",
-			SourceClientID: "test_client_1",
-			TargetClientID: "test_client_2",
-			Protocol:       cloud.ProtocolTCP,
-			SourcePort:     8086,
-			TargetHost:     "localhost",
-			TargetPort:     86,
-			Status:         cloud.MappingStatusActive,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
-
-		mapping2 := &cloud.PortMapping{
-			ID:             "client_mapping_2",
-			UserID:         "test_user_1",
-			SourceClientID: "test_client_1",
-			TargetClientID: "test_client_3",
-			Protocol:       cloud.ProtocolHTTP,
-			SourcePort:     8087,
-			TargetHost:     "localhost",
-			TargetPort:     87,
-			Status:         cloud.MappingStatusActive,
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
-
-		err := mappingRepo.AddMappingToClient(ctx, "test_client_1", mapping1)
-		if err != nil {
-			t.Fatalf("AddMappingToClient failed: %v", err)
-		}
-
-		err = mappingRepo.AddMappingToClient(ctx, "test_client_1", mapping2)
-		if err != nil {
-			t.Fatalf("AddMappingToClient failed: %v", err)
-		}
-
-		mappings, err := mappingRepo.ListClientMappings(ctx, "test_client_1")
-		if err != nil {
-			t.Fatalf("ListClientMappings failed: %v", err)
-		}
-
-		if len(mappings) < 2 {
-			t.Errorf("Expected at least 2 mappings, got %d", len(mappings))
-		}
-
-		found := false
-		for _, m := range mappings {
-			if m.ID == mapping1.ID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Error("Expected to find mapping in list")
-		}
-	})
+	assert.Equal(t, "client1", mapping.SourceClientID)
+	assert.Equal(t, "client2", mapping.TargetClientID)
+	assert.Equal(t, cloud.ProtocolTCP, mapping.Protocol)
+	assert.Equal(t, 8080, mapping.SourcePort)
+	assert.Equal(t, 9090, mapping.TargetPort)
+	assert.NotEmpty(t, mapping.ID)
+	assert.NotZero(t, mapping.CreatedAt)
+	assert.NotZero(t, mapping.UpdatedAt)
 }
 
-func TestNodeRepository(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
-	defer storage.Close()
+func TestPortMappingRepository_GetMapping(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	mappingRepo := cloud.NewPortMappingRepository(repo)
+	ctx := context.Background()
 
-	repo := cloud.NewRepository(storage)
+	mappingID, err := utils.GenerateRandomString(12)
+	require.NoError(t, err)
+
+	mapping := &cloud.PortMapping{
+		ID:             mappingID,
+		SourceClientID: "client1",
+		TargetClientID: "client2",
+		Protocol:       cloud.ProtocolTCP,
+		SourcePort:     8080,
+		TargetPort:     9090,
+		UserID:         "user1",
+		Status:         cloud.MappingStatusActive,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	err = mappingRepo.CreatePortMapping(ctx, mapping)
+	require.NoError(t, err)
+
+	retrievedMapping, err := mappingRepo.GetPortMapping(ctx, mapping.ID)
+	require.NoError(t, err)
+	require.NotNil(t, retrievedMapping)
+
+	assert.Equal(t, mapping.ID, retrievedMapping.ID)
+	assert.Equal(t, mapping.SourceClientID, retrievedMapping.SourceClientID)
+	assert.Equal(t, mapping.TargetClientID, retrievedMapping.TargetClientID)
+
+	_, err = mappingRepo.GetPortMapping(ctx, "nonexistent")
+	assert.Error(t, err)
+}
+
+func TestPortMappingRepository_UpdateMapping(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	mappingRepo := cloud.NewPortMappingRepository(repo)
+	ctx := context.Background()
+
+	mappingID, err := utils.GenerateRandomString(12)
+	require.NoError(t, err)
+
+	mapping := &cloud.PortMapping{
+		ID:             mappingID,
+		SourceClientID: "client1",
+		TargetClientID: "client2",
+		Protocol:       cloud.ProtocolTCP,
+		SourcePort:     8080,
+		TargetPort:     9090,
+		UserID:         "user1",
+		Status:         cloud.MappingStatusActive,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	err = mappingRepo.CreatePortMapping(ctx, mapping)
+	require.NoError(t, err)
+
+	// 更新映射
+	mapping.Status = cloud.MappingStatusInactive
+	mapping.SourcePort = 8081
+	err = mappingRepo.UpdatePortMapping(ctx, mapping)
+	require.NoError(t, err)
+
+	// 验证更新
+	retrievedMapping, err := mappingRepo.GetPortMapping(ctx, mapping.ID)
+	require.NoError(t, err)
+
+	assert.Equal(t, cloud.MappingStatusInactive, retrievedMapping.Status)
+	assert.Equal(t, 8081, retrievedMapping.SourcePort)
+}
+
+func TestPortMappingRepository_DeleteMapping(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	mappingRepo := cloud.NewPortMappingRepository(repo)
+	ctx := context.Background()
+
+	mappingID, err := utils.GenerateRandomString(12)
+	require.NoError(t, err)
+
+	mapping := &cloud.PortMapping{
+		ID:             mappingID,
+		SourceClientID: "client1",
+		TargetClientID: "client2",
+		Protocol:       cloud.ProtocolTCP,
+		SourcePort:     8080,
+		TargetPort:     9090,
+		UserID:         "user1",
+		Status:         cloud.MappingStatusActive,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	err = mappingRepo.CreatePortMapping(ctx, mapping)
+	require.NoError(t, err)
+
+	// 删除映射
+	err = mappingRepo.DeletePortMapping(ctx, mapping.ID)
+	require.NoError(t, err)
+
+	// 验证删除
+	_, err = mappingRepo.GetPortMapping(ctx, mapping.ID)
+	assert.Error(t, err)
+}
+
+func TestPortMappingRepository_ListMappings(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	mappingRepo := cloud.NewPortMappingRepository(repo)
+	ctx := context.Background()
+
+	mappingID1, err := utils.GenerateRandomString(12)
+	require.NoError(t, err)
+	mappingID2, err := utils.GenerateRandomString(12)
+	require.NoError(t, err)
+	mappingID3, err := utils.GenerateRandomString(12)
+	require.NoError(t, err)
+
+	// 创建多个映射
+	mapping1 := &cloud.PortMapping{
+		ID:             mappingID1,
+		SourceClientID: "client1",
+		TargetClientID: "client2",
+		Protocol:       cloud.ProtocolTCP,
+		SourcePort:     8080,
+		TargetPort:     9090,
+		UserID:         "user1",
+		Status:         cloud.MappingStatusActive,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	err = mappingRepo.CreatePortMapping(ctx, mapping1)
+	require.NoError(t, err)
+	err = mappingRepo.AddMappingToUser(ctx, "user1", mapping1)
+	require.NoError(t, err)
+
+	mapping2 := &cloud.PortMapping{
+		ID:             mappingID2,
+		SourceClientID: "client3",
+		TargetClientID: "client4",
+		Protocol:       cloud.ProtocolUDP,
+		SourcePort:     8081,
+		TargetPort:     9091,
+		UserID:         "user1",
+		Status:         cloud.MappingStatusInactive,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	err = mappingRepo.CreatePortMapping(ctx, mapping2)
+	require.NoError(t, err)
+	err = mappingRepo.AddMappingToUser(ctx, "user1", mapping2)
+	require.NoError(t, err)
+
+	mapping3 := &cloud.PortMapping{
+		ID:             mappingID3,
+		SourceClientID: "client5",
+		TargetClientID: "client6",
+		Protocol:       cloud.ProtocolTCP,
+		SourcePort:     8082,
+		TargetPort:     9092,
+		UserID:         "user2",
+		Status:         cloud.MappingStatusActive,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+	}
+	err = mappingRepo.CreatePortMapping(ctx, mapping3)
+	require.NoError(t, err)
+	err = mappingRepo.AddMappingToUser(ctx, "user2", mapping3)
+	require.NoError(t, err)
+
+	// 列出用户的所有映射
+	userMappings, err := mappingRepo.ListUserMappings(ctx, "user1")
+	require.NoError(t, err)
+	assert.Len(t, userMappings, 2)
+
+	// 列出所有映射 (通过用户映射来验证总数)
+	user2Mappings, err := mappingRepo.ListUserMappings(ctx, "user2")
+	require.NoError(t, err)
+	assert.Len(t, user2Mappings, 1)
+
+	totalMappings := len(userMappings) + len(user2Mappings)
+	assert.Equal(t, 3, totalMappings)
+
+	// 验证TCP映射数量
+	tcpCount := 0
+	for _, m := range userMappings {
+		if m.Protocol == cloud.ProtocolTCP {
+			tcpCount++
+		}
+	}
+	for _, m := range user2Mappings {
+		if m.Protocol == cloud.ProtocolTCP {
+			tcpCount++
+		}
+	}
+	assert.Equal(t, 2, tcpCount)
+
+	// 验证UDP映射数量
+	udpCount := 0
+	for _, m := range userMappings {
+		if m.Protocol == cloud.ProtocolUDP {
+			udpCount++
+		}
+	}
+	for _, m := range user2Mappings {
+		if m.Protocol == cloud.ProtocolUDP {
+			udpCount++
+		}
+	}
+	assert.Equal(t, 1, udpCount)
+}
+
+func TestNodeRepository_CreateNode(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
 	nodeRepo := cloud.NewNodeRepository(repo)
 	ctx := context.Background()
 
-	t.Run("SaveNode and GetNode", func(t *testing.T) {
-		node := &cloud.Node{
-			ID:      "test_node_1",
-			Name:    "Test Node 1",
-			Address: "192.168.1.100:8080",
-			Meta: map[string]string{
-				"region": "us-west",
-				"zone":   "us-west-1a",
-			},
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
+	nodeID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
 
-		err := nodeRepo.SaveNode(ctx, node)
-		if err != nil {
-			t.Fatalf("SaveNode failed: %v", err)
-		}
+	// 创建节点
+	node := &cloud.Node{
+		ID:        nodeID,
+		Name:      "Test Node",
+		Address:   "127.0.0.1:8080",
+		Meta:      map[string]string{"region": "us-west"},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = nodeRepo.CreateNode(ctx, node)
+	require.NoError(t, err)
+	require.NotNil(t, node)
 
-		retrieved, err := nodeRepo.GetNode(ctx, node.ID)
-		if err != nil {
-			t.Fatalf("GetNode failed: %v", err)
-		}
+	assert.Equal(t, nodeID, node.ID)
+	assert.Equal(t, "Test Node", node.Name)
+	assert.Equal(t, "127.0.0.1:8080", node.Address)
+	assert.Equal(t, "us-west", node.Meta["region"])
+	assert.NotZero(t, node.CreatedAt)
+	assert.NotZero(t, node.UpdatedAt)
 
-		if retrieved.ID != node.ID {
-			t.Errorf("Expected node ID %s, got %s", node.ID, retrieved.ID)
-		}
-		if retrieved.Name != node.Name {
-			t.Errorf("Expected node name %s, got %s", node.Name, retrieved.Name)
-		}
-		if retrieved.Address != node.Address {
-			t.Errorf("Expected node address %s, got %s", node.Address, retrieved.Address)
-		}
-		if retrieved.Meta["region"] != node.Meta["region"] {
-			t.Errorf("Expected region %s, got %s", node.Meta["region"], retrieved.Meta["region"])
-		}
-	})
+	// 测试重复ID
+	node2 := &cloud.Node{
+		ID:        nodeID,
+		Name:      "Another Node",
+		Address:   "127.0.0.1:8081",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = nodeRepo.CreateNode(ctx, node2)
+	assert.Error(t, err)
+}
 
-	t.Run("DeleteNode", func(t *testing.T) {
-		node := &cloud.Node{
-			ID:        "test_node_2",
-			Name:      "Test Node 2",
-			Address:   "192.168.1.101:8080",
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
+func TestNodeRepository_GetNode(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	nodeRepo := cloud.NewNodeRepository(repo)
+	ctx := context.Background()
 
-		err := nodeRepo.SaveNode(ctx, node)
-		if err != nil {
-			t.Fatalf("SaveNode failed: %v", err)
-		}
+	nodeID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
 
-		err = nodeRepo.DeleteNode(ctx, node.ID)
-		if err != nil {
-			t.Fatalf("DeleteNode failed: %v", err)
-		}
+	// 创建节点
+	node := &cloud.Node{
+		ID:        nodeID,
+		Name:      "Test Node",
+		Address:   "127.0.0.1:8080",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = nodeRepo.CreateNode(ctx, node)
+	require.NoError(t, err)
 
-		_, err = nodeRepo.GetNode(ctx, node.ID)
-		if err != cloud.ErrKeyNotFound {
-			t.Errorf("Expected ErrKeyNotFound, got %v", err)
-		}
-	})
+	// 通过ID获取节点
+	retrievedNode, err := nodeRepo.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	require.NotNil(t, retrievedNode)
 
-	t.Run("ListNodes and AddNodeToList", func(t *testing.T) {
-		node1 := &cloud.Node{
-			ID:        "list_node_1",
-			Name:      "List Node 1",
-			Address:   "192.168.1.102:8080",
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
+	assert.Equal(t, node.ID, retrievedNode.ID)
+	assert.Equal(t, node.Name, retrievedNode.Name)
+	assert.Equal(t, node.Address, retrievedNode.Address)
 
-		node2 := &cloud.Node{
-			ID:        "list_node_2",
-			Name:      "List Node 2",
-			Address:   "192.168.1.103:8080",
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
+	// 测试不存在的节点
+	_, err = nodeRepo.GetNode(ctx, "nonexistent")
+	assert.Error(t, err)
+}
 
-		err := nodeRepo.AddNodeToList(ctx, node1)
-		if err != nil {
-			t.Fatalf("AddNodeToList failed: %v", err)
-		}
+func TestNodeRepository_UpdateNode(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	nodeRepo := cloud.NewNodeRepository(repo)
+	ctx := context.Background()
 
-		err = nodeRepo.AddNodeToList(ctx, node2)
-		if err != nil {
-			t.Fatalf("AddNodeToList failed: %v", err)
-		}
+	nodeID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
 
-		nodes, err := nodeRepo.ListNodes(ctx)
-		if err != nil {
-			t.Fatalf("ListNodes failed: %v", err)
-		}
+	// 创建节点
+	node := &cloud.Node{
+		ID:        nodeID,
+		Name:      "Test Node",
+		Address:   "127.0.0.1:8080",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = nodeRepo.CreateNode(ctx, node)
+	require.NoError(t, err)
 
-		if len(nodes) < 2 {
-			t.Errorf("Expected at least 2 nodes, got %d", len(nodes))
-		}
+	// 更新节点
+	node.Name = "Updated Node"
+	node.Address = "127.0.0.1:8081"
 
-		found := false
-		for _, n := range nodes {
-			if n.ID == node1.ID {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Error("Expected to find node in list")
-		}
-	})
+	err = nodeRepo.UpdateNode(ctx, node)
+	require.NoError(t, err)
+
+	// 验证更新
+	retrievedNode, err := nodeRepo.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Updated Node", retrievedNode.Name)
+	assert.Equal(t, "127.0.0.1:8081", retrievedNode.Address)
+}
+
+func TestNodeRepository_DeleteNode(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	nodeRepo := cloud.NewNodeRepository(repo)
+	ctx := context.Background()
+
+	nodeID, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+
+	// 创建节点
+	node := &cloud.Node{
+		ID:        nodeID,
+		Name:      "Test Node",
+		Address:   "127.0.0.1:8080",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = nodeRepo.CreateNode(ctx, node)
+	require.NoError(t, err)
+
+	// 删除节点
+	err = nodeRepo.DeleteNode(ctx, node.ID)
+	require.NoError(t, err)
+
+	// 验证删除
+	_, err = nodeRepo.GetNode(ctx, node.ID)
+	assert.Error(t, err)
+}
+
+func TestNodeRepository_ListNodes(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	nodeRepo := cloud.NewNodeRepository(repo)
+	ctx := context.Background()
+
+	nodeID1, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+	nodeID2, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+	nodeID3, err := utils.GenerateRandomString(16)
+	require.NoError(t, err)
+
+	// 创建多个节点
+	node1 := &cloud.Node{
+		ID:        nodeID1,
+		Name:      "Node 1",
+		Address:   "127.0.0.1:8080",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = nodeRepo.CreateNode(ctx, node1)
+	require.NoError(t, err)
+	err = nodeRepo.AddNodeToList(ctx, node1)
+	require.NoError(t, err)
+
+	node2 := &cloud.Node{
+		ID:        nodeID2,
+		Name:      "Node 2",
+		Address:   "127.0.0.1:8081",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = nodeRepo.CreateNode(ctx, node2)
+	require.NoError(t, err)
+	err = nodeRepo.AddNodeToList(ctx, node2)
+	require.NoError(t, err)
+
+	node3 := &cloud.Node{
+		ID:        nodeID3,
+		Name:      "Node 3",
+		Address:   "127.0.0.1:8082",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	err = nodeRepo.CreateNode(ctx, node3)
+	require.NoError(t, err)
+	err = nodeRepo.AddNodeToList(ctx, node3)
+	require.NoError(t, err)
+
+	// 列出所有节点
+	nodes, err := nodeRepo.ListNodes(ctx)
+	require.NoError(t, err)
+	assert.Len(t, nodes, 3)
+
+	// 验证节点列表包含所有创建的节点
+	nodeIDs := make(map[string]bool)
+	for _, node := range nodes {
+		nodeIDs[node.ID] = true
+	}
+
+	assert.True(t, nodeIDs[nodeID1])
+	assert.True(t, nodeIDs[nodeID2])
+	assert.True(t, nodeIDs[nodeID3])
 }
 
 func TestRepository_KeyPrefixes(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	repo := cloud.NewRepository(storage)

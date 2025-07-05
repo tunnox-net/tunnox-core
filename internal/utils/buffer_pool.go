@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"io"
 	"sync"
 )
@@ -10,12 +11,25 @@ import (
 type BufferPool struct {
 	pools map[int]*sync.Pool
 	mu    sync.RWMutex
+	Dispose
 }
 
 // NewBufferPool 创建新的内存池
-func NewBufferPool() *BufferPool {
-	return &BufferPool{
+func NewBufferPool(parentCtx context.Context) *BufferPool {
+	pool := &BufferPool{
 		pools: make(map[int]*sync.Pool),
+	}
+	pool.SetCtx(parentCtx, pool.onClose)
+	return pool
+}
+
+// onClose 资源释放回调
+func (bp *BufferPool) onClose() {
+	bp.mu.Lock()
+	defer bp.mu.Unlock()
+
+	for k := range bp.pools {
+		delete(bp.pools, k)
 	}
 }
 
@@ -69,12 +83,22 @@ func (bp *BufferPool) Put(buf []byte) {
 // GetPool() *BufferPool 获取底层内存池
 type BufferManager struct {
 	pool *BufferPool
+	Dispose
 }
 
 // NewBufferManager 创建缓冲区管理器
-func NewBufferManager() *BufferManager {
-	return &BufferManager{
-		pool: NewBufferPool(),
+func NewBufferManager(parentCtx context.Context) *BufferManager {
+	bm := &BufferManager{
+		pool: NewBufferPool(parentCtx),
+	}
+	bm.SetCtx(parentCtx, bm.onClose)
+	return bm
+}
+
+// onClose 资源释放回调
+func (bm *BufferManager) onClose() {
+	if bm.pool != nil {
+		bm.pool.Close()
 	}
 }
 
@@ -121,6 +145,11 @@ func (bm *BufferManager) GetPool() *BufferPool {
 	return bm.pool
 }
 
+// Close() 关闭缓冲区管理器，释放所有缓冲池
+func (bm *BufferManager) Close() {
+	bm.Dispose.Close()
+}
+
 // ZeroCopyBuffer 零拷贝缓冲区，避免不必要的内存拷贝
 // Data() []byte 获取底层数据（只读）
 // Length() int 获取数据长度
@@ -163,4 +192,9 @@ func (zcb *ZeroCopyBuffer) Copy() []byte {
 	result := make([]byte, len(zcb.data))
 	copy(result, zcb.data)
 	return result
+}
+
+// Close() 关闭内存池，释放所有缓冲池
+func (bp *BufferPool) Close() {
+	bp.Dispose.Close()
 }

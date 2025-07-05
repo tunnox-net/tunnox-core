@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	"tunnox-core/internal/utils"
 )
 
 // TokenCacheManager Token缓存管理器
 type TokenCacheManager struct {
 	storage Storage
+	utils.Dispose
 }
 
 // TokenInfo 缓存中的Token信息
@@ -31,9 +34,11 @@ type RefreshTokenInfo struct {
 
 // NewTokenCacheManager 创建Token缓存管理器
 func NewTokenCacheManager(storage Storage) *TokenCacheManager {
-	return &TokenCacheManager{
+	mgr := &TokenCacheManager{
 		storage: storage,
 	}
+	mgr.Dispose.SetCtx(context.Background(), nil)
+	return mgr
 }
 
 // StoreAccessToken 存储访问Token信息

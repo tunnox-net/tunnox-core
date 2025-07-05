@@ -25,10 +25,16 @@ func NewPackageStream(reader io.Reader, writer io.Writer, parentCtx context.Cont
 	stream := &PackageStream{
 		reader:    reader,
 		writer:    writer,
-		bufferMgr: utils.NewBufferManager(),
+		bufferMgr: utils.NewBufferManager(parentCtx),
 	}
-	stream.SetCtx(parentCtx, nil)
+	stream.SetCtx(parentCtx, stream.onClose)
 	return stream
+}
+
+func (ps *PackageStream) onClose() {
+	if ps.bufferMgr != nil {
+		ps.bufferMgr.Close()
+	}
 }
 
 // readLock 获取读取锁并检查状态

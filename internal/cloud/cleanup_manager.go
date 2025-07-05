@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/utils"
 )
 
 // CleanupManager 分布式清理管理器
@@ -13,6 +14,7 @@ type CleanupManager struct {
 	storage Storage
 	lock    DistributedLock
 	mu      sync.Mutex
+	utils.Dispose
 }
 
 // CleanupTask 清理任务信息
@@ -27,11 +29,22 @@ type CleanupTask struct {
 }
 
 // NewCleanupManager 创建清理管理器
-func NewCleanupManager(storage Storage, lock DistributedLock) *CleanupManager {
-	return &CleanupManager{
+func NewCleanupManager(storage Storage, lock DistributedLock, parentCtx context.Context) *CleanupManager {
+	cm := &CleanupManager{
 		storage: storage,
 		lock:    lock,
 	}
+	cm.SetCtx(parentCtx, cm.onClose)
+	return cm
+}
+
+// onClose 资源释放回调
+func (cm *CleanupManager) onClose() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	// 清理管理器本身不持有需要特殊清理的资源
+	// 但可以在这里添加清理逻辑
 }
 
 // RegisterCleanupTask 注册清理任务

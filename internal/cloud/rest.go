@@ -1,6 +1,7 @@
 package cloud
 
 import (
+	"context"
 	"strings"
 
 	"tunnox-core/internal/constants"
@@ -12,13 +13,22 @@ import (
 // RESTHandler REST API处理器
 type RESTHandler struct {
 	cloudControl CloudControlAPI
+	utils.Dispose
 }
 
 // NewRESTHandler 创建REST处理器
-func NewRESTHandler(cloudControl CloudControlAPI) *RESTHandler {
-	return &RESTHandler{
+func NewRESTHandler(cloudControl CloudControlAPI, parentCtx context.Context) *RESTHandler {
+	handler := &RESTHandler{
 		cloudControl: cloudControl,
 	}
+	handler.SetCtx(parentCtx, handler.onClose)
+	return handler
+}
+
+// onClose 资源释放回调
+func (h *RESTHandler) onClose() {
+	// REST处理器本身不持有需要特殊清理的资源
+	// 但可以在这里添加清理逻辑
 }
 
 // RegisterRoutes 注册REST路由

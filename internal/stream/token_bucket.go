@@ -16,6 +16,7 @@ type TokenBucket struct {
 	lastTime  time.Time  // 上次更新时间
 	mu        sync.Mutex // 保护并发访问
 	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 // NewTokenBucket 创建新的令牌桶
@@ -33,12 +34,21 @@ func NewTokenBucket(rate int64, ctx context.Context) (*TokenBucket, error) {
 		burstSize = int(rate) // 突发大小不应超过速率
 	}
 
+	var realCtx context.Context
+	var cancel context.CancelFunc
+	if ctx != nil {
+		realCtx, cancel = context.WithCancel(ctx)
+	} else {
+		realCtx, cancel = context.WithCancel(context.Background())
+	}
+
 	return &TokenBucket{
 		rate:      rate,
 		burstSize: burstSize,
 		tokens:    0, // 初始令牌数为0，需要等待产生
 		lastTime:  time.Now(),
-		ctx:       ctx,
+		ctx:       realCtx,
+		cancel:    cancel,
 	}, nil
 }
 
@@ -136,4 +146,10 @@ func (tb *TokenBucket) GetTokens() int {
 	tb.mu.Lock()
 	defer tb.mu.Unlock()
 	return tb.tokens
+}
+
+func (tb *TokenBucket) Close() {
+	if tb.cancel != nil {
+		tb.cancel()
+	}
 }

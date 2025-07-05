@@ -10,7 +10,7 @@ import (
 )
 
 func TestMemoryStorage_BasicOperations(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	ctx := context.Background()
@@ -66,7 +66,7 @@ func TestMemoryStorage_BasicOperations(t *testing.T) {
 }
 
 func TestMemoryStorage_ListOperations(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	ctx := context.Background()
@@ -144,7 +144,7 @@ func TestMemoryStorage_ListOperations(t *testing.T) {
 }
 
 func TestMemoryStorage_HashOperations(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	ctx := context.Background()
@@ -215,7 +215,7 @@ func TestMemoryStorage_HashOperations(t *testing.T) {
 }
 
 func TestMemoryStorage_CounterOperations(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	ctx := context.Background()
@@ -250,7 +250,7 @@ func TestMemoryStorage_CounterOperations(t *testing.T) {
 }
 
 func TestMemoryStorage_Expiration(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	ctx := context.Background()
@@ -322,7 +322,7 @@ func TestMemoryStorage_Expiration(t *testing.T) {
 }
 
 func TestMemoryStorage_CleanupExpired(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	ctx := context.Background()
@@ -376,7 +376,7 @@ func TestMemoryStorage_CleanupExpired(t *testing.T) {
 }
 
 func TestMemoryStorage_AutoCleanup(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	ctx := context.Background()
@@ -415,7 +415,7 @@ func TestMemoryStorage_AutoCleanup(t *testing.T) {
 }
 
 func TestMemoryStorage_Concurrency(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	ctx := context.Background()
@@ -463,7 +463,7 @@ func TestMemoryStorage_Concurrency(t *testing.T) {
 }
 
 func TestMemoryStorage_ErrorHandling(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	ctx := context.Background()

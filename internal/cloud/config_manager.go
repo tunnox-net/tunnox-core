@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/utils"
 )
 
 // ConfigManager 配置管理器
@@ -14,6 +15,7 @@ type ConfigManager struct {
 	config   *CloudControlConfig
 	mu       sync.RWMutex
 	watchers []ConfigWatcher
+	utils.Dispose
 }
 
 // ConfigWatcher 配置变更监听器
@@ -22,17 +24,28 @@ type ConfigWatcher interface {
 }
 
 // NewConfigManager 创建配置管理器
-func NewConfigManager(storage Storage, initialConfig *CloudControlConfig) *ConfigManager {
+func NewConfigManager(storage Storage, initialConfig *CloudControlConfig, parentCtx context.Context) *ConfigManager {
 	cm := &ConfigManager{
 		storage:  storage,
 		config:   initialConfig,
 		watchers: make([]ConfigWatcher, 0),
 	}
 
+	cm.SetCtx(parentCtx, cm.onClose)
+
 	// 启动配置监听
 	go cm.watchConfigChanges()
 
 	return cm
+}
+
+// onClose 资源释放回调
+func (cm *ConfigManager) onClose() {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	// 清空监听器
+	cm.watchers = nil
 }
 
 // GetConfig 获取当前配置
@@ -137,6 +150,8 @@ func (cm *ConfigManager) watchConfigChanges() {
 				// 记录错误但不中断监听
 				continue
 			}
+		case <-cm.Ctx().Done():
+			return
 		}
 	}
 }

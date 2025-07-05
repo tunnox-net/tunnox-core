@@ -24,15 +24,19 @@ type BuiltInCloudControl struct {
 	lock           DistributedLock
 	cleanupTicker  *time.Ticker
 	done           chan bool
+
+	// 资源管理
+	utils.Dispose
 }
 
 // NewBuiltInCloudControl 创建新的内置云控
 func NewBuiltInCloudControl(config *CloudControlConfig) *BuiltInCloudControl {
-	memoryStorage := NewMemoryStorage()
+	ctx := context.Background()
+	memoryStorage := NewMemoryStorage(ctx)
 	storage := NewRepository(memoryStorage)
 	lock := NewMemoryLock()
 
-	return &BuiltInCloudControl{
+	cloudControl := &BuiltInCloudControl{
 		config:         config,
 		idGen:          NewDistributedIDGenerator(storage.GetStorage(), lock),
 		userRepo:       NewUserRepository(storage),
@@ -41,23 +45,106 @@ func NewBuiltInCloudControl(config *CloudControlConfig) *BuiltInCloudControl {
 		nodeRepo:       NewNodeRepository(storage),
 		connRepo:       NewConnectionRepository(storage),
 		jwtManager:     NewJWTManager(config, storage),
-		configManager:  NewConfigManager(storage.GetStorage(), config),
-		cleanupManager: NewCleanupManager(storage.GetStorage(), lock),
+		configManager:  NewConfigManager(storage.GetStorage(), config, ctx),
+		cleanupManager: NewCleanupManager(storage.GetStorage(), lock, ctx),
 		lock:           lock,
 		cleanupTicker:  time.NewTicker(DefaultCleanupInterval),
 		done:           make(chan bool),
 	}
+
+	// 设置上下文和资源清理
+	cloudControl.SetCtx(ctx, cloudControl.onClose)
+
+	return cloudControl
 }
 
 // Start 启动内置云控
 func (b *BuiltInCloudControl) Start() {
+	if b.IsClosed() {
+		utils.Warnf("Cloud control is already closed, cannot start")
+		return
+	}
+
 	go b.cleanupRoutine()
+	utils.Infof("Built-in cloud control started successfully")
 }
 
 // Stop 停止内置云控
 func (b *BuiltInCloudControl) Stop() {
-	b.cleanupTicker.Stop()
-	close(b.done)
+	if b.IsClosed() {
+		return
+	}
+
+	utils.Infof("Stopping built-in cloud control...")
+
+	// 停止清理定时器
+	if b.cleanupTicker != nil {
+		b.cleanupTicker.Stop()
+	}
+
+	// 通知清理例程退出
+	select {
+	case b.done <- true:
+	default:
+		// 通道可能已满，直接关闭
+		close(b.done)
+	}
+
+	utils.Infof("Built-in cloud control stopped")
+}
+
+// Close 关闭内置云控
+func (b *BuiltInCloudControl) Close() error {
+	if b.IsClosed() {
+		return nil
+	}
+
+	// 先停止服务
+	b.Stop()
+
+	// 等待清理例程完全退出
+	time.Sleep(100 * time.Millisecond)
+
+	// 触发Dispose清理
+	b.Dispose.Close()
+
+	utils.Infof("Built-in cloud control closed and resources cleaned up")
+	return nil
+}
+
+// onClose 资源清理回调
+func (b *BuiltInCloudControl) onClose() {
+	utils.Infof("Cleaning up cloud control resources...")
+
+	// 停止清理定时器
+	if b.cleanupTicker != nil {
+		b.cleanupTicker.Stop()
+		b.cleanupTicker = nil
+	}
+
+	// 关闭done通道
+	select {
+	case <-b.done:
+		// 通道已关闭
+	default:
+		close(b.done)
+	}
+
+	// 清理各个组件
+	if b.jwtManager != nil {
+		// JWT管理器可能有自己的清理逻辑
+		utils.Infof("JWT manager resources cleaned up")
+	}
+
+	if b.cleanupManager != nil {
+		utils.Infof("Cleanup manager resources cleaned up")
+	}
+
+	if b.lock != nil {
+		utils.Infof("Distributed lock resources cleaned up")
+	}
+
+	utils.Infof("Cloud control resources cleanup completed")
 }
 
 // NodeRegister 节点注册
@@ -688,7 +775,7 @@ func (b *BuiltInCloudControl) GenerateAnonymousCredentials(ctx context.Context) 
 	client := &Client{
 		ID:        fmt.Sprintf("%d", clientID),
 		UserID:    "", // 匿名用户
-		Name:      fmt.Sprintf("Anonymous-%s", authCode[:8]),
+		Name:      fmt.Sprintf("Anonymous-%s", authCode),
 		AuthCode:  authCode,
 		SecretKey: secretKey,
 		Status:    ClientStatusOffline,
@@ -1186,12 +1273,6 @@ func (b *BuiltInCloudControl) RevokeJWTToken(ctx context.Context, token string) 
 	return b.jwtManager.RevokeToken(ctx, claims.ID)
 }
 
-// Close 关闭内置云控
-func (b *BuiltInCloudControl) Close() error {
-	b.Stop()
-	return nil
-}
-
 // cleanupRoutine 清理例程
 func (b *BuiltInCloudControl) cleanupRoutine() {
 	utils.LogSystemEvent("cleanup_routine_started", "cloud_control", nil)
@@ -1199,6 +1280,14 @@ func (b *BuiltInCloudControl) cleanupRoutine() {
 	for {
 		select {
 		case <-b.cleanupTicker.C:
+			// 检查是否已关闭
+			if b.IsClosed() {
+				utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", map[string]interface{}{
+					"reason": "disposed",
+				})
+				return
+			}
+
 			ctx := context.Background()
 			startTime := time.Now()
 
@@ -1239,7 +1328,15 @@ func (b *BuiltInCloudControl) cleanupRoutine() {
 			}
 
 		case <-b.done:
-			utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", nil)
+			utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", map[string]interface{}{
+				"reason": "manual_stop",
+			})
+			return
+
+		case <-b.Ctx().Done():
+			utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", map[string]interface{}{
+				"reason": "context_cancelled",
+			})
 			return
 		}
 	}

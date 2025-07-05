@@ -77,7 +77,7 @@ func BenchmarkReadExact_WithoutPool(b *testing.B) {
 
 // BenchmarkBufferPool_Allocation 测试内存池分配性能
 func BenchmarkBufferPool_Allocation(b *testing.B) {
-	pool := utils.NewBufferPool()
+	pool := utils.NewBufferPool(context.Background())
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -101,7 +101,7 @@ func BenchmarkBufferPool_Allocation_Standard(b *testing.B) {
 
 // TestBufferPool_Concurrent 测试内存池并发安全性
 func TestBufferPool_Concurrent(t *testing.T) {
-	pool := utils.NewBufferPool()
+	pool := utils.NewBufferPool(context.Background())
 
 	// 并发测试
 	const numGoroutines = 100
@@ -137,7 +137,7 @@ func TestBufferPool_Concurrent(t *testing.T) {
 
 // TestBufferPool_MemoryReuse 测试内存池内存复用
 func TestBufferPool_MemoryReuse(t *testing.T) {
-	pool := utils.NewBufferPool()
+	pool := utils.NewBufferPool(context.Background())
 
 	// 分配一些缓冲区
 	buffers := make([][]byte, 10)
@@ -169,11 +169,11 @@ func TestBufferPool_MemoryReuse(t *testing.T) {
 
 // TestBufferManager_Integration 测试缓冲区管理器集成
 func TestBufferManager_Integration(t *testing.T) {
-	manager := utils.NewBufferManager()
+	bm := utils.NewBufferManager(context.Background())
 
 	// 测试分配和释放
-	buf1 := manager.Allocate(1024)
-	buf2 := manager.Allocate(2048)
+	buf1 := bm.Allocate(1024)
+	buf2 := bm.Allocate(2048)
 
 	if len(buf1) != 1024 {
 		t.Errorf("Expected buffer size 1024, got %d", len(buf1))
@@ -193,12 +193,12 @@ func TestBufferManager_Integration(t *testing.T) {
 	}
 
 	// 释放缓冲区
-	manager.Release(buf1)
-	manager.Release(buf2)
+	bm.Release(buf1)
+	bm.Release(buf2)
 
 	// 重新分配，应该复用内存
-	buf3 := manager.Allocate(1024)
-	buf4 := manager.Allocate(2048)
+	buf3 := bm.Allocate(1024)
+	buf4 := bm.Allocate(2048)
 
 	// 检查是否被清零
 	for i, val := range buf3 {
@@ -213,8 +213,8 @@ func TestBufferManager_Integration(t *testing.T) {
 		}
 	}
 
-	manager.Release(buf3)
-	manager.Release(buf4)
+	bm.Release(buf3)
+	bm.Release(buf4)
 }
 
 // BenchmarkPackageStream_ReadExact_LargeData 测试大数据量读取性能
@@ -252,7 +252,7 @@ func BenchmarkPackageStream_ReadExact_LargeData(b *testing.B) {
 
 // TestMemoryPool_Stress 压力测试
 func TestMemoryPool_Stress(t *testing.T) {
-	pool := utils.NewBufferPool()
+	pool := utils.NewBufferPool(context.Background())
 
 	// 模拟高并发场景
 	const numIterations = 10000

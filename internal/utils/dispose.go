@@ -25,8 +25,17 @@ func (c *Dispose) IsClosed() bool {
 }
 
 func (c *Dispose) Close() {
-	if c.cancel != nil {
-		c.cancel()
+	defer c.currentLock.Unlock()
+	c.currentLock.Lock()
+
+	if !c.closed {
+		if c.cancel != nil {
+			c.cancel()
+		}
+		if c.onClose != nil {
+			c.onClose()
+		}
+		c.closed = true
 	}
 }
 

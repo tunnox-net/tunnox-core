@@ -37,10 +37,11 @@ type Server struct {
 	router       *gin.Engine
 	cloudControl cloud.CloudControlAPI
 	httpServer   *http.Server
+	utils.Dispose
 }
 
 // NewServer 创建新服务器
-func NewServer(config *AppConfig) *Server {
+func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 	// 初始化日志
 	if err := utils.InitLogger(&config.Log); err != nil {
 		utils.Fatalf("Failed to initialize logger: %v", err)
@@ -69,6 +70,8 @@ func NewServer(config *AppConfig) *Server {
 		cloudControl: cloudControl,
 	}
 
+	server.SetCtx(parentCtx, server.onClose)
+
 	// 设置中间件
 	server.setupMiddleware()
 
@@ -85,6 +88,24 @@ func NewServer(config *AppConfig) *Server {
 	}
 
 	return server
+}
+
+// onClose 资源释放回调
+func (s *Server) onClose() {
+	// 优雅关闭HTTP服务器
+	if s.httpServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			utils.Errorf("Server forced to shutdown: %v", err)
+		}
+	}
+
+	// 关闭云控制器
+	if s.cloudControl != nil {
+		s.cloudControl.Close()
+	}
 }
 
 // setupMiddleware 设置中间件
@@ -117,7 +138,7 @@ func (s *Server) setupMiddleware() {
 // setupRoutes 设置路由
 func (s *Server) setupRoutes() {
 	// 创建REST处理器
-	restHandler := cloud.NewRESTHandler(s.cloudControl)
+	restHandler := cloud.NewRESTHandler(s.cloudControl, s.Ctx())
 
 	// 注册路由
 	restHandler.RegisterRoutes(s.router)
@@ -237,7 +258,7 @@ func main() {
 	config := getDefaultConfig()
 
 	// 创建服务器
-	server := NewServer(config)
+	server := NewServer(config, context.Background())
 
 	// 启动服务器
 	if err := server.Start(); err != nil {

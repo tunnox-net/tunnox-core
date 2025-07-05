@@ -106,7 +106,7 @@ func RecoveryMiddleware() gin.HandlerFunc {
 
 // RateLimitMiddleware 限流中间件
 func RateLimitMiddleware(limit int, window time.Duration) gin.HandlerFunc {
-	limiter := NewRateLimiter(limit, window)
+	limiter := NewRateLimiter(limit, window, context.Background())
 
 	return func(c *gin.Context) {
 		if !limiter.Allow() {

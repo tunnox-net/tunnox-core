@@ -7,11 +7,14 @@ import (
 	"time"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestZeroCopyBuffer_Basic(t *testing.T) {
 	// 创建内存池
-	pool := utils.NewBufferPool()
+	pool := utils.NewBufferPool(context.Background())
 
 	// 分配缓冲区
 	data := []byte("hello world")
@@ -39,7 +42,7 @@ func TestZeroCopyBuffer_Basic(t *testing.T) {
 
 func TestZeroCopyBuffer_Copy(t *testing.T) {
 	// 创建内存池
-	pool := utils.NewBufferPool()
+	pool := utils.NewBufferPool(context.Background())
 
 	// 分配缓冲区
 	data := []byte("hello world")
@@ -66,7 +69,7 @@ func TestZeroCopyBuffer_Copy(t *testing.T) {
 
 func TestZeroCopyBuffer_MultipleClose(t *testing.T) {
 	// 创建内存池
-	pool := utils.NewBufferPool()
+	pool := utils.NewBufferPool(context.Background())
 
 	// 分配缓冲区
 	data := []byte("test")
@@ -276,7 +279,7 @@ func TestTokenBucket_ContextCancellation(t *testing.T) {
 }
 
 func BenchmarkZeroCopyBuffer_Allocation(b *testing.B) {
-	pool := utils.NewBufferPool()
+	pool := utils.NewBufferPool(context.Background())
 	data := make([]byte, 1024)
 
 	b.ResetTimer()
@@ -295,4 +298,80 @@ func BenchmarkTokenBucket_WaitForTokens(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		tb.WaitForTokens(1000)
 	}
+}
+
+func TestBufferManager_Dispose(t *testing.T) {
+	manager := utils.NewBufferManager(context.Background())
+	require.NotNil(t, manager)
+
+	// 验证未关闭
+	assert.False(t, manager.IsClosed())
+
+	// 关闭缓冲区管理器
+	manager.Close()
+
+	// 验证已关闭
+	assert.True(t, manager.IsClosed())
+}
+
+func TestBufferManager_Dispose_Concurrent(t *testing.T) {
+	manager := utils.NewBufferManager(context.Background())
+	require.NotNil(t, manager)
+
+	// 并发关闭
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 10; i++ {
+			manager.Close()
+		}
+		done <- struct{}{}
+	}()
+	go func() {
+		for i := 0; i < 10; i++ {
+			manager.Close()
+		}
+		done <- struct{}{}
+	}()
+	<-done
+	<-done
+
+	assert.True(t, manager.IsClosed())
+}
+
+func TestBufferPool_Dispose(t *testing.T) {
+	pool := utils.NewBufferPool(context.Background())
+	require.NotNil(t, pool)
+
+	// 验证未关闭
+	assert.False(t, pool.IsClosed())
+
+	// 关闭缓冲区池
+	pool.Close()
+
+	// 验证已关闭
+	assert.True(t, pool.IsClosed())
+}
+
+func TestBufferPool_Dispose_Concurrent(t *testing.T) {
+	pool := utils.NewBufferPool(context.Background())
+	require.NotNil(t, pool)
+
+	// 并发关闭
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 10; i++ {
+			pool.Close()
+		}
+		done <- struct{}{}
+	}()
+	go func() {
+		for i := 0; i < 10; i++ {
+			pool.Close()
+		}
+		done <- struct{}{}
+	}()
+	<-done
+	<-done
+
+	assert.True(t, pool.IsClosed())
 }

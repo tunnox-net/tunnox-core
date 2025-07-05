@@ -89,7 +89,7 @@ func TestLoggerInitialization(t *testing.T) {
 
 func TestHTTPRateLimiter(t *testing.T) {
 	// 测试限流器
-	limiter := utils.NewRateLimiter(5, time.Second)
+	limiter := utils.NewRateLimiter(5, time.Second, context.Background())
 	defer limiter.Close()
 
 	// 测试允许请求

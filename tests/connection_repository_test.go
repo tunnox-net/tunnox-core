@@ -12,7 +12,7 @@ import (
 )
 
 func TestConnectionRepository(t *testing.T) {
-	storage := cloud.NewMemoryStorage()
+	storage := cloud.NewMemoryStorage(context.Background())
 	repo := cloud.NewRepository(storage)
 	connRepo := cloud.NewConnectionRepository(repo)
 
@@ -358,4 +358,49 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 		// require.NoError(t, err)
 		// assert.Len(t, connections, 0)
 	})
+}
+
+func TestConnectionRepository_Dispose(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	connRepo := cloud.NewConnectionRepository(repo)
+	require.NotNil(t, connRepo)
+
+	// 验证初始状态
+	assert.False(t, connRepo.IsClosed())
+	assert.False(t, connRepo.Repository.IsClosed())
+
+	// 关闭ConnectionRepository
+	connRepo.Close()
+	assert.True(t, connRepo.IsClosed())
+	assert.True(t, connRepo.Repository.IsClosed())
+
+	// 多次关闭不报错
+	connRepo.Close()
+	assert.True(t, connRepo.IsClosed())
+	assert.True(t, connRepo.Repository.IsClosed())
+}
+
+func TestConnectionRepository_Dispose_Concurrent(t *testing.T) {
+	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
+	connRepo := cloud.NewConnectionRepository(repo)
+	require.NotNil(t, connRepo)
+
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 10; i++ {
+			connRepo.Close()
+		}
+		done <- struct{}{}
+	}()
+	go func() {
+		for i := 0; i < 10; i++ {
+			connRepo.Close()
+		}
+		done <- struct{}{}
+	}()
+	<-done
+	<-done
+
+	assert.True(t, connRepo.IsClosed())
+	assert.True(t, connRepo.Repository.IsClosed())
 }

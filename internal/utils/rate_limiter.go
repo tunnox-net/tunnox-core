@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -13,10 +14,11 @@ type RateLimiter struct {
 	mutex       sync.RWMutex
 	cleanupTick *time.Ticker
 	done        chan bool
+	Dispose
 }
 
 // NewRateLimiter 创建新的限流器
-func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
+func NewRateLimiter(limit int, window time.Duration, parentCtx context.Context) *RateLimiter {
 	limiter := &RateLimiter{
 		limit:       limit,
 		window:      window,
@@ -25,10 +27,26 @@ func NewRateLimiter(limit int, window time.Duration) *RateLimiter {
 		done:        make(chan bool),
 	}
 
+	limiter.SetCtx(parentCtx, limiter.onClose)
+
 	// 启动清理协程
 	go limiter.cleanupRoutine()
 
 	return limiter
+}
+
+// onClose 资源释放回调
+func (r *RateLimiter) onClose() {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	if r.cleanupTick != nil {
+		r.cleanupTick.Stop()
+		r.cleanupTick = nil
+	}
+
+	close(r.done)
+	r.tokens = nil
 }
 
 // Allow 检查是否允许请求
@@ -73,10 +91,20 @@ func (r *RateLimiter) AllowWithKey(key string) bool {
 // cleanupRoutine 清理协程
 func (r *RateLimiter) cleanupRoutine() {
 	for {
+		r.mutex.RLock()
+		tick := r.cleanupTick
+		r.mutex.RUnlock()
+
+		if tick == nil {
+			return
+		}
+
 		select {
-		case <-r.cleanupTick.C:
+		case <-tick.C:
 			r.cleanupTokens()
 		case <-r.done:
+			return
+		case <-r.Ctx().Done():
 			return
 		}
 	}
@@ -108,8 +136,7 @@ func (r *RateLimiter) cleanupTokens() {
 
 // Close 关闭限流器
 func (r *RateLimiter) Close() {
-	r.cleanupTick.Stop()
-	close(r.done)
+	r.Dispose.Close()
 }
 
 // GetStats 获取统计信息

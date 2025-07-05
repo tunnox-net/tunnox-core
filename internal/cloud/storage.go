@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"time"
+	"tunnox-core/internal/utils"
 )
 
 // 存储相关错误
@@ -55,6 +56,7 @@ type MemoryStorage struct {
 	cleanupTicker  *time.Ticker
 	cleanupStop    chan struct{}
 	cleanupRunning bool
+	utils.Dispose
 }
 
 type storageItem struct {
@@ -63,11 +65,23 @@ type storageItem struct {
 }
 
 // NewMemoryStorage 创建新的内存存储
-func NewMemoryStorage() *MemoryStorage {
-	return &MemoryStorage{
+func NewMemoryStorage(parentCtx context.Context) *MemoryStorage {
+	storage := &MemoryStorage{
 		data:        make(map[string]*storageItem),
 		cleanupStop: make(chan struct{}),
 	}
+	storage.SetCtx(parentCtx, storage.onClose)
+	return storage
+}
+
+// onClose 资源释放回调
+func (m *MemoryStorage) onClose() {
+	m.StopCleanup()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.data = nil
 }
 
 // Set 设置键值对
@@ -433,11 +447,6 @@ func (m *MemoryStorage) StopCleanup() {
 
 // Close 关闭存储
 func (m *MemoryStorage) Close() error {
-	m.StopCleanup()
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.data = nil
+	m.Dispose.Close()
 	return nil
 }
