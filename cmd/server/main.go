@@ -11,6 +11,7 @@ import (
 
 	"tunnox-core/internal/cloud"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/utils"
 
 	"github.com/gin-gonic/gin"
@@ -37,6 +38,7 @@ type Server struct {
 	router       *gin.Engine
 	cloudControl cloud.CloudControlAPI
 	httpServer   *http.Server
+	protocolMgr  *protocol.ProtocolManager
 	utils.Dispose
 }
 
@@ -71,6 +73,14 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 	}
 
 	server.SetCtx(parentCtx, server.onClose)
+	// 创建协议适配器管理器，纳入Dispose树
+	protocolMgr := protocol.NewProtocolManager(server.Ctx())
+	// 注册所有已支持协议（可扩展）
+	tcpAdapter := protocol.NewTcpAdapter(":9000", parentCtx)
+	protocolMgr.Register(tcpAdapter)
+	// 后续可自动注册更多协议适配器
+
+	server.protocolMgr = protocolMgr
 
 	// 设置中间件
 	server.setupMiddleware()
@@ -92,6 +102,10 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 
 // onClose 资源释放回调
 func (s *Server) onClose() {
+	// 优雅关闭协议适配器
+	if s.protocolMgr != nil {
+		s.protocolMgr.CloseAll()
+	}
 	// 优雅关闭HTTP服务器
 	if s.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -104,7 +118,7 @@ func (s *Server) onClose() {
 
 	// 关闭云控制器
 	if s.cloudControl != nil {
-		s.cloudControl.Close()
+		_ = s.cloudControl.Close()
 	}
 }
 
@@ -163,6 +177,13 @@ func (s *Server) Start() error {
 	if err := s.registerNodeToCloud(); err != nil {
 		utils.Errorf("Failed to register node to cloud control: %v", err)
 		return err
+	}
+
+	// 启动所有协议适配器
+	if s.protocolMgr != nil {
+		if err := s.protocolMgr.StartAll(s.Ctx()); err != nil {
+			return err
+		}
 	}
 
 	// 启动服务器
