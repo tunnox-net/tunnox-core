@@ -1,8 +1,120 @@
 # tunnox-core
 
-<p align="center">
-  <a href="README.zh-CN.md">中文</a> | <b>English</b>
-</p>
+High-performance multi-protocol tunnel/relay/proxy core library supporting TCP, WebSocket, UDP, and QUIC. Unified business logic entry, easy to extend.
+
+## Features
+
+- 🚀 **Multi-protocol support**: TCP, WebSocket, UDP, QUIC
+- 🧩 **Unified interface**: All protocol adapters implement the Adapter interface, business logic is handled by ConnectionSession
+- 🔒 **Thread-safe**: All connections and streams are concurrency-safe
+- 🔄 **Easy extensibility**: Add new protocols by implementing the Adapter interface
+- 📦 **Rich examples and docs**: See the docs/ directory
+
+## Quick Start
+
+### 1. Start a multi-protocol server
+
+```go
+package main
+import (
+    "context"
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+    "tunnox-core/internal/cloud"
+    "tunnox-core/internal/protocol"
+)
+
+func main() {
+    ctx := context.Background()
+    cloudControl := cloud.NewBuiltInCloudControl(cloud.DefaultConfig())
+    cloudControl.Start()
+    defer cloudControl.Stop()
+
+    session := &protocol.ConnectionSession{CloudApi: cloudControl}
+    session.SetCtx(ctx, session.onClose)
+    pm := protocol.NewManager(ctx)
+
+    tcp := protocol.NewTcpAdapter(ctx, session)
+    ws := protocol.NewWebSocketAdapter(ctx, session)
+    udp := protocol.NewUdpAdapter(ctx, session)
+    quic := protocol.NewQuicAdapter(ctx, session)
+
+    tcp.ListenFrom(":8080")
+    ws.ListenFrom(":8081")
+    udp.ListenFrom(":8082")
+    quic.ListenFrom(":8083")
+
+    pm.Register(tcp)
+    pm.Register(ws)
+    pm.Register(udp)
+    pm.Register(quic)
+    if err := pm.StartAll(ctx); err != nil {
+        log.Fatal(err)
+    }
+    log.Println("Server started on TCP:8080, WS:8081, UDP:8082, QUIC:8083")
+    sig := make(chan os.Signal, 1)
+    signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+    <-sig
+    pm.CloseAll()
+}
+```
+
+### 2. Client connection example
+
+```go
+// TCP
+client := protocol.NewTcpAdapter(ctx, nil)
+client.ConnectTo("localhost:8080")
+// WebSocket
+ws := protocol.NewWebSocketAdapter(ctx, nil)
+ws.ConnectTo("ws://localhost:8081")
+// UDP
+udp := protocol.NewUdpAdapter(ctx, nil)
+udp.ConnectTo("localhost:8082")
+// QUIC
+quic := protocol.NewQuicAdapter(ctx, nil)
+quic.ConnectTo("localhost:8083")
+```
+
+### 3. Unified business logic entry
+
+All protocol connections are handled by ConnectionSession:
+```go
+func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) {
+    // Business logic here, protocol-agnostic
+}
+```
+
+## Protocol Comparison
+
+| Protocol   | Reliability | Performance | Firewall Friendly | Latency | Typical Use Cases         |
+|------------|-------------|-------------|-------------------|---------|--------------------------|
+| TCP        | High        | Medium      | Good              | Medium  | File transfer, DB        |
+| WebSocket  | High        | Medium      | Excellent         | Medium  | Web, real-time comm      |
+| UDP        | Low         | High        | Good              | Low     | Games, streaming, DNS    |
+| QUIC       | High        | High        | Medium            | Low     | Modern web, mobile apps  |
+
+## Extensibility
+
+- Add new protocols by implementing and registering the Adapter interface
+- Business logic is fully reusable, protocol-agnostic
+
+## Testing
+
+```bash
+go test ./tests -v -run "Test.*Adapter"
+```
+
+## Documentation
+- [Multi-protocol Example](docs/multi_protocol_example.md)
+- [Architecture](docs/architecture.md)
+- [API/Usage Examples](docs/examples.md)
+
+---
+
+For more help or custom development, please open an issue or PR!
 
 ---
 

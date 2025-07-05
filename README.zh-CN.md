@@ -1,8 +1,120 @@
 # tunnox-core
 
-<p align="center">
-  <b>中文</b> | <a href="README.md">English</a>
-</p>
+高性能多协议隧道/中转/代理核心库，支持 TCP、WebSocket、UDP、QUIC 四种协议，统一业务处理入口，易于扩展。
+
+## 特性亮点
+
+- 🚀 **多协议支持**：TCP、WebSocket、UDP、QUIC
+- 🧩 **统一接口**：所有协议适配器实现 Adapter 接口，业务逻辑统一交由 ConnectionSession 处理
+- 🔒 **线程安全**：所有连接和流均为并发安全设计
+- 🔄 **易于扩展**：新增协议只需实现 Adapter 接口即可
+- 📦 **丰富的示例和文档**：docs/ 目录下有详细用法
+
+## 快速上手
+
+### 1. 服务端启动多协议监听
+
+```go
+package main
+import (
+    "context"
+    "log"
+    "os"
+    "os/signal"
+    "syscall"
+    "tunnox-core/internal/cloud"
+    "tunnox-core/internal/protocol"
+)
+
+func main() {
+    ctx := context.Background()
+    cloudControl := cloud.NewBuiltInCloudControl(cloud.DefaultConfig())
+    cloudControl.Start()
+    defer cloudControl.Stop()
+
+    session := &protocol.ConnectionSession{CloudApi: cloudControl}
+    session.SetCtx(ctx, session.onClose)
+    pm := protocol.NewManager(ctx)
+
+    tcp := protocol.NewTcpAdapter(ctx, session)
+    ws := protocol.NewWebSocketAdapter(ctx, session)
+    udp := protocol.NewUdpAdapter(ctx, session)
+    quic := protocol.NewQuicAdapter(ctx, session)
+
+    tcp.ListenFrom(":8080")
+    ws.ListenFrom(":8081")
+    udp.ListenFrom(":8082")
+    quic.ListenFrom(":8083")
+
+    pm.Register(tcp)
+    pm.Register(ws)
+    pm.Register(udp)
+    pm.Register(quic)
+    if err := pm.StartAll(ctx); err != nil {
+        log.Fatal(err)
+    }
+    log.Println("Server started on TCP:8080, WS:8081, UDP:8082, QUIC:8083")
+    sig := make(chan os.Signal, 1)
+    signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
+    <-sig
+    pm.CloseAll()
+}
+```
+
+### 2. 客户端连接示例
+
+```go
+// TCP
+client := protocol.NewTcpAdapter(ctx, nil)
+client.ConnectTo("localhost:8080")
+// WebSocket
+ws := protocol.NewWebSocketAdapter(ctx, nil)
+ws.ConnectTo("ws://localhost:8081")
+// UDP
+udp := protocol.NewUdpAdapter(ctx, nil)
+udp.ConnectTo("localhost:8082")
+// QUIC
+quic := protocol.NewQuicAdapter(ctx, nil)
+quic.ConnectTo("localhost:8083")
+```
+
+### 3. 统一业务处理入口
+
+所有协议的连接最终都由 ConnectionSession 统一处理：
+```go
+func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) {
+    // 业务逻辑在这里实现，与协议无关
+}
+```
+
+## 协议特性对比
+
+| 协议 | 可靠性 | 性能 | 防火墙友好 | 延迟 | 适用场景 |
+|------|--------|------|------------|------|----------|
+| TCP | 高 | 中等 | 好 | 中等 | 文件传输、数据库连接 |
+| WebSocket | 高 | 中等 | 很好 | 中等 | Web应用、实时通信 |
+| UDP | 低 | 高 | 好 | 低 | 游戏、流媒体、DNS |
+| QUIC | 高 | 高 | 中等 | 低 | 现代Web、移动应用 |
+
+## 扩展性
+
+- 新增协议只需实现 Adapter 接口并注册即可
+- 业务逻辑完全复用，无需关心底层协议
+
+## 测试
+
+```bash
+go test ./tests -v -run "Test.*Adapter"
+```
+
+## 文档
+- [多协议适配器示例](docs/multi_protocol_example.zh-CN.md)
+- [架构说明](docs/architecture.zh-CN.md)
+- [API/用法示例](docs/examples.md)
+
+---
+
+如需更多帮助或定制开发，欢迎提 issue 或 PR！
 
 ---
 
