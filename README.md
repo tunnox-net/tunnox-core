@@ -8,12 +8,13 @@
 
 ## Overview
 
-tunnox-core is a high-quality, cloud-controlled intranet tunneling backend core, featuring a layered protocol adapter system, resource tree management, and extensibility for multiple protocols. All resources are managed via a Dispose tree for graceful shutdown and maintainability. The project aims to deliver an elegant, scalable, and production-ready tunneling service core.
+tunnox-core is a high-performance, highly maintainable, and extensible backend core designed for cloud-controlled intranet tunneling scenarios. It features a layered protocol adapter architecture, advanced resource management, and is engineered for low latency and high throughput. All resources are managed via a Dispose tree for graceful shutdown and resource control. The goal is to deliver an elegant, scalable, and production-ready tunneling service core.
 
 ---
 
 ## Features
 
+- **High Performance**: Optimized for low latency and high throughput, with zero-copy data transfer, memory pooling, and efficient concurrency.
 - **Layered Protocol Adapter Architecture**: Unified interface for all protocol adapters, supporting hot-plug and extensibility.
 - **Dispose Tree Resource Management**: All adapters, streams, services, and sessions are managed in a hierarchical Dispose tree for safe and graceful shutdown.
 - **Multi-Protocol Support**: TCP implemented, extensible to HTTP, WebSocket, etc.
