@@ -205,7 +205,6 @@ func (s *Server) Start() error {
 
 // Stop 停止服务器
 func (s *Server) Stop() error {
-	utils.Info("=== STOP METHOD CALLED ===")
 	utils.Info("Shutting down tunnox-core server...")
 
 	// 关闭协议适配器

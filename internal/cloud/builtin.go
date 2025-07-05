@@ -1278,23 +1278,59 @@ func (b *BuiltInCloudControl) RevokeJWTToken(ctx context.Context, token string) 
 func (b *BuiltInCloudControl) cleanupRoutine() {
 	utils.LogSystemEvent("cleanup_routine_started", "cloud_control", nil)
 
-	// 使用更短的ticker间隔，确保能快速响应退出信号
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+	// 注册清理任务
+	ctx := context.Background()
+	tasks := []struct {
+		taskType string
+		interval time.Duration
+	}{
+		{"expired_tokens", 5 * time.Minute},
+		{"orphaned_connections", 2 * time.Minute},
+		{"stale_mappings", 10 * time.Minute},
+	}
+
+	for _, task := range tasks {
+		if err := b.cleanupManager.RegisterCleanupTask(ctx, task.taskType, task.interval); err != nil {
+			utils.Errorf("Failed to register cleanup task %s: %v", task.taskType, err)
+		} else {
+			utils.Infof("Registered cleanup task: %s (interval: %v)", task.taskType, task.interval)
+		}
+	}
 
 	for {
+		// 优先检查退出条件
 		select {
-		case <-ticker.C:
-			// 检查是否已关闭
-			if b.IsClosed() {
-				utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", map[string]interface{}{
-					"reason": "disposed",
-				})
-				utils.Info("Cloud control cleanup routine exited (disposed)")
-				return
-			}
+		case <-b.done:
+			utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", map[string]interface{}{
+				"reason": "manual_stop",
+			})
+			utils.Info("Cloud control cleanup routine exited (manual stop)")
+			return
 
-			// 执行清理逻辑（简化版）
+		case <-b.Ctx().Done():
+			utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", map[string]interface{}{
+				"reason": "context_cancelled",
+			})
+			utils.Info("Cloud control cleanup routine exited (context cancelled)")
+			return
+
+		default:
+			// 如果没有退出信号，检查ticker
+		}
+
+		// 检查是否已关闭
+		if b.IsClosed() {
+			utils.LogSystemEvent("cleanup_routine_stopped", "cloud_control", map[string]interface{}{
+				"reason": "disposed",
+			})
+			utils.Info("Cloud control cleanup routine exited (disposed)")
+			return
+		}
+
+		// 等待ticker或退出信号
+		select {
+		case <-b.cleanupTicker.C:
+			// 执行清理逻辑
 			ctx := context.Background()
 			startTime := time.Now()
 
