@@ -3,7 +3,6 @@ package cloud
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 	"tunnox-core/internal/utils"
 )
@@ -13,20 +12,25 @@ import (
 // 子类只需注入不同的 Storage 实现
 
 type CloudControl struct {
-	config         *ControlConfig
-	storage        Storage
-	idGen          *DistributedIDGenerator
-	userRepo       *UserRepository
-	clientRepo     *ClientRepository
-	mappingRepo    *PortMappingRepo
-	nodeRepo       *NodeRepository
-	connRepo       *ConnectionRepo
-	jwtManager     *JWTManager
-	configManager  *ConfigManager
-	cleanupManager *CleanupManager
-	lock           DistributedLock
-	cleanupTicker  *time.Ticker
-	done           chan bool
+	config            *ControlConfig
+	storage           Storage
+	idGen             *DistributedIDGenerator
+	userRepo          *UserRepository
+	clientRepo        *ClientRepository
+	mappingRepo       *PortMappingRepo
+	nodeRepo          *NodeRepository
+	connRepo          *ConnectionRepo
+	jwtManager        *JWTManager
+	configManager     *ConfigManager
+	cleanupManager    *CleanupManager
+	statsManager      *StatsManager
+	anonymousManager  *AnonymousManager
+	nodeManager       *NodeManager
+	searchManager     *SearchManager
+	connectionManager *ConnectionManager
+	lock              DistributedLock
+	cleanupTicker     *time.Ticker
+	done              chan bool
 	utils.Dispose
 }
 
@@ -34,21 +38,37 @@ func NewCloudControl(config *ControlConfig, storage Storage) *CloudControl {
 	ctx := context.Background()
 	repo := NewRepository(storage)
 	lock := NewMemoryLock() // 可替换为分布式锁
+
+	// 创建仓库实例
+	userRepo := NewUserRepository(repo)
+	clientRepo := NewClientRepository(repo)
+	mappingRepo := NewPortMappingRepo(repo)
+	nodeRepo := NewNodeRepository(repo)
+	connRepo := NewConnectionRepo(repo)
+
+	// 创建ID生成器
+	idGen := NewDistributedIDGenerator(storage, lock)
+
 	base := &CloudControl{
-		config:         config,
-		storage:        storage,
-		idGen:          NewDistributedIDGenerator(storage, lock),
-		userRepo:       NewUserRepository(repo),
-		clientRepo:     NewClientRepository(repo),
-		mappingRepo:    NewPortMappingRepo(repo),
-		nodeRepo:       NewNodeRepository(repo),
-		connRepo:       NewConnectionRepo(repo),
-		jwtManager:     NewJWTManager(config, repo),
-		configManager:  NewConfigManager(storage, config, ctx),
-		cleanupManager: NewCleanupManager(storage, lock, ctx),
-		lock:           lock,
-		cleanupTicker:  time.NewTicker(DefaultCleanupInterval),
-		done:           make(chan bool),
+		config:            config,
+		storage:           storage,
+		idGen:             idGen,
+		userRepo:          userRepo,
+		clientRepo:        clientRepo,
+		mappingRepo:       mappingRepo,
+		nodeRepo:          nodeRepo,
+		connRepo:          connRepo,
+		jwtManager:        NewJWTManager(config, repo),
+		configManager:     NewConfigManager(storage, config, ctx),
+		cleanupManager:    NewCleanupManager(storage, lock, ctx),
+		statsManager:      NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo),
+		anonymousManager:  NewAnonymousManager(clientRepo, mappingRepo, idGen),
+		nodeManager:       NewNodeManager(nodeRepo),
+		searchManager:     NewSearchManager(userRepo, clientRepo, mappingRepo),
+		connectionManager: NewConnectionManager(connRepo, idGen),
+		lock:              lock,
+		cleanupTicker:     time.NewTicker(DefaultCleanupInterval),
+		done:              make(chan bool),
 	}
 	base.SetCtx(ctx, base.onClose)
 	return base
@@ -344,465 +364,97 @@ func (b *CloudControl) ListPortMappings(mappingType MappingType) ([]*PortMapping
 	return b.mappingRepo.GetUserPortMappings("")
 }
 
-// 匿名用户管理
+// 匿名用户管理 - 委托给AnonymousManager
 func (b *CloudControl) GenerateAnonymousCredentials() (*Client, error) {
-	// 生成客户端ID，确保不重复
-	var clientID int64
-	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateClientID(b.Ctx())
-		if err != nil {
-			return nil, fmt.Errorf("generate client ID failed: %w", err)
-		}
-		// 检查客户端是否已存在
-		existingClient, err := b.clientRepo.GetClient(fmt.Sprintf("%d", generatedID))
-		if err != nil {
-			clientID = generatedID
-			break
-		}
-		if existingClient != nil {
-			_ = b.idGen.ReleaseClientID(b.Ctx(), generatedID)
-			continue
-		}
-		clientID = generatedID
-		break
-	}
-	if clientID == 0 {
-		return nil, fmt.Errorf("failed to generate unique client ID after %d attempts", DefaultMaxAttempts)
-	}
-
-	authCode, err := b.idGen.GenerateAuthCode()
-	if err != nil {
-		_ = b.idGen.ReleaseClientID(b.Ctx(), clientID)
-		return nil, fmt.Errorf("generate auth code failed: %w", err)
-	}
-	secretKey, err := b.idGen.GenerateSecretKey()
-	if err != nil {
-		_ = b.idGen.ReleaseClientID(b.Ctx(), clientID)
-		return nil, fmt.Errorf("generate secret key failed: %w", err)
-	}
-	now := time.Now()
-	client := &Client{
-		ID:        clientID,
-		UserID:    "",
-		Name:      fmt.Sprintf("Anonymous-%s", authCode),
-		AuthCode:  authCode,
-		SecretKey: secretKey,
-		Status:    ClientStatusOffline,
-		Type:      ClientTypeAnonymous,
-		Config: ClientConfig{
-			EnableCompression: DefaultEnableCompression,
-			BandwidthLimit:    DefaultAnonymousBandwidthLimit,
-			MaxConnections:    DefaultAnonymousMaxConnections,
-			AllowedPorts:      DefaultAllowedPorts,
-			BlockedPorts:      DefaultBlockedPorts,
-			AutoReconnect:     DefaultAutoReconnect,
-			HeartbeatInterval: DefaultHeartbeatInterval,
-		},
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	if err := b.clientRepo.CreateClient(client); err != nil {
-		_ = b.idGen.ReleaseClientID(b.Ctx(), clientID)
-		return nil, fmt.Errorf("save anonymous client failed: %w", err)
-	}
-	if err := b.clientRepo.AddClientToUser("", client); err != nil {
-		_ = b.clientRepo.DeleteClient(fmt.Sprintf("%d", clientID))
-		_ = b.idGen.ReleaseClientID(b.Ctx(), clientID)
-		return nil, fmt.Errorf("add anonymous client to list failed: %w", err)
-	}
-	return client, nil
+	return b.anonymousManager.GenerateAnonymousCredentials()
 }
 
 func (b *CloudControl) GetAnonymousClient(clientID int64) (*Client, error) {
-	client, err := b.clientRepo.GetClient(fmt.Sprintf("%d", clientID))
-	if err != nil {
-		return nil, err
-	}
-	if client.Type != ClientTypeAnonymous {
-		return nil, fmt.Errorf("client is not anonymous")
-	}
-	return client, nil
+	return b.anonymousManager.GetAnonymousClient(clientID)
 }
 
 func (b *CloudControl) ListAnonymousClients() ([]*Client, error) {
-	return b.clientRepo.ListUserClients("")
+	return b.anonymousManager.ListAnonymousClients()
 }
 
 func (b *CloudControl) DeleteAnonymousClient(clientID int64) error {
-	return b.DeleteClient(clientID)
+	return b.anonymousManager.DeleteAnonymousClient(clientID)
 }
 
 func (b *CloudControl) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol Protocol, sourcePort, targetPort int) (*PortMapping, error) {
-	// 生成端口映射ID，确保不重复
-	var mappingID string
-	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateMappingID(b.Ctx())
-		if err != nil {
-			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
-		}
-
-		// 检查端口映射是否已存在
-		existingMapping, err := b.mappingRepo.GetPortMapping(generatedID)
-		if err != nil {
-			// 端口映射不存在，可以使用这个ID
-			mappingID = generatedID
-			break
-		}
-
-		if existingMapping != nil {
-			// 端口映射已存在，释放ID并重试
-			_ = b.idGen.ReleaseMappingID(b.Ctx(), generatedID)
-			continue
-		}
-
-		mappingID = generatedID
-		break
-	}
-
-	if mappingID == "" {
-		return nil, fmt.Errorf("failed to generate unique mapping ID after %d attempts", DefaultMaxAttempts)
-	}
-
-	now := time.Now()
-	mapping := &PortMapping{
-		ID:             mappingID,
-		UserID:         "",
-		SourceClientID: sourceClientID,
-		TargetClientID: targetClientID,
-		Protocol:       protocol,
-		SourcePort:     sourcePort,
-		TargetPort:     targetPort,
-		Status:         MappingStatusActive,
-		Type:           MappingTypeAnonymous,
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		TrafficStats:   TrafficStats{},
-	}
-
-	if err := b.mappingRepo.CreatePortMapping(mapping); err != nil {
-		// 如果保存失败，释放ID
-		_ = b.idGen.ReleaseMappingID(b.Ctx(), mappingID)
-		return nil, fmt.Errorf("save anonymous mapping failed: %w", err)
-	}
-
-	if err := b.mappingRepo.AddMappingToUser("", mapping); err != nil {
-		// 如果添加到匿名列表失败，删除映射并释放ID
-		_ = b.mappingRepo.DeletePortMapping(mappingID)
-		_ = b.idGen.ReleaseMappingID(b.Ctx(), mappingID)
-		return nil, fmt.Errorf("add anonymous mapping to list failed: %w", err)
-	}
-
-	return mapping, nil
+	return b.anonymousManager.CreateAnonymousMapping(sourceClientID, targetClientID, protocol, sourcePort, targetPort)
 }
 
 func (b *CloudControl) GetAnonymousMappings() ([]*PortMapping, error) {
-	return b.mappingRepo.GetUserPortMappings("")
+	return b.anonymousManager.GetAnonymousMappings()
 }
 
 func (b *CloudControl) CleanupExpiredAnonymous() error {
-	// 这里可以实现清理逻辑
-	return nil
+	return b.anonymousManager.CleanupExpiredAnonymous()
 }
 
-// 节点管理
+// 节点管理 - 委托给NodeManager
 func (b *CloudControl) GetNodeServiceInfo(nodeID string) (*NodeServiceInfo, error) {
-	node, err := b.nodeRepo.GetNode(nodeID)
-	if err != nil {
-		return nil, err
-	}
-	if node == nil {
-		return nil, fmt.Errorf("node not found")
-	}
-
-	return &NodeServiceInfo{
-		NodeID:  node.ID,
-		Address: node.Address,
-	}, nil
+	return b.nodeManager.GetNodeServiceInfo(nodeID)
 }
 
 func (b *CloudControl) GetAllNodeServiceInfo() ([]*NodeServiceInfo, error) {
-	nodes, err := b.nodeRepo.ListNodes()
-	if err != nil {
-		return nil, err
-	}
-
-	var nodeInfos []*NodeServiceInfo
-	for _, node := range nodes {
-		nodeInfo := &NodeServiceInfo{
-			NodeID:  node.ID,
-			Address: node.Address,
-		}
-		nodeInfos = append(nodeInfos, nodeInfo)
-	}
-
-	return nodeInfos, nil
+	return b.nodeManager.GetAllNodeServiceInfo()
 }
 
-// 统计相关
+// 统计相关 - 委托给StatsManager
 func (b *CloudControl) GetUserStats(userID string) (*UserStats, error) {
-	// 获取用户的客户端
-	clients, err := b.clientRepo.ListUserClients(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// 获取用户的端口映射
-	mappings, err := b.mappingRepo.GetUserPortMappings(userID)
-	if err != nil {
-		return nil, err
-	}
-
-	// 计算统计信息
-	totalClients := len(clients)
-	onlineClients := 0
-	totalMappings := len(mappings)
-	activeMappings := 0
-	totalTraffic := int64(0)
-	totalConnections := int64(0)
-	var lastActive time.Time
-
-	for _, client := range clients {
-		if client.Status == ClientStatusOnline {
-			onlineClients++
-		}
-		if client.LastSeen != nil && client.LastSeen.After(lastActive) {
-			lastActive = *client.LastSeen
-		}
-	}
-
-	for _, mapping := range mappings {
-		if mapping.Status == MappingStatusActive {
-			activeMappings++
-		}
-		totalTraffic += mapping.TrafficStats.BytesSent + mapping.TrafficStats.BytesReceived
-		totalConnections += mapping.TrafficStats.Connections
-	}
-
-	return &UserStats{
-		UserID:           userID,
-		TotalClients:     totalClients,
-		OnlineClients:    onlineClients,
-		TotalMappings:    totalMappings,
-		ActiveMappings:   activeMappings,
-		TotalTraffic:     totalTraffic,
-		TotalConnections: totalConnections,
-		LastActive:       lastActive,
-	}, nil
+	return b.statsManager.GetUserStats(userID)
 }
 
 func (b *CloudControl) GetClientStats(clientID int64) (*ClientStats, error) {
-	client, err := b.clientRepo.GetClient(fmt.Sprintf("%d", clientID))
-	if err != nil {
-		return nil, err
-	}
-
-	// 获取客户端的端口映射
-	mappings, err := b.mappingRepo.GetClientPortMappings(fmt.Sprintf("%d", clientID))
-	if err != nil {
-		return nil, err
-	}
-
-	// 计算统计信息
-	totalMappings := len(mappings)
-	activeMappings := 0
-	totalTraffic := int64(0)
-	totalConnections := int64(0)
-	uptime := int64(0)
-
-	for _, mapping := range mappings {
-		if mapping.Status == MappingStatusActive {
-			activeMappings++
-		}
-		totalTraffic += mapping.TrafficStats.BytesSent + mapping.TrafficStats.BytesReceived
-		totalConnections += mapping.TrafficStats.Connections
-	}
-
-	// 计算在线时长
-	if client.LastSeen != nil && client.Status == ClientStatusOnline {
-		uptime = int64(time.Since(*client.LastSeen).Seconds())
-	}
-
-	return &ClientStats{
-		ClientID:         clientID,
-		UserID:           client.UserID,
-		TotalMappings:    totalMappings,
-		ActiveMappings:   activeMappings,
-		TotalTraffic:     totalTraffic,
-		TotalConnections: totalConnections,
-		Uptime:           uptime,
-		LastSeen:         time.Now(),
-	}, nil
+	return b.statsManager.GetClientStats(clientID)
 }
 
 func (b *CloudControl) GetSystemStats() (*SystemStats, error) {
-	// 获取所有用户
-	users, err := b.userRepo.ListUsers("")
-	if err != nil {
-		return nil, err
-	}
-
-	// 获取所有客户端
-	clients, err := b.clientRepo.ListUserClients("")
-	if err != nil {
-		return nil, err
-	}
-
-	// 获取所有端口映射
-	mappings, err := b.mappingRepo.GetUserPortMappings("")
-	if err != nil {
-		return nil, err
-	}
-
-	// 获取所有节点
-	nodes, err := b.nodeRepo.ListNodes()
-	if err != nil {
-		return nil, err
-	}
-
-	// 计算统计信息
-	totalUsers := len(users)
-	totalClients := len(clients)
-	onlineClients := 0
-	totalMappings := len(mappings)
-	activeMappings := 0
-	totalNodes := len(nodes)
-	onlineNodes := 0
-	totalTraffic := int64(0)
-	totalConnections := int64(0)
-	anonymousUsers := 0
-
-	for _, client := range clients {
-		if client.Status == ClientStatusOnline {
-			onlineClients++
-		}
-		if client.Type == ClientTypeAnonymous {
-			anonymousUsers++
-		}
-	}
-
-	for _, mapping := range mappings {
-		if mapping.Status == MappingStatusActive {
-			activeMappings++
-		}
-		totalTraffic += mapping.TrafficStats.BytesSent + mapping.TrafficStats.BytesReceived
-		totalConnections += mapping.TrafficStats.Connections
-	}
-
-	// 简单假设所有节点都在线
-	onlineNodes = totalNodes
-
-	return &SystemStats{
-		TotalUsers:       totalUsers,
-		TotalClients:     totalClients,
-		OnlineClients:    onlineClients,
-		TotalMappings:    totalMappings,
-		ActiveMappings:   activeMappings,
-		TotalNodes:       totalNodes,
-		OnlineNodes:      onlineNodes,
-		TotalTraffic:     totalTraffic,
-		TotalConnections: totalConnections,
-		AnonymousUsers:   anonymousUsers,
-	}, nil
+	return b.statsManager.GetSystemStats()
 }
 
 func (b *CloudControl) GetTrafficStats(timeRange string) ([]*TrafficDataPoint, error) {
-	// 简单实现：返回空数组
-	return []*TrafficDataPoint{}, nil
+	return b.statsManager.GetTrafficStats(timeRange)
 }
 
 func (b *CloudControl) GetConnectionStats(timeRange string) ([]*ConnectionDataPoint, error) {
-	// 简单实现：返回空数组
-	return []*ConnectionDataPoint{}, nil
+	return b.statsManager.GetConnectionStats(timeRange)
 }
 
-// 搜索相关
+// 搜索相关 - 委托给SearchManager
 func (b *CloudControl) SearchUsers(keyword string) ([]*User, error) {
-	users, err := b.userRepo.ListUsers("")
-	if err != nil {
-		return nil, err
-	}
-
-	var results []*User
-	for _, user := range users {
-		if strings.Contains(strings.ToLower(user.Username), strings.ToLower(keyword)) ||
-			strings.Contains(strings.ToLower(user.Email), strings.ToLower(keyword)) {
-			results = append(results, user)
-		}
-	}
-
-	return results, nil
+	return b.searchManager.SearchUsers(keyword)
 }
 
 func (b *CloudControl) SearchClients(keyword string) ([]*Client, error) {
-	clients, err := b.clientRepo.ListUserClients("")
-	if err != nil {
-		return nil, err
-	}
-
-	var results []*Client
-	for _, client := range clients {
-		if strings.Contains(strings.ToLower(client.Name), strings.ToLower(keyword)) ||
-			strings.Contains(fmt.Sprintf("%d", client.ID), keyword) {
-			results = append(results, client)
-		}
-	}
-
-	return results, nil
+	return b.searchManager.SearchClients(keyword)
 }
 
 func (b *CloudControl) SearchPortMappings(keyword string) ([]*PortMapping, error) {
-	mappings, err := b.mappingRepo.GetUserPortMappings("")
-	if err != nil {
-		return nil, err
-	}
-
-	var results []*PortMapping
-	for _, mapping := range mappings {
-		if strings.Contains(mapping.ID, keyword) ||
-			strings.Contains(mapping.TargetHost, keyword) ||
-			strings.Contains(fmt.Sprintf("%d", mapping.SourcePort), keyword) ||
-			strings.Contains(fmt.Sprintf("%d", mapping.TargetPort), keyword) {
-			results = append(results, mapping)
-		}
-	}
-
-	return results, nil
+	return b.searchManager.SearchPortMappings(keyword)
 }
 
-// 连接管理
+// 连接管理 - 委托给ConnectionManager
 func (b *CloudControl) RegisterConnection(mappingID string, connInfo *ConnectionInfo) error {
-	// 如果连接ID为空，则生成新的连接ID
-	if connInfo.ConnID == "" {
-		connID, err := b.idGen.GenerateMappingID(b.Ctx())
-		if err != nil {
-			return fmt.Errorf("generate connection ID failed: %w", err)
-		}
-		connInfo.ConnID = connID
-	}
-
-	connInfo.MappingID = mappingID
-	connInfo.EstablishedAt = time.Now()
-	connInfo.LastActivity = time.Now()
-	connInfo.UpdatedAt = time.Now()
-
-	// 创建连接（CreateConnection会自动添加到映射连接列表）
-	return b.connRepo.CreateConnection(connInfo)
+	return b.connectionManager.RegisterConnection(mappingID, connInfo)
 }
 
 func (b *CloudControl) UnregisterConnection(connID string) error {
-	return b.connRepo.DeleteConnection(connID)
+	return b.connectionManager.UnregisterConnection(connID)
 }
 
 func (b *CloudControl) GetConnections(mappingID string) ([]*ConnectionInfo, error) {
-	return b.connRepo.ListConnections(mappingID)
+	return b.connectionManager.GetConnections(mappingID)
 }
 
 func (b *CloudControl) GetClientConnections(clientID int64) ([]*ConnectionInfo, error) {
-	return b.connRepo.ListClientConns(clientID)
+	return b.connectionManager.GetClientConnections(clientID)
 }
 
 func (b *CloudControl) UpdateConnectionStats(connID string, bytesSent, bytesReceived int64) error {
-	return b.connRepo.UpdateStats(connID, bytesSent, bytesReceived)
+	return b.connectionManager.UpdateConnectionStats(connID, bytesSent, bytesReceived)
 }
 
 // JWT管理

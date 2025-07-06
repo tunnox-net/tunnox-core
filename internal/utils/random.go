@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strconv"
 )
 
 // 错误定义
@@ -162,4 +163,14 @@ func ContainsString(slice []string, item string) bool {
 		}
 	}
 	return false
+}
+
+// Int64ToString 将int64转换为字符串
+func Int64ToString(n int64) string {
+	return strconv.FormatInt(n, 10)
+}
+
+// StringToInt64 将字符串转换为int64
+func StringToInt64(s string) (int64, error) {
+	return strconv.ParseInt(s, 10, 64)
 }
