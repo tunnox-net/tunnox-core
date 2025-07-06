@@ -72,7 +72,7 @@ func (w *GzipWriter) Write(p []byte) (n int, err error) {
 	return w.gWriter.Write(p)
 }
 
-func (w *GzipWriter) Close() {
+func (w *GzipWriter) onClose() {
 	w.closeMutex.Lock()
 	defer w.closeMutex.Unlock()
 
@@ -85,19 +85,11 @@ func (w *GzipWriter) Close() {
 		_ = w.gWriter.Close()
 		w.gWriter = nil
 	}
-
-	// 触发context相关清理
-	w.Dispose.Close()
-}
-
-func (w *GzipWriter) onClose() {
-	// 移除重复调用，避免死锁
-	// w.Close() 已经在 Close() 方法中调用了 Dispose.Close()
 }
 
 func NewGzipWriter(writer io.Writer, parentCtx context.Context) *GzipWriter {
 	w := &GzipWriter{writer: writer}
 	w.gWriter = gzip.NewWriter(writer)
-	w.SetCtx(parentCtx, nil) // 移除 onClose 回调，避免重复调用
+	w.SetCtx(parentCtx, w.onClose)
 	return w
 }

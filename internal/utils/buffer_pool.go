@@ -145,10 +145,7 @@ func (bm *BufferManager) GetPool() *BufferPool {
 	return bm.pool
 }
 
-// Close() 关闭缓冲区管理器，释放所有缓冲池
-func (bm *BufferManager) Close() {
-	bm.Dispose.Close()
-}
+// Close 方法由 utils.Dispose 提供，无需重复实现
 
 // ZeroCopyBuffer 零拷贝缓冲区，避免不必要的内存拷贝
 // Data() []byte 获取底层数据（只读）
@@ -194,7 +191,4 @@ func (zcb *ZeroCopyBuffer) Copy() []byte {
 	return result
 }
 
-// Close() 关闭内存池，释放所有缓冲池
-func (bp *BufferPool) Close() {
-	bp.Dispose.Close()
-}
+// Close 方法由 utils.Dispose 提供，无需重复实现

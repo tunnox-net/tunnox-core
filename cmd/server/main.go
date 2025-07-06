@@ -4,12 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
-
-	"gopkg.in/yaml.v3"
 
 	"tunnox-core/internal/cloud"
 	"tunnox-core/internal/constants"
@@ -133,7 +132,7 @@ func (s *Server) setupProtocolAdapters() error {
 
 	for protocolName, config := range enabledProtocols {
 		// 创建适配器
-		adapter, err := factory.CreateAdapter(protocolName, s.Ctx())
+		adapter, err := factory.CreateAdapter(protocolName, s.protocolMgr.Ctx())
 		if err != nil {
 			return fmt.Errorf("failed to create %s adapter: %v", protocolName, err)
 		}
@@ -223,6 +222,7 @@ func (s *Server) Stop() error {
 		}
 	}
 
+	s.Ctx().Done()
 	utils.Info("Tunnox-core server shutdown completed")
 	return nil
 }
@@ -235,6 +235,7 @@ func (s *Server) WaitForShutdown() {
 
 	// 等待信号
 	<-quit
+
 	utils.Info("Received shutdown signal")
 
 	// 停止服务器

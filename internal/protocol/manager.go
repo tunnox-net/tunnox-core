@@ -36,21 +36,17 @@ func (pm *Manager) StartAll() error {
 }
 
 func (pm *Manager) CloseAll() {
-	pm.adapters = nil
-	pm.Ctx().Done()
+	pm.Dispose.Close()
 }
 
 func (pm *Manager) onClose() {
-	pm.lock.Lock()
-	defer pm.lock.Unlock()
-
-	if pm.IsClosed() {
-		return
-	}
-
 	hasAdapters := len(pm.adapters) > 0
 
 	if hasAdapters {
-		pm.CloseAll()
+		for _, adapter := range pm.adapters {
+			adapter.Close()
+		}
 	}
+
+	pm.adapters = nil
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/errors"
+	"tunnox-core/internal/utils"
 )
 
 // TokenBucket 通用令牌桶实现
@@ -15,12 +16,11 @@ type TokenBucket struct {
 	tokens    int        // 当前令牌数
 	lastTime  time.Time  // 上次更新时间
 	mu        sync.Mutex // 保护并发访问
-	ctx       context.Context
-	cancel    context.CancelFunc
+	utils.Dispose
 }
 
 // NewTokenBucket 创建新的令牌桶
-func NewTokenBucket(rate int64, ctx context.Context) (*TokenBucket, error) {
+func NewTokenBucket(rate int64, parentCtx context.Context) (*TokenBucket, error) {
 	if rate <= 0 {
 		return nil, errors.ErrInvalidRate
 	}
@@ -34,22 +34,23 @@ func NewTokenBucket(rate int64, ctx context.Context) (*TokenBucket, error) {
 		burstSize = int(rate) // 突发大小不应超过速率
 	}
 
-	var realCtx context.Context
-	var cancel context.CancelFunc
-	if ctx != nil {
-		realCtx, cancel = context.WithCancel(ctx)
-	} else {
-		realCtx, cancel = context.WithCancel(context.Background())
-	}
-
-	return &TokenBucket{
+	tokenBucket := &TokenBucket{
 		rate:      rate,
 		burstSize: burstSize,
 		tokens:    0, // 初始令牌数为0，需要等待产生
 		lastTime:  time.Now(),
-		ctx:       realCtx,
-		cancel:    cancel,
-	}, nil
+	}
+
+	// 使用Dispose的context管理
+	tokenBucket.SetCtx(parentCtx, tokenBucket.onClose)
+
+	return tokenBucket, nil
+}
+
+// onClose 资源释放回调
+func (tb *TokenBucket) onClose() {
+	// TokenBucket 本身没有需要特殊清理的资源
+	// context 的取消由 Dispose 自动处理
 }
 
 // WaitForTokens 等待足够的令牌
@@ -84,7 +85,7 @@ func (tb *TokenBucket) WaitForTokens(tokensNeeded int) error {
 			case <-time.After(waitTime):
 				// 重新获取锁
 				tb.mu.Lock()
-			case <-tb.ctx.Done():
+			case <-tb.Ctx().Done():
 				// 重新获取锁
 				tb.mu.Lock()
 				return errors.ErrContextCancelled
@@ -148,8 +149,5 @@ func (tb *TokenBucket) GetTokens() int {
 	return tb.tokens
 }
 
-func (tb *TokenBucket) Close() {
-	if tb.cancel != nil {
-		tb.cancel()
-	}
-}
+// Close 方法由 utils.Dispose 提供，无需重复实现
+// TokenBucket 使用独立的 context 管理，在 onClose 中处理清理

@@ -91,28 +91,21 @@ func (b *BuiltInCloudControl) Stop() {
 	utils.Infof("Built-in cloud control stopped")
 }
 
-// Close 关闭内置云控
+// Close 关闭内置云控（实现CloudControlAPI接口）
 func (b *BuiltInCloudControl) Close() error {
-	if b.IsClosed() {
-		return nil
-	}
-
-	// 先停止服务
-	b.Stop()
-
-	// 等待清理例程完全退出
-	time.Sleep(100 * time.Millisecond)
-
-	// 触发Dispose清理
-	b.Dispose.Close()
-
-	utils.Infof("Built-in cloud control closed and resources cleaned up")
+	b.Ctx().Done()
 	return nil
 }
 
 // onClose 资源清理回调
 func (b *BuiltInCloudControl) onClose() {
 	utils.Infof("Cleaning up cloud control resources...")
+
+	// 先停止服务
+	b.Stop()
+
+	// 等待清理例程完全退出
+	time.Sleep(100 * time.Millisecond)
 
 	// 关闭done通道
 	select {

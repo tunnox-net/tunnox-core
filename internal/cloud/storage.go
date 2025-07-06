@@ -445,7 +445,7 @@ func (m *MemoryStorage) StopCleanup() {
 	m.cleanupRunning = false
 }
 
-// Close 关闭存储
+// Close 关闭存储（实现Storage接口）
 func (m *MemoryStorage) Close() error {
 	m.Dispose.Close()
 	return nil

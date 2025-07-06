@@ -134,10 +134,7 @@ func (r *RateLimiter) cleanupTokens() {
 	}
 }
 
-// Close 关闭限流器
-func (r *RateLimiter) Close() {
-	r.Dispose.Close()
-}
+// Close 方法由 utils.Dispose 提供，无需重复实现
 
 // GetStats 获取统计信息
 func (r *RateLimiter) GetStats() map[string]int {

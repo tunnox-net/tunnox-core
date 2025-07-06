@@ -29,3 +29,8 @@ func (b *BaseAdapter) Name() string     { return b.name }
 func (b *BaseAdapter) Addr() string     { return b.addr }
 func (b *BaseAdapter) SetName(n string) { b.name = n }
 func (b *BaseAdapter) SetAddr(a string) { b.addr = a }
+
+// Close 关闭适配器（实现Adapter接口）
+func (b *BaseAdapter) Close() {
+	b.Dispose.Close()
+}
