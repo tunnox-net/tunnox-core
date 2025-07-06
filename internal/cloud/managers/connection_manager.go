@@ -1,20 +1,23 @@
-package cloud
+package managers
 
 import (
 	"fmt"
 	"time"
+	"tunnox-core/internal/cloud/distributed"
+	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/utils"
 )
 
 // ConnectionManager 连接管理服务
 type ConnectionManager struct {
-	connRepo *ConnectionRepo
-	idGen    *DistributedIDGenerator
+	connRepo *repos.ConnectionRepo
+	idGen    *distributed.DistributedIDGenerator
 	utils.Dispose
 }
 
 // NewConnectionManager 创建连接管理服务
-func NewConnectionManager(connRepo *ConnectionRepo, idGen *DistributedIDGenerator) *ConnectionManager {
+func NewConnectionManager(connRepo *repos.ConnectionRepo, idGen *distributed.DistributedIDGenerator) *ConnectionManager {
 	manager := &ConnectionManager{
 		connRepo: connRepo,
 		idGen:    idGen,
@@ -29,7 +32,7 @@ func (cm *ConnectionManager) onClose() {
 }
 
 // RegisterConnection 注册连接
-func (cm *ConnectionManager) RegisterConnection(mappingID string, connInfo *ConnectionInfo) error {
+func (cm *ConnectionManager) RegisterConnection(mappingID string, connInfo *models.ConnectionInfo) error {
 	// 如果连接ID为空，则生成新的连接ID
 	if connInfo.ConnID == "" {
 		connID, err := cm.idGen.GenerateMappingID(cm.Ctx())
@@ -54,12 +57,12 @@ func (cm *ConnectionManager) UnregisterConnection(connID string) error {
 }
 
 // GetConnections 获取映射的所有连接
-func (cm *ConnectionManager) GetConnections(mappingID string) ([]*ConnectionInfo, error) {
+func (cm *ConnectionManager) GetConnections(mappingID string) ([]*models.ConnectionInfo, error) {
 	return cm.connRepo.ListConnections(mappingID)
 }
 
 // GetClientConnections 获取客户端的所有连接
-func (cm *ConnectionManager) GetClientConnections(clientID int64) ([]*ConnectionInfo, error) {
+func (cm *ConnectionManager) GetClientConnections(clientID int64) ([]*models.ConnectionInfo, error) {
 	return cm.connRepo.ListClientConns(clientID)
 }
 

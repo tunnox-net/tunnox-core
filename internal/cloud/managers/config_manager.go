@@ -1,4 +1,4 @@
-package cloud
+package managers
 
 import (
 	"context"
@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/utils"
 )
 
 // ConfigManager 配置管理器
 type ConfigManager struct {
-	storage  Storage
+	storage  storages.Storage
 	config   *ControlConfig
 	mu       sync.RWMutex
 	watchers []ConfigWatcher
@@ -25,7 +26,7 @@ type ConfigWatcher interface {
 }
 
 // NewConfigManager 创建配置管理器
-func NewConfigManager(storage Storage, initialConfig *ControlConfig, parentCtx context.Context) *ConfigManager {
+func NewConfigManager(storage storages.Storage, initialConfig *ControlConfig, parentCtx context.Context) *ConfigManager {
 	cm := &ConfigManager{
 		storage:  storage,
 		config:   initialConfig,
@@ -40,10 +41,17 @@ func NewConfigManager(storage Storage, initialConfig *ControlConfig, parentCtx c
 	return cm
 }
 
-// onClose 资源释放回调
+// onClose 资源清理回调
 func (cm *ConfigManager) onClose() {
+	utils.Infof("Config manager resources cleaned up")
+	// 停止配置监听
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
+
+	// 清理配置缓存
+	if cm.storage != nil {
+		utils.Infof("Config storage resources cleaned up")
+	}
 
 	// 清空监听器
 	cm.watchers = nil

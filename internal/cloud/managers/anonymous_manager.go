@@ -1,21 +1,27 @@
-package cloud
+package managers
 
 import (
 	"fmt"
 	"time"
+	"tunnox-core/internal/cloud/configs"
+	"tunnox-core/internal/cloud/constants"
+	"tunnox-core/internal/cloud/distributed"
+	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/utils"
 )
 
 // AnonymousManager 匿名用户管理服务
 type AnonymousManager struct {
-	clientRepo  *ClientRepository
-	mappingRepo *PortMappingRepo
-	idGen       *DistributedIDGenerator
+	clientRepo  *repos.ClientRepository
+	mappingRepo *repos.PortMappingRepo
+	idGen       *distributed.DistributedIDGenerator
 	utils.Dispose
 }
 
 // NewAnonymousManager 创建匿名用户管理服务
-func NewAnonymousManager(clientRepo *ClientRepository, mappingRepo *PortMappingRepo, idGen *DistributedIDGenerator) *AnonymousManager {
+func NewAnonymousManager(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idGen *distributed.DistributedIDGenerator) *AnonymousManager {
 	manager := &AnonymousManager{
 		clientRepo:  clientRepo,
 		mappingRepo: mappingRepo,
@@ -28,13 +34,15 @@ func NewAnonymousManager(clientRepo *ClientRepository, mappingRepo *PortMappingR
 // onClose 资源清理回调
 func (am *AnonymousManager) onClose() {
 	utils.Infof("Anonymous manager resources cleaned up")
+	// 清理匿名客户端缓存和临时数据
+	// 这里可以添加清理匿名资源的逻辑
 }
 
 // GenerateAnonymousCredentials 生成匿名客户端凭据
-func (am *AnonymousManager) GenerateAnonymousCredentials() (*Client, error) {
+func (am *AnonymousManager) GenerateAnonymousCredentials() (*models.Client, error) {
 	// 生成客户端ID，确保不重复
 	var clientID int64
-	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
+	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
 		generatedID, err := am.idGen.GenerateClientID(am.Ctx())
 		if err != nil {
 			return nil, fmt.Errorf("generate client ID failed: %w", err)
@@ -53,7 +61,7 @@ func (am *AnonymousManager) GenerateAnonymousCredentials() (*Client, error) {
 		break
 	}
 	if clientID == 0 {
-		return nil, fmt.Errorf("failed to generate unique client ID after %d attempts", DefaultMaxAttempts)
+		return nil, fmt.Errorf("failed to generate unique client ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
 	authCode, err := am.idGen.GenerateAuthCode()
@@ -67,22 +75,22 @@ func (am *AnonymousManager) GenerateAnonymousCredentials() (*Client, error) {
 		return nil, fmt.Errorf("generate secret key failed: %w", err)
 	}
 	now := time.Now()
-	client := &Client{
+	client := &models.Client{
 		ID:        clientID,
 		UserID:    "",
 		Name:      fmt.Sprintf("Anonymous-%s", authCode),
 		AuthCode:  authCode,
 		SecretKey: secretKey,
-		Status:    ClientStatusOffline,
-		Type:      ClientTypeAnonymous,
-		Config: ClientConfig{
-			EnableCompression: DefaultEnableCompression,
-			BandwidthLimit:    DefaultAnonymousBandwidthLimit,
-			MaxConnections:    DefaultAnonymousMaxConnections,
-			AllowedPorts:      DefaultAllowedPorts,
-			BlockedPorts:      DefaultBlockedPorts,
-			AutoReconnect:     DefaultAutoReconnect,
-			HeartbeatInterval: DefaultHeartbeatInterval,
+		Status:    models.ClientStatusOffline,
+		Type:      models.ClientTypeAnonymous,
+		Config: configs.ClientConfig{
+			EnableCompression: constants.DefaultEnableCompression,
+			BandwidthLimit:    constants.DefaultAnonymousBandwidthLimit,
+			MaxConnections:    constants.DefaultAnonymousMaxConnections,
+			AllowedPorts:      constants.DefaultAllowedPorts,
+			BlockedPorts:      constants.DefaultBlockedPorts,
+			AutoReconnect:     constants.DefaultAutoReconnect,
+			HeartbeatInterval: constants.DefaultHeartbeatInterval,
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -100,19 +108,19 @@ func (am *AnonymousManager) GenerateAnonymousCredentials() (*Client, error) {
 }
 
 // GetAnonymousClient 获取匿名客户端
-func (am *AnonymousManager) GetAnonymousClient(clientID int64) (*Client, error) {
+func (am *AnonymousManager) GetAnonymousClient(clientID int64) (*models.Client, error) {
 	client, err := am.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
 		return nil, err
 	}
-	if client.Type != ClientTypeAnonymous {
+	if client.Type != models.ClientTypeAnonymous {
 		return nil, fmt.Errorf("client is not anonymous")
 	}
 	return client, nil
 }
 
 // ListAnonymousClients 列出所有匿名客户端
-func (am *AnonymousManager) ListAnonymousClients() ([]*Client, error) {
+func (am *AnonymousManager) ListAnonymousClients() ([]*models.Client, error) {
 	return am.clientRepo.ListUserClients("")
 }
 
@@ -128,10 +136,10 @@ func (am *AnonymousManager) DeleteAnonymousClient(clientID int64) error {
 }
 
 // CreateAnonymousMapping 创建匿名端口映射
-func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol Protocol, sourcePort, targetPort int) (*PortMapping, error) {
+func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
 	// 生成端口映射ID，确保不重复
 	var mappingID string
-	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
+	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
 		generatedID, err := am.idGen.GenerateMappingID(am.Ctx())
 		if err != nil {
 			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
@@ -156,11 +164,11 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 	}
 
 	if mappingID == "" {
-		return nil, fmt.Errorf("failed to generate unique mapping ID after %d attempts", DefaultMaxAttempts)
+		return nil, fmt.Errorf("failed to generate unique mapping ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
 	now := time.Now()
-	mapping := &PortMapping{
+	mapping := &models.PortMapping{
 		ID:             mappingID,
 		UserID:         "",
 		SourceClientID: sourceClientID,
@@ -168,11 +176,11 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 		Protocol:       protocol,
 		SourcePort:     sourcePort,
 		TargetPort:     targetPort,
-		Status:         MappingStatusActive,
-		Type:           MappingTypeAnonymous,
+		Status:         models.MappingStatusActive,
+		Type:           models.MappingTypeAnonymous,
 		CreatedAt:      now,
 		UpdatedAt:      now,
-		TrafficStats:   TrafficStats{},
+		TrafficStats:   stats.TrafficStats{},
 	}
 
 	if err := am.mappingRepo.CreatePortMapping(mapping); err != nil {
@@ -192,7 +200,7 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 }
 
 // GetAnonymousMappings 获取所有匿名端口映射
-func (am *AnonymousManager) GetAnonymousMappings() ([]*PortMapping, error) {
+func (am *AnonymousManager) GetAnonymousMappings() ([]*models.PortMapping, error) {
 	return am.mappingRepo.GetUserPortMappings("")
 }
 

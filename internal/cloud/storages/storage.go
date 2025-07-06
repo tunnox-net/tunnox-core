@@ -1,10 +1,11 @@
-package cloud
+package storages
 
 import (
 	"context"
 	"errors"
 	"sync"
 	"time"
+	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/utils"
 )
 
@@ -170,7 +171,7 @@ func (m *MemoryStorage) AppendToList(key string, value interface{}) error {
 	if !exists {
 		m.data[key] = &storageItem{
 			value:      []interface{}{value},
-			expiration: time.Now().Add(DefaultDataTTL),
+			expiration: time.Now().Add(constants.DefaultDataTTL),
 		}
 		return nil
 	}
@@ -178,7 +179,7 @@ func (m *MemoryStorage) AppendToList(key string, value interface{}) error {
 	if time.Now().After(item.expiration) {
 		m.data[key] = &storageItem{
 			value:      []interface{}{value},
-			expiration: time.Now().Add(DefaultDataTTL),
+			expiration: time.Now().Add(constants.DefaultDataTTL),
 		}
 		return nil
 	}
@@ -229,14 +230,14 @@ func (m *MemoryStorage) SetHash(key string, field string, value interface{}) err
 	if !exists {
 		item = &storageItem{
 			value:      make(map[string]interface{}),
-			expiration: time.Now().Add(DefaultDataTTL),
+			expiration: time.Now().Add(constants.DefaultDataTTL),
 		}
 		m.data[key] = item
 	}
 
 	if time.Now().After(item.expiration) {
 		item.value = make(map[string]interface{})
-		item.expiration = time.Now().Add(DefaultDataTTL)
+		item.expiration = time.Now().Add(constants.DefaultDataTTL)
 	}
 
 	if hash, ok := item.value.(map[string]interface{}); ok {
@@ -335,14 +336,14 @@ func (m *MemoryStorage) IncrBy(key string, value int64) (int64, error) {
 	if !exists {
 		item = &storageItem{
 			value:      int64(0),
-			expiration: time.Now().Add(DefaultDataTTL),
+			expiration: time.Now().Add(constants.DefaultDataTTL),
 		}
 		m.data[key] = item
 	}
 
 	if time.Now().After(item.expiration) {
 		item.value = int64(0)
-		item.expiration = time.Now().Add(DefaultDataTTL)
+		item.expiration = time.Now().Add(constants.DefaultDataTTL)
 	}
 
 	if counter, ok := item.value.(int64); ok {

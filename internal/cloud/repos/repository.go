@@ -1,10 +1,14 @@
-package cloud
+package repos
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
+	constants2 "tunnox-core/internal/cloud/constants"
+	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
 
 	"tunnox-core/internal/utils"
@@ -12,12 +16,12 @@ import (
 
 // Repository 数据访问层
 type Repository struct {
-	storage Storage
+	storage storages.Storage
 	utils.Dispose
 }
 
 // NewRepository 创建新的数据访问层
-func NewRepository(storage Storage) *Repository {
+func NewRepository(storage storages.Storage) *Repository {
 	repo := &Repository{
 		storage: storage,
 	}
@@ -26,7 +30,7 @@ func NewRepository(storage Storage) *Repository {
 }
 
 // GetStorage 获取底层存储实例
-func (r *Repository) GetStorage() Storage {
+func (r *Repository) GetStorage() storages.Storage {
 	return r.storage
 }
 
@@ -41,18 +45,18 @@ func NewUserRepository(repo *Repository) *UserRepository {
 }
 
 // SaveUser 保存用户（创建或更新）
-func (r *UserRepository) SaveUser(user *User) error {
+func (r *UserRepository) SaveUser(user *models.User) error {
 	data, err := json.Marshal(user)
 	if err != nil {
 		return fmt.Errorf("marshal user failed: %w", err)
 	}
 
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUser, user.ID)
-	return r.storage.Set(key, string(data), DefaultUserDataTTL)
+	return r.storage.Set(key, string(data), constants2.DefaultUserDataTTL)
 }
 
 // CreateUser 创建新用户（仅创建，不允许覆盖）
-func (r *UserRepository) CreateUser(user *User) error {
+func (r *UserRepository) CreateUser(user *models.User) error {
 	// 检查用户是否已存在
 	existingUser, err := r.GetUser(user.ID)
 	if err == nil && existingUser != nil {
@@ -63,7 +67,7 @@ func (r *UserRepository) CreateUser(user *User) error {
 }
 
 // UpdateUser 更新用户（仅更新，不允许创建）
-func (r *UserRepository) UpdateUser(user *User) error {
+func (r *UserRepository) UpdateUser(user *models.User) error {
 	// 检查用户是否存在
 	existingUser, _ := r.GetUser(user.ID)
 	if existingUser == nil {
@@ -74,7 +78,7 @@ func (r *UserRepository) UpdateUser(user *User) error {
 }
 
 // GetUser 获取用户
-func (r *UserRepository) GetUser(userID string) (*User, error) {
+func (r *UserRepository) GetUser(userID string) (*models.User, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUser, userID)
 	data, err := r.storage.Get(key)
 	if err != nil {
@@ -86,7 +90,7 @@ func (r *UserRepository) GetUser(userID string) (*User, error) {
 		return nil, fmt.Errorf("invalid user data type")
 	}
 
-	var user User
+	var user models.User
 	if err := json.Unmarshal([]byte(userData), &user); err != nil {
 		return nil, fmt.Errorf("unmarshal user failed: %w", err)
 	}
@@ -101,17 +105,17 @@ func (r *UserRepository) DeleteUser(userID string) error {
 }
 
 // ListUsers 列出用户
-func (r *UserRepository) ListUsers(userType UserType) ([]*User, error) {
+func (r *UserRepository) ListUsers(userType models.UserType) ([]*models.User, error) {
 	key := constants.KeyPrefixUserList
 	data, err := r.storage.GetList(key)
 	if err != nil {
-		return []*User{}, nil
+		return []*models.User{}, nil
 	}
 
-	var users []*User
+	var users []*models.User
 	for _, item := range data {
 		if userData, ok := item.(string); ok {
-			var user User
+			var user models.User
 			if err := json.Unmarshal([]byte(userData), &user); err != nil {
 				continue
 			}
@@ -125,7 +129,7 @@ func (r *UserRepository) ListUsers(userType UserType) ([]*User, error) {
 }
 
 // AddUserToList 添加用户到列表
-func (r *UserRepository) AddUserToList(user *User) error {
+func (r *UserRepository) AddUserToList(user *models.User) error {
 	data, err := json.Marshal(user)
 	if err != nil {
 		return err
@@ -146,14 +150,14 @@ func NewClientRepository(repo *Repository) *ClientRepository {
 }
 
 // SaveClient 保存客户端（创建或更新）
-func (r *ClientRepository) SaveClient(client *Client) error {
+func (r *ClientRepository) SaveClient(client *models.Client) error {
 	data, err := json.Marshal(client)
 	if err != nil {
 		return fmt.Errorf("marshal client failed: %w", err)
 	}
 
 	key := fmt.Sprintf("%s:%d", constants.KeyPrefixClient, client.ID)
-	err = r.storage.Set(key, string(data), DefaultClientDataTTL)
+	err = r.storage.Set(key, string(data), constants2.DefaultClientDataTTL)
 	if err != nil {
 		return err
 	}
@@ -163,7 +167,7 @@ func (r *ClientRepository) SaveClient(client *Client) error {
 }
 
 // CreateClient 创建新客户端（仅创建，不允许覆盖）
-func (r *ClientRepository) CreateClient(client *Client) error {
+func (r *ClientRepository) CreateClient(client *models.Client) error {
 	// 检查客户端是否已存在
 	existingClient, err := r.GetClient(fmt.Sprintf("%d", client.ID))
 	if err == nil && existingClient != nil {
@@ -174,7 +178,7 @@ func (r *ClientRepository) CreateClient(client *Client) error {
 }
 
 // UpdateClient 更新客户端（仅更新，不允许创建）
-func (r *ClientRepository) UpdateClient(client *Client) error {
+func (r *ClientRepository) UpdateClient(client *models.Client) error {
 	// 检查客户端是否存在
 	existingClient, _ := r.GetClient(fmt.Sprintf("%d", client.ID))
 	if existingClient == nil {
@@ -185,7 +189,7 @@ func (r *ClientRepository) UpdateClient(client *Client) error {
 }
 
 // GetClient 获取客户端
-func (r *ClientRepository) GetClient(clientID string) (*Client, error) {
+func (r *ClientRepository) GetClient(clientID string) (*models.Client, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClient, clientID)
 	data, err := r.storage.Get(key)
 	if err != nil {
@@ -197,7 +201,7 @@ func (r *ClientRepository) GetClient(clientID string) (*Client, error) {
 		return nil, fmt.Errorf("invalid client data type")
 	}
 
-	var client Client
+	var client models.Client
 	if err := json.Unmarshal([]byte(clientData), &client); err != nil {
 		return nil, fmt.Errorf("unmarshal client failed: %w", err)
 	}
@@ -212,7 +216,7 @@ func (r *ClientRepository) DeleteClient(clientID string) error {
 }
 
 // UpdateClientStatus 更新客户端状态
-func (r *ClientRepository) UpdateClientStatus(clientID string, status ClientStatus, nodeID string) error {
+func (r *ClientRepository) UpdateClientStatus(clientID string, status models.ClientStatus, nodeID string) error {
 	client, err := r.GetClient(clientID)
 	if err != nil {
 		return err
@@ -226,17 +230,17 @@ func (r *ClientRepository) UpdateClientStatus(clientID string, status ClientStat
 }
 
 // ListUserClients 列出用户的所有客户端
-func (r *ClientRepository) ListUserClients(userID string) ([]*Client, error) {
+func (r *ClientRepository) ListUserClients(userID string) ([]*models.Client, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserClients, userID)
 	data, err := r.storage.GetList(key)
 	if err != nil {
-		return []*Client{}, nil
+		return []*models.Client{}, nil
 	}
 
-	var clients []*Client
+	var clients []*models.Client
 	for _, item := range data {
 		if clientData, ok := item.(string); ok {
-			var client Client
+			var client models.Client
 			if err := json.Unmarshal([]byte(clientData), &client); err != nil {
 				continue
 			}
@@ -248,7 +252,7 @@ func (r *ClientRepository) ListUserClients(userID string) ([]*Client, error) {
 }
 
 // AddClientToUser 添加客户端到用户
-func (r *ClientRepository) AddClientToUser(userID string, client *Client) error {
+func (r *ClientRepository) AddClientToUser(userID string, client *models.Client) error {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserClients, userID)
 	data, err := json.Marshal(client)
 	if err != nil {
@@ -259,7 +263,7 @@ func (r *ClientRepository) AddClientToUser(userID string, client *Client) error 
 }
 
 // RemoveClientFromUser 从用户移除客户端
-func (r *ClientRepository) RemoveClientFromUser(userID string, client *Client) error {
+func (r *ClientRepository) RemoveClientFromUser(userID string, client *models.Client) error {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserClients, userID)
 	data, err := json.Marshal(client)
 	if err != nil {
@@ -270,17 +274,17 @@ func (r *ClientRepository) RemoveClientFromUser(userID string, client *Client) e
 }
 
 // ListClients 列出所有客户端
-func (r *ClientRepository) ListClients() ([]*Client, error) {
+func (r *ClientRepository) ListClients() ([]*models.Client, error) {
 	key := constants.KeyPrefixClientList
 	data, err := r.storage.GetList(key)
 	if err != nil {
-		return []*Client{}, nil
+		return []*models.Client{}, nil
 	}
 
-	var clients []*Client
+	var clients []*models.Client
 	for _, item := range data {
 		if clientData, ok := item.(string); ok {
-			var client Client
+			var client models.Client
 			if err := json.Unmarshal([]byte(clientData), &client); err != nil {
 				continue
 			}
@@ -292,7 +296,7 @@ func (r *ClientRepository) ListClients() ([]*Client, error) {
 }
 
 // AddClientToList 添加客户端到全局客户端列表
-func (r *ClientRepository) AddClientToList(client *Client) error {
+func (r *ClientRepository) AddClientToList(client *models.Client) error {
 	key := constants.KeyPrefixClientList
 	data, err := json.Marshal(client)
 	if err != nil {
@@ -303,7 +307,7 @@ func (r *ClientRepository) AddClientToList(client *Client) error {
 }
 
 // saveUserClients 保存用户客户端列表
-func (r *ClientRepository) saveUserClients(userID string, clients []*Client) error {
+func (r *ClientRepository) saveUserClients(userID string, clients []*models.Client) error {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserClients, userID)
 	var data []interface{}
 
@@ -315,7 +319,7 @@ func (r *ClientRepository) saveUserClients(userID string, clients []*Client) err
 		data = append(data, string(clientData))
 	}
 
-	return r.storage.SetList(key, data, DefaultUserDataTTL)
+	return r.storage.SetList(key, data, constants2.DefaultUserDataTTL)
 }
 
 // PortMappingRepo 端口映射数据访问
@@ -329,18 +333,18 @@ func NewPortMappingRepo(repo *Repository) *PortMappingRepo {
 }
 
 // SavePortMapping 保存端口映射（创建或更新）
-func (r *PortMappingRepo) SavePortMapping(mapping *PortMapping) error {
+func (r *PortMappingRepo) SavePortMapping(mapping *models.PortMapping) error {
 	data, err := json.Marshal(mapping)
 	if err != nil {
 		return fmt.Errorf("marshal port mapping failed: %w", err)
 	}
 
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixPortMapping, mapping.ID)
-	return r.storage.Set(key, string(data), DefaultMappingDataTTL)
+	return r.storage.Set(key, string(data), constants2.DefaultMappingDataTTL)
 }
 
 // CreatePortMapping 创建新端口映射（仅创建，不允许覆盖）
-func (r *PortMappingRepo) CreatePortMapping(mapping *PortMapping) error {
+func (r *PortMappingRepo) CreatePortMapping(mapping *models.PortMapping) error {
 	// 检查端口映射是否已存在
 	existingMapping, err := r.GetPortMapping(mapping.ID)
 	if err == nil && existingMapping != nil {
@@ -351,7 +355,7 @@ func (r *PortMappingRepo) CreatePortMapping(mapping *PortMapping) error {
 }
 
 // UpdatePortMapping 更新端口映射（仅更新，不允许创建）
-func (r *PortMappingRepo) UpdatePortMapping(mapping *PortMapping) error {
+func (r *PortMappingRepo) UpdatePortMapping(mapping *models.PortMapping) error {
 	// 检查端口映射是否存在
 	existingMapping, _ := r.GetPortMapping(mapping.ID)
 	if existingMapping == nil {
@@ -362,7 +366,7 @@ func (r *PortMappingRepo) UpdatePortMapping(mapping *PortMapping) error {
 }
 
 // GetPortMapping 获取端口映射
-func (r *PortMappingRepo) GetPortMapping(mappingID string) (*PortMapping, error) {
+func (r *PortMappingRepo) GetPortMapping(mappingID string) (*models.PortMapping, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixPortMapping, mappingID)
 	data, err := r.storage.Get(key)
 	if err != nil {
@@ -374,7 +378,7 @@ func (r *PortMappingRepo) GetPortMapping(mappingID string) (*PortMapping, error)
 		return nil, fmt.Errorf("invalid mapping data type")
 	}
 
-	var mapping PortMapping
+	var mapping models.PortMapping
 	if err := json.Unmarshal([]byte(mappingData), &mapping); err != nil {
 		return nil, fmt.Errorf("unmarshal port mapping failed: %w", err)
 	}
@@ -389,7 +393,7 @@ func (r *PortMappingRepo) DeletePortMapping(mappingID string) error {
 }
 
 // UpdatePortMappingStatus 更新端口映射状态
-func (r *PortMappingRepo) UpdatePortMappingStatus(mappingID string, status MappingStatus) error {
+func (r *PortMappingRepo) UpdatePortMappingStatus(mappingID string, status models.MappingStatus) error {
 	mapping, err := r.GetPortMapping(mappingID)
 	if err != nil {
 		return err
@@ -402,7 +406,7 @@ func (r *PortMappingRepo) UpdatePortMappingStatus(mappingID string, status Mappi
 }
 
 // UpdatePortMappingStats 更新端口映射统计
-func (r *PortMappingRepo) UpdatePortMappingStats(mappingID string, stats *TrafficStats) error {
+func (r *PortMappingRepo) UpdatePortMappingStats(mappingID string, stats *stats.TrafficStats) error {
 	mapping, err := r.GetPortMapping(mappingID)
 	if err != nil {
 		return err
@@ -417,17 +421,17 @@ func (r *PortMappingRepo) UpdatePortMappingStats(mappingID string, stats *Traffi
 }
 
 // GetUserPortMappings 列出用户的端口映射
-func (r *PortMappingRepo) GetUserPortMappings(userID string) ([]*PortMapping, error) {
+func (r *PortMappingRepo) GetUserPortMappings(userID string) ([]*models.PortMapping, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserMappings, userID)
 	data, err := r.storage.GetList(key)
 	if err != nil {
-		return []*PortMapping{}, nil
+		return []*models.PortMapping{}, nil
 	}
 
-	var mappings []*PortMapping
+	var mappings []*models.PortMapping
 	for _, item := range data {
 		if mappingData, ok := item.(string); ok {
-			var mapping PortMapping
+			var mapping models.PortMapping
 			if err := json.Unmarshal([]byte(mappingData), &mapping); err != nil {
 				continue
 			}
@@ -439,17 +443,17 @@ func (r *PortMappingRepo) GetUserPortMappings(userID string) ([]*PortMapping, er
 }
 
 // GetClientPortMappings 列出客户端的端口映射
-func (r *PortMappingRepo) GetClientPortMappings(clientID string) ([]*PortMapping, error) {
+func (r *PortMappingRepo) GetClientPortMappings(clientID string) ([]*models.PortMapping, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, clientID)
 	data, err := r.storage.GetList(key)
 	if err != nil {
-		return []*PortMapping{}, nil
+		return []*models.PortMapping{}, nil
 	}
 
-	var mappings []*PortMapping
+	var mappings []*models.PortMapping
 	for _, item := range data {
 		if mappingData, ok := item.(string); ok {
-			var mapping PortMapping
+			var mapping models.PortMapping
 			if err := json.Unmarshal([]byte(mappingData), &mapping); err != nil {
 				continue
 			}
@@ -461,7 +465,7 @@ func (r *PortMappingRepo) GetClientPortMappings(clientID string) ([]*PortMapping
 }
 
 // AddMappingToUser 添加映射到用户
-func (r *PortMappingRepo) AddMappingToUser(userID string, mapping *PortMapping) error {
+func (r *PortMappingRepo) AddMappingToUser(userID string, mapping *models.PortMapping) error {
 	data, err := json.Marshal(mapping)
 	if err != nil {
 		return err
@@ -472,7 +476,7 @@ func (r *PortMappingRepo) AddMappingToUser(userID string, mapping *PortMapping) 
 }
 
 // AddMappingToClient 添加映射到客户端
-func (r *PortMappingRepo) AddMappingToClient(clientID string, mapping *PortMapping) error {
+func (r *PortMappingRepo) AddMappingToClient(clientID string, mapping *models.PortMapping) error {
 	data, err := json.Marshal(mapping)
 	if err != nil {
 		return err
@@ -493,18 +497,18 @@ func NewNodeRepository(repo *Repository) *NodeRepository {
 }
 
 // SaveNode 保存节点（创建或更新）
-func (r *NodeRepository) SaveNode(node *Node) error {
+func (r *NodeRepository) SaveNode(node *models.Node) error {
 	data, err := json.Marshal(node)
 	if err != nil {
 		return fmt.Errorf("marshal node failed: %w", err)
 	}
 
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixNode, node.ID)
-	return r.storage.Set(key, string(data), DefaultNodeDataTTL)
+	return r.storage.Set(key, string(data), constants2.DefaultNodeDataTTL)
 }
 
 // CreateNode 创建新节点（仅创建，不允许覆盖）
-func (r *NodeRepository) CreateNode(node *Node) error {
+func (r *NodeRepository) CreateNode(node *models.Node) error {
 	// 检查节点是否已存在
 	existingNode, err := r.GetNode(node.ID)
 	if err == nil && existingNode != nil {
@@ -515,7 +519,7 @@ func (r *NodeRepository) CreateNode(node *Node) error {
 }
 
 // UpdateNode 更新节点（仅更新，不允许创建）
-func (r *NodeRepository) UpdateNode(node *Node) error {
+func (r *NodeRepository) UpdateNode(node *models.Node) error {
 	// 检查节点是否存在
 	existingNode, _ := r.GetNode(node.ID)
 	if existingNode == nil {
@@ -526,7 +530,7 @@ func (r *NodeRepository) UpdateNode(node *Node) error {
 }
 
 // GetNode 获取节点
-func (r *NodeRepository) GetNode(nodeID string) (*Node, error) {
+func (r *NodeRepository) GetNode(nodeID string) (*models.Node, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixNode, nodeID)
 	data, err := r.storage.Get(key)
 	if err != nil {
@@ -538,7 +542,7 @@ func (r *NodeRepository) GetNode(nodeID string) (*Node, error) {
 		return nil, fmt.Errorf("invalid node data type")
 	}
 
-	var node Node
+	var node models.Node
 	if err := json.Unmarshal([]byte(nodeData), &node); err != nil {
 		return nil, fmt.Errorf("unmarshal node failed: %w", err)
 	}
@@ -553,17 +557,17 @@ func (r *NodeRepository) DeleteNode(nodeID string) error {
 }
 
 // ListNodes 列出所有节点
-func (r *NodeRepository) ListNodes() ([]*Node, error) {
+func (r *NodeRepository) ListNodes() ([]*models.Node, error) {
 	key := constants.KeyPrefixNodeList
 	data, err := r.storage.GetList(key)
 	if err != nil {
-		return []*Node{}, nil
+		return []*models.Node{}, nil
 	}
 
-	var nodes []*Node
+	var nodes []*models.Node
 	for _, item := range data {
 		if nodeData, ok := item.(string); ok {
-			var node Node
+			var node models.Node
 			if err := json.Unmarshal([]byte(nodeData), &node); err != nil {
 				continue
 			}
@@ -575,7 +579,7 @@ func (r *NodeRepository) ListNodes() ([]*Node, error) {
 }
 
 // AddNodeToList 添加节点到列表
-func (r *NodeRepository) AddNodeToList(node *Node) error {
+func (r *NodeRepository) AddNodeToList(node *models.Node) error {
 	data, err := json.Marshal(node)
 	if err != nil {
 		return err
@@ -605,14 +609,14 @@ func (cr *ConnectionRepo) onClose() {
 }
 
 // SaveConnection 保存连接信息（创建或更新）
-func (r *ConnectionRepo) SaveConnection(connInfo *ConnectionInfo) error {
+func (r *ConnectionRepo) SaveConnection(connInfo *models.ConnectionInfo) error {
 	data, err := json.Marshal(connInfo)
 	if err != nil {
 		return fmt.Errorf("marshal connection failed: %w", err)
 	}
 
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixConnection, connInfo.ConnID)
-	if err := r.storage.Set(key, string(data), DefaultConnectionTTL); err != nil {
+	if err := r.storage.Set(key, string(data), constants2.DefaultConnectionTTL); err != nil {
 		return fmt.Errorf("save connection failed: %w", err)
 	}
 	// 添加到映射和客户端的连接列表
@@ -626,7 +630,7 @@ func (r *ConnectionRepo) SaveConnection(connInfo *ConnectionInfo) error {
 }
 
 // CreateConnection 创建新连接（仅创建，不允许覆盖）
-func (r *ConnectionRepo) CreateConnection(connInfo *ConnectionInfo) error {
+func (r *ConnectionRepo) CreateConnection(connInfo *models.ConnectionInfo) error {
 	// 检查连接是否已存在
 	existingConn, err := r.GetConnection(connInfo.ConnID)
 	if err == nil && existingConn != nil {
@@ -637,7 +641,7 @@ func (r *ConnectionRepo) CreateConnection(connInfo *ConnectionInfo) error {
 }
 
 // UpdateConnection 更新连接（仅更新，不允许创建）
-func (r *ConnectionRepo) UpdateConnection(connInfo *ConnectionInfo) error {
+func (r *ConnectionRepo) UpdateConnection(connInfo *models.ConnectionInfo) error {
 	// 检查连接是否存在
 	existingConn, _ := r.GetConnection(connInfo.ConnID)
 	if existingConn == nil {
@@ -651,7 +655,7 @@ func (r *ConnectionRepo) UpdateConnection(connInfo *ConnectionInfo) error {
 	}
 
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixConnection, connInfo.ConnID)
-	if err := r.storage.Set(key, string(data), DefaultConnectionTTL); err != nil {
+	if err := r.storage.Set(key, string(data), constants2.DefaultConnectionTTL); err != nil {
 		return fmt.Errorf("update connection failed: %w", err)
 	}
 
@@ -659,7 +663,7 @@ func (r *ConnectionRepo) UpdateConnection(connInfo *ConnectionInfo) error {
 }
 
 // GetConnection 获取连接信息
-func (r *ConnectionRepo) GetConnection(connID string) (*ConnectionInfo, error) {
+func (r *ConnectionRepo) GetConnection(connID string) (*models.ConnectionInfo, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixConnection, connID)
 	data, err := r.storage.Get(key)
 	if err != nil {
@@ -671,7 +675,7 @@ func (r *ConnectionRepo) GetConnection(connID string) (*ConnectionInfo, error) {
 		return nil, fmt.Errorf("invalid connection data type")
 	}
 
-	var connInfo ConnectionInfo
+	var connInfo models.ConnectionInfo
 	if err := json.Unmarshal([]byte(connData), &connInfo); err != nil {
 		return nil, fmt.Errorf("unmarshal connection failed: %w", err)
 	}
@@ -708,17 +712,17 @@ func (r *ConnectionRepo) DeleteConnection(connID string) error {
 }
 
 // ListConnections 列出映射的连接
-func (r *ConnectionRepo) ListConnections(mappingID string) ([]*ConnectionInfo, error) {
+func (r *ConnectionRepo) ListConnections(mappingID string) ([]*models.ConnectionInfo, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixMappingConnections, mappingID)
 	data, err := r.storage.GetList(key)
 	if err != nil {
-		return []*ConnectionInfo{}, nil
+		return []*models.ConnectionInfo{}, nil
 	}
 
-	var connections []*ConnectionInfo
+	var connections []*models.ConnectionInfo
 	for _, item := range data {
 		if connData, ok := item.(string); ok {
-			var connInfo ConnectionInfo
+			var connInfo models.ConnectionInfo
 			if err := json.Unmarshal([]byte(connData), &connInfo); err != nil {
 				continue
 			}
@@ -730,17 +734,17 @@ func (r *ConnectionRepo) ListConnections(mappingID string) ([]*ConnectionInfo, e
 }
 
 // ListClientConns 列出客户端的所有连接
-func (r *ConnectionRepo) ListClientConns(clientID int64) ([]*ConnectionInfo, error) {
+func (r *ConnectionRepo) ListClientConns(clientID int64) ([]*models.ConnectionInfo, error) {
 	key := fmt.Sprintf("%s:%d", constants.KeyPrefixClientConnections, clientID)
 	data, err := r.storage.GetList(key)
 	if err != nil {
-		return []*ConnectionInfo{}, nil
+		return []*models.ConnectionInfo{}, nil
 	}
 
-	var conns []*ConnectionInfo
+	var conns []*models.ConnectionInfo
 	for _, item := range data {
 		if connData, ok := item.(string); ok {
-			var conn ConnectionInfo
+			var conn models.ConnectionInfo
 			if err := json.Unmarshal([]byte(connData), &conn); err != nil {
 				continue
 			}
@@ -752,7 +756,7 @@ func (r *ConnectionRepo) ListClientConns(clientID int64) ([]*ConnectionInfo, err
 }
 
 // AddConnectionToMapping 添加连接到映射列表
-func (r *ConnectionRepo) AddConnectionToMapping(mappingID string, connInfo *ConnectionInfo) error {
+func (r *ConnectionRepo) AddConnectionToMapping(mappingID string, connInfo *models.ConnectionInfo) error {
 	data, err := json.Marshal(connInfo)
 	if err != nil {
 		return err
@@ -763,7 +767,7 @@ func (r *ConnectionRepo) AddConnectionToMapping(mappingID string, connInfo *Conn
 }
 
 // AddConnectionToClient 添加连接到客户端
-func (r *ConnectionRepo) AddConnectionToClient(clientID int64, connInfo *ConnectionInfo) error {
+func (r *ConnectionRepo) AddConnectionToClient(clientID int64, connInfo *models.ConnectionInfo) error {
 	key := fmt.Sprintf("%s:%d", constants.KeyPrefixClientConnections, clientID)
 	data, err := json.Marshal(connInfo)
 	if err != nil {
@@ -862,5 +866,5 @@ func (r *ClientRepository) TouchClient(clientID string) error {
 		return err
 	}
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClient, clientID)
-	return r.storage.SetExpiration(key, DefaultClientDataTTL)
+	return r.storage.SetExpiration(key, constants2.DefaultClientDataTTL)
 }

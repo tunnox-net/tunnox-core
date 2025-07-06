@@ -4,8 +4,10 @@ import (
 	"context"
 	"testing"
 	"time"
+	"tunnox-core/internal/cloud/distributed"
+	"tunnox-core/internal/cloud/managers"
+	"tunnox-core/internal/cloud/storages"
 
-	"tunnox-core/internal/cloud"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
@@ -19,7 +21,7 @@ func TestDisposeIntegration(t *testing.T) {
 
 	// 测试云控制组件
 	t.Run("CloudControl_Dispose", func(t *testing.T) {
-		cloudControl := cloud.NewBuiltinCloudControl(nil)
+		cloudControl := managers.NewBuiltinCloudControl(nil)
 		require.NotNil(t, cloudControl)
 
 		// 启动云控制
@@ -38,7 +40,7 @@ func TestDisposeIntegration(t *testing.T) {
 
 	// 测试存储组件
 	t.Run("Storage_Dispose", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(ctx)
+		storage := storages.NewMemoryStorage(ctx)
 		require.NotNil(t, storage)
 
 		// 验证未关闭
@@ -54,9 +56,9 @@ func TestDisposeIntegration(t *testing.T) {
 
 	// 测试配置管理器
 	t.Run("ConfigManager_Dispose", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(ctx)
-		config := &cloud.ControlConfig{}
-		configManager := cloud.NewConfigManager(storage, config, ctx)
+		storage := storages.NewMemoryStorage(ctx)
+		config := &managers.ControlConfig{}
+		configManager := managers.NewConfigManager(storage, config, ctx)
 		require.NotNil(t, configManager)
 
 		// 验证未关闭
@@ -71,9 +73,9 @@ func TestDisposeIntegration(t *testing.T) {
 
 	// 测试清理管理器
 	t.Run("CleanupManager_Dispose", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(ctx)
-		lock := cloud.NewMemoryLock()
-		cleanupManager := cloud.NewCleanupManager(storage, lock, ctx)
+		storage := storages.NewMemoryStorage(ctx)
+		lock := distributed.NewMemoryLock()
+		cleanupManager := managers.NewCleanupManager(storage, lock, ctx)
 		require.NotNil(t, cleanupManager)
 
 		// 验证未关闭
@@ -200,7 +202,7 @@ func TestDisposeIntegration(t *testing.T) {
 // TestDisposeCascade 测试Dispose的级联关闭
 func TestDisposeCascade(t *testing.T) {
 	// 创建云控制（包含多个子组件）
-	cloudControl := cloud.NewBuiltinCloudControl(nil)
+	cloudControl := managers.NewBuiltinCloudControl(nil)
 	require.NotNil(t, cloudControl)
 
 	// 启动云控制
@@ -222,7 +224,7 @@ func TestDisposeConcurrency(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("Concurrent_Close", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(ctx)
+		storage := storages.NewMemoryStorage(ctx)
 		require.NotNil(t, storage)
 
 		// 并发关闭
@@ -248,7 +250,7 @@ func TestDisposeConcurrency(t *testing.T) {
 	})
 
 	t.Run("Concurrent_Operations", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(ctx)
+		storage := storages.NewMemoryStorage(ctx)
 		require.NotNil(t, storage)
 
 		// 并发操作和关闭

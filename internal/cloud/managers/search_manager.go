@@ -1,20 +1,22 @@
-package cloud
+package managers
 
 import (
 	"strings"
+	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/utils"
 )
 
 // SearchManager 搜索管理服务
 type SearchManager struct {
-	userRepo    *UserRepository
-	clientRepo  *ClientRepository
-	mappingRepo *PortMappingRepo
+	userRepo    *repos.UserRepository
+	clientRepo  *repos.ClientRepository
+	mappingRepo *repos.PortMappingRepo
 	utils.Dispose
 }
 
 // NewSearchManager 创建搜索管理服务
-func NewSearchManager(userRepo *UserRepository, clientRepo *ClientRepository, mappingRepo *PortMappingRepo) *SearchManager {
+func NewSearchManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo) *SearchManager {
 	manager := &SearchManager{
 		userRepo:    userRepo,
 		clientRepo:  clientRepo,
@@ -30,13 +32,13 @@ func (sm *SearchManager) onClose() {
 }
 
 // SearchUsers 搜索用户
-func (sm *SearchManager) SearchUsers(keyword string) ([]*User, error) {
+func (sm *SearchManager) SearchUsers(keyword string) ([]*models.User, error) {
 	users, err := sm.userRepo.ListUsers("")
 	if err != nil {
 		return nil, err
 	}
 
-	var results []*User
+	var results []*models.User
 	for _, user := range users {
 		if strings.Contains(strings.ToLower(user.Username), strings.ToLower(keyword)) ||
 			strings.Contains(strings.ToLower(user.Email), strings.ToLower(keyword)) {
@@ -48,13 +50,13 @@ func (sm *SearchManager) SearchUsers(keyword string) ([]*User, error) {
 }
 
 // SearchClients 搜索客户端
-func (sm *SearchManager) SearchClients(keyword string) ([]*Client, error) {
+func (sm *SearchManager) SearchClients(keyword string) ([]*models.Client, error) {
 	clients, err := sm.clientRepo.ListUserClients("")
 	if err != nil {
 		return nil, err
 	}
 
-	var results []*Client
+	var results []*models.Client
 	for _, client := range clients {
 		if strings.Contains(strings.ToLower(client.Name), strings.ToLower(keyword)) ||
 			strings.Contains(client.AuthCode, keyword) ||
@@ -67,13 +69,13 @@ func (sm *SearchManager) SearchClients(keyword string) ([]*Client, error) {
 }
 
 // SearchPortMappings 搜索端口映射
-func (sm *SearchManager) SearchPortMappings(keyword string) ([]*PortMapping, error) {
+func (sm *SearchManager) SearchPortMappings(keyword string) ([]*models.PortMapping, error) {
 	mappings, err := sm.mappingRepo.GetUserPortMappings("")
 	if err != nil {
 		return nil, err
 	}
 
-	var results []*PortMapping
+	var results []*models.PortMapping
 	for _, mapping := range mappings {
 		if strings.Contains(mapping.ID, keyword) ||
 			strings.Contains(utils.Int64ToString(mapping.SourceClientID), keyword) ||

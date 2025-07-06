@@ -1,4 +1,4 @@
-package cloud
+package configs
 
 // ClientConfig 客户端配置
 type ClientConfig struct {

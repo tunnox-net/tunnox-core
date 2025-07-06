@@ -1,6 +1,10 @@
-package cloud
+package models
 
-import "time"
+import (
+	"time"
+	"tunnox-core/internal/cloud/configs"
+	"tunnox-core/internal/cloud/stats"
+)
 
 // NodeRegisterRequest 节点注册请求
 type NodeRegisterRequest struct {
@@ -86,20 +90,20 @@ type UserQuota struct {
 }
 
 type Client struct {
-	ID        int64        `json:"id"`         // ClientID (8位数字，类似TeamViewer)
-	UserID    string       `json:"user_id"`    // 所属用户ID（匿名用户可能为空）
-	Name      string       `json:"name"`       // 客户端名称
-	AuthCode  string       `json:"auth_code"`  // 认证码
-	SecretKey string       `json:"secret_key"` // 密钥(开发用)
-	Status    ClientStatus `json:"status"`     // 客户端状态
-	Config    ClientConfig `json:"config"`     // 客户端配置
-	LastSeen  *time.Time   `json:"last_seen"`  // 最后在线时间
-	CreatedAt time.Time    `json:"created_at"` // 创建时间
-	UpdatedAt time.Time    `json:"updated_at"` // 更新时间
-	NodeID    string       `json:"node_id"`    // 连接的节点ID
-	IPAddress string       `json:"ip_address"` // 客户端IP地址
-	Version   string       `json:"version"`    // 客户端版本
-	Type      ClientType   `json:"type"`       // 客户端类型
+	ID        int64                `json:"id"`         // ClientID (8位数字，类似TeamViewer)
+	UserID    string               `json:"user_id"`    // 所属用户ID（匿名用户可能为空）
+	Name      string               `json:"name"`       // 客户端名称
+	AuthCode  string               `json:"auth_code"`  // 认证码
+	SecretKey string               `json:"secret_key"` // 密钥(开发用)
+	Status    ClientStatus         `json:"status"`     // 客户端状态
+	Config    configs.ClientConfig `json:"config"`     // 客户端配置
+	LastSeen  *time.Time           `json:"last_seen"`  // 最后在线时间
+	CreatedAt time.Time            `json:"created_at"` // 创建时间
+	UpdatedAt time.Time            `json:"updated_at"` // 更新时间
+	NodeID    string               `json:"node_id"`    // 连接的节点ID
+	IPAddress string               `json:"ip_address"` // 客户端IP地址
+	Version   string               `json:"version"`    // 客户端版本
+	Type      ClientType           `json:"type"`       // 客户端类型
 
 	// JWT Token管理
 	JWTToken       string     `json:"jwt_token"`        // 当前有效的JWT Token
@@ -124,21 +128,21 @@ const (
 )
 
 type PortMapping struct {
-	ID             string        `json:"id"`               // 映射ID
-	UserID         string        `json:"user_id"`          // 所属用户ID（匿名映射可能为空）
-	SourceClientID int64         `json:"source_client_id"` // 源客户端ID
-	TargetClientID int64         `json:"target_client_id"` // 目标客户端ID
-	Protocol       Protocol      `json:"protocol"`         // 协议：tcp/udp/http/socks
-	SourcePort     int           `json:"source_port"`      // 源端口
-	TargetHost     string        `json:"target_host"`      // 目标主机
-	TargetPort     int           `json:"target_port"`      // 目标端口
-	Config         MappingConfig `json:"config"`           // 映射配置
-	Status         MappingStatus `json:"status"`           // 映射状态
-	CreatedAt      time.Time     `json:"created_at"`       // 创建时间
-	UpdatedAt      time.Time     `json:"updated_at"`       // 更新时间
-	LastActive     *time.Time    `json:"last_active"`      // 最后活跃时间
-	TrafficStats   TrafficStats  `json:"traffic_stats"`    // 流量统计
-	Type           MappingType   `json:"type"`             // 映射类型
+	ID             string                `json:"id"`               // 映射ID
+	UserID         string                `json:"user_id"`          // 所属用户ID（匿名映射可能为空）
+	SourceClientID int64                 `json:"source_client_id"` // 源客户端ID
+	TargetClientID int64                 `json:"target_client_id"` // 目标客户端ID
+	Protocol       Protocol              `json:"protocol"`         // 协议：tcp/udp/http/socks
+	SourcePort     int                   `json:"source_port"`      // 源端口
+	TargetHost     string                `json:"target_host"`      // 目标主机
+	TargetPort     int                   `json:"target_port"`      // 目标端口
+	Config         configs.MappingConfig `json:"config"`           // 映射配置
+	Status         MappingStatus         `json:"status"`           // 映射状态
+	CreatedAt      time.Time             `json:"created_at"`       // 创建时间
+	UpdatedAt      time.Time             `json:"updated_at"`       // 更新时间
+	LastActive     *time.Time            `json:"last_active"`      // 最后活跃时间
+	TrafficStats   stats.TrafficStats    `json:"traffic_stats"`    // 流量统计
+	Type           MappingType           `json:"type"`             // 映射类型
 }
 
 type MappingType string

@@ -1,10 +1,11 @@
-package cloud
+package managers
 
 import (
 	"context"
 	"fmt"
 	"time"
-
+	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/utils"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -60,7 +61,7 @@ type JWTTokenInfo struct {
 }
 
 // NewJWTManager 创建JWT管理器
-func NewJWTManager(config *ControlConfig, repo *Repository) *JWTManager {
+func NewJWTManager(config *ControlConfig, repo *repos.Repository) *JWTManager {
 	manager := &JWTManager{
 		config: config,
 		cache:  NewTokenCacheManager(repo.GetStorage()),
@@ -71,11 +72,15 @@ func NewJWTManager(config *ControlConfig, repo *Repository) *JWTManager {
 
 // onClose 资源清理回调
 func (m *JWTManager) onClose() {
-
+	utils.Infof("JWT manager resources cleaned up")
+	// 清理Token缓存
+	if m.cache != nil {
+		m.cache.Close()
+	}
 }
 
 // GenerateTokenPair 生成Token对（访问Token + 刷新Token）
-func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *Client) (*JWTTokenInfo, error) {
+func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *models.Client) (*JWTTokenInfo, error) {
 	now := time.Now()
 
 	// 生成Token ID用于撤销
@@ -329,7 +334,7 @@ func (m *JWTManager) ValidateRefreshToken(ctx context.Context, refreshTokenStrin
 }
 
 // RefreshAccessToken 使用刷新Token生成新的访问Token
-func (m *JWTManager) RefreshAccessToken(ctx context.Context, refreshTokenString string, client *Client) (*JWTTokenInfo, error) {
+func (m *JWTManager) RefreshAccessToken(ctx context.Context, refreshTokenString string, client *models.Client) (*JWTTokenInfo, error) {
 	// 验证刷新Token
 	refreshClaims, err := m.ValidateRefreshToken(ctx, refreshTokenString)
 	if err != nil {

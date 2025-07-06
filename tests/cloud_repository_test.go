@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"testing"
 	"time"
+	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/cloud/storages"
 
-	"tunnox-core/internal/cloud"
 	"tunnox-core/internal/utils"
 
 	"github.com/stretchr/testify/assert"
@@ -14,14 +16,14 @@ import (
 )
 
 func TestUserRepository_CreateUser(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	userRepo := cloud.NewUserRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	userRepo := repos.NewUserRepository(repo)
 
-	user := &cloud.User{
+	user := &models.User{
 		ID:        "testuser",
 		Email:     "test@example.com",
-		Type:      cloud.UserTypeRegistered,
-		Status:    cloud.UserStatusActive,
+		Type:      models.UserTypeRegistered,
+		Status:    models.UserStatusActive,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -31,17 +33,17 @@ func TestUserRepository_CreateUser(t *testing.T) {
 
 	assert.Equal(t, "testuser", user.ID)
 	assert.Equal(t, "test@example.com", user.Email)
-	assert.Equal(t, cloud.UserTypeRegistered, user.Type)
-	assert.Equal(t, cloud.UserStatusActive, user.Status)
+	assert.Equal(t, models.UserTypeRegistered, user.Type)
+	assert.Equal(t, models.UserStatusActive, user.Status)
 	assert.NotZero(t, user.CreatedAt)
 	assert.NotZero(t, user.UpdatedAt)
 
 	// 测试重复ID（应该失败）
-	user2 := &cloud.User{
+	user2 := &models.User{
 		ID:        "testuser", // 使用相同的ID
 		Email:     "test2@example.com",
-		Type:      cloud.UserTypeRegistered,
-		Status:    cloud.UserStatusActive,
+		Type:      models.UserTypeRegistered,
+		Status:    models.UserStatusActive,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -49,11 +51,11 @@ func TestUserRepository_CreateUser(t *testing.T) {
 	assert.Error(t, err)
 
 	// 测试不同ID（应该成功）
-	user3 := &cloud.User{
+	user3 := &models.User{
 		ID:        "testuser2",
 		Email:     "test@example.com", // 相同邮箱
-		Type:      cloud.UserTypeRegistered,
-		Status:    cloud.UserStatusActive,
+		Type:      models.UserTypeRegistered,
+		Status:    models.UserStatusActive,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -62,14 +64,14 @@ func TestUserRepository_CreateUser(t *testing.T) {
 }
 
 func TestUserRepository_GetUser(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	userRepo := cloud.NewUserRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	userRepo := repos.NewUserRepository(repo)
 
-	user := &cloud.User{
+	user := &models.User{
 		ID:        "testuser",
 		Email:     "test@example.com",
-		Type:      cloud.UserTypeRegistered,
-		Status:    cloud.UserStatusActive,
+		Type:      models.UserTypeRegistered,
+		Status:    models.UserStatusActive,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -89,14 +91,14 @@ func TestUserRepository_GetUser(t *testing.T) {
 }
 
 func TestUserRepository_UpdateUser(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	userRepo := cloud.NewUserRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	userRepo := repos.NewUserRepository(repo)
 
-	user := &cloud.User{
+	user := &models.User{
 		ID:        "testuser",
 		Email:     "test@example.com",
-		Type:      cloud.UserTypeRegistered,
-		Status:    cloud.UserStatusActive,
+		Type:      models.UserTypeRegistered,
+		Status:    models.UserStatusActive,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -104,25 +106,25 @@ func TestUserRepository_UpdateUser(t *testing.T) {
 	require.NoError(t, err)
 
 	user.Email = "updated@example.com"
-	user.Status = cloud.UserStatusSuspended
+	user.Status = models.UserStatusSuspended
 	err = userRepo.UpdateUser(user)
 	require.NoError(t, err)
 
 	retrievedUser, err := userRepo.GetUser(user.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "updated@example.com", retrievedUser.Email)
-	assert.Equal(t, cloud.UserStatusSuspended, retrievedUser.Status)
+	assert.Equal(t, models.UserStatusSuspended, retrievedUser.Status)
 }
 
 func TestUserRepository_DeleteUser(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	userRepo := cloud.NewUserRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	userRepo := repos.NewUserRepository(repo)
 
-	user := &cloud.User{
+	user := &models.User{
 		ID:        "testuser",
 		Email:     "test@example.com",
-		Type:      cloud.UserTypeRegistered,
-		Status:    cloud.UserStatusActive,
+		Type:      models.UserTypeRegistered,
+		Status:    models.UserStatusActive,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -137,22 +139,22 @@ func TestUserRepository_DeleteUser(t *testing.T) {
 }
 
 func TestUserRepository_ListUsers(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	userRepo := cloud.NewUserRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	userRepo := repos.NewUserRepository(repo)
 
-	user1 := &cloud.User{
+	user1 := &models.User{
 		ID:        "user1",
 		Email:     "user1@example.com",
-		Type:      cloud.UserTypeRegistered,
-		Status:    cloud.UserStatusActive,
+		Type:      models.UserTypeRegistered,
+		Status:    models.UserStatusActive,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	user2 := &cloud.User{
+	user2 := &models.User{
 		ID:        "user2",
 		Email:     "user2@example.com",
-		Type:      cloud.UserTypeAnonymous,
-		Status:    cloud.UserStatusActive,
+		Type:      models.UserTypeAnonymous,
+		Status:    models.UserStatusActive,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -173,23 +175,23 @@ func TestUserRepository_ListUsers(t *testing.T) {
 	assert.Len(t, users, 2)
 
 	// List registered users only
-	registeredUsers, err := userRepo.ListUsers(cloud.UserTypeRegistered)
+	registeredUsers, err := userRepo.ListUsers(models.UserTypeRegistered)
 	require.NoError(t, err)
 	assert.Len(t, registeredUsers, 1)
 	assert.Equal(t, "user1", registeredUsers[0].ID)
 }
 
 func TestClientRepository_CreateClient(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	clientRepo := cloud.NewClientRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	clientRepo := repos.NewClientRepository(repo)
 
 	clientID := int64(12345678) // 使用 int64 类型的 ClientID
 
-	client := &cloud.Client{
+	client := &models.Client{
 		ID:        clientID,
 		Name:      "testclient",
 		UserID:    "user123",
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -199,17 +201,17 @@ func TestClientRepository_CreateClient(t *testing.T) {
 
 	assert.Equal(t, "testclient", client.Name)
 	assert.Equal(t, "user123", client.UserID)
-	assert.Equal(t, cloud.ClientTypeRegistered, client.Type)
+	assert.Equal(t, models.ClientTypeRegistered, client.Type)
 	assert.NotEmpty(t, client.ID)
 	assert.NotZero(t, client.CreatedAt)
 	assert.NotZero(t, client.UpdatedAt)
 
 	// 测试重复ID（应该失败）
-	client2 := &cloud.Client{
+	client2 := &models.Client{
 		ID:        clientID, // 使用相同的ID
 		Name:      "testclient2",
 		UserID:    "user456",
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -218,11 +220,11 @@ func TestClientRepository_CreateClient(t *testing.T) {
 
 	// 测试不同ID（应该成功）
 	clientID2 := int64(87654321) // 使用不同的 int64 ID
-	client3 := &cloud.Client{
+	client3 := &models.Client{
 		ID:        clientID2,
 		Name:      "testclient", // 相同名称
 		UserID:    "user123",    // 相同用户ID
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -231,16 +233,16 @@ func TestClientRepository_CreateClient(t *testing.T) {
 }
 
 func TestClientRepository_GetClient(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	clientRepo := cloud.NewClientRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	clientRepo := repos.NewClientRepository(repo)
 
 	clientID := int64(12345678)
 
-	client := &cloud.Client{
+	client := &models.Client{
 		ID:        clientID,
 		Name:      "testclient",
 		UserID:    "user123",
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -260,16 +262,16 @@ func TestClientRepository_GetClient(t *testing.T) {
 }
 
 func TestClientRepository_UpdateClient(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	clientRepo := cloud.NewClientRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	clientRepo := repos.NewClientRepository(repo)
 
 	clientID := int64(12345678)
 
-	client := &cloud.Client{
+	client := &models.Client{
 		ID:        clientID,
 		Name:      "testclient",
 		UserID:    "user123",
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -277,7 +279,7 @@ func TestClientRepository_UpdateClient(t *testing.T) {
 	require.NoError(t, err)
 
 	client.Name = "updatedclient"
-	client.Status = cloud.ClientStatusBlocked
+	client.Status = models.ClientStatusBlocked
 	client.NodeID = "node123"
 	err = clientRepo.UpdateClient(client)
 	require.NoError(t, err)
@@ -285,21 +287,21 @@ func TestClientRepository_UpdateClient(t *testing.T) {
 	retrievedClient, err := clientRepo.GetClient(fmt.Sprintf("%d", client.ID))
 	require.NoError(t, err)
 	assert.Equal(t, "updatedclient", retrievedClient.Name)
-	assert.Equal(t, cloud.ClientStatusBlocked, retrievedClient.Status)
+	assert.Equal(t, models.ClientStatusBlocked, retrievedClient.Status)
 	assert.Equal(t, "node123", retrievedClient.NodeID)
 }
 
 func TestClientRepository_DeleteClient(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	clientRepo := cloud.NewClientRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	clientRepo := repos.NewClientRepository(repo)
 
 	clientID := int64(12345678)
 
-	client := &cloud.Client{
+	client := &models.Client{
 		ID:        clientID,
 		Name:      "testclient",
 		UserID:    "user123",
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -314,34 +316,34 @@ func TestClientRepository_DeleteClient(t *testing.T) {
 }
 
 func TestClientRepository_ListClients(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	clientRepo := cloud.NewClientRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	clientRepo := repos.NewClientRepository(repo)
 
 	clientID1 := int64(12345678)
 	clientID2 := int64(87654321)
 	clientID3 := int64(11111111)
 
-	client1 := &cloud.Client{
+	client1 := &models.Client{
 		ID:        clientID1,
 		Name:      "client1",
 		UserID:    "user1",
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	client2 := &cloud.Client{
+	client2 := &models.Client{
 		ID:        clientID2,
 		Name:      "client2",
 		UserID:    "user1",
-		Type:      cloud.ClientTypeAnonymous,
+		Type:      models.ClientTypeAnonymous,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
-	client3 := &cloud.Client{
+	client3 := &models.Client{
 		ID:        clientID3,
 		Name:      "client3",
 		UserID:    "user2",
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -364,9 +366,9 @@ func TestClientRepository_ListClients(t *testing.T) {
 	assert.Len(t, clients, 2)
 
 	// List registered clients for user1
-	registeredClients := []*cloud.Client{}
+	registeredClients := []*models.Client{}
 	for _, c := range clients {
-		if c.Type == cloud.ClientTypeRegistered {
+		if c.Type == models.ClientTypeRegistered {
 			registeredClients = append(registeredClients, c)
 		}
 	}
@@ -386,22 +388,22 @@ func TestClientRepository_ListClients(t *testing.T) {
 }
 
 func TestPortMappingRepo_CreateMapping(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
-	repo := cloud.NewRepository(storage)
-	mappingRepo := cloud.NewPortMappingRepo(repo)
+	storage := storages.NewMemoryStorage(context.Background())
+	repo := repos.NewRepository(storage)
+	mappingRepo := repos.NewPortMappingRepo(repo)
 
 	mappingID, err := utils.GenerateRandomString(12)
 	require.NoError(t, err)
 
-	mapping := &cloud.PortMapping{
+	mapping := &models.PortMapping{
 		ID:             mappingID,
 		SourceClientID: 1,
 		TargetClientID: 2,
-		Protocol:       cloud.ProtocolTCP,
+		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,
 		TargetPort:     9090,
 		UserID:         "user1",
-		Status:         cloud.MappingStatusActive,
+		Status:         models.MappingStatusActive,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -411,7 +413,7 @@ func TestPortMappingRepo_CreateMapping(t *testing.T) {
 
 	assert.Equal(t, int64(1), mapping.SourceClientID)
 	assert.Equal(t, int64(2), mapping.TargetClientID)
-	assert.Equal(t, cloud.ProtocolTCP, mapping.Protocol)
+	assert.Equal(t, models.ProtocolTCP, mapping.Protocol)
 	assert.Equal(t, 8080, mapping.SourcePort)
 	assert.Equal(t, 9090, mapping.TargetPort)
 	assert.NotEmpty(t, mapping.ID)
@@ -420,21 +422,21 @@ func TestPortMappingRepo_CreateMapping(t *testing.T) {
 }
 
 func TestPortMappingRepo_GetMapping(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	mappingRepo := cloud.NewPortMappingRepo(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	mappingRepo := repos.NewPortMappingRepo(repo)
 
 	mappingID, err := utils.GenerateRandomString(12)
 	require.NoError(t, err)
 
-	mapping := &cloud.PortMapping{
+	mapping := &models.PortMapping{
 		ID:             mappingID,
 		SourceClientID: 1,
 		TargetClientID: 2,
-		Protocol:       cloud.ProtocolTCP,
+		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,
 		TargetPort:     9090,
 		UserID:         "user1",
-		Status:         cloud.MappingStatusActive,
+		Status:         models.MappingStatusActive,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -454,21 +456,21 @@ func TestPortMappingRepo_GetMapping(t *testing.T) {
 }
 
 func TestPortMappingRepo_UpdateMapping(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	mappingRepo := cloud.NewPortMappingRepo(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	mappingRepo := repos.NewPortMappingRepo(repo)
 
 	mappingID, err := utils.GenerateRandomString(12)
 	require.NoError(t, err)
 
-	mapping := &cloud.PortMapping{
+	mapping := &models.PortMapping{
 		ID:             mappingID,
 		SourceClientID: 1,
 		TargetClientID: 2,
-		Protocol:       cloud.ProtocolTCP,
+		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,
 		TargetPort:     9090,
 		UserID:         "user1",
-		Status:         cloud.MappingStatusActive,
+		Status:         models.MappingStatusActive,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -476,7 +478,7 @@ func TestPortMappingRepo_UpdateMapping(t *testing.T) {
 	require.NoError(t, err)
 
 	// 更新映射
-	mapping.Status = cloud.MappingStatusInactive
+	mapping.Status = models.MappingStatusInactive
 	mapping.SourcePort = 8081
 	err = mappingRepo.UpdatePortMapping(mapping)
 	require.NoError(t, err)
@@ -485,26 +487,26 @@ func TestPortMappingRepo_UpdateMapping(t *testing.T) {
 	retrievedMapping, err := mappingRepo.GetPortMapping(mapping.ID)
 	require.NoError(t, err)
 
-	assert.Equal(t, cloud.MappingStatusInactive, retrievedMapping.Status)
+	assert.Equal(t, models.MappingStatusInactive, retrievedMapping.Status)
 	assert.Equal(t, 8081, retrievedMapping.SourcePort)
 }
 
 func TestPortMappingRepo_DeleteMapping(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	mappingRepo := cloud.NewPortMappingRepo(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	mappingRepo := repos.NewPortMappingRepo(repo)
 
 	mappingID, err := utils.GenerateRandomString(12)
 	require.NoError(t, err)
 
-	mapping := &cloud.PortMapping{
+	mapping := &models.PortMapping{
 		ID:             mappingID,
 		SourceClientID: 1,
 		TargetClientID: 2,
-		Protocol:       cloud.ProtocolTCP,
+		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,
 		TargetPort:     9090,
 		UserID:         "user1",
-		Status:         cloud.MappingStatusActive,
+		Status:         models.MappingStatusActive,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -521,8 +523,8 @@ func TestPortMappingRepo_DeleteMapping(t *testing.T) {
 }
 
 func TestPortMappingRepo_ListMappings(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	mappingRepo := cloud.NewPortMappingRepo(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	mappingRepo := repos.NewPortMappingRepo(repo)
 
 	mappingID1, err := utils.GenerateRandomString(12)
 	require.NoError(t, err)
@@ -532,15 +534,15 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 	require.NoError(t, err)
 
 	// 创建多个映射
-	mapping1 := &cloud.PortMapping{
+	mapping1 := &models.PortMapping{
 		ID:             mappingID1,
 		SourceClientID: 1,
 		TargetClientID: 2,
-		Protocol:       cloud.ProtocolTCP,
+		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,
 		TargetPort:     9090,
 		UserID:         "user1",
-		Status:         cloud.MappingStatusActive,
+		Status:         models.MappingStatusActive,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -549,15 +551,15 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 	err = mappingRepo.AddMappingToUser("user1", mapping1)
 	require.NoError(t, err)
 
-	mapping2 := &cloud.PortMapping{
+	mapping2 := &models.PortMapping{
 		ID:             mappingID2,
 		SourceClientID: 3,
 		TargetClientID: 4,
-		Protocol:       cloud.ProtocolUDP,
+		Protocol:       models.ProtocolUDP,
 		SourcePort:     8081,
 		TargetPort:     9091,
 		UserID:         "user1",
-		Status:         cloud.MappingStatusInactive,
+		Status:         models.MappingStatusInactive,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -566,15 +568,15 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 	err = mappingRepo.AddMappingToUser("user1", mapping2)
 	require.NoError(t, err)
 
-	mapping3 := &cloud.PortMapping{
+	mapping3 := &models.PortMapping{
 		ID:             mappingID3,
 		SourceClientID: 5,
 		TargetClientID: 6,
-		Protocol:       cloud.ProtocolTCP,
+		Protocol:       models.ProtocolTCP,
 		SourcePort:     8082,
 		TargetPort:     9092,
 		UserID:         "user2",
-		Status:         cloud.MappingStatusActive,
+		Status:         models.MappingStatusActive,
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -599,12 +601,12 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 	// 验证TCP映射数量
 	tcpCount := 0
 	for _, m := range userMappings {
-		if m.Protocol == cloud.ProtocolTCP {
+		if m.Protocol == models.ProtocolTCP {
 			tcpCount++
 		}
 	}
 	for _, m := range user2Mappings {
-		if m.Protocol == cloud.ProtocolTCP {
+		if m.Protocol == models.ProtocolTCP {
 			tcpCount++
 		}
 	}
@@ -613,12 +615,12 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 	// 验证UDP映射数量
 	udpCount := 0
 	for _, m := range userMappings {
-		if m.Protocol == cloud.ProtocolUDP {
+		if m.Protocol == models.ProtocolUDP {
 			udpCount++
 		}
 	}
 	for _, m := range user2Mappings {
-		if m.Protocol == cloud.ProtocolUDP {
+		if m.Protocol == models.ProtocolUDP {
 			udpCount++
 		}
 	}
@@ -626,10 +628,10 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 }
 
 func TestNodeRepository_CreateNode(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	nodeRepo := cloud.NewNodeRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	nodeRepo := repos.NewNodeRepository(repo)
 
-	node := &cloud.Node{
+	node := &models.Node{
 		ID:        "testnode",
 		Name:      "Test Node",
 		Address:   "127.0.0.1:8080",
@@ -649,7 +651,7 @@ func TestNodeRepository_CreateNode(t *testing.T) {
 	assert.NotZero(t, node.UpdatedAt)
 
 	// 测试重复ID
-	node2 := &cloud.Node{
+	node2 := &models.Node{
 		ID:        "testnode",
 		Name:      "Another Node",
 		Address:   "127.0.0.1:8081",
@@ -661,10 +663,10 @@ func TestNodeRepository_CreateNode(t *testing.T) {
 }
 
 func TestNodeRepository_GetNode(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	nodeRepo := cloud.NewNodeRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	nodeRepo := repos.NewNodeRepository(repo)
 
-	node := &cloud.Node{
+	node := &models.Node{
 		ID:        "testnode",
 		Name:      "Test Node",
 		Address:   "127.0.0.1:8080",
@@ -687,10 +689,10 @@ func TestNodeRepository_GetNode(t *testing.T) {
 }
 
 func TestNodeRepository_UpdateNode(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	nodeRepo := cloud.NewNodeRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	nodeRepo := repos.NewNodeRepository(repo)
 
-	node := &cloud.Node{
+	node := &models.Node{
 		ID:        "testnode",
 		Name:      "Test Node",
 		Address:   "127.0.0.1:8080",
@@ -716,10 +718,10 @@ func TestNodeRepository_UpdateNode(t *testing.T) {
 }
 
 func TestNodeRepository_DeleteNode(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	nodeRepo := cloud.NewNodeRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	nodeRepo := repos.NewNodeRepository(repo)
 
-	node := &cloud.Node{
+	node := &models.Node{
 		ID:        "testnode",
 		Name:      "Test Node",
 		Address:   "127.0.0.1:8080",
@@ -739,10 +741,10 @@ func TestNodeRepository_DeleteNode(t *testing.T) {
 }
 
 func TestNodeRepository_ListNodes(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	nodeRepo := cloud.NewNodeRepository(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	nodeRepo := repos.NewNodeRepository(repo)
 
-	node1 := &cloud.Node{
+	node1 := &models.Node{
 		ID:        "node1",
 		Name:      "Node 1",
 		Address:   "127.0.0.1:8080",
@@ -754,7 +756,7 @@ func TestNodeRepository_ListNodes(t *testing.T) {
 	err = nodeRepo.AddNodeToList(node1)
 	require.NoError(t, err)
 
-	node2 := &cloud.Node{
+	node2 := &models.Node{
 		ID:        "node2",
 		Name:      "Node 2",
 		Address:   "127.0.0.1:8081",
@@ -782,53 +784,53 @@ func TestNodeRepository_ListNodes(t *testing.T) {
 }
 
 func TestRepository_KeyPrefixes(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
+	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	repo := cloud.NewRepository(storage)
-	userRepo := cloud.NewUserRepository(repo)
-	clientRepo := cloud.NewClientRepository(repo)
-	mappingRepo := cloud.NewPortMappingRepo(repo)
-	nodeRepo := cloud.NewNodeRepository(repo)
+	repo := repos.NewRepository(storage)
+	userRepo := repos.NewUserRepository(repo)
+	clientRepo := repos.NewClientRepository(repo)
+	mappingRepo := repos.NewPortMappingRepo(repo)
+	nodeRepo := repos.NewNodeRepository(repo)
 
 	t.Run("Verify Key Prefixes", func(t *testing.T) {
 		// 创建测试数据
-		user := &cloud.User{
+		user := &models.User{
 			ID:        "prefix_test_user",
 			Username:  "prefixtest",
 			Email:     "prefix@example.com",
-			Status:    cloud.UserStatusActive,
-			Type:      cloud.UserTypeRegistered,
+			Status:    models.UserStatusActive,
+			Type:      models.UserTypeRegistered,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
 
-		client := &cloud.Client{
+		client := &models.Client{
 			ID:        12345,
 			UserID:    user.ID,
 			Name:      "Prefix Test Client",
 			AuthCode:  "prefix_auth",
 			SecretKey: "prefix_secret",
-			Status:    cloud.ClientStatusOffline,
+			Status:    models.ClientStatusOffline,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}
 
-		mapping := &cloud.PortMapping{
+		mapping := &models.PortMapping{
 			ID:             "prefix_test_mapping",
 			UserID:         user.ID,
 			SourceClientID: client.ID,
 			TargetClientID: 67890,
-			Protocol:       cloud.ProtocolTCP,
+			Protocol:       models.ProtocolTCP,
 			SourcePort:     9090,
 			TargetHost:     "localhost",
 			TargetPort:     90,
-			Status:         cloud.MappingStatusActive,
+			Status:         models.MappingStatusActive,
 			CreatedAt:      time.Now(),
 			UpdatedAt:      time.Now(),
 		}
 
-		node := &cloud.Node{
+		node := &models.Node{
 			ID:        "prefix_test_node",
 			Name:      "Prefix Test Node",
 			Address:   "192.168.1.200:8080",

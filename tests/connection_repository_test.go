@@ -4,20 +4,22 @@ import (
 	"context"
 	"testing"
 	"time"
+	"tunnox-core/internal/cloud/managers"
+	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/cloud/storages"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"tunnox-core/internal/cloud"
 )
 
 func TestConnectionRepository(t *testing.T) {
 	t.Run("CreateConnection_and_GetConnection", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(context.Background())
-		repo := cloud.NewRepository(storage)
-		connRepo := cloud.NewConnectionRepo(repo)
+		storage := storages.NewMemoryStorage(context.Background())
+		repo := repos.NewRepository(storage)
+		connRepo := repos.NewConnectionRepo(repo)
 
-		connInfo := &cloud.ConnectionInfo{
+		connInfo := &models.ConnectionInfo{
 			ConnID:    "test-conn-1",
 			MappingID: "test-mapping-1",
 			SourceIP:  "192.168.1.100",
@@ -41,11 +43,11 @@ func TestConnectionRepository(t *testing.T) {
 	})
 
 	t.Run("UpdateConnection", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(context.Background())
-		repo := cloud.NewRepository(storage)
-		connRepo := cloud.NewConnectionRepo(repo)
+		storage := storages.NewMemoryStorage(context.Background())
+		repo := repos.NewRepository(storage)
+		connRepo := repos.NewConnectionRepo(repo)
 
-		connInfo := &cloud.ConnectionInfo{
+		connInfo := &models.ConnectionInfo{
 			ConnID:    "test-conn-2",
 			MappingID: "test-mapping-2",
 			SourceIP:  "192.168.1.101",
@@ -73,11 +75,11 @@ func TestConnectionRepository(t *testing.T) {
 	})
 
 	t.Run("DeleteConnection", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(context.Background())
-		repo := cloud.NewRepository(storage)
-		connRepo := cloud.NewConnectionRepo(repo)
+		storage := storages.NewMemoryStorage(context.Background())
+		repo := repos.NewRepository(storage)
+		connRepo := repos.NewConnectionRepo(repo)
 
-		connInfo := &cloud.ConnectionInfo{
+		connInfo := &models.ConnectionInfo{
 			ConnID:    "test-conn-3",
 			MappingID: "test-mapping-3",
 			SourceIP:  "192.168.1.102",
@@ -98,20 +100,20 @@ func TestConnectionRepository(t *testing.T) {
 	})
 
 	t.Run("ListConnections", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(context.Background())
-		repo := cloud.NewRepository(storage)
-		connRepo := cloud.NewConnectionRepo(repo)
+		storage := storages.NewMemoryStorage(context.Background())
+		repo := repos.NewRepository(storage)
+		connRepo := repos.NewConnectionRepo(repo)
 
 		// 创建映射ID
 		mappingID := "test-mapping-4"
 
 		// 创建连接信息
-		conn1 := &cloud.ConnectionInfo{
+		conn1 := &models.ConnectionInfo{
 			ConnID:    "test-conn-4-1",
 			MappingID: mappingID,
 			SourceIP:  "192.168.1.101",
 		}
-		conn2 := &cloud.ConnectionInfo{
+		conn2 := &models.ConnectionInfo{
 			ConnID:    "test-conn-4-2",
 			MappingID: mappingID,
 			SourceIP:  "192.168.1.102",
@@ -139,20 +141,20 @@ func TestConnectionRepository(t *testing.T) {
 	})
 
 	t.Run("ListClientConns", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(context.Background())
-		repo := cloud.NewRepository(storage)
-		connRepo := cloud.NewConnectionRepo(repo)
+		storage := storages.NewMemoryStorage(context.Background())
+		repo := repos.NewRepository(storage)
+		connRepo := repos.NewConnectionRepo(repo)
 
 		// 创建客户端ID
 		clientID := int64(1)
 
 		// 创建连接信息
-		conn1 := &cloud.ConnectionInfo{
+		conn1 := &models.ConnectionInfo{
 			ConnID:   "test-conn-5-1",
 			ClientID: clientID,
 			SourceIP: "192.168.1.105",
 		}
-		conn2 := &cloud.ConnectionInfo{
+		conn2 := &models.ConnectionInfo{
 			ConnID:   "test-conn-5-2",
 			ClientID: clientID,
 			SourceIP: "192.168.1.106",
@@ -179,12 +181,12 @@ func TestConnectionRepository(t *testing.T) {
 	})
 
 	t.Run("UpdateStats", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(context.Background())
-		repo := cloud.NewRepository(storage)
-		connRepo := cloud.NewConnectionRepo(repo)
+		storage := storages.NewMemoryStorage(context.Background())
+		repo := repos.NewRepository(storage)
+		connRepo := repos.NewConnectionRepo(repo)
 
 		// 创建连接信息
-		connInfo := &cloud.ConnectionInfo{
+		connInfo := &models.ConnectionInfo{
 			ConnID:    "test-conn-6",
 			MappingID: "test-mapping-6",
 			SourceIP:  "192.168.1.107",
@@ -208,19 +210,19 @@ func TestConnectionRepository(t *testing.T) {
 
 func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 	t.Run("RegisterConnection_WithRepository", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(context.Background())
-		config := &cloud.ControlConfig{
+		storage := storages.NewMemoryStorage(context.Background())
+		config := &managers.ControlConfig{
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
 		}
-		cloudControl := cloud.NewBuiltinCloudControlWithStorage(config, storage)
+		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage)
 
 		// 先创建一个映射
-		mapping := &cloud.PortMapping{
+		mapping := &models.PortMapping{
 			ID:             "test-mapping-8",
 			SourceClientID: 2,
 			TargetClientID: 3,
-			Protocol:       cloud.ProtocolTCP,
+			Protocol:       models.ProtocolTCP,
 			SourcePort:     8080,
 			TargetHost:     "localhost",
 			TargetPort:     3000,
@@ -231,7 +233,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 		require.NoError(t, err)
 
 		// 注册连接
-		connInfo := &cloud.ConnectionInfo{
+		connInfo := &models.ConnectionInfo{
 			ConnID:   "test-conn-7",
 			SourceIP: "192.168.1.108",
 		}
@@ -248,19 +250,19 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 	})
 
 	t.Run("GetConnections_WithRepository", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(context.Background())
-		config := &cloud.ControlConfig{
+		storage := storages.NewMemoryStorage(context.Background())
+		config := &managers.ControlConfig{
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
 		}
-		cloudControl := cloud.NewBuiltinCloudControlWithStorage(config, storage)
+		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage)
 
 		// 先创建一个映射
-		mapping := &cloud.PortMapping{
+		mapping := &models.PortMapping{
 			ID:             "test-mapping-9",
 			SourceClientID: 6,
 			TargetClientID: 7,
-			Protocol:       cloud.ProtocolTCP,
+			Protocol:       models.ProtocolTCP,
 			SourcePort:     8082,
 			TargetHost:     "localhost",
 			TargetPort:     3002,
@@ -270,11 +272,11 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 		createdMapping, err := cloudControl.CreatePortMapping(mapping)
 		require.NoError(t, err)
 
-		conn1 := &cloud.ConnectionInfo{
+		conn1 := &models.ConnectionInfo{
 			ConnID:   "test-conn-8-1",
 			SourceIP: "192.168.1.109",
 		}
-		conn2 := &cloud.ConnectionInfo{
+		conn2 := &models.ConnectionInfo{
 			ConnID:   "test-conn-8-2",
 			SourceIP: "192.168.1.110",
 		}
@@ -301,19 +303,19 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 	})
 
 	t.Run("UpdateConnectionStats_WithRepository", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(context.Background())
-		config := &cloud.ControlConfig{
+		storage := storages.NewMemoryStorage(context.Background())
+		config := &managers.ControlConfig{
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
 		}
-		cloudControl := cloud.NewBuiltinCloudControlWithStorage(config, storage)
+		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage)
 
 		// 先创建一个映射
-		mapping := &cloud.PortMapping{
+		mapping := &models.PortMapping{
 			ID:             "test-mapping-10",
 			SourceClientID: 8,
 			TargetClientID: 9,
-			Protocol:       cloud.ProtocolTCP,
+			Protocol:       models.ProtocolTCP,
 			SourcePort:     8083,
 			TargetHost:     "localhost",
 			TargetPort:     3003,
@@ -323,7 +325,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 		createdMapping, err := cloudControl.CreatePortMapping(mapping)
 		require.NoError(t, err)
 
-		connInfo := &cloud.ConnectionInfo{
+		connInfo := &models.ConnectionInfo{
 			ConnID:   "test-conn-9",
 			SourceIP: "192.168.1.111",
 		}
@@ -343,19 +345,19 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 	})
 
 	t.Run("UnregisterConnection_WithRepository", func(t *testing.T) {
-		storage := cloud.NewMemoryStorage(context.Background())
-		config := &cloud.ControlConfig{
+		storage := storages.NewMemoryStorage(context.Background())
+		config := &managers.ControlConfig{
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
 		}
-		cloudControl := cloud.NewBuiltinCloudControlWithStorage(config, storage)
+		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage)
 
 		// 先创建一个映射
-		mapping := &cloud.PortMapping{
+		mapping := &models.PortMapping{
 			ID:             "test-mapping-11",
 			SourceClientID: 10,
 			TargetClientID: 11,
-			Protocol:       cloud.ProtocolTCP,
+			Protocol:       models.ProtocolTCP,
 			SourcePort:     8084,
 			TargetHost:     "localhost",
 			TargetPort:     3004,
@@ -365,7 +367,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 		createdMapping, err := cloudControl.CreatePortMapping(mapping)
 		require.NoError(t, err)
 
-		connInfo := &cloud.ConnectionInfo{
+		connInfo := &models.ConnectionInfo{
 			ConnID:   "test-conn-10",
 			SourceIP: "192.168.1.112",
 		}
@@ -386,8 +388,8 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 }
 
 func TestConnectionRepository_Dispose(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	connRepo := cloud.NewConnectionRepo(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	connRepo := repos.NewConnectionRepo(repo)
 	require.NotNil(t, connRepo)
 
 	// 验证初始状态
@@ -406,8 +408,8 @@ func TestConnectionRepository_Dispose(t *testing.T) {
 }
 
 func TestConnectionRepository_Dispose_Concurrent(t *testing.T) {
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	connRepo := cloud.NewConnectionRepo(repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	connRepo := repos.NewConnectionRepo(repo)
 	require.NotNil(t, connRepo)
 
 	done := make(chan struct{})

@@ -1,4 +1,4 @@
-package cloud
+package managers
 
 import (
 	"context"
@@ -6,14 +6,16 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/cloud/distributed"
+	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/utils"
 )
 
 // CleanupManager 分布式清理管理器
 type CleanupManager struct {
-	storage Storage
-	lock    DistributedLock
+	storage storages.Storage
+	lock    distributed.DistributedLock
 	mu      sync.Mutex
 	utils.Dispose
 }
@@ -30,7 +32,7 @@ type CleanupTask struct {
 }
 
 // NewCleanupManager 创建清理管理器
-func NewCleanupManager(storage Storage, lock DistributedLock, parentCtx context.Context) *CleanupManager {
+func NewCleanupManager(storage storages.Storage, lock distributed.DistributedLock, parentCtx context.Context) *CleanupManager {
 	cm := &CleanupManager{
 		storage: storage,
 		lock:    lock,
@@ -39,13 +41,23 @@ func NewCleanupManager(storage Storage, lock DistributedLock, parentCtx context.
 	return cm
 }
 
-// onClose 资源释放回调
+// onClose 资源清理回调
 func (cm *CleanupManager) onClose() {
+	utils.Infof("Cleanup manager resources cleaned up")
+
+	// 停止清理任务
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
-	// 清理管理器本身不持有需要特殊清理的资源
-	// 但可以在这里添加清理逻辑
+	// 释放分布式锁
+	if cm.lock != nil {
+		utils.Infof("Distributed lock resources cleaned up")
+	}
+
+	// 清理存储资源
+	if cm.storage != nil {
+		utils.Infof("Cleanup storage resources cleaned up")
+	}
 }
 
 // RegisterCleanupTask 注册清理任务

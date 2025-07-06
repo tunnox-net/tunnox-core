@@ -1,9 +1,16 @@
-package cloud
+package managers
 
 import (
 	"context"
 	"fmt"
 	"time"
+	"tunnox-core/internal/cloud/configs"
+	"tunnox-core/internal/cloud/constants"
+	"tunnox-core/internal/cloud/distributed"
+	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/utils"
 )
 
@@ -13,13 +20,13 @@ import (
 
 type CloudControl struct {
 	config            *ControlConfig
-	storage           Storage
-	idGen             *DistributedIDGenerator
-	userRepo          *UserRepository
-	clientRepo        *ClientRepository
-	mappingRepo       *PortMappingRepo
-	nodeRepo          *NodeRepository
-	connRepo          *ConnectionRepo
+	storage           storages.Storage
+	idGen             *distributed.DistributedIDGenerator
+	userRepo          *repos.UserRepository
+	clientRepo        *repos.ClientRepository
+	mappingRepo       *repos.PortMappingRepo
+	nodeRepo          *repos.NodeRepository
+	connRepo          *repos.ConnectionRepo
 	jwtManager        *JWTManager
 	configManager     *ConfigManager
 	cleanupManager    *CleanupManager
@@ -28,26 +35,26 @@ type CloudControl struct {
 	nodeManager       *NodeManager
 	searchManager     *SearchManager
 	connectionManager *ConnectionManager
-	lock              DistributedLock
+	lock              distributed.DistributedLock
 	cleanupTicker     *time.Ticker
 	done              chan bool
 	utils.Dispose
 }
 
-func NewCloudControl(config *ControlConfig, storage Storage) *CloudControl {
+func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudControl {
 	ctx := context.Background()
-	repo := NewRepository(storage)
-	lock := NewMemoryLock() // 可替换为分布式锁
+	repo := repos.NewRepository(storage)
+	lock := distributed.NewMemoryLock() // 可替换为分布式锁
 
 	// 创建仓库实例
-	userRepo := NewUserRepository(repo)
-	clientRepo := NewClientRepository(repo)
-	mappingRepo := NewPortMappingRepo(repo)
-	nodeRepo := NewNodeRepository(repo)
-	connRepo := NewConnectionRepo(repo)
+	userRepo := repos.NewUserRepository(repo)
+	clientRepo := repos.NewClientRepository(repo)
+	mappingRepo := repos.NewPortMappingRepo(repo)
+	nodeRepo := repos.NewNodeRepository(repo)
+	connRepo := repos.NewConnectionRepo(repo)
 
 	// 创建ID生成器
-	idGen := NewDistributedIDGenerator(storage, lock)
+	idGen := distributed.NewDistributedIDGenerator(storage, lock)
 
 	base := &CloudControl{
 		config:            config,
@@ -67,7 +74,7 @@ func NewCloudControl(config *ControlConfig, storage Storage) *CloudControl {
 		searchManager:     NewSearchManager(userRepo, clientRepo, mappingRepo),
 		connectionManager: NewConnectionManager(connRepo, idGen),
 		lock:              lock,
-		cleanupTicker:     time.NewTicker(DefaultCleanupInterval),
+		cleanupTicker:     time.NewTicker(constants.DefaultCleanupInterval),
 		done:              make(chan bool),
 	}
 	base.SetCtx(ctx, base.onClose)
@@ -94,10 +101,10 @@ func (b *CloudControl) onClose() {
 // ...（后续迁移 builtin.go 的通用方法到这里）
 
 // 用户管理
-func (b *CloudControl) CreateUser(username, email string) (*User, error) {
+func (b *CloudControl) CreateUser(username, email string) (*models.User, error) {
 	userID, _ := b.idGen.GenerateUserID(b.Ctx())
 	now := time.Now()
-	user := &User{
+	user := &models.User{
 		ID:        userID,
 		Username:  username,
 		Email:     email,
@@ -110,11 +117,11 @@ func (b *CloudControl) CreateUser(username, email string) (*User, error) {
 	return user, nil
 }
 
-func (b *CloudControl) GetUser(userID string) (*User, error) {
+func (b *CloudControl) GetUser(userID string) (*models.User, error) {
 	return b.userRepo.GetUser(userID)
 }
 
-func (b *CloudControl) UpdateUser(user *User) error {
+func (b *CloudControl) UpdateUser(user *models.User) error {
 	user.UpdatedAt = time.Now()
 	return b.userRepo.UpdateUser(user)
 }
@@ -123,15 +130,15 @@ func (b *CloudControl) DeleteUser(userID string) error {
 	return b.userRepo.DeleteUser(userID)
 }
 
-func (b *CloudControl) ListUsers(userType UserType) ([]*User, error) {
+func (b *CloudControl) ListUsers(userType models.UserType) ([]*models.User, error) {
 	return b.userRepo.ListUsers(userType)
 }
 
 // 客户端管理
-func (b *CloudControl) CreateClient(userID, clientName string) (*Client, error) {
+func (b *CloudControl) CreateClient(userID, clientName string) (*models.Client, error) {
 	// 生成客户端ID，确保不重复
 	var clientID int64
-	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
+	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
 		generatedID, err := b.idGen.GenerateClientID(b.Ctx())
 		if err != nil {
 			return nil, fmt.Errorf("generate client ID failed: %w", err)
@@ -156,7 +163,7 @@ func (b *CloudControl) CreateClient(userID, clientName string) (*Client, error) 
 	}
 
 	if clientID == 0 {
-		return nil, fmt.Errorf("failed to generate unique client ID after %d attempts", DefaultMaxAttempts)
+		return nil, fmt.Errorf("failed to generate unique client ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
 	authCode, err := b.idGen.GenerateAuthCode()
@@ -174,22 +181,22 @@ func (b *CloudControl) CreateClient(userID, clientName string) (*Client, error) 
 	}
 
 	now := time.Now()
-	client := &Client{
+	client := &models.Client{
 		ID:        clientID,
 		UserID:    userID,
 		Name:      clientName,
 		AuthCode:  authCode,
 		SecretKey: secretKey,
-		Status:    ClientStatusOffline,
-		Type:      ClientTypeRegistered,
-		Config: ClientConfig{
-			EnableCompression: DefaultEnableCompression,
-			BandwidthLimit:    DefaultClientBandwidthLimit,
-			MaxConnections:    DefaultClientMaxConnections,
-			AllowedPorts:      DefaultAllowedPorts,
-			BlockedPorts:      DefaultBlockedPorts,
-			AutoReconnect:     DefaultAutoReconnect,
-			HeartbeatInterval: DefaultHeartbeatInterval,
+		Status:    models.ClientStatusOffline,
+		Type:      models.ClientTypeRegistered,
+		Config: configs.ClientConfig{
+			EnableCompression: constants.DefaultEnableCompression,
+			BandwidthLimit:    constants.DefaultClientBandwidthLimit,
+			MaxConnections:    constants.DefaultClientMaxConnections,
+			AllowedPorts:      constants.DefaultAllowedPorts,
+			BlockedPorts:      constants.DefaultBlockedPorts,
+			AutoReconnect:     constants.DefaultAutoReconnect,
+			HeartbeatInterval: constants.DefaultHeartbeatInterval,
 		},
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -221,11 +228,11 @@ func (b *CloudControl) TouchClient(clientID int64) {
 	}
 }
 
-func (b *CloudControl) GetClient(clientID int64) (*Client, error) {
+func (b *CloudControl) GetClient(clientID int64) (*models.Client, error) {
 	return b.clientRepo.GetClient(fmt.Sprintf("%d", clientID))
 }
 
-func (b *CloudControl) UpdateClient(client *Client) error {
+func (b *CloudControl) UpdateClient(client *models.Client) error {
 	client.UpdatedAt = time.Now()
 	return b.clientRepo.UpdateClient(client)
 }
@@ -240,11 +247,11 @@ func (b *CloudControl) DeleteClient(clientID int64) error {
 	return b.clientRepo.DeleteClient(fmt.Sprintf("%d", clientID))
 }
 
-func (b *CloudControl) UpdateClientStatus(clientID int64, status ClientStatus, nodeID string) error {
+func (b *CloudControl) UpdateClientStatus(clientID int64, status models.ClientStatus, nodeID string) error {
 	return b.clientRepo.UpdateClientStatus(fmt.Sprintf("%d", clientID), status, nodeID)
 }
 
-func (b *CloudControl) ListClients(userID string, clientType ClientType) ([]*Client, error) {
+func (b *CloudControl) ListClients(userID string, clientType models.ClientType) ([]*models.Client, error) {
 	if userID != "" {
 		return b.clientRepo.ListUserClients(userID)
 	}
@@ -256,7 +263,7 @@ func (b *CloudControl) ListClients(userID string, clientType ClientType) ([]*Cli
 	if clientType == "" {
 		return clients, nil
 	}
-	var filtered []*Client
+	var filtered []*models.Client
 	for _, client := range clients {
 		if client.Type == clientType {
 			filtered = append(filtered, client)
@@ -265,19 +272,19 @@ func (b *CloudControl) ListClients(userID string, clientType ClientType) ([]*Cli
 	return filtered, nil
 }
 
-func (b *CloudControl) ListUserClients(userID string) ([]*Client, error) {
+func (b *CloudControl) ListUserClients(userID string) ([]*models.Client, error) {
 	return b.clientRepo.ListUserClients(userID)
 }
 
-func (b *CloudControl) GetClientPortMappings(clientID int64) ([]*PortMapping, error) {
+func (b *CloudControl) GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) {
 	return b.mappingRepo.GetClientPortMappings(fmt.Sprintf("%d", clientID))
 }
 
 // 端口映射管理
-func (b *CloudControl) CreatePortMapping(mapping *PortMapping) (*PortMapping, error) {
+func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.PortMapping, error) {
 	// 生成端口映射ID，确保不重复
 	var mappingID string
-	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
+	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
 		generatedID, err := b.idGen.GenerateMappingID(b.Ctx())
 		if err != nil {
 			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
@@ -302,11 +309,11 @@ func (b *CloudControl) CreatePortMapping(mapping *PortMapping) (*PortMapping, er
 	}
 
 	if mappingID == "" {
-		return nil, fmt.Errorf("failed to generate unique mapping ID after %d attempts", DefaultMaxAttempts)
+		return nil, fmt.Errorf("failed to generate unique mapping ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
 	mapping.ID = mappingID
-	mapping.Status = MappingStatusActive
+	mapping.Status = models.MappingStatusActive
 	mapping.CreatedAt = time.Now()
 	mapping.UpdatedAt = time.Now()
 
@@ -328,15 +335,15 @@ func (b *CloudControl) CreatePortMapping(mapping *PortMapping) (*PortMapping, er
 	return mapping, nil
 }
 
-func (b *CloudControl) GetUserPortMappings(userID string) ([]*PortMapping, error) {
+func (b *CloudControl) GetUserPortMappings(userID string) ([]*models.PortMapping, error) {
 	return b.mappingRepo.GetUserPortMappings(userID)
 }
 
-func (b *CloudControl) GetPortMapping(mappingID string) (*PortMapping, error) {
+func (b *CloudControl) GetPortMapping(mappingID string) (*models.PortMapping, error) {
 	return b.mappingRepo.GetPortMapping(mappingID)
 }
 
-func (b *CloudControl) UpdatePortMapping(mapping *PortMapping) error {
+func (b *CloudControl) UpdatePortMapping(mapping *models.PortMapping) error {
 	mapping.UpdatedAt = time.Now()
 	return b.mappingRepo.UpdatePortMapping(mapping)
 }
@@ -351,29 +358,29 @@ func (b *CloudControl) DeletePortMapping(mappingID string) error {
 	return b.mappingRepo.DeletePortMapping(mappingID)
 }
 
-func (b *CloudControl) UpdatePortMappingStatus(mappingID string, status MappingStatus) error {
+func (b *CloudControl) UpdatePortMappingStatus(mappingID string, status models.MappingStatus) error {
 	return b.mappingRepo.UpdatePortMappingStatus(mappingID, status)
 }
 
-func (b *CloudControl) UpdatePortMappingStats(mappingID string, stats *TrafficStats) error {
+func (b *CloudControl) UpdatePortMappingStats(mappingID string, stats *stats.TrafficStats) error {
 	return b.mappingRepo.UpdatePortMappingStats(mappingID, stats)
 }
 
-func (b *CloudControl) ListPortMappings(mappingType MappingType) ([]*PortMapping, error) {
+func (b *CloudControl) ListPortMappings(mappingType models.MappingType) ([]*models.PortMapping, error) {
 	// 简化实现：返回所有映射
 	return b.mappingRepo.GetUserPortMappings("")
 }
 
 // 匿名用户管理 - 委托给AnonymousManager
-func (b *CloudControl) GenerateAnonymousCredentials() (*Client, error) {
+func (b *CloudControl) GenerateAnonymousCredentials() (*models.Client, error) {
 	return b.anonymousManager.GenerateAnonymousCredentials()
 }
 
-func (b *CloudControl) GetAnonymousClient(clientID int64) (*Client, error) {
+func (b *CloudControl) GetAnonymousClient(clientID int64) (*models.Client, error) {
 	return b.anonymousManager.GetAnonymousClient(clientID)
 }
 
-func (b *CloudControl) ListAnonymousClients() ([]*Client, error) {
+func (b *CloudControl) ListAnonymousClients() ([]*models.Client, error) {
 	return b.anonymousManager.ListAnonymousClients()
 }
 
@@ -381,11 +388,11 @@ func (b *CloudControl) DeleteAnonymousClient(clientID int64) error {
 	return b.anonymousManager.DeleteAnonymousClient(clientID)
 }
 
-func (b *CloudControl) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol Protocol, sourcePort, targetPort int) (*PortMapping, error) {
+func (b *CloudControl) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
 	return b.anonymousManager.CreateAnonymousMapping(sourceClientID, targetClientID, protocol, sourcePort, targetPort)
 }
 
-func (b *CloudControl) GetAnonymousMappings() ([]*PortMapping, error) {
+func (b *CloudControl) GetAnonymousMappings() ([]*models.PortMapping, error) {
 	return b.anonymousManager.GetAnonymousMappings()
 }
 
@@ -394,50 +401,50 @@ func (b *CloudControl) CleanupExpiredAnonymous() error {
 }
 
 // 节点管理 - 委托给NodeManager
-func (b *CloudControl) GetNodeServiceInfo(nodeID string) (*NodeServiceInfo, error) {
+func (b *CloudControl) GetNodeServiceInfo(nodeID string) (*models.NodeServiceInfo, error) {
 	return b.nodeManager.GetNodeServiceInfo(nodeID)
 }
 
-func (b *CloudControl) GetAllNodeServiceInfo() ([]*NodeServiceInfo, error) {
+func (b *CloudControl) GetAllNodeServiceInfo() ([]*models.NodeServiceInfo, error) {
 	return b.nodeManager.GetAllNodeServiceInfo()
 }
 
 // 统计相关 - 委托给StatsManager
-func (b *CloudControl) GetUserStats(userID string) (*UserStats, error) {
+func (b *CloudControl) GetUserStats(userID string) (*stats.UserStats, error) {
 	return b.statsManager.GetUserStats(userID)
 }
 
-func (b *CloudControl) GetClientStats(clientID int64) (*ClientStats, error) {
+func (b *CloudControl) GetClientStats(clientID int64) (*stats.ClientStats, error) {
 	return b.statsManager.GetClientStats(clientID)
 }
 
-func (b *CloudControl) GetSystemStats() (*SystemStats, error) {
+func (b *CloudControl) GetSystemStats() (*stats.SystemStats, error) {
 	return b.statsManager.GetSystemStats()
 }
 
-func (b *CloudControl) GetTrafficStats(timeRange string) ([]*TrafficDataPoint, error) {
+func (b *CloudControl) GetTrafficStats(timeRange string) ([]*stats.TrafficDataPoint, error) {
 	return b.statsManager.GetTrafficStats(timeRange)
 }
 
-func (b *CloudControl) GetConnectionStats(timeRange string) ([]*ConnectionDataPoint, error) {
+func (b *CloudControl) GetConnectionStats(timeRange string) ([]*stats.ConnectionDataPoint, error) {
 	return b.statsManager.GetConnectionStats(timeRange)
 }
 
 // 搜索相关 - 委托给SearchManager
-func (b *CloudControl) SearchUsers(keyword string) ([]*User, error) {
+func (b *CloudControl) SearchUsers(keyword string) ([]*models.User, error) {
 	return b.searchManager.SearchUsers(keyword)
 }
 
-func (b *CloudControl) SearchClients(keyword string) ([]*Client, error) {
+func (b *CloudControl) SearchClients(keyword string) ([]*models.Client, error) {
 	return b.searchManager.SearchClients(keyword)
 }
 
-func (b *CloudControl) SearchPortMappings(keyword string) ([]*PortMapping, error) {
+func (b *CloudControl) SearchPortMappings(keyword string) ([]*models.PortMapping, error) {
 	return b.searchManager.SearchPortMappings(keyword)
 }
 
 // 连接管理 - 委托给ConnectionManager
-func (b *CloudControl) RegisterConnection(mappingID string, connInfo *ConnectionInfo) error {
+func (b *CloudControl) RegisterConnection(mappingID string, connInfo *models.ConnectionInfo) error {
 	return b.connectionManager.RegisterConnection(mappingID, connInfo)
 }
 
@@ -445,11 +452,11 @@ func (b *CloudControl) UnregisterConnection(connID string) error {
 	return b.connectionManager.UnregisterConnection(connID)
 }
 
-func (b *CloudControl) GetConnections(mappingID string) ([]*ConnectionInfo, error) {
+func (b *CloudControl) GetConnections(mappingID string) ([]*models.ConnectionInfo, error) {
 	return b.connectionManager.GetConnections(mappingID)
 }
 
-func (b *CloudControl) GetClientConnections(clientID int64) ([]*ConnectionInfo, error) {
+func (b *CloudControl) GetClientConnections(clientID int64) ([]*models.ConnectionInfo, error) {
 	return b.connectionManager.GetClientConnections(clientID)
 }
 
@@ -513,10 +520,10 @@ func (b *CloudControl) RevokeJWTToken(token string) error {
 }
 
 // 核心节点管理
-func (b *CloudControl) NodeRegister(req *NodeRegisterRequest) (*NodeRegisterResponse, error) {
+func (b *CloudControl) NodeRegister(req *models.NodeRegisterRequest) (*models.NodeRegisterResponse, error) {
 	// 生成节点ID，确保不重复
 	var nodeID string
-	for attempts := 0; attempts < DefaultMaxAttempts; attempts++ {
+	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
 		generatedID, err := b.idGen.GenerateNodeID(b.Ctx())
 		if err != nil {
 			return nil, fmt.Errorf("generate node ID failed: %w", err)
@@ -541,11 +548,11 @@ func (b *CloudControl) NodeRegister(req *NodeRegisterRequest) (*NodeRegisterResp
 	}
 
 	if nodeID == "" {
-		return nil, fmt.Errorf("failed to generate unique node ID after %d attempts", DefaultMaxAttempts)
+		return nil, fmt.Errorf("failed to generate unique node ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
 	now := time.Now()
-	node := &Node{
+	node := &models.Node{
 		ID:        nodeID,
 		Name:      fmt.Sprintf("Node-%s", nodeID),
 		Address:   req.Address,
@@ -560,14 +567,14 @@ func (b *CloudControl) NodeRegister(req *NodeRegisterRequest) (*NodeRegisterResp
 		return nil, fmt.Errorf("save node failed: %w", err)
 	}
 
-	return &NodeRegisterResponse{
+	return &models.NodeRegisterResponse{
 		NodeID:  nodeID,
 		Success: true,
 		Message: "Node registered successfully",
 	}, nil
 }
 
-func (b *CloudControl) NodeUnregister(req *NodeUnregisterRequest) error {
+func (b *CloudControl) NodeUnregister(req *models.NodeUnregisterRequest) error {
 	// 获取节点信息，用于释放ID
 	node, err := b.nodeRepo.GetNode(req.NodeID)
 	if err == nil && node != nil {
@@ -577,18 +584,18 @@ func (b *CloudControl) NodeUnregister(req *NodeUnregisterRequest) error {
 	return b.nodeRepo.DeleteNode(req.NodeID)
 }
 
-func (b *CloudControl) NodeHeartbeat(req *NodeHeartbeatRequest) (*NodeHeartbeatResponse, error) {
+func (b *CloudControl) NodeHeartbeat(req *models.NodeHeartbeatRequest) (*models.NodeHeartbeatResponse, error) {
 	// 更新节点心跳时间
 	node, err := b.nodeRepo.GetNode(req.NodeID)
 	if err != nil {
-		return &NodeHeartbeatResponse{
+		return &models.NodeHeartbeatResponse{
 			Success: false,
 			Message: "Node not found",
 		}, nil
 	}
 
 	if node == nil {
-		return &NodeHeartbeatResponse{
+		return &models.NodeHeartbeatResponse{
 			Success: false,
 			Message: "Node not found",
 		}, nil
@@ -598,30 +605,30 @@ func (b *CloudControl) NodeHeartbeat(req *NodeHeartbeatRequest) (*NodeHeartbeatR
 	node.Address = req.Address
 	node.UpdatedAt = time.Now()
 	if err := b.nodeRepo.UpdateNode(node); err != nil {
-		return &NodeHeartbeatResponse{
+		return &models.NodeHeartbeatResponse{
 			Success: false,
 			Message: "Failed to update node",
 		}, nil
 	}
 
-	return &NodeHeartbeatResponse{
+	return &models.NodeHeartbeatResponse{
 		Success: true,
 		Message: "Heartbeat received",
 	}, nil
 }
 
-func (b *CloudControl) Authenticate(req *AuthRequest) (*AuthResponse, error) {
+func (b *CloudControl) Authenticate(req *models.AuthRequest) (*models.AuthResponse, error) {
 	// 获取客户端信息
 	client, err := b.clientRepo.GetClient(fmt.Sprintf("%d", req.ClientID))
 	if err != nil {
-		return &AuthResponse{
+		return &models.AuthResponse{
 			Success: false,
 			Message: "Client not found",
 		}, nil
 	}
 
 	if client == nil {
-		return &AuthResponse{
+		return &models.AuthResponse{
 			Success: false,
 			Message: "Client not found",
 		}, nil
@@ -629,7 +636,7 @@ func (b *CloudControl) Authenticate(req *AuthRequest) (*AuthResponse, error) {
 
 	// 验证认证码
 	if client.AuthCode != req.AuthCode {
-		return &AuthResponse{
+		return &models.AuthResponse{
 			Success: false,
 			Message: "Invalid auth code",
 		}, nil
@@ -637,14 +644,14 @@ func (b *CloudControl) Authenticate(req *AuthRequest) (*AuthResponse, error) {
 
 	// 验证密钥（如果提供）
 	if req.SecretKey != "" && client.SecretKey != req.SecretKey {
-		return &AuthResponse{
+		return &models.AuthResponse{
 			Success: false,
 			Message: "Invalid secret key",
 		}, nil
 	}
 
 	// 更新客户端状态
-	client.Status = ClientStatusOnline
+	client.Status = models.ClientStatusOnline
 	client.NodeID = req.NodeID
 	client.IPAddress = req.IPAddress
 	client.Version = req.Version
@@ -653,7 +660,7 @@ func (b *CloudControl) Authenticate(req *AuthRequest) (*AuthResponse, error) {
 	client.UpdatedAt = now
 
 	if err := b.clientRepo.UpdateClient(client); err != nil {
-		return &AuthResponse{
+		return &models.AuthResponse{
 			Success: false,
 			Message: "Failed to update client status",
 		}, nil
@@ -662,7 +669,7 @@ func (b *CloudControl) Authenticate(req *AuthRequest) (*AuthResponse, error) {
 	// 生成JWT令牌
 	tokenInfo, err := b.jwtManager.GenerateTokenPair(b.Ctx(), client)
 	if err != nil {
-		return &AuthResponse{
+		return &models.AuthResponse{
 			Success: false,
 			Message: "Failed to generate token",
 		}, nil
@@ -671,7 +678,7 @@ func (b *CloudControl) Authenticate(req *AuthRequest) (*AuthResponse, error) {
 	// 获取节点信息
 	node, _ := b.nodeRepo.GetNode(req.NodeID)
 
-	return &AuthResponse{
+	return &models.AuthResponse{
 		Success:   true,
 		Token:     tokenInfo.Token,
 		Client:    client,
@@ -681,11 +688,11 @@ func (b *CloudControl) Authenticate(req *AuthRequest) (*AuthResponse, error) {
 	}, nil
 }
 
-func (b *CloudControl) ValidateToken(token string) (*AuthResponse, error) {
+func (b *CloudControl) ValidateToken(token string) (*models.AuthResponse, error) {
 	// 验证JWT令牌
 	claims, err := b.jwtManager.ValidateAccessToken(b.Ctx(), token)
 	if err != nil {
-		return &AuthResponse{
+		return &models.AuthResponse{
 			Success: false,
 			Message: "Invalid token",
 		}, nil
@@ -698,19 +705,19 @@ func (b *CloudControl) ValidateToken(token string) (*AuthResponse, error) {
 	}
 
 	if client == nil {
-		return &AuthResponse{
+		return &models.AuthResponse{
 			Success: false,
 			Message: "Client not found",
 		}, nil
 	}
 
 	// 获取节点信息
-	var node *Node
+	var node *models.Node
 	if client.NodeID != "" {
 		node, _ = b.nodeRepo.GetNode(client.NodeID)
 	}
 
-	return &AuthResponse{
+	return &models.AuthResponse{
 		Success:   true,
 		Token:     token,
 		Client:    client,

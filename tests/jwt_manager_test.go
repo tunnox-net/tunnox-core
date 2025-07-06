@@ -5,34 +5,36 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
-	"tunnox-core/internal/cloud"
+	"tunnox-core/internal/cloud/managers"
+	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/cloud/storages"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestJWTManager_GenerateTokenPair(t *testing.T) {
-	config := &cloud.ControlConfig{
+	config := &managers.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 	}
 
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	manager := cloud.NewJWTManager(config, repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	manager := managers.NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
 
 	// 创建测试客户端
-	client := &cloud.Client{
+	client := &models.Client{
 		ID:        1,
 		UserID:    "test-user",
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		NodeID:    "test-node",
 		Name:      "Test Client",
-		Status:    cloud.ClientStatusOnline,
+		Status:    models.ClientStatusOnline,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -55,31 +57,31 @@ func TestJWTManager_GenerateTokenPair(t *testing.T) {
 
 	assert.Equal(t, int64(1), claims.ClientID)
 	assert.Equal(t, "test-user", claims.UserID)
-	assert.Equal(t, string(cloud.ClientTypeRegistered), claims.ClientType)
+	assert.Equal(t, string(models.ClientTypeRegistered), claims.ClientType)
 	assert.Equal(t, "test-node", claims.NodeID)
 }
 
 func TestJWTManager_RefreshToken(t *testing.T) {
-	config := &cloud.ControlConfig{
+	config := &managers.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 	}
 
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	manager := cloud.NewJWTManager(config, repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	manager := managers.NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
 
 	// 创建测试客户端
-	client := &cloud.Client{
+	client := &models.Client{
 		ID:        1,
 		UserID:    "test-user",
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		NodeID:    "test-node",
 		Name:      "Test Client",
-		Status:    cloud.ClientStatusOnline,
+		Status:    models.ClientStatusOnline,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -106,26 +108,26 @@ func TestJWTManager_RefreshToken(t *testing.T) {
 }
 
 func TestJWTManager_RevokeToken(t *testing.T) {
-	config := &cloud.ControlConfig{
+	config := &managers.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 	}
 
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	manager := cloud.NewJWTManager(config, repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	manager := managers.NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
 
 	// 创建测试客户端
-	client := &cloud.Client{
+	client := &models.Client{
 		ID:        1,
 		UserID:    "test-user",
-		Type:      cloud.ClientTypeRegistered,
+		Type:      models.ClientTypeRegistered,
 		NodeID:    "test-node",
 		Name:      "Test Client",
-		Status:    cloud.ClientStatusOnline,
+		Status:    models.ClientStatusOnline,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
@@ -144,14 +146,14 @@ func TestJWTManager_RevokeToken(t *testing.T) {
 }
 
 func TestJWTManager_Concurrency(t *testing.T) {
-	config := &cloud.ControlConfig{
+	config := &managers.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 	}
 
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	manager := cloud.NewJWTManager(config, repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	manager := managers.NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
@@ -164,13 +166,13 @@ func TestJWTManager_Concurrency(t *testing.T) {
 		go func(id int) {
 			defer func() { done <- struct{}{} }()
 
-			client := &cloud.Client{
+			client := &models.Client{
 				ID:        int64(id),
 				UserID:    fmt.Sprintf("user-%d", id),
-				Type:      cloud.ClientTypeRegistered,
+				Type:      models.ClientTypeRegistered,
 				NodeID:    fmt.Sprintf("node-%d", id),
 				Name:      fmt.Sprintf("Client %d", id),
-				Status:    cloud.ClientStatusOnline,
+				Status:    models.ClientStatusOnline,
 				CreatedAt: time.Now(),
 				UpdatedAt: time.Now(),
 			}
@@ -189,14 +191,14 @@ func TestJWTManager_Concurrency(t *testing.T) {
 }
 
 func TestJWTManager_Dispose(t *testing.T) {
-	config := &cloud.ControlConfig{
+	config := &managers.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 		UseBuiltIn:        true,
 	}
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	manager := cloud.NewJWTManager(config, repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	manager := managers.NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	// 验证未关闭
@@ -210,14 +212,14 @@ func TestJWTManager_Dispose(t *testing.T) {
 }
 
 func TestJWTManager_Dispose_Concurrent(t *testing.T) {
-	config := &cloud.ControlConfig{
+	config := &managers.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 		UseBuiltIn:        true,
 	}
-	repo := cloud.NewRepository(cloud.NewMemoryStorage(context.Background()))
-	manager := cloud.NewJWTManager(config, repo)
+	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	manager := managers.NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	// 并发关闭

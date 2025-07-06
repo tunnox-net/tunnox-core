@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"tunnox-core/internal/cloud"
+	"tunnox-core/internal/cloud/managers"
+	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -15,7 +16,7 @@ import (
 // 后需就都只基于并关联PackageStreamer 操作流
 
 type ConnectionSession struct {
-	cloudApi cloud.CloudControlAPI
+	cloudApi managers.CloudControlAPI
 	connMap  map[io.Reader]string
 	streamer map[string]stream.PackageStreamer
 
@@ -187,14 +188,14 @@ func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer)
 	// 这里假设通过 Authenticate 获取 connID（可根据实际业务替换）
 	if s.cloudApi != nil {
 		// 填充必要的鉴权信息，如 ClientID、AuthCode、SecretKey、NodeID、Version、IPAddress、Type
-		authReq := &cloud.AuthRequest{
+		authReq := &models.AuthRequest{
 			ClientID:  0, // 需要从配置或参数获取
 			AuthCode:  "",
 			SecretKey: "",
 			NodeID:    "",
 			Version:   "",
 			IPAddress: "",
-			Type:      cloud.ClientTypeRegistered,
+			Type:      models.ClientTypeRegistered,
 		}
 		resp, err := s.cloudApi.Authenticate(authReq)
 		if err == nil && resp.Success {

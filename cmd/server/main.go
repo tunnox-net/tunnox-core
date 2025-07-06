@@ -8,10 +8,10 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"tunnox-core/internal/cloud/managers"
 
 	"gopkg.in/yaml.v3"
 
-	"tunnox-core/internal/cloud"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/utils"
@@ -79,7 +79,7 @@ func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Contex
 // Server 服务器结构
 type Server struct {
 	config       *AppConfig
-	cloudControl cloud.CloudControlAPI
+	cloudControl managers.CloudControlAPI
 	protocolMgr  *protocol.Manager
 	utils.Dispose
 }
@@ -92,7 +92,7 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 	}
 
 	// 创建云控制器
-	cloudControl := cloud.NewBuiltinCloudControl(nil)
+	cloudControl := managers.NewBuiltinCloudControl(nil)
 
 	// 创建服务器
 	server := &Server{
@@ -174,7 +174,7 @@ func (s *Server) onClose() {
 	if s.cloudControl != nil {
 		utils.Info(constants.MsgClosingCloudControl)
 		if err := s.cloudControl.Close(); err != nil {
-			utils.Errorf(constants.MsgCloudControlClosed, err)
+			utils.Errorf("Cloud control closed with error: %v", err)
 		} else {
 			utils.Info(constants.MsgCloudControlClosed)
 		}
@@ -219,7 +219,7 @@ func (s *Server) Stop() error {
 	if s.cloudControl != nil {
 		utils.Info(constants.MsgClosingCloudControl)
 		if err := s.cloudControl.Close(); err != nil {
-			utils.Errorf(constants.MsgCloudControlClosed, err)
+			utils.Errorf("Cloud control closed with error: %v", err)
 		} else {
 			utils.Info(constants.MsgCloudControlClosed)
 		}

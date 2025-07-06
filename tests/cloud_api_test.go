@@ -3,13 +3,13 @@ package tests
 import (
 	"testing"
 	"time"
-
-	"tunnox-core/internal/cloud"
+	"tunnox-core/internal/cloud/managers"
+	"tunnox-core/internal/cloud/models"
 )
 
 func TestBuiltInCloudControl_JWTTokenManagement(t *testing.T) {
-	config := cloud.DefaultConfig()
-	api := cloud.NewBuiltinCloudControl(config)
+	config := managers.DefaultConfig()
+	api := managers.NewBuiltinCloudControl(config)
 
 	t.Run("GenerateJWTToken", func(t *testing.T) {
 		// 先创建一个客户端
@@ -141,8 +141,8 @@ func TestBuiltInCloudControl_JWTTokenManagement(t *testing.T) {
 }
 
 func TestBuiltInCloudControl_ConnectionManagement(t *testing.T) {
-	config := cloud.DefaultConfig()
-	api := cloud.NewBuiltinCloudControl(config)
+	config := managers.DefaultConfig()
+	api := managers.NewBuiltinCloudControl(config)
 
 	t.Run("RegisterConnection and GetConnections", func(t *testing.T) {
 		// 先创建两个客户端
@@ -156,15 +156,15 @@ func TestBuiltInCloudControl_ConnectionManagement(t *testing.T) {
 		}
 
 		// 先创建一个端口映射
-		mapping := &cloud.PortMapping{
+		mapping := &models.PortMapping{
 			ID:             "test_mapping_1",
 			UserID:         "test_user_1",
 			SourceClientID: client1.ID,
 			TargetClientID: client2.ID,
-			Protocol:       cloud.ProtocolTCP,
+			Protocol:       models.ProtocolTCP,
 			SourcePort:     8080,
 			TargetPort:     80,
-			Status:         cloud.MappingStatusActive,
+			Status:         models.MappingStatusActive,
 			CreatedAt:      time.Now(),
 			UpdatedAt:      time.Now(),
 		}
@@ -175,7 +175,7 @@ func TestBuiltInCloudControl_ConnectionManagement(t *testing.T) {
 		}
 
 		// 创建连接信息
-		connInfo := &cloud.ConnectionInfo{
+		connInfo := &models.ConnectionInfo{
 			ConnID:        "test_conn_1",
 			MappingID:     mapping.ID,
 			SourceIP:      "127.0.0.1",
@@ -241,8 +241,8 @@ func TestBuiltInCloudControl_ConnectionManagement(t *testing.T) {
 }
 
 func TestBuiltInCloudControl_AuthenticationWithJWT(t *testing.T) {
-	config := cloud.DefaultConfig()
-	api := cloud.NewBuiltinCloudControl(config)
+	config := managers.DefaultConfig()
+	api := managers.NewBuiltinCloudControl(config)
 
 	t.Run("Authenticate with JWT token", func(t *testing.T) {
 		// 先创建一个客户端
@@ -257,7 +257,7 @@ func TestBuiltInCloudControl_AuthenticationWithJWT(t *testing.T) {
 			t.Fatalf("GenerateJWTToken failed: %v", err)
 		}
 
-		authReq := &cloud.AuthRequest{
+		authReq := &models.AuthRequest{
 			ClientID:  client.ID,
 			AuthCode:  client.AuthCode,
 			SecretKey: client.SecretKey,
@@ -294,7 +294,7 @@ func TestBuiltInCloudControl_AuthenticationWithJWT(t *testing.T) {
 		}
 
 		// 先将客户端设置为在线状态
-		err = api.UpdateClientStatus(client.ID, cloud.ClientStatusOnline, "test_node_1")
+		err = api.UpdateClientStatus(client.ID, models.ClientStatusOnline, "test_node_1")
 		if err != nil {
 			t.Fatalf("UpdateClientStatus failed: %v", err)
 		}

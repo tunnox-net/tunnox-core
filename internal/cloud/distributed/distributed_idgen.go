@@ -1,10 +1,12 @@
-package cloud
+package distributed
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
+	"tunnox-core/internal/cloud/generators"
+	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
 
 	"tunnox-core/internal/utils"
@@ -12,12 +14,12 @@ import (
 
 // DistributedIDGenerator 分布式ID生成器
 type DistributedIDGenerator struct {
-	storage Storage
+	storage storages.Storage
 	lock    DistributedLock
 }
 
 // NewDistributedIDGenerator 创建分布式ID生成器
-func NewDistributedIDGenerator(storage Storage, lock DistributedLock) *DistributedIDGenerator {
+func NewDistributedIDGenerator(storage storages.Storage, lock DistributedLock) *DistributedIDGenerator {
 	return &DistributedIDGenerator{
 		storage: storage,
 		lock:    lock,
@@ -38,8 +40,8 @@ func (g *DistributedIDGenerator) GenerateClientID(ctx context.Context) (int64, e
 	}
 	defer g.lock.Release(lockKey)
 
-	for attempts := 0; attempts < MaxAttempts; attempts++ {
-		randomInt, err := utils.GenerateRandomInt64(ClientIDMin, ClientIDMax)
+	for attempts := 0; attempts < generators.MaxAttempts; attempts++ {
+		randomInt, err := utils.GenerateRandomInt64(generators.ClientIDMin, generators.ClientIDMax)
 		if err != nil {
 			return 0, err
 		}
@@ -59,7 +61,7 @@ func (g *DistributedIDGenerator) GenerateClientID(ctx context.Context) (int64, e
 		}
 	}
 
-	return 0, ErrIDExhausted
+	return 0, generators.ErrIDExhausted
 }
 
 // GenerateNodeID 生成节点ID
@@ -76,8 +78,8 @@ func (g *DistributedIDGenerator) GenerateNodeID(ctx context.Context) (string, er
 	}
 	defer g.lock.Release(lockKey)
 
-	for attempts := 0; attempts < MaxAttempts; attempts++ {
-		nodeID, err := utils.GenerateRandomString(NodeIDLength)
+	for attempts := 0; attempts < generators.MaxAttempts; attempts++ {
+		nodeID, err := utils.GenerateRandomString(generators.NodeIDLength)
 		if err != nil {
 			return "", err
 		}
@@ -97,7 +99,7 @@ func (g *DistributedIDGenerator) GenerateNodeID(ctx context.Context) (string, er
 		}
 	}
 
-	return "", ErrIDExhausted
+	return "", generators.ErrIDExhausted
 }
 
 // GenerateUserID 生成用户ID
@@ -114,8 +116,8 @@ func (g *DistributedIDGenerator) GenerateUserID(ctx context.Context) (string, er
 	}
 	defer g.lock.Release(lockKey)
 
-	for attempts := 0; attempts < MaxAttempts; attempts++ {
-		userID, err := utils.GenerateRandomString(UserIDLength)
+	for attempts := 0; attempts < generators.MaxAttempts; attempts++ {
+		userID, err := utils.GenerateRandomString(generators.UserIDLength)
 		if err != nil {
 			return "", err
 		}
@@ -135,7 +137,7 @@ func (g *DistributedIDGenerator) GenerateUserID(ctx context.Context) (string, er
 		}
 	}
 
-	return "", ErrIDExhausted
+	return "", generators.ErrIDExhausted
 }
 
 // GenerateMappingID 生成端口映射ID
@@ -152,8 +154,8 @@ func (g *DistributedIDGenerator) GenerateMappingID(ctx context.Context) (string,
 	}
 	defer g.lock.Release(lockKey)
 
-	for attempts := 0; attempts < MaxAttempts; attempts++ {
-		mappingID, err := utils.GenerateRandomString(MappingIDLength)
+	for attempts := 0; attempts < generators.MaxAttempts; attempts++ {
+		mappingID, err := utils.GenerateRandomString(generators.MappingIDLength)
 		if err != nil {
 			return "", err
 		}
@@ -173,7 +175,7 @@ func (g *DistributedIDGenerator) GenerateMappingID(ctx context.Context) (string,
 		}
 	}
 
-	return "", ErrIDExhausted
+	return "", generators.ErrIDExhausted
 }
 
 // ReleaseClientID 释放客户端ID
@@ -317,9 +319,9 @@ type IDUsageInfo struct {
 
 // 保持向后兼容的方法（用于生成认证码和密钥）
 func (g *DistributedIDGenerator) GenerateAuthCode() (string, error) {
-	return utils.GenerateRandomDigits(AuthCodeLength)
+	return utils.GenerateRandomDigits(generators.AuthCodeLength)
 }
 
 func (g *DistributedIDGenerator) GenerateSecretKey() (string, error) {
-	return utils.GenerateRandomString(SecretKeyLength)
+	return utils.GenerateRandomString(generators.SecretKeyLength)
 }

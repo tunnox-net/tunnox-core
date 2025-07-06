@@ -1,22 +1,25 @@
-package cloud
+package managers
 
 import (
 	"time"
+	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/utils"
 )
 
 // StatsManager 统计管理服务
 type StatsManager struct {
-	userRepo    *UserRepository
-	clientRepo  *ClientRepository
-	mappingRepo *PortMappingRepo
-	nodeRepo    *NodeRepository
+	userRepo    *repos.UserRepository
+	clientRepo  *repos.ClientRepository
+	mappingRepo *repos.PortMappingRepo
+	nodeRepo    *repos.NodeRepository
 	utils.Dispose
 }
 
 // NewStatsManager 创建统计管理服务
-func NewStatsManager(userRepo *UserRepository, clientRepo *ClientRepository,
-	mappingRepo *PortMappingRepo, nodeRepo *NodeRepository) *StatsManager {
+func NewStatsManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository,
+	mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository) *StatsManager {
 	manager := &StatsManager{
 		userRepo:    userRepo,
 		clientRepo:  clientRepo,
@@ -30,10 +33,12 @@ func NewStatsManager(userRepo *UserRepository, clientRepo *ClientRepository,
 // onClose 资源清理回调
 func (sm *StatsManager) onClose() {
 	utils.Infof("Stats manager resources cleaned up")
+	// 清理统计缓存和临时数据
+	// 这里可以添加清理统计缓存的逻辑
 }
 
 // GetUserStats 获取用户统计信息
-func (sm *StatsManager) GetUserStats(userID string) (*UserStats, error) {
+func (sm *StatsManager) GetUserStats(userID string) (*stats.UserStats, error) {
 	// 获取用户的客户端
 	clients, err := sm.clientRepo.ListUserClients(userID)
 	if err != nil {
@@ -56,7 +61,7 @@ func (sm *StatsManager) GetUserStats(userID string) (*UserStats, error) {
 	var lastActive time.Time
 
 	for _, client := range clients {
-		if client.Status == ClientStatusOnline {
+		if client.Status == models.ClientStatusOnline {
 			onlineClients++
 		}
 		if client.LastSeen != nil && client.LastSeen.After(lastActive) {
@@ -65,14 +70,14 @@ func (sm *StatsManager) GetUserStats(userID string) (*UserStats, error) {
 	}
 
 	for _, mapping := range mappings {
-		if mapping.Status == MappingStatusActive {
+		if mapping.Status == models.MappingStatusActive {
 			activeMappings++
 		}
 		totalTraffic += mapping.TrafficStats.BytesSent + mapping.TrafficStats.BytesReceived
 		totalConnections += mapping.TrafficStats.Connections
 	}
 
-	return &UserStats{
+	return &stats.UserStats{
 		UserID:           userID,
 		TotalClients:     totalClients,
 		OnlineClients:    onlineClients,
@@ -85,7 +90,7 @@ func (sm *StatsManager) GetUserStats(userID string) (*UserStats, error) {
 }
 
 // GetClientStats 获取客户端统计信息
-func (sm *StatsManager) GetClientStats(clientID int64) (*ClientStats, error) {
+func (sm *StatsManager) GetClientStats(clientID int64) (*stats.ClientStats, error) {
 	client, err := sm.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
 		return nil, err
@@ -105,7 +110,7 @@ func (sm *StatsManager) GetClientStats(clientID int64) (*ClientStats, error) {
 	uptime := int64(0)
 
 	for _, mapping := range mappings {
-		if mapping.Status == MappingStatusActive {
+		if mapping.Status == models.MappingStatusActive {
 			activeMappings++
 		}
 		totalTraffic += mapping.TrafficStats.BytesSent + mapping.TrafficStats.BytesReceived
@@ -113,11 +118,11 @@ func (sm *StatsManager) GetClientStats(clientID int64) (*ClientStats, error) {
 	}
 
 	// 计算在线时长
-	if client.LastSeen != nil && client.Status == ClientStatusOnline {
+	if client.LastSeen != nil && client.Status == models.ClientStatusOnline {
 		uptime = int64(time.Since(*client.LastSeen).Seconds())
 	}
 
-	return &ClientStats{
+	return &stats.ClientStats{
 		ClientID:         clientID,
 		UserID:           client.UserID,
 		TotalMappings:    totalMappings,
@@ -130,7 +135,7 @@ func (sm *StatsManager) GetClientStats(clientID int64) (*ClientStats, error) {
 }
 
 // GetSystemStats 获取系统整体统计
-func (sm *StatsManager) GetSystemStats() (*SystemStats, error) {
+func (sm *StatsManager) GetSystemStats() (*stats.SystemStats, error) {
 	// 获取所有用户
 	users, err := sm.userRepo.ListUsers("")
 	if err != nil {
@@ -168,16 +173,16 @@ func (sm *StatsManager) GetSystemStats() (*SystemStats, error) {
 	anonymousUsers := 0
 
 	for _, client := range clients {
-		if client.Status == ClientStatusOnline {
+		if client.Status == models.ClientStatusOnline {
 			onlineClients++
 		}
-		if client.Type == ClientTypeAnonymous {
+		if client.Type == models.ClientTypeAnonymous {
 			anonymousUsers++
 		}
 	}
 
 	for _, mapping := range mappings {
-		if mapping.Status == MappingStatusActive {
+		if mapping.Status == models.MappingStatusActive {
 			activeMappings++
 		}
 		totalTraffic += mapping.TrafficStats.BytesSent + mapping.TrafficStats.BytesReceived
@@ -187,7 +192,7 @@ func (sm *StatsManager) GetSystemStats() (*SystemStats, error) {
 	// 简单假设所有节点都在线
 	onlineNodes = totalNodes
 
-	return &SystemStats{
+	return &stats.SystemStats{
 		TotalUsers:       totalUsers,
 		TotalClients:     totalClients,
 		OnlineClients:    onlineClients,
@@ -202,13 +207,13 @@ func (sm *StatsManager) GetSystemStats() (*SystemStats, error) {
 }
 
 // GetTrafficStats 获取流量统计图表数据
-func (sm *StatsManager) GetTrafficStats(timeRange string) ([]*TrafficDataPoint, error) {
+func (sm *StatsManager) GetTrafficStats(timeRange string) ([]*stats.TrafficDataPoint, error) {
 	// 简单实现：返回空数组
-	return []*TrafficDataPoint{}, nil
+	return []*stats.TrafficDataPoint{}, nil
 }
 
 // GetConnectionStats 获取连接数统计图表数据
-func (sm *StatsManager) GetConnectionStats(timeRange string) ([]*ConnectionDataPoint, error) {
+func (sm *StatsManager) GetConnectionStats(timeRange string) ([]*stats.ConnectionDataPoint, error) {
 	// 简单实现：返回空数组
-	return []*ConnectionDataPoint{}, nil
+	return []*stats.ConnectionDataPoint{}, nil
 }

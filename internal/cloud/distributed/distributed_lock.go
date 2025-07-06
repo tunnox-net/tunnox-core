@@ -1,4 +1,4 @@
-package cloud
+package distributed
 
 import (
 	"time"

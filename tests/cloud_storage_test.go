@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
-	"tunnox-core/internal/cloud"
+	"tunnox-core/internal/cloud/storages"
 )
 
 func TestMemoryStorage_BasicOperations(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
+	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	// 测试 Set 和 Get
@@ -57,14 +56,14 @@ func TestMemoryStorage_BasicOperations(t *testing.T) {
 		}
 
 		_, err = storage.Get("test_key")
-		if err != cloud.ErrKeyNotFound {
+		if err != storages.ErrKeyNotFound {
 			t.Errorf("Expected ErrKeyNotFound, got %v", err)
 		}
 	})
 }
 
 func TestMemoryStorage_ListOperations(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
+	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	t.Run("SetList and GetList", func(t *testing.T) {
@@ -140,7 +139,7 @@ func TestMemoryStorage_ListOperations(t *testing.T) {
 }
 
 func TestMemoryStorage_HashOperations(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
+	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	t.Run("SetHash and GetHash", func(t *testing.T) {
@@ -200,7 +199,7 @@ func TestMemoryStorage_HashOperations(t *testing.T) {
 }
 
 func TestMemoryStorage_CounterOperations(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
+	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	t.Run("Incr", func(t *testing.T) {
@@ -233,7 +232,7 @@ func TestMemoryStorage_CounterOperations(t *testing.T) {
 }
 
 func TestMemoryStorage_Expiration(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
+	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	t.Run("TTL Expiration", func(t *testing.T) {
@@ -257,7 +256,7 @@ func TestMemoryStorage_Expiration(t *testing.T) {
 
 		// 再次获取应该失败
 		_, err = storage.Get("expire_key")
-		if err != cloud.ErrKeyNotFound {
+		if err != storages.ErrKeyNotFound {
 			t.Errorf("Expected ErrKeyNotFound, got %v", err)
 		}
 	})
@@ -279,7 +278,7 @@ func TestMemoryStorage_Expiration(t *testing.T) {
 
 		// 应该已过期
 		_, err = storage.Get("extend_key")
-		if err != cloud.ErrKeyNotFound {
+		if err != storages.ErrKeyNotFound {
 			t.Errorf("Expected ErrKeyNotFound, got %v", err)
 		}
 	})
@@ -303,7 +302,7 @@ func TestMemoryStorage_Expiration(t *testing.T) {
 }
 
 func TestMemoryStorage_CleanupExpired(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
+	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	t.Run("Manual Cleanup", func(t *testing.T) {
@@ -334,12 +333,12 @@ func TestMemoryStorage_CleanupExpired(t *testing.T) {
 
 		// 过期的键应该不存在
 		_, err = storage.Get("expired1")
-		if err != cloud.ErrKeyNotFound {
+		if err != storages.ErrKeyNotFound {
 			t.Errorf("Expected ErrKeyNotFound for expired1, got %v", err)
 		}
 
 		_, err = storage.Get("expired2")
-		if err != cloud.ErrKeyNotFound {
+		if err != storages.ErrKeyNotFound {
 			t.Errorf("Expected ErrKeyNotFound for expired2, got %v", err)
 		}
 
@@ -355,7 +354,7 @@ func TestMemoryStorage_CleanupExpired(t *testing.T) {
 }
 
 func TestMemoryStorage_AutoCleanup(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
+	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	t.Run("Auto Cleanup", func(t *testing.T) {
@@ -382,7 +381,7 @@ func TestMemoryStorage_AutoCleanup(t *testing.T) {
 
 		// 应该已被自动清理
 		_, err = storage.Get("auto_expire")
-		if err != cloud.ErrKeyNotFound {
+		if err != storages.ErrKeyNotFound {
 			t.Errorf("Expected ErrKeyNotFound, got %v", err)
 		}
 
@@ -392,7 +391,7 @@ func TestMemoryStorage_AutoCleanup(t *testing.T) {
 }
 
 func TestMemoryStorage_Concurrency(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
+	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	t.Run("Concurrent Operations", func(t *testing.T) {
@@ -438,19 +437,19 @@ func TestMemoryStorage_Concurrency(t *testing.T) {
 }
 
 func TestMemoryStorage_ErrorHandling(t *testing.T) {
-	storage := cloud.NewMemoryStorage(context.Background())
+	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	t.Run("Get Non-existent Key", func(t *testing.T) {
 		_, err := storage.Get("non_existent")
-		if err != cloud.ErrKeyNotFound {
+		if err != storages.ErrKeyNotFound {
 			t.Errorf("Expected ErrKeyNotFound, got %v", err)
 		}
 	})
 
 	t.Run("Get Hash Non-existent Key", func(t *testing.T) {
 		_, err := storage.GetHash("non_existent", "field")
-		if err != cloud.ErrKeyNotFound {
+		if err != storages.ErrKeyNotFound {
 			t.Errorf("Expected ErrKeyNotFound, got %v", err)
 		}
 	})
@@ -462,7 +461,7 @@ func TestMemoryStorage_ErrorHandling(t *testing.T) {
 		}
 
 		_, err = storage.GetHash("test_hash", "non_existent_field")
-		if err != cloud.ErrKeyNotFound {
+		if err != storages.ErrKeyNotFound {
 			t.Errorf("Expected ErrKeyNotFound, got %v", err)
 		}
 	})
@@ -476,13 +475,13 @@ func TestMemoryStorage_ErrorHandling(t *testing.T) {
 
 		// 尝试作为列表获取
 		_, err = storage.GetList("string_key")
-		if err != cloud.ErrInvalidType {
+		if err != storages.ErrInvalidType {
 			t.Errorf("Expected ErrInvalidType, got %v", err)
 		}
 
 		// 尝试作为哈希获取
 		_, err = storage.GetHash("string_key", "field")
-		if err != cloud.ErrInvalidType {
+		if err != storages.ErrInvalidType {
 			t.Errorf("Expected ErrInvalidType, got %v", err)
 		}
 	})
