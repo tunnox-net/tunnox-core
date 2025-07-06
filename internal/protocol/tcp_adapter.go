@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
@@ -18,10 +19,10 @@ type TcpAdapter struct {
 	connMutex   sync.RWMutex
 	stream      stream.PackageStreamer
 	streamMutex sync.RWMutex
-	session     *ConnectionSession
+	session     Session
 }
 
-func NewTcpAdapter(parentCtx context.Context, session *ConnectionSession) *TcpAdapter {
+func NewTcpAdapter(parentCtx context.Context, session Session) *TcpAdapter {
 	t := &TcpAdapter{
 		session: session,
 	}
@@ -47,7 +48,7 @@ func (t *TcpAdapter) ConnectTo(serverAddr string) error {
 	t.SetAddr(serverAddr)
 
 	t.streamMutex.Lock()
-	t.stream = stream.NewPackageStream(conn, conn, t.Ctx())
+	t.stream = stream.NewStreamProcessor(conn, conn, t.Ctx())
 	t.streamMutex.Unlock()
 
 	return nil
@@ -97,14 +98,49 @@ func (t *TcpAdapter) handleConn(conn net.Conn) {
 	defer func() { _ = conn.Close() }()
 	utils.Infof("TCP adapter handling connection from %s", conn.RemoteAddr())
 
-	// 调用ConnectionSession.AcceptConnection处理连接
+	// 使用新的 Session 接口处理连接
 	if t.session != nil {
-		t.session.AcceptConnection(conn, conn)
+		// 初始化连接
+		connInfo, err := t.session.InitConnection(conn, conn)
+		if err != nil {
+			utils.Errorf("Failed to initialize connection: %v", err)
+			return
+		}
+		defer t.session.CloseConnection(connInfo.ID)
+
+		// 处理数据流
+		for {
+			packet, bytesRead, err := connInfo.Stream.ReadPacket()
+			if err != nil {
+				if err == io.EOF {
+					utils.Infof("Connection closed by peer: %s", connInfo.ID)
+				} else {
+					utils.Errorf("Failed to read packet: %v", err)
+				}
+				break
+			}
+
+			utils.Debugf("Read packet for connection %s: %d bytes, type: %s",
+				connInfo.ID, bytesRead, packet.PacketType)
+
+			// 包装成 StreamPacket
+			connPacket := &StreamPacket{
+				ConnectionID: connInfo.ID,
+				Packet:       packet,
+				Timestamp:    time.Now(),
+			}
+
+			// 处理数据包
+			if err := t.session.HandlePacket(connPacket); err != nil {
+				utils.Errorf("Failed to handle packet: %v", err)
+				break
+			}
+		}
 	} else {
 		// 如果没有session，使用默认的echo处理
 		ctx, cancel := context.WithCancel(t.Ctx())
 		defer cancel()
-		ps := stream.NewPackageStream(conn, conn, ctx)
+		ps := stream.NewStreamProcessor(conn, conn, ctx)
 		defer ps.Close()
 
 		buf := make([]byte, 1024)

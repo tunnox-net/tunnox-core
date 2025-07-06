@@ -24,7 +24,7 @@ func BenchmarkReadExact_WithPool(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := stream.NewPackageStream(reader, writer, ctx)
+	stream := stream.NewStreamProcessor(reader, writer, ctx)
 	defer stream.Close()
 
 	b.ResetTimer()
@@ -57,7 +57,7 @@ func BenchmarkReadExact_WithoutPool(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := stream.NewPackageStream(reader, writer, ctx)
+	stream := stream.NewStreamProcessor(reader, writer, ctx)
 	defer stream.Close()
 
 	b.ResetTimer()
@@ -232,7 +232,7 @@ func BenchmarkPackageStream_ReadExact_LargeData(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := stream.NewPackageStream(reader, writer, ctx)
+	stream := stream.NewStreamProcessor(reader, writer, ctx)
 	defer stream.Close()
 
 	b.ResetTimer()

@@ -20,10 +20,10 @@ func TestPackageStream_BasicPacketReadWrite(t *testing.T) {
 	var buf bytes.Buffer
 
 	// 创建写入和读取流
-	writeStream := io2.NewPackageStream(nil, &buf, ctx)
+	writeStream := io2.NewStreamProcessor(nil, &buf, ctx)
 	defer writeStream.Close()
 
-	readStream := io2.NewPackageStream(&buf, nil, ctx)
+	readStream := io2.NewStreamProcessor(&buf, nil, ctx)
 	defer readStream.Close()
 
 	// 创建测试数据包
@@ -90,10 +90,10 @@ func TestPackageStream_CompressedPacketReadWrite(t *testing.T) {
 	var buf bytes.Buffer
 
 	// 创建写入和读取流
-	writeStream := io2.NewPackageStream(nil, &buf, ctx)
+	writeStream := io2.NewStreamProcessor(nil, &buf, ctx)
 	defer writeStream.Close()
 
-	readStream := io2.NewPackageStream(&buf, nil, ctx)
+	readStream := io2.NewStreamProcessor(&buf, nil, ctx)
 	defer readStream.Close()
 
 	// 创建包含大量重复数据的命令包（便于压缩）
@@ -174,10 +174,10 @@ func TestPackageStream_RateLimitedPacketReadWrite(t *testing.T) {
 	var buf bytes.Buffer
 
 	// 创建写入和读取流
-	writeStream := io2.NewPackageStream(nil, &buf, ctx)
+	writeStream := io2.NewStreamProcessor(nil, &buf, ctx)
 	defer writeStream.Close()
 
-	readStream := io2.NewPackageStream(&buf, nil, ctx)
+	readStream := io2.NewStreamProcessor(&buf, nil, ctx)
 	defer readStream.Close()
 
 	// 创建测试数据包
@@ -251,10 +251,10 @@ func TestPackageStream_CompressedAndRateLimitedPacketReadWrite(t *testing.T) {
 	var buf bytes.Buffer
 
 	// 创建写入和读取流
-	writeStream := io2.NewPackageStream(nil, &buf, ctx)
+	writeStream := io2.NewStreamProcessor(nil, &buf, ctx)
 	defer writeStream.Close()
 
-	readStream := io2.NewPackageStream(&buf, nil, ctx)
+	readStream := io2.NewStreamProcessor(&buf, nil, ctx)
 	defer readStream.Close()
 
 	// 创建包含大量重复数据的命令包
@@ -342,10 +342,10 @@ func TestPackageStream_LargePacketReadWrite(t *testing.T) {
 	var buf bytes.Buffer
 
 	// 创建写入和读取流
-	writeStream := io2.NewPackageStream(nil, &buf, ctx)
+	writeStream := io2.NewStreamProcessor(nil, &buf, ctx)
 	defer writeStream.Close()
 
-	readStream := io2.NewPackageStream(&buf, nil, ctx)
+	readStream := io2.NewStreamProcessor(&buf, nil, ctx)
 	defer readStream.Close()
 
 	// 创建大数据包（100KB数据，避免JSON序列化问题）
@@ -427,10 +427,10 @@ func TestPackageStream_MultiplePacketsReadWrite(t *testing.T) {
 	var buf bytes.Buffer
 
 	// 创建写入和读取流
-	writeStream := io2.NewPackageStream(nil, &buf, ctx)
+	writeStream := io2.NewStreamProcessor(nil, &buf, ctx)
 	defer writeStream.Close()
 
-	readStream := io2.NewPackageStream(&buf, nil, ctx)
+	readStream := io2.NewStreamProcessor(&buf, nil, ctx)
 	defer readStream.Close()
 
 	// 创建多个测试数据包
@@ -524,7 +524,7 @@ func TestPackageStream_ErrorConditions(t *testing.T) {
 	var buf bytes.Buffer
 
 	// 测试写入nil数据包
-	writeStream := io2.NewPackageStream(nil, &buf, ctx)
+	writeStream := io2.NewStreamProcessor(nil, &buf, ctx)
 	defer writeStream.Close()
 
 	_, err := writeStream.WritePacket(nil, false, 0)
@@ -533,7 +533,7 @@ func TestPackageStream_ErrorConditions(t *testing.T) {
 	}
 
 	// 测试读取空缓冲区
-	readStream := io2.NewPackageStream(&buf, nil, ctx)
+	readStream := io2.NewStreamProcessor(&buf, nil, ctx)
 	defer readStream.Close()
 
 	_, _, err = readStream.ReadPacket()

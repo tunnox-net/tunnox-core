@@ -5,7 +5,7 @@
 ## 概述
 
 `ConnectionSession.AcceptConnection` 是处理新连接的核心方法，它负责：
-- 创建 PackageStream 来处理数据流
+- 创建 StreamProcessor 来处理数据流
 - 管理连接的生命周期
 - 处理连接的业务逻辑
 
@@ -67,7 +67,7 @@ func main() {
 
 1. **TCP Adapter**: 在 `handleConn` 方法中调用 `session.AcceptConnection(conn, conn)`
 2. **WebSocket Adapter**: 在 `handleWebSocket` 方法中调用 `session.AcceptConnection(wrapper, wrapper)`
-3. **ConnectionSession**: 在 `AcceptConnection` 方法中创建 PackageStream 并处理业务逻辑
+3. **ConnectionSession**: 在 `AcceptConnection` 方法中创建 StreamProcessor 并处理业务逻辑
 
 ```go
 // TCP Adapter 中的处理
@@ -110,8 +110,8 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 ```go
 // ConnectionSession 的 AcceptConnection 方法
 func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) {
-    // 创建 PackageStream
-    ps := stream.NewPackageStream(reader, writer, s.Ctx())
+    // 创建 StreamProcessor
+ps := stream.NewStreamProcessor(reader, writer, s.Ctx())
     
     // 添加关闭回调
     ps.AddCloseFunc(func() {
@@ -137,11 +137,11 @@ func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer)
 // 扩展 ConnectionSession 以支持自定义处理
 type CustomConnectionSession struct {
     protocol.ConnectionSession
-    customHandler func(stream.PackageStreamer)
+    customHandler func(stream.StreamProcessor)
 }
 
 func (s *CustomConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) {
-    ps := stream.NewPackageStream(reader, writer, s.Ctx())
+    ps := stream.NewStreamProcessor(reader, writer, s.Ctx())
     
     // 调用自定义处理器
     if s.customHandler != nil {
@@ -157,7 +157,7 @@ func (s *CustomConnectionSession) AcceptConnection(reader io.Reader, writer io.W
 
 ```go
 func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) {
-    ps := stream.NewPackageStream(reader, writer, s.Ctx())
+    ps := stream.NewStreamProcessor(reader, writer, s.Ctx())
     
     // 生成连接ID
     connID := generateConnectionID()
@@ -180,7 +180,7 @@ func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer)
     go s.handleConnection(ps, connID)
 }
 
-func (s *ConnectionSession) handleConnection(ps stream.PackageStreamer, connID string) {
+func (s *ConnectionSession) handleConnection(ps stream.StreamProcessor, connID string) {
     // 实现具体的连接处理逻辑
     // 例如：数据包解析、业务处理等
 }

@@ -92,7 +92,7 @@ func TestPackageStream_ReadExactZeroCopy(t *testing.T) {
 
 	// 创建PackageStream
 	ctx := context.Background()
-	ps := stream.NewPackageStream(reader, nil, ctx)
+	ps := stream.NewStreamProcessor(reader, nil, ctx)
 	defer ps.Close()
 
 	// 使用零拷贝读取
@@ -123,7 +123,7 @@ func TestPackageStream_ReadExactZeroCopy_LargeData(t *testing.T) {
 
 	// 创建PackageStream
 	ctx := context.Background()
-	ps := stream.NewPackageStream(reader, nil, ctx)
+	ps := stream.NewStreamProcessor(reader, nil, ctx)
 	defer ps.Close()
 
 	// 分块读取

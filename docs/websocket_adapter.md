@@ -8,7 +8,7 @@ WebSocket Adapter 是 tunnox-core 项目中的一个协议适配器实现，提�
 - 自动处理 WebSocket 握手和升级
 - 内置心跳机制（ping/pong）
 - 线程安全的连接管理
-- 与现有的 PackageStream 系统完全兼容
+- 与现有的 StreamProcessor 系统完全兼容
 - 支持二进制消息传输
 
 ## 基本用法
@@ -61,7 +61,7 @@ reader := adapter.GetReader()
 writer := adapter.GetWriter()
 
 // 创建数据包流
-ps := stream.NewPackageStream(reader, writer, ctx)
+ps := stream.NewStreamProcessor(reader, writer, ctx)
 defer ps.Close()
 
 // 发送数据

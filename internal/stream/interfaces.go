@@ -64,7 +64,7 @@ type CompressionWriter interface {
 
 // StreamFactory 流工厂接口
 type StreamFactory interface {
-	// NewPackageStream 创建新的数据包流
+	// NewStreamProcessor 创建新的数据包流
 	NewPackageStream(reader io.Reader, writer io.Writer) PackageStreamer
 
 	// NewRateLimiterReader 创建限速读取器

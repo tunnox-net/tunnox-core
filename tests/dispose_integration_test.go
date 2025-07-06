@@ -123,7 +123,7 @@ func TestDisposeIntegration(t *testing.T) {
 		// 测试PackageStream
 		reader := &mockReader{}
 		writer := &mockWriter{}
-		packageStream := stream.NewPackageStream(reader, writer, ctx)
+		packageStream := stream.NewStreamProcessor(reader, writer, ctx)
 		require.NotNil(t, packageStream)
 
 		// 验证未关闭

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
@@ -58,11 +59,11 @@ type UdpAdapter struct {
 	connMutex   sync.RWMutex
 	stream      stream.PackageStreamer
 	streamMutex sync.RWMutex
-	session     *ConnectionSession
+	session     Session
 }
 
 // NewUdpAdapter 创建新的UDP适配器
-func NewUdpAdapter(parentCtx context.Context, session *ConnectionSession) *UdpAdapter {
+func NewUdpAdapter(parentCtx context.Context, session Session) *UdpAdapter {
 	adapter := &UdpAdapter{
 		session: session,
 	}
@@ -97,7 +98,7 @@ func (u *UdpAdapter) ConnectTo(serverAddr string) error {
 
 	// 创建数据流
 	u.streamMutex.Lock()
-	u.stream = stream.NewPackageStream(conn, conn, u.Ctx())
+	u.stream = stream.NewStreamProcessor(conn, conn, u.Ctx())
 	u.streamMutex.Unlock()
 
 	return nil
@@ -162,7 +163,7 @@ func (u *UdpAdapter) receiveLoop() {
 func (u *UdpAdapter) handlePacket(data []byte, addr net.Addr) {
 	utils.Infof("UDP adapter handling packet from %s, size: %d", addr, len(data))
 
-	// 调用ConnectionSession.AcceptConnection处理连接
+	// 使用新的 Session 接口处理连接
 	if u.session != nil {
 		// 创建虚拟连接包装器
 		virtualConn := &UdpVirtualConn{
@@ -170,7 +171,43 @@ func (u *UdpAdapter) handlePacket(data []byte, addr net.Addr) {
 			addr: addr,
 			conn: u.conn,
 		}
-		u.session.AcceptConnection(virtualConn, virtualConn)
+
+		// 初始化连接
+		connInfo, err := u.session.InitConnection(virtualConn, virtualConn)
+		if err != nil {
+			utils.Errorf("Failed to initialize UDP connection: %v", err)
+			return
+		}
+		defer u.session.CloseConnection(connInfo.ID)
+
+		// 处理数据流
+		for {
+			packet, bytesRead, err := connInfo.Stream.ReadPacket()
+			if err != nil {
+				if err == io.EOF {
+					utils.Infof("UDP connection closed by peer: %s", connInfo.ID)
+				} else {
+					utils.Errorf("Failed to read UDP packet: %v", err)
+				}
+				break
+			}
+
+			utils.Debugf("Read UDP packet for connection %s: %d bytes, type: %s",
+				connInfo.ID, bytesRead, packet.PacketType)
+
+			// 包装成 StreamPacket
+			connPacket := &StreamPacket{
+				ConnectionID: connInfo.ID,
+				Packet:       packet,
+				Timestamp:    time.Now(),
+			}
+
+			// 处理数据包
+			if err := u.session.HandlePacket(connPacket); err != nil {
+				utils.Errorf("Failed to handle UDP packet: %v", err)
+				break
+			}
+		}
 	} else {
 		// 如果没有session，使用默认的echo处理
 		utils.Infof("Echoing UDP packet back to %s", addr)

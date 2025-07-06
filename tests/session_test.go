@@ -1,0 +1,245 @@
+package tests
+
+import (
+	"bytes"
+	"context"
+	"testing"
+	"time"
+	"tunnox-core/internal/packet"
+	"tunnox-core/internal/protocol"
+	"tunnox-core/internal/utils"
+)
+
+func TestNewConnectionSession(t *testing.T) {
+	// 创建新的连接会话
+	session := protocol.NewConnectionSession(context.Background())
+	defer session.Close()
+
+	// 验证初始状态
+	activeCount := session.GetActiveConnections()
+	if activeCount != 0 {
+		t.Errorf("Expected 0 active connections, got %d", activeCount)
+	}
+}
+
+func TestSessionInitConnection(t *testing.T) {
+	// 创建会话
+	session := protocol.NewConnectionSession(context.Background())
+	defer session.Close()
+
+	// 创建测试数据
+	var buf bytes.Buffer
+	reader := &buf
+	writer := &buf
+
+	// 初始化连接
+	connInfo, err := session.InitConnection(reader, writer)
+	if err != nil {
+		t.Fatalf("Failed to initialize connection: %v", err)
+	}
+
+	// 验证连接信息
+	if connInfo.ID == "" {
+		t.Error("Expected non-empty connection ID")
+	}
+	if connInfo.Stream == nil {
+		t.Error("Expected non-nil stream")
+	}
+	if connInfo.Metadata == nil {
+		t.Error("Expected non-nil metadata")
+	}
+
+	// 验证活跃连接数量
+	activeCount := session.GetActiveConnections()
+	if activeCount != 1 {
+		t.Errorf("Expected 1 active connection, got %d", activeCount)
+	}
+
+	// 获取连接信息
+	retrievedInfo, exists := session.GetStreamConnectionInfo(connInfo.ID)
+	if !exists {
+		t.Error("Expected connection to exist")
+	}
+	if retrievedInfo.ID != connInfo.ID {
+		t.Errorf("Connection ID mismatch: expected %s, got %s", connInfo.ID, retrievedInfo.ID)
+	}
+}
+
+func TestSessionCloseConnection(t *testing.T) {
+	// 创建会话
+	session := protocol.NewConnectionSession(context.Background())
+	defer session.Close()
+
+	// 创建测试数据
+	var buf bytes.Buffer
+	reader := &buf
+	writer := &buf
+
+	// 初始化连接
+	connInfo, err := session.InitConnection(reader, writer)
+	if err != nil {
+		t.Fatalf("Failed to initialize connection: %v", err)
+	}
+
+	// 验证连接存在
+	activeCount := session.GetActiveConnections()
+	if activeCount != 1 {
+		t.Errorf("Expected 1 active connection, got %d", activeCount)
+	}
+
+	// 关闭连接
+	err = session.CloseConnection(connInfo.ID)
+	if err != nil {
+		t.Fatalf("Failed to close connection: %v", err)
+	}
+
+	// 验证连接已关闭
+	activeCount = session.GetActiveConnections()
+	if activeCount != 0 {
+		t.Errorf("Expected 0 active connections after close, got %d", activeCount)
+	}
+
+	// 验证连接信息不存在
+	_, exists := session.GetStreamConnectionInfo(connInfo.ID)
+	if exists {
+		t.Error("Expected connection to not exist after close")
+	}
+}
+
+func TestSessionHandlePacket(t *testing.T) {
+	// 创建会话
+	session := protocol.NewConnectionSession(context.Background())
+	defer session.Close()
+
+	// 创建测试数据包
+	testPacket := &protocol.StreamPacket{
+		ConnectionID: "test_conn_123",
+		Packet: &packet.TransferPacket{
+			PacketType: packet.Heartbeat,
+		},
+		Timestamp: time.Now(),
+	}
+
+	// 处理数据包（应该成功，因为没有连接依赖）
+	err := session.HandlePacket(testPacket)
+	if err != nil {
+		t.Errorf("Failed to handle packet: %v", err)
+	}
+}
+
+func TestSessionMultipleConnections(t *testing.T) {
+	// 创建会话
+	session := protocol.NewConnectionSession(context.Background())
+	defer session.Close()
+
+	// 创建多个连接
+	var bufs []bytes.Buffer
+	var connInfos []*protocol.StreamConnectionInfo
+
+	for i := 0; i < 3; i++ {
+		var buf bytes.Buffer
+		bufs = append(bufs, buf)
+
+		connInfo, err := session.InitConnection(&buf, &buf)
+		if err != nil {
+			t.Fatalf("Failed to initialize connection %d: %v", i, err)
+		}
+		connInfos = append(connInfos, connInfo)
+	}
+
+	// 验证连接数量
+	activeCount := session.GetActiveConnections()
+	if activeCount != 3 {
+		t.Errorf("Expected 3 active connections, got %d", activeCount)
+	}
+
+	// 关闭部分连接
+	err := session.CloseConnection(connInfos[0].ID)
+	if err != nil {
+		t.Fatalf("Failed to close connection: %v", err)
+	}
+
+	// 验证剩余连接数量
+	activeCount = session.GetActiveConnections()
+	if activeCount != 2 {
+		t.Errorf("Expected 2 active connections after close, got %d", activeCount)
+	}
+}
+
+func TestSessionCloseNonExistentConnection(t *testing.T) {
+	// 创建会话
+	session := protocol.NewConnectionSession(context.Background())
+	defer session.Close()
+
+	// 尝试关闭不存在的连接
+	err := session.CloseConnection("non_existent_connection")
+	if err == nil {
+		t.Error("Expected error when closing non-existent connection")
+	}
+}
+
+func TestSessionConnectionIDGenerator(t *testing.T) {
+	// 创建会话
+	session := protocol.NewConnectionSession(context.Background())
+	defer session.Close()
+
+	// 创建多个连接，验证ID唯一性
+	var buf bytes.Buffer
+	connInfo1, err := session.InitConnection(&buf, &buf)
+	if err != nil {
+		t.Fatalf("Failed to initialize first connection: %v", err)
+	}
+
+	connInfo2, err := session.InitConnection(&buf, &buf)
+	if err != nil {
+		t.Fatalf("Failed to initialize second connection: %v", err)
+	}
+
+	// 验证ID不同
+	if connInfo1.ID == connInfo2.ID {
+		t.Error("Expected different connection IDs")
+	}
+
+	// 验证ID格式（应该包含时间戳和计数器）
+	if len(connInfo1.ID) < 10 {
+		t.Errorf("Connection ID too short: %s", connInfo1.ID)
+	}
+	if len(connInfo2.ID) < 10 {
+		t.Errorf("Connection ID too short: %s", connInfo2.ID)
+	}
+
+	utils.Infof("Generated connection IDs: %s, %s", connInfo1.ID, connInfo2.ID)
+}
+
+func TestSessionCleanup(t *testing.T) {
+	// 创建会话
+	session := protocol.NewConnectionSession(context.Background())
+
+	// 创建连接
+	var buf bytes.Buffer
+	connInfo, err := session.InitConnection(&buf, &buf)
+	if err != nil {
+		t.Fatalf("Failed to initialize connection: %v", err)
+	}
+
+	// 验证连接存在
+	activeCount := session.GetActiveConnections()
+	if activeCount != 1 {
+		t.Errorf("Expected 1 active connection, got %d", activeCount)
+	}
+
+	// 关闭会话（应该清理所有连接）
+	session.Close()
+
+	// 验证所有连接已清理
+	activeCount = session.GetActiveConnections()
+	if activeCount != 0 {
+		t.Errorf("Expected 0 active connections after session close, got %d", activeCount)
+	}
+
+	// 验证连接信息不存在
+	_, exists := session.GetStreamConnectionInfo(connInfo.ID)
+	if exists {
+		t.Error("Expected connection to not exist after session close")
+	}
+}

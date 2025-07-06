@@ -18,11 +18,11 @@ func TestHeartbeatOnly(t *testing.T) {
 	var buf bytes.Buffer
 
 	// 创建写入 stream
-	writeStream := io2.NewPackageStream(nil, &buf, ctx)
+	writeStream := io2.NewStreamProcessor(nil, &buf, ctx)
 	defer writeStream.Close()
 
 	// 创建读取 stream
-	readStream := io2.NewPackageStream(&buf, nil, ctx)
+	readStream := io2.NewStreamProcessor(&buf, nil, ctx)
 	defer readStream.Close()
 
 	heartbeatPacket := &packet.TransferPacket{

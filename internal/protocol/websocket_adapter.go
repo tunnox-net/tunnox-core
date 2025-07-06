@@ -64,11 +64,11 @@ type WebSocketAdapter struct {
 	connMutex   sync.RWMutex
 	stream      stream.PackageStreamer
 	streamMutex sync.RWMutex
-	session     *ConnectionSession
+	session     Session
 }
 
 // NewWebSocketAdapter 创建新的WebSocket适配器
-func NewWebSocketAdapter(parentCtx context.Context, session *ConnectionSession) *WebSocketAdapter {
+func NewWebSocketAdapter(parentCtx context.Context, session Session) *WebSocketAdapter {
 	adapter := &WebSocketAdapter{
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -107,7 +107,7 @@ func (w *WebSocketAdapter) ConnectTo(serverAddr string) error {
 	// 创建数据流
 	wrapper := &WebSocketConnWrapper{conn: conn}
 	w.streamMutex.Lock()
-	w.stream = stream.NewPackageStream(wrapper, wrapper, w.Ctx())
+	w.stream = stream.NewStreamProcessor(wrapper, wrapper, w.Ctx())
 	w.streamMutex.Unlock()
 
 	return nil
@@ -212,7 +212,7 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 
 	utils.Infof(constants.MsgWebSocketConnectionEstablished, conn.RemoteAddr())
 
-	// 调用ConnectionSession.AcceptConnection处理连接
+	// 使用新的 Session 接口处理连接
 	if w.session != nil {
 		wrapper := &WebSocketConnWrapper{conn: conn}
 		go func() {
@@ -221,14 +221,49 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 				utils.Infof(constants.MsgWebSocketHandlerExited, conn.RemoteAddr())
 				return
 			default:
-				w.session.AcceptConnection(wrapper, wrapper)
+				// 初始化连接
+				connInfo, err := w.session.InitConnection(wrapper, wrapper)
+				if err != nil {
+					utils.Errorf("Failed to initialize WebSocket connection: %v", err)
+					return
+				}
+				defer w.session.CloseConnection(connInfo.ID)
+
+				// 处理数据流
+				for {
+					packet, bytesRead, err := connInfo.Stream.ReadPacket()
+					if err != nil {
+						if err == io.EOF {
+							utils.Infof("WebSocket connection closed by peer: %s", connInfo.ID)
+						} else {
+							utils.Errorf("Failed to read WebSocket packet: %v", err)
+						}
+						break
+					}
+
+					utils.Debugf("Read WebSocket packet for connection %s: %d bytes, type: %s",
+						connInfo.ID, bytesRead, packet.PacketType)
+
+					// 包装成 StreamPacket
+					connPacket := &StreamPacket{
+						ConnectionID: connInfo.ID,
+						Packet:       packet,
+						Timestamp:    time.Now(),
+					}
+
+					// 处理数据包
+					if err := w.session.HandlePacket(connPacket); err != nil {
+						utils.Errorf("Failed to handle WebSocket packet: %v", err)
+						break
+					}
+				}
 			}
 		}()
 	} else {
 		// 如果没有session，创建数据流并保持连接活跃
 		wrapper := &WebSocketConnWrapper{conn: conn}
 		w.streamMutex.Lock()
-		w.stream = stream.NewPackageStream(wrapper, wrapper, w.Ctx())
+		w.stream = stream.NewStreamProcessor(wrapper, wrapper, w.Ctx())
 		w.streamMutex.Unlock()
 
 		// 保持连接活跃

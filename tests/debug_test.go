@@ -34,7 +34,7 @@ func TestDebugPackageStream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	stream := stream.NewPackageStream(reader, writer, ctx)
+	stream := stream.NewStreamProcessor(reader, writer, ctx)
 	defer stream.Close()
 
 	// 读取数据

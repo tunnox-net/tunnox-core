@@ -13,7 +13,7 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-type PackageStream struct {
+type StreamProcessor struct {
 	reader    io.Reader
 	writer    io.Writer
 	transLock sync.Mutex
@@ -21,16 +21,16 @@ type PackageStream struct {
 	utils.Dispose
 }
 
-func (ps *PackageStream) GetReader() io.Reader {
+func (ps *StreamProcessor) GetReader() io.Reader {
 	return ps.reader
 }
 
-func (ps *PackageStream) GetWriter() io.Writer {
+func (ps *StreamProcessor) GetWriter() io.Writer {
 	return ps.writer
 }
 
-func NewPackageStream(reader io.Reader, writer io.Writer, parentCtx context.Context) *PackageStream {
-	stream := &PackageStream{
+func NewStreamProcessor(reader io.Reader, writer io.Writer, parentCtx context.Context) *StreamProcessor {
+	stream := &StreamProcessor{
 		reader:    reader,
 		writer:    writer,
 		bufferMgr: utils.NewBufferManager(parentCtx),
@@ -39,14 +39,14 @@ func NewPackageStream(reader io.Reader, writer io.Writer, parentCtx context.Cont
 	return stream
 }
 
-func (ps *PackageStream) onClose() {
+func (ps *StreamProcessor) onClose() {
 	if ps.bufferMgr != nil {
 		ps.bufferMgr.Close()
 	}
 }
 
 // readLock 获取读取锁并检查状态
-func (ps *PackageStream) readLock() error {
+func (ps *StreamProcessor) readLock() error {
 	if ps.IsClosed() {
 		return io.EOF
 	}
@@ -59,7 +59,7 @@ func (ps *PackageStream) readLock() error {
 }
 
 // writeLock 获取写入锁并检查状态
-func (ps *PackageStream) writeLock() error {
+func (ps *StreamProcessor) writeLock() error {
 	if ps.IsClosed() {
 		return errors.ErrStreamClosed
 	}
@@ -73,7 +73,7 @@ func (ps *PackageStream) writeLock() error {
 
 // ReadExact 读取指定长度的字节，使用内存池优化
 // 如果读取的字节数不足指定长度，会继续读取直到达到指定长度或遇到错误
-func (ps *PackageStream) ReadExact(length int) ([]byte, error) {
+func (ps *StreamProcessor) ReadExact(length int) ([]byte, error) {
 	if err := ps.readLock(); err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (ps *PackageStream) ReadExact(length int) ([]byte, error) {
 
 // ReadExactZeroCopy 零拷贝读取指定长度的字节
 // 返回零拷贝缓冲区和清理函数，调用方负责调用清理函数
-func (ps *PackageStream) ReadExactZeroCopy(length int) (*utils.ZeroCopyBuffer, error) {
+func (ps *StreamProcessor) ReadExactZeroCopy(length int) (*utils.ZeroCopyBuffer, error) {
 	if err := ps.readLock(); err != nil {
 		return nil, err
 	}
@@ -189,7 +189,7 @@ func (ps *PackageStream) ReadExactZeroCopy(length int) (*utils.ZeroCopyBuffer, e
 
 // WriteExact 写入指定长度的字节，直到写完为止
 // 如果写入的字节数不足指定长度，会继续写入直到达到指定长度或遇到错误
-func (ps *PackageStream) WriteExact(data []byte) error {
+func (ps *StreamProcessor) WriteExact(data []byte) error {
 	if err := ps.writeLock(); err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ func (ps *PackageStream) WriteExact(data []byte) error {
 }
 
 // readPacketType 读取包类型，使用内存池
-func (ps *PackageStream) readPacketType() (packet.Type, error) {
+func (ps *StreamProcessor) readPacketType() (packet.Type, error) {
 	typeBuffer := ps.bufferMgr.Allocate(constants.PacketTypeSize)
 	defer ps.bufferMgr.Release(typeBuffer)
 
@@ -241,7 +241,7 @@ func (ps *PackageStream) readPacketType() (packet.Type, error) {
 }
 
 // readPacketBodySize 读取包体大小，使用内存池
-func (ps *PackageStream) readPacketBodySize() (uint32, error) {
+func (ps *StreamProcessor) readPacketBodySize() (uint32, error) {
 	sizeBuffer := ps.bufferMgr.Allocate(constants.PacketBodySizeBytes)
 	defer ps.bufferMgr.Release(sizeBuffer)
 
@@ -256,7 +256,7 @@ func (ps *PackageStream) readPacketBodySize() (uint32, error) {
 }
 
 // readPacketBody 读取包体数据，使用内存池
-func (ps *PackageStream) readPacketBody(bodySize uint32) ([]byte, error) {
+func (ps *StreamProcessor) readPacketBody(bodySize uint32) ([]byte, error) {
 	bodyData := ps.bufferMgr.Allocate(int(bodySize))
 	defer ps.bufferMgr.Release(bodyData)
 
@@ -276,7 +276,7 @@ func (ps *PackageStream) readPacketBody(bodySize uint32) ([]byte, error) {
 }
 
 // decompressData 解压数据
-func (ps *PackageStream) decompressData(compressedData []byte) ([]byte, error) {
+func (ps *StreamProcessor) decompressData(compressedData []byte) ([]byte, error) {
 	gzipReader := NewGzipReader(bytes.NewReader(compressedData), ps.Ctx())
 	defer gzipReader.Close()
 
@@ -290,7 +290,7 @@ func (ps *PackageStream) decompressData(compressedData []byte) ([]byte, error) {
 }
 
 // ReadPacket 读取整个数据包，返回读取的字节数
-func (ps *PackageStream) ReadPacket() (*packet.TransferPacket, int, error) {
+func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 	if err := ps.readLock(); err != nil {
 		return nil, 0, err
 	}
@@ -358,7 +358,7 @@ func (ps *PackageStream) ReadPacket() (*packet.TransferPacket, int, error) {
 }
 
 // compressData 压缩数据
-func (ps *PackageStream) compressData(data []byte) ([]byte, error) {
+func (ps *StreamProcessor) compressData(data []byte) ([]byte, error) {
 	var compressedData bytes.Buffer
 	gzipWriter := NewGzipWriter(&compressedData, ps.Ctx())
 
@@ -375,7 +375,7 @@ func (ps *PackageStream) compressData(data []byte) ([]byte, error) {
 }
 
 // writeRateLimitedData 限速写入数据
-func (ps *PackageStream) writeRateLimitedData(data []byte, rateLimitBytesPerSecond int64) error {
+func (ps *StreamProcessor) writeRateLimitedData(data []byte, rateLimitBytesPerSecond int64) error {
 	// 使用限速写入器
 	rateLimitedWriter, err := NewRateLimiterWriter(ps.writer, rateLimitBytesPerSecond, ps.Ctx())
 	if err != nil {
@@ -396,7 +396,7 @@ func (ps *PackageStream) writeRateLimitedData(data []byte, rateLimitBytesPerSeco
 }
 
 // WritePacket 写入整个数据包，返回写入的字节数
-func (ps *PackageStream) WritePacket(pkt *packet.TransferPacket, useCompression bool, rateLimitBytesPerSecond int64) (int, error) {
+func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompression bool, rateLimitBytesPerSecond int64) (int, error) {
 	if err := ps.writeLock(); err != nil {
 		return 0, err
 	}

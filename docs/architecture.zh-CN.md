@@ -30,7 +30,7 @@ graph TD
     
     subgraph "业务层"
         CS["ConnectionSession"]
-        PS["PackageStream"]
+        PS["StreamProcessor"]
         RL["Rate Limiter"]
     end
     
@@ -121,7 +121,7 @@ graph TD
 
 **组件**：
 - `ConnectionSession`：连接会话，统一业务入口
-- `PackageStream`：数据包流处理
+- `StreamProcessor`：数据包流处理
 - `RateLimiter`：流量控制
 
 **特点**：
@@ -229,7 +229,7 @@ Server (根节点)
 │   ├── UdpAdapter
 │   └── QuicAdapter
 │       └── ConnectionSession
-│           └── PackageStream
+│           └── StreamProcessor
 └── Storage Backends
     ├── MemoryStorage
     ├── RedisStorage
@@ -267,12 +267,12 @@ sequenceDiagram
     participant Client as 客户端
     participant Adapter as 协议适配器
     participant Session as ConnectionSession
-    participant Stream as PackageStream
+    participant Stream as StreamProcessor
     participant Cloud as CloudControl
     
     Client->>Adapter: 建立连接
     Adapter->>Session: AcceptConnection(reader, writer)
-    Session->>Stream: 创建 PackageStream
+    Session->>Stream: 创建 StreamProcessor
     Session->>Cloud: 验证用户权限
     Cloud-->>Session: 返回验证结果
     Session->>Stream: 开始数据传输
@@ -285,7 +285,7 @@ sequenceDiagram
 1. **连接建立**：客户端连接到适配器
 2. **会话创建**：适配器调用 `session.AcceptConnection()`
 3. **权限验证**：通过云控验证用户权限
-4. **流创建**：创建 `PackageStream` 处理数据
+4. **流创建**：创建 `StreamProcessor` 处理数据
 5. **数据传输**：在流中进行数据转发
 6. **连接关闭**：自动清理资源
 

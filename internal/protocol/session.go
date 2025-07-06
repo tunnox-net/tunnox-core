@@ -1,88 +1,148 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"sync"
-	"tunnox-core/internal/cloud/managers"
-	"tunnox-core/internal/cloud/models"
+	"time"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
 
-// ConnectionSession用于统一处理业务逻辑
-// 将所有的协议通过AcceptConnection做成conn / ClientID 映射，并关联PackageStreamer，
-// 后需就都只基于并关联PackageStreamer 操作流
+// StreamPacket 包装结构，包含连接信息
+type StreamPacket struct {
+	ConnectionID string
+	Packet       *packet.TransferPacket
+	Timestamp    time.Time
+}
 
+// StreamConnectionInfo 连接信息
+type StreamConnectionInfo struct {
+	ID       string
+	Stream   *stream.StreamProcessor
+	Metadata map[string]interface{}
+}
+
+// Session 接口定义
+type Session interface {
+	// 初始化连接
+	InitConnection(reader io.Reader, writer io.Writer) (*StreamConnectionInfo, error)
+
+	// 处理带连接信息的数据包
+	HandlePacket(packet *StreamPacket) error
+
+	// 关闭连接
+	CloseConnection(connectionId string) error
+}
+
+// ConnectionSession 实现 Session 接口
 type ConnectionSession struct {
-	cloudApi managers.CloudControlAPI
-	connMap  map[io.Reader]string
-	streamer map[string]stream.PackageStreamer
-
-	connMapLock  sync.RWMutex
-	streamerLock sync.RWMutex
+	connMap  map[string]*StreamConnectionInfo
+	connLock sync.RWMutex
+	idGen    *ConnectionIDGenerator
 
 	utils.Dispose
 }
 
-func (s *ConnectionSession) dispatchTransfer(streamer *stream.PackageStream, connID string) {
-	utils.Info("Starting dispatch transfer for connection", connID)
-	defer func() {
-		utils.Info("Dispatch transfer ended for connection", connID)
-		// 确保流被关闭
-		streamer.Close()
-	}()
-
-	// 持续读取数据包，直到出错或连接关闭
-	for {
-		// 检查上下文是否已取消
-		select {
-		case <-s.Ctx().Done():
-			utils.Info("Context cancelled, stopping dispatch transfer for connection", connID)
-			return
-		default:
-		}
-
-		// 读取数据包
-		transferPacket, bytesRead, err := streamer.ReadPacket()
-		if err != nil {
-			if err == io.EOF {
-				utils.Info("Connection closed by peer for connection", connID)
-			} else {
-				utils.Error("Failed to read packet for connection", connID, "error:", err)
-			}
-			return
-		}
-
-		utils.Debug("Read packet for connection", connID, "bytes:", bytesRead, "type:", transferPacket.PacketType)
-
-		// 处理不同类型的数据包
-		if err := s.processPacket(transferPacket, streamer, connID); err != nil {
-			utils.Error("Failed to process packet for connection", connID, "error:", err)
-			return
-		}
-	}
+// ConnectionIDGenerator 连接ID生成器
+type ConnectionIDGenerator struct {
+	counter int64
+	mu      sync.Mutex
 }
 
-func (s *ConnectionSession) processPacket(transferPacket *packet.TransferPacket, streamer *stream.PackageStream, connID string) error {
+func NewConnectionIDGenerator() *ConnectionIDGenerator {
+	return &ConnectionIDGenerator{}
+}
+
+func (g *ConnectionIDGenerator) GenerateID() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.counter++
+	return fmt.Sprintf("conn_%d_%d", time.Now().Unix(), g.counter)
+}
+
+// NewConnectionSession 创建新的连接会话
+func NewConnectionSession(parentCtx context.Context) *ConnectionSession {
+	session := &ConnectionSession{
+		connMap: make(map[string]*StreamConnectionInfo),
+		idGen:   NewConnectionIDGenerator(),
+	}
+	session.SetCtx(parentCtx, session.onClose)
+	return session
+}
+
+// InitConnection 初始化连接
+func (s *ConnectionSession) InitConnection(reader io.Reader, writer io.Writer) (*StreamConnectionInfo, error) {
+	// 生成连接ID
+	connID := s.idGen.GenerateID()
+
+	// 创建数据流
+	ps := stream.NewStreamProcessor(reader, writer, s.Ctx())
+
+	// 创建连接信息
+	connInfo := &StreamConnectionInfo{
+		ID:       connID,
+		Stream:   ps,
+		Metadata: make(map[string]interface{}),
+	}
+
+	// 保存连接信息
+	s.connLock.Lock()
+	s.connMap[connID] = connInfo
+	s.connLock.Unlock()
+
+	utils.Infof("Connection initialized: %s", connID)
+	return connInfo, nil
+}
+
+// HandlePacket 处理数据包
+func (s *ConnectionSession) HandlePacket(connPacket *StreamPacket) error {
+	utils.Debugf("Handling packet for connection: %s, type: %s",
+		connPacket.ConnectionID, connPacket.Packet.PacketType)
+
 	// 处理心跳包
-	if transferPacket.PacketType.IsHeartbeat() {
-		return s.handleHeartbeat(transferPacket, streamer, connID)
+	if connPacket.Packet.PacketType.IsHeartbeat() {
+		return s.handleHeartbeat(connPacket)
 	}
 
 	// 处理JSON命令包
-	if transferPacket.PacketType.IsJsonCommand() && transferPacket.CommandPacket != nil {
-		return s.handleCommandPacket(transferPacket.CommandPacket, streamer, connID)
+	if connPacket.Packet.PacketType.IsJsonCommand() && connPacket.Packet.CommandPacket != nil {
+		return s.handleCommandPacket(connPacket)
 	}
 
 	// 处理其他类型的包
-	utils.Warn("Unsupported packet type for connection", connID, "type:", transferPacket.PacketType)
+	utils.Warnf("Unsupported packet type for connection %s: %s",
+		connPacket.ConnectionID, connPacket.Packet.PacketType)
 	return nil
 }
 
-func (s *ConnectionSession) handleHeartbeat(transferPacket *packet.TransferPacket, streamer *stream.PackageStream, connID string) error {
-	utils.Debug("Processing heartbeat for connection", connID)
+// CloseConnection 关闭连接
+func (s *ConnectionSession) CloseConnection(connectionId string) error {
+	s.connLock.Lock()
+	defer s.connLock.Unlock()
+
+	connInfo, exists := s.connMap[connectionId]
+	if !exists {
+		return fmt.Errorf("connection not found: %s", connectionId)
+	}
+
+	// 关闭数据流
+	if connInfo.Stream != nil {
+		connInfo.Stream.Close()
+	}
+
+	// 从映射中删除
+	delete(s.connMap, connectionId)
+
+	utils.Infof("Connection closed: %s", connectionId)
+	return nil
+}
+
+// handleHeartbeat 处理心跳包
+func (s *ConnectionSession) handleHeartbeat(connPacket *StreamPacket) error {
+	utils.Debugf("Processing heartbeat for connection: %s", connPacket.ConnectionID)
 
 	// TODO: 实现心跳处理逻辑
 	// - 更新连接状态
@@ -92,133 +152,112 @@ func (s *ConnectionSession) handleHeartbeat(transferPacket *packet.TransferPacke
 	return nil
 }
 
-func (s *ConnectionSession) handleCommandPacket(commandPacket *packet.CommandPacket, streamer *stream.PackageStream, connID string) error {
-	utils.Info("Processing command packet for connection", connID, "command:", commandPacket.CommandType)
+// handleCommandPacket 处理命令包
+func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error {
+	utils.Infof("Processing command packet for connection: %s, command: %s",
+		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
 	// 根据命令类型分发处理
-	switch commandPacket.CommandType {
+	switch connPacket.Packet.CommandPacket.CommandType {
 	case packet.TcpMap:
-		return s.handleTcpMapCommand(commandPacket, streamer, connID)
+		return s.handleTcpMapCommand(connPacket)
 	case packet.HttpMap:
-		return s.handleHttpMapCommand(commandPacket, streamer, connID)
+		return s.handleHttpMapCommand(connPacket)
 	case packet.SocksMap:
-		return s.handleSocksMapCommand(commandPacket, streamer, connID)
+		return s.handleSocksMapCommand(connPacket)
 	case packet.DataIn:
-		return s.handleDataInCommand(commandPacket, streamer, connID)
+		return s.handleDataInCommand(connPacket)
 	case packet.Forward:
-		return s.handleForwardCommand(commandPacket, streamer, connID)
+		return s.handleForwardCommand(connPacket)
 	case packet.DataOut:
-		return s.handleDataOutCommand(commandPacket, streamer, connID)
+		return s.handleDataOutCommand(connPacket)
 	case packet.Disconnect:
-		return s.handleDisconnectCommand(commandPacket, streamer, connID)
+		return s.handleDisconnectCommand(connPacket)
 	default:
-		utils.Warn("Unknown command type for connection", connID, "command:", commandPacket.CommandType)
+		utils.Warnf("Unknown command type for connection %s: %s",
+			connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 		return nil
 	}
 }
 
 // TODO: 实现各种命令处理函数
-func (s *ConnectionSession) handleTcpMapCommand(commandPacket *packet.CommandPacket, streamer *stream.PackageStream, connID string) error {
-	utils.Info("TODO: Handle TCP mapping command for connection", connID)
+func (s *ConnectionSession) handleTcpMapCommand(connPacket *StreamPacket) error {
+	utils.Infof("TODO: Handle TCP mapping command for connection: %s", connPacket.ConnectionID)
 	// TODO: 实现TCP端口映射逻辑
-	// - 解析映射参数
-	// - 创建本地监听端口
-	// - 建立数据转发通道
 	return nil
 }
 
-func (s *ConnectionSession) handleHttpMapCommand(commandPacket *packet.CommandPacket, streamer *stream.PackageStream, connID string) error {
-	utils.Info("TODO: Handle HTTP mapping command for connection", connID)
+func (s *ConnectionSession) handleHttpMapCommand(connPacket *StreamPacket) error {
+	utils.Infof("TODO: Handle HTTP mapping command for connection: %s", connPacket.ConnectionID)
 	// TODO: 实现HTTP端口映射逻辑
-	// - 解析HTTP映射参数
-	// - 创建HTTP代理服务
-	// - 处理HTTP请求转发
 	return nil
 }
 
-func (s *ConnectionSession) handleSocksMapCommand(commandPacket *packet.CommandPacket, streamer *stream.PackageStream, connID string) error {
-	utils.Info("TODO: Handle SOCKS mapping command for connection", connID)
+func (s *ConnectionSession) handleSocksMapCommand(connPacket *StreamPacket) error {
+	utils.Infof("TODO: Handle SOCKS mapping command for connection: %s", connPacket.ConnectionID)
 	// TODO: 实现SOCKS代理映射逻辑
-	// - 解析SOCKS映射参数
-	// - 创建SOCKS代理服务
-	// - 处理SOCKS协议
 	return nil
 }
 
-func (s *ConnectionSession) handleDataInCommand(commandPacket *packet.CommandPacket, streamer *stream.PackageStream, connID string) error {
-	utils.Info("TODO: Handle DataIn command for connection", connID)
+func (s *ConnectionSession) handleDataInCommand(connPacket *StreamPacket) error {
+	utils.Infof("TODO: Handle DataIn command for connection: %s", connPacket.ConnectionID)
 	// TODO: 实现数据输入处理逻辑
-	// - 处理客户端TCP监听端口收到的新连接
-	// - 通知服务端准备透传
-	// - 建立数据传输通道
 	return nil
 }
 
-func (s *ConnectionSession) handleForwardCommand(commandPacket *packet.CommandPacket, streamer *stream.PackageStream, connID string) error {
-	utils.Info("TODO: Handle Forward command for connection", connID)
+func (s *ConnectionSession) handleForwardCommand(connPacket *StreamPacket) error {
+	utils.Infof("TODO: Handle Forward command for connection: %s", connPacket.ConnectionID)
 	// TODO: 实现服务端间转发逻辑
-	// - 检测需要中转的连接
-	// - 通知其他服务端准备透传
-	// - 建立跨服务端数据通道
 	return nil
 }
 
-func (s *ConnectionSession) handleDataOutCommand(commandPacket *packet.CommandPacket, streamer *stream.PackageStream, connID string) error {
-	utils.Info("TODO: Handle DataOut command for connection", connID)
+func (s *ConnectionSession) handleDataOutCommand(connPacket *StreamPacket) error {
+	utils.Infof("TODO: Handle DataOut command for connection: %s", connPacket.ConnectionID)
 	// TODO: 实现数据输出处理逻辑
-	// - 服务端通知目标客户端准备透传
-	// - 建立客户端间数据通道
-	// - 处理数据转发
 	return nil
 }
 
-func (s *ConnectionSession) handleDisconnectCommand(commandPacket *packet.CommandPacket, streamer *stream.PackageStream, connID string) error {
-	utils.Info("TODO: Handle Disconnect command for connection", connID)
+func (s *ConnectionSession) handleDisconnectCommand(connPacket *StreamPacket) error {
+	utils.Infof("TODO: Handle Disconnect command for connection: %s", connPacket.ConnectionID)
 	// TODO: 实现连接断开处理逻辑
-	// - 清理连接资源
-	// - 通知相关组件
-	// - 关闭数据传输通道
 	return nil
 }
 
-func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) {
-	// 1. 通过云控注册/鉴权，获取 connID
-	connID := ""
+// onClose 资源清理回调
+func (s *ConnectionSession) onClose() {
+	utils.Infof("Cleaning up connection session resources...")
 
-	// 这里假设通过 Authenticate 获取 connID（可根据实际业务替换）
-	if s.cloudApi != nil {
-		// 填充必要的鉴权信息，如 ClientID、AuthCode、SecretKey、NodeID、Version、IPAddress、Type
-		authReq := &models.AuthRequest{
-			ClientID:  0, // 需要从配置或参数获取
-			AuthCode:  "",
-			SecretKey: "",
-			NodeID:    "",
-			Version:   "",
-			IPAddress: "",
-			Type:      models.ClientTypeRegistered,
-		}
-		resp, err := s.cloudApi.Authenticate(authReq)
-		if err == nil && resp.Success {
-			connID = fmt.Sprintf("%d", resp.Client.ID)
-		}
+	// 获取所有连接信息的副本，避免在锁内调用 Close
+	var connections []*StreamConnectionInfo
+	s.connLock.Lock()
+	for _, connInfo := range s.connMap {
+		connections = append(connections, connInfo)
+	}
+	// 清空连接映射
+	s.connMap = make(map[string]*StreamConnectionInfo)
+	s.connLock.Unlock()
+
+	// 在锁外记录清理的连接
+	for _, connInfo := range connections {
+		utils.Infof("Cleaned up connection: %s", connInfo.ID)
 	}
 
-	if connID == "" {
-		utils.Warn("cloudApi is nil, cannot get connID from cloud, using fallback id")
-		connID = "unknown"
-	}
+	utils.Infof("Connection session resources cleanup completed")
+}
 
-	// 2. 保存连接映射
-	s.connMapLock.Lock()
-	s.connMap[reader] = connID
-	s.connMapLock.Unlock()
+// GetStreamConnectionInfo 获取连接信息（用于调试和监控）
+func (s *ConnectionSession) GetStreamConnectionInfo(connectionId string) (*StreamConnectionInfo, bool) {
+	s.connLock.RLock()
+	defer s.connLock.RUnlock()
 
-	// 3. 传递 connID 给 dispatchTransfer
-	ps := stream.NewPackageStream(reader, writer, s.Ctx())
-	ps.AddCloseFunc(func() {
-		s.connMapLock.Lock()
-		defer s.connMapLock.Unlock()
-		delete(s.connMap, reader)
-	})
-	go s.dispatchTransfer(ps, connID)
+	connInfo, exists := s.connMap[connectionId]
+	return connInfo, exists
+}
+
+// GetActiveConnections 获取活跃连接数量
+func (s *ConnectionSession) GetActiveConnections() int {
+	s.connLock.RLock()
+	defer s.connLock.RUnlock()
+
+	return len(s.connMap)
 }

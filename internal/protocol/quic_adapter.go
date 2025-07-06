@@ -136,7 +136,7 @@ func (q *QuicAdapter) ConnectTo(serverAddr string) error {
 
 	// 创建数据流
 	q.streamMutex.Lock()
-	q.stream = sm.NewPackageStream(stream, stream, q.Ctx())
+	q.stream = sm.NewStreamProcessor(stream, stream, q.Ctx())
 	q.streamMutex.Unlock()
 
 	return nil
