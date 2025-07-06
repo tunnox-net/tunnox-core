@@ -181,35 +181,43 @@ func (s *ConnectionSession) handleDisconnectCommand(commandPacket *packet.Comman
 }
 
 func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) {
-	// 1. 通过云控注册/鉴权，获取 connId
-	connId := ""
+	// 1. 通过云控注册/鉴权，获取 connID
+	connID := ""
+
+	// 这里假设通过 Authenticate 获取 connID（可根据实际业务替换）
 	if s.cloudApi != nil {
-		// 这里假设通过 Authenticate 获取 connId（可根据实际业务替换）
-		req := &cloud.AuthRequest{
-			// 填充必要的鉴权信息，如 ClientID、AuthCode、SecretKey、NodeID、Version、IPAddress、Type
+		// 填充必要的鉴权信息，如 ClientID、AuthCode、SecretKey、NodeID、Version、IPAddress、Type
+		authReq := &cloud.AuthRequest{
+			ClientID:  0, // 需要从配置或参数获取
+			AuthCode:  "",
+			SecretKey: "",
+			NodeID:    "",
+			Version:   "",
+			IPAddress: "",
+			Type:      cloud.ClientTypeRegistered,
 		}
-		resp, err := s.cloudApi.Authenticate(req)
-		if err != nil || resp == nil || resp.Client == nil {
-			utils.Error("Cloud authentication failed for new connection:", err)
-			return
+		resp, err := s.cloudApi.Authenticate(authReq)
+		if err == nil && resp.Success {
+			connID = fmt.Sprintf("%d", resp.Client.ID)
 		}
-		connId = fmt.Sprintf("%d", resp.Client.ID)
-	} else {
-		utils.Warn("cloudApi is nil, cannot get connId from cloud, using fallback id")
-		connId = "unknown"
 	}
 
-	// 2. 写入映射
+	if connID == "" {
+		utils.Warn("cloudApi is nil, cannot get connID from cloud, using fallback id")
+		connID = "unknown"
+	}
+
+	// 2. 保存连接映射
 	s.connMapLock.Lock()
-	s.connMap[reader] = connId
+	s.connMap[reader] = connID
 	s.connMapLock.Unlock()
 
-	// 3. 传递 connId 给 dispatchTransfer
+	// 3. 传递 connID 给 dispatchTransfer
 	ps := stream.NewPackageStream(reader, writer, s.Ctx())
 	ps.AddCloseFunc(func() {
 		s.connMapLock.Lock()
 		defer s.connMapLock.Unlock()
 		delete(s.connMap, reader)
 	})
-	go s.dispatchTransfer(ps, connId)
+	go s.dispatchTransfer(ps, connID)
 }

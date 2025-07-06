@@ -249,7 +249,7 @@ func (b *CloudControl) ListUserClients(userID string) ([]*Client, error) {
 	return b.clientRepo.ListUserClients(userID)
 }
 
-func (b *CloudControl) ListClientMappings(clientID int64) ([]*PortMapping, error) {
+func (b *CloudControl) GetClientPortMappings(clientID int64) ([]*PortMapping, error) {
 	return b.mappingRepo.GetClientPortMappings(fmt.Sprintf("%d", clientID))
 }
 
@@ -308,7 +308,7 @@ func (b *CloudControl) CreatePortMapping(mapping *PortMapping) (*PortMapping, er
 	return mapping, nil
 }
 
-func (b *CloudControl) GetPortMappings(userID string) ([]*PortMapping, error) {
+func (b *CloudControl) GetUserPortMappings(userID string) ([]*PortMapping, error) {
 	return b.mappingRepo.GetUserPortMappings(userID)
 }
 

@@ -61,7 +61,7 @@ type Info struct {
 	ConnID     string // 连接ID，每次新连接由服务端分配的临时ID
 	NodeID     string // 连接接入的节点ID(服务端ID)
 	SourceID   string // 连接的来源ID(可能是ClientID,也可能是ServerID,如果是serverID，说明是转发)
-	TargetID   string // 连接的目的ID(应该只会是ClientId）
+	TargetID   string // 连接的目的ID(应该只会是ClientID）
 	PairConnID string // 配对的连接ID，只会是数据通道
 }
 

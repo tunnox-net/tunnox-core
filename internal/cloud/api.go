@@ -30,12 +30,12 @@ type CloudControlAPI interface {
 	DeleteClient(clientID int64) error
 	UpdateClientStatus(clientID int64, status ClientStatus, nodeID string) error
 	ListClients(userID string, clientType ClientType) ([]*Client, error)
-	ListUserClients(userID string) ([]*Client, error)          // 获取用户下的所有客户端
-	ListClientMappings(clientID int64) ([]*PortMapping, error) // 获取客户端下的所有端口映射
+	ListUserClients(userID string) ([]*Client, error)             // 获取用户下的所有客户端
+	GetClientPortMappings(clientID int64) ([]*PortMapping, error) // 获取客户端下的所有端口映射
 
 	// 端口映射管理
 	CreatePortMapping(mapping *PortMapping) (*PortMapping, error)
-	GetPortMappings(userID string) ([]*PortMapping, error)
+	GetUserPortMappings(userID string) ([]*PortMapping, error)
 	GetPortMapping(mappingID string) (*PortMapping, error)
 	UpdatePortMapping(mapping *PortMapping) error
 	DeletePortMapping(mappingID string) error

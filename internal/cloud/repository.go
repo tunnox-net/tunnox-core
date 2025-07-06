@@ -65,8 +65,8 @@ func (r *UserRepository) CreateUser(user *User) error {
 // UpdateUser 更新用户（仅更新，不允许创建）
 func (r *UserRepository) UpdateUser(user *User) error {
 	// 检查用户是否存在
-	existingUser, err := r.GetUser(user.ID)
-	if err != nil || existingUser == nil {
+	existingUser, _ := r.GetUser(user.ID)
+	if existingUser == nil {
 		return fmt.Errorf("user with ID %s does not exist", user.ID)
 	}
 
@@ -176,8 +176,8 @@ func (r *ClientRepository) CreateClient(client *Client) error {
 // UpdateClient 更新客户端（仅更新，不允许创建）
 func (r *ClientRepository) UpdateClient(client *Client) error {
 	// 检查客户端是否存在
-	existingClient, err := r.GetClient(fmt.Sprintf("%d", client.ID))
-	if err != nil || existingClient == nil {
+	existingClient, _ := r.GetClient(fmt.Sprintf("%d", client.ID))
+	if existingClient == nil {
 		return fmt.Errorf("client with ID %d does not exist", client.ID)
 	}
 
@@ -353,8 +353,8 @@ func (r *PortMappingRepo) CreatePortMapping(mapping *PortMapping) error {
 // UpdatePortMapping 更新端口映射（仅更新，不允许创建）
 func (r *PortMappingRepo) UpdatePortMapping(mapping *PortMapping) error {
 	// 检查端口映射是否存在
-	existingMapping, err := r.GetPortMapping(mapping.ID)
-	if err != nil || existingMapping == nil {
+	existingMapping, _ := r.GetPortMapping(mapping.ID)
+	if existingMapping == nil {
 		return fmt.Errorf("port mapping with ID %s does not exist", mapping.ID)
 	}
 
@@ -517,8 +517,8 @@ func (r *NodeRepository) CreateNode(node *Node) error {
 // UpdateNode 更新节点（仅更新，不允许创建）
 func (r *NodeRepository) UpdateNode(node *Node) error {
 	// 检查节点是否存在
-	existingNode, err := r.GetNode(node.ID)
-	if err != nil || existingNode == nil {
+	existingNode, _ := r.GetNode(node.ID)
+	if existingNode == nil {
 		return fmt.Errorf("node with ID %s does not exist", node.ID)
 	}
 
@@ -639,8 +639,8 @@ func (r *ConnectionRepo) CreateConnection(connInfo *ConnectionInfo) error {
 // UpdateConnection 更新连接（仅更新，不允许创建）
 func (r *ConnectionRepo) UpdateConnection(connInfo *ConnectionInfo) error {
 	// 检查连接是否存在
-	existingConn, err := r.GetConnection(connInfo.ConnID)
-	if err != nil || existingConn == nil {
+	existingConn, _ := r.GetConnection(connInfo.ConnID)
+	if existingConn == nil {
 		return fmt.Errorf("connection with ID %s does not exist", connInfo.ConnID)
 	}
 

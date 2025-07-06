@@ -3,8 +3,6 @@ package cloud
 import "time"
 
 // NodeRegisterRequest 节点注册请求
-// 云控平台收到后分配/确认节点ID
-// Address: 节点对外服务地址（如Pod的外部访问地址）
 type NodeRegisterRequest struct {
 	NodeID  string            `json:"node_id"`        // 节点ID（可选，首次注册可为空）
 	Address string            `json:"address"`        // 节点服务地址（IP:Port或域名）
@@ -19,7 +17,7 @@ type NodeRegisterResponse struct {
 	Message string `json:"message"` // 错误信息
 }
 
-// NodeUnregisterRequest 节点反注册请求
+// NodeUnregisterRequest 节点注销请求
 type NodeUnregisterRequest struct {
 	NodeID string `json:"node_id"`
 }
@@ -38,12 +36,13 @@ type NodeHeartbeatResponse struct {
 	Message string `json:"message"`
 }
 
-// NodeServiceInfo 节点服务信息（用于集群间转发）
+// NodeServiceInfo 节点服务信息
 type NodeServiceInfo struct {
 	NodeID  string `json:"node_id"`
 	Address string `json:"address"` // 对外服务地址
 }
 
+// User 用户信息
 type User struct {
 	ID        string     `json:"id"`         // 用户唯一标识
 	Username  string     `json:"username"`   // 用户名
@@ -60,34 +59,34 @@ type UserType string
 
 const (
 	UserTypeRegistered UserType = "registered" // 注册用户
-	UserTypeAnonymous  UserType = "anonymous"  // 匿名用户（类似TeamViewer）
+	UserTypeAnonymous  UserType = "anonymous"  // 匿名用户
 )
 
 type UserStatus string
 
 const (
-	UserStatusActive    UserStatus = "active"
-	UserStatusSuspended UserStatus = "suspended"
-	UserStatusDeleted   UserStatus = "deleted"
+	UserStatusActive    UserStatus = "active"    // 活跃
+	UserStatusSuspended UserStatus = "suspended" // 暂停
+	UserStatusDeleted   UserStatus = "deleted"   // 已删除
 )
 
 type UserPlan string
 
 const (
-	UserPlanFree       UserPlan = "free"
-	UserPlanPremium    UserPlan = "premium"
-	UserPlanEnterprise UserPlan = "enterprise"
+	UserPlanFree       UserPlan = "free"       // 免费版
+	UserPlanPremium    UserPlan = "premium"    // 高级版
+	UserPlanEnterprise UserPlan = "enterprise" // 企业版
 )
 
 type UserQuota struct {
-	MaxClientIds   int   `json:"max_client_ids"`  // 最大ClientId数量
+	MaxClientIDs   int   `json:"max_client_ids"`  // 最大ClientID数量
 	MaxConnections int   `json:"max_connections"` // 最大并发连接数
 	BandwidthLimit int64 `json:"bandwidth_limit"` // 带宽限制(字节/秒)
 	StorageLimit   int64 `json:"storage_limit"`   // 存储限制(字节)
 }
 
 type Client struct {
-	ID        int64        `json:"id"`         // ClientId (8位数字，类似TeamViewer)
+	ID        int64        `json:"id"`         // ClientID (8位数字，类似TeamViewer)
 	UserID    string       `json:"user_id"`    // 所属用户ID（匿名用户可能为空）
 	Name      string       `json:"name"`       // 客户端名称
 	AuthCode  string       `json:"auth_code"`  // 认证码
@@ -123,16 +122,6 @@ const (
 	ClientStatusOnline  ClientStatus = "online"
 	ClientStatusBlocked ClientStatus = "blocked"
 )
-
-type ClientConfig struct {
-	EnableCompression bool  `json:"enable_compression"` // 是否启用压缩
-	BandwidthLimit    int64 `json:"bandwidth_limit"`    // 带宽限制(字节/秒)
-	MaxConnections    int   `json:"max_connections"`    // 最大连接数
-	AllowedPorts      []int `json:"allowed_ports"`      // 允许的端口范围
-	BlockedPorts      []int `json:"blocked_ports"`      // 禁止的端口
-	AutoReconnect     bool  `json:"auto_reconnect"`     // 自动重连
-	HeartbeatInterval int   `json:"heartbeat_interval"` // 心跳间隔(秒)
-}
 
 type PortMapping struct {
 	ID             string        `json:"id"`               // 映射ID
@@ -176,19 +165,6 @@ const (
 	MappingStatusError    MappingStatus = "error"
 )
 
-type MappingConfig struct {
-	EnableCompression bool  `json:"enable_compression"` // 是否启用压缩
-	BandwidthLimit    int64 `json:"bandwidth_limit"`    // 带宽限制
-	Timeout           int   `json:"timeout"`            // 超时时间(秒)
-	RetryCount        int   `json:"retry_count"`        // 重试次数
-}
-
-type TrafficStats struct {
-	BytesSent     int64 `json:"bytes_sent"`     // 发送字节数
-	BytesReceived int64 `json:"bytes_received"` // 接收字节数
-	Connections   int64 `json:"connections"`    // 连接数
-}
-
 // ConnectionInfo 连接信息
 type ConnectionInfo struct {
 	ConnID        string    `json:"conn_id"`        // 连接ID
@@ -229,55 +205,4 @@ type AuthResponse struct {
 	Node      *Node     `json:"node"`       // 节点信息
 	ExpiresAt time.Time `json:"expires_at"` // 令牌过期时间
 	Message   string    `json:"message"`    // 错误消息
-}
-
-// 统计相关数据结构
-type UserStats struct {
-	UserID           string    `json:"user_id"`
-	TotalClients     int       `json:"total_clients"`
-	OnlineClients    int       `json:"online_clients"`
-	TotalMappings    int       `json:"total_mappings"`
-	ActiveMappings   int       `json:"active_mappings"`
-	TotalTraffic     int64     `json:"total_traffic"`     // 总流量(字节)
-	TotalConnections int64     `json:"total_connections"` // 总连接数
-	LastActive       time.Time `json:"last_active"`
-}
-
-type ClientStats struct {
-	ClientID         int64     `json:"client_id"`
-	UserID           string    `json:"user_id"`
-	TotalMappings    int       `json:"total_mappings"`
-	ActiveMappings   int       `json:"active_mappings"`
-	TotalTraffic     int64     `json:"total_traffic"`     // 总流量(字节)
-	TotalConnections int64     `json:"total_connections"` // 总连接数
-	Uptime           int64     `json:"uptime"`            // 在线时长(秒)
-	LastSeen         time.Time `json:"last_seen"`
-}
-
-type SystemStats struct {
-	TotalUsers       int   `json:"total_users"`
-	TotalClients     int   `json:"total_clients"`
-	OnlineClients    int   `json:"online_clients"`
-	TotalMappings    int   `json:"total_mappings"`
-	ActiveMappings   int   `json:"active_mappings"`
-	TotalNodes       int   `json:"total_nodes"`
-	OnlineNodes      int   `json:"online_nodes"`
-	TotalTraffic     int64 `json:"total_traffic"`     // 总流量(字节)
-	TotalConnections int64 `json:"total_connections"` // 总连接数
-	AnonymousUsers   int   `json:"anonymous_users"`   // 匿名用户数
-}
-
-type TrafficDataPoint struct {
-	Timestamp     time.Time `json:"timestamp"`
-	BytesSent     int64     `json:"bytes_sent"`
-	BytesReceived int64     `json:"bytes_received"`
-	UserID        string    `json:"user_id,omitempty"`
-	ClientID      int64     `json:"client_id,omitempty"`
-}
-
-type ConnectionDataPoint struct {
-	Timestamp   time.Time `json:"timestamp"`
-	Connections int       `json:"connections"`
-	UserID      string    `json:"user_id,omitempty"`
-	ClientID    int64     `json:"client_id,omitempty"`
 }
