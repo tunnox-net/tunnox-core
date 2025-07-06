@@ -87,7 +87,7 @@ type UserQuota struct {
 }
 
 type Client struct {
-	ID        string       `json:"id"`         // ClientId
+	ID        int64        `json:"id"`         // ClientId (8位数字，类似TeamViewer)
 	UserID    string       `json:"user_id"`    // 所属用户ID（匿名用户可能为空）
 	Name      string       `json:"name"`       // 客户端名称
 	AuthCode  string       `json:"auth_code"`  // 认证码
@@ -137,8 +137,8 @@ type ClientConfig struct {
 type PortMapping struct {
 	ID             string        `json:"id"`               // 映射ID
 	UserID         string        `json:"user_id"`          // 所属用户ID（匿名映射可能为空）
-	SourceClientID string        `json:"source_client_id"` // 源客户端ID
-	TargetClientID string        `json:"target_client_id"` // 目标客户端ID
+	SourceClientID int64         `json:"source_client_id"` // 源客户端ID
+	TargetClientID int64         `json:"target_client_id"` // 目标客户端ID
 	Protocol       Protocol      `json:"protocol"`         // 协议：tcp/udp/http/socks
 	SourcePort     int           `json:"source_port"`      // 源端口
 	TargetHost     string        `json:"target_host"`      // 目标主机
@@ -207,7 +207,7 @@ type JWTTokenInfo struct {
 	Token        string    `json:"token"`
 	RefreshToken string    `json:"refresh_token"`
 	ExpiresAt    time.Time `json:"expires_at"`
-	ClientId     string    `json:"client_id"`
+	ClientId     int64     `json:"client_id"`
 	TokenID      string    `json:"token_id"` // Token唯一标识，用于撤销
 }
 
@@ -221,7 +221,7 @@ type Node struct {
 }
 
 type AuthRequest struct {
-	ClientID  string     `json:"client_id"`  // 客户端ID
+	ClientID  int64      `json:"client_id"`  // 客户端ID
 	AuthCode  string     `json:"auth_code"`  // 认证码
 	SecretKey string     `json:"secret_key"` // 密钥(可选)
 	NodeID    string     `json:"node_id"`    // 节点ID
@@ -252,7 +252,7 @@ type UserStats struct {
 }
 
 type ClientStats struct {
-	ClientID         string    `json:"client_id"`
+	ClientID         int64     `json:"client_id"`
 	UserID           string    `json:"user_id"`
 	TotalMappings    int       `json:"total_mappings"`
 	ActiveMappings   int       `json:"active_mappings"`
@@ -280,12 +280,12 @@ type TrafficDataPoint struct {
 	BytesSent     int64     `json:"bytes_sent"`
 	BytesReceived int64     `json:"bytes_received"`
 	UserID        string    `json:"user_id,omitempty"`
-	ClientID      string    `json:"client_id,omitempty"`
+	ClientID      int64     `json:"client_id,omitempty"`
 }
 
 type ConnectionDataPoint struct {
 	Timestamp   time.Time `json:"timestamp"`
 	Connections int       `json:"connections"`
 	UserID      string    `json:"user_id,omitempty"`
-	ClientID    string    `json:"client_id,omitempty"`
+	ClientID    int64     `json:"client_id,omitempty"`
 }

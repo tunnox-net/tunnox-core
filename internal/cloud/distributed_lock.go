@@ -1,18 +1,17 @@
 package cloud
 
 import (
-	"context"
 	"time"
 )
 
 // DistributedLock 分布式锁接口
 type DistributedLock interface {
 	// Acquire 获取锁，返回是否成功获取
-	Acquire(ctx context.Context, key string, ttl time.Duration) (bool, error)
+	Acquire(key string, ttl time.Duration) (bool, error)
 	// Release 释放锁
-	Release(ctx context.Context, key string) error
+	Release(key string) error
 	// IsLocked 检查锁是否被持有
-	IsLocked(ctx context.Context, key string) (bool, error)
+	IsLocked(key string) (bool, error)
 }
 
 // MemoryLock 内存锁实现（用于单机开发/测试）
@@ -33,7 +32,7 @@ func NewMemoryLock() *MemoryLock {
 }
 
 // Acquire 获取内存锁
-func (m *MemoryLock) Acquire(ctx context.Context, key string, ttl time.Duration) (bool, error) {
+func (m *MemoryLock) Acquire(key string, ttl time.Duration) (bool, error) {
 	now := time.Now()
 
 	// 检查锁是否存在且未过期
@@ -55,13 +54,13 @@ func (m *MemoryLock) Acquire(ctx context.Context, key string, ttl time.Duration)
 }
 
 // Release 释放内存锁
-func (m *MemoryLock) Release(ctx context.Context, key string) error {
+func (m *MemoryLock) Release(key string) error {
 	delete(m.locks, key)
 	return nil
 }
 
 // IsLocked 检查内存锁是否被持有
-func (m *MemoryLock) IsLocked(ctx context.Context, key string) (bool, error) {
+func (m *MemoryLock) IsLocked(key string) (bool, error) {
 	now := time.Now()
 
 	if info, exists := m.locks[key]; exists {

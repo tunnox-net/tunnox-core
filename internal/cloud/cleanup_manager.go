@@ -53,7 +53,7 @@ func (cm *CleanupManager) RegisterCleanupTask(ctx context.Context, taskType stri
 
 	// 检查任务是否已存在
 	key := fmt.Sprintf("%s:cleanup_task:%s", KeyPrefixCleanup, taskID)
-	exists, err := cm.storage.Exists(ctx, key)
+	exists, err := cm.storage.Exists(key)
 	if err != nil {
 		return fmt.Errorf("check task exists failed: %w", err)
 	}
@@ -77,7 +77,7 @@ func (cm *CleanupManager) RegisterCleanupTask(ctx context.Context, taskType stri
 		return fmt.Errorf("marshal task failed: %w", err)
 	}
 
-	if err := cm.storage.Set(ctx, key, string(data), 0); err != nil {
+	if err := cm.storage.Set(key, string(data), 0); err != nil {
 		return fmt.Errorf("save task failed: %w", err)
 	}
 
@@ -90,7 +90,7 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 	lockKey := fmt.Sprintf("lock:cleanup_task:%s", taskID)
 
 	// 获取分布式锁
-	acquired, err := cm.lock.Acquire(ctx, lockKey, 5*time.Minute) // 5分钟锁超时
+	acquired, err := cm.lock.Acquire(lockKey, 5*time.Minute) // 5分钟锁超时
 	if err != nil {
 		return nil, false, fmt.Errorf("acquire lock failed: %w", err)
 	}
@@ -100,27 +100,27 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 
 	// 获取任务信息
 	key := fmt.Sprintf("%s:cleanup_task:%s", KeyPrefixCleanup, taskID)
-	data, err := cm.storage.Get(ctx, key)
+	data, err := cm.storage.Get(key)
 	if err != nil {
-		cm.lock.Release(ctx, lockKey)
+		cm.lock.Release(lockKey)
 		return nil, false, fmt.Errorf("get task failed: %w", err)
 	}
 
 	taskData, ok := data.(string)
 	if !ok {
-		cm.lock.Release(ctx, lockKey)
+		cm.lock.Release(lockKey)
 		return nil, false, fmt.Errorf("invalid task data type")
 	}
 
 	var task CleanupTask
 	if err := json.Unmarshal([]byte(taskData), &task); err != nil {
-		cm.lock.Release(ctx, lockKey)
+		cm.lock.Release(lockKey)
 		return nil, false, fmt.Errorf("unmarshal task failed: %w", err)
 	}
 
 	// 检查是否需要执行
 	if time.Now().Before(task.NextRun) {
-		cm.lock.Release(ctx, lockKey)
+		cm.lock.Release(lockKey)
 		return nil, false, nil // 还未到执行时间
 	}
 
@@ -131,12 +131,12 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 
 	dataBytes, err := json.Marshal(task)
 	if err != nil {
-		cm.lock.Release(ctx, lockKey)
+		cm.lock.Release(lockKey)
 		return nil, false, fmt.Errorf("marshal updated task failed: %w", err)
 	}
 
-	if err := cm.storage.Set(ctx, key, string(dataBytes), 0); err != nil {
-		cm.lock.Release(ctx, lockKey)
+	if err := cm.storage.Set(key, string(dataBytes), 0); err != nil {
+		cm.lock.Release(lockKey)
 		return nil, false, fmt.Errorf("update task failed: %w", err)
 	}
 
@@ -148,11 +148,11 @@ func (cm *CleanupManager) CompleteCleanupTask(ctx context.Context, taskType stri
 	taskID := fmt.Sprintf("cleanup_%s", taskType)
 	lockKey := fmt.Sprintf("lock:cleanup_task:%s", taskID)
 
-	defer cm.lock.Release(ctx, lockKey)
+	defer cm.lock.Release(lockKey)
 
 	// 更新任务状态
 	key := fmt.Sprintf("%s:cleanup_task:%s", KeyPrefixCleanup, taskID)
-	data, err := cm.storage.Get(ctx, key)
+	data, err := cm.storage.Get(key)
 	if err != nil {
 		return fmt.Errorf("get task failed: %w", err)
 	}
@@ -180,7 +180,7 @@ func (cm *CleanupManager) CompleteCleanupTask(ctx context.Context, taskType stri
 		return fmt.Errorf("marshal completed task failed: %w", err)
 	}
 
-	if err := cm.storage.Set(ctx, key, string(dataBytes), 0); err != nil {
+	if err := cm.storage.Set(key, string(dataBytes), 0); err != nil {
 		return fmt.Errorf("update completed task failed: %w", err)
 	}
 
@@ -202,7 +202,7 @@ func (cm *CleanupManager) GetCleanupTasks(ctx context.Context) ([]*CleanupTask, 
 		taskID := fmt.Sprintf("cleanup_%s", taskType)
 		key := fmt.Sprintf("%s:cleanup_task:%s", KeyPrefixCleanup, taskID)
 
-		data, err := cm.storage.Get(ctx, key)
+		data, err := cm.storage.Get(key)
 		if err != nil {
 			continue // 任务不存在，跳过
 		}

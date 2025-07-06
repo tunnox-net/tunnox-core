@@ -1,7 +1,6 @@
 package stream
 
 import (
-	"context"
 	"io"
 	"tunnox-core/internal/packet"
 )
@@ -66,17 +65,17 @@ type CompressionWriter interface {
 // StreamFactory 流工厂接口
 type StreamFactory interface {
 	// NewPackageStream 创建新的数据包流
-	NewPackageStream(reader io.Reader, writer io.Writer, ctx context.Context) PackageStreamer
+	NewPackageStream(reader io.Reader, writer io.Writer) PackageStreamer
 
 	// NewRateLimiterReader 创建限速读取器
-	NewRateLimiterReader(reader io.Reader, bytesPerSecond int64, ctx context.Context) (RateLimiterReaderInterface, error)
+	NewRateLimiterReader(reader io.Reader, bytesPerSecond int64) (RateLimiterReaderInterface, error)
 
 	// NewRateLimiterWriter 创建限速写入器
-	NewRateLimiterWriter(writer io.Writer, bytesPerSecond int64, ctx context.Context) (RateLimiterWriterInterface, error)
+	NewRateLimiterWriter(writer io.Writer, bytesPerSecond int64) (RateLimiterWriterInterface, error)
 
 	// NewCompressionReader 创建压缩读取器
-	NewCompressionReader(reader io.Reader, ctx context.Context) CompressionReader
+	NewCompressionReader(reader io.Reader) CompressionReader
 
 	// NewCompressionWriter 创建压缩写入器
-	NewCompressionWriter(writer io.Writer, ctx context.Context) CompressionWriter
+	NewCompressionWriter(writer io.Writer) CompressionWriter
 }

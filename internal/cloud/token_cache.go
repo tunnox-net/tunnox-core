@@ -55,14 +55,14 @@ func (m *TokenCacheManager) StoreAccessToken(ctx context.Context, token string, 
 		return fmt.Errorf("token already expired")
 	}
 
-	return m.storage.Set(ctx, key, string(data), ttl)
+	return m.storage.Set(key, string(data), ttl)
 }
 
 // GetAccessTokenInfo 获取访问Token信息
 func (m *TokenCacheManager) GetAccessTokenInfo(ctx context.Context, token string) (*TokenInfo, error) {
 	key := fmt.Sprintf("%s:access_token:%s", KeyPrefixToken, token)
 
-	value, err := m.storage.Get(ctx, key)
+	value, err := m.storage.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("token not found: %w", err)
 	}
@@ -94,14 +94,14 @@ func (m *TokenCacheManager) StoreRefreshToken(ctx context.Context, refreshToken 
 		return fmt.Errorf("refresh token already expired")
 	}
 
-	return m.storage.Set(ctx, key, string(data), ttl)
+	return m.storage.Set(key, string(data), ttl)
 }
 
 // GetRefreshTokenInfo 获取刷新Token信息
 func (m *TokenCacheManager) GetRefreshTokenInfo(ctx context.Context, refreshToken string) (*RefreshTokenInfo, error) {
 	key := fmt.Sprintf("%s:refresh_token:%s", KeyPrefixToken, refreshToken)
 
-	value, err := m.storage.Get(ctx, key)
+	value, err := m.storage.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("refresh token not found: %w", err)
 	}
@@ -122,13 +122,13 @@ func (m *TokenCacheManager) GetRefreshTokenInfo(ctx context.Context, refreshToke
 // RevokeAccessToken 撤销访问Token
 func (m *TokenCacheManager) RevokeAccessToken(ctx context.Context, token string) error {
 	key := fmt.Sprintf("%s:access_token:%s", KeyPrefixToken, token)
-	return m.storage.Delete(ctx, key)
+	return m.storage.Delete(key)
 }
 
 // RevokeRefreshToken 撤销刷新Token
 func (m *TokenCacheManager) RevokeRefreshToken(ctx context.Context, refreshToken string) error {
 	key := fmt.Sprintf("%s:refresh_token:%s", KeyPrefixToken, refreshToken)
-	return m.storage.Delete(ctx, key)
+	return m.storage.Delete(key)
 }
 
 // RevokeTokenByID 通过Token ID撤销所有相关Token
@@ -149,14 +149,14 @@ func (m *TokenCacheManager) RevokeTokenByID(ctx context.Context, tokenID string)
 	}
 
 	// 设置24小时过期时间
-	return m.storage.Set(ctx, blacklistKey, string(data), 24*time.Hour)
+	return m.storage.Set(blacklistKey, string(data), 24*time.Hour)
 }
 
 // IsTokenRevoked 检查Token是否被撤销
 func (m *TokenCacheManager) IsTokenRevoked(ctx context.Context, token string) (bool, error) {
 	// 首先检查Token是否存在
 	key := fmt.Sprintf("%s:access_token:%s", KeyPrefixToken, token)
-	exists, err := m.storage.Exists(ctx, key)
+	exists, err := m.storage.Exists(key)
 	if err != nil {
 		return false, err
 	}
@@ -174,7 +174,7 @@ func (m *TokenCacheManager) IsTokenRevoked(ctx context.Context, token string) (b
 
 	// 检查Token ID是否在黑名单中
 	blacklistKey := fmt.Sprintf("%s:blacklist:%s", KeyPrefixToken, tokenInfo.TokenID)
-	blacklisted, err := m.storage.Exists(ctx, blacklistKey)
+	blacklisted, err := m.storage.Exists(blacklistKey)
 	if err != nil {
 		return false, err
 	}
@@ -185,7 +185,7 @@ func (m *TokenCacheManager) IsTokenRevoked(ctx context.Context, token string) (b
 // IsRefreshTokenRevoked 检查刷新Token是否被撤销
 func (m *TokenCacheManager) IsRefreshTokenRevoked(ctx context.Context, refreshToken string) (bool, error) {
 	key := fmt.Sprintf("%s:refresh_token:%s", KeyPrefixToken, refreshToken)
-	exists, err := m.storage.Exists(ctx, key)
+	exists, err := m.storage.Exists(key)
 	if err != nil {
 		return false, err
 	}

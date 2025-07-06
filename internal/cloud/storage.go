@@ -17,33 +17,33 @@ var (
 // Storage 存储接口
 type Storage interface {
 	// 基础操作
-	Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error
-	Get(ctx context.Context, key string) (interface{}, error)
-	Delete(ctx context.Context, key string) error
-	Exists(ctx context.Context, key string) (bool, error)
+	Set(key string, value interface{}, ttl time.Duration) error
+	Get(key string) (interface{}, error)
+	Delete(key string) error
+	Exists(key string) (bool, error)
 
 	// 列表操作
-	SetList(ctx context.Context, key string, values []interface{}, ttl time.Duration) error
-	GetList(ctx context.Context, key string) ([]interface{}, error)
-	AppendToList(ctx context.Context, key string, value interface{}) error
-	RemoveFromList(ctx context.Context, key string, value interface{}) error
+	SetList(key string, values []interface{}, ttl time.Duration) error
+	GetList(key string) ([]interface{}, error)
+	AppendToList(key string, value interface{}) error
+	RemoveFromList(key string, value interface{}) error
 
 	// 哈希操作
-	SetHash(ctx context.Context, key string, field string, value interface{}) error
-	GetHash(ctx context.Context, key string, field string) (interface{}, error)
-	GetAllHash(ctx context.Context, key string) (map[string]interface{}, error)
-	DeleteHash(ctx context.Context, key string, field string) error
+	SetHash(key string, field string, value interface{}) error
+	GetHash(key string, field string) (interface{}, error)
+	GetAllHash(key string) (map[string]interface{}, error)
+	DeleteHash(key string, field string) error
 
 	// 计数器操作
-	Incr(ctx context.Context, key string) (int64, error)
-	IncrBy(ctx context.Context, key string, value int64) (int64, error)
+	Incr(key string) (int64, error)
+	IncrBy(key string, value int64) (int64, error)
 
 	// 过期时间
-	SetExpiration(ctx context.Context, key string, ttl time.Duration) error
-	GetExpiration(ctx context.Context, key string) (time.Duration, error)
+	SetExpiration(key string, ttl time.Duration) error
+	GetExpiration(key string) (time.Duration, error)
 
 	// 清理过期数据
-	CleanupExpired(ctx context.Context) error
+	CleanupExpired() error
 
 	// 关闭存储
 	Close() error
@@ -85,7 +85,7 @@ func (m *MemoryStorage) onClose() {
 }
 
 // Set 设置键值对
-func (m *MemoryStorage) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+func (m *MemoryStorage) Set(key string, value interface{}, ttl time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -98,7 +98,7 @@ func (m *MemoryStorage) Set(ctx context.Context, key string, value interface{}, 
 }
 
 // Get 获取值
-func (m *MemoryStorage) Get(ctx context.Context, key string) (interface{}, error) {
+func (m *MemoryStorage) Get(key string) (interface{}, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -116,7 +116,7 @@ func (m *MemoryStorage) Get(ctx context.Context, key string) (interface{}, error
 }
 
 // Delete 删除键
-func (m *MemoryStorage) Delete(ctx context.Context, key string) error {
+func (m *MemoryStorage) Delete(key string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -125,7 +125,7 @@ func (m *MemoryStorage) Delete(ctx context.Context, key string) error {
 }
 
 // Exists 检查键是否存在
-func (m *MemoryStorage) Exists(ctx context.Context, key string) (bool, error) {
+func (m *MemoryStorage) Exists(key string) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -143,13 +143,13 @@ func (m *MemoryStorage) Exists(ctx context.Context, key string) (bool, error) {
 }
 
 // SetList 设置列表
-func (m *MemoryStorage) SetList(ctx context.Context, key string, values []interface{}, ttl time.Duration) error {
-	return m.Set(ctx, key, values, ttl)
+func (m *MemoryStorage) SetList(key string, values []interface{}, ttl time.Duration) error {
+	return m.Set(key, values, ttl)
 }
 
 // GetList 获取列表
-func (m *MemoryStorage) GetList(ctx context.Context, key string) ([]interface{}, error) {
-	value, err := m.Get(ctx, key)
+func (m *MemoryStorage) GetList(key string) ([]interface{}, error) {
+	value, err := m.Get(key)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func (m *MemoryStorage) GetList(ctx context.Context, key string) ([]interface{},
 }
 
 // AppendToList 追加到列表
-func (m *MemoryStorage) AppendToList(ctx context.Context, key string, value interface{}) error {
+func (m *MemoryStorage) AppendToList(key string, value interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -192,7 +192,7 @@ func (m *MemoryStorage) AppendToList(ctx context.Context, key string, value inte
 }
 
 // RemoveFromList 从列表中移除
-func (m *MemoryStorage) RemoveFromList(ctx context.Context, key string, value interface{}) error {
+func (m *MemoryStorage) RemoveFromList(key string, value interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -221,7 +221,7 @@ func (m *MemoryStorage) RemoveFromList(ctx context.Context, key string, value in
 }
 
 // SetHash 设置哈希字段
-func (m *MemoryStorage) SetHash(ctx context.Context, key string, field string, value interface{}) error {
+func (m *MemoryStorage) SetHash(key string, field string, value interface{}) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -248,7 +248,7 @@ func (m *MemoryStorage) SetHash(ctx context.Context, key string, field string, v
 }
 
 // GetHash 获取哈希字段
-func (m *MemoryStorage) GetHash(ctx context.Context, key string, field string) (interface{}, error) {
+func (m *MemoryStorage) GetHash(key string, field string) (interface{}, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -273,7 +273,7 @@ func (m *MemoryStorage) GetHash(ctx context.Context, key string, field string) (
 }
 
 // GetAllHash 获取所有哈希字段
-func (m *MemoryStorage) GetAllHash(ctx context.Context, key string) (map[string]interface{}, error) {
+func (m *MemoryStorage) GetAllHash(key string) (map[string]interface{}, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -299,7 +299,7 @@ func (m *MemoryStorage) GetAllHash(ctx context.Context, key string) (map[string]
 }
 
 // DeleteHash 删除哈希字段
-func (m *MemoryStorage) DeleteHash(ctx context.Context, key string, field string) error {
+func (m *MemoryStorage) DeleteHash(key string, field string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -322,12 +322,12 @@ func (m *MemoryStorage) DeleteHash(ctx context.Context, key string, field string
 }
 
 // Incr 递增计数器
-func (m *MemoryStorage) Incr(ctx context.Context, key string) (int64, error) {
-	return m.IncrBy(ctx, key, 1)
+func (m *MemoryStorage) Incr(key string) (int64, error) {
+	return m.IncrBy(key, 1)
 }
 
 // IncrBy 按指定值递增
-func (m *MemoryStorage) IncrBy(ctx context.Context, key string, value int64) (int64, error) {
+func (m *MemoryStorage) IncrBy(key string, value int64) (int64, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -355,7 +355,7 @@ func (m *MemoryStorage) IncrBy(ctx context.Context, key string, value int64) (in
 }
 
 // SetExpiration 设置过期时间
-func (m *MemoryStorage) SetExpiration(ctx context.Context, key string, ttl time.Duration) error {
+func (m *MemoryStorage) SetExpiration(key string, ttl time.Duration) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -369,7 +369,7 @@ func (m *MemoryStorage) SetExpiration(ctx context.Context, key string, ttl time.
 }
 
 // GetExpiration 获取过期时间
-func (m *MemoryStorage) GetExpiration(ctx context.Context, key string) (time.Duration, error) {
+func (m *MemoryStorage) GetExpiration(key string) (time.Duration, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -387,7 +387,7 @@ func (m *MemoryStorage) GetExpiration(ctx context.Context, key string) (time.Dur
 }
 
 // CleanupExpired 清理过期数据
-func (m *MemoryStorage) CleanupExpired(ctx context.Context) error {
+func (m *MemoryStorage) CleanupExpired() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -417,8 +417,7 @@ func (m *MemoryStorage) StartCleanup(interval time.Duration) {
 		for {
 			select {
 			case <-m.cleanupTicker.C:
-				ctx := context.Background()
-				if err := m.CleanupExpired(ctx); err != nil {
+				if err := m.CleanupExpired(); err != nil {
 					// 记录错误但不中断清理
 					// 这里可以添加日志记录
 				}

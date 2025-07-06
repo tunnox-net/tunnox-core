@@ -64,7 +64,7 @@ func (cm *ConfigManager) UpdateConfig(ctx context.Context, newConfig *CloudContr
 	}
 
 	key := fmt.Sprintf("%s:config", KeyPrefixConfig)
-	if err := cm.storage.Set(ctx, key, string(data), 0); err != nil {
+	if err := cm.storage.Set(key, string(data), 0); err != nil {
 		return fmt.Errorf("save config failed: %w", err)
 	}
 
@@ -82,7 +82,7 @@ func (cm *ConfigManager) UpdateConfig(ctx context.Context, newConfig *CloudContr
 // LoadConfig 从存储加载配置
 func (cm *ConfigManager) LoadConfig(ctx context.Context) error {
 	key := fmt.Sprintf("%s:config", KeyPrefixConfig)
-	data, err := cm.storage.Get(ctx, key)
+	data, err := cm.storage.Get(key)
 	if err != nil {
 		// 配置不存在，使用默认配置
 		return nil

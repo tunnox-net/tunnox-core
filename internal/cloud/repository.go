@@ -47,7 +47,7 @@ func (r *UserRepository) SaveUser(ctx context.Context, user *User) error {
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixUser, user.ID)
-	return r.storage.Set(ctx, key, string(data), DefaultUserDataTTL)
+	return r.storage.Set(key, string(data), DefaultUserDataTTL)
 }
 
 // CreateUser 创建新用户（仅创建，不允许覆盖）
@@ -75,7 +75,7 @@ func (r *UserRepository) UpdateUser(ctx context.Context, user *User) error {
 // GetUser 获取用户
 func (r *UserRepository) GetUser(ctx context.Context, userID string) (*User, error) {
 	key := fmt.Sprintf("%s:%s", KeyPrefixUser, userID)
-	data, err := r.storage.Get(ctx, key)
+	data, err := r.storage.Get(key)
 	if err != nil {
 		return nil, err
 	}
@@ -96,13 +96,13 @@ func (r *UserRepository) GetUser(ctx context.Context, userID string) (*User, err
 // DeleteUser 删除用户
 func (r *UserRepository) DeleteUser(ctx context.Context, userID string) error {
 	key := fmt.Sprintf("%s:%s", KeyPrefixUser, userID)
-	return r.storage.Delete(ctx, key)
+	return r.storage.Delete(key)
 }
 
 // ListUsers 列出用户
 func (r *UserRepository) ListUsers(ctx context.Context, userType UserType) ([]*User, error) {
 	key := KeyPrefixUserList
-	data, err := r.storage.GetList(ctx, key)
+	data, err := r.storage.GetList(key)
 	if err != nil {
 		return []*User{}, nil
 	}
@@ -131,7 +131,7 @@ func (r *UserRepository) AddUserToList(ctx context.Context, user *User) error {
 	}
 
 	key := KeyPrefixUserList
-	return r.storage.AppendToList(ctx, key, string(data))
+	return r.storage.AppendToList(key, string(data))
 }
 
 // ClientRepository 客户端数据访问
@@ -151,16 +151,16 @@ func (r *ClientRepository) SaveClient(ctx context.Context, client *Client) error
 		return fmt.Errorf("marshal client failed: %w", err)
 	}
 
-	key := fmt.Sprintf("%s:%s", KeyPrefixClient, client.ID)
-	return r.storage.Set(ctx, key, string(data), DefaultClientDataTTL)
+	key := fmt.Sprintf("%s:%d", KeyPrefixClient, client.ID)
+	return r.storage.Set(key, string(data), DefaultClientDataTTL)
 }
 
 // CreateClient 创建新客户端（仅创建，不允许覆盖）
 func (r *ClientRepository) CreateClient(ctx context.Context, client *Client) error {
 	// 检查客户端是否已存在
-	existingClient, err := r.GetClient(ctx, client.ID)
+	existingClient, err := r.GetClient(ctx, fmt.Sprintf("%d", client.ID))
 	if err == nil && existingClient != nil {
-		return fmt.Errorf("client with ID %s already exists", client.ID)
+		return fmt.Errorf("client with ID %d already exists", client.ID)
 	}
 
 	return r.SaveClient(ctx, client)
@@ -169,9 +169,9 @@ func (r *ClientRepository) CreateClient(ctx context.Context, client *Client) err
 // UpdateClient 更新客户端（仅更新，不允许创建）
 func (r *ClientRepository) UpdateClient(ctx context.Context, client *Client) error {
 	// 检查客户端是否存在
-	existingClient, err := r.GetClient(ctx, client.ID)
+	existingClient, err := r.GetClient(ctx, fmt.Sprintf("%d", client.ID))
 	if err != nil || existingClient == nil {
-		return fmt.Errorf("client with ID %s does not exist", client.ID)
+		return fmt.Errorf("client with ID %d does not exist", client.ID)
 	}
 
 	return r.SaveClient(ctx, client)
@@ -180,7 +180,7 @@ func (r *ClientRepository) UpdateClient(ctx context.Context, client *Client) err
 // GetClient 获取客户端
 func (r *ClientRepository) GetClient(ctx context.Context, clientID string) (*Client, error) {
 	key := fmt.Sprintf("%s:%s", KeyPrefixClient, clientID)
-	data, err := r.storage.Get(ctx, key)
+	data, err := r.storage.Get(key)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +201,7 @@ func (r *ClientRepository) GetClient(ctx context.Context, clientID string) (*Cli
 // DeleteClient 删除客户端
 func (r *ClientRepository) DeleteClient(ctx context.Context, clientID string) error {
 	key := fmt.Sprintf("%s:%s", KeyPrefixClient, clientID)
-	return r.storage.Delete(ctx, key)
+	return r.storage.Delete(key)
 }
 
 // UpdateClientStatus 更新客户端状态
@@ -223,7 +223,7 @@ func (r *ClientRepository) UpdateClientStatus(ctx context.Context, clientID stri
 // ListUserClients 列出用户的客户端
 func (r *ClientRepository) ListUserClients(ctx context.Context, userID string) ([]*Client, error) {
 	key := fmt.Sprintf("%s:%s", KeyPrefixUserClients, userID)
-	data, err := r.storage.GetList(ctx, key)
+	data, err := r.storage.GetList(key)
 	if err != nil {
 		return []*Client{}, nil
 	}
@@ -242,15 +242,63 @@ func (r *ClientRepository) ListUserClients(ctx context.Context, userID string) (
 	return clients, nil
 }
 
-// AddClientToUser 添加客户端到用户
+// AddClientToUser 将客户端添加到用户
 func (r *ClientRepository) AddClientToUser(ctx context.Context, userID string, client *Client) error {
-	data, err := json.Marshal(client)
+	// 获取用户的客户端列表
+	clients, err := r.ListUserClients(ctx, userID)
 	if err != nil {
 		return err
 	}
 
+	// 检查客户端是否已存在
+	for _, existingClient := range clients {
+		if existingClient.ID == client.ID {
+			return nil // 客户端已存在，无需重复添加
+		}
+	}
+
+	// 添加客户端到列表
+	clients = append(clients, client)
+
+	// 保存更新后的列表
+	return r.saveUserClients(ctx, userID, clients)
+}
+
+// RemoveClientFromUser 从用户移除客户端
+func (r *ClientRepository) RemoveClientFromUser(ctx context.Context, userID string, client *Client) error {
+	// 获取用户的客户端列表
+	clients, err := r.ListUserClients(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// 移除指定的客户端
+	var filteredClients []*Client
+	for _, existingClient := range clients {
+		if existingClient.ID != client.ID {
+			filteredClients = append(filteredClients, existingClient)
+		}
+	}
+
+	// 保存更新后的列表
+	return r.saveUserClients(ctx, userID, filteredClients)
+}
+
+// saveUserClients 保存用户的客户端列表
+func (r *ClientRepository) saveUserClients(ctx context.Context, userID string, clients []*Client) error {
 	key := fmt.Sprintf("%s:%s", KeyPrefixUserClients, userID)
-	return r.storage.AppendToList(ctx, key, string(data))
+
+	// 将客户端列表序列化为接口数组
+	var clientInterfaces []interface{}
+	for _, client := range clients {
+		data, err := json.Marshal(client)
+		if err != nil {
+			return fmt.Errorf("marshal client failed: %w", err)
+		}
+		clientInterfaces = append(clientInterfaces, string(data))
+	}
+
+	return r.storage.SetList(key, clientInterfaces, DefaultClientDataTTL)
 }
 
 // PortMappingRepository 端口映射数据访问
@@ -271,7 +319,7 @@ func (r *PortMappingRepository) SavePortMapping(ctx context.Context, mapping *Po
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixPortMapping, mapping.ID)
-	return r.storage.Set(ctx, key, string(data), DefaultMappingDataTTL)
+	return r.storage.Set(key, string(data), DefaultMappingDataTTL)
 }
 
 // CreatePortMapping 创建新端口映射（仅创建，不允许覆盖）
@@ -299,7 +347,7 @@ func (r *PortMappingRepository) UpdatePortMapping(ctx context.Context, mapping *
 // GetPortMapping 获取端口映射
 func (r *PortMappingRepository) GetPortMapping(ctx context.Context, mappingID string) (*PortMapping, error) {
 	key := fmt.Sprintf("%s:%s", KeyPrefixPortMapping, mappingID)
-	data, err := r.storage.Get(ctx, key)
+	data, err := r.storage.Get(key)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +368,7 @@ func (r *PortMappingRepository) GetPortMapping(ctx context.Context, mappingID st
 // DeletePortMapping 删除端口映射
 func (r *PortMappingRepository) DeletePortMapping(ctx context.Context, mappingID string) error {
 	key := fmt.Sprintf("%s:%s", KeyPrefixPortMapping, mappingID)
-	return r.storage.Delete(ctx, key)
+	return r.storage.Delete(key)
 }
 
 // UpdatePortMappingStatus 更新端口映射状态
@@ -354,7 +402,7 @@ func (r *PortMappingRepository) UpdatePortMappingStats(ctx context.Context, mapp
 // ListUserMappings 列出用户的端口映射
 func (r *PortMappingRepository) ListUserMappings(ctx context.Context, userID string) ([]*PortMapping, error) {
 	key := fmt.Sprintf("%s:%s", KeyPrefixUserMappings, userID)
-	data, err := r.storage.GetList(ctx, key)
+	data, err := r.storage.GetList(key)
 	if err != nil {
 		return []*PortMapping{}, nil
 	}
@@ -376,7 +424,7 @@ func (r *PortMappingRepository) ListUserMappings(ctx context.Context, userID str
 // ListClientMappings 列出客户端的端口映射
 func (r *PortMappingRepository) ListClientMappings(ctx context.Context, clientID string) ([]*PortMapping, error) {
 	key := fmt.Sprintf("%s:%s", KeyPrefixClientMappings, clientID)
-	data, err := r.storage.GetList(ctx, key)
+	data, err := r.storage.GetList(key)
 	if err != nil {
 		return []*PortMapping{}, nil
 	}
@@ -403,7 +451,7 @@ func (r *PortMappingRepository) AddMappingToUser(ctx context.Context, userID str
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixUserMappings, userID)
-	return r.storage.AppendToList(ctx, key, string(data))
+	return r.storage.AppendToList(key, string(data))
 }
 
 // AddMappingToClient 添加映射到客户端
@@ -414,7 +462,7 @@ func (r *PortMappingRepository) AddMappingToClient(ctx context.Context, clientID
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixClientMappings, clientID)
-	return r.storage.AppendToList(ctx, key, string(data))
+	return r.storage.AppendToList(key, string(data))
 }
 
 // NodeRepository 节点数据访问
@@ -435,7 +483,7 @@ func (r *NodeRepository) SaveNode(ctx context.Context, node *Node) error {
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixNode, node.ID)
-	return r.storage.Set(ctx, key, string(data), DefaultNodeDataTTL)
+	return r.storage.Set(key, string(data), DefaultNodeDataTTL)
 }
 
 // CreateNode 创建新节点（仅创建，不允许覆盖）
@@ -463,7 +511,7 @@ func (r *NodeRepository) UpdateNode(ctx context.Context, node *Node) error {
 // GetNode 获取节点
 func (r *NodeRepository) GetNode(ctx context.Context, nodeID string) (*Node, error) {
 	key := fmt.Sprintf("%s:%s", KeyPrefixNode, nodeID)
-	data, err := r.storage.Get(ctx, key)
+	data, err := r.storage.Get(key)
 	if err != nil {
 		return nil, err
 	}
@@ -484,13 +532,13 @@ func (r *NodeRepository) GetNode(ctx context.Context, nodeID string) (*Node, err
 // DeleteNode 删除节点
 func (r *NodeRepository) DeleteNode(ctx context.Context, nodeID string) error {
 	key := fmt.Sprintf("%s:%s", KeyPrefixNode, nodeID)
-	return r.storage.Delete(ctx, key)
+	return r.storage.Delete(key)
 }
 
 // ListNodes 列出所有节点
 func (r *NodeRepository) ListNodes(ctx context.Context) ([]*Node, error) {
 	key := KeyPrefixNodeList
-	data, err := r.storage.GetList(ctx, key)
+	data, err := r.storage.GetList(key)
 	if err != nil {
 		return []*Node{}, nil
 	}
@@ -517,7 +565,7 @@ func (r *NodeRepository) AddNodeToList(ctx context.Context, node *Node) error {
 	}
 
 	key := KeyPrefixNodeList
-	return r.storage.AppendToList(ctx, key, string(data))
+	return r.storage.AppendToList(key, string(data))
 }
 
 // ConnectionRepository 连接数据访问
@@ -547,7 +595,7 @@ func (r *ConnectionRepository) SaveConnection(ctx context.Context, connInfo *Con
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixConnection, connInfo.ConnId)
-	return r.storage.Set(ctx, key, string(data), DefaultConnectionTTL)
+	return r.storage.Set(key, string(data), DefaultConnectionTTL)
 }
 
 // CreateConnection 创建新连接（仅创建，不允许覆盖）
@@ -575,7 +623,7 @@ func (r *ConnectionRepository) UpdateConnection(ctx context.Context, connInfo *C
 // GetConnection 获取连接信息
 func (r *ConnectionRepository) GetConnection(ctx context.Context, connID string) (*ConnectionInfo, error) {
 	key := fmt.Sprintf("%s:%s", KeyPrefixConnection, connID)
-	data, err := r.storage.Get(ctx, key)
+	data, err := r.storage.Get(key)
 	if err != nil {
 		return nil, err
 	}
@@ -596,13 +644,13 @@ func (r *ConnectionRepository) GetConnection(ctx context.Context, connID string)
 // DeleteConnection 删除连接
 func (r *ConnectionRepository) DeleteConnection(ctx context.Context, connID string) error {
 	key := fmt.Sprintf("%s:%s", KeyPrefixConnection, connID)
-	return r.storage.Delete(ctx, key)
+	return r.storage.Delete(key)
 }
 
 // ListMappingConnections 列出映射的连接
 func (r *ConnectionRepository) ListMappingConnections(ctx context.Context, mappingID string) ([]*ConnectionInfo, error) {
 	key := fmt.Sprintf("%s:%s", KeyPrefixMappingConnections, mappingID)
-	data, err := r.storage.GetList(ctx, key)
+	data, err := r.storage.GetList(key)
 	if err != nil {
 		return []*ConnectionInfo{}, nil
 	}
@@ -624,7 +672,7 @@ func (r *ConnectionRepository) ListMappingConnections(ctx context.Context, mappi
 // ListClientConnections 列出客户端的连接
 func (r *ConnectionRepository) ListClientConnections(ctx context.Context, clientID string) ([]*ConnectionInfo, error) {
 	key := fmt.Sprintf("%s:%s", KeyPrefixClientConnections, clientID)
-	data, err := r.storage.GetList(ctx, key)
+	data, err := r.storage.GetList(key)
 	if err != nil {
 		return []*ConnectionInfo{}, nil
 	}
@@ -651,7 +699,7 @@ func (r *ConnectionRepository) AddConnectionToMapping(ctx context.Context, mappi
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixMappingConnections, mappingID)
-	return r.storage.AppendToList(ctx, key, string(data))
+	return r.storage.AppendToList(key, string(data))
 }
 
 // AddConnectionToClient 添加连接到客户端列表
@@ -662,7 +710,7 @@ func (r *ConnectionRepository) AddConnectionToClient(ctx context.Context, client
 	}
 
 	key := fmt.Sprintf("%s:%s", KeyPrefixClientConnections, clientID)
-	return r.storage.AppendToList(ctx, key, string(data))
+	return r.storage.AppendToList(key, string(data))
 }
 
 // UpdateConnectionStats 更新连接统计
@@ -693,5 +741,5 @@ func (r *ClientRepository) TouchClient(ctx context.Context, clientID string) err
 		return err
 	}
 	key := fmt.Sprintf("%s:%s", KeyPrefixClient, clientID)
-	return r.storage.SetExpiration(ctx, key, DefaultClientDataTTL)
+	return r.storage.SetExpiration(key, DefaultClientDataTTL)
 }

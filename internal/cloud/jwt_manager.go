@@ -60,13 +60,13 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *Client) (*JW
 
 	// 创建访问Token声明
 	accessClaims := &JWTClaims{
-		ClientID:   client.ID,
+		ClientID:   fmt.Sprintf("%d", client.ID),
 		UserID:     client.UserID,
 		ClientType: string(client.Type),
 		NodeID:     client.NodeID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    m.config.JWTIssuer,
-			Subject:   client.ID,
+			Subject:   fmt.Sprintf("%d", client.ID),
 			Audience:  []string{"tunnox-client"},
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.config.JWTExpiration)),
 			NotBefore: jwt.NewNumericDate(now),
@@ -77,11 +77,11 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *Client) (*JW
 
 	// 创建刷新Token声明
 	refreshClaims := &RefreshTokenClaims{
-		ClientID: client.ID,
+		ClientID: fmt.Sprintf("%d", client.ID),
 		TokenID:  tokenID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    m.config.JWTIssuer,
-			Subject:   client.ID,
+			Subject:   fmt.Sprintf("%d", client.ID),
 			Audience:  []string{"tunnox-refresh"},
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.config.RefreshExpiration)),
 			NotBefore: jwt.NewNumericDate(now),
@@ -106,7 +106,7 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *Client) (*JW
 
 	// 存储Token信息到缓存
 	tokenInfo := &TokenInfo{
-		ClientID:   client.ID,
+		ClientID:   fmt.Sprintf("%d", client.ID),
 		UserID:     client.UserID,
 		ClientType: string(client.Type),
 		NodeID:     client.NodeID,
@@ -115,7 +115,7 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *Client) (*JW
 	}
 
 	refreshTokenInfo := &RefreshTokenInfo{
-		ClientID:  client.ID,
+		ClientID:  fmt.Sprintf("%d", client.ID),
 		TokenID:   tokenID,
 		ExpiresAt: now.Add(m.config.RefreshExpiration),
 	}
@@ -311,7 +311,7 @@ func (m *JWTManager) RefreshAccessToken(ctx context.Context, refreshTokenString 
 	}
 
 	// 校验ClientID是否匹配
-	if refreshClaims.ClientID != client.ID {
+	if refreshClaims.ClientID != fmt.Sprintf("%d", client.ID) {
 		return nil, fmt.Errorf("client ID mismatch")
 	}
 

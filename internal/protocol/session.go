@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"fmt"
 	"io"
 	"sync"
 	"tunnox-core/internal/cloud"
@@ -187,12 +188,12 @@ func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer)
 		req := &cloud.AuthRequest{
 			// 填充必要的鉴权信息，如 ClientID、AuthCode、SecretKey、NodeID、Version、IPAddress、Type
 		}
-		resp, err := s.cloudApi.Authenticate(s.Ctx(), req)
+		resp, err := s.cloudApi.Authenticate(req)
 		if err != nil || resp == nil || resp.Client == nil {
 			utils.Error("Cloud authentication failed for new connection:", err)
 			return
 		}
-		connId = resp.Client.ID
+		connId = fmt.Sprintf("%d", resp.Client.ID)
 	} else {
 		utils.Warn("cloudApi is nil, cannot get connId from cloud, using fallback id")
 		connId = "unknown"
