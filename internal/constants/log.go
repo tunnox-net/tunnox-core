@@ -10,71 +10,19 @@ const (
 	LogLevelPanic = "panic"
 )
 
-// 日志消息常量
-const (
-	// 服务相关
-	LogMsgServerStarting     = "Server starting on %s"
-	LogMsgServerStarted      = "Server started successfully"
-	LogMsgServerShuttingDown = "Server shutting down"
-	LogMsgServerShutdown     = "Server shutdown completed"
-
-	// HTTP相关
-	LogMsgHTTPRequestReceived  = "HTTP request received: %s %s"
-	LogMsgHTTPRequestCompleted = "HTTP request completed: %s %s - %d"
-	LogMsgHTTPRequestFailed    = "HTTP request failed: %s %s - %v"
-
-	// 云控相关
-	LogMsgCloudControlInitialized = "Cloud control initialized"
-	LogMsgNodeRegistered          = "Node registered: %s"
-	LogMsgNodeUnregistered        = "Node unregistered: %s"
-	LogMsgClientAuthenticated     = "Client authenticated: %s"
-	LogMsgUserCreated             = "User created: %s"
-	LogMsgClientCreated           = "Client created: %s"
-	LogMsgMappingCreated          = "Port mapping created: %s"
-
-	// 错误相关
-	LogMsgErrorInternalServer   = "Internal server error: %v"
-	LogMsgErrorInvalidRequest   = "Invalid request: %v"
-	LogMsgErrorNotFound         = "Resource not found: %s"
-	LogMsgErrorUnauthorized     = "Unauthorized access: %s"
-	LogMsgErrorForbidden        = "Forbidden access: %s"
-	LogMsgErrorValidationFailed = "Validation failed: %v"
-
-	// 数据库/存储相关
-	LogMsgStorageOperationFailed = "Storage operation failed: %v"
-	LogMsgDatabaseConnectionLost = "Database connection lost"
-	LogMsgDatabaseReconnected    = "Database reconnected"
-
-	// 配置相关
-	LogMsgConfigLoaded   = "Configuration loaded successfully"
-	LogMsgConfigInvalid  = "Invalid configuration: %v"
-	LogMsgConfigReloaded = "Configuration reloaded"
-
-	// 性能相关
-	LogMsgPerformanceSlow     = "Slow operation detected: %s took %v"
-	LogMsgPerformanceHighLoad = "High load detected: %d concurrent requests"
-	LogMsgMemoryUsage         = "Memory usage: %d MB"
-	LogMsgGoroutineCount      = "Goroutine count: %d"
-)
-
 // 日志字段名常量
 const (
-	LogFieldRequestID    = "request_id"
-	LogFieldUserID       = "user_id"
-	LogFieldClientID     = "client_id"
-	LogFieldNodeID       = "node_id"
-	LogFieldMappingID    = "mapping_id"
-	LogFieldIPAddress    = "ip_address"
-	LogFieldUserAgent    = "user_agent"
-	LogFieldStatusCode   = "status_code"
-	LogFieldResponseTime = "response_time"
-	LogFieldError        = "error"
-	LogFieldOperation    = "operation"
-	LogFieldDuration     = "duration"
-	LogFieldSize         = "size"
-	LogFieldMethod       = "method"
-	LogFieldPath         = "path"
-	LogFieldVersion      = "version"
+	LogFieldUserID    = "user_id"
+	LogFieldClientID  = "client_id"
+	LogFieldNodeID    = "node_id"
+	LogFieldMappingID = "mapping_id"
+	LogFieldIPAddress = "ip_address"
+	LogFieldUserAgent = "user_agent"
+	LogFieldError     = "error"
+	LogFieldDuration  = "duration"
+	LogFieldSize      = "size"
+	LogFieldMethod    = "method"
+	LogFieldPath      = "path"
 )
 
 // 日志格式常量
@@ -88,4 +36,31 @@ const (
 	LogOutputStdout = "stdout"
 	LogOutputStderr = "stderr"
 	LogOutputFile   = "file"
+)
+
+// 通用提示信息常量
+const (
+	MsgNoProtocolsEnabled             = "No protocols enabled in configuration"
+	MsgFailedToUpgradeConnection      = "Failed to upgrade connection: %v"
+	MsgWebSocketConnectionEstablished = "WebSocket connection established from %s"
+	MsgWebSocketHandlerExited         = "WebSocket handler goroutine exited for %s (context done)"
+	MsgWebSocketDefaultHandlerExited  = "WebSocket default handler goroutine exited for %s (context done)"
+	MsgAdapterConfigured              = "%s adapter configured on %s"
+	MsgRegisteredAdapters             = "Successfully registered %d protocol adapters: %v"
+	MsgStartingServer                 = "Starting tunnox-core server..."
+	MsgAllAdaptersStarted             = "All protocol adapters started successfully"
+	MsgServerStarted                  = "Tunnox-core server started successfully"
+	MsgShuttingDownServer             = "Shutting down tunnox-core server..."
+	MsgAllProtocolManagerClosed       = "All protocol manager is closed"
+	MsgClosingCloudControl            = "Closing cloud control..."
+	MsgCloudControlClosed             = "Cloud control closed successfully"
+	MsgServerShutdownCompleted        = "Tunnox-core server shutdown completed"
+	MsgReceivedShutdownSignal         = "Received shutdown signal"
+	MsgCleaningUpServerResources      = "Cleaning up server resources..."
+	MsgServerShutdownMainExited       = "Server shutdown completed, main goroutine exiting"
+	MsgConfigFileNotFound             = "Config file %s not found, using default configuration"
+	MsgConfigLoadedFrom               = "Configuration loaded from %s"
+	MsgFailedToReadConfigFile         = "failed to read config file %s: %v"
+	MsgFailedToParseConfigFile        = "failed to parse config file %s: %v"
+	MsgInvalidConfiguration           = "invalid configuration: %v"
 )

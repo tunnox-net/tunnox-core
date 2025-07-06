@@ -103,25 +103,7 @@ const (
 	ErrMsgConfigUpdateFailed    = "configuration update failed"
 )
 
-// 成功消息常量
-const (
-	SuccessMsgNodeRegistered         = "node registered successfully"
-	SuccessMsgNodeUnregistered       = "node unregistered successfully"
-	SuccessMsgHeartbeatReceived      = "heartbeat received"
-	SuccessMsgAuthentication         = "authentication successful"
-	SuccessMsgTokenValid             = "token is valid"
-	SuccessMsgUserCreated            = "user created successfully"
-	SuccessMsgUserUpdated            = "user updated successfully"
-	SuccessMsgUserDeleted            = "user deleted successfully"
-	SuccessMsgClientCreated          = "client created successfully"
-	SuccessMsgClientUpdated          = "client updated successfully"
-	SuccessMsgClientDeleted          = "client deleted successfully"
-	SuccessMsgMappingCreated         = "port mapping created successfully"
-	SuccessMsgMappingUpdated         = "port mapping updated successfully"
-	SuccessMsgMappingDeleted         = "port mapping deleted successfully"
-	SuccessMsgConnectionRegistered   = "connection registered successfully"
-	SuccessMsgConnectionUnregistered = "connection unregistered successfully"
-)
+// 成功消息常量（已移除未使用的SuccessMsg*常量）
 
 // 日志相关常量
 // const (
@@ -132,15 +114,4 @@ const (
 // 	LogLevelFatal   = "fatal"
 // )
 
-// 操作类型常量
-const (
-	OperationCreate  = "create"
-	OperationRead    = "read"
-	OperationUpdate  = "update"
-	OperationDelete  = "delete"
-	OperationList    = "list"
-	OperationAuth    = "authenticate"
-	OperationLock    = "lock"
-	OperationUnlock  = "unlock"
-	OperationCleanup = "cleanup"
-)
+// 操作类型常量（已移除未使用的Operation*常量）

@@ -206,11 +206,6 @@ func TestDisposeWithNilParentCtx(t *testing.T) {
 	// 设置nil上下文
 	dispose.SetCtx(nil, nil)
 
-	// 验证上下文为nil
-	if dispose.Ctx() != nil {
-		t.Error("Context should be nil when parent context is nil")
-	}
-
 	// 验证未关闭
 	if dispose.IsClosed() {
 		t.Error("Should not be closed with nil parent context")

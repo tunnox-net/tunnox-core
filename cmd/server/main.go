@@ -121,7 +121,7 @@ func (s *Server) setupProtocolAdapters() error {
 	// 获取启用的协议配置
 	enabledProtocols := s.getEnabledProtocols()
 	if len(enabledProtocols) == 0 {
-		utils.Warn("No protocols enabled in configuration")
+		utils.Warn(constants.MsgNoProtocolsEnabled)
 		return nil
 	}
 
@@ -143,10 +143,10 @@ func (s *Server) setupProtocolAdapters() error {
 		s.protocolMgr.Register(adapter)
 		registeredProtocols = append(registeredProtocols, protocolName)
 
-		utils.Infof("%s adapter configured on %s", capitalize(protocolName), addr)
+		utils.Infof(constants.MsgAdapterConfigured, capitalize(protocolName), addr)
 	}
 
-	utils.Infof("Successfully registered %d protocol adapters: %v", len(registeredProtocols), registeredProtocols)
+	utils.Infof(constants.MsgRegisteredAdapters, len(registeredProtocols), registeredProtocols)
 	return nil
 }
 
@@ -172,13 +172,18 @@ func (s *Server) onClose() {
 
 	// 关闭云控制器
 	if s.cloudControl != nil {
-		_ = s.cloudControl.Close()
+		utils.Info(constants.MsgClosingCloudControl)
+		if err := s.cloudControl.Close(); err != nil {
+			utils.Errorf(constants.MsgCloudControlClosed, err)
+		} else {
+			utils.Info(constants.MsgCloudControlClosed)
+		}
 	}
 }
 
 // Start 启动服务器
 func (s *Server) Start() error {
-	utils.Info("Starting tunnox-core server...")
+	utils.Info(constants.MsgStartingServer)
 
 	// 设置协议适配器
 	if err := s.setupProtocolAdapters(); err != nil {
@@ -191,37 +196,37 @@ func (s *Server) Start() error {
 		if err := s.protocolMgr.StartAll(); err != nil {
 			return fmt.Errorf("failed to start protocol adapters: %v", err)
 		}
-		utils.Info("All protocol adapters started successfully")
+		utils.Info(constants.MsgAllAdaptersStarted)
 	} else {
 		utils.Warn("Protocol manager is nil")
 	}
 
-	utils.Info("Tunnox-core server started successfully")
+	utils.Info(constants.MsgServerStarted)
 	return nil
 }
 
 // Stop 停止服务器
 func (s *Server) Stop() error {
-	utils.Info("Shutting down tunnox-core server...")
+	utils.Info(constants.MsgShuttingDownServer)
 
 	// 关闭协议适配器
 	if s.protocolMgr != nil {
 		s.protocolMgr.CloseAll()
-		utils.Info("All protocol manager is closed")
+		utils.Info(constants.MsgAllProtocolManagerClosed)
 	}
 
 	// 关闭云控制器
 	if s.cloudControl != nil {
-		utils.Info("Closing cloud control...")
+		utils.Info(constants.MsgClosingCloudControl)
 		if err := s.cloudControl.Close(); err != nil {
-			utils.Errorf("Failed to close cloud control: %v", err)
+			utils.Errorf(constants.MsgCloudControlClosed, err)
 		} else {
-			utils.Info("Cloud control closed successfully")
+			utils.Info(constants.MsgCloudControlClosed)
 		}
 	}
 
 	s.Ctx().Done()
-	utils.Info("Tunnox-core server shutdown completed")
+	utils.Info(constants.MsgServerShutdownCompleted)
 	return nil
 }
 
@@ -234,7 +239,7 @@ func (s *Server) WaitForShutdown() {
 	// 等待信号
 	<-quit
 
-	utils.Info("Received shutdown signal")
+	utils.Info(constants.MsgReceivedShutdownSignal)
 
 	// 停止服务器
 	if err := s.Stop(); err != nil {
@@ -243,38 +248,38 @@ func (s *Server) WaitForShutdown() {
 	}
 
 	// 确保所有资源都被清理
-	utils.Info("Cleaning up server resources...")
+	utils.Info(constants.MsgCleaningUpServerResources)
 	s.Dispose.Close()
 
-	utils.Info("Server shutdown completed, main goroutine exiting")
+	utils.Info(constants.MsgServerShutdownMainExited)
 }
 
 // loadConfig 加载配置文件
 func loadConfig(configPath string) (*AppConfig, error) {
 	// 如果配置文件不存在，使用默认配置
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		utils.Warnf("Config file %s not found, using default configuration", configPath)
+		utils.Warnf(constants.MsgConfigFileNotFound, configPath)
 		return getDefaultConfig(), nil
 	}
 
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file %s: %v", configPath, err)
+		return nil, fmt.Errorf(constants.MsgFailedToReadConfigFile, configPath, err)
 	}
 
 	// 解析YAML
 	var config AppConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config file %s: %v", configPath, err)
+		return nil, fmt.Errorf(constants.MsgFailedToParseConfigFile, configPath, err)
 	}
 
 	// 验证配置
 	if err := validateConfig(&config); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %v", err)
+		return nil, fmt.Errorf(constants.MsgInvalidConfiguration, err)
 	}
 
-	utils.Infof("Configuration loaded from %s", configPath)
+	utils.Infof(constants.MsgConfigLoadedFrom, configPath)
 	return &config, nil
 }
 
@@ -399,16 +404,16 @@ func main() {
 
 	// 显示帮助信息
 	if *showHelp {
-		fmt.Println("Tunnox Core Server")
-		fmt.Println("Usage: server.exe [options]")
-		fmt.Println()
-		fmt.Println("Options:")
+		utils.Info("Tunnox Core Server")
+		utils.Info("Usage: server.exe [options]")
+		utils.Info()
+		utils.Info("Options:")
 		flag.PrintDefaults()
-		fmt.Println()
-		fmt.Println("Examples:")
-		fmt.Println("  server.exe                    # 使用当前目录下的 config.yaml")
-		fmt.Println("  server.exe -config ./my_config.yaml")
-		fmt.Println("  server.exe -config /path/to/config.yaml")
+		utils.Info()
+		utils.Info("Examples:")
+		utils.Info("  server.exe                    # 使用当前目录下的 config.yaml")
+		utils.Info("  server.exe -config ./my_config.yaml")
+		utils.Info("  server.exe -config /path/to/config.yaml")
 		return
 	}
 

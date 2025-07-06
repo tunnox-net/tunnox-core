@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"tunnox-core/internal/constants"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
@@ -201,7 +202,7 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 	// 升级HTTP连接为WebSocket
 	conn, err := w.upgrader.Upgrade(writer, request, nil)
 	if err != nil {
-		utils.Errorf("Failed to upgrade connection: %v", err)
+		utils.Errorf(constants.MsgFailedToUpgradeConnection, err)
 		return
 	}
 
@@ -209,7 +210,7 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 	w.conn = conn
 	w.connMutex.Unlock()
 
-	utils.Infof("WebSocket connection established from %s", conn.RemoteAddr())
+	utils.Infof(constants.MsgWebSocketConnectionEstablished, conn.RemoteAddr())
 
 	// 调用ConnectionSession.AcceptConnection处理连接
 	if w.session != nil {
@@ -217,7 +218,7 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 		go func() {
 			select {
 			case <-w.Ctx().Done():
-				utils.Infof("WebSocket handler goroutine exited for %s (context done)", conn.RemoteAddr())
+				utils.Infof(constants.MsgWebSocketHandlerExited, conn.RemoteAddr())
 				return
 			default:
 				w.session.AcceptConnection(wrapper, wrapper)
@@ -234,7 +235,7 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 		go w.keepAlive()
 		go func() {
 			<-w.Ctx().Done()
-			utils.Infof("WebSocket default handler goroutine exited for %s (context done)", conn.RemoteAddr())
+			utils.Infof(constants.MsgWebSocketDefaultHandlerExited, conn.RemoteAddr())
 			return
 		}()
 	}
