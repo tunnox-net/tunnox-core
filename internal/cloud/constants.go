@@ -4,51 +4,7 @@ import "time"
 
 // 说明：本文件为云控相关常量，通用常量请放在internal/constants/constants.go，避免重复。
 
-// 键值前缀常量，用于标准化Repository的键值命名空间
-const (
-	// 基础前缀
-	KeyPrefixTunnox = "tunnox"
-
-	// 用户相关键值前缀
-	KeyPrefixUser        = "tunnox:user"
-	KeyPrefixUserList    = "tunnox:users:list"
-	KeyPrefixUserClients = "tunnox:user_clients"
-
-	// 客户端相关键值前缀
-	KeyPrefixClient = "tunnox:client"
-
-	// 端口映射相关键值前缀
-	KeyPrefixPortMapping    = "tunnox:port_mapping"
-	KeyPrefixUserMappings   = "tunnox:user_mappings"
-	KeyPrefixClientMappings = "tunnox:client_mappings"
-
-	// 节点相关键值前缀
-	KeyPrefixNode     = "tunnox:node"
-	KeyPrefixNodeList = "tunnox:nodes:list"
-
-	// 统计相关键值前缀
-	KeyPrefixStats      = "tunnox:stats"
-	KeyPrefixTraffic    = "tunnox:traffic"
-	KeyPrefixConnection = "tunnox:connection"
-
-	// 连接管理相关键值前缀
-	KeyPrefixMappingConnections = "tunnox:mapping_connections"
-	KeyPrefixClientConnections  = "tunnox:client_connections"
-
-	// 认证相关键值前缀
-	KeyPrefixAuth  = "tunnox:auth"
-	KeyPrefixToken = "tunnox:token"
-
-	// ID管理相关键值前缀
-	KeyPrefixID = "tunnox:id"
-
-	// 配置管理相关键值前缀
-	KeyPrefixConfig = "tunnox:config"
-
-	// 清理管理相关键值前缀
-	KeyPrefixCleanup = "tunnox:cleanup"
-)
-
+// 仅保留cloud专有常量
 // 时间相关常量
 const (
 	// 清理间隔

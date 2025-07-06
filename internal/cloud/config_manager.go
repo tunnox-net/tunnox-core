@@ -6,13 +6,14 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/constants"
 	"tunnox-core/internal/utils"
 )
 
 // ConfigManager 配置管理器
 type ConfigManager struct {
 	storage  Storage
-	config   *CloudControlConfig
+	config   *ControlConfig
 	mu       sync.RWMutex
 	watchers []ConfigWatcher
 	utils.Dispose
@@ -20,11 +21,11 @@ type ConfigManager struct {
 
 // ConfigWatcher 配置变更监听器
 type ConfigWatcher interface {
-	OnConfigChanged(config *CloudControlConfig)
+	OnConfigChanged(config *ControlConfig)
 }
 
 // NewConfigManager 创建配置管理器
-func NewConfigManager(storage Storage, initialConfig *CloudControlConfig, parentCtx context.Context) *ConfigManager {
+func NewConfigManager(storage Storage, initialConfig *ControlConfig, parentCtx context.Context) *ConfigManager {
 	cm := &ConfigManager{
 		storage:  storage,
 		config:   initialConfig,
@@ -49,21 +50,21 @@ func (cm *ConfigManager) onClose() {
 }
 
 // GetConfig 获取当前配置
-func (cm *ConfigManager) GetConfig() *CloudControlConfig {
+func (cm *ConfigManager) GetConfig() *ControlConfig {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	return cm.config
 }
 
 // UpdateConfig 更新配置
-func (cm *ConfigManager) UpdateConfig(ctx context.Context, newConfig *CloudControlConfig) error {
+func (cm *ConfigManager) UpdateConfig(ctx context.Context, newConfig *ControlConfig) error {
 	// 保存配置到存储
 	data, err := json.Marshal(newConfig)
 	if err != nil {
 		return fmt.Errorf("marshal config failed: %w", err)
 	}
 
-	key := fmt.Sprintf("%s:config", KeyPrefixConfig)
+	key := fmt.Sprintf("%s:config", constants.KeyPrefixConfig)
 	if err := cm.storage.Set(key, string(data), 0); err != nil {
 		return fmt.Errorf("save config failed: %w", err)
 	}
@@ -81,7 +82,7 @@ func (cm *ConfigManager) UpdateConfig(ctx context.Context, newConfig *CloudContr
 
 // LoadConfig 从存储加载配置
 func (cm *ConfigManager) LoadConfig(ctx context.Context) error {
-	key := fmt.Sprintf("%s:config", KeyPrefixConfig)
+	key := fmt.Sprintf("%s:config", constants.KeyPrefixConfig)
 	data, err := cm.storage.Get(key)
 	if err != nil {
 		// 配置不存在，使用默认配置
@@ -93,7 +94,7 @@ func (cm *ConfigManager) LoadConfig(ctx context.Context) error {
 		return fmt.Errorf("invalid config data type")
 	}
 
-	var config CloudControlConfig
+	var config ControlConfig
 	if err := json.Unmarshal([]byte(configData), &config); err != nil {
 		return fmt.Errorf("unmarshal config failed: %w", err)
 	}
@@ -126,7 +127,7 @@ func (cm *ConfigManager) RemoveWatcher(watcher ConfigWatcher) {
 }
 
 // notifyWatchers 通知所有监听器
-func (cm *ConfigManager) notifyWatchers(config *CloudControlConfig) {
+func (cm *ConfigManager) notifyWatchers(config *ControlConfig) {
 	cm.mu.RLock()
 	watchers := make([]ConfigWatcher, len(cm.watchers))
 	copy(watchers, cm.watchers)

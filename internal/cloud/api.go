@@ -30,8 +30,8 @@ type CloudControlAPI interface {
 	DeleteClient(clientID int64) error
 	UpdateClientStatus(clientID int64, status ClientStatus, nodeID string) error
 	ListClients(userID string, clientType ClientType) ([]*Client, error)
-	GetUserClients(userID string) ([]*Client, error)              // 获取用户下的所有客户端
-	GetClientPortMappings(clientID int64) ([]*PortMapping, error) // 获取客户端下的所有端口映射
+	ListUserClients(userID string) ([]*Client, error)          // 获取用户下的所有客户端
+	ListClientMappings(clientID int64) ([]*PortMapping, error) // 获取客户端下的所有端口映射
 
 	// 端口映射管理
 	CreatePortMapping(mapping *PortMapping) (*PortMapping, error)
@@ -64,14 +64,14 @@ type CloudControlAPI interface {
 	GetConnectionStats(timeRange string) ([]*ConnectionDataPoint, error) // 获取连接数统计图表数据
 
 	// 连接管理接口
-	RegisterConnection(mappingId string, connInfo *ConnectionInfo) error
-	UnregisterConnection(connId string) error
-	GetConnections(mappingId string) ([]*ConnectionInfo, error)
-	GetClientConnections(clientId int64) ([]*ConnectionInfo, error)
-	UpdateConnectionStats(connId string, bytesSent, bytesReceived int64) error
+	RegisterConnection(mappingID string, connInfo *ConnectionInfo) error
+	UnregisterConnection(connID string) error
+	GetConnections(mappingID string) ([]*ConnectionInfo, error)
+	GetClientConnections(clientID int64) ([]*ConnectionInfo, error)
+	UpdateConnectionStats(connID string, bytesSent, bytesReceived int64) error
 
 	// JWT Token管理接口
-	GenerateJWTToken(clientId int64) (*JWTTokenInfo, error)
+	GenerateJWTToken(clientID int64) (*JWTTokenInfo, error)
 	RefreshJWTToken(refreshToken string) (*JWTTokenInfo, error)
 	ValidateJWTToken(token string) (*JWTTokenInfo, error)
 	RevokeJWTToken(token string) error
@@ -84,8 +84,8 @@ type CloudControlAPI interface {
 	Close() error
 }
 
-// CloudControlConfig 云控配置
-type CloudControlConfig struct {
+// ControlConfig 云控配置
+type ControlConfig struct {
 	APIEndpoint string        `json:"api_endpoint"`
 	APIKey      string        `json:"api_key,omitempty"`
 	APISecret   string        `json:"api_secret,omitempty"`
@@ -102,8 +102,8 @@ type CloudControlConfig struct {
 }
 
 // DefaultConfig 返回默认配置
-func DefaultConfig() *CloudControlConfig {
-	return &CloudControlConfig{
+func DefaultConfig() *ControlConfig {
+	return &ControlConfig{
 		APIEndpoint:       "http://localhost:8080",
 		Timeout:           30 * time.Second,
 		UseBuiltIn:        true,

@@ -191,8 +191,9 @@ type TrafficStats struct {
 
 // ConnectionInfo 连接信息
 type ConnectionInfo struct {
-	ConnId        string    `json:"conn_id"`        // 连接ID
-	MappingId     string    `json:"mapping_id"`     // 所属映射ID
+	ConnID        string    `json:"conn_id"`        // 连接ID
+	MappingID     string    `json:"mapping_id"`     // 所属映射ID
+	ClientID      int64     `json:"client_id"`      // 所属客户端ID
 	SourceIP      string    `json:"source_ip"`      // 源IP地址
 	EstablishedAt time.Time `json:"established_at"` // 建立时间
 	LastActivity  time.Time `json:"last_activity"`  // 最后活动时间
@@ -200,15 +201,6 @@ type ConnectionInfo struct {
 	BytesSent     int64     `json:"bytes_sent"`     // 发送字节数
 	BytesReceived int64     `json:"bytes_received"` // 接收字节数
 	Status        string    `json:"status"`         // 连接状态
-}
-
-// JWTTokenInfo JWT Token信息
-type JWTTokenInfo struct {
-	Token        string    `json:"token"`
-	RefreshToken string    `json:"refresh_token"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	ClientId     int64     `json:"client_id"`
-	TokenID      string    `json:"token_id"` // Token唯一标识，用于撤销
 }
 
 type Node struct {

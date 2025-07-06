@@ -2,7 +2,6 @@ package tests
 
 import (
 	"testing"
-	"tunnox-core/internal/conn"
 	"tunnox-core/internal/packet"
 )
 
@@ -26,51 +25,48 @@ func TestCommandTypeConstants(t *testing.T) {
 }
 
 func TestInitPacket(t *testing.T) {
-	// 测试InitPacket结构体
 	initPacket := packet.InitPacket{
-		ConnType:  conn.ClientControl,
-		ClientId:  "test-client-123",
-		SecretKey: "secret-key-456",
+		Version:   "1.0.0",
+		ClientID:  "test-client-123",
+		AuthCode:  "test-auth",
+		SecretKey: "test-secret",
+		NodeID:    "test-node",
+		IPAddress: "127.0.0.1",
+		Type:      "client",
 	}
 
-	// 验证字段值
-	if initPacket.ConnType != conn.ClientControl {
-		t.Errorf("Expected ConnType %v, got %v", conn.ClientControl, initPacket.ConnType)
+	if initPacket.Version != "1.0.0" {
+		t.Errorf("Expected Version %s, got %s", "1.0.0", initPacket.Version)
 	}
 
-	if initPacket.ClientId != "test-client-123" {
-		t.Errorf("Expected ClientId %s, got %s", "test-client-123", initPacket.ClientId)
+	if initPacket.ClientID != "test-client-123" {
+		t.Errorf("Expected ClientID %s, got %s", "test-client-123", initPacket.ClientID)
 	}
 
-	if initPacket.SecretKey != "secret-key-456" {
-		t.Errorf("Expected SecretKey %s, got %s", "secret-key-456", initPacket.SecretKey)
+	if initPacket.AuthCode != "test-auth" {
+		t.Errorf("Expected AuthCode %s, got %s", "test-auth", initPacket.AuthCode)
 	}
 }
 
 func TestAcceptPacket(t *testing.T) {
-	// 测试AcceptPacket结构体
 	acceptPacket := packet.AcceptPacket{
-		ConnType: conn.DataTransfer,
-		ClientId: "test-client-789",
-		Token:    "token-abc",
-		AuthCode: "auth-code-def",
+		Success:   true,
+		Message:   "Authentication successful",
+		ClientID:  "test-client-789",
+		Token:     "test-token",
+		ExpiresAt: 1234567890,
 	}
 
-	// 验证字段值
-	if acceptPacket.ConnType != conn.DataTransfer {
-		t.Errorf("Expected ConnType %v, got %v", conn.DataTransfer, acceptPacket.ConnType)
+	if !acceptPacket.Success {
+		t.Errorf("Expected Success %t, got %t", true, acceptPacket.Success)
 	}
 
-	if acceptPacket.ClientId != "test-client-789" {
-		t.Errorf("Expected ClientId %s, got %s", "test-client-789", acceptPacket.ClientId)
+	if acceptPacket.ClientID != "test-client-789" {
+		t.Errorf("Expected ClientID %s, got %s", "test-client-789", acceptPacket.ClientID)
 	}
 
-	if acceptPacket.Token != "token-abc" {
-		t.Errorf("Expected Token %s, got %s", "token-abc", acceptPacket.Token)
-	}
-
-	if acceptPacket.AuthCode != "auth-code-def" {
-		t.Errorf("Expected AuthCode %s, got %s", "auth-code-def", acceptPacket.AuthCode)
+	if acceptPacket.Token != "test-token" {
+		t.Errorf("Expected Token %s, got %s", "test-token", acceptPacket.Token)
 	}
 }
 
@@ -141,18 +137,22 @@ func TestCommandPacketWithDifferentTypes(t *testing.T) {
 func TestInitPacketWithEmptyFields(t *testing.T) {
 	// 测试空字段的InitPacket
 	initPacket := packet.InitPacket{
-		ConnType:  conn.ClientControl,
-		ClientId:  "",
+		Version:   "",
+		ClientID:  "",
+		AuthCode:  "",
 		SecretKey: "",
+		NodeID:    "",
+		IPAddress: "",
+		Type:      "",
 	}
 
 	// 验证字段值
-	if initPacket.ConnType != conn.ClientControl {
-		t.Errorf("Expected ConnType %v, got %v", conn.ClientControl, initPacket.ConnType)
+	if initPacket.Version != "" {
+		t.Errorf("Expected empty Version, got %s", initPacket.Version)
 	}
 
-	if initPacket.ClientId != "" {
-		t.Errorf("Expected empty ClientId, got %s", initPacket.ClientId)
+	if initPacket.ClientID != "" {
+		t.Errorf("Expected empty ClientID, got %s", initPacket.ClientID)
 	}
 
 	if initPacket.SecretKey != "" {
@@ -163,27 +163,28 @@ func TestInitPacketWithEmptyFields(t *testing.T) {
 func TestAcceptPacketWithEmptyFields(t *testing.T) {
 	// 测试空字段的AcceptPacket
 	acceptPacket := packet.AcceptPacket{
-		ConnType: conn.ServerControlReply,
-		ClientId: "",
-		Token:    "",
-		AuthCode: "",
+		Success:   false,
+		Message:   "",
+		ClientID:  "",
+		Token:     "",
+		ExpiresAt: 0,
 	}
 
 	// 验证字段值
-	if acceptPacket.ConnType != conn.ServerControlReply {
-		t.Errorf("Expected ConnType %v, got %v", conn.ServerControlReply, acceptPacket.ConnType)
+	if acceptPacket.Success {
+		t.Errorf("Expected Success false, got %t", acceptPacket.Success)
 	}
 
-	if acceptPacket.ClientId != "" {
-		t.Errorf("Expected empty ClientId, got %s", acceptPacket.ClientId)
+	if acceptPacket.ClientID != "" {
+		t.Errorf("Expected empty ClientID, got %s", acceptPacket.ClientID)
 	}
 
 	if acceptPacket.Token != "" {
 		t.Errorf("Expected empty Token, got %s", acceptPacket.Token)
 	}
 
-	if acceptPacket.AuthCode != "" {
-		t.Errorf("Expected empty AuthCode, got %s", acceptPacket.AuthCode)
+	if acceptPacket.Message != "" {
+		t.Errorf("Expected empty Message, got %s", acceptPacket.Message)
 	}
 }
 
@@ -245,11 +246,11 @@ func TestPacketStructSizes(t *testing.T) {
 	commandPacket := packet.CommandPacket{}
 
 	// 验证结构体不为空
-	if initPacket.ConnType != 0 {
+	if initPacket.Version != "" {
 		t.Error("InitPacket should have zero value initially")
 	}
 
-	if acceptPacket.ConnType != 0 {
+	if acceptPacket.Success {
 		t.Error("AcceptPacket should have zero value initially")
 	}
 

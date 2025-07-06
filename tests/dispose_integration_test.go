@@ -19,7 +19,7 @@ func TestDisposeIntegration(t *testing.T) {
 
 	// 测试云控制组件
 	t.Run("CloudControl_Dispose", func(t *testing.T) {
-		cloudControl := cloud.NewBuiltInCloudControl(nil)
+		cloudControl := cloud.NewBuiltinCloudControl(nil)
 		require.NotNil(t, cloudControl)
 
 		// 启动云控制
@@ -55,7 +55,7 @@ func TestDisposeIntegration(t *testing.T) {
 	// 测试配置管理器
 	t.Run("ConfigManager_Dispose", func(t *testing.T) {
 		storage := cloud.NewMemoryStorage(ctx)
-		config := &cloud.CloudControlConfig{}
+		config := &cloud.ControlConfig{}
 		configManager := cloud.NewConfigManager(storage, config, ctx)
 		require.NotNil(t, configManager)
 
@@ -200,7 +200,7 @@ func TestDisposeIntegration(t *testing.T) {
 // TestDisposeCascade 测试Dispose的级联关闭
 func TestDisposeCascade(t *testing.T) {
 	// 创建云控制（包含多个子组件）
-	cloudControl := cloud.NewBuiltInCloudControl(nil)
+	cloudControl := cloud.NewBuiltinCloudControl(nil)
 	require.NotNil(t, cloudControl)
 
 	// 启动云控制
@@ -255,7 +255,7 @@ func TestDisposeConcurrency(t *testing.T) {
 		done := make(chan struct{})
 		go func() {
 			for i := 0; i < 100; i++ {
-				storage.Set(ctx, "key", "value", time.Minute)
+				storage.Set("key", "value", time.Minute)
 			}
 			done <- struct{}{}
 		}()

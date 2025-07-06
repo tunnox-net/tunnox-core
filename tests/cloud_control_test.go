@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 
 func TestBuiltInCloudControl_Dispose(t *testing.T) {
 	// 创建配置
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret-key",
 		JWTExpiration:     24 * time.Hour,
 		RefreshExpiration: 7 * 24 * time.Hour,
@@ -21,7 +20,7 @@ func TestBuiltInCloudControl_Dispose(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := cloud.NewBuiltInCloudControl(config)
+	cloudControl := cloud.NewBuiltinCloudControl(config)
 	require.NotNil(t, cloudControl)
 
 	// 验证初始状态
@@ -49,7 +48,7 @@ func TestBuiltInCloudControl_Dispose(t *testing.T) {
 
 func TestBuiltInCloudControl_ContextCancellation(t *testing.T) {
 	// 创建配置
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret-key",
 		JWTExpiration:     24 * time.Hour,
 		RefreshExpiration: 7 * 24 * time.Hour,
@@ -57,7 +56,7 @@ func TestBuiltInCloudControl_ContextCancellation(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := cloud.NewBuiltInCloudControl(config)
+	cloudControl := cloud.NewBuiltinCloudControl(config)
 	require.NotNil(t, cloudControl)
 
 	// 启动云控
@@ -81,7 +80,7 @@ func TestBuiltInCloudControl_ContextCancellation(t *testing.T) {
 
 func TestBuiltInCloudControl_StartAfterClose(t *testing.T) {
 	// 创建配置
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret-key",
 		JWTExpiration:     24 * time.Hour,
 		RefreshExpiration: 7 * 24 * time.Hour,
@@ -89,7 +88,7 @@ func TestBuiltInCloudControl_StartAfterClose(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := cloud.NewBuiltInCloudControl(config)
+	cloudControl := cloud.NewBuiltinCloudControl(config)
 	require.NotNil(t, cloudControl)
 
 	// 关闭云控
@@ -108,7 +107,7 @@ func TestBuiltInCloudControl_StartAfterClose(t *testing.T) {
 
 func TestBuiltInCloudControl_StopAfterClose(t *testing.T) {
 	// 创建配置
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret-key",
 		JWTExpiration:     24 * time.Hour,
 		RefreshExpiration: 7 * 24 * time.Hour,
@@ -116,7 +115,7 @@ func TestBuiltInCloudControl_StopAfterClose(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := cloud.NewBuiltInCloudControl(config)
+	cloudControl := cloud.NewBuiltinCloudControl(config)
 	require.NotNil(t, cloudControl)
 
 	// 关闭云控
@@ -130,7 +129,7 @@ func TestBuiltInCloudControl_StopAfterClose(t *testing.T) {
 
 func TestBuiltInCloudControl_CloseMultipleTimes(t *testing.T) {
 	// 创建配置
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret-key",
 		JWTExpiration:     24 * time.Hour,
 		RefreshExpiration: 7 * 24 * time.Hour,
@@ -138,7 +137,7 @@ func TestBuiltInCloudControl_CloseMultipleTimes(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := cloud.NewBuiltInCloudControl(config)
+	cloudControl := cloud.NewBuiltinCloudControl(config)
 	require.NotNil(t, cloudControl)
 
 	// 启动云控
@@ -157,7 +156,7 @@ func TestBuiltInCloudControl_CloseMultipleTimes(t *testing.T) {
 
 func TestBuiltInCloudControl_NodeRegistration(t *testing.T) {
 	// 创建配置
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret-key",
 		JWTExpiration:     24 * time.Hour,
 		RefreshExpiration: 7 * 24 * time.Hour,
@@ -165,7 +164,7 @@ func TestBuiltInCloudControl_NodeRegistration(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := cloud.NewBuiltInCloudControl(config)
+	cloudControl := cloud.NewBuiltinCloudControl(config)
 	require.NotNil(t, cloudControl)
 	defer cloudControl.Close()
 
@@ -181,8 +180,7 @@ func TestBuiltInCloudControl_NodeRegistration(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
-	resp, err := cloudControl.NodeRegister(ctx, req)
+	resp, err := cloudControl.NodeRegister(req)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	assert.True(t, resp.Success)
@@ -195,7 +193,7 @@ func TestBuiltInCloudControl_NodeRegistration(t *testing.T) {
 
 func TestBuiltInCloudControl_ClientCreation(t *testing.T) {
 	// 创建配置
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret-key",
 		JWTExpiration:     24 * time.Hour,
 		RefreshExpiration: 7 * 24 * time.Hour,
@@ -203,7 +201,7 @@ func TestBuiltInCloudControl_ClientCreation(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := cloud.NewBuiltInCloudControl(config)
+	cloudControl := cloud.NewBuiltinCloudControl(config)
 	require.NotNil(t, cloudControl)
 	defer cloudControl.Close()
 
@@ -211,12 +209,12 @@ func TestBuiltInCloudControl_ClientCreation(t *testing.T) {
 	cloudControl.Start()
 
 	// 创建用户
-	user, err := cloudControl.CreateUser(context.Background(), "testuser", "test@example.com")
+	user, err := cloudControl.CreateUser("testuser", "test@example.com")
 	require.NoError(t, err)
 	require.NotNil(t, user)
 
 	// 创建客户端
-	client, err := cloudControl.CreateClient(context.Background(), user.ID, "test-client")
+	client, err := cloudControl.CreateClient(user.ID, "test-client")
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	assert.Equal(t, user.ID, client.UserID)
@@ -226,7 +224,7 @@ func TestBuiltInCloudControl_ClientCreation(t *testing.T) {
 
 func TestBuiltInCloudControl_JWTTokenGeneration(t *testing.T) {
 	// 创建配置
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret-key",
 		JWTExpiration:     24 * time.Hour,
 		RefreshExpiration: 7 * 24 * time.Hour,
@@ -234,7 +232,7 @@ func TestBuiltInCloudControl_JWTTokenGeneration(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := cloud.NewBuiltInCloudControl(config)
+	cloudControl := cloud.NewBuiltinCloudControl(config)
 	require.NotNil(t, cloudControl)
 	defer cloudControl.Close()
 
@@ -242,14 +240,14 @@ func TestBuiltInCloudControl_JWTTokenGeneration(t *testing.T) {
 	cloudControl.Start()
 
 	// 创建用户和客户端
-	user, err := cloudControl.CreateUser(context.Background(), "testuser", "test@example.com")
+	user, err := cloudControl.CreateUser("testuser", "test@example.com")
 	require.NoError(t, err)
 
-	client, err := cloudControl.CreateClient(context.Background(), user.ID, "test-client")
+	client, err := cloudControl.CreateClient(user.ID, "test-client")
 	require.NoError(t, err)
 
 	// 生成JWT令牌
-	tokenInfo, err := cloudControl.GenerateJWTToken(context.Background(), client.ID)
+	tokenInfo, err := cloudControl.GenerateJWTToken(client.ID)
 	require.NoError(t, err)
 	require.NotNil(t, tokenInfo)
 	assert.NotEmpty(t, tokenInfo.Token)
@@ -257,7 +255,7 @@ func TestBuiltInCloudControl_JWTTokenGeneration(t *testing.T) {
 	assert.Equal(t, client.ID, tokenInfo.ClientId)
 
 	// 验证令牌
-	validatedToken, err := cloudControl.ValidateJWTToken(context.Background(), tokenInfo.Token)
+	validatedToken, err := cloudControl.ValidateJWTToken(tokenInfo.Token)
 	require.NoError(t, err)
 	require.NotNil(t, validatedToken)
 	assert.Equal(t, client.ID, validatedToken.ClientId)
@@ -265,7 +263,7 @@ func TestBuiltInCloudControl_JWTTokenGeneration(t *testing.T) {
 
 func TestBuiltInCloudControl_AnonymousCredentials(t *testing.T) {
 	// 创建配置
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret-key",
 		JWTExpiration:     24 * time.Hour,
 		RefreshExpiration: 7 * 24 * time.Hour,
@@ -273,7 +271,7 @@ func TestBuiltInCloudControl_AnonymousCredentials(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := cloud.NewBuiltInCloudControl(config)
+	cloudControl := cloud.NewBuiltinCloudControl(config)
 	require.NotNil(t, cloudControl)
 	defer cloudControl.Close()
 
@@ -281,14 +279,14 @@ func TestBuiltInCloudControl_AnonymousCredentials(t *testing.T) {
 	cloudControl.Start()
 
 	// 生成匿名凭据
-	client, err := cloudControl.GenerateAnonymousCredentials(context.Background())
+	client, err := cloudControl.GenerateAnonymousCredentials()
 	require.NoError(t, err)
 	require.NotNil(t, client)
 	assert.Equal(t, cloud.ClientTypeAnonymous, client.Type)
 	assert.NotEmpty(t, client.ID)
 
 	// 验证匿名客户端存在
-	retrievedClient, err := cloudControl.GetAnonymousClient(context.Background(), client.ID)
+	retrievedClient, err := cloudControl.GetAnonymousClient(client.ID)
 	require.NoError(t, err)
 	require.NotNil(t, retrievedClient)
 	assert.Equal(t, client.ID, retrievedClient.ID)
@@ -296,7 +294,7 @@ func TestBuiltInCloudControl_AnonymousCredentials(t *testing.T) {
 
 func TestBuiltInCloudControl_SystemStats(t *testing.T) {
 	// 创建配置
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret-key",
 		JWTExpiration:     24 * time.Hour,
 		RefreshExpiration: 7 * 24 * time.Hour,
@@ -304,7 +302,7 @@ func TestBuiltInCloudControl_SystemStats(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := cloud.NewBuiltInCloudControl(config)
+	cloudControl := cloud.NewBuiltinCloudControl(config)
 	require.NotNil(t, cloudControl)
 	defer cloudControl.Close()
 
@@ -312,7 +310,7 @@ func TestBuiltInCloudControl_SystemStats(t *testing.T) {
 	cloudControl.Start()
 
 	// 获取系统统计信息
-	stats, err := cloudControl.GetSystemStats(context.Background())
+	stats, err := cloudControl.GetSystemStats()
 	require.NoError(t, err)
 	require.NotNil(t, stats)
 	assert.GreaterOrEqual(t, stats.TotalUsers, 0)

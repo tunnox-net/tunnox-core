@@ -1,7 +1,5 @@
 package packet
 
-import "tunnox-core/internal/conn"
-
 type Type byte
 
 const (
@@ -43,17 +41,24 @@ const (
 	Disconnect CommandType = 8 //连接断开，可以任何方向
 )
 
+// InitPacket 初始化数据包
 type InitPacket struct {
-	ConnType  conn.Type
-	ClientId  string
-	SecretKey string
+	Version   string `json:"version"`
+	ClientID  string `json:"client_id"`
+	AuthCode  string `json:"auth_code"`
+	SecretKey string `json:"secret_key"`
+	NodeID    string `json:"node_id"`
+	IPAddress string `json:"ip_address"`
+	Type      string `json:"type"`
 }
 
+// AcceptPacket 接受数据包
 type AcceptPacket struct {
-	ConnType conn.Type
-	ClientId string
-	Token    string
-	AuthCode string
+	Success   bool   `json:"success"`
+	Message   string `json:"message"`
+	ClientID  string `json:"client_id"`
+	Token     string `json:"token,omitempty"`
+	ExpiresAt int64  `json:"expires_at,omitempty"`
 }
 
 type TransferPacket struct {

@@ -134,11 +134,11 @@ func TestConnInfo(t *testing.T) {
 	// 测试连接信息结构体
 	connInfo := conn.Info{
 		Type:       conn.ClientControl,
-		ConnId:     "conn-123",
-		NodeId:     "node-456",
-		SourceId:   "source-789",
-		TargetId:   "target-abc",
-		PairConnId: "pair-def",
+		ConnID:     "conn-123",
+		NodeID:     "node-456",
+		SourceID:   "source-789",
+		TargetID:   "target-abc",
+		PairConnID: "pair-def",
 	}
 
 	// 验证字段值
@@ -146,24 +146,24 @@ func TestConnInfo(t *testing.T) {
 		t.Errorf("Expected Type %v, got %v", conn.ClientControl, connInfo.Type)
 	}
 
-	if connInfo.ConnId != "conn-123" {
-		t.Errorf("Expected ConnId %s, got %s", "conn-123", connInfo.ConnId)
+	if connInfo.ConnID != "conn-123" {
+		t.Errorf("Expected ConnID %s, got %s", "conn-123", connInfo.ConnID)
 	}
 
-	if connInfo.NodeId != "node-456" {
-		t.Errorf("Expected NodeId %s, got %s", "node-456", connInfo.NodeId)
+	if connInfo.NodeID != "node-456" {
+		t.Errorf("Expected NodeID %s, got %s", "node-456", connInfo.NodeID)
 	}
 
-	if connInfo.SourceId != "source-789" {
-		t.Errorf("Expected SourceId %s, got %s", "source-789", connInfo.SourceId)
+	if connInfo.SourceID != "source-789" {
+		t.Errorf("Expected SourceID %s, got %s", "source-789", connInfo.SourceID)
 	}
 
-	if connInfo.TargetId != "target-abc" {
-		t.Errorf("Expected TargetId %s, got %s", "target-abc", connInfo.TargetId)
+	if connInfo.TargetID != "target-abc" {
+		t.Errorf("Expected TargetID %s, got %s", "target-abc", connInfo.TargetID)
 	}
 
-	if connInfo.PairConnId != "pair-def" {
-		t.Errorf("Expected PairConnId %s, got %s", "pair-def", connInfo.PairConnId)
+	if connInfo.PairConnID != "pair-def" {
+		t.Errorf("Expected PairConnID %s, got %s", "pair-def", connInfo.PairConnID)
 	}
 }
 
@@ -171,15 +171,15 @@ func TestConnInfoString(t *testing.T) {
 	// 测试连接信息的字符串表示
 	connInfo := conn.Info{
 		Type:       conn.DataTransfer,
-		ConnId:     "test-conn",
-		NodeId:     "test-node",
-		SourceId:   "test-source",
-		TargetId:   "test-target",
-		PairConnId: "test-pair",
+		ConnID:     "test-conn",
+		NodeID:     "test-node",
+		SourceID:   "test-source",
+		TargetID:   "test-target",
+		PairConnID: "test-pair",
 	}
 
 	result := connInfo.String()
-	expected := "Connection{Type:DataTransfer, ConnId:test-conn, NodeId:test-node, SourceId:test-source, TargetId:test-target, PairConnId:test-pair}"
+	expected := "Connection{Type:DataTransfer, ConnID:test-conn, NodeID:test-node, SourceID:test-source, TargetID:test-target, PairConnID:test-pair}"
 
 	if result != expected {
 		t.Errorf("Expected %s, got %s", expected, result)
@@ -262,16 +262,16 @@ func TestConnInfoHasPair(t *testing.T) {
 	// 测试配对连接判断
 	testCases := []struct {
 		name       string
-		pairConnId string
+		pairConnID string
 		expected   bool
 	}{
-		{"HasPair", "pair-123", true},
-		{"NoPair", "", false},
+		{"has_pair", "pair-123", true},
+		{"no_pair", "", false},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			connInfo := conn.Info{PairConnId: tc.pairConnId}
+			connInfo := conn.Info{PairConnID: tc.pairConnID}
 			result := connInfo.HasPair()
 			if result != tc.expected {
 				t.Errorf("Expected %v, got %v", tc.expected, result)
@@ -297,14 +297,14 @@ func TestConnInfoSetPair(t *testing.T) {
 		t.Error("Should have pair after SetPair")
 	}
 
-	if connInfo.PairConnId != "new-pair-123" {
-		t.Errorf("Expected PairConnId %s, got %s", "new-pair-123", connInfo.PairConnId)
+	if connInfo.PairConnID != "new-pair-123" {
+		t.Errorf("Expected PairConnID %s, got %s", "new-pair-123", connInfo.PairConnID)
 	}
 }
 
 func TestConnInfoClearPair(t *testing.T) {
 	// 测试清除配对连接ID
-	connInfo := conn.Info{PairConnId: "existing-pair"}
+	connInfo := conn.Info{PairConnID: "existing-pair"}
 
 	// 初始状态应该有配对
 	if !connInfo.HasPair() {
@@ -319,8 +319,8 @@ func TestConnInfoClearPair(t *testing.T) {
 		t.Error("Should not have pair after ClearPair")
 	}
 
-	if connInfo.PairConnId != "" {
-		t.Errorf("Expected empty PairConnId, got %s", connInfo.PairConnId)
+	if connInfo.PairConnID != "" {
+		t.Errorf("Expected empty PairConnID, got %s", connInfo.PairConnID)
 	}
 }
 
@@ -328,11 +328,11 @@ func TestConnInfoWithEmptyFields(t *testing.T) {
 	// 测试空字段的连接信息
 	connInfo := conn.Info{
 		Type:       conn.ClientControl,
-		ConnId:     "",
-		NodeId:     "",
-		SourceId:   "",
-		TargetId:   "",
-		PairConnId: "",
+		ConnID:     "",
+		NodeID:     "",
+		SourceID:   "",
+		TargetID:   "",
+		PairConnID: "",
 	}
 
 	// 验证字段值
@@ -340,24 +340,24 @@ func TestConnInfoWithEmptyFields(t *testing.T) {
 		t.Errorf("Expected Type %v, got %v", conn.ClientControl, connInfo.Type)
 	}
 
-	if connInfo.ConnId != "" {
-		t.Errorf("Expected empty ConnId, got %s", connInfo.ConnId)
+	if connInfo.ConnID != "" {
+		t.Errorf("Expected empty ConnID, got %s", connInfo.ConnID)
 	}
 
-	if connInfo.NodeId != "" {
-		t.Errorf("Expected empty NodeId, got %s", connInfo.NodeId)
+	if connInfo.NodeID != "" {
+		t.Errorf("Expected empty NodeID, got %s", connInfo.NodeID)
 	}
 
-	if connInfo.SourceId != "" {
-		t.Errorf("Expected empty SourceId, got %s", connInfo.SourceId)
+	if connInfo.SourceID != "" {
+		t.Errorf("Expected empty SourceID, got %s", connInfo.SourceID)
 	}
 
-	if connInfo.TargetId != "" {
-		t.Errorf("Expected empty TargetId, got %s", connInfo.TargetId)
+	if connInfo.TargetID != "" {
+		t.Errorf("Expected empty TargetID, got %s", connInfo.TargetID)
 	}
 
-	if connInfo.PairConnId != "" {
-		t.Errorf("Expected empty PairConnId, got %s", connInfo.PairConnId)
+	if connInfo.PairConnID != "" {
+		t.Errorf("Expected empty PairConnID, got %s", connInfo.PairConnID)
 	}
 
 	// 验证方法调用
@@ -374,7 +374,7 @@ func TestConnInfoWithEmptyFields(t *testing.T) {
 	}
 
 	if connInfo.HasPair() != false {
-		t.Error("Empty PairConnId should not have pair")
+		t.Error("Empty PairConnID should not have pair")
 	}
 }
 
@@ -397,15 +397,15 @@ func TestConnInfoStringWithEmptyFields(t *testing.T) {
 	// 测试空字段的字符串表示
 	connInfo := conn.Info{
 		Type:       conn.DataTransferReply,
-		ConnId:     "",
-		NodeId:     "",
-		SourceId:   "",
-		TargetId:   "",
-		PairConnId: "",
+		ConnID:     "",
+		NodeID:     "",
+		SourceID:   "",
+		TargetID:   "",
+		PairConnID: "",
 	}
 
 	result := connInfo.String()
-	expected := "Connection{Type:DataTransferReply, ConnId:, NodeId:, SourceId:, TargetId:, PairConnId:}"
+	expected := "Connection{Type:DataTransferReply, ConnID:, NodeID:, SourceID:, TargetID:, PairConnID:}"
 
 	if result != expected {
 		t.Errorf("Expected %s, got %s", expected, result)

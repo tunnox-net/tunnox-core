@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"tunnox-core/internal/constants"
 
 	"tunnox-core/internal/utils"
 )
@@ -177,31 +178,31 @@ func (g *DistributedIDGenerator) GenerateMappingID(ctx context.Context) (string,
 
 // ReleaseClientID 释放客户端ID
 func (g *DistributedIDGenerator) ReleaseClientID(ctx context.Context, clientID int64) error {
-	key := fmt.Sprintf("%s:used_client_id:%d", KeyPrefixID, clientID)
+	key := fmt.Sprintf("%s:used_client_id:%d", constants.KeyPrefixID, clientID)
 	return g.storage.Delete(key)
 }
 
 // ReleaseNodeID 释放节点ID
 func (g *DistributedIDGenerator) ReleaseNodeID(ctx context.Context, nodeID string) error {
-	key := fmt.Sprintf("%s:used_node_id:%s", KeyPrefixID, nodeID)
+	key := fmt.Sprintf("%s:used_node_id:%s", constants.KeyPrefixID, nodeID)
 	return g.storage.Delete(key)
 }
 
 // ReleaseUserID 释放用户ID
 func (g *DistributedIDGenerator) ReleaseUserID(ctx context.Context, userID string) error {
-	key := fmt.Sprintf("%s:used_user_id:%s", KeyPrefixID, userID)
+	key := fmt.Sprintf("%s:used_user_id:%s", constants.KeyPrefixID, userID)
 	return g.storage.Delete(key)
 }
 
 // ReleaseMappingID 释放端口映射ID
 func (g *DistributedIDGenerator) ReleaseMappingID(ctx context.Context, mappingID string) error {
-	key := fmt.Sprintf("%s:used_mapping_id:%s", KeyPrefixID, mappingID)
+	key := fmt.Sprintf("%s:used_mapping_id:%s", constants.KeyPrefixID, mappingID)
 	return g.storage.Delete(key)
 }
 
 // 辅助方法：检查客户端ID是否已使用
 func (g *DistributedIDGenerator) isClientIDUsed(ctx context.Context, clientID int64) (bool, error) {
-	key := fmt.Sprintf("%s:used_client_id:%d", KeyPrefixID, clientID)
+	key := fmt.Sprintf("%s:used_client_id:%d", constants.KeyPrefixID, clientID)
 	exists, err := g.storage.Exists(key)
 	if err != nil {
 		return false, err
@@ -211,7 +212,7 @@ func (g *DistributedIDGenerator) isClientIDUsed(ctx context.Context, clientID in
 
 // 辅助方法：标记客户端ID为已使用
 func (g *DistributedIDGenerator) markClientIDAsUsed(ctx context.Context, clientID int64) error {
-	key := fmt.Sprintf("%s:used_client_id:%d", KeyPrefixID, clientID)
+	key := fmt.Sprintf("%s:used_client_id:%d", constants.KeyPrefixID, clientID)
 	info := &IDUsageInfo{
 		ID:        fmt.Sprintf("%d", clientID),
 		Type:      "client",
@@ -228,7 +229,7 @@ func (g *DistributedIDGenerator) markClientIDAsUsed(ctx context.Context, clientI
 
 // 辅助方法：检查节点ID是否已使用
 func (g *DistributedIDGenerator) isNodeIDUsed(ctx context.Context, nodeID string) (bool, error) {
-	key := fmt.Sprintf("%s:used_node_id:%s", KeyPrefixID, nodeID)
+	key := fmt.Sprintf("%s:used_node_id:%s", constants.KeyPrefixID, nodeID)
 	exists, err := g.storage.Exists(key)
 	if err != nil {
 		return false, err
@@ -238,7 +239,7 @@ func (g *DistributedIDGenerator) isNodeIDUsed(ctx context.Context, nodeID string
 
 // 辅助方法：标记节点ID为已使用
 func (g *DistributedIDGenerator) markNodeIDAsUsed(ctx context.Context, nodeID string) error {
-	key := fmt.Sprintf("%s:used_node_id:%s", KeyPrefixID, nodeID)
+	key := fmt.Sprintf("%s:used_node_id:%s", constants.KeyPrefixID, nodeID)
 	info := &IDUsageInfo{
 		ID:        nodeID,
 		Type:      "node",
@@ -255,7 +256,7 @@ func (g *DistributedIDGenerator) markNodeIDAsUsed(ctx context.Context, nodeID st
 
 // 辅助方法：检查用户ID是否已使用
 func (g *DistributedIDGenerator) isUserIDUsed(ctx context.Context, userID string) (bool, error) {
-	key := fmt.Sprintf("%s:used_user_id:%s", KeyPrefixID, userID)
+	key := fmt.Sprintf("%s:used_user_id:%s", constants.KeyPrefixID, userID)
 	exists, err := g.storage.Exists(key)
 	if err != nil {
 		return false, err
@@ -265,7 +266,7 @@ func (g *DistributedIDGenerator) isUserIDUsed(ctx context.Context, userID string
 
 // 辅助方法：标记用户ID为已使用
 func (g *DistributedIDGenerator) markUserIDAsUsed(ctx context.Context, userID string) error {
-	key := fmt.Sprintf("%s:used_user_id:%s", KeyPrefixID, userID)
+	key := fmt.Sprintf("%s:used_user_id:%s", constants.KeyPrefixID, userID)
 	info := &IDUsageInfo{
 		ID:        userID,
 		Type:      "user",
@@ -282,7 +283,7 @@ func (g *DistributedIDGenerator) markUserIDAsUsed(ctx context.Context, userID st
 
 // 辅助方法：检查端口映射ID是否已使用
 func (g *DistributedIDGenerator) isMappingIDUsed(ctx context.Context, mappingID string) (bool, error) {
-	key := fmt.Sprintf("%s:used_mapping_id:%s", KeyPrefixID, mappingID)
+	key := fmt.Sprintf("%s:used_mapping_id:%s", constants.KeyPrefixID, mappingID)
 	exists, err := g.storage.Exists(key)
 	if err != nil {
 		return false, err
@@ -292,7 +293,7 @@ func (g *DistributedIDGenerator) isMappingIDUsed(ctx context.Context, mappingID 
 
 // 辅助方法：标记端口映射ID为已使用
 func (g *DistributedIDGenerator) markMappingIDAsUsed(ctx context.Context, mappingID string) error {
-	key := fmt.Sprintf("%s:used_mapping_id:%s", KeyPrefixID, mappingID)
+	key := fmt.Sprintf("%s:used_mapping_id:%s", constants.KeyPrefixID, mappingID)
 	info := &IDUsageInfo{
 		ID:        mappingID,
 		Type:      "mapping",

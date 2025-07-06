@@ -13,7 +13,7 @@ import (
 )
 
 func TestJWTManager_GenerateTokenPair(t *testing.T) {
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
@@ -27,7 +27,7 @@ func TestJWTManager_GenerateTokenPair(t *testing.T) {
 
 	// 创建测试客户端
 	client := &cloud.Client{
-		ID:        "test-client",
+		ID:        1,
 		UserID:    "test-user",
 		Type:      cloud.ClientTypeRegistered,
 		NodeID:    "test-node",
@@ -44,7 +44,7 @@ func TestJWTManager_GenerateTokenPair(t *testing.T) {
 
 	assert.NotEmpty(t, tokenInfo.Token)
 	assert.NotEmpty(t, tokenInfo.RefreshToken)
-	assert.Equal(t, "test-client", tokenInfo.ClientId)
+	assert.Equal(t, int64(1), tokenInfo.ClientId)
 	assert.True(t, tokenInfo.ExpiresAt.After(time.Now()))
 	assert.True(t, tokenInfo.ExpiresAt.Before(time.Now().Add(2*time.Hour)))
 
@@ -53,14 +53,14 @@ func TestJWTManager_GenerateTokenPair(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, claims)
 
-	assert.Equal(t, "test-client", claims.ClientID)
+	assert.Equal(t, int64(1), claims.ClientID)
 	assert.Equal(t, "test-user", claims.UserID)
 	assert.Equal(t, string(cloud.ClientTypeRegistered), claims.ClientType)
 	assert.Equal(t, "test-node", claims.NodeID)
 }
 
 func TestJWTManager_RefreshToken(t *testing.T) {
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
@@ -74,7 +74,7 @@ func TestJWTManager_RefreshToken(t *testing.T) {
 
 	// 创建测试客户端
 	client := &cloud.Client{
-		ID:        "test-client",
+		ID:        1,
 		UserID:    "test-user",
 		Type:      cloud.ClientTypeRegistered,
 		NodeID:    "test-node",
@@ -95,18 +95,18 @@ func TestJWTManager_RefreshToken(t *testing.T) {
 
 	assert.NotEmpty(t, newTokenInfo.Token)
 	assert.NotEmpty(t, newTokenInfo.RefreshToken)
-	assert.Equal(t, "test-client", newTokenInfo.ClientId)
+	assert.Equal(t, int64(1), newTokenInfo.ClientId)
 	assert.NotEqual(t, tokenInfo.Token, newTokenInfo.Token)
 	assert.NotEqual(t, tokenInfo.RefreshToken, newTokenInfo.RefreshToken)
 
 	// 验证新令牌
 	claims, err := manager.ValidateAccessToken(ctx, newTokenInfo.Token)
 	require.NoError(t, err)
-	assert.Equal(t, "test-client", claims.ClientID)
+	assert.Equal(t, int64(1), claims.ClientID)
 }
 
 func TestJWTManager_RevokeToken(t *testing.T) {
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
@@ -120,7 +120,7 @@ func TestJWTManager_RevokeToken(t *testing.T) {
 
 	// 创建测试客户端
 	client := &cloud.Client{
-		ID:        "test-client",
+		ID:        1,
 		UserID:    "test-user",
 		Type:      cloud.ClientTypeRegistered,
 		NodeID:    "test-node",
@@ -144,7 +144,7 @@ func TestJWTManager_RevokeToken(t *testing.T) {
 }
 
 func TestJWTManager_Concurrency(t *testing.T) {
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
@@ -165,7 +165,7 @@ func TestJWTManager_Concurrency(t *testing.T) {
 			defer func() { done <- struct{}{} }()
 
 			client := &cloud.Client{
-				ID:        fmt.Sprintf("client-%d", id),
+				ID:        int64(id),
 				UserID:    fmt.Sprintf("user-%d", id),
 				Type:      cloud.ClientTypeRegistered,
 				NodeID:    fmt.Sprintf("node-%d", id),
@@ -189,7 +189,7 @@ func TestJWTManager_Concurrency(t *testing.T) {
 }
 
 func TestJWTManager_Dispose(t *testing.T) {
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
@@ -210,7 +210,7 @@ func TestJWTManager_Dispose(t *testing.T) {
 }
 
 func TestJWTManager_Dispose_Concurrent(t *testing.T) {
-	config := &cloud.CloudControlConfig{
+	config := &cloud.ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,

@@ -12,14 +12,14 @@ import (
 
 // JWTManager JWT Token管理器
 type JWTManager struct {
-	config *CloudControlConfig
+	config *ControlConfig
 	cache  *TokenCacheManager
 	utils.Dispose
 }
 
 // JWTClaims JWT声明
 type JWTClaims struct {
-	ClientID   string `json:"client_id"`
+	ClientID   int64  `json:"client_id,string"`
 	UserID     string `json:"user_id,omitempty"`
 	ClientType string `json:"client_type"`
 	NodeID     string `json:"node_id,omitempty"`
@@ -28,13 +28,39 @@ type JWTClaims struct {
 
 // RefreshTokenClaims 刷新Token声明
 type RefreshTokenClaims struct {
-	ClientID string `json:"client_id"`
-	TokenID  string `json:"token_id"` // 用于撤销特定Token
+	ClientID int64  `json:"client_id,string"`
+	TokenID  string `json:"token_id"`
 	jwt.RegisteredClaims
 }
 
+// TokenInfo 结构体
+type TokenInfo struct {
+	ClientID   int64
+	UserID     string
+	ClientType string
+	NodeID     string
+	TokenID    string
+	ExpiresAt  time.Time
+}
+
+// RefreshTokenInfo 结构体
+type RefreshTokenInfo struct {
+	ClientID  int64
+	TokenID   string
+	ExpiresAt time.Time
+}
+
+// JWTTokenInfo 结构体
+type JWTTokenInfo struct {
+	Token        string
+	RefreshToken string
+	ExpiresAt    time.Time
+	ClientId     int64
+	TokenID      string
+}
+
 // NewJWTManager 创建JWT管理器
-func NewJWTManager(config *CloudControlConfig, repo *Repository) *JWTManager {
+func NewJWTManager(config *ControlConfig, repo *Repository) *JWTManager {
 	manager := &JWTManager{
 		config: config,
 		cache:  NewTokenCacheManager(repo.GetStorage()),
@@ -60,7 +86,7 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *Client) (*JW
 
 	// 创建访问Token声明
 	accessClaims := &JWTClaims{
-		ClientID:   fmt.Sprintf("%d", client.ID),
+		ClientID:   client.ID,
 		UserID:     client.UserID,
 		ClientType: string(client.Type),
 		NodeID:     client.NodeID,
@@ -77,7 +103,7 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *Client) (*JW
 
 	// 创建刷新Token声明
 	refreshClaims := &RefreshTokenClaims{
-		ClientID: fmt.Sprintf("%d", client.ID),
+		ClientID: client.ID,
 		TokenID:  tokenID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    m.config.JWTIssuer,
@@ -106,7 +132,7 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *Client) (*JW
 
 	// 存储Token信息到缓存
 	tokenInfo := &TokenInfo{
-		ClientID:   fmt.Sprintf("%d", client.ID),
+		ClientID:   client.ID,
 		UserID:     client.UserID,
 		ClientType: string(client.Type),
 		NodeID:     client.NodeID,
@@ -115,7 +141,7 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *Client) (*JW
 	}
 
 	refreshTokenInfo := &RefreshTokenInfo{
-		ClientID:  fmt.Sprintf("%d", client.ID),
+		ClientID:  client.ID,
 		TokenID:   tokenID,
 		ExpiresAt: now.Add(m.config.RefreshExpiration),
 	}
@@ -165,7 +191,7 @@ func (m *JWTManager) ValidateAccessToken(ctx context.Context, tokenString string
 			NodeID:     cachedInfo.NodeID,
 			RegisteredClaims: jwt.RegisteredClaims{
 				Issuer:    m.config.JWTIssuer,
-				Subject:   cachedInfo.ClientID,
+				Subject:   fmt.Sprintf("%d", cachedInfo.ClientID),
 				Audience:  []string{"tunnox-client"},
 				ExpiresAt: jwt.NewNumericDate(cachedInfo.ExpiresAt),
 				ID:        cachedInfo.TokenID,
@@ -247,7 +273,7 @@ func (m *JWTManager) ValidateRefreshToken(ctx context.Context, refreshTokenStrin
 			TokenID:  cachedInfo.TokenID,
 			RegisteredClaims: jwt.RegisteredClaims{
 				Issuer:    m.config.JWTIssuer,
-				Subject:   cachedInfo.ClientID,
+				Subject:   fmt.Sprintf("%d", cachedInfo.ClientID),
 				Audience:  []string{"tunnox-refresh"},
 				ExpiresAt: jwt.NewNumericDate(cachedInfo.ExpiresAt),
 				ID:        cachedInfo.TokenID,
@@ -311,7 +337,7 @@ func (m *JWTManager) RefreshAccessToken(ctx context.Context, refreshTokenString 
 	}
 
 	// 校验ClientID是否匹配
-	if refreshClaims.ClientID != fmt.Sprintf("%d", client.ID) {
+	if refreshClaims.ClientID != client.ID {
 		return nil, fmt.Errorf("client ID mismatch")
 	}
 

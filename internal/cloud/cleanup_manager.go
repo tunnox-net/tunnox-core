@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/constants"
 	"tunnox-core/internal/utils"
 )
 
@@ -52,7 +53,7 @@ func (cm *CleanupManager) RegisterCleanupTask(ctx context.Context, taskType stri
 	taskID := fmt.Sprintf("cleanup_%s", taskType)
 
 	// 检查任务是否已存在
-	key := fmt.Sprintf("%s:cleanup_task:%s", KeyPrefixCleanup, taskID)
+	key := fmt.Sprintf("%s:cleanup_task:%s", constants.KeyPrefixCleanup, taskID)
 	exists, err := cm.storage.Exists(key)
 	if err != nil {
 		return fmt.Errorf("check task exists failed: %w", err)
@@ -99,7 +100,7 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 	}
 
 	// 获取任务信息
-	key := fmt.Sprintf("%s:cleanup_task:%s", KeyPrefixCleanup, taskID)
+	key := fmt.Sprintf("%s:cleanup_task:%s", constants.KeyPrefixCleanup, taskID)
 	data, err := cm.storage.Get(key)
 	if err != nil {
 		cm.lock.Release(lockKey)
@@ -151,7 +152,7 @@ func (cm *CleanupManager) CompleteCleanupTask(ctx context.Context, taskType stri
 	defer cm.lock.Release(lockKey)
 
 	// 更新任务状态
-	key := fmt.Sprintf("%s:cleanup_task:%s", KeyPrefixCleanup, taskID)
+	key := fmt.Sprintf("%s:cleanup_task:%s", constants.KeyPrefixCleanup, taskID)
 	data, err := cm.storage.Get(key)
 	if err != nil {
 		return fmt.Errorf("get task failed: %w", err)
@@ -200,7 +201,7 @@ func (cm *CleanupManager) GetCleanupTasks(ctx context.Context) ([]*CleanupTask, 
 
 	for _, taskType := range taskTypes {
 		taskID := fmt.Sprintf("cleanup_%s", taskType)
-		key := fmt.Sprintf("%s:cleanup_task:%s", KeyPrefixCleanup, taskID)
+		key := fmt.Sprintf("%s:cleanup_task:%s", constants.KeyPrefixCleanup, taskID)
 
 		data, err := cm.storage.Get(key)
 		if err != nil {

@@ -7,23 +7,28 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// BuiltInCloudControl 内置云控实现，继承 BaseCloudControl，注入 MemoryStorage
+// BuiltinCloudControl 内置云控实现，继承 CloudControl，注入 MemoryStorage
 
-type BuiltInCloudControl struct {
-	*BaseCloudControl
+type BuiltinCloudControl struct {
+	*CloudControl
 }
 
-func NewBuiltInCloudControl(config *CloudControlConfig) *BuiltInCloudControl {
-	ctx := context.Background()
-	memoryStorage := NewMemoryStorage(ctx)
-	base := NewBaseCloudControl(config, memoryStorage)
-	return &BuiltInCloudControl{BaseCloudControl: base}
+func NewBuiltinCloudControl(config *ControlConfig) *BuiltinCloudControl {
+	memoryStorage := NewMemoryStorage(context.Background())
+	base := NewCloudControl(config, memoryStorage)
+	return &BuiltinCloudControl{CloudControl: base}
 }
 
-// 只在这里实现 BuiltInCloudControl 特有的逻辑，通用逻辑全部在 BaseCloudControl
+// NewBuiltinCloudControlWithStorage 创建内置云控实例，使用指定的存储实例（主要用于测试）
+func NewBuiltinCloudControlWithStorage(config *ControlConfig, storage Storage) *BuiltinCloudControl {
+	base := NewCloudControl(config, storage)
+	return &BuiltinCloudControl{CloudControl: base}
+}
+
+// 只在这里实现 BuiltinCloudControl 特有的逻辑，通用逻辑全部在 CloudControl
 
 // Start 启动内置云控
-func (b *BuiltInCloudControl) Start() {
+func (b *BuiltinCloudControl) Start() {
 	if b.IsClosed() {
 		utils.Warnf("Cloud control is already closed, cannot start")
 		return
@@ -34,13 +39,13 @@ func (b *BuiltInCloudControl) Start() {
 }
 
 // Close 关闭内置云控（实现CloudControlAPI接口）
-func (b *BuiltInCloudControl) Close() error {
+func (b *BuiltinCloudControl) Close() error {
 	b.Dispose.Close()
 	return nil
 }
 
 // onClose 资源清理回调
-func (b *BuiltInCloudControl) onClose() {
+func (b *BuiltinCloudControl) onClose() {
 	utils.Infof("Cleaning up cloud control resources...")
 
 	// 等待清理例程完全退出
@@ -64,7 +69,7 @@ func (b *BuiltInCloudControl) onClose() {
 }
 
 // cleanupRoutine 清理例程
-func (b *BuiltInCloudControl) cleanupRoutine() {
+func (b *BuiltinCloudControl) cleanupRoutine() {
 	utils.LogSystemEvent("cleanup_routine_started", "cloud_control", nil)
 
 	// 注册清理任务

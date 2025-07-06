@@ -4,11 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+
+	"gopkg.in/yaml.v3"
 
 	"tunnox-core/internal/cloud"
 	"tunnox-core/internal/constants"
@@ -91,10 +92,7 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 	}
 
 	// 创建云控制器
-	cloudControl, err := cloud.NewBuiltinCloudControl(nil)
-	if err != nil {
-		utils.Fatalf("Failed to create cloud control: %v", err)
-	}
+	cloudControl := cloud.NewBuiltinCloudControl(nil)
 
 	// 创建服务器
 	server := &Server{
