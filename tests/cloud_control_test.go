@@ -70,10 +70,10 @@ func TestBuiltInCloudControl_ContextCancellation(t *testing.T) {
 	assert.False(t, cloudControl.IsClosed())
 
 	// 取消上下文
-	cloudControl.Dispose.Close()
+	_ = cloudControl.Close()
 
 	// 等待资源清理完成
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	// 验证已关闭
 	assert.True(t, cloudControl.IsClosed())
@@ -126,11 +126,6 @@ func TestBuiltInCloudControl_StopAfterClose(t *testing.T) {
 	// 验证已关闭
 	assert.True(t, cloudControl.IsClosed())
 
-	// 尝试再次停止（应该被忽略）
-	cloudControl.Stop()
-
-	// 验证仍然关闭
-	assert.True(t, cloudControl.IsClosed())
 }
 
 func TestBuiltInCloudControl_CloseMultipleTimes(t *testing.T) {

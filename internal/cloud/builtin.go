@@ -69,31 +69,9 @@ func (b *BuiltInCloudControl) Start() {
 	utils.Infof("Built-in cloud control started successfully")
 }
 
-// Stop 停止内置云控
-func (b *BuiltInCloudControl) Stop() {
-	if b.IsClosed() {
-		return
-	}
-
-	utils.Infof("Stopping built-in cloud control...")
-
-	// 通知清理例程退出 - 直接关闭通道更可靠
-	select {
-	case <-b.done:
-		// 通道已关闭
-		utils.Infof("Cleanup done channel already closed")
-	default:
-		utils.Info("Closing cleanup done channel...")
-		close(b.done)
-		utils.Infof("Cleanup done channel closed")
-	}
-
-	utils.Infof("Built-in cloud control stopped")
-}
-
 // Close 关闭内置云控（实现CloudControlAPI接口）
 func (b *BuiltInCloudControl) Close() error {
-	b.Ctx().Done()
+	b.Dispose.Close()
 	return nil
 }
 
@@ -101,19 +79,8 @@ func (b *BuiltInCloudControl) Close() error {
 func (b *BuiltInCloudControl) onClose() {
 	utils.Infof("Cleaning up cloud control resources...")
 
-	// 先停止服务
-	b.Stop()
-
 	// 等待清理例程完全退出
 	time.Sleep(100 * time.Millisecond)
-
-	// 关闭done通道
-	select {
-	case <-b.done:
-		// 通道已关闭
-	default:
-		close(b.done)
-	}
 
 	// 清理各个组件
 	if b.jwtManager != nil {

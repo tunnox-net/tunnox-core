@@ -66,12 +66,17 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func()) {
 		return
 	}
 
-	if parent != nil {
+	curParent := parent
+	if curParent == nil {
+		curParent = context.Background()
+	}
+
+	if curParent != nil {
 		if c.ctx != nil && !c.closed {
 			Warn("context is not nil and context is not closed")
 		}
 		c.onClose = onClose
-		c.ctx, c.cancel = context.WithCancel(parent)
+		c.ctx, c.cancel = context.WithCancel(curParent)
 		c.closed = false
 		go func() {
 			select {
