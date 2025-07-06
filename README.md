@@ -1,324 +1,414 @@
-# tunnox-core
+# Tunnox Core
 
-High-performance multi-protocol tunnel/relay/proxy core library for cloud-native and edge scenarios. Supports TCP, WebSocket, UDP, and QUIC. Unified business logic, easy extensibility, and robust resource management.
+<div align="center">
 
-## Features
+![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
+![Tests](https://img.shields.io/badge/Tests-Passing-brightgreen.svg)
+![Architecture](https://img.shields.io/badge/Architecture-Layered-orange.svg)
 
-- 🚀 **Multi-protocol support**: TCP, WebSocket, UDP, QUIC
-- 🧩 **Unified Adapter interface**: All protocol adapters implement the `Adapter` interface
-- 🏗️ **Manager**: Unified registration/start/stop for all adapters
-- 🧠 **ConnectionSession**: Centralized business logic (in development)
-- 🔒 **Thread-safe**: All connections and streams are concurrency-safe
-- 🔄 **Easy extensibility**: Add new protocols by implementing the Adapter interface
-- 📦 **Rich examples and docs**: See the `docs/` directory
+**High-performance, scalable cloud-controlled tunneling core framework**  
+*Engineered for elegance, maintainability, and production readiness*
 
-## Quick Start
+</div>
 
-### 1. Start a multi-protocol server
+---
+
+## 🎯 Project Overview
+
+Tunnox Core is a sophisticated cloud-controlled tunneling framework designed for distributed network environments. It provides comprehensive capabilities for connection management, port mapping, authentication, statistics, and resource orchestration with a focus on **engineering elegance**, **maintainability**, and **scalability**.
+
+### 🌟 Core Philosophy
+
+- **Layered Architecture**: Clean separation of concerns with distinct layers for business logic, data access, and infrastructure
+- **Resource Management**: Hierarchical Dispose tree ensuring graceful shutdown and resource cleanup
+- **Type Safety**: Strong typing with consistent naming conventions throughout
+- **Testability**: 100% test coverage with isolated test environments
+- **Extensibility**: Plugin-based manager architecture for easy feature expansion
+
+---
+
+## 🏗️ Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Application Layer"
+        Server[Server Entry Point]
+        Config[Configuration Management]
+    end
+    
+    subgraph "Business Layer"
+        CloudControl[CloudControl Bus]
+        subgraph "Business Managers"
+            JWTManager[JWT Manager]
+            StatsManager[Stats Manager]
+            NodeManager[Node Manager]
+            AnonymousManager[Anonymous Manager]
+            SearchManager[Search Manager]
+            ConnectionManager[Connection Manager]
+            ConfigManager[Config Manager]
+            CleanupManager[Cleanup Manager]
+        end
+    end
+    
+    subgraph "Data Layer"
+        subgraph "Repositories"
+            UserRepo[User Repository]
+            ClientRepo[Client Repository]
+            MappingRepo[Port Mapping Repository]
+            NodeRepo[Node Repository]
+            ConnectionRepo[Connection Repository]
+        end
+        
+        subgraph "Storage Abstraction"
+            MemoryStorage[Memory Storage]
+            RedisStorage[Redis Storage]
+            CustomStorage[Custom Storage]
+        end
+    end
+    
+    subgraph "Infrastructure Layer"
+        subgraph "Distributed Services"
+            IDGenerator[Distributed ID Generator]
+            DistributedLock[Distributed Lock]
+        end
+        
+        subgraph "Protocol Layer"
+            TCPAdapter[TCP Adapter]
+            WebSocketAdapter[WebSocket Adapter]
+            UDPAdapter[UDP Adapter]
+            QUICAdapter[QUIC Adapter]
+        end
+    end
+    
+    Server --> CloudControl
+    CloudControl --> JWTManager
+    CloudControl --> StatsManager
+    CloudControl --> NodeManager
+    CloudControl --> AnonymousManager
+    CloudControl --> SearchManager
+    CloudControl --> ConnectionManager
+    CloudControl --> ConfigManager
+    CloudControl --> CleanupManager
+    
+    JWTManager --> UserRepo
+    StatsManager --> UserRepo
+    NodeManager --> NodeRepo
+    AnonymousManager --> ClientRepo
+    SearchManager --> UserRepo
+    ConnectionManager --> ConnectionRepo
+    
+    UserRepo --> MemoryStorage
+    ClientRepo --> MemoryStorage
+    MappingRepo --> MemoryStorage
+    NodeRepo --> MemoryStorage
+    ConnectionRepo --> MemoryStorage
+    
+    CloudControl --> IDGenerator
+    CloudControl --> DistributedLock
+    
+    Server --> TCPAdapter
+    Server --> WebSocketAdapter
+    Server --> UDPAdapter
+    Server --> QUICAdapter
+```
+
+---
+
+## ✨ Key Features
+
+### 🔐 **Authentication & Security**
+- **JWT Token Management**: Secure token generation, validation, and refresh
+- **Token Caching**: High-performance token cache with automatic cleanup
+- **Role-based Access**: Granular permission control
+- **Secure Communication**: Encrypted data transmission
+
+### 📊 **Statistics & Monitoring**
+- **Real-time Analytics**: Multi-dimensional traffic and connection statistics
+- **User Analytics**: Per-user and per-client performance metrics
+- **System Monitoring**: Comprehensive system health monitoring
+- **Historical Data**: Time-series data for trend analysis
+
+### 🌐 **Distributed Infrastructure**
+- **Distributed ID Generation**: Conflict-free ID generation across nodes
+- **Distributed Locking**: Coordinated resource access
+- **Node Management**: Dynamic node registration and health monitoring
+- **Load Balancing**: Intelligent traffic distribution
+
+### 🔄 **Resource Management**
+- **Dispose Tree**: Hierarchical resource cleanup
+- **Memory Pooling**: Efficient buffer management
+- **Connection Pooling**: Optimized connection reuse
+- **Automatic Cleanup**: Background cleanup of expired resources
+
+### 🧩 **Extensible Architecture**
+- **Manager Pattern**: Plugin-based business logic
+- **Repository Pattern**: Clean data access abstraction
+- **Storage Abstraction**: Pluggable storage backends
+- **Protocol Adapters**: Multi-protocol support (TCP, WebSocket, UDP, QUIC)
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Go 1.21 or higher
+- Git
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/tunnox-net/tunnox-core.git
+cd tunnox-core
+
+# Install dependencies
+go mod tidy
+
+# Run tests
+go test ./... -v
+
+# Build the server
+go build -o server cmd/server/main.go
+
+# Run the server
+./server
+```
+
+### Basic Usage
 
 ```go
 package main
+
 import (
     "context"
     "log"
-    "os"
-    "os/signal"
-    "syscall"
-    "tunnox-core/internal/cloud"
-    "tunnox-core/internal/protocol"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/storages"
 )
 
 func main() {
-    ctx := context.Background()
-    cloudControl := cloud.NewBuiltInCloudControl(cloud.DefaultConfig())
+    // Create configuration
+    config := managers.DefaultConfig()
+    
+    // Create storage backend
+    storage := storages.NewMemoryStorage(context.Background())
+    
+    // Create cloud control instance
+    cloudControl := managers.NewCloudControl(config, storage)
+    
+    // Start the service
     cloudControl.Start()
-    defer cloudControl.Stop()
-
-    session := &protocol.ConnectionSession{CloudApi: cloudControl}
-    session.SetCtx(ctx, session.onClose)
-    pm := protocol.NewManager(ctx)
-
-    tcp := protocol.NewTcpAdapter(ctx, session)
-    ws := protocol.NewWebSocketAdapter(ctx, session)
-    udp := protocol.NewUdpAdapter(ctx, session)
-    quic := protocol.NewQuicAdapter(ctx, session)
-
-    tcp.ListenFrom(":8080")
-    ws.ListenFrom(":8081")
-    udp.ListenFrom(":8082")
-    quic.ListenFrom(":8083")
-
-    pm.Register(tcp)
-    pm.Register(ws)
-    pm.Register(udp)
-    pm.Register(quic)
-    if err := pm.StartAll(ctx); err != nil {
+    defer cloudControl.Close()
+    
+    // Create a user
+    user, err := cloudControl.CreateUser("john_doe", "john@example.com")
+    if err != nil {
         log.Fatal(err)
     }
-    log.Println("Server started on TCP:8080, WS:8081, UDP:8082, QUIC:8083")
-    sig := make(chan os.Signal, 1)
-    signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-    <-sig
-    pm.CloseAll()
+    
+    // Create a client
+    client, err := cloudControl.CreateClient(user.ID, "my-client")
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    log.Printf("Created user: %s, client: %d", user.ID, client.ID)
 }
 ```
 
-### 2. Client connection example
+---
 
-```go
-// TCP
-client := protocol.NewTcpAdapter(ctx, nil)
-client.ConnectTo("localhost:8080")
-// WebSocket
-ws := protocol.NewWebSocketAdapter(ctx, nil)
-ws.ConnectTo("ws://localhost:8081")
-// UDP
-udp := protocol.NewUdpAdapter(ctx, nil)
-udp.ConnectTo("localhost:8082")
-// QUIC
-quic := protocol.NewQuicAdapter(ctx, nil)
-quic.ConnectTo("localhost:8083")
+## 📁 Project Structure
+
+```
+tunnox-core/
+├── cmd/
+│   └── server/                 # Server entry point
+│       ├── main.go            # Main application
+│       └── config/            # Configuration files
+├── internal/
+│   ├── cloud/                 # Cloud control core
+│   │   ├── managers/          # Business managers
+│   │   │   ├── base.go        # CloudControl core
+│   │   │   ├── jwt_manager.go # JWT authentication
+│   │   │   ├── stats_manager.go # Statistics
+│   │   │   ├── node_manager.go # Node management
+│   │   │   └── ...            # Other managers
+│   │   ├── repos/             # Data repositories
+│   │   ├── models/            # Data models
+│   │   ├── distributed/       # Distributed services
+│   │   ├── storages/          # Storage abstraction
+│   │   ├── configs/           # Configuration structures
+│   │   ├── constants/         # Constants
+│   │   └── stats/             # Statistics structures
+│   ├── protocol/              # Protocol adapters
+│   ├── stream/                # Data streaming
+│   └── utils/                 # Utilities
+├── tests/                     # Test suite
+├── docs/                      # Documentation
+└── examples/                  # Usage examples
 ```
 
-### 3. Unified business logic entry (In Development)
+---
 
-All protocol connections are handled by ConnectionSession:
-```go
-func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) {
-    // Business logic here, protocol-agnostic (currently in development)
-}
+## 🔧 Configuration
+
+### Server Configuration
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8080
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 60
+  protocols:
+    tcp:
+      enabled: true
+      port: 8080
+    websocket:
+      enabled: true
+      port: 8081
+    udp:
+      enabled: true
+      port: 8082
+    quic:
+      enabled: true
+      port: 8083
+
+cloud:
+  type: "built_in"
+  jwt_secret_key: "your-secret-key"
+  jwt_expiration: "24h"
+  refresh_expiration: "168h"
+  cleanup_interval: "5m"
+
+log:
+  level: "info"
+  format: "text"
+  output: "stdout"
 ```
 
-## Adapter Interface
-
-```go
-type Adapter interface {
-    ConnectTo(serverAddr string) error
-    ListenFrom(serverAddr string) error
-    Start(ctx context.Context) error
-    Stop() error
-    Name() string
-    GetReader() io.Reader
-    GetWriter() io.Writer
-    Close()
-}
-```
-
-## Protocol Comparison
-
-| Protocol   | Reliability | Performance | Firewall Friendly | Latency | Typical Use Cases         |
-|------------|-------------|-------------|-------------------|---------|--------------------------|
-| TCP        | High        | Medium      | Good              | Medium  | File transfer, DB        |
-| WebSocket  | High        | Medium      | Excellent         | Medium  | Web, real-time comm      |
-| UDP        | Low         | High        | Good              | Low     | Games, streaming, DNS    |
-| QUIC       | High        | High        | Medium            | Low     | Modern web, mobile apps  |
-
-## Development Status
-
-- ✅ **Protocol Adapters**: TCP, WebSocket, UDP, QUIC adapters fully implemented
-- ✅ **Manager**: Protocol manager with unified registration/start/stop
-- ✅ **Cloud Control**: Built-in cloud control API
-- 🔄 **ConnectionSession**: Core business logic integration (in development)
-- 🔄 **Package Stream**: Data transport with compression and rate limiting
-
-## Extensibility
-
-- Add new protocols by implementing and registering the Adapter interface
-- Business logic will be fully reusable, protocol-agnostic (once ConnectionSession is complete)
-
-## Testing
+### Environment Variables
 
 ```bash
-go test ./tests -v -run "Test.*Adapter"
-```
-
-## Directory Structure
-
-```
-internal/
-  cloud/      # Cloud control core: user, client, mapping, node, auth, config
-  protocol/   # Protocol adapters, manager, session (in development)
-  stream/     # Package stream, compression, rate limiter
-  utils/      # Dispose tree, buffer pool, helpers
-cmd/server/   # Server entry point with configuration
- tests/       # Full unit test coverage
-docs/         # Documentation
-```
-
-## Documentation
-- [Multi-protocol Example](docs/multi_protocol_example.md)
-- [Architecture](docs/architecture.md)
-- [API/Usage Examples](docs/examples.md)
-
----
-
-For more help or custom development, please open an issue or PR!
-
----
-
-## Overview
-
-tunnox-core is a high-performance, highly maintainable, and extensible backend core designed for cloud-controlled intranet tunneling scenarios. It features a layered protocol adapter architecture, advanced resource management, and is engineered for low latency and high throughput. All resources are managed via a Dispose tree for graceful shutdown and resource control. The goal is to deliver an elegant, scalable, and production-ready tunneling service core.
-
----
-
-## Features
-
-- **High Performance**: Optimized for low latency and high throughput, with zero-copy data transfer, memory pooling, and efficient concurrency.
-- **Layered Protocol Adapter Architecture**: Unified interface for all protocol adapters, supporting hot-plug and extensibility.
-- **Dispose Tree Resource Management**: All adapters, streams, services, and sessions are managed in a hierarchical Dispose tree for safe and graceful shutdown.
-- **Multi-Protocol Support**: TCP implemented, extensible to HTTP, WebSocket, etc.
-- **Command-based Packet Dispatch**: Session layer dispatches business logic by CommandType, supporting clean separation of concerns.
-- **High Maintainability**: Elegant code structure, clear layering, and easy for team collaboration.
-- **Comprehensive Unit Testing**: 100% test pass rate required, with resource isolation for each test case.
-
----
-
-## Architecture Diagram
-
-```mermaid
-graph TD
-    Server((Server)) --> ProtocolManager
-    ProtocolManager --> TcpAdapter
-    ProtocolManager --> OtherAdapters["...Future Adapters"]
-    TcpAdapter --> ConnectionSession
-    ConnectionSession --> PackageStream
-    PackageStream --> StreamFeatures["Compression/RateLimit/Dispose"]
-    Server --> CloudControl["Cloud Control Core"]
-    CloudControl --> UserRepo
-    CloudControl --> ClientRepo
-    CloudControl --> MappingRepo
-    CloudControl --> NodeRepo
+export TUNNOX_JWT_SECRET_KEY="your-secret-key"
+export TUNNOX_API_ENDPOINT="http://localhost:8080"
+export TUNNOX_NODE_ID="node-001"
+export TUNNOX_LOG_LEVEL="info"
 ```
 
 ---
 
-## Quick Start
+## 📚 Documentation
+
+- **[Architecture Guide](docs/architecture.md)** - Detailed architecture overview and design principles
+- **[API Reference](docs/api.md)** - Complete API documentation and interfaces
+- **[Usage Examples](docs/examples.md)** - Comprehensive code examples and best practices
+- **[Configuration Guide](cmd/server/config/README.md)** - Configuration options and examples
+
+---
+
+## 🧪 Testing
+
+### Run All Tests
 
 ```bash
-# 1. Clone the repository
-$ git clone https://github.com/tunnox-net/tunnox-core.git
-$ cd tunnox-core
+go test ./... -v
+```
 
-# 2. Install dependencies
-$ go mod tidy
+### Run Specific Test Suites
 
-# 3. Run unit tests
-$ go test ./... -v
+```bash
+# Cloud control tests
+go test ./tests -v -run "TestCloudControl"
 
-# 4. Refer to examples/ for integration
+# Protocol tests
+go test ./tests -v -run "TestProtocol"
+
+# Resource management tests
+go test ./tests -v -run "TestDispose"
+```
+
+### Test Coverage
+
+```bash
+go test ./... -cover
 ```
 
 ---
 
-## Documentation
+## 🔄 Development
 
-- [Architecture Design](docs/architecture.md) - Detailed architecture overview and design principles
-- [API Documentation](docs/api.md) - Complete API reference and interfaces
-- [Usage Examples](docs/examples.md) - Comprehensive code examples and best practices
+### Adding New Managers
 
----
+1. Create a new manager in `internal/cloud/managers/`
+2. Implement the required interfaces
+3. Add Dispose interface implementation
+4. Register in CloudControl
+5. Add comprehensive tests
 
-## Directory Structure
+### Adding New Storage Backends
 
-```
-internal/
-  cloud/      # Cloud control core: user, client, mapping, node, auth, config
-  protocol/   # Protocol adapters, manager, session
-  stream/     # Package stream, compression, rate limiter
-  utils/      # Dispose tree, buffer pool, helpers
-cmd/server/   # Server entry
- tests/       # Full unit test coverage
-docs/         # Documentation
-```
+1. Implement the `Storage` interface
+2. Add factory method in `factories/`
+3. Update configuration options
+4. Add integration tests
 
----
+### Code Style Guidelines
 
-## Development Progress
-
-✅ Dispose tree resource management, all core structs included  
-✅ ProtocolAdapter interface & BaseAdapter, multi-protocol ready  
-✅ TcpAdapter, TCP port listening & connection management  
-✅ ProtocolManager, unified registration/start/close  
-✅ ConnectionSession, layered packet handling & CommandType dispatch  
-✅ Cloud control core (user, client, mapping, node, auth, etc.)  
-✅ Unit test system, 100% pass for Dispose, Repository, etc.
-
-⏳ **Core Features**
-- ConnectionSession command-handler optimization (map[CommandType]Handler)
-- Complete packet processing pipeline with InitPacket/AcceptPacket support
-- User authentication and authorization flow implementation
-- Real-time connection monitoring and statistics
-
-⏳ **Protocol Adapters**
-- HTTP/HTTPS protocol adapter
-- WebSocket protocol adapter
-- UDP protocol adapter
-- Custom protocol adapter framework
-
-⏳ **Configuration & Management**
-- Configuration file support (YAML/JSON)
-- Environment variable configuration
-- Hot-reload configuration capability
-- Parameterized port and address configuration
-
-⏳ **Storage & Persistence**
-- Redis storage backend integration
-- PostgreSQL database support
-- Distributed storage with consistency
-- Data migration and backup tools
-
-⏳ **Security & Encryption**
-- TLS/SSL encryption support
-- End-to-end encryption for data transfer
-- Certificate management and validation
-- Rate limiting and DDoS protection
-
-⏳ **Monitoring & Observability**
-- Metrics collection (Prometheus format)
-- Distributed tracing (OpenTelemetry)
-- Health check endpoints
-- Performance monitoring dashboard
-
-⏳ **Scalability & Performance**
-- Load balancing across multiple nodes
-- Connection pooling optimization
-- Memory usage optimization
-- Performance benchmarking suite
-
-⏳ **API & Integration**
-- RESTful API endpoints
-- gRPC service interface
-- WebSocket API for real-time updates
-- SDK for multiple languages
-
-⏳ **Testing & Quality**
-- Integration test suite
-- Performance testing framework
-- Security testing (penetration tests)
-- End-to-end testing scenarios
-
-⏳ **Documentation & Examples**
-- Complete API documentation
-- Deployment guides
-- Troubleshooting guides
-- Production deployment examples
+- Follow Go naming conventions
+- Implement Dispose interface for all resources
+- Add comprehensive error handling
+- Write unit tests for all public APIs
+- Use consistent logging patterns
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
-Contributions are welcome! Please open issues, pull requests, or suggestions to help build a high-quality cloud-controlled tunneling core.
+We welcome contributions! Please see our [Contributing Guide](docs/CONTRIBUTING.md) for details.
+
+### Development Setup
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests
+5. Ensure all tests pass
+6. Submit a pull request
+
+### Code Review Process
+
+- All changes require code review
+- Tests must pass
+- Documentation must be updated
+- Performance impact must be considered
 
 ---
 
-## License
+## 📄 License
 
-[MIT](LICENSE)
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## Contact
+## 🙏 Acknowledgments
 
-- Maintainer: roger tong
-- Email: zhangyu.tongbin@gmail.com
+- Built with modern Go best practices
+- Inspired by clean architecture principles
+- Designed for production scalability
+- Focused on developer experience
+
+---
+
+<div align="center">
+
+**Built with ❤️ for the Go community**
+
+[![GitHub stars](https://img.shields.io/github/stars/tunnox-net/tunnox-core?style=social)](https://github.com/tunnox-net/tunnox-core)
+[![GitHub forks](https://img.shields.io/github/forks/tunnox-net/tunnox-core?style=social)](https://github.com/tunnox-net/tunnox-core)
+
+</div>

@@ -2,53 +2,13 @@
 
 ## Overview
 
-This document provides comprehensive examples of how to use tunnox-core in various scenarios.
+This document provides comprehensive examples of how to use Tunnox Core in various scenarios. The examples demonstrate the **Manager Pattern** architecture, proper resource management, and best practices for building scalable cloud-controlled applications.
 
-## Basic Server Setup
+## 🚀 Quick Start Examples
 
-### Simple TCP Server
+### Basic Server Setup
 
-```go
-package main
-
-import (
-    "context"
-    "log"
-    "os"
-    "os/signal"
-    "syscall"
-    "tunnox-core/internal/protocol"
-)
-
-func main() {
-    ctx := context.Background()
-    
-    // Create protocol manager
-    pm := protocol.NewProtocolManager(ctx)
-    
-    // Create and register TCP adapter
-    tcpAdapter := protocol.NewTcpAdapter(ctx, nil)
-    pm.Register(tcpAdapter)
-    
-    // Start all adapters
-    if err := pm.StartAll(ctx); err != nil {
-        log.Fatal("Failed to start adapters:", err)
-    }
-    
-    log.Println("Server started on :8080")
-    
-    // Wait for shutdown signal
-    sigChan := make(chan os.Signal, 1)
-    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-    <-sigChan
-    
-    log.Println("Shutting down...")
-    pm.CloseAll()
-    log.Println("Server stopped")
-}
-```
-
-### Server with Cloud Control
+#### Simple Cloud Control Server
 
 ```go
 package main
@@ -59,31 +19,25 @@ import (
     "os"
     "os/signal"
     "syscall"
-    "tunnox-core/internal/cloud"
-    "tunnox-core/internal/protocol"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/storages"
 )
 
 func main() {
-    ctx := context.Background()
+    // Create configuration
+    config := managers.DefaultConfig()
     
-    // Initialize cloud control
-    config := cloud.DefaultConfig()
-    cloudControl := cloud.NewBuiltInCloudControl(config)
+    // Create storage backend
+    storage := storages.NewMemoryStorage(context.Background())
+    
+    // Create cloud control instance
+    cloudControl := managers.NewCloudControl(config, storage)
+    
+    // Start the service
     cloudControl.Start()
+    defer cloudControl.Close()
     
-    // Create protocol manager
-    pm := protocol.NewProtocolManager(ctx)
-    
-    // Create and register TCP adapter
-    tcpAdapter := protocol.NewTcpAdapter(ctx, nil)
-    pm.Register(tcpAdapter)
-    
-    // Start all adapters
-    if err := pm.StartAll(ctx); err != nil {
-        log.Fatal("Failed to start adapters:", err)
-    }
-    
-    log.Println("Server started with cloud control")
+    log.Println("Cloud control server started")
     
     // Wait for shutdown signal
     sigChan := make(chan os.Signal, 1)
@@ -91,15 +45,10 @@ func main() {
     <-sigChan
     
     log.Println("Shutting down...")
-    pm.CloseAll()
-    cloudControl.Stop()
-    log.Println("Server stopped")
 }
 ```
 
-## Cloud Control Operations
-
-### User Management
+#### Server with Built-in Cloud Control
 
 ```go
 package main
@@ -107,60 +56,148 @@ package main
 import (
     "context"
     "log"
-    "tunnox-core/internal/cloud"
+    "os"
+    "os/signal"
+    "syscall"
+    "tunnox-core/internal/cloud/managers"
 )
 
-func userManagementExample() {
-    ctx := context.Background()
+func main() {
+    // Create configuration
+    config := managers.DefaultConfig()
     
-    // Create cloud control
-    config := cloud.DefaultConfig()
-    cloudControl := cloud.NewBuiltInCloudControl(config)
+    // Create built-in cloud control (uses memory storage)
+    cloudControl := managers.NewBuiltinCloudControl(config)
+    
+    // Start the service
     cloudControl.Start()
-    defer cloudControl.Stop()
+    defer cloudControl.Close()
     
-    // Create a user
-    user := &cloud.User{
-        Username: "john_doe",
-        Email:    "john@example.com",
-        Status:   cloud.UserStatusActive,
-    }
+    log.Println("Built-in cloud control server started")
     
-    if err := cloudControl.CreateUser(ctx, user); err != nil {
-        log.Fatal("Failed to create user:", err)
-    }
-    log.Printf("Created user: %s", user.ID)
+    // Wait for shutdown signal
+    sigChan := make(chan os.Signal, 1)
+    signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+    <-sigChan
     
-    // Get user
-    retrievedUser, err := cloudControl.GetUser(ctx, user.ID)
+    log.Println("Shutting down...")
+}
+```
+
+## 👥 User Management Examples
+
+### Complete User Lifecycle
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
+)
+
+func userLifecycleExample(cloudControl managers.CloudControlAPI) error {
+    // 1. Create a user
+    user, err := cloudControl.CreateUser("john_doe", "john@example.com")
     if err != nil {
-        log.Fatal("Failed to get user:", err)
+        return fmt.Errorf("failed to create user: %w", err)
+    }
+    log.Printf("Created user: %s (%s)", user.Username, user.ID)
+    
+    // 2. Get user details
+    retrievedUser, err := cloudControl.GetUser(user.ID)
+    if err != nil {
+        return fmt.Errorf("failed to get user: %w", err)
     }
     log.Printf("Retrieved user: %s", retrievedUser.Username)
     
-    // Update user
+    // 3. Update user information
     retrievedUser.Email = "john.updated@example.com"
-    if err := cloudControl.UpdateUser(ctx, retrievedUser); err != nil {
-        log.Fatal("Failed to update user:", err)
+    err = cloudControl.UpdateUser(retrievedUser)
+    if err != nil {
+        return fmt.Errorf("failed to update user: %w", err)
     }
     log.Println("Updated user email")
     
-    // List users
-    users, err := cloudControl.ListUsers(ctx, "")
+    // 4. List all users
+    users, err := cloudControl.ListUsers(models.UserTypeActive)
     if err != nil {
-        log.Fatal("Failed to list users:", err)
+        return fmt.Errorf("failed to list users: %w", err)
     }
-    log.Printf("Total users: %d", len(users))
+    log.Printf("Total active users: %d", len(users))
     
-    // Delete user
-    if err := cloudControl.DeleteUser(ctx, user.ID); err != nil {
-        log.Fatal("Failed to delete user:", err)
+    // 5. Delete user (cleanup)
+    err = cloudControl.DeleteUser(user.ID)
+    if err != nil {
+        return fmt.Errorf("failed to delete user: %w", err)
     }
     log.Println("Deleted user")
+    
+    return nil
 }
 ```
 
-### Client Management
+### Bulk User Operations
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
+)
+
+func bulkUserOperationsExample(cloudControl managers.CloudControlAPI) error {
+    // Create multiple users
+    userData := []struct {
+        username string
+        email    string
+    }{
+        {"alice", "alice@example.com"},
+        {"bob", "bob@example.com"},
+        {"charlie", "charlie@example.com"},
+    }
+    
+    var users []*models.User
+    
+    for _, data := range userData {
+        user, err := cloudControl.CreateUser(data.username, data.email)
+        if err != nil {
+            return fmt.Errorf("failed to create user %s: %w", data.username, err)
+        }
+        users = append(users, user)
+        log.Printf("Created user: %s", user.Username)
+    }
+    
+    // List all users
+    allUsers, err := cloudControl.ListUsers("")
+    if err != nil {
+        return fmt.Errorf("failed to list users: %w", err)
+    }
+    
+    log.Printf("Total users in system: %d", len(allUsers))
+    
+    // Cleanup - delete all created users
+    for _, user := range users {
+        err := cloudControl.DeleteUser(user.ID)
+        if err != nil {
+            log.Printf("Warning: failed to delete user %s: %v", user.Username, err)
+        } else {
+            log.Printf("Deleted user: %s", user.Username)
+        }
+    }
+    
+    return nil
+}
+```
+
+## 🔧 Client Management Examples
+
+### Client Registration and Management
 
 ```go
 package main
@@ -169,68 +206,85 @@ import (
     "context"
     "log"
     "time"
-    "tunnox-core/internal/cloud"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
 )
 
-func clientManagementExample() {
-    ctx := context.Background()
-    
-    // Create cloud control
-    config := cloud.DefaultConfig()
-    cloudControl := cloud.NewBuiltInCloudControl(config)
-    cloudControl.Start()
-    defer cloudControl.Stop()
-    
-    // Create a user first
-    user := &cloud.User{
-        Username: "client_user",
-        Email:    "client@example.com",
-        Status:   cloud.UserStatusActive,
-    }
-    cloudControl.CreateUser(ctx, user)
-    
-    // Register a client
-    client := &cloud.Client{
-        UserID:   user.ID,
-        Name:     "my-client",
-        Status:   cloud.ClientStatusOnline,
-        LastSeen: time.Now(),
-    }
-    
-    if err := cloudControl.RegisterClient(ctx, client); err != nil {
-        log.Fatal("Failed to register client:", err)
-    }
-    log.Printf("Registered client: %s", client.ID)
-    
-    // Get client
-    retrievedClient, err := cloudControl.GetClient(ctx, client.ID)
+func clientManagementExample(cloudControl managers.CloudControlAPI) error {
+    // 1. Create a user first
+    user, err := cloudControl.CreateUser("client_user", "client@example.com")
     if err != nil {
-        log.Fatal("Failed to get client:", err)
+        return fmt.Errorf("failed to create user: %w", err)
     }
-    log.Printf("Retrieved client: %s", retrievedClient.Name)
+    defer cloudControl.DeleteUser(user.ID) // Cleanup
     
-    // Update client status
-    retrievedClient.Status = cloud.ClientStatusOffline
-    retrievedClient.LastSeen = time.Now()
-    if err := cloudControl.UpdateClient(ctx, retrievedClient); err != nil {
-        log.Fatal("Failed to update client:", err)
+    // 2. Create multiple clients for the user
+    clientNames := []string{"desktop-client", "mobile-client", "server-client"}
+    var clients []*models.Client
+    
+    for _, name := range clientNames {
+        client, err := cloudControl.CreateClient(user.ID, name)
+        if err != nil {
+            return fmt.Errorf("failed to create client %s: %w", name, err)
+        }
+        clients = append(clients, client)
+        log.Printf("Created client: %s (ID: %d)", client.Name, client.ID)
     }
-    log.Println("Updated client status")
     
-    // List user clients
-    clients, err := cloudControl.ListUserClients(ctx, user.ID)
+    // 3. Update client status
+    for _, client := range clients {
+        err := cloudControl.UpdateClientStatus(client.ID, models.ClientStatusOnline, "node-001")
+        if err != nil {
+            return fmt.Errorf("failed to update client status: %w", err)
+        }
+        log.Printf("Updated client %d status to online", client.ID)
+    }
+    
+    // 4. Touch client (update last seen)
+    for _, client := range clients {
+        cloudControl.TouchClient(client.ID)
+    }
+    
+    // 5. List user's clients
+    userClients, err := cloudControl.ListUserClients(user.ID)
     if err != nil {
-        log.Fatal("Failed to list clients:", err)
+        return fmt.Errorf("failed to list user clients: %w", err)
     }
-    log.Printf("User has %d clients", len(clients))
+    log.Printf("User has %d clients", len(userClients))
     
-    // Cleanup
-    cloudControl.DeleteClient(ctx, client.ID)
-    cloudControl.DeleteUser(ctx, user.ID)
+    // 6. Get client details
+    for _, client := range clients {
+        retrievedClient, err := cloudControl.GetClient(client.ID)
+        if err != nil {
+            return fmt.Errorf("failed to get client %d: %w", client.ID, err)
+        }
+        log.Printf("Client %d: %s, Status: %s", 
+            retrievedClient.ID, retrievedClient.Name, retrievedClient.Status)
+    }
+    
+    // 7. Get client port mappings
+    for _, client := range clients {
+        mappings, err := cloudControl.GetClientPortMappings(client.ID)
+        if err != nil {
+            return fmt.Errorf("failed to get client mappings: %w", err)
+        }
+        log.Printf("Client %d has %d port mappings", client.ID, len(mappings))
+    }
+    
+    // 8. Cleanup - delete clients
+    for _, client := range clients {
+        err := cloudControl.DeleteClient(client.ID)
+        if err != nil {
+            return fmt.Errorf("failed to delete client %d: %w", client.ID, err)
+        }
+        log.Printf("Deleted client: %d", client.ID)
+    }
+    
+    return nil
 }
 ```
 
-### Port Mapping
+### Client Status Monitoring
 
 ```go
 package main
@@ -238,351 +292,65 @@ package main
 import (
     "context"
     "log"
-    "tunnox-core/internal/cloud"
+    "time"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
 )
 
-func portMappingExample() {
-    ctx := context.Background()
-    
-    // Create cloud control
-    config := cloud.DefaultConfig()
-    cloudControl := cloud.NewBuiltInCloudControl(config)
-    cloudControl.Start()
-    defer cloudControl.Stop()
-    
+func clientStatusMonitoringExample(cloudControl managers.CloudControlAPI) error {
     // Create user and client
-    user := &cloud.User{
-        Username: "mapping_user",
-        Email:    "mapping@example.com",
-        Status:   cloud.UserStatusActive,
-    }
-    cloudControl.CreateUser(ctx, user)
-    
-    client := &cloud.Client{
-        UserID: user.ID,
-        Name:   "mapping-client",
-        Status: cloud.ClientStatusOnline,
-    }
-    cloudControl.RegisterClient(ctx, client)
-    
-    // Create port mapping
-    mapping := &cloud.PortMapping{
-        UserID:     user.ID,
-        ClientID:   client.ID,
-        LocalPort:  8080,
-        RemotePort: 80,
-        Protocol:   "tcp",
-        Status:     cloud.MappingStatusActive,
-        TrafficStats: &cloud.TrafficStats{
-            BytesSent:     0,
-            BytesReceived: 0,
-        },
-    }
-    
-    if err := cloudControl.CreatePortMapping(ctx, mapping); err != nil {
-        log.Fatal("Failed to create mapping:", err)
-    }
-    log.Printf("Created mapping: %s", mapping.ID)
-    
-    // Get mapping
-    retrievedMapping, err := cloudControl.GetPortMapping(ctx, mapping.ID)
+    user, err := cloudControl.CreateUser("monitor_user", "monitor@example.com")
     if err != nil {
-        log.Fatal("Failed to get mapping:", err)
+        return fmt.Errorf("failed to create user: %w", err)
     }
-    log.Printf("Retrieved mapping: %d -> %d", retrievedMapping.LocalPort, retrievedMapping.RemotePort)
+    defer cloudControl.DeleteUser(user.ID)
     
-    // Update mapping
-    retrievedMapping.Status = cloud.MappingStatusInactive
-    if err := cloudControl.UpdatePortMapping(ctx, retrievedMapping); err != nil {
-        log.Fatal("Failed to update mapping:", err)
-    }
-    log.Println("Updated mapping status")
-    
-    // List user mappings
-    mappings, err := cloudControl.ListUserMappings(ctx, user.ID)
+    client, err := cloudControl.CreateClient(user.ID, "monitor-client")
     if err != nil {
-        log.Fatal("Failed to list mappings:", err)
+        return fmt.Errorf("failed to create client: %w", err)
     }
-    log.Printf("User has %d mappings", len(mappings))
+    defer cloudControl.DeleteClient(client.ID)
     
-    // Cleanup
-    cloudControl.DeletePortMapping(ctx, mapping.ID)
-    cloudControl.DeleteClient(ctx, client.ID)
-    cloudControl.DeleteUser(ctx, user.ID)
-}
-```
-
-## Authentication
-
-### User Authentication
-
-```go
-package main
-
-import (
-    "context"
-    "log"
-    "tunnox-core/internal/cloud"
-)
-
-func authenticationExample() {
-    ctx := context.Background()
-    
-    // Create cloud control
-    config := cloud.DefaultConfig()
-    cloudControl := cloud.NewBuiltInCloudControl(config)
-    cloudControl.Start()
-    defer cloudControl.Stop()
-    
-    // Create a user
-    user := &cloud.User{
-        Username: "auth_user",
-        Email:    "auth@example.com",
-        Status:   cloud.UserStatusActive,
-    }
-    cloudControl.CreateUser(ctx, user)
-    
-    // Authenticate user
-    credentials := &cloud.UserCredentials{
-        Username: "auth_user",
-        Password: "password123",
+    // Simulate client status changes
+    statuses := []models.ClientStatus{
+        models.ClientStatusOnline,
+        models.ClientStatusOffline,
+        models.ClientStatusError,
+        models.ClientStatusOnline,
     }
     
-    authResult, err := cloudControl.AuthenticateUser(ctx, credentials)
-    if err != nil {
-        log.Fatal("Authentication failed:", err)
-    }
-    log.Printf("Authentication successful, token: %s", authResult.AccessToken)
-    
-    // Validate token
-    tokenInfo, err := cloudControl.ValidateToken(ctx, authResult.AccessToken)
-    if err != nil {
-        log.Fatal("Token validation failed:", err)
-    }
-    log.Printf("Token valid for user: %s", tokenInfo.UserID)
-    
-    // Refresh token
-    newAuthResult, err := cloudControl.RefreshToken(ctx, authResult.RefreshToken)
-    if err != nil {
-        log.Fatal("Token refresh failed:", err)
-    }
-    log.Printf("Token refreshed: %s", newAuthResult.AccessToken)
-    
-    // Cleanup
-    cloudControl.DeleteUser(ctx, user.ID)
-}
-```
-
-## Custom Protocol Adapter
-
-### Creating a Custom Adapter
-
-```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "log"
-    "net"
-    "tunnox-core/internal/protocol"
-    "tunnox-core/internal/stream"
-    "tunnox-core/internal/utils"
-)
-
-// CustomAdapter implements ProtocolAdapter interface
-type CustomAdapter struct {
-    protocol.BaseAdapter
-    listener   net.Listener
-    active     bool
-}
-
-func NewCustomAdapter(addr string, parentCtx context.Context) *CustomAdapter {
-    adapter := &CustomAdapter{}
-    adapter.SetName("custom")
-    adapter.SetAddr(addr)
-    adapter.SetCtx(parentCtx, adapter.onClose)
-    return adapter
-}
-
-func (c *CustomAdapter) Start(ctx context.Context) error {
-    ln, err := net.Listen("tcp", c.Addr())
-    if err != nil {
-        return fmt.Errorf("failed to listen: %w", err)
-    }
-    c.listener = ln
-    c.active = true
-    
-    go c.acceptLoop()
-    return nil
-}
-
-func (c *CustomAdapter) acceptLoop() {
-    for c.active {
-        conn, err := c.listener.Accept()
+    for i, status := range statuses {
+        err := cloudControl.UpdateClientStatus(client.ID, status, "node-001")
         if err != nil {
-            if !c.IsClosed() {
-                log.Printf("Accept error: %v", err)
-            }
-            return
-        }
-        go c.handleConn(conn)
-    }
-}
-
-func (c *CustomAdapter) handleConn(conn net.Conn) {
-    defer conn.Close()
-    
-    ctx, cancel := context.WithCancel(c.Ctx())
-    defer cancel()
-    
-    // Create package stream
-    ps := stream.NewPackageStream(conn, conn, ctx)
-    defer ps.Close()
-    
-    // Handle connection (implement your custom logic here)
-    log.Printf("Custom adapter handling connection from %s", conn.RemoteAddr())
-    
-    // Example: echo server
-    for {
-        data, err := ps.ReadExact(1024)
-        if err != nil {
-            break
+            return fmt.Errorf("failed to update status: %w", err)
         }
         
-        // Echo back
-        if err := ps.WriteExact(data); err != nil {
-            break
+        // Touch client to update last seen
+        cloudControl.TouchClient(client.ID)
+        
+        log.Printf("Updated client %d status to %s", client.ID, status)
+        
+        // Get updated client info
+        updatedClient, err := cloudControl.GetClient(client.ID)
+        if err != nil {
+            return fmt.Errorf("failed to get client: %w", err)
+        }
+        
+        log.Printf("Client %d: Status=%s, LastSeen=%v", 
+            updatedClient.ID, updatedClient.Status, updatedClient.LastSeen)
+        
+        if i < len(statuses)-1 {
+            time.Sleep(1 * time.Second) // Simulate time passing
         }
     }
-}
-
-func (c *CustomAdapter) Close() error {
-    c.active = false
-    if c.listener != nil {
-        c.listener.Close()
-    }
-    c.Dispose.Close()
+    
     return nil
 }
-
-func (c *CustomAdapter) onClose() {
-    c.Close()
-}
-
-func main() {
-    ctx := context.Background()
-    
-    // Create protocol manager
-    pm := protocol.NewProtocolManager(ctx)
-    
-    // Register custom adapter
-    customAdapter := NewCustomAdapter(":8081", ctx)
-    pm.Register(customAdapter)
-    
-    // Start all adapters
-    if err := pm.StartAll(ctx); err != nil {
-        log.Fatal("Failed to start adapters:", err)
-    }
-    
-    log.Println("Custom adapter server started on :8081")
-    
-    // Keep running
-    select {}
-}
 ```
 
-## Error Handling Examples
+## 🌐 Port Mapping Examples
 
-### Comprehensive Error Handling
-
-```go
-package main
-
-import (
-    "context"
-    "errors"
-    "fmt"
-    "log"
-    "tunnox-core/internal/cloud"
-)
-
-func errorHandlingExample() {
-    ctx := context.Background()
-    
-    config := cloud.DefaultConfig()
-    cloudControl := cloud.NewBuiltInCloudControl(config)
-    cloudControl.Start()
-    defer cloudControl.Stop()
-    
-    // Example: Handle user not found
-    _, err := cloudControl.GetUser(ctx, "non-existent-id")
-    if err != nil {
-        if errors.Is(err, cloud.ErrUserNotFound) {
-            log.Println("User not found - this is expected")
-        } else {
-            log.Fatal("Unexpected error:", err)
-        }
-    }
-    
-    // Example: Handle client operations
-    client := &cloud.Client{
-        UserID: "non-existent-user",
-        Name:   "test-client",
-        Status: cloud.ClientStatusOnline,
-    }
-    
-    err = cloudControl.RegisterClient(ctx, client)
-    if err != nil {
-        if errors.Is(err, cloud.ErrUserNotFound) {
-            log.Println("Cannot register client for non-existent user")
-        } else {
-            log.Fatal("Unexpected error:", err)
-        }
-    }
-    
-    // Example: Handle authentication errors
-    credentials := &cloud.UserCredentials{
-        Username: "invalid-user",
-        Password: "wrong-password",
-    }
-    
-    _, err = cloudControl.AuthenticateUser(ctx, credentials)
-    if err != nil {
-        if errors.Is(err, cloud.ErrAuthenticationFailed) {
-            log.Println("Authentication failed - this is expected")
-        } else {
-            log.Fatal("Unexpected authentication error:", err)
-        }
-    }
-}
-
-// Custom error handler
-func handleCloudError(err error, operation string) error {
-    if err == nil {
-        return nil
-    }
-    
-    switch {
-    case errors.Is(err, cloud.ErrUserNotFound):
-        return fmt.Errorf("user not found during %s: %w", operation, err)
-    case errors.Is(err, cloud.ErrClientNotFound):
-        return fmt.Errorf("client not found during %s: %w", operation, err)
-    case errors.Is(err, cloud.ErrMappingNotFound):
-        return fmt.Errorf("mapping not found during %s: %w", operation, err)
-    case errors.Is(err, cloud.ErrAuthenticationFailed):
-        return fmt.Errorf("authentication failed during %s: %w", operation, err)
-    case errors.Is(err, cloud.ErrInvalidToken):
-        return fmt.Errorf("invalid token during %s: %w", operation, err)
-    default:
-        return fmt.Errorf("unexpected error during %s: %w", operation, err)
-    }
-}
-```
-
-## Performance Optimization
-
-### Using Buffer Pools
+### Port Mapping Lifecycle
 
 ```go
 package main
@@ -590,35 +358,176 @@ package main
 import (
     "context"
     "log"
-    "tunnox-core/internal/utils"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
 )
 
-func bufferPoolExample() {
-    ctx := context.Background()
+func portMappingLifecycleExample(cloudControl managers.CloudControlAPI) error {
+    // 1. Create user and client
+    user, err := cloudControl.CreateUser("mapping_user", "mapping@example.com")
+    if err != nil {
+        return fmt.Errorf("failed to create user: %w", err)
+    }
+    defer cloudControl.DeleteUser(user.ID)
     
-    // Create buffer manager
-    bufferMgr := utils.NewBufferManager(ctx)
-    defer bufferMgr.Close()
+    client, err := cloudControl.CreateClient(user.ID, "mapping-client")
+    if err != nil {
+        return fmt.Errorf("failed to create client: %w", err)
+    }
+    defer cloudControl.DeleteClient(client.ID)
     
-    // Allocate buffers
-    buffer1 := bufferMgr.Allocate(1024)
-    buffer2 := bufferMgr.Allocate(2048)
+    // 2. Create port mapping
+    mapping := &models.PortMapping{
+        UserID:         user.ID,
+        SourceClientID: client.ID,
+        TargetClientID: client.ID,
+        Protocol:       models.ProtocolTCP,
+        SourcePort:     8080,
+        TargetPort:     80,
+        Status:         models.MappingStatusActive,
+        Type:           models.MappingTypeStandard,
+    }
     
-    log.Printf("Allocated buffers: %d bytes, %d bytes", len(buffer1), len(buffer2))
+    createdMapping, err := cloudControl.CreatePortMapping(mapping)
+    if err != nil {
+        return fmt.Errorf("failed to create mapping: %w", err)
+    }
+    log.Printf("Created mapping: %s", createdMapping.ID)
     
-    // Use buffers
-    copy(buffer1, []byte("Hello, World!"))
-    copy(buffer2, []byte("This is a larger buffer"))
+    // 3. Get mapping details
+    retrievedMapping, err := cloudControl.GetPortMapping(createdMapping.ID)
+    if err != nil {
+        return fmt.Errorf("failed to get mapping: %w", err)
+    }
+    log.Printf("Retrieved mapping: %s -> %s:%d", 
+        retrievedMapping.ID, retrievedMapping.Protocol, retrievedMapping.TargetPort)
     
-    // Release buffers back to pool
-    bufferMgr.Release(buffer1)
-    bufferMgr.Release(buffer2)
+    // 4. Update mapping status
+    err = cloudControl.UpdatePortMappingStatus(createdMapping.ID, models.MappingStatusInactive)
+    if err != nil {
+        return fmt.Errorf("failed to update mapping status: %w", err)
+    }
+    log.Printf("Updated mapping %s status to inactive", createdMapping.ID)
     
-    log.Println("Buffers released back to pool")
+    // 5. Update mapping statistics
+    stats := &stats.TrafficStats{
+        BytesSent:     1024 * 1024, // 1MB
+        BytesReceived: 512 * 1024,  // 512KB
+        Connections:   10,
+    }
+    
+    err = cloudControl.UpdatePortMappingStats(createdMapping.ID, stats)
+    if err != nil {
+        return fmt.Errorf("failed to update mapping stats: %w", err)
+    }
+    log.Printf("Updated mapping %s statistics", createdMapping.ID)
+    
+    // 6. List user's port mappings
+    userMappings, err := cloudControl.GetUserPortMappings(user.ID)
+    if err != nil {
+        return fmt.Errorf("failed to get user mappings: %w", err)
+    }
+    log.Printf("User has %d port mappings", len(userMappings))
+    
+    // 7. Delete mapping
+    err = cloudControl.DeletePortMapping(createdMapping.ID)
+    if err != nil {
+        return fmt.Errorf("failed to delete mapping: %w", err)
+    }
+    log.Printf("Deleted mapping: %s", createdMapping.ID)
+    
+    return nil
 }
 ```
 
-### Rate Limiting Example
+### Multiple Protocol Mappings
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
+)
+
+func multipleProtocolMappingsExample(cloudControl managers.CloudControlAPI) error {
+    // Create user and client
+    user, err := cloudControl.CreateUser("multi_protocol_user", "multi@example.com")
+    if err != nil {
+        return fmt.Errorf("failed to create user: %w", err)
+    }
+    defer cloudControl.DeleteUser(user.ID)
+    
+    client, err := cloudControl.CreateClient(user.ID, "multi-protocol-client")
+    if err != nil {
+        return fmt.Errorf("failed to create client: %w", err)
+    }
+    defer cloudControl.DeleteClient(client.ID)
+    
+    // Create mappings for different protocols
+    mappings := []struct {
+        protocol   models.Protocol
+        sourcePort int
+        targetPort int
+        name       string
+    }{
+        {models.ProtocolTCP, 8080, 80, "HTTP"},
+        {models.ProtocolTCP, 8443, 443, "HTTPS"},
+        {models.ProtocolUDP, 53, 53, "DNS"},
+        {models.ProtocolTCP, 22, 22, "SSH"},
+    }
+    
+    var createdMappings []*models.PortMapping
+    
+    for _, mappingData := range mappings {
+        mapping := &models.PortMapping{
+            UserID:         user.ID,
+            SourceClientID: client.ID,
+            TargetClientID: client.ID,
+            Protocol:       mappingData.protocol,
+            SourcePort:     mappingData.sourcePort,
+            TargetPort:     mappingData.targetPort,
+            Status:         models.MappingStatusActive,
+            Type:           models.MappingTypeStandard,
+        }
+        
+        createdMapping, err := cloudControl.CreatePortMapping(mapping)
+        if err != nil {
+            return fmt.Errorf("failed to create %s mapping: %w", mappingData.name, err)
+        }
+        
+        createdMappings = append(createdMappings, createdMapping)
+        log.Printf("Created %s mapping: %s (%s:%d -> %d)", 
+            mappingData.name, createdMapping.ID, mappingData.protocol, 
+            mappingData.sourcePort, mappingData.targetPort)
+    }
+    
+    // List all mappings
+    allMappings, err := cloudControl.ListPortMappings(models.MappingTypeStandard)
+    if err != nil {
+        return fmt.Errorf("failed to list mappings: %w", err)
+    }
+    log.Printf("Total standard mappings: %d", len(allMappings))
+    
+    // Cleanup
+    for _, mapping := range createdMappings {
+        err := cloudControl.DeletePortMapping(mapping.ID)
+        if err != nil {
+            log.Printf("Warning: failed to delete mapping %s: %v", mapping.ID, err)
+        } else {
+            log.Printf("Deleted mapping: %s", mapping.ID)
+        }
+    }
+    
+    return nil
+}
+```
+
+## 🔐 JWT Authentication Examples
+
+### Complete JWT Workflow
 
 ```go
 package main
@@ -627,117 +536,729 @@ import (
     "context"
     "log"
     "time"
-    "tunnox-core/internal/stream"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
 )
 
-func rateLimitingExample() {
-    ctx := context.Background()
-    
-    // Create token bucket with 1000 bytes per second
-    tokenBucket, err := stream.NewTokenBucket(1000, ctx)
+func jwtAuthenticationExample(cloudControl managers.CloudControlAPI) error {
+    // 1. Create user and client
+    user, err := cloudControl.CreateUser("jwt_user", "jwt@example.com")
     if err != nil {
-        log.Fatal("Failed to create token bucket:", err)
+        return fmt.Errorf("failed to create user: %w", err)
     }
-    defer tokenBucket.Close()
+    defer cloudControl.DeleteUser(user.ID)
     
-    // Simulate data transfer
-    dataSizes := []int{100, 200, 300, 400, 500}
-    
-    for _, size := range dataSizes {
-        start := time.Now()
-        
-        // Wait for tokens
-        err := tokenBucket.WaitForTokens(size)
-        if err != nil {
-            log.Printf("Rate limit error: %v", err)
-            continue
-        }
-        
-        duration := time.Since(start)
-        log.Printf("Transferred %d bytes in %v", size, duration)
+    client, err := cloudControl.CreateClient(user.ID, "jwt-client")
+    if err != nil {
+        return fmt.Errorf("failed to create client: %w", err)
     }
+    defer cloudControl.DeleteClient(client.ID)
+    
+    // 2. Generate JWT token
+    tokenInfo, err := cloudControl.GenerateJWTToken(client.ID)
+    if err != nil {
+        return fmt.Errorf("failed to generate token: %w", err)
+    }
+    log.Printf("Generated token for client %d", tokenInfo.ClientId)
+    log.Printf("Token expires at: %v", tokenInfo.ExpiresAt)
+    
+    // 3. Validate token
+    validatedToken, err := cloudControl.ValidateJWTToken(tokenInfo.Token)
+    if err != nil {
+        return fmt.Errorf("failed to validate token: %w", err)
+    }
+    log.Printf("Token validated for client: %d", validatedToken.ClientId)
+    
+    // 4. Simulate token refresh
+    time.Sleep(1 * time.Second) // Simulate time passing
+    
+    newTokenInfo, err := cloudControl.RefreshJWTToken(tokenInfo.RefreshToken)
+    if err != nil {
+        return fmt.Errorf("failed to refresh token: %w", err)
+    }
+    log.Printf("Refreshed token for client: %d", newTokenInfo.ClientId)
+    log.Printf("New token expires at: %v", newTokenInfo.ExpiresAt)
+    
+    // 5. Validate new token
+    newValidatedToken, err := cloudControl.ValidateJWTToken(newTokenInfo.Token)
+    if err != nil {
+        return fmt.Errorf("failed to validate new token: %w", err)
+    }
+    log.Printf("New token validated for client: %d", newValidatedToken.ClientId)
+    
+    // 6. Revoke token
+    err = cloudControl.RevokeJWTToken(newTokenInfo.Token)
+    if err != nil {
+        return fmt.Errorf("failed to revoke token: %w", err)
+    }
+    log.Printf("Revoked token: %s", newTokenInfo.TokenID)
+    
+    // 7. Try to validate revoked token (should fail)
+    _, err = cloudControl.ValidateJWTToken(newTokenInfo.Token)
+    if err == nil {
+        return fmt.Errorf("expected token validation to fail after revocation")
+    }
+    log.Printf("Token validation failed as expected after revocation: %v", err)
+    
+    return nil
 }
 ```
 
-## Testing Examples
-
-### Unit Test Example
+### Token Management for Multiple Clients
 
 ```go
 package main
 
 import (
     "context"
-    "testing"
-    "tunnox-core/internal/cloud"
+    "log"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
 )
 
-func TestUserCreation(t *testing.T) {
-    ctx := context.Background()
-    
-    // Create cloud control for testing
-    config := cloud.DefaultConfig()
-    cloudControl := cloud.NewBuiltInCloudControl(config)
-    cloudControl.Start()
-    defer cloudControl.Stop()
-    
-    // Test user creation
-    user := &cloud.User{
-        Username: "testuser",
-        Email:    "test@example.com",
-        Status:   cloud.UserStatusActive,
-    }
-    
-    err := cloudControl.CreateUser(ctx, user)
+func multiClientTokenExample(cloudControl managers.CloudControlAPI) error {
+    // Create user
+    user, err := cloudControl.CreateUser("multi_token_user", "multi@example.com")
     if err != nil {
-        t.Fatalf("Failed to create user: %v", err)
+        return fmt.Errorf("failed to create user: %w", err)
+    }
+    defer cloudControl.DeleteUser(user.ID)
+    
+    // Create multiple clients
+    clientNames := []string{"desktop", "mobile", "server"}
+    var clients []*models.Client
+    var tokens []*managers.JWTTokenInfo
+    
+    for _, name := range clientNames {
+        client, err := cloudControl.CreateClient(user.ID, name)
+        if err != nil {
+            return fmt.Errorf("failed to create client %s: %w", name, err)
+        }
+        defer cloudControl.DeleteClient(client.ID)
+        clients = append(clients, client)
+        
+        // Generate token for each client
+        tokenInfo, err := cloudControl.GenerateJWTToken(client.ID)
+        if err != nil {
+            return fmt.Errorf("failed to generate token for client %s: %w", name, err)
+        }
+        tokens = append(tokens, tokenInfo)
+        
+        log.Printf("Generated token for %s client (ID: %d)", name, client.ID)
     }
     
-    if user.ID == "" {
-        t.Error("User ID should be generated")
+    // Validate all tokens
+    for i, token := range tokens {
+        validatedToken, err := cloudControl.ValidateJWTToken(token.Token)
+        if err != nil {
+            return fmt.Errorf("failed to validate token for client %s: %w", clientNames[i], err)
+        }
+        log.Printf("Validated token for %s client: %d", clientNames[i], validatedToken.ClientId)
     }
     
-    // Test user retrieval
-    retrievedUser, err := cloudControl.GetUser(ctx, user.ID)
-    if err != nil {
-        t.Fatalf("Failed to get user: %v", err)
+    // Refresh tokens
+    for i, token := range tokens {
+        newToken, err := cloudControl.RefreshJWTToken(token.RefreshToken)
+        if err != nil {
+            return fmt.Errorf("failed to refresh token for client %s: %w", clientNames[i], err)
+        }
+        log.Printf("Refreshed token for %s client: %d", clientNames[i], newToken.ClientId)
+        
+        // Update token reference
+        tokens[i] = newToken
     }
     
-    if retrievedUser.Username != user.Username {
-        t.Errorf("Expected username %s, got %s", user.Username, retrievedUser.Username)
+    // Revoke all tokens
+    for i, token := range tokens {
+        err := cloudControl.RevokeJWTToken(token.Token)
+        if err != nil {
+            return fmt.Errorf("failed to revoke token for client %s: %w", clientNames[i], err)
+        }
+        log.Printf("Revoked token for %s client", clientNames[i])
     }
     
-    // Cleanup
-    cloudControl.DeleteUser(ctx, user.ID)
-}
-
-func TestUserNotFound(t *testing.T) {
-    ctx := context.Background()
-    
-    config := cloud.DefaultConfig()
-    cloudControl := cloud.NewBuiltInCloudControl(config)
-    cloudControl.Start()
-    defer cloudControl.Stop()
-    
-    // Test getting non-existent user
-    _, err := cloudControl.GetUser(ctx, "non-existent-id")
-    if err == nil {
-        t.Error("Expected error for non-existent user")
-    }
-    
-    if !errors.Is(err, cloud.ErrUserNotFound) {
-        t.Errorf("Expected ErrUserNotFound, got %v", err)
-    }
+    return nil
 }
 ```
 
-## Best Practices Summary
+## 📊 Statistics and Analytics Examples
 
-1. **Always use context**: Pass context through all operations for cancellation and timeouts
-2. **Implement Dispose**: All custom components should implement the Dispose interface
-3. **Handle errors properly**: Use error wrapping and type checking
-4. **Use defer for cleanup**: Ensure resources are properly released
-5. **Test thoroughly**: Write unit tests for all components
-6. **Monitor performance**: Use buffer pools and rate limiting appropriately
-7. **Log appropriately**: Add logging for debugging and monitoring
-8. **Validate input**: Always validate user input and configuration 
+### Comprehensive Statistics Collection
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
+)
+
+func statisticsCollectionExample(cloudControl managers.CloudControlAPI) error {
+    // Create test data
+    user, err := cloudControl.CreateUser("stats_user", "stats@example.com")
+    if err != nil {
+        return fmt.Errorf("failed to create user: %w", err)
+    }
+    defer cloudControl.DeleteUser(user.ID)
+    
+    client, err := cloudControl.CreateClient(user.ID, "stats-client")
+    if err != nil {
+        return fmt.Errorf("failed to create client: %w", err)
+    }
+    defer cloudControl.DeleteClient(client.ID)
+    
+    // Create some mappings with traffic
+    mappings := []struct {
+        protocol   models.Protocol
+        sourcePort int
+        targetPort int
+        traffic    int64
+    }{
+        {models.ProtocolTCP, 8080, 80, 1024 * 1024 * 10}, // 10MB
+        {models.ProtocolTCP, 8443, 443, 1024 * 1024 * 5},  // 5MB
+        {models.ProtocolUDP, 53, 53, 1024 * 512},          // 512KB
+    }
+    
+    var createdMappings []*models.PortMapping
+    
+    for _, mappingData := range mappings {
+        mapping := &models.PortMapping{
+            UserID:         user.ID,
+            SourceClientID: client.ID,
+            TargetClientID: client.ID,
+            Protocol:       mappingData.protocol,
+            SourcePort:     mappingData.sourcePort,
+            TargetPort:     mappingData.targetPort,
+            Status:         models.MappingStatusActive,
+            Type:           models.MappingTypeStandard,
+        }
+        
+        createdMapping, err := cloudControl.CreatePortMapping(mapping)
+        if err != nil {
+            return fmt.Errorf("failed to create mapping: %w", err)
+        }
+        defer cloudControl.DeletePortMapping(createdMapping.ID)
+        createdMappings = append(createdMappings, createdMapping)
+        
+        // Update mapping with traffic stats
+        stats := &stats.TrafficStats{
+            BytesSent:     mappingData.traffic,
+            BytesReceived: mappingData.traffic / 2,
+            Connections:   10,
+        }
+        
+        err = cloudControl.UpdatePortMappingStats(createdMapping.ID, stats)
+        if err != nil {
+            return fmt.Errorf("failed to update mapping stats: %w", err)
+        }
+    }
+    
+    // 1. Get user statistics
+    userStats, err := cloudControl.GetUserStats(user.ID)
+    if err != nil {
+        return fmt.Errorf("failed to get user stats: %w", err)
+    }
+    
+    log.Printf("User Statistics:")
+    log.Printf("  Total Clients: %d", userStats.TotalClients)
+    log.Printf("  Online Clients: %d", userStats.OnlineClients)
+    log.Printf("  Total Mappings: %d", userStats.TotalMappings)
+    log.Printf("  Active Mappings: %d", userStats.ActiveMappings)
+    log.Printf("  Total Traffic: %d bytes", userStats.TotalTraffic)
+    log.Printf("  Total Connections: %d", userStats.TotalConnections)
+    log.Printf("  Last Active: %v", userStats.LastActive)
+    
+    // 2. Get client statistics
+    clientStats, err := cloudControl.GetClientStats(client.ID)
+    if err != nil {
+        return fmt.Errorf("failed to get client stats: %w", err)
+    }
+    
+    log.Printf("Client Statistics:")
+    log.Printf("  Client ID: %d", clientStats.ClientID)
+    log.Printf("  Total Mappings: %d", clientStats.TotalMappings)
+    log.Printf("  Active Mappings: %d", clientStats.ActiveMappings)
+    log.Printf("  Total Traffic: %d bytes", clientStats.TotalTraffic)
+    log.Printf("  Total Connections: %d", clientStats.TotalConnections)
+    log.Printf("  Uptime: %d seconds", clientStats.Uptime)
+    log.Printf("  Last Seen: %v", clientStats.LastSeen)
+    
+    // 3. Get system statistics
+    systemStats, err := cloudControl.GetSystemStats()
+    if err != nil {
+        return fmt.Errorf("failed to get system stats: %w", err)
+    }
+    
+    log.Printf("System Statistics:")
+    log.Printf("  Total Users: %d", systemStats.TotalUsers)
+    log.Printf("  Total Clients: %d", systemStats.TotalClients)
+    log.Printf("  Online Clients: %d", systemStats.OnlineClients)
+    log.Printf("  Total Mappings: %d", systemStats.TotalMappings)
+    log.Printf("  Active Mappings: %d", systemStats.ActiveMappings)
+    log.Printf("  Total Nodes: %d", systemStats.TotalNodes)
+    log.Printf("  Online Nodes: %d", systemStats.OnlineNodes)
+    log.Printf("  Total Traffic: %d bytes", systemStats.TotalTraffic)
+    log.Printf("  Total Connections: %d", systemStats.TotalConnections)
+    log.Printf("  Anonymous Users: %d", systemStats.AnonymousUsers)
+    
+    // 4. Get traffic statistics
+    trafficStats, err := cloudControl.GetTrafficStats("24h")
+    if err != nil {
+        return fmt.Errorf("failed to get traffic stats: %w", err)
+    }
+    log.Printf("Traffic Statistics (24h): %d data points", len(trafficStats))
+    
+    // 5. Get connection statistics
+    connectionStats, err := cloudControl.GetConnectionStats("24h")
+    if err != nil {
+        return fmt.Errorf("failed to get connection stats: %w", err)
+    }
+    log.Printf("Connection Statistics (24h): %d data points", len(connectionStats))
+    
+    return nil
+}
+```
+
+## 🔍 Search and Discovery Examples
+
+### Advanced Search Operations
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
+)
+
+func searchAndDiscoveryExample(cloudControl managers.CloudControlAPI) error {
+    // Create test data
+    user1, err := cloudControl.CreateUser("alice_smith", "alice@example.com")
+    if err != nil {
+        return fmt.Errorf("failed to create user1: %w", err)
+    }
+    defer cloudControl.DeleteUser(user1.ID)
+    
+    user2, err := cloudControl.CreateUser("bob_jones", "bob@example.com")
+    if err != nil {
+        return fmt.Errorf("failed to create user2: %w", err)
+    }
+    defer cloudControl.DeleteUser(user2.ID)
+    
+    client1, err := cloudControl.CreateClient(user1.ID, "alice-desktop")
+    if err != nil {
+        return fmt.Errorf("failed to create client1: %w", err)
+    }
+    defer cloudControl.DeleteClient(client1.ID)
+    
+    client2, err := cloudControl.CreateClient(user2.ID, "bob-mobile")
+    if err != nil {
+        return fmt.Errorf("failed to create client2: %w", err)
+    }
+    defer cloudControl.DeleteClient(client2.ID)
+    
+    // Create mappings
+    mapping1 := &models.PortMapping{
+        UserID:         user1.ID,
+        SourceClientID: client1.ID,
+        TargetClientID: client1.ID,
+        Protocol:       models.ProtocolTCP,
+        SourcePort:     8080,
+        TargetPort:     80,
+        Status:         models.MappingStatusActive,
+        Type:           models.MappingTypeStandard,
+    }
+    
+    mapping2 := &models.PortMapping{
+        UserID:         user2.ID,
+        SourceClientID: client2.ID,
+        TargetClientID: client2.ID,
+        Protocol:       models.ProtocolTCP,
+        SourcePort:     8443,
+        TargetPort:     443,
+        Status:         models.MappingStatusActive,
+        Type:           models.MappingTypeStandard,
+    }
+    
+    createdMapping1, err := cloudControl.CreatePortMapping(mapping1)
+    if err != nil {
+        return fmt.Errorf("failed to create mapping1: %w", err)
+    }
+    defer cloudControl.DeletePortMapping(createdMapping1.ID)
+    
+    createdMapping2, err := cloudControl.CreatePortMapping(mapping2)
+    if err != nil {
+        return fmt.Errorf("failed to create mapping2: %w", err)
+    }
+    defer cloudControl.DeletePortMapping(createdMapping2.ID)
+    
+    // 1. Search users
+    log.Println("Searching users...")
+    
+    users, err := cloudControl.SearchUsers("alice")
+    if err != nil {
+        return fmt.Errorf("failed to search users: %w", err)
+    }
+    log.Printf("Found %d users matching 'alice'", len(users))
+    for _, user := range users {
+        log.Printf("  - %s (%s)", user.Username, user.Email)
+    }
+    
+    users, err = cloudControl.SearchUsers("bob")
+    if err != nil {
+        return fmt.Errorf("failed to search users: %w", err)
+    }
+    log.Printf("Found %d users matching 'bob'", len(users))
+    for _, user := range users {
+        log.Printf("  - %s (%s)", user.Username, user.Email)
+    }
+    
+    // 2. Search clients
+    log.Println("Searching clients...")
+    
+    clients, err := cloudControl.SearchClients("desktop")
+    if err != nil {
+        return fmt.Errorf("failed to search clients: %w", err)
+    }
+    log.Printf("Found %d clients matching 'desktop'", len(clients))
+    for _, client := range clients {
+        log.Printf("  - %s (ID: %d)", client.Name, client.ID)
+    }
+    
+    clients, err = cloudControl.SearchClients("mobile")
+    if err != nil {
+        return fmt.Errorf("failed to search clients: %w", err)
+    }
+    log.Printf("Found %d clients matching 'mobile'", len(clients))
+    for _, client := range clients {
+        log.Printf("  - %s (ID: %d)", client.Name, client.ID)
+    }
+    
+    // 3. Search port mappings
+    log.Println("Searching port mappings...")
+    
+    mappings, err := cloudControl.SearchPortMappings("8080")
+    if err != nil {
+        return fmt.Errorf("failed to search mappings: %w", err)
+    }
+    log.Printf("Found %d mappings matching '8080'", len(mappings))
+    for _, mapping := range mappings {
+        log.Printf("  - %s (%s:%d -> %d)", 
+            mapping.ID, mapping.Protocol, mapping.SourcePort, mapping.TargetPort)
+    }
+    
+    mappings, err = cloudControl.SearchPortMappings("443")
+    if err != nil {
+        return fmt.Errorf("failed to search mappings: %w", err)
+    }
+    log.Printf("Found %d mappings matching '443'", len(mappings))
+    for _, mapping := range mappings {
+        log.Printf("  - %s (%s:%d -> %d)", 
+            mapping.ID, mapping.Protocol, mapping.SourcePort, mapping.TargetPort)
+    }
+    
+    return nil
+}
+```
+
+## 🎭 Anonymous User Examples
+
+### Anonymous User Management
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
+)
+
+func anonymousUserExample(cloudControl managers.CloudControlAPI) error {
+    // 1. Generate anonymous credentials
+    anonymousClient, err := cloudControl.GenerateAnonymousCredentials()
+    if err != nil {
+        return fmt.Errorf("failed to generate anonymous credentials: %w", err)
+    }
+    defer cloudControl.DeleteAnonymousClient(anonymousClient.ID)
+    
+    log.Printf("Generated anonymous client: %d (%s)", 
+        anonymousClient.ID, anonymousClient.Name)
+    log.Printf("  Auth Code: %s", anonymousClient.AuthCode)
+    log.Printf("  Type: %s", anonymousClient.Type)
+    
+    // 2. Get anonymous client details
+    retrievedClient, err := cloudControl.GetAnonymousClient(anonymousClient.ID)
+    if err != nil {
+        return fmt.Errorf("failed to get anonymous client: %w", err)
+    }
+    log.Printf("Retrieved anonymous client: %d", retrievedClient.ID)
+    
+    // 3. Create anonymous mapping
+    mapping, err := cloudControl.CreateAnonymousMapping(
+        anonymousClient.ID,
+        anonymousClient.ID,
+        models.ProtocolTCP,
+        8080,
+        80,
+    )
+    if err != nil {
+        return fmt.Errorf("failed to create anonymous mapping: %w", err)
+    }
+    defer cloudControl.DeletePortMapping(mapping.ID)
+    
+    log.Printf("Created anonymous mapping: %s", mapping.ID)
+    log.Printf("  Protocol: %s", mapping.Protocol)
+    log.Printf("  Port: %d -> %d", mapping.SourcePort, mapping.TargetPort)
+    log.Printf("  Type: %s", mapping.Type)
+    
+    // 4. List all anonymous clients
+    anonymousClients, err := cloudControl.ListAnonymousClients()
+    if err != nil {
+        return fmt.Errorf("failed to list anonymous clients: %w", err)
+    }
+    log.Printf("Total anonymous clients: %d", len(anonymousClients))
+    
+    // 5. List all anonymous mappings
+    anonymousMappings, err := cloudControl.GetAnonymousMappings()
+    if err != nil {
+        return fmt.Errorf("failed to get anonymous mappings: %w", err)
+    }
+    log.Printf("Total anonymous mappings: %d", len(anonymousMappings))
+    
+    // 6. Cleanup expired anonymous resources
+    err = cloudControl.CleanupExpiredAnonymous()
+    if err != nil {
+        return fmt.Errorf("failed to cleanup anonymous resources: %w", err)
+    }
+    log.Println("Cleaned up expired anonymous resources")
+    
+    return nil
+}
+```
+
+## 🔗 Connection Management Examples
+
+### Connection Tracking
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "tunnox-core/internal/cloud/managers"
+    "tunnox-core/internal/cloud/models"
+)
+
+func connectionTrackingExample(cloudControl managers.CloudControlAPI) error {
+    // Create user, client, and mapping
+    user, err := cloudControl.CreateUser("conn_user", "conn@example.com")
+    if err != nil {
+        return fmt.Errorf("failed to create user: %w", err)
+    }
+    defer cloudControl.DeleteUser(user.ID)
+    
+    client, err := cloudControl.CreateClient(user.ID, "conn-client")
+    if err != nil {
+        return fmt.Errorf("failed to create client: %w", err)
+    }
+    defer cloudControl.DeleteClient(client.ID)
+    
+    mapping := &models.PortMapping{
+        UserID:         user.ID,
+        SourceClientID: client.ID,
+        TargetClientID: client.ID,
+        Protocol:       models.ProtocolTCP,
+        SourcePort:     8080,
+        TargetPort:     80,
+        Status:         models.MappingStatusActive,
+        Type:           models.MappingTypeStandard,
+    }
+    
+    createdMapping, err := cloudControl.CreatePortMapping(mapping)
+    if err != nil {
+        return fmt.Errorf("failed to create mapping: %w", err)
+    }
+    defer cloudControl.DeletePortMapping(createdMapping.ID)
+    
+    // Register connections
+    connections := []struct {
+        remoteAddr string
+        localAddr  string
+        protocol   models.Protocol
+    }{
+        {"192.168.1.100:54321", "127.0.0.1:8080", models.ProtocolTCP},
+        {"192.168.1.101:54322", "127.0.0.1:8080", models.ProtocolTCP},
+        {"192.168.1.102:54323", "127.0.0.1:8080", models.ProtocolTCP},
+    }
+    
+    var connIDs []string
+    
+    for _, connData := range connections {
+        connInfo := &models.ConnectionInfo{
+            MappingID:  createdMapping.ID,
+            ClientID:   client.ID,
+            RemoteAddr: connData.remoteAddr,
+            LocalAddr:  connData.localAddr,
+            Protocol:   connData.protocol,
+            Status:     "active",
+        }
+        
+        err := cloudControl.RegisterConnection(createdMapping.ID, connInfo)
+        if err != nil {
+            return fmt.Errorf("failed to register connection: %w", err)
+        }
+        
+        // Get the connection ID (in real implementation, this would be returned)
+        // For this example, we'll simulate it
+        connID := fmt.Sprintf("conn-%s-%s", createdMapping.ID, connData.remoteAddr)
+        connIDs = append(connIDs, connID)
+        
+        log.Printf("Registered connection: %s", connID)
+    }
+    
+    // Get connections for mapping
+    mappingConnections, err := cloudControl.GetConnections(createdMapping.ID)
+    if err != nil {
+        return fmt.Errorf("failed to get mapping connections: %w", err)
+    }
+    log.Printf("Mapping %s has %d connections", createdMapping.ID, len(mappingConnections))
+    
+    // Get connections for client
+    clientConnections, err := cloudControl.GetClientConnections(client.ID)
+    if err != nil {
+        return fmt.Errorf("failed to get client connections: %w", err)
+    }
+    log.Printf("Client %d has %d connections", client.ID, len(clientConnections))
+    
+    // Update connection statistics
+    for i, connID := range connIDs {
+        bytesSent := int64(1024 * (i + 1))
+        bytesReceived := int64(512 * (i + 1))
+        
+        err := cloudControl.UpdateConnectionStats(connID, bytesSent, bytesReceived)
+        if err != nil {
+            return fmt.Errorf("failed to update connection stats: %w", err)
+        }
+        
+        log.Printf("Updated connection %s stats: sent=%d, received=%d", 
+            connID, bytesSent, bytesReceived)
+    }
+    
+    // Unregister connections
+    for _, connID := range connIDs {
+        err := cloudControl.UnregisterConnection(connID)
+        if err != nil {
+            return fmt.Errorf("failed to unregister connection: %w", err)
+        }
+        log.Printf("Unregistered connection: %s", connID)
+    }
+    
+    return nil
+}
+```
+
+## 🎯 Best Practices
+
+### Error Handling
+
+```go
+func bestPracticeErrorHandling(cloudControl managers.CloudControlAPI) error {
+    // Always use proper error handling
+    user, err := cloudControl.CreateUser("best_practice_user", "best@example.com")
+    if err != nil {
+        return fmt.Errorf("failed to create user: %w", err)
+    }
+    
+    // Use defer for cleanup
+    defer func() {
+        if err := cloudControl.DeleteUser(user.ID); err != nil {
+            log.Printf("Warning: failed to cleanup user: %v", err)
+        }
+    }()
+    
+    // Handle specific error types
+    client, err := cloudControl.CreateClient(user.ID, "best-client")
+    if err != nil {
+        // Check for specific error types if needed
+        return fmt.Errorf("failed to create client: %w", err)
+    }
+    
+    // Continue with operations...
+    return nil
+}
+```
+
+### Resource Management
+
+```go
+func bestPracticeResourceManagement(cloudControl managers.CloudControlAPI) error {
+    // Create resources with proper cleanup
+    var resources []string
+    
+    // Helper function for cleanup
+    cleanup := func() {
+        for _, resource := range resources {
+            // Cleanup logic here
+            log.Printf("Cleaned up resource: %s", resource)
+        }
+    }
+    
+    // Ensure cleanup happens
+    defer cleanup()
+    
+    // Create resources
+    user, err := cloudControl.CreateUser("resource_user", "resource@example.com")
+    if err != nil {
+        return fmt.Errorf("failed to create user: %w", err)
+    }
+    resources = append(resources, fmt.Sprintf("user:%s", user.ID))
+    
+    client, err := cloudControl.CreateClient(user.ID, "resource-client")
+    if err != nil {
+        return fmt.Errorf("failed to create client: %w", err)
+    }
+    resources = append(resources, fmt.Sprintf("client:%d", client.ID))
+    
+    // Continue with operations...
+    return nil
+}
+```
+
+### Configuration Management
+
+```go
+func bestPracticeConfiguration(cloudControl managers.CloudControlAPI) error {
+    // Use environment variables for configuration
+    config := managers.DefaultConfig()
+    
+    // Override with environment variables
+    if endpoint := os.Getenv("TUNNOX_API_ENDPOINT"); endpoint != "" {
+        config.APIEndpoint = endpoint
+    }
+    
+    if secretKey := os.Getenv("TUNNOX_JWT_SECRET_KEY"); secretKey != "" {
+        config.JWTSecretKey = secretKey
+    }
+    
+    // Use the configuration
+    log.Printf("Using API endpoint: %s", config.APIEndpoint)
+    
+    return nil
+}
+```
+
+---
+
+## 📚 Additional Resources
+
+- **[API Documentation](api.md)** - Complete API reference
+- **[Architecture Guide](architecture.md)** - System architecture overview
+- **[Configuration Guide](cmd/server/config/README.md)** - Configuration options
+- **[Contributing Guide](CONTRIBUTING.md)** - Development guidelines 
