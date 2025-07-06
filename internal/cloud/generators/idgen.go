@@ -2,7 +2,9 @@ package generators
 
 import (
 	"errors"
+	"fmt"
 	"sync"
+	"time"
 
 	"tunnox-core/internal/utils"
 )
@@ -200,4 +202,21 @@ func (g *IDGenerator) GetUsedCount() int {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return len(g.usedIDs) + len(g.usedNodeIDs) + len(g.usedUserIDs) + len(g.usedMappingIDs)
+}
+
+// ConnectionIDGenerator 连接ID生成器
+type ConnectionIDGenerator struct {
+	counter int64
+	mu      sync.Mutex
+}
+
+func NewConnectionIDGenerator() *ConnectionIDGenerator {
+	return &ConnectionIDGenerator{}
+}
+
+func (g *ConnectionIDGenerator) GenerateID() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.counter++
+	return fmt.Sprintf("conn_%d_%d", time.Now().Unix(), g.counter)
 }

@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 	"time"
+	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -41,33 +42,16 @@ type Session interface {
 type ConnectionSession struct {
 	connMap  map[string]*StreamConnectionInfo
 	connLock sync.RWMutex
-	idGen    *ConnectionIDGenerator
+	idGen    *generators.ConnectionIDGenerator
 
 	utils.Dispose
-}
-
-// ConnectionIDGenerator 连接ID生成器
-type ConnectionIDGenerator struct {
-	counter int64
-	mu      sync.Mutex
-}
-
-func NewConnectionIDGenerator() *ConnectionIDGenerator {
-	return &ConnectionIDGenerator{}
-}
-
-func (g *ConnectionIDGenerator) GenerateID() string {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.counter++
-	return fmt.Sprintf("conn_%d_%d", time.Now().Unix(), g.counter)
 }
 
 // NewConnectionSession 创建新的连接会话
 func NewConnectionSession(parentCtx context.Context) *ConnectionSession {
 	session := &ConnectionSession{
 		connMap: make(map[string]*StreamConnectionInfo),
-		idGen:   NewConnectionIDGenerator(),
+		idGen:   generators.NewConnectionIDGenerator(),
 	}
 	session.SetCtx(parentCtx, session.onClose)
 	return session
