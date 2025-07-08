@@ -150,6 +150,27 @@ graph TB
     StreamProcessor --> Encryption
 ```
 
+### 📋 架构分层说明
+
+#### 🎯 **分层设计原则**
+
+| 原则 | 描述 | 实现方式 |
+|------|------|----------|
+| **依赖倒置** | 高层模块不依赖低层模块，都依赖抽象 | 通过接口进行解耦 |
+| **单一职责** | 每层只负责自己的核心功能 | 明确的职责边界 |
+| **开闭原则** | 对扩展开放，对修改关闭 | 工厂模式和配置化 |
+| **接口隔离** | 通过接口进行解耦，降低耦合度 | 定义清晰的接口 |
+
+#### 📋 **各层职责**
+
+| 层级 | 职责 | 主要组件 |
+|------|------|----------|
+| **应用层** | 服务器入口和配置管理 | ProtocolFactory, Server, Main |
+| **协议层** | 多种网络协议的适配器实现 | TCP, WebSocket, UDP, QUIC适配器 |
+| **会话层** | 连接会话管理和生命周期控制 | ConnectionSession, StreamManager |
+| **流管理层** | 流组件的统一管理和注册 | StreamManager, 流注册表, 指标统计 |
+| **工厂层** | 流组件的创建和配置 | DefaultStreamFactory, ConfigurableStreamFactory |
+| **实现层** | 具体的流处理组件实现 | StreamProcessor, 压缩器, 限速器 |
 
 
 ### 🔄 流处理架构分层图
@@ -279,28 +300,6 @@ graph TB
     class DSF,CSF,SP factoryLayer
     class SPROC,GZR,GZW,RLR,RLW,TB implementationLayer
 ```
-
-### 📋 架构分层说明
-
-#### 🎯 **分层设计原则**
-
-| 原则 | 描述 | 实现方式 |
-|------|------|----------|
-| **依赖倒置** | 高层模块不依赖低层模块，都依赖抽象 | 通过接口进行解耦 |
-| **单一职责** | 每层只负责自己的核心功能 | 明确的职责边界 |
-| **开闭原则** | 对扩展开放，对修改关闭 | 工厂模式和配置化 |
-| **接口隔离** | 通过接口进行解耦，降低耦合度 | 定义清晰的接口 |
-
-#### 📋 **各层职责**
-
-| 层级 | 职责 | 主要组件 |
-|------|------|----------|
-| **应用层** | 服务器入口和配置管理 | ProtocolFactory, Server, Main |
-| **协议层** | 多种网络协议的适配器实现 | TCP, WebSocket, UDP, QUIC适配器 |
-| **会话层** | 连接会话管理和生命周期控制 | ConnectionSession, StreamManager |
-| **流管理层** | 流组件的统一管理和注册 | StreamManager, 流注册表, 指标统计 |
-| **工厂层** | 流组件的创建和配置 | DefaultStreamFactory, ConfigurableStreamFactory |
-| **实现层** | 具体的流处理组件实现 | StreamProcessor, 压缩器, 限速器 |
 
 ---
 
