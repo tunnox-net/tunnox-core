@@ -30,16 +30,20 @@ Tunnox Core 是一个基于 Go 语言开发的云端隧道框架，专为分布�
 ### 🌟 技术特点
 
 - **分层架构**：清晰的业务逻辑、数据访问和基础设施分离，便于维护和扩展
+- **工厂模式**：StreamFactory统一管理流组件创建，支持配置化工厂和预定义模板
 - **资源管理**：基于 Dispose 模式的层次化资源清理，防止内存泄漏，确保优雅关闭
 - **类型安全**：强类型系统，统一的命名规范，提高代码质量和开发效率
 - **并发控制**：线程安全的设计，优化的锁定策略，支持高并发场景
 - **性能优化**：内存池、零拷贝、流式处理、压缩算法等技术的综合应用
 - **协议适配**：统一的协议适配器接口，支持多种网络协议的透明切换
 - **流式处理**：支持数据压缩、限速、分块传输等高级流处理功能
+- **流管理**：StreamManager统一管理流生命周期，支持流注册、监控和指标统计
 
 ---
 
 ## 🏗️ 系统架构
+
+### 整体架构图
 
 ```mermaid
 graph TB
@@ -140,6 +144,174 @@ graph TB
     StreamProcessor --> Encryption
 ```
 
+### 流处理架构分层图
+
+```mermaid
+graph TB
+    %% 应用层 (Application Layer)
+    subgraph AL["应用层 (Application Layer)"]
+        style AL fill:#e1f5fe
+        PF[ProtocolFactory<br/>协议工厂]
+        S[Server<br/>服务器]
+        M[Main<br/>主程序]
+    end
+
+    %% 协议层 (Protocol Layer)
+    subgraph PL["协议层 (Protocol Layer)"]
+        style PL fill:#f3e5f5
+        TA[TCP Adapter<br/>TCP适配器]
+        WA[WebSocket Adapter<br/>WebSocket适配器]
+        UA[UDP Adapter<br/>UDP适配器]
+        QA[QUIC Adapter<br/>QUIC适配器]
+    end
+
+    %% 会话层 (Session Layer)
+    subgraph SL["会话层 (Session Layer)"]
+        style SL fill:#e8f5e8
+        CS[ConnectionSession<br/>连接会话]
+        subgraph CS_INNER["会话组件"]
+            CID[ConnectionID<br/>连接ID生成器]
+            SM[StreamManager<br/>流管理器]
+        end
+    end
+
+    %% 流管理层 (Stream Management Layer)
+    subgraph SML["流管理层 (Stream Management Layer)"]
+        style SML fill:#fff3e0
+        STM[StreamManager<br/>流管理器]
+        subgraph STM_INNER["管理组件"]
+            SR[Stream Registry<br/>流注册表]
+            SMF[Stream Metrics<br/>流指标]
+        end
+    end
+
+    %% 工厂层 (Factory Layer)
+    subgraph FL["工厂层 (Factory Layer)"]
+        style FL fill:#fce4ec
+        DSF[DefaultStreamFactory<br/>默认流工厂]
+        CSF[ConfigurableStreamFactory<br/>可配置流工厂]
+        SP[Stream Profiles<br/>流配置模板]
+    end
+
+    %% 实现层 (Implementation Layer)
+    subgraph IL["实现层 (Implementation Layer)"]
+        style IL fill:#f1f8e9
+        SPROC[StreamProcessor<br/>流处理器]
+        GZR[GzipReader<br/>压缩读取器]
+        GZW[GzipWriter<br/>压缩写入器]
+        RLR[RateLimiterReader<br/>限速读取器]
+        RLW[RateLimiterWriter<br/>限速写入器]
+        TB[TokenBucket<br/>令牌桶]
+    end
+
+    %% 连接关系
+    %% 应用层到协议层
+    PF --> TA
+    PF --> WA
+    PF --> UA
+    PF --> QA
+
+    %% 协议层到会话层
+    TA --> CS
+    WA --> CS
+    UA --> CS
+    QA --> CS
+
+    %% 会话层内部
+    CS --> CID
+    CS --> SM
+
+    %% 会话层到流管理层
+    SM --> STM
+
+    %% 流管理层内部
+    STM --> SR
+    STM --> SMF
+
+    %% 流管理层到工厂层
+    STM --> DSF
+    STM --> STM --> CSF
+
+    %% 工厂层内部
+    CSF --> SP
+
+    %% 工厂层到实现层
+    DSF --> SPROC
+    DSF --> GZR
+    DSF --> GZW
+    DSF --> RLR
+    DSF --> RLW
+    CSF --> SPROC
+    CSF --> GZR
+    CSF --> GZW
+    CSF --> RLR
+    CSF --> RLW
+
+    %% 实现层内部依赖
+    RLR --> TB
+    RLW --> TB
+    SPROC --> GZR
+    SPROC --> GZW
+    SPROC --> RLR
+    SPROC --> RLW
+
+    %% 样式定义
+    classDef applicationLayer fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef protocolLayer fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef sessionLayer fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
+    classDef streamManagementLayer fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef factoryLayer fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef implementationLayer fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+
+    %% 应用样式
+    class PF,S,M applicationLayer
+    class TA,WA,UA,QA protocolLayer
+    class CS,CID,SM sessionLayer
+    class STM,SR,SMF streamManagementLayer
+    class DSF,CSF,SP factoryLayer
+    class SPROC,GZR,GZW,RLR,RLW,TB implementationLayer
+```
+
+### 架构分层说明
+
+#### 🎯 **分层设计原则**
+- **依赖倒置**：高层模块不依赖低层模块，都依赖抽象
+- **单一职责**：每层只负责自己的核心功能
+- **开闭原则**：对扩展开放，对修改关闭
+- **接口隔离**：通过接口进行解耦，降低耦合度
+
+#### 📋 **各层职责**
+
+**应用层 (Application Layer)**
+- 服务器入口和配置管理
+- 协议工厂，负责创建协议适配器
+- 主程序逻辑和启动流程
+
+**协议层 (Protocol Layer)**
+- 多种网络协议的适配器实现
+- TCP、WebSocket、UDP、QUIC协议支持
+- 统一的协议接口抽象
+
+**会话层 (Session Layer)**
+- 连接会话管理和生命周期控制
+- 连接ID生成和会话状态维护
+- 流管理器的统一入口
+
+**流管理层 (Stream Management Layer)**
+- 流组件的统一管理和注册
+- 流指标统计和监控
+- 流生命周期管理
+
+**工厂层 (Factory Layer)**
+- 流组件的创建和配置
+- 支持默认和可配置的工厂模式
+- 预定义配置模板管理
+
+**实现层 (Implementation Layer)**
+- 具体的流处理组件实现
+- 压缩、限速、数据处理等核心功能
+- 高性能的底层实现
+
 ---
 
 ## ✨ 核心功能
@@ -238,11 +410,19 @@ tunnox-core/
 │   │   └── generators/    # ID生成器
 │   ├── protocol/          # 协议适配器
 │   ├── stream/            # 流处理
+│   │   ├── factory.go     # 流工厂实现
+│   │   ├── manager.go     # 流管理器
+│   │   ├── config.go      # 流配置模板
+│   │   ├── interfaces.go  # 流接口定义
+│   │   └── ...           # 其他流处理组件
 │   ├── packet/            # 数据包定义
 │   ├── utils/             # 工具函数
 │   ├── errors/            # 错误定义
 │   └── constants/         # 常量定义
+├── docs/                  # 文档
+│   └── architecture-layers.mmd  # 架构分层图
 ├── tests/                 # 测试文件
+│   └── stream_factory_test.go   # 流工厂测试
 ├── config.yaml           # 配置文件
 ├── go.mod               # Go模块文件
 └── LICENSE              # 许可证
@@ -269,6 +449,8 @@ tunnox-core/
 - **内存池**：自定义内存池实现，减少 GC 压力
 - **零拷贝**：缓冲区复用，提升数据传输效率
 - **流式处理**：支持压缩、限速、分块传输
+- **工厂模式**：StreamFactory统一管理流组件创建，支持配置化优化
+- **流管理**：StreamManager提供流生命周期管理和性能监控
 - **连接池**：连接池框架（具体复用优化待实现）
 - **数据包处理**：支持压缩、加密标识位，灵活的数据包类型处理
 
@@ -281,6 +463,8 @@ tunnox-core/
 - [x] 基础架构设计
 - [x] 协议适配器框架（TCP、WebSocket、UDP、QUIC）
 - [x] 流处理系统（压缩、限速、零拷贝）
+- [x] **StreamFactory架构**（工厂模式、配置化工厂、预定义模板）
+- [x] **StreamManager**（流生命周期管理、指标统计）
 - [x] 连接会话管理框架
 - [x] JWT 认证系统
 - [x] 内存池和缓冲区管理

@@ -22,7 +22,7 @@ type StreamPacket struct {
 // StreamConnectionInfo 连接信息
 type StreamConnectionInfo struct {
 	ID       string
-	Stream   *stream.StreamProcessor
+	Stream   stream.PackageStreamer
 	Metadata map[string]interface{}
 }
 
@@ -36,22 +36,35 @@ type Session interface {
 
 	// 关闭连接
 	CloseConnection(connectionId string) error
+
+	// 获取流管理器
+	GetStreamManager() *stream.StreamManager
 }
 
 // ConnectionSession 实现 Session 接口
 type ConnectionSession struct {
-	connMap  map[string]*StreamConnectionInfo
-	connLock sync.RWMutex
-	idGen    *generators.ConnectionIDGenerator
+	connMap       map[string]*StreamConnectionInfo
+	connLock      sync.RWMutex
+	idGen         *generators.ConnectionIDGenerator
+	streamMgr     *stream.StreamManager
+	streamFactory stream.StreamFactory
 
 	utils.Dispose
 }
 
 // NewConnectionSession 创建新的连接会话
 func NewConnectionSession(parentCtx context.Context) *ConnectionSession {
+	// 创建默认流工厂
+	streamFactory := stream.NewDefaultStreamFactory(parentCtx)
+
+	// 创建流管理器
+	streamMgr := stream.NewStreamManager(streamFactory, parentCtx)
+
 	session := &ConnectionSession{
-		connMap: make(map[string]*StreamConnectionInfo),
-		idGen:   generators.NewConnectionIDGenerator(),
+		connMap:       make(map[string]*StreamConnectionInfo),
+		idGen:         generators.NewConnectionIDGenerator(),
+		streamMgr:     streamMgr,
+		streamFactory: streamFactory,
 	}
 	session.SetCtx(parentCtx, session.onClose)
 	return session
@@ -62,8 +75,11 @@ func (s *ConnectionSession) InitConnection(reader io.Reader, writer io.Writer) (
 	// 生成连接ID
 	connID := s.idGen.GenerateID()
 
-	// 创建数据流
-	ps := stream.NewStreamProcessor(reader, writer, s.Ctx())
+	// 使用流管理器创建数据流
+	ps, err := s.streamMgr.CreateStream(connID, reader, writer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stream: %w", err)
+	}
 
 	// 创建连接信息
 	connInfo := &StreamConnectionInfo{
@@ -107,14 +123,14 @@ func (s *ConnectionSession) CloseConnection(connectionId string) error {
 	s.connLock.Lock()
 	defer s.connLock.Unlock()
 
-	connInfo, exists := s.connMap[connectionId]
+	_, exists := s.connMap[connectionId]
 	if !exists {
 		return fmt.Errorf("connection not found: %s", connectionId)
 	}
 
-	// 关闭数据流
-	if connInfo.Stream != nil {
-		connInfo.Stream.Close()
+	// 从流管理器中移除流
+	if err := s.streamMgr.RemoveStream(connectionId); err != nil {
+		utils.Warnf("Failed to remove stream from manager: %v", err)
 	}
 
 	// 从映射中删除
@@ -122,6 +138,11 @@ func (s *ConnectionSession) CloseConnection(connectionId string) error {
 
 	utils.Infof("Connection closed: %s", connectionId)
 	return nil
+}
+
+// GetStreamManager 获取流管理器
+func (s *ConnectionSession) GetStreamManager() *stream.StreamManager {
+	return s.streamMgr
 }
 
 // handleHeartbeat 处理心跳包

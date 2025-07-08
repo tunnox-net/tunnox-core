@@ -111,9 +111,8 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 
 // setupProtocolAdapters 设置协议适配器
 func (s *Server) setupProtocolAdapters() error {
-	// 创建 ConnectionSession
-	session := &protocol.ConnectionSession{}
-	session.SetCtx(s.Ctx(), nil)
+	// 创建 ConnectionSession（使用新的架构）
+	session := protocol.NewConnectionSession(s.Ctx())
 
 	// 创建协议工厂
 	factory := NewProtocolFactory(session)
