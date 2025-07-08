@@ -16,52 +16,28 @@ import (
 type DistributedIDGenerator struct {
 	storage storages.Storage
 	lock    DistributedLock
+	// 优化的客户端ID生成器
+	optimizedClientIDGen *generators.OptimizedClientIDGenerator
 }
 
 // NewDistributedIDGenerator 创建分布式ID生成器
 func NewDistributedIDGenerator(storage storages.Storage, lock DistributedLock) *DistributedIDGenerator {
-	return &DistributedIDGenerator{
+	generator := &DistributedIDGenerator{
 		storage: storage,
 		lock:    lock,
 	}
+
+	// 初始化优化的客户端ID生成器
+	generator.optimizedClientIDGen = generators.NewOptimizedClientIDGenerator(storage, context.Background())
+
+	return generator
 }
 
-// GenerateClientID 生成客户端ID（8位大于10000000的随机整数）
+// GenerateClientID 生成客户端ID（使用优化的分段位图算法）
 func (g *DistributedIDGenerator) GenerateClientID(ctx context.Context) (int64, error) {
-	lockKey := "lock:generate_client_id"
-
-	// 获取分布式锁，确保ID生成的原子性
-	acquired, err := g.lock.Acquire(lockKey, 10*time.Second)
-	if err != nil {
-		return 0, fmt.Errorf("acquire lock failed: %w", err)
-	}
-	if !acquired {
-		return 0, fmt.Errorf("failed to acquire lock for ID generation")
-	}
-	defer g.lock.Release(lockKey)
-
-	for attempts := 0; attempts < generators.MaxAttempts; attempts++ {
-		randomInt, err := utils.GenerateRandomInt64(generators.ClientIDMin, generators.ClientIDMax)
-		if err != nil {
-			return 0, err
-		}
-
-		// 检查ID是否已被使用
-		used, err := g.isClientIDUsed(ctx, randomInt)
-		if err != nil {
-			return 0, err
-		}
-
-		if !used {
-			// 标记ID为已使用
-			if err := g.markClientIDAsUsed(ctx, randomInt); err != nil {
-				return 0, err
-			}
-			return randomInt, nil
-		}
-	}
-
-	return 0, generators.ErrIDExhausted
+	// 直接使用优化的ID生成器，无需分布式锁
+	// 因为优化生成器内部已经处理了并发安全
+	return g.optimizedClientIDGen.GenerateClientID()
 }
 
 // GenerateNodeID 生成节点ID
@@ -180,8 +156,8 @@ func (g *DistributedIDGenerator) GenerateMappingID(ctx context.Context) (string,
 
 // ReleaseClientID 释放客户端ID
 func (g *DistributedIDGenerator) ReleaseClientID(ctx context.Context, clientID int64) error {
-	key := fmt.Sprintf("%s:used_client_id:%d", constants.KeyPrefixID, clientID)
-	return g.storage.Delete(key)
+	// 使用优化的ID生成器释放ID
+	return g.optimizedClientIDGen.ReleaseClientID(clientID)
 }
 
 // ReleaseNodeID 释放节点ID
@@ -204,29 +180,14 @@ func (g *DistributedIDGenerator) ReleaseMappingID(ctx context.Context, mappingID
 
 // 辅助方法：检查客户端ID是否已使用
 func (g *DistributedIDGenerator) isClientIDUsed(ctx context.Context, clientID int64) (bool, error) {
-	key := fmt.Sprintf("%s:used_client_id:%d", constants.KeyPrefixID, clientID)
-	exists, err := g.storage.Exists(key)
-	if err != nil {
-		return false, err
-	}
-	return exists, nil
+	// 使用优化的ID生成器检查ID使用状态
+	return g.optimizedClientIDGen.IsClientIDUsed(clientID)
 }
 
-// 辅助方法：标记客户端ID为已使用
+// 辅助方法：标记客户端ID为已使用（已由优化生成器内部处理）
 func (g *DistributedIDGenerator) markClientIDAsUsed(ctx context.Context, clientID int64) error {
-	key := fmt.Sprintf("%s:used_client_id:%d", constants.KeyPrefixID, clientID)
-	info := &IDUsageInfo{
-		ID:        fmt.Sprintf("%d", clientID),
-		Type:      "client",
-		CreatedAt: time.Now(),
-	}
-
-	data, err := json.Marshal(info)
-	if err != nil {
-		return err
-	}
-
-	return g.storage.Set(key, string(data), 0) // 永久存储
+	// 此方法已不再需要，因为优化的生成器在GenerateClientID时自动标记ID为已使用
+	return nil
 }
 
 // 辅助方法：检查节点ID是否已使用
@@ -324,4 +285,21 @@ func (g *DistributedIDGenerator) GenerateAuthCode() (string, error) {
 
 func (g *DistributedIDGenerator) GenerateSecretKey() (string, error) {
 	return utils.GenerateRandomString(generators.SecretKeyLength)
+}
+
+// GetClientIDUsedCount 获取已使用的客户端ID数量
+func (g *DistributedIDGenerator) GetClientIDUsedCount() int {
+	return g.optimizedClientIDGen.GetUsedCount()
+}
+
+// GetClientIDSegmentStats 获取客户端ID段统计信息
+func (g *DistributedIDGenerator) GetClientIDSegmentStats() map[int]float64 {
+	return g.optimizedClientIDGen.GetSegmentStats()
+}
+
+// Close 关闭分布式ID生成器
+func (g *DistributedIDGenerator) Close() {
+	if g.optimizedClientIDGen != nil {
+		g.optimizedClientIDGen.Close()
+	}
 }

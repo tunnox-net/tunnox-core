@@ -85,6 +85,10 @@ func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudCont
 func (b *CloudControl) onClose() {
 	utils.Infof("Cleaning up cloud control resources...")
 	time.Sleep(100 * time.Millisecond)
+	if b.idGen != nil {
+		b.idGen.Close()
+		utils.Infof("ID generator resources cleaned up")
+	}
 	if b.jwtManager != nil {
 		utils.Infof("JWT manager resources cleaned up")
 	}
