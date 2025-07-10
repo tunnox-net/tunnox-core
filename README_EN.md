@@ -23,27 +23,58 @@ Tunnox Core is a cloud tunnel framework developed in Go, designed specifically f
 
 ### 🎯 Project Goals
 
-| Goal | Description | Status |
-|------|-------------|--------|
-| **Lightweight Tunnel Service** | Provide port mapping and tunnel functionality framework, supporting TCP, HTTP, SOCKS, and other protocol mappings | 🔄 In Development |
-| **Multi-Protocol Support** | Support TCP, WebSocket, UDP, QUIC, and other transport protocols, adapting to different network environment requirements | ✅ Completed |
-| **Distributed Architecture** | Support cluster deployment and node management, achieving high availability and load balancing | 🔄 In Development |
-| **Resource Optimization** | Significantly improve performance and reduce resource consumption through memory pools, zero-copy, connection pools, and other technologies | ✅ Completed |
-| **Scalability** | Modular design, plugin architecture, facilitating feature extension and customized development | ✅ Completed |
+**Lightweight Tunnel Service** 🔄 In Development
+- Provide port mapping and tunnel functionality framework, supporting TCP, HTTP, SOCKS, and other protocol mappings
+
+**Multi-Protocol Support** ✅ Completed
+- Support TCP, WebSocket, UDP, QUIC, and other transport protocols, adapting to different network environment requirements
+
+**Distributed Architecture** 🔄 In Development
+- Support cluster deployment and node management, achieving high availability and load balancing
+
+**Resource Optimization** ✅ Completed
+- Significantly improve performance and reduce resource consumption through memory pools, zero-copy, connection pools, and other technologies
+
+**Scalability** ✅ Completed
+- Modular design, plugin architecture, facilitating feature extension and customized development
 
 ### 🌟 Technical Features
 
-| Feature | Description | Advantage |
-|---------|-------------|-----------|
-| 🏗️ **Layered Architecture** | Clear separation of business logic, data access, and infrastructure | Easy maintenance and extension |
-| 🏭 **Factory Pattern** | StreamFactory unified management of stream component creation, supporting configurable factories and predefined templates | Unified management and configuration |
-| 🔧 **Resource Management** | Hierarchical resource cleanup based on Dispose pattern, preventing memory leaks | Ensures graceful shutdown |
-| 🛡️ **Type Safety** | Strong type system, unified naming conventions | Improves code quality and development efficiency |
-| ⚡ **Concurrency Control** | Thread-safe design, optimized locking strategies | Supports high-concurrency scenarios |
-| 🚀 **Performance Optimization** | Comprehensive application of memory pools, zero-copy, streaming processing, compression algorithms, and other technologies | High performance and low latency |
-| 🔌 **Protocol Adaptation** | Unified protocol adapter interface, supporting transparent switching of multiple network protocols | Flexible protocol switching |
-| 📊 **Streaming Processing** | Support for data compression, rate limiting, chunked transmission, and other advanced stream processing features | Optimizes network bandwidth |
-| 📈 **Stream Management** | StreamManager unified management of stream lifecycle, supporting stream registration, monitoring, and metrics statistics | Unified monitoring and management |
+**🏗️ Layered Architecture**
+- Clear separation of business logic, data access, and infrastructure
+- Easy maintenance and extension
+
+**🏭 Factory Pattern**
+- StreamFactory unified management of stream component creation, supporting configurable factories and predefined templates
+- Unified management and configuration
+
+**🔧 Resource Management**
+- Hierarchical resource cleanup based on Dispose pattern, preventing memory leaks
+- Ensures graceful shutdown
+
+**🛡️ Type Safety**
+- Strong type system, unified naming conventions
+- Improves code quality and development efficiency
+
+**⚡ Concurrency Control**
+- Thread-safe design, optimized locking strategies
+- Supports high-concurrency scenarios
+
+**🚀 Performance Optimization**
+- Comprehensive application of memory pools, zero-copy, streaming processing, compression algorithms, and other technologies
+- High performance and low latency
+
+**🔌 Protocol Adaptation**
+- Unified protocol adapter interface, supporting transparent switching of multiple network protocols
+- Flexible protocol switching
+
+**📊 Streaming Processing**
+- Support for data compression, rate limiting, chunked transmission, and other advanced stream processing features
+- Optimizes network bandwidth
+
+**📈 Stream Management**
+- StreamManager unified management of stream lifecycle, supporting stream registration, monitoring, and metrics statistics
+- Unified monitoring and management
 
 ---
 
@@ -152,25 +183,49 @@ graph TB
 
 ### 📋 Architecture Layer Description
 
-#### 🎯 **Layered Design Principles**
+#### 🎯 Layered Design Principles
 
-| Principle | Description | Implementation |
-|-----------|-------------|----------------|
-| **Dependency Inversion** | High-level modules don't depend on low-level modules, both depend on abstractions | Decoupling through interfaces |
-| **Single Responsibility** | Each layer is only responsible for its core functionality | Clear responsibility boundaries |
-| **Open-Closed Principle** | Open for extension, closed for modification | Factory pattern and configuration |
-| **Interface Segregation** | Decoupling through interfaces, reducing coupling | Define clear interfaces |
+**Dependency Inversion**
+- High-level modules don't depend on low-level modules, both depend on abstractions
+- Decoupling through interfaces
 
-#### 📋 **Layer Responsibilities**
+**Single Responsibility**
+- Each layer is only responsible for its core functionality
+- Clear responsibility boundaries
 
-| Layer | Responsibility | Main Components |
-|-------|----------------|-----------------|
-| **Application Layer** | Server entry and configuration management | ProtocolFactory, Server, Main |
-| **Protocol Layer** | Multiple network protocol adapter implementations | TCP, WebSocket, UDP, QUIC adapters |
-| **Session Layer** | Connection session management and lifecycle control | ConnectionSession, StreamManager |
-| **Stream Management Layer** | Unified management and registration of stream components | StreamManager, stream registry, metrics statistics |
-| **Factory Layer** | Stream component creation and configuration | DefaultStreamFactory, ConfigurableStreamFactory |
-| **Implementation Layer** | Specific stream processing component implementations | StreamProcessor, compressors, rate limiters |
+**Open-Closed Principle**
+- Open for extension, closed for modification
+- Factory pattern and configuration
+
+**Interface Segregation**
+- Decoupling through interfaces, reducing coupling
+- Define clear interfaces
+
+#### 📋 Layer Responsibilities
+
+**Application Layer**
+- Server entry and configuration management
+- Main components: ProtocolFactory, Server, Main
+
+**Protocol Layer**
+- Multiple network protocol adapter implementations
+- Main components: TCP, WebSocket, UDP, QUIC adapters
+
+**Session Layer**
+- Connection session management and lifecycle control
+- Main components: ConnectionSession, StreamManager
+
+**Stream Management Layer**
+- Unified management and registration of stream components
+- Main components: StreamManager, stream registry, metrics statistics
+
+**Factory Layer**
+- Stream component creation and configuration
+- Main components: DefaultStreamFactory, ConfigurableStreamFactory
+
+**Implementation Layer**
+- Specific stream processing component implementations
+- Main components: StreamProcessor, compressors, rate limiters
 
 ### 🔄 Stream Processing Architecture Layered Diagram
 
@@ -306,52 +361,85 @@ graph TB
 
 ### 🔐 Authentication & Security
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| **JWT Token Management** | Support for token generation, validation, and refresh, with built-in token caching and automatic cleanup mechanisms | ✅ Completed |
-| **Anonymous User Support** | Anonymous client generation and management functionality | ✅ Completed |
-| **Role Permission Control** | Basic permission control framework (fine-grained permissions to be implemented) | 🔄 In Development |
-| **Secure Communication** | TLS encrypted transmission support (specific implementation to be improved) | 🔄 In Development |
-| **Encrypted Transmission Options** | Reserved data packet encryption flag bits, supporting optional end-to-end encrypted transmission | 🔄 In Development |
+**JWT Token Management** ✅ Completed
+- Support for token generation, validation, and refresh, with built-in token caching and automatic cleanup mechanisms
+
+**Anonymous User Support** ✅ Completed
+- Anonymous client generation and management functionality
+
+**Role Permission Control** 🔄 In Development
+- Basic permission control framework (fine-grained permissions to be implemented)
+
+**Secure Communication** 🔄 In Development
+- TLS encrypted transmission support (specific implementation to be improved)
+
+**Encrypted Transmission Options** 🔄 In Development
+- Reserved data packet encryption flag bits, supporting optional end-to-end encrypted transmission
 
 ### 📊 Statistics & Monitoring
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| **Basic Statistics** | Basic statistical information for users, clients, and port mappings | ✅ Completed |
-| **Traffic Statistics** | Basic traffic and connection count statistics (chart data to be implemented) | 🔄 In Development |
-| **System Monitoring** | System-wide statistical information collection | ✅ Completed |
-| **Performance Metrics** | Basic performance metrics collection framework | ✅ Completed |
+**Basic Statistics** ✅ Completed
+- Basic statistical information for users, clients, and port mappings
+
+**Traffic Statistics** 🔄 In Development
+- Basic traffic and connection count statistics (chart data to be implemented)
+
+**System Monitoring** ✅ Completed
+- System-wide statistical information collection
+
+**Performance Metrics** ✅ Completed
+- Basic performance metrics collection framework
 
 ### 🌐 Distributed Support
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| **Node Management** | Basic node registration and heartbeat mechanisms (failover to be implemented) | 🔄 In Development |
-| **ID Generation** | Basic ID generator, supporting client, user, node, and mapping ID generation (memory version) | ✅ Completed |
-| **Distributed Lock** | Basic distributed lock implementation, supporting resource coordination in cluster environments (memory version) | ✅ Completed |
-| **Load Balancing** | Load balancing framework (specific strategies to be implemented) | 🔄 In Development |
-| **Cluster Communication** | Inter-node communication framework (specific implementation to be completed) | 🔄 In Development |
+**Node Management** 🔄 In Development
+- Basic node registration and heartbeat mechanisms (failover to be implemented)
+
+**ID Generation** ✅ Completed
+- Basic ID generator, supporting client, user, node, and mapping ID generation (memory version)
+
+**Distributed Lock** ✅ Completed
+- Basic distributed lock implementation, supporting resource coordination in cluster environments (memory version)
+
+**Load Balancing** 🔄 In Development
+- Load balancing framework (specific strategies to be implemented)
+
+**Cluster Communication** 🔄 In Development
+- Inter-node communication framework (specific implementation to be completed)
 
 ### ⚡ Performance Optimization
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| **Memory Pool** | Efficient buffer management, reducing memory allocation and GC pressure | ✅ Completed |
-| **Zero-Copy** | Reducing memory allocation overhead, improving data transmission efficiency | ✅ Completed |
-| **Streaming Processing** | Support for compression and rate limiting, optimizing network bandwidth usage | ✅ Completed |
-| **Connection Pool** | Connection pool framework (specific optimizations to be implemented) | 🔄 In Development |
-| **Asynchronous Processing** | Asynchronous processing framework (specific mechanisms to be improved) | 🔄 In Development |
-| **Data Packet Processing** | Support for compression and encryption flag bits, flexible data packet type processing | ✅ Completed |
+**Memory Pool** ✅ Completed
+- Efficient buffer management, reducing memory allocation and GC pressure
+
+**Zero-Copy** ✅ Completed
+- Reducing memory allocation overhead, improving data transmission efficiency
+
+**Streaming Processing** ✅ Completed
+- Support for compression and rate limiting, optimizing network bandwidth usage
+
+**Connection Pool** 🔄 In Development
+- Connection pool framework (specific optimizations to be implemented)
+
+**Asynchronous Processing** 🔄 In Development
+- Asynchronous processing framework (specific mechanisms to be improved)
+
+**Data Packet Processing** ✅ Completed
+- Support for compression and encryption flag bits, flexible data packet type processing
 
 ### 🔄 Resource Management
 
-| Feature | Description | Status |
-|---------|-------------|--------|
-| **Automatic Cleanup** | Basic expired resource cleanup mechanisms, preventing resource leaks | ✅ Completed |
-| **Memory Leak Prevention** | Basic resource tracking framework, ensuring proper resource release | ✅ Completed |
-| **Graceful Shutdown** | Basic resource release mechanisms, supporting graceful service shutdown | ✅ Completed |
-| **Resource Monitoring** | Basic resource usage monitoring framework (real-time monitoring to be improved) | 🔄 In Development |
+**Automatic Cleanup** ✅ Completed
+- Basic expired resource cleanup mechanisms, preventing resource leaks
+
+**Memory Leak Prevention** ✅ Completed
+- Basic resource tracking framework, ensuring proper resource release
+
+**Graceful Shutdown** ✅ Completed
+- Basic resource release mechanisms, supporting graceful service shutdown
+
+**Resource Monitoring** 🔄 In Development
+- Basic resource usage monitoring framework (real-time monitoring to be improved)
 
 ---
 
@@ -359,10 +447,11 @@ graph TB
 
 ### 📋 Requirements
 
-| Component | Version Requirement | Description |
-|-----------|-------------------|-------------|
-| **Go** | 1.24+ | Support for generics, modularization, and other modern features |
-| **Git** | Latest version | For code version control |
+**Go** 1.24+
+- Support for generics, modularization, and other modern features
+
+**Git** Latest version
+- For code version control
 
 ### 🛠️ Installation & Running
 
@@ -388,16 +477,37 @@ go build -o server cmd/server/main.go
 
 The project uses YAML configuration files, supporting the following configuration items:
 
-| Configuration Category | Configuration Item | Description |
-|------------------------|-------------------|-------------|
-| **Server Configuration** | Listen address, port, timeout settings, CORS configuration | Basic server parameters |
-| **Protocol Configuration** | TCP, WebSocket, UDP, QUIC protocol parameters | Support for independent port configuration |
-| **Logging Configuration** | Log level, format, output location | Support for log rotation and compression |
-| **Cloud Control Configuration** | JWT settings, data cleanup strategies, ID generation parameters | Cloud control related configuration |
-| **Performance Configuration** | Memory pool, connection pool parameters | Support for dynamic adjustment |
-| **Monitoring Configuration** | Metrics collection, health checks | Support for Prometheus format |
-| **Security Configuration** | TLS settings, API key authentication, administrator accounts | Security related configuration |
-| **Rate Limiting Configuration** | Request frequency limits, burst traffic handling | Traffic control configuration |
+**Server Configuration**
+- Listen address, port, timeout settings, CORS configuration
+- Basic server parameters
+
+**Protocol Configuration**
+- TCP, WebSocket, UDP, QUIC protocol parameters
+- Support for independent port configuration
+
+**Logging Configuration**
+- Log level, format, output location
+- Support for log rotation and compression
+
+**Cloud Control Configuration**
+- JWT settings, data cleanup strategies, ID generation parameters
+- Cloud control related configuration
+
+**Performance Configuration**
+- Memory pool, connection pool parameters
+- Support for dynamic adjustment
+
+**Monitoring Configuration**
+- Metrics collection, health checks
+- Support for Prometheus format
+
+**Security Configuration**
+- TLS settings, API key authentication, administrator accounts
+- Security related configuration
+
+**Rate Limiting Configuration**
+- Request frequency limits, burst traffic handling
+- Traffic control configuration
 
 > **Note**: The current configuration system is static configuration, supporting file configuration and environment variable overrides. Dynamic configuration management functionality is under development.
 
@@ -441,34 +551,64 @@ tunnox-core/
 
 ### 🏗️ Core Framework
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| **Go** | 1.24+ | Primary development language, supporting generics, modularization, and other modern features |
-| **TCP/WebSocket/UDP/QUIC** | Latest | Multiple transport protocol support |
-| **JWT** | golang-jwt/jwt/v5 | Authentication tokens, supporting token refresh and caching |
-| **Gorilla WebSocket** | Latest | WebSocket support, supporting binary and text messages |
-| **quic-go** | Latest | QUIC protocol support, supporting HTTP/3 and custom protocols |
+**Go** 1.24+
+- Primary development language, supporting generics, modularization, and other modern features
+
+**TCP/WebSocket/UDP/QUIC** Latest
+- Multiple transport protocol support
+
+**JWT** golang-jwt/jwt/v5
+- Authentication tokens, supporting token refresh and caching
+
+**Gorilla WebSocket** Latest
+- WebSocket support, supporting binary and text messages
+
+**quic-go** Latest
+- QUIC protocol support, supporting HTTP/3 and custom protocols
 
 ### 🛠️ Utility Libraries
 
-| Technology | Version | Purpose |
-|------------|---------|---------|
-| **Logrus** | Latest | Structured logging, supporting multiple output formats |
-| **Testify** | Latest | Rich assertion and testing tools |
-| **YAML** | gopkg.in/yaml.v3 | Human-friendly configuration file format |
-| **Gzip** | Built-in | Built-in compression algorithm support |
+**Logrus** Latest
+- Structured logging, supporting multiple output formats
+
+**Testify** Latest
+- Rich assertion and testing tools
+
+**YAML** gopkg.in/yaml.v3
+- Human-friendly configuration file format
+
+**Gzip** Built-in
+- Built-in compression algorithm support
 
 ### ⚡ Performance Optimization
 
-| Technology | Description | Advantage |
-|------------|-------------|-----------|
-| **Memory Pool** | Custom memory pool implementation, reducing GC pressure | Reduces memory allocation overhead |
-| **Zero-Copy** | Buffer reuse, improving data transmission efficiency | Improves transmission performance |
-| **Streaming Processing** | Support for compression, rate limiting, chunked transmission | Optimizes network bandwidth |
-| **Factory Pattern** | StreamFactory unified management of stream component creation | Supports configurable optimization |
-| **Stream Management** | StreamManager provides stream lifecycle management and performance monitoring | Unified monitoring and management |
-| **Connection Pool** | Connection pool framework (specific reuse optimization to be implemented) | Connection reuse optimization |
-| **Data Packet Processing** | Support for compression and encryption flag bits, flexible data packet type processing | Flexible data processing |
+**Memory Pool**
+- Custom memory pool implementation, reducing GC pressure
+- Reduces memory allocation overhead
+
+**Zero-Copy**
+- Buffer reuse, improving data transmission efficiency
+- Improves transmission performance
+
+**Streaming Processing**
+- Support for compression, rate limiting, chunked transmission
+- Optimizes network bandwidth
+
+**Factory Pattern**
+- StreamFactory unified management of stream component creation
+- Supports configurable optimization
+
+**Stream Management**
+- StreamManager provides stream lifecycle management and performance monitoring
+- Unified monitoring and management
+
+**Connection Pool**
+- Connection pool framework (specific reuse optimization to be implemented)
+- Connection reuse optimization
+
+**Data Packet Processing**
+- Support for compression and encryption flag bits, flexible data packet type processing
+- Flexible data processing
 
 ---
 
@@ -476,40 +616,88 @@ tunnox-core/
 
 ### ✅ Completed
 
-| Feature Module | Completion | Description |
-|----------------|------------|-------------|
-| **Basic Architecture Design** | 100% | Complete layered architecture design |
-| **Protocol Adapter Framework** | 100% | TCP, WebSocket, UDP, QUIC protocol framework |
-| **Stream Processing System** | 100% | Compression, rate limiting, zero-copy functionality |
-| **StreamFactory Architecture** | 100% | Factory pattern, configurable factory, predefined templates |
-| **StreamManager** | 100% | Stream lifecycle management, metrics statistics |
-| **Connection Session Management Framework** | 100% | Session management and lifecycle control |
-| **JWT Authentication System** | 100% | Complete JWT authentication functionality |
-| **Memory Pool and Buffer Management** | 100% | Efficient memory management |
-| **Logging System** | 100% | Structured logging system |
-| **Error Handling Framework** | 100% | Unified error handling |
-| **Basic ID Generator** | 100% | Memory version ID generation |
-| **Basic Configuration Management** | 100% | File configuration and environment variables |
-| **Data Model Definitions** | 100% | Complete data models |
-| **Data Access Layer** | 100% | Repository pattern implementation |
-| **Basic Statistics Functionality** | 100% | Basic statistics and monitoring |
+**Basic Architecture Design** 100%
+- Complete layered architecture design
+
+**Protocol Adapter Framework** 100%
+- TCP, WebSocket, UDP, QUIC protocol framework
+
+**Stream Processing System** 100%
+- Compression, rate limiting, zero-copy functionality
+
+**StreamFactory Architecture** 100%
+- Factory pattern, configurable factory, predefined templates
+
+**StreamManager** 100%
+- Stream lifecycle management, metrics statistics
+
+**Connection Session Management Framework** 100%
+- Session management and lifecycle control
+
+**JWT Authentication System** 100%
+- Complete JWT authentication functionality
+
+**Memory Pool and Buffer Management** 100%
+- Efficient memory management
+
+**Logging System** 100%
+- Structured logging system
+
+**Error Handling Framework** 100%
+- Unified error handling
+
+**Basic ID Generator** 100%
+- Memory version ID generation
+
+**Basic Configuration Management** 100%
+- File configuration and environment variables
+
+**Data Model Definitions** 100%
+- Complete data models
+
+**Data Access Layer** 100%
+- Repository pattern implementation
+
+**Basic Statistics Functionality** 100%
+- Basic statistics and monitoring
 
 ### 🚧 In Development
 
-| Feature Module | Progress | Description |
-|----------------|----------|-------------|
-| **Port Mapping Business Logic Implementation** | 30% | Core business logic development in progress |
-| **Data Forwarding Mechanism Implementation** | 20% | Data forwarding functionality development in progress |
-| **Cluster Node Communication Implementation** | 15% | Inter-node communication development in progress |
-| **Statistics and Monitoring System Improvement** | 40% | Monitoring system improvement in progress |
-| **User Management Interface Development** | 10% | Management interface development in progress |
-| **API Interface Implementation** | 25% | RESTful API development in progress |
-| **Encrypted Transmission Processor Implementation** | 35% | Encryption functionality development in progress |
-| **Distributed ID Generator Improvement** | 60% | Redis/database support development in progress |
-| **Distributed Lock Implementation** | 50% | Redis/database support development in progress |
-| **Dynamic Configuration Management System** | 20% | Hot reload, configuration validation development in progress |
-| **Protocol Adapter Specific Implementation** | 70% | Specific protocol implementation in progress |
-| **Connection Session Specific Business Logic** | 45% | Business logic improvement in progress |
+**Port Mapping Business Logic Implementation** 30%
+- Core business logic development in progress
+
+**Data Forwarding Mechanism Implementation** 20%
+- Data forwarding functionality development in progress
+
+**Cluster Node Communication Implementation** 15%
+- Inter-node communication development in progress
+
+**Statistics and Monitoring System Improvement** 40%
+- Monitoring system improvement in progress
+
+**User Management Interface Development** 10%
+- Management interface development in progress
+
+**API Interface Implementation** 25%
+- RESTful API development in progress
+
+**Encrypted Transmission Processor Implementation** 35%
+- Encryption functionality development in progress
+
+**Distributed ID Generator Improvement** 60%
+- Redis/database support development in progress
+
+**Distributed Lock Implementation** 50%
+- Redis/database support development in progress
+
+**Dynamic Configuration Management System** 20%
+- Hot reload, configuration validation development in progress
+
+**Protocol Adapter Specific Implementation** 70%
+- Specific protocol implementation in progress
+
+**Connection Session Specific Business Logic** 45%
+- Business logic improvement in progress
 
 ### 📋 Planned
 
@@ -537,12 +725,21 @@ We welcome community contributions! Please follow these steps:
 
 ### 🛠️ Development Standards
 
-| Standard | Requirement | Description |
-|----------|-------------|-------------|
-| **Code Standards** | Follow Go language coding standards | Use gofmt to format code |
-| **Test Coverage** | Add appropriate test cases | Ensure code quality |
-| **Documentation Updates** | Update relevant documentation | Keep documentation synchronized |
-| **Test Passing** | Ensure code passes all tests | Verify functionality correctness |
+**Code Standards**
+- Follow Go language coding standards
+- Use gofmt to format code
+
+**Test Coverage**
+- Add appropriate test cases
+- Ensure code quality
+
+**Documentation Updates**
+- Update relevant documentation
+- Keep documentation synchronized
+
+**Test Passing**
+- Ensure code passes all tests
+- Verify functionality correctness
 
 ---
 
@@ -554,11 +751,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Contact Us
 
-| Contact Method | Link |
-|----------------|------|
-| **Project Repository** | https://github.com/tunnox-net/tunnox-core |
-| **Issue Feedback** | https://github.com/tunnox-net/tunnox-core/issues |
-| **Development Email** | zhangyu.tongbin@gmail.com |
+**Project Repository**
+- https://github.com/tunnox-net/tunnox-core
+
+**Issue Feedback**
+- https://github.com/tunnox-net/tunnox-core/issues
+
+**Development Email**
+- zhangyu.tongbin@gmail.com
 
 ---
 

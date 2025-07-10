@@ -197,62 +197,117 @@ if err != nil {
 
 // 4. 使用流
 written, err := stream.WritePacket(packet, false, 0)
-
-// 5. 清理资源
-manager.RemoveStream("conn-1")
 ```
 
 ### 配置化使用
 ```go
-// 1. 使用高性能配置
-manager, err := stream.CreateManagerFromProfile(ctx, "high_performance")
+// 1. 创建配置
+config := stream.StreamFactoryConfig{
+    DefaultCompression: true,
+    DefaultRateLimit:   1024,
+    BufferSize:         4096,
+    EnableMemoryPool:   true,
+}
+
+// 2. 创建可配置工厂
+factory := stream.NewConfigurableStreamFactory(ctx, config)
+
+// 3. 创建管理器
+manager := stream.NewStreamManager(factory, ctx)
+
+// 4. 使用流
+stream, err := manager.CreateStream("conn-1", reader, writer)
+```
+
+### 预定义配置使用
+```go
+// 1. 从预定义配置创建工厂
+factory, err := stream.CreateFactoryFromProfile(ctx, "high_performance")
 if err != nil {
     log.Fatal(err)
 }
 
-// 2. 创建流
-stream, err := manager.CreateStream("conn-1", reader, writer)
+// 2. 创建管理器
+manager := stream.NewStreamManager(factory, ctx)
 
-// 3. 获取指标
-metrics := manager.GetMetrics()
-fmt.Printf("活跃流数量: %d\n", metrics.ActiveStreams)
+// 3. 使用流
+stream, err := manager.CreateStream("conn-1", reader, writer)
 ```
 
-## 📈 性能影响
+## 📈 性能优化
 
-### 正面影响
-- ✅ 更好的资源管理和清理
-- ✅ 统一的配置管理
-- ✅ 更好的并发控制
-- ✅ 可监控的流状态
+### 内存池优化
+- 减少内存分配开销
+- 降低 GC 压力
+- 提升数据传输效率
 
-### 轻微开销
-- 🔄 工厂模式的轻微性能开销（可忽略）
-- 🔄 流管理器的内存开销（每个流约 100-200 字节）
+### 零拷贝优化
+- 缓冲区复用
+- 减少内存拷贝
+- 提升传输性能
 
-## 🔮 未来扩展
+### 流式处理优化
+- 支持压缩和限速
+- 优化网络带宽使用
+- 灵活的数据包处理
 
-### 计划中的功能
-- [ ] 流组件的热插拔支持
-- [ ] 更丰富的配置模板
-- [ ] 流性能基准测试
-- [ ] 分布式流管理
-- [ ] 流组件的插件化支持
+## 🔧 配置说明
 
-### 扩展点
-- 自定义流工厂实现
-- 新的流组件类型
-- 自定义配置模板
-- 流监控和告警
+### 流工厂配置
+```go
+type StreamFactoryConfig struct {
+    DefaultCompression bool   // 默认启用压缩
+    DefaultRateLimit   int64  // 默认限速值
+    BufferSize         int    // 缓冲区大小
+    EnableMemoryPool   bool   // 启用内存池
+}
+```
 
-## 📝 总结
+### 预定义配置模板
+- **default**：默认配置，平衡性能和资源使用
+- **high_performance**：高性能配置，优先考虑性能
+- **bandwidth_saving**：带宽节省配置，优先考虑带宽优化
+- **low_latency**：低延迟配置，优先考虑延迟优化
 
-本次 StreamFactory 架构改进实现了：
+## 🛠️ 开发指南
 
-1. **真正的工厂模式**：统一管理流组件创建
-2. **清晰的分层架构**：遵循 SOLID 原则
-3. **配置化支持**：预定义模板和自定义配置
-4. **资源管理**：统一的流生命周期管理
-5. **可扩展性**：为未来功能扩展奠定基础
+### 添加新的流类型
+1. 实现 `Stream` 接口
+2. 在工厂中添加创建方法
+3. 添加相应的测试用例
 
-这个改进为项目提供了更加健壮、可维护和可扩展的架构基础。 
+### 添加新的配置模板
+1. 在 `config.go` 中定义配置
+2. 在 `CreateFactoryFromProfile` 中添加支持
+3. 更新文档和测试
+
+### 扩展流管理器
+1. 在 `StreamManager` 中添加新方法
+2. 确保线程安全
+3. 添加相应的测试用例
+
+## 📋 总结
+
+本次改进实现了：
+
+**架构优化**
+- 清晰的分层架构设计
+- 真正的工厂模式实现
+- 统一的流管理机制
+
+**功能完善**
+- 配置化的流组件创建
+- 预定义配置模板支持
+- 完整的生命周期管理
+
+**性能提升**
+- 内存池和零拷贝优化
+- 流式处理支持
+- 并发安全设计
+
+**开发体验**
+- 简洁的 API 设计
+- 完善的测试覆盖
+- 详细的文档说明
+
+这些改进为 Tunnox Core 提供了更加稳定、高效、可扩展的流处理架构基础。 
