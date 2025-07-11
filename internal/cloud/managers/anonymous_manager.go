@@ -140,7 +140,7 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 	// 生成端口映射ID，确保不重复
 	var mappingID string
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
-		generatedID, err := am.idGen.GenerateMappingID(am.Ctx())
+		generatedID, err := am.idGen.GenerateMappingID()
 		if err != nil {
 			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
 		}

@@ -35,7 +35,7 @@ func (cm *ConnectionManager) onClose() {
 func (cm *ConnectionManager) RegisterConnection(mappingID string, connInfo *models.ConnectionInfo) error {
 	// 如果连接ID为空，则生成新的连接ID
 	if connInfo.ConnID == "" {
-		connID, err := cm.idGen.GenerateMappingID(cm.Ctx())
+		connID, err := cm.idGen.GenerateMappingID()
 		if err != nil {
 			return fmt.Errorf("generate connection ID failed: %w", err)
 		}

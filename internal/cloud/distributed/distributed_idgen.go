@@ -41,117 +41,18 @@ func (g *DistributedIDGenerator) GenerateClientID(ctx context.Context) (int64, e
 }
 
 // GenerateNodeID 生成节点ID
-func (g *DistributedIDGenerator) GenerateNodeID(ctx context.Context) (string, error) {
-	lockKey := "lock:generate_node_id"
-
-	// 获取分布式锁
-	acquired, err := g.lock.Acquire(lockKey, 10*time.Second)
-	if err != nil {
-		return "", fmt.Errorf("acquire lock failed: %w", err)
-	}
-	if !acquired {
-		return "", fmt.Errorf("failed to acquire lock for ID generation")
-	}
-	defer g.lock.Release(lockKey)
-
-	for attempts := 0; attempts < generators.MaxAttempts; attempts++ {
-		nodeID, err := utils.GenerateRandomString(generators.NodeIDLength)
-		if err != nil {
-			return "", err
-		}
-
-		// 检查ID是否已被使用
-		used, err := g.isNodeIDUsed(ctx, nodeID)
-		if err != nil {
-			return "", err
-		}
-
-		if !used {
-			// 标记ID为已使用
-			if err := g.markNodeIDAsUsed(ctx, nodeID); err != nil {
-				return "", err
-			}
-			return nodeID, nil
-		}
-	}
-
-	return "", generators.ErrIDExhausted
+func (g *DistributedIDGenerator) GenerateNodeID() (string, error) {
+	return utils.GenerateRandomString(16) // 16位随机字符串
 }
 
 // GenerateUserID 生成用户ID
-func (g *DistributedIDGenerator) GenerateUserID(ctx context.Context) (string, error) {
-	lockKey := "lock:generate_user_id"
-
-	// 获取分布式锁
-	acquired, err := g.lock.Acquire(lockKey, 10*time.Second)
-	if err != nil {
-		return "", fmt.Errorf("acquire lock failed: %w", err)
-	}
-	if !acquired {
-		return "", fmt.Errorf("failed to acquire lock for ID generation")
-	}
-	defer g.lock.Release(lockKey)
-
-	for attempts := 0; attempts < generators.MaxAttempts; attempts++ {
-		userID, err := utils.GenerateRandomString(generators.UserIDLength)
-		if err != nil {
-			return "", err
-		}
-
-		// 检查ID是否已被使用
-		used, err := g.isUserIDUsed(ctx, userID)
-		if err != nil {
-			return "", err
-		}
-
-		if !used {
-			// 标记ID为已使用
-			if err := g.markUserIDAsUsed(ctx, userID); err != nil {
-				return "", err
-			}
-			return userID, nil
-		}
-	}
-
-	return "", generators.ErrIDExhausted
+func (g *DistributedIDGenerator) GenerateUserID() (string, error) {
+	return utils.GenerateRandomString(16) // 16位随机字符串
 }
 
 // GenerateMappingID 生成端口映射ID
-func (g *DistributedIDGenerator) GenerateMappingID(ctx context.Context) (string, error) {
-	lockKey := "lock:generate_mapping_id"
-
-	// 获取分布式锁
-	acquired, err := g.lock.Acquire(lockKey, 10*time.Second)
-	if err != nil {
-		return "", fmt.Errorf("acquire lock failed: %w", err)
-	}
-	if !acquired {
-		return "", fmt.Errorf("failed to acquire lock for ID generation")
-	}
-	defer g.lock.Release(lockKey)
-
-	for attempts := 0; attempts < generators.MaxAttempts; attempts++ {
-		mappingID, err := utils.GenerateRandomString(generators.MappingIDLength)
-		if err != nil {
-			return "", err
-		}
-
-		// 检查ID是否已被使用
-		used, err := g.isMappingIDUsed(ctx, mappingID)
-		if err != nil {
-			return "", err
-		}
-
-		if !used {
-			// 标记ID为已使用
-			if err := g.markMappingIDAsUsed(ctx, mappingID); err != nil {
-				return "", err
-			}
-			return mappingID, nil
-		}
-	}
-
-	return "", generators.ErrIDExhausted
+func (g *DistributedIDGenerator) GenerateMappingID() (string, error) {
+	return utils.GenerateRandomString(12) // 12位随机字符串
 }
 
 // ReleaseClientID 释放客户端ID
@@ -280,11 +181,11 @@ type IDUsageInfo struct {
 
 // 保持向后兼容的方法（用于生成认证码和密钥）
 func (g *DistributedIDGenerator) GenerateAuthCode() (string, error) {
-	return utils.GenerateRandomDigits(generators.AuthCodeLength)
+	return utils.GenerateRandomDigits(6) // 6位数字认证码
 }
 
 func (g *DistributedIDGenerator) GenerateSecretKey() (string, error) {
-	return utils.GenerateRandomString(generators.SecretKeyLength)
+	return utils.GenerateRandomString(32) // 32位随机字符串密钥
 }
 
 // GetClientIDUsedCount 获取已使用的客户端ID数量

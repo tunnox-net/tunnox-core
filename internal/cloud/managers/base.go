@@ -106,7 +106,7 @@ func (b *CloudControl) onClose() {
 
 // 用户管理
 func (b *CloudControl) CreateUser(username, email string) (*models.User, error) {
-	userID, _ := b.idGen.GenerateUserID(b.Ctx())
+	userID, _ := b.idGen.GenerateUserID()
 	now := time.Now()
 	user := &models.User{
 		ID:        userID,
@@ -289,7 +289,7 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 	// 生成端口映射ID，确保不重复
 	var mappingID string
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateMappingID(b.Ctx())
+		generatedID, err := b.idGen.GenerateMappingID()
 		if err != nil {
 			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
 		}
@@ -528,7 +528,7 @@ func (b *CloudControl) NodeRegister(req *models.NodeRegisterRequest) (*models.No
 	// 生成节点ID，确保不重复
 	var nodeID string
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateNodeID(b.Ctx())
+		generatedID, err := b.idGen.GenerateNodeID()
 		if err != nil {
 			return nil, fmt.Errorf("generate node ID failed: %w", err)
 		}

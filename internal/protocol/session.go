@@ -62,7 +62,7 @@ func NewConnectionSession(parentCtx context.Context) *ConnectionSession {
 
 	session := &ConnectionSession{
 		connMap:       make(map[string]*StreamConnectionInfo),
-		idGen:         generators.NewConnectionIDGenerator(),
+		idGen:         generators.NewConnectionIDGenerator(parentCtx),
 		streamMgr:     streamMgr,
 		streamFactory: streamFactory,
 	}
@@ -73,7 +73,10 @@ func NewConnectionSession(parentCtx context.Context) *ConnectionSession {
 // InitConnection 初始化连接
 func (s *ConnectionSession) InitConnection(reader io.Reader, writer io.Writer) (*StreamConnectionInfo, error) {
 	// 生成连接ID
-	connID := s.idGen.GenerateID()
+	connID, err := s.idGen.Generate()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate connection ID: %w", err)
+	}
 
 	// 使用流管理器创建数据流
 	ps, err := s.streamMgr.CreateStream(connID, reader, writer)
