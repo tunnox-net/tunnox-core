@@ -11,6 +11,8 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+//TODO: mapping连接实例的ID实现有问题
+
 // 错误定义
 var (
 	ErrIDExhausted = errors.New("ID exhausted")
