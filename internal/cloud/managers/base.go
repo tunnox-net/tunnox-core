@@ -7,6 +7,7 @@ import (
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/distributed"
+	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
@@ -21,7 +22,7 @@ import (
 type CloudControl struct {
 	config            *ControlConfig
 	storage           storages.Storage
-	idGen             *distributed.DistributedIDGenerator
+	idManager         *generators.IDManager
 	userRepo          *repos.UserRepository
 	clientRepo        *repos.ClientRepository
 	mappingRepo       *repos.PortMappingRepo
@@ -53,13 +54,13 @@ func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudCont
 	nodeRepo := repos.NewNodeRepository(repo)
 	connRepo := repos.NewConnectionRepo(repo)
 
-	// 创建ID生成器
-	idGen := distributed.NewDistributedIDGenerator(storage, lock)
+	// 创建ID管理器
+	idManager := generators.NewIDManager(storage, ctx)
 
 	base := &CloudControl{
 		config:            config,
 		storage:           storage,
-		idGen:             idGen,
+		idManager:         idManager,
 		userRepo:          userRepo,
 		clientRepo:        clientRepo,
 		mappingRepo:       mappingRepo,
@@ -69,10 +70,10 @@ func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudCont
 		configManager:     NewConfigManager(storage, config, ctx),
 		cleanupManager:    NewCleanupManager(storage, lock, ctx),
 		statsManager:      NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo),
-		anonymousManager:  NewAnonymousManager(clientRepo, mappingRepo, idGen),
+		anonymousManager:  NewAnonymousManager(clientRepo, mappingRepo, idManager),
 		nodeManager:       NewNodeManager(nodeRepo),
 		searchManager:     NewSearchManager(userRepo, clientRepo, mappingRepo),
-		connectionManager: NewConnectionManager(connRepo, idGen),
+		connectionManager: NewConnectionManager(connRepo, idManager),
 		lock:              lock,
 		cleanupTicker:     time.NewTicker(constants.DefaultCleanupInterval),
 		done:              make(chan bool),
@@ -85,9 +86,9 @@ func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudCont
 func (b *CloudControl) onClose() {
 	utils.Infof("Cleaning up cloud control resources...")
 	time.Sleep(100 * time.Millisecond)
-	if b.idGen != nil {
-		b.idGen.Close()
-		utils.Infof("ID generator resources cleaned up")
+	if b.idManager != nil {
+		b.idManager.Close()
+		utils.Infof("ID manager resources cleaned up")
 	}
 	if b.jwtManager != nil {
 		utils.Infof("JWT manager resources cleaned up")
@@ -106,7 +107,7 @@ func (b *CloudControl) onClose() {
 
 // 用户管理
 func (b *CloudControl) CreateUser(username, email string) (*models.User, error) {
-	userID, _ := b.idGen.GenerateUserID()
+	userID, _ := b.idManager.GenerateUserID()
 	now := time.Now()
 	user := &models.User{
 		ID:        userID,
@@ -143,7 +144,7 @@ func (b *CloudControl) CreateClient(userID, clientName string) (*models.Client, 
 	// 生成客户端ID，确保不重复
 	var clientID int64
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateClientID(b.Ctx())
+		generatedID, err := b.idManager.GenerateClientID()
 		if err != nil {
 			return nil, fmt.Errorf("generate client ID failed: %w", err)
 		}
@@ -158,7 +159,7 @@ func (b *CloudControl) CreateClient(userID, clientName string) (*models.Client, 
 
 		if existingClient != nil {
 			// 客户端已存在，释放ID并重试
-			_ = b.idGen.ReleaseClientID(b.Ctx(), generatedID)
+			_ = b.idManager.ReleaseClientID(generatedID)
 			continue
 		}
 
@@ -170,17 +171,17 @@ func (b *CloudControl) CreateClient(userID, clientName string) (*models.Client, 
 		return nil, fmt.Errorf("failed to generate unique client ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
-	authCode, err := b.idGen.GenerateAuthCode()
+	authCode, err := b.idManager.GenerateAuthCode()
 	if err != nil {
 		// 如果生成认证码失败，释放客户端ID
-		_ = b.idGen.ReleaseClientID(b.Ctx(), clientID)
+		_ = b.idManager.ReleaseClientID(clientID)
 		return nil, fmt.Errorf("generate auth code failed: %w", err)
 	}
 
-	secretKey, err := b.idGen.GenerateSecretKey()
+	secretKey, err := b.idManager.GenerateSecretKey()
 	if err != nil {
 		// 如果生成密钥失败，释放客户端ID
-		_ = b.idGen.ReleaseClientID(b.Ctx(), clientID)
+		_ = b.idManager.ReleaseClientID(clientID)
 		return nil, fmt.Errorf("generate secret key failed: %w", err)
 	}
 
@@ -208,15 +209,14 @@ func (b *CloudControl) CreateClient(userID, clientName string) (*models.Client, 
 
 	if err := b.clientRepo.CreateClient(client); err != nil {
 		// 如果保存失败，释放客户端ID
-		_ = b.idGen.ReleaseClientID(b.Ctx(), clientID)
+		_ = b.idManager.ReleaseClientID(clientID)
 		return nil, fmt.Errorf("save client failed: %w", err)
 	}
 
-	// 强制添加到用户列表（即使 userID 为空也加到匿名列表）
 	if err := b.clientRepo.AddClientToUser(userID, client); err != nil {
 		// 如果添加到用户失败，删除客户端并释放ID
 		_ = b.clientRepo.DeleteClient(fmt.Sprintf("%d", clientID))
-		_ = b.idGen.ReleaseClientID(b.Ctx(), clientID)
+		_ = b.idManager.ReleaseClientID(clientID)
 		return nil, fmt.Errorf("add client to user failed: %w", err)
 	}
 
@@ -246,7 +246,7 @@ func (b *CloudControl) DeleteClient(clientID int64) error {
 	client, err := b.clientRepo.GetClient(fmt.Sprintf("%d", clientID))
 	if err == nil && client != nil {
 		// 释放客户端ID
-		_ = b.idGen.ReleaseClientID(b.Ctx(), clientID)
+		_ = b.idManager.ReleaseClientID(clientID)
 	}
 	return b.clientRepo.DeleteClient(fmt.Sprintf("%d", clientID))
 }
@@ -289,7 +289,7 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 	// 生成端口映射ID，确保不重复
 	var mappingID string
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateMappingID()
+		generatedID, err := b.idManager.GenerateMappingID()
 		if err != nil {
 			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
 		}
@@ -304,7 +304,7 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 
 		if existingMapping != nil {
 			// 端口映射已存在，释放ID并重试
-			_ = b.idGen.ReleaseMappingID(b.Ctx(), generatedID)
+			_ = b.idManager.ReleaseMappingID(generatedID)
 			continue
 		}
 
@@ -317,23 +317,21 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 	}
 
 	mapping.ID = mappingID
-	mapping.Status = models.MappingStatusActive
 	mapping.CreatedAt = time.Now()
 	mapping.UpdatedAt = time.Now()
 
 	if err := b.mappingRepo.CreatePortMapping(mapping); err != nil {
 		// 如果保存失败，释放ID
-		_ = b.idGen.ReleaseMappingID(b.Ctx(), mappingID)
+		_ = b.idManager.ReleaseMappingID(mappingID)
 		return nil, fmt.Errorf("save port mapping failed: %w", err)
 	}
 
-	if mapping.UserID != "" {
-		if err := b.mappingRepo.AddMappingToUser(mapping.UserID, mapping); err != nil {
-			// 如果添加到用户失败，删除端口映射并释放ID
-			_ = b.mappingRepo.DeletePortMapping(mappingID)
-			_ = b.idGen.ReleaseMappingID(b.Ctx(), mappingID)
-			return nil, fmt.Errorf("add mapping to user failed: %w", err)
-		}
+	// 添加到用户的端口映射列表
+	if err := b.mappingRepo.AddMappingToUser(mapping.UserID, mapping); err != nil {
+		// 如果添加到用户失败，删除端口映射并释放ID
+		_ = b.mappingRepo.DeletePortMapping(mappingID)
+		_ = b.idManager.ReleaseMappingID(mappingID)
+		return nil, fmt.Errorf("add mapping to user failed: %w", err)
 	}
 
 	return mapping, nil
@@ -357,7 +355,7 @@ func (b *CloudControl) DeletePortMapping(mappingID string) error {
 	mapping, err := b.mappingRepo.GetPortMapping(mappingID)
 	if err == nil && mapping != nil {
 		// 释放端口映射ID
-		_ = b.idGen.ReleaseMappingID(b.Ctx(), mappingID)
+		_ = b.idManager.ReleaseMappingID(mappingID)
 	}
 	return b.mappingRepo.DeletePortMapping(mappingID)
 }
@@ -528,7 +526,7 @@ func (b *CloudControl) NodeRegister(req *models.NodeRegisterRequest) (*models.No
 	// 生成节点ID，确保不重复
 	var nodeID string
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idGen.GenerateNodeID()
+		generatedID, err := b.idManager.GenerateNodeID()
 		if err != nil {
 			return nil, fmt.Errorf("generate node ID failed: %w", err)
 		}
@@ -543,7 +541,7 @@ func (b *CloudControl) NodeRegister(req *models.NodeRegisterRequest) (*models.No
 
 		if existingNode != nil {
 			// 节点已存在，释放ID并重试
-			_ = b.idGen.ReleaseNodeID(b.Ctx(), generatedID)
+			_ = b.idManager.ReleaseNodeID(generatedID)
 			continue
 		}
 
@@ -567,7 +565,7 @@ func (b *CloudControl) NodeRegister(req *models.NodeRegisterRequest) (*models.No
 
 	if err := b.nodeRepo.CreateNode(node); err != nil {
 		// 如果保存失败，释放节点ID
-		_ = b.idGen.ReleaseNodeID(b.Ctx(), nodeID)
+		_ = b.idManager.ReleaseNodeID(nodeID)
 		return nil, fmt.Errorf("save node failed: %w", err)
 	}
 
@@ -583,7 +581,7 @@ func (b *CloudControl) NodeUnregister(req *models.NodeUnregisterRequest) error {
 	node, err := b.nodeRepo.GetNode(req.NodeID)
 	if err == nil && node != nil {
 		// 释放节点ID
-		_ = b.idGen.ReleaseNodeID(b.Ctx(), req.NodeID)
+		_ = b.idManager.ReleaseNodeID(req.NodeID)
 	}
 	return b.nodeRepo.DeleteNode(req.NodeID)
 }

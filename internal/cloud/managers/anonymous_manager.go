@@ -5,7 +5,7 @@ import (
 	"time"
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/constants"
-	"tunnox-core/internal/cloud/distributed"
+	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
@@ -16,16 +16,16 @@ import (
 type AnonymousManager struct {
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
-	idGen       *distributed.DistributedIDGenerator
+	idManager   *generators.IDManager
 	utils.Dispose
 }
 
 // NewAnonymousManager 创建匿名用户管理服务
-func NewAnonymousManager(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idGen *distributed.DistributedIDGenerator) *AnonymousManager {
+func NewAnonymousManager(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *generators.IDManager) *AnonymousManager {
 	manager := &AnonymousManager{
 		clientRepo:  clientRepo,
 		mappingRepo: mappingRepo,
-		idGen:       idGen,
+		idManager:   idManager,
 	}
 	manager.SetCtx(nil, manager.onClose)
 	return manager
@@ -43,7 +43,7 @@ func (am *AnonymousManager) GenerateAnonymousCredentials() (*models.Client, erro
 	// 生成客户端ID，确保不重复
 	var clientID int64
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
-		generatedID, err := am.idGen.GenerateClientID(am.Ctx())
+		generatedID, err := am.idManager.GenerateClientID()
 		if err != nil {
 			return nil, fmt.Errorf("generate client ID failed: %w", err)
 		}
@@ -54,7 +54,7 @@ func (am *AnonymousManager) GenerateAnonymousCredentials() (*models.Client, erro
 			break
 		}
 		if existingClient != nil {
-			_ = am.idGen.ReleaseClientID(am.Ctx(), generatedID)
+			_ = am.idManager.ReleaseClientID(generatedID)
 			continue
 		}
 		clientID = generatedID
@@ -64,14 +64,14 @@ func (am *AnonymousManager) GenerateAnonymousCredentials() (*models.Client, erro
 		return nil, fmt.Errorf("failed to generate unique client ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
-	authCode, err := am.idGen.GenerateAuthCode()
+	authCode, err := am.idManager.GenerateAuthCode()
 	if err != nil {
-		_ = am.idGen.ReleaseClientID(am.Ctx(), clientID)
+		_ = am.idManager.ReleaseClientID(clientID)
 		return nil, fmt.Errorf("generate auth code failed: %w", err)
 	}
-	secretKey, err := am.idGen.GenerateSecretKey()
+	secretKey, err := am.idManager.GenerateSecretKey()
 	if err != nil {
-		_ = am.idGen.ReleaseClientID(am.Ctx(), clientID)
+		_ = am.idManager.ReleaseClientID(clientID)
 		return nil, fmt.Errorf("generate secret key failed: %w", err)
 	}
 	now := time.Now()
@@ -96,12 +96,12 @@ func (am *AnonymousManager) GenerateAnonymousCredentials() (*models.Client, erro
 		UpdatedAt: now,
 	}
 	if err := am.clientRepo.CreateClient(client); err != nil {
-		_ = am.idGen.ReleaseClientID(am.Ctx(), clientID)
+		_ = am.idManager.ReleaseClientID(clientID)
 		return nil, fmt.Errorf("save anonymous client failed: %w", err)
 	}
 	if err := am.clientRepo.AddClientToUser("", client); err != nil {
 		_ = am.clientRepo.DeleteClient(utils.Int64ToString(clientID))
-		_ = am.idGen.ReleaseClientID(am.Ctx(), clientID)
+		_ = am.idManager.ReleaseClientID(clientID)
 		return nil, fmt.Errorf("add anonymous client to list failed: %w", err)
 	}
 	return client, nil
@@ -130,7 +130,7 @@ func (am *AnonymousManager) DeleteAnonymousClient(clientID int64) error {
 	client, err := am.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err == nil && client != nil {
 		// 释放客户端ID
-		_ = am.idGen.ReleaseClientID(am.Ctx(), clientID)
+		_ = am.idManager.ReleaseClientID(clientID)
 	}
 	return am.clientRepo.DeleteClient(utils.Int64ToString(clientID))
 }
@@ -140,7 +140,7 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 	// 生成端口映射ID，确保不重复
 	var mappingID string
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
-		generatedID, err := am.idGen.GenerateMappingID()
+		generatedID, err := am.idManager.GenerateMappingID()
 		if err != nil {
 			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
 		}
@@ -155,7 +155,7 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 
 		if existingMapping != nil {
 			// 端口映射已存在，释放ID并重试
-			_ = am.idGen.ReleaseMappingID(am.Ctx(), generatedID)
+			_ = am.idManager.ReleaseMappingID(generatedID)
 			continue
 		}
 
@@ -185,14 +185,14 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 
 	if err := am.mappingRepo.CreatePortMapping(mapping); err != nil {
 		// 如果保存失败，释放ID
-		_ = am.idGen.ReleaseMappingID(am.Ctx(), mappingID)
+		_ = am.idManager.ReleaseMappingID(mappingID)
 		return nil, fmt.Errorf("save anonymous mapping failed: %w", err)
 	}
 
 	if err := am.mappingRepo.AddMappingToUser("", mapping); err != nil {
 		// 如果添加到匿名列表失败，删除映射并释放ID
 		_ = am.mappingRepo.DeletePortMapping(mappingID)
-		_ = am.idGen.ReleaseMappingID(am.Ctx(), mappingID)
+		_ = am.idManager.ReleaseMappingID(mappingID)
 		return nil, fmt.Errorf("add anonymous mapping to list failed: %w", err)
 	}
 

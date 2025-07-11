@@ -370,6 +370,16 @@ func (m *IDManager) GenerateNodeID() (string, error) {
 	return m.nodeIDGen.Generate()
 }
 
+func (m *IDManager) GenerateUserID() (string, error) {
+	// 使用随机字符串生成用户ID
+	return utils.GenerateRandomString(16)
+}
+
+func (m *IDManager) GenerateMappingID() (string, error) {
+	// 使用随机字符串生成端口映射ID
+	return utils.GenerateRandomString(12)
+}
+
 func (m *IDManager) GenerateConnectionID() (string, error) {
 	return m.connectionIDGen.Generate()
 }
@@ -388,6 +398,16 @@ func (m *IDManager) ReleaseClientID(id int64) error {
 
 func (m *IDManager) ReleaseNodeID(id string) error {
 	return m.nodeIDGen.Release(id)
+}
+
+func (m *IDManager) ReleaseUserID(id string) error {
+	// 用户ID使用随机字符串，不需要释放
+	return nil
+}
+
+func (m *IDManager) ReleaseMappingID(id string) error {
+	// 端口映射ID使用随机字符串，不需要释放
+	return nil
 }
 
 func (m *IDManager) ReleaseConnectionID(id string) error {
@@ -410,6 +430,16 @@ func (m *IDManager) IsNodeIDUsed(id string) (bool, error) {
 	return m.nodeIDGen.IsUsed(id)
 }
 
+func (m *IDManager) IsUserIDUsed(id string) (bool, error) {
+	// 用户ID使用随机字符串，天然唯一
+	return false, nil
+}
+
+func (m *IDManager) IsMappingIDUsed(id string) (bool, error) {
+	// 端口映射ID使用随机字符串，天然唯一
+	return false, nil
+}
+
 func (m *IDManager) IsConnectionIDUsed(id string) (bool, error) {
 	return m.connectionIDGen.IsUsed(id)
 }
@@ -420,6 +450,16 @@ func (m *IDManager) IsConfigIDUsed(id string) (bool, error) {
 
 func (m *IDManager) IsTunnelIDUsed(id string) (bool, error) {
 	return m.tunnelIDGen.IsUsed(id)
+}
+
+// GenerateAuthCode 生成认证码
+func (m *IDManager) GenerateAuthCode() (string, error) {
+	return utils.GenerateRandomDigits(6)
+}
+
+// GenerateSecretKey 生成密钥
+func (m *IDManager) GenerateSecretKey() (string, error) {
+	return utils.GenerateRandomString(32)
 }
 
 // IDUsageInfo ID使用信息

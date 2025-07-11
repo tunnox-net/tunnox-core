@@ -3,7 +3,7 @@ package managers
 import (
 	"fmt"
 	"time"
-	"tunnox-core/internal/cloud/distributed"
+	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/utils"
@@ -11,16 +11,16 @@ import (
 
 // ConnectionManager 连接管理服务
 type ConnectionManager struct {
-	connRepo *repos.ConnectionRepo
-	idGen    *distributed.DistributedIDGenerator
+	connRepo  *repos.ConnectionRepo
+	idManager *generators.IDManager
 	utils.Dispose
 }
 
 // NewConnectionManager 创建连接管理服务
-func NewConnectionManager(connRepo *repos.ConnectionRepo, idGen *distributed.DistributedIDGenerator) *ConnectionManager {
+func NewConnectionManager(connRepo *repos.ConnectionRepo, idManager *generators.IDManager) *ConnectionManager {
 	manager := &ConnectionManager{
-		connRepo: connRepo,
-		idGen:    idGen,
+		connRepo:  connRepo,
+		idManager: idManager,
 	}
 	manager.SetCtx(nil, manager.onClose)
 	return manager
@@ -35,7 +35,7 @@ func (cm *ConnectionManager) onClose() {
 func (cm *ConnectionManager) RegisterConnection(mappingID string, connInfo *models.ConnectionInfo) error {
 	// 如果连接ID为空，则生成新的连接ID
 	if connInfo.ConnID == "" {
-		connID, err := cm.idGen.GenerateMappingID()
+		connID, err := cm.idManager.GenerateMappingID()
 		if err != nil {
 			return fmt.Errorf("generate connection ID failed: %w", err)
 		}
