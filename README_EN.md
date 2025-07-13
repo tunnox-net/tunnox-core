@@ -4,11 +4,11 @@
 
 ![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
-![Status](https://img.shields.io/badge/Status-Development-orange.svg)
+![Status](https://img.shields.io/badge/Status-In%20Development-orange.svg)
 ![Architecture](https://img.shields.io/badge/Architecture-Layered-purple.svg)
 ![Zero-Copy](https://img.shields.io/badge/Zero--Copy-Supported-red.svg)
+![Encryption](https://img.shields.io/badge/Encryption-AES--GCM-blue.svg)
 ![Tests](https://img.shields.io/badge/Tests-100%25%20Passing-brightgreen.svg)
-![Code](https://img.shields.io/badge/Code-11K%2B%20Lines-blue.svg)
 
 **🌐 Cloud Tunnel and Connection Management Core Framework**  
 *A lightweight tunnel solution designed for distributed network environments*
@@ -21,21 +21,21 @@
 
 ## 📋 Project Overview
 
-Tunnox Core is a cloud tunnel framework developed in Go, designed specifically for distributed network environments. The project adopts a modern layered architecture, integrates support for multiple network protocols, and provides high-performance, low-latency solutions for port mapping and connection management through advanced technologies such as memory pools, zero-copy, and streaming processing.
+Tunnox Core is a cloud tunnel framework developed in Go, designed specifically for distributed network environments. The project adopts a modern layered architecture, integrates support for multiple network protocols, and provides high-performance, low-latency solutions for port mapping and connection management through advanced technologies such as memory pools, zero-copy, stream processing, and encryption.
 
 ### 🎯 Project Goals
-
-**Lightweight Tunnel Service** 🔄 In Development
-- Provide port mapping and tunnel functionality framework, supporting TCP, HTTP, SOCKS, and other protocol mappings
 
 **Multi-Protocol Support** ✅ Completed
 - Support TCP, WebSocket, UDP, QUIC, and other transport protocols, adapting to different network environment requirements
 
+**Stream Processing System** ✅ Completed
+- Complete stream processing architecture supporting compression, rate limiting, encryption, zero-copy and other technologies
+
 **Distributed Architecture** 🔄 In Development
 - Support cluster deployment and node management, achieving high availability and load balancing
 
-**Resource Optimization** ✅ Completed
-- Significantly improve performance and reduce resource consumption through memory pools, zero-copy, connection pools, and other technologies
+**Port Mapping Business** 🔄 In Development
+- Provide port mapping and tunnel functionality framework, supporting TCP, HTTP, SOCKS, and other protocol mappings
 
 **Scalability** ✅ Completed
 - Modular design, plugin architecture, facilitating feature extension and customized development
@@ -43,8 +43,12 @@ Tunnox Core is a cloud tunnel framework developed in Go, designed specifically f
 ### 🌟 Technical Features
 
 **🏗️ Layered Architecture**
-- Clear separation of business logic, data access, and infrastructure
+- Clear separation of application layer, protocol layer, session layer, stream management layer, factory layer, and implementation layer
 - Easy to maintain and extend
+
+**🔐 Encrypted Transmission**
+- Support for AES-GCM encryption with compression-first-then-encryption transmission strategy
+- Configurable encryption key management
 
 **🏭 Factory Pattern**
 - StreamFactory unified management of stream component creation, supporting configurable factory and predefined templates
@@ -54,27 +58,15 @@ Tunnox Core is a cloud tunnel framework developed in Go, designed specifically f
 - Hierarchical resource cleanup based on Dispose pattern, preventing memory leaks
 - Ensuring graceful shutdown
 
-**🛡️ Type Safety**
-- Strong type system, unified naming conventions
-- Improving code quality and development efficiency
-
-**⚡ Concurrency Control**
-- Thread-safe design, optimized locking strategies
-- Supporting high-concurrency scenarios
-
-**🚀 Performance Optimization**
-- Comprehensive application of memory pools, zero-copy, streaming processing, compression algorithms, and other technologies
+**⚡ Performance Optimization**
+- Comprehensive application of memory pools, zero-copy, stream processing, compression algorithms, and other technologies
 - High performance and low latency
 
 **🔌 Protocol Adaptation**
 - Unified protocol adapter interface, supporting transparent switching of multiple network protocols
 - Flexible protocol switching
 
-**📊 Streaming Processing**
-- Supporting advanced stream processing functions such as data compression, rate limiting, and chunked transmission
-- Optimizing network bandwidth
-
-**📈 Stream Management**
+**📊 Stream Management**
 - StreamManager unified management of stream lifecycle, supporting stream registration, monitoring, and metrics statistics
 - Unified monitoring and management
 
@@ -348,14 +340,15 @@ graph TB
 **Anonymous User Support** ✅ Completed
 - Anonymous client generation and management functionality
 
+**Encrypted Transmission** ✅ Completed
+- Support for AES-GCM encryption with compression-first-then-encryption transmission strategy
+- Configurable encryption key management
+
 **Role Permission Control** 🔄 In Development
 - Basic permission control framework (fine-grained permissions to be implemented)
 
 **Secure Communication** 🔄 In Development
 - TLS encrypted transmission support (specific implementation to be improved)
-
-**Encrypted Transmission Options** 🔄 In Development
-- Reserved data packet encryption flag bits, supporting optional end-to-end encrypted transmission
 
 ### 📊 Statistics & Monitoring
 
@@ -397,7 +390,7 @@ graph TB
 - Reducing memory allocation overhead, improving data transmission efficiency
 
 **Streaming Processing** ✅ Completed
-- Support for compression and rate limiting, optimizing network bandwidth usage
+- Support for compression, rate limiting, encryption, optimizing network bandwidth usage
 
 **Connection Pool** 🔄 In Development
 - Connection pool framework (specific optimizations to be implemented)
@@ -630,8 +623,8 @@ tunnox-core/
 **API Interface Implementation** 25%
 - RESTful API development in progress
 
-**Encrypted Transmission Processor Implementation** 35%
-- Encryption functionality development in progress
+**Encrypted Transmission System** 100%
+- AES-GCM encryption with compression-first-then-encryption strategy
 
 **Distributed ID Generator Improvement** 60%
 - Redis/database support development in progress
