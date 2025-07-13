@@ -107,12 +107,6 @@ func (q *QuicAdapter) Accept() (io.ReadWriteCloser, error) {
 	return &QuicConn{stream: stream}, nil
 }
 
-func (q *QuicAdapter) handleProtocolSpecific(conn io.ReadWriteCloser) error {
-	// QUIC 特定的处理
-	utils.Infof("QUIC protocol specific handling")
-	return nil
-}
-
 func (q *QuicAdapter) getConnectionType() string {
 	return "QUIC"
 }

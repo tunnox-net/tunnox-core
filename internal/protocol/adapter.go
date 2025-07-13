@@ -32,7 +32,7 @@ type Adapter interface {
 	Name() string
 	GetReader() io.Reader
 	GetWriter() io.Writer
-	Close()
+	Close() error
 	SetAddr(addr string)
 	GetAddr() string
 }
@@ -56,7 +56,6 @@ type ProtocolAdapter interface {
 	Dial(addr string) (io.ReadWriteCloser, error)
 	Listen(addr string) error            // 直接启动监听，不需要返回监听器
 	Accept() (io.ReadWriteCloser, error) // 直接在适配器中实现Accept
-	handleProtocolSpecific(conn io.ReadWriteCloser) error
 	getConnectionType() string
 }
 
@@ -165,52 +164,50 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 
 	utils.Infof("%s adapter handling connection", adapter.getConnectionType())
 
-	// 使用 Session 接口处理连接
-	if b.session != nil {
-		// 初始化连接
-		connInfo, err := b.session.InitConnection(conn, conn)
+	// Session是系统关键组件，必须存在
+	if b.session == nil {
+		utils.Errorf("Session is required but not set for %s adapter", adapter.getConnectionType())
+		return
+	}
+
+	// 初始化连接
+	connInfo, err := b.session.InitConnection(conn, conn)
+	if err != nil {
+		utils.Errorf("Failed to initialize connection: %v", err)
+		return
+	}
+	defer func(session Session, connectionId string) {
+		err := session.CloseConnection(connectionId)
 		if err != nil {
-			utils.Errorf("Failed to initialize connection: %v", err)
-			return
+			utils.Errorf("Failed to close connection: %v", err)
 		}
-		defer func(session Session, connectionId string) {
-			err := session.CloseConnection(connectionId)
-			if err != nil {
-				utils.Errorf("Failed to close connection: %v", err)
-			}
-		}(b.session, connInfo.ID)
+	}(b.session, connInfo.ID)
 
-		// 处理数据流
-		for {
-			packet, _, err := connInfo.Stream.ReadPacket()
-			if err != nil {
-				if err == io.EOF {
-					utils.Infof("Connection closed by peer: %s", connInfo.ID)
-				} else {
-					utils.Errorf("Failed to read packet: %v", err)
-				}
-				break
+	// 处理数据流
+	for {
+		packet, _, err := connInfo.Stream.ReadPacket()
+		if err != nil {
+			if err == io.EOF {
+				utils.Infof("Connection closed by peer: %s", connInfo.ID)
+			} else {
+				utils.Errorf("Failed to read packet: %v", err)
 			}
-
-			utils.Debugf("Received packet type: %v", packet.PacketType)
-
-			// 包装成 StreamPacket
-			connPacket := &StreamPacket{
-				ConnectionID: connInfo.ID,
-				Packet:       packet,
-				Timestamp:    time.Now(),
-			}
-
-			// 处理数据包
-			if err := b.session.HandlePacket(connPacket); err != nil {
-				utils.Errorf("Failed to handle packet: %v", err)
-				break
-			}
+			break
 		}
-	} else {
-		// 如果没有session，使用协议特定的处理
-		if err := adapter.handleProtocolSpecific(conn); err != nil {
-			utils.Errorf("Protocol specific handling failed: %v", err)
+
+		utils.Debugf("Received packet type: %v", packet.PacketType)
+
+		// 包装成 StreamPacket
+		connPacket := &StreamPacket{
+			ConnectionID: connInfo.ID,
+			Packet:       packet,
+			Timestamp:    time.Now(),
+		}
+
+		// 处理数据包
+		if err := b.session.HandlePacket(connPacket); err != nil {
+			utils.Errorf("Failed to handle packet: %v", err)
+			break
 		}
 	}
 }
@@ -236,9 +233,9 @@ func (b *BaseAdapter) GetWriter() io.Writer {
 }
 
 // Close 关闭适配器（实现Adapter接口）
-func (b *BaseAdapter) Close() {
+func (b *BaseAdapter) Close() error {
 	b.active = false
-	b.Dispose.Close()
+	return b.Dispose.Close()
 }
 
 // onClose 通用资源清理

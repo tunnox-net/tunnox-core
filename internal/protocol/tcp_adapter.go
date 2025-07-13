@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"tunnox-core/internal/stream"
 )
 
 // TcpConn TCP连接包装器
@@ -60,28 +59,6 @@ func (t *TcpAdapter) Accept() (io.ReadWriteCloser, error) {
 		return nil, err
 	}
 	return &TcpConn{Conn: conn}, nil
-}
-
-func (t *TcpAdapter) handleProtocolSpecific(conn io.ReadWriteCloser) error {
-	// TCP 特定的 echo 处理
-	ctx, cancel := context.WithCancel(t.Ctx())
-	defer cancel()
-	ps := stream.NewStreamProcessor(conn, conn, ctx)
-	defer ps.Close()
-
-	buf := make([]byte, 1024)
-	for {
-		n, err := ps.GetReader().Read(buf)
-		if err != nil {
-			break
-		}
-		if n > 0 {
-			if _, err := ps.GetWriter().Write(buf[:n]); err != nil {
-				break
-			}
-		}
-	}
-	return nil
 }
 
 func (t *TcpAdapter) getConnectionType() string {

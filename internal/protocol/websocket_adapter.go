@@ -148,12 +148,6 @@ func (w *WebSocketAdapter) Accept() (io.ReadWriteCloser, error) {
 	}
 }
 
-func (w *WebSocketAdapter) handleProtocolSpecific(conn io.ReadWriteCloser) error {
-	// WebSocket 特定的处理
-	utils.Infof("WebSocket protocol specific handling")
-	return nil
-}
-
 func (w *WebSocketAdapter) getConnectionType() string {
 	return "WebSocket"
 }

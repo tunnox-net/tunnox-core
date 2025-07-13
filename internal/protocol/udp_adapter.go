@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"time"
-	"tunnox-core/internal/utils"
 )
 
 // UdpConn UDP连接包装器
@@ -108,28 +107,6 @@ func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
 		conn: u.conn,
 		pos:  0,
 	}, nil
-}
-
-func (u *UdpAdapter) handleProtocolSpecific(conn io.ReadWriteCloser) error {
-	// UDP 特定的处理 - 简单echo数据包
-	if virtualConn, ok := conn.(*UdpVirtualConn); ok {
-		// 读取数据
-		buffer := make([]byte, 1024)
-		n, err := virtualConn.Read(buffer)
-		if err != nil && err != io.EOF {
-			return fmt.Errorf("failed to read UDP data: %w", err)
-		}
-
-		if n > 0 {
-			// Echo数据包
-			_, err = virtualConn.Write(buffer[:n])
-			if err != nil {
-				return fmt.Errorf("failed to echo UDP data: %w", err)
-			}
-			utils.Infof("UDP packet echoed: %d bytes", n)
-		}
-	}
-	return nil
 }
 
 func (u *UdpAdapter) getConnectionType() string {
