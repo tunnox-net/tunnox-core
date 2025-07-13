@@ -18,6 +18,7 @@ type CommandUtils struct {
 	timeout      time.Duration
 	metadata     map[string]interface{}
 	requestID    string
+	commandId    string // 客户端生成的唯一命令ID
 	connectionID string
 	session      protocol.Session
 	ctx          context.Context
@@ -70,6 +71,17 @@ func (cu *CommandUtils) WithRequestID(requestID string) *CommandUtils {
 	return cu
 }
 
+// WithCommandId 设置命令ID
+func (cu *CommandUtils) WithCommandId(commandId string) *CommandUtils {
+	cu.commandId = commandId
+	return cu
+}
+
+// generateCommandId 生成唯一的命令ID
+func (cu *CommandUtils) generateCommandId() string {
+	return fmt.Sprintf("cmd_%d_%s", time.Now().UnixNano(), cu.connectionID)
+}
+
 // WithConnectionID 设置连接ID
 func (cu *CommandUtils) WithConnectionID(connectionID string) *CommandUtils {
 	cu.connectionID = connectionID
@@ -106,6 +118,11 @@ func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 		cu.ctx = context.Background()
 	}
 
+	// 生成CommandId（如果未设置）
+	if cu.commandId == "" {
+		cu.commandId = cu.generateCommandId()
+	}
+
 	// 序列化请求数据
 	var commandBody string
 	if cu.requestData != nil {
@@ -119,6 +136,7 @@ func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 	// 创建命令包
 	commandPacket := &packet.CommandPacket{
 		CommandType: cu.commandType,
+		CommandId:   cu.commandId,
 		Token:       cu.requestID,
 		SenderId:    cu.connectionID,
 		ReceiverId:  "", // 由服务端处理
@@ -205,6 +223,12 @@ func (cu *CommandUtils) waitForResponse() (*CommandResponse, error) {
 			if responsePacket.PacketType.IsJsonCommand() && responsePacket.CommandPacket != nil {
 				// 检查请求ID是否匹配
 				if responsePacket.CommandPacket.Token == cu.requestID {
+					// 检查CommandId是否匹配（如果响应中包含CommandId）
+					if responsePacket.CommandPacket.CommandId != "" && responsePacket.CommandPacket.CommandId != cu.commandId {
+						utils.Warnf("CommandId mismatch: expected %s, got %s", cu.commandId, responsePacket.CommandPacket.CommandId)
+						continue // 继续等待正确的响应
+					}
+
 					// 解析响应数据
 					var response CommandResponse
 					if err := json.Unmarshal([]byte(responsePacket.CommandPacket.CommandBody), &response); err != nil {

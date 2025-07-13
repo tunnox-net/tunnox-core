@@ -100,6 +100,7 @@ func (ce *CommandExecutor) executeDuplex(ctx *CommandContext, handler CommandHan
 		}
 
 		response.RequestID = requestID
+		response.CommandId = ctx.CommandId // 设置对应的命令ID
 		responseChan <- response
 	}()
 
@@ -144,6 +145,7 @@ func (ce *CommandExecutor) createCommandContext(streamPacket *common.StreamPacke
 	return &CommandContext{
 		ConnectionID: streamPacket.ConnectionID,
 		CommandType:  commandPacket.CommandType,
+		CommandId:    commandPacket.CommandId,
 		RequestID:    commandPacket.Token,
 		SenderID:     commandPacket.SenderId,
 		ReceiverID:   commandPacket.ReceiverId,
@@ -164,7 +166,8 @@ func (ce *CommandExecutor) sendResponse(connectionID string, response *CommandRe
 
 	// 创建响应包
 	responsePacket := &packet.CommandPacket{
-		CommandType: 0, // 响应包使用特殊类型
+		CommandType: 0,                  // 响应包使用特殊类型
+		CommandId:   response.CommandId, // 包含对应的命令ID
 		Token:       response.RequestID,
 		SenderId:    "", // 服务端发送
 		ReceiverId:  connectionID,

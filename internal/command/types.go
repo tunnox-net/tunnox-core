@@ -19,6 +19,7 @@ const (
 type CommandContext struct {
 	ConnectionID string                 // 连接ID
 	CommandType  packet.CommandType     // 命令类型
+	CommandId    string                 // 客户端生成的唯一命令ID
 	RequestID    string                 // 请求ID（Token）
 	SenderID     string                 // 发送者ID
 	ReceiverID   string                 // 接收者ID
@@ -35,6 +36,7 @@ type CommandResponse struct {
 	Error     string                 `json:"error,omitempty"`
 	Metadata  map[string]interface{} `json:"metadata,omitempty"`
 	RequestID string                 `json:"request_id,omitempty"`
+	CommandId string                 `json:"command_id,omitempty"` // 对应的命令ID
 }
 
 // CommandHandler 命令处理器接口

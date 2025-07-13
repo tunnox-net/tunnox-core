@@ -69,6 +69,7 @@ type TransferPacket struct {
 
 type CommandPacket struct {
 	CommandType CommandType
+	CommandId   string // 客户端生成的唯一命令ID
 	Token       string
 	SenderId    string
 	ReceiverId  string
