@@ -227,7 +227,12 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 					utils.Errorf("Failed to initialize WebSocket connection: %v", err)
 					return
 				}
-				defer w.session.CloseConnection(connInfo.ID)
+				defer func(session Session, connectionId string) {
+					err := session.CloseConnection(connectionId)
+					if err != nil {
+						utils.Errorf("Failed to close WebSocket connection: %v", err)
+					}
+				}(w.session, connInfo.ID)
 
 				// 处理数据流
 				for {

@@ -80,9 +80,15 @@ func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Contex
 
 // Server 服务器结构
 type Server struct {
-	config       *AppConfig
-	cloudControl managers.CloudControlAPI
-	protocolMgr  *protocol.Manager
+	config          *AppConfig
+	cloudControl    managers.CloudControlAPI
+	protocolMgr     *protocol.Manager
+	serverId        string
+	storage         storages.Storage
+	idManager       *generators.IDManager
+	session         *protocol.ConnectionSession
+	protocolFactory *ProtocolFactory
+
 	utils.Dispose
 }
 
@@ -104,24 +110,26 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 
 	server.SetCtx(parentCtx, server.onClose)
 
+	// 创建存储和ID管理器
+	server.storage = storages.NewMemoryStorage(server.Ctx())
+	server.idManager = generators.NewIDManager(server.storage, server.Ctx())
+
+	// 创建 ConnectionSession（使用新的架构）
+	server.session = protocol.NewConnectionSession(server.idManager, server.Ctx())
+
+	// 创建协议工厂
+	server.protocolFactory = NewProtocolFactory(server.session)
+
 	// 创建协议适配器管理器，纳入Dispose树
-	protocolMgr := protocol.NewManager(server.Ctx())
-	server.protocolMgr = protocolMgr
+	server.protocolMgr = protocol.NewManager(server.Ctx())
+
+	server.serverId, _ = server.idManager.GenerateConnectionID()
 
 	return server
 }
 
 // setupProtocolAdapters 设置协议适配器
 func (s *Server) setupProtocolAdapters() error {
-	// 创建存储和ID管理器
-	storage := storages.NewMemoryStorage(s.Ctx())
-	idManager := generators.NewIDManager(storage, s.Ctx())
-
-	// 创建 ConnectionSession（使用新的架构）
-	session := protocol.NewConnectionSession(idManager, s.Ctx())
-
-	// 创建协议工厂
-	factory := NewProtocolFactory(session)
 
 	// 获取启用的协议配置
 	enabledProtocols := s.getEnabledProtocols()
@@ -135,7 +143,7 @@ func (s *Server) setupProtocolAdapters() error {
 
 	for protocolName, config := range enabledProtocols {
 		// 创建适配器
-		adapter, err := factory.CreateAdapter(protocolName, s.protocolMgr.Ctx())
+		adapter, err := s.protocolFactory.CreateAdapter(protocolName, s.protocolMgr.Ctx())
 		if err != nil {
 			return fmt.Errorf("failed to create %s adapter: %v", protocolName, err)
 		}
