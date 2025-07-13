@@ -49,36 +49,14 @@ type BaseAdapter struct {
 	streamMutex sync.RWMutex
 }
 
-// 协议特定的连接类型接口
-type ProtocolConn interface {
-	io.Reader
-	io.Writer
-	Close() error
-}
-
-// 协议特定的监听器接口
-type ProtocolListener interface {
-	Accept() (ProtocolConn, error)
-	Close() error
-}
-
-// 协议特定的连接器接口
-type ProtocolDialer interface {
-	Dial(addr string) (ProtocolConn, error)
-}
-
-// 协议特定的监听器创建器接口
-type ProtocolListenerCreator interface {
-	Listen(addr string) (ProtocolListener, error)
-}
-
 // 协议适配器接口，子类需要实现
 type ProtocolAdapter interface {
 	Adapter
 	// 协议特定的方法
-	createDialer() ProtocolDialer
-	createListener(addr string) (ProtocolListener, error)
-	handleProtocolSpecific(conn ProtocolConn) error
+	Dial(addr string) (io.ReadWriteCloser, error)
+	Listen(addr string) error            // 直接启动监听，不需要返回监听器
+	Accept() (io.ReadWriteCloser, error) // 直接在适配器中实现Accept
+	handleProtocolSpecific(conn io.ReadWriteCloser) error
 	getConnectionType() string
 }
 
@@ -107,8 +85,7 @@ func (b *BaseAdapter) ConnectTo(adapter ProtocolAdapter, serverAddr string) erro
 		return fmt.Errorf("already connected")
 	}
 
-	dialer := adapter.createDialer()
-	conn, err := dialer.Dial(serverAddr)
+	conn, err := adapter.Dial(serverAddr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s server: %w", adapter.getConnectionType(), err)
 	}
@@ -129,20 +106,20 @@ func (b *BaseAdapter) ListenFrom(adapter ProtocolAdapter, listenAddr string) err
 		return fmt.Errorf("address not set")
 	}
 
-	listener, err := adapter.createListener(b.Addr())
-	if err != nil {
+	// 适配器直接启动监听
+	if err := adapter.Listen(b.Addr()); err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", adapter.getConnectionType(), err)
 	}
 
 	b.active = true
-	go b.acceptLoop(adapter, listener)
+	go b.acceptLoop(adapter)
 	return nil
 }
 
 // acceptLoop 通用接受连接循环
-func (b *BaseAdapter) acceptLoop(adapter ProtocolAdapter, listener ProtocolListener) {
+func (b *BaseAdapter) acceptLoop(adapter ProtocolAdapter) {
 	for b.active {
-		conn, err := listener.Accept()
+		conn, err := adapter.Accept()
 		if err != nil {
 			if !b.IsClosed() {
 				// 检查是否为可忽略的错误（如超时）
@@ -179,7 +156,7 @@ func isIgnorableError(err error) bool {
 }
 
 // handleConnection 通用连接处理逻辑
-func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn ProtocolConn) {
+func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWriteCloser) {
 	defer func() {
 		if closer, ok := conn.(interface{ Close() error }); ok {
 			_ = closer.Close()

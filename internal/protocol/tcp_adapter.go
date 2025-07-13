@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net"
 	"tunnox-core/internal/stream"
 )
@@ -13,30 +15,6 @@ type TcpConn struct {
 
 func (t *TcpConn) Close() error {
 	return t.Conn.Close()
-}
-
-// TcpListener TCP监听器包装器
-type TcpListener struct {
-	net.Listener
-}
-
-func (t *TcpListener) Accept() (ProtocolConn, error) {
-	conn, err := t.Listener.Accept()
-	if err != nil {
-		return nil, err
-	}
-	return &TcpConn{Conn: conn}, nil
-}
-
-// TcpDialer TCP连接器
-type TcpDialer struct{}
-
-func (t *TcpDialer) Dial(addr string) (ProtocolConn, error) {
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	return &TcpConn{Conn: conn}, nil
 }
 
 type TcpAdapter struct {
@@ -52,21 +30,39 @@ func NewTcpAdapter(parentCtx context.Context, session Session) *TcpAdapter {
 	return t
 }
 
-// 实现 ProtocolAdapter 接口
-func (t *TcpAdapter) createDialer() ProtocolDialer {
-	return &TcpDialer{}
-}
-
-func (t *TcpAdapter) createListener(addr string) (ProtocolListener, error) {
-	listener, err := net.Listen("tcp", addr)
+// Dial 实现连接功能
+func (t *TcpAdapter) Dial(addr string) (io.ReadWriteCloser, error) {
+	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
 	}
-	t.listener = listener
-	return &TcpListener{Listener: listener}, nil
+	return &TcpConn{Conn: conn}, nil
 }
 
-func (t *TcpAdapter) handleProtocolSpecific(conn ProtocolConn) error {
+// Listen 实现监听功能
+func (t *TcpAdapter) Listen(addr string) error {
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	t.listener = listener
+	return nil
+}
+
+// Accept 实现接受连接功能
+func (t *TcpAdapter) Accept() (io.ReadWriteCloser, error) {
+	if t.listener == nil {
+		return nil, fmt.Errorf("TCP listener not initialized")
+	}
+
+	conn, err := t.listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &TcpConn{Conn: conn}, nil
+}
+
+func (t *TcpAdapter) handleProtocolSpecific(conn io.ReadWriteCloser) error {
 	// TCP 特定的 echo 处理
 	ctx, cancel := context.WithCancel(t.Ctx())
 	defer cancel()

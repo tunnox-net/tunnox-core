@@ -123,13 +123,13 @@ func (m *MemoryStorage) Get(key string) (interface{}, error) {
 
 	utils.Infof("MemoryStorage.Get: retrieving key %s, data map size: %d", key, len(m.data))
 	if m.data == nil {
-		utils.Errorf("MemoryStorage.Get: data map is nil for key %s", key)
+		utils.Debugf("MemoryStorage.Get: data map is nil for key %s", key)
 		return nil, ErrKeyNotFound
 	}
 
 	item, exists := m.data[key]
 	if !exists {
-		utils.Errorf("MemoryStorage.Get: key %s not found in data map", key)
+		utils.Debugf("MemoryStorage.Get: key %s not found in data map", key)
 		return nil, ErrKeyNotFound
 	}
 
@@ -160,13 +160,13 @@ func (m *MemoryStorage) Exists(key string) (bool, error) {
 
 	utils.Infof("MemoryStorage.Exists: checking key %s, data map size: %d", key, len(m.data))
 	if m.data == nil {
-		utils.Errorf("MemoryStorage.Exists: data map is nil for key %s", key)
+		utils.Debugf("MemoryStorage.Exists: data map is nil for key %s", key)
 		return false, nil
 	}
 
 	item, exists := m.data[key]
 	if !exists {
-		utils.Errorf("MemoryStorage.Exists: key %s not found in data map", key)
+		utils.Debugf("MemoryStorage.Exists: key %s not found in data map", key)
 		return false, nil
 	}
 

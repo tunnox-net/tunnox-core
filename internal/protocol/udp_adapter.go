@@ -31,12 +31,62 @@ func (u *UdpConn) Close() error {
 	return u.conn.Close()
 }
 
-// UdpListener UDP监听器包装器
-type UdpListener struct {
+// UdpAdapter UDP协议适配器
+type UdpAdapter struct {
+	BaseAdapter
 	conn net.PacketConn
 }
 
-func (u *UdpListener) Accept() (ProtocolConn, error) {
+// NewUdpAdapter 创建新的UDP适配器
+func NewUdpAdapter(parentCtx context.Context, session Session) *UdpAdapter {
+	adapter := &UdpAdapter{}
+	adapter.SetName("udp")
+	adapter.SetSession(session)
+	adapter.SetCtx(parentCtx, adapter.onClose)
+	return adapter
+}
+
+// Dial 实现连接功能
+func (u *UdpAdapter) Dial(addr string) (io.ReadWriteCloser, error) {
+	// 解析服务器地址
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve UDP address: %w", err)
+	}
+
+	// 创建UDP连接
+	conn, err := net.DialUDP("udp", nil, udpAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to UDP server: %w", err)
+	}
+
+	return &UdpConn{conn: conn, addr: udpAddr}, nil
+}
+
+// Listen 实现监听功能
+func (u *UdpAdapter) Listen(addr string) error {
+	// 解析监听地址
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to resolve UDP address: %w", err)
+	}
+
+	// 创建UDP监听器
+	conn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on UDP: %w", err)
+	}
+
+	u.conn = conn
+	return nil
+}
+
+// Accept 实现接受连接功能
+func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
+	if u.conn == nil {
+		return nil, fmt.Errorf("UDP listener not initialized")
+	}
+
 	// UDP 是面向数据包的，这里应该阻塞等待数据包
 	// 设置超时避免无限阻塞
 	u.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
@@ -60,67 +110,7 @@ func (u *UdpListener) Accept() (ProtocolConn, error) {
 	}, nil
 }
 
-func (u *UdpListener) Close() error {
-	return u.conn.Close()
-}
-
-// UdpDialer UDP连接器
-type UdpDialer struct{}
-
-func (u *UdpDialer) Dial(addr string) (ProtocolConn, error) {
-	// 解析服务器地址
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve UDP address: %w", err)
-	}
-
-	// 创建UDP连接
-	conn, err := net.DialUDP("udp", nil, udpAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to UDP server: %w", err)
-	}
-
-	return &UdpConn{conn: conn, addr: udpAddr}, nil
-}
-
-// UdpAdapter UDP协议适配器
-type UdpAdapter struct {
-	BaseAdapter
-	conn net.PacketConn
-}
-
-// NewUdpAdapter 创建新的UDP适配器
-func NewUdpAdapter(parentCtx context.Context, session Session) *UdpAdapter {
-	adapter := &UdpAdapter{}
-	adapter.SetName("udp")
-	adapter.SetSession(session)
-	adapter.SetCtx(parentCtx, adapter.onClose)
-	return adapter
-}
-
-// 实现 ProtocolAdapter 接口
-func (u *UdpAdapter) createDialer() ProtocolDialer {
-	return &UdpDialer{}
-}
-
-func (u *UdpAdapter) createListener(addr string) (ProtocolListener, error) {
-	// 解析监听地址
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve UDP address: %w", err)
-	}
-
-	// 创建UDP监听器
-	conn, err := net.ListenUDP("udp", udpAddr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to listen on UDP: %w", err)
-	}
-
-	u.conn = conn
-	return &UdpListener{conn: conn}, nil
-}
-
-func (u *UdpAdapter) handleProtocolSpecific(conn ProtocolConn) error {
+func (u *UdpAdapter) handleProtocolSpecific(conn io.ReadWriteCloser) error {
 	// UDP 特定的处理 - 简单echo数据包
 	if virtualConn, ok := conn.(*UdpVirtualConn); ok {
 		// 读取数据

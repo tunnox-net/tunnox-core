@@ -44,7 +44,7 @@ server:
 
 log:
   # 日志级别: debug, info, warn, error, fatal, panic
-  level: "info"
+  level: "debug"
   
   # 日志格式: json, text
   format: "text"
