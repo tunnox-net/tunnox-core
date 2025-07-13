@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/utils"
 )
 
@@ -36,7 +36,7 @@ func (ce *CommandExecutor) AddMiddleware(middleware Middleware) {
 }
 
 // Execute 执行命令
-func (ce *CommandExecutor) Execute(streamPacket *protocol.StreamPacket) error {
+func (ce *CommandExecutor) Execute(streamPacket *common.StreamPacket) error {
 	// 创建命令上下文
 	ctx := ce.createCommandContext(streamPacket)
 
@@ -138,7 +138,7 @@ func (ce *CommandExecutor) executeWithMiddleware(ctx *CommandContext, handler Co
 }
 
 // createCommandContext 创建命令上下文
-func (ce *CommandExecutor) createCommandContext(streamPacket *protocol.StreamPacket) *CommandContext {
+func (ce *CommandExecutor) createCommandContext(streamPacket *common.StreamPacket) *CommandContext {
 	commandPacket := streamPacket.Packet.CommandPacket
 
 	return &CommandContext{
@@ -190,7 +190,7 @@ func (ce *CommandExecutor) generateRequestID() string {
 }
 
 // SetSession 设置会话对象
-func (ce *CommandExecutor) SetSession(session protocol.Session) {
+func (ce *CommandExecutor) SetSession(session common.Session) {
 	// 这个方法需要在外部调用时设置Session
 	// 暂时为空实现
 }

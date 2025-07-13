@@ -231,7 +231,7 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 
 				// 处理数据流
 				for {
-					packet, bytesRead, err := connInfo.Stream.ReadPacket()
+					packet, _, err := connInfo.Stream.ReadPacket()
 					if err != nil {
 						if err == io.EOF {
 							utils.Infof("WebSocket connection closed by peer: %s", connInfo.ID)
@@ -241,8 +241,7 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 						break
 					}
 
-					utils.Debugf("Read WebSocket packet for connection %s: %d bytes, type: %s",
-						connInfo.ID, bytesRead, packet.PacketType)
+					utils.Debugf("Received packet type: %v", packet.PacketType)
 
 					// 包装成 StreamPacket
 					connPacket := &StreamPacket{

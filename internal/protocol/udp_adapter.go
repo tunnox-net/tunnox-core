@@ -182,7 +182,7 @@ func (u *UdpAdapter) handlePacket(data []byte, addr net.Addr) {
 
 		// 处理数据流
 		for {
-			packet, bytesRead, err := connInfo.Stream.ReadPacket()
+			packet, _, err := connInfo.Stream.ReadPacket()
 			if err != nil {
 				if err == io.EOF {
 					utils.Infof("UDP connection closed by peer: %s", connInfo.ID)
@@ -192,8 +192,7 @@ func (u *UdpAdapter) handlePacket(data []byte, addr net.Addr) {
 				break
 			}
 
-			utils.Debugf("Read UDP packet for connection %s: %d bytes, type: %s",
-				connInfo.ID, bytesRead, packet.PacketType)
+			utils.Debugf("Received packet type: %v", packet.PacketType)
 
 			// 包装成 StreamPacket
 			connPacket := &StreamPacket{

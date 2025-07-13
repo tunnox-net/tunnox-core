@@ -5,41 +5,21 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"time"
 	"tunnox-core/internal/cloud/generators"
+	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
 
 // StreamPacket 包装结构，包含连接信息
-type StreamPacket struct {
-	ConnectionID string
-	Packet       *packet.TransferPacket
-	Timestamp    time.Time
-}
+type StreamPacket = common.StreamPacket
 
 // StreamConnectionInfo 连接信息
-type StreamConnectionInfo struct {
-	ID       string
-	Stream   stream.PackageStreamer
-	Metadata map[string]interface{}
-}
+type StreamConnectionInfo = common.StreamConnectionInfo
 
 // Session 接口定义
-type Session interface {
-	// 初始化连接
-	InitConnection(reader io.Reader, writer io.Writer) (*StreamConnectionInfo, error)
-
-	// 处理带连接信息的数据包
-	HandlePacket(packet *StreamPacket) error
-
-	// 关闭连接
-	CloseConnection(connectionId string) error
-
-	// 获取流管理器
-	GetStreamManager() *stream.StreamManager
-}
+type Session = common.Session
 
 // ConnectionSession 实现 Session 接口
 type ConnectionSession struct {
@@ -102,7 +82,7 @@ func (s *ConnectionSession) InitConnection(reader io.Reader, writer io.Writer) (
 
 // HandlePacket 处理数据包
 func (s *ConnectionSession) HandlePacket(connPacket *StreamPacket) error {
-	utils.Debugf("Handling packet for connection: %s, type: %s",
+	utils.Debugf("Handling packet for connection: %s, type: %v",
 		connPacket.ConnectionID, connPacket.Packet.PacketType)
 
 	// 处理心跳包
@@ -116,7 +96,7 @@ func (s *ConnectionSession) HandlePacket(connPacket *StreamPacket) error {
 	}
 
 	// 处理其他类型的包
-	utils.Warnf("Unsupported packet type for connection %s: %s",
+	utils.Warnf("Unsupported packet type for connection %s: %v",
 		connPacket.ConnectionID, connPacket.Packet.PacketType)
 	return nil
 }
@@ -162,7 +142,7 @@ func (s *ConnectionSession) handleHeartbeat(connPacket *StreamPacket) error {
 
 // handleCommandPacket 处理命令包
 func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error {
-	utils.Infof("Processing command packet for connection: %s, command: %s",
+	utils.Infof("Processing command packet for connection: %s, command: %v",
 		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
 	// 根据命令类型分发处理
@@ -182,7 +162,7 @@ func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error 
 	case packet.Disconnect:
 		return s.handleDisconnectCommand(connPacket)
 	default:
-		utils.Warnf("Unknown command type for connection %s: %s",
+		utils.Warnf("Unknown command type for connection %s: %v",
 			connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 		return nil
 	}

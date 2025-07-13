@@ -1,14 +1,13 @@
-package tests
+package command
 
 import (
 	"fmt"
 	"testing"
 	"time"
-	"tunnox-core/internal/command"
 )
 
 func TestNewRPCManager(t *testing.T) {
-	rm := command.NewRPCManager()
+	rm := NewRPCManager()
 
 	if rm == nil {
 		t.Fatal("NewRPCManager returned nil")
@@ -24,9 +23,9 @@ func TestNewRPCManager(t *testing.T) {
 }
 
 func TestRPCManager_RegisterAndGetRequest(t *testing.T) {
-	rm := command.NewRPCManager()
+	rm := NewRPCManager()
 	requestID := "test-request-123"
-	responseChan := make(chan *command.CommandResponse, 1)
+	responseChan := make(chan *CommandResponse, 1)
 
 	// 注册请求
 	rm.RegisterRequest(requestID, responseChan)
@@ -49,9 +48,9 @@ func TestRPCManager_RegisterAndGetRequest(t *testing.T) {
 }
 
 func TestRPCManager_UnregisterRequest(t *testing.T) {
-	rm := command.NewRPCManager()
+	rm := NewRPCManager()
 	requestID := "test-request-456"
-	responseChan := make(chan *command.CommandResponse, 1)
+	responseChan := make(chan *CommandResponse, 1)
 
 	// 注册请求
 	rm.RegisterRequest(requestID, responseChan)
@@ -76,7 +75,7 @@ func TestRPCManager_UnregisterRequest(t *testing.T) {
 }
 
 func TestRPCManager_SetAndGetTimeout(t *testing.T) {
-	rm := command.NewRPCManager()
+	rm := NewRPCManager()
 
 	// 测试默认超时
 	defaultTimeout := rm.GetTimeout()
@@ -96,7 +95,7 @@ func TestRPCManager_SetAndGetTimeout(t *testing.T) {
 }
 
 func TestRPCManager_GetPendingRequestCount(t *testing.T) {
-	rm := command.NewRPCManager()
+	rm := NewRPCManager()
 
 	// 初始数量应该为0
 	count := rm.GetPendingRequestCount()
@@ -105,9 +104,9 @@ func TestRPCManager_GetPendingRequestCount(t *testing.T) {
 	}
 
 	// 注册几个请求
-	rm.RegisterRequest("req1", make(chan *command.CommandResponse, 1))
-	rm.RegisterRequest("req2", make(chan *command.CommandResponse, 1))
-	rm.RegisterRequest("req3", make(chan *command.CommandResponse, 1))
+	rm.RegisterRequest("req1", make(chan *CommandResponse, 1))
+	rm.RegisterRequest("req2", make(chan *CommandResponse, 1))
+	rm.RegisterRequest("req3", make(chan *CommandResponse, 1))
 
 	// 验证数量
 	count = rm.GetPendingRequestCount()
@@ -126,14 +125,14 @@ func TestRPCManager_GetPendingRequestCount(t *testing.T) {
 }
 
 func TestRPCManager_ConcurrentAccess(t *testing.T) {
-	rm := command.NewRPCManager()
+	rm := NewRPCManager()
 	done := make(chan bool, 10)
 
 	// 并发注册请求
 	for i := 0; i < 10; i++ {
 		go func(id int) {
 			requestID := fmt.Sprintf("concurrent-req-%d", id)
-			responseChan := make(chan *command.CommandResponse, 1)
+			responseChan := make(chan *CommandResponse, 1)
 
 			rm.RegisterRequest(requestID, responseChan)
 
@@ -163,13 +162,13 @@ func TestRPCManager_ConcurrentAccess(t *testing.T) {
 }
 
 func TestRPCManager_TimeoutHandling(t *testing.T) {
-	rm := command.NewRPCManager()
+	rm := NewRPCManager()
 
 	// 设置较短的超时时间用于测试
 	rm.SetTimeout(100 * time.Millisecond)
 
 	requestID := "timeout-test"
-	responseChan := make(chan *command.CommandResponse, 1)
+	responseChan := make(chan *CommandResponse, 1)
 
 	// 注册请求
 	rm.RegisterRequest(requestID, responseChan)
@@ -191,15 +190,15 @@ func TestRPCManager_TimeoutHandling(t *testing.T) {
 }
 
 func TestRPCManager_ResponseChannelCommunication(t *testing.T) {
-	rm := command.NewRPCManager()
+	rm := NewRPCManager()
 	requestID := "comm-test"
-	responseChan := make(chan *command.CommandResponse, 1)
+	responseChan := make(chan *CommandResponse, 1)
 
 	// 注册请求
 	rm.RegisterRequest(requestID, responseChan)
 
 	// 创建测试响应
-	testResponse := &command.CommandResponse{
+	testResponse := &CommandResponse{
 		Success:   true,
 		Data:      "test data",
 		RequestID: requestID,
