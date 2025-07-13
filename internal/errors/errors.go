@@ -129,6 +129,33 @@ func NewCompressionError(operation, message string, cause error) *CompressionErr
 	}
 }
 
+// EncryptionError 加密相关错误
+type EncryptionError struct {
+	Operation string
+	Message   string
+	Cause     error
+}
+
+func (e *EncryptionError) Error() string {
+	if e.Cause != nil {
+		return fmt.Sprintf("encryption error [%s]: %s: %v", e.Operation, e.Message, e.Cause)
+	}
+	return fmt.Sprintf("encryption error [%s]: %s", e.Operation, e.Message)
+}
+
+func (e *EncryptionError) Unwrap() error {
+	return e.Cause
+}
+
+// NewEncryptionError 创建加密错误
+func NewEncryptionError(operation, message string, cause error) *EncryptionError {
+	return &EncryptionError{
+		Operation: operation,
+		Message:   message,
+		Cause:     cause,
+	}
+}
+
 // WrapError 包装错误，添加上下文信息
 func WrapError(err error, context string) error {
 	if err == nil {

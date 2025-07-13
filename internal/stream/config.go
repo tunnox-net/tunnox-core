@@ -24,6 +24,7 @@ type StreamProfile struct {
 	BufferSize           int
 	EnableMemoryPool     bool
 	MaxConcurrentStreams int
+	EncryptionKey        EncryptionKey // 加密密钥
 }
 
 // PredefinedProfiles 预定义的流配置模板
@@ -64,6 +65,16 @@ var PredefinedProfiles = map[string]StreamProfile{
 		EnableMemoryPool:     false,
 		MaxConcurrentStreams: 2000,
 	},
+	"encrypted": {
+		Name:                 "encrypted",
+		Type:                 StreamTypeHybrid,
+		DefaultCompression:   true,
+		DefaultRateLimit:     0,
+		BufferSize:           4096,
+		EnableMemoryPool:     true,
+		MaxConcurrentStreams: 1000,
+		EncryptionKey:        nil, // 需要外部设置
+	},
 }
 
 // GetProfile 获取预定义配置模板
@@ -87,6 +98,7 @@ func CreateFactoryFromProfile(ctx context.Context, profileName string) (StreamFa
 		DefaultRateLimit:   profile.DefaultRateLimit,
 		BufferSize:         profile.BufferSize,
 		EnableMemoryPool:   profile.EnableMemoryPool,
+		EncryptionKey:      profile.EncryptionKey,
 	}
 
 	return NewConfigurableStreamFactory(ctx, config), nil

@@ -19,6 +19,7 @@ type StreamProcessor struct {
 	writer    io.Writer
 	transLock sync.Mutex
 	bufferMgr *utils.BufferManager
+	encMgr    *EncryptionManager // 加密管理器
 	utils.Dispose
 }
 
@@ -35,6 +36,20 @@ func NewStreamProcessor(reader io.Reader, writer io.Writer, parentCtx context.Co
 		reader:    reader,
 		writer:    writer,
 		bufferMgr: utils.NewBufferManager(parentCtx),
+		encMgr:    nil, // 默认不启用加密
+	}
+	stream.SetCtx(parentCtx, nil)
+	stream.AddCleanHandler(stream.onClose)
+	return stream
+}
+
+// NewStreamProcessorWithEncryption 创建带加密的流处理器
+func NewStreamProcessorWithEncryption(reader io.Reader, writer io.Writer, key EncryptionKey, parentCtx context.Context) *StreamProcessor {
+	stream := &StreamProcessor{
+		reader:    reader,
+		writer:    writer,
+		bufferMgr: utils.NewBufferManager(parentCtx),
+		encMgr:    NewEncryptionManager(key, parentCtx),
 	}
 	stream.SetCtx(parentCtx, nil)
 	stream.AddCleanHandler(stream.onClose)
@@ -335,7 +350,13 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 		}
 		totalBytes += len(bodyData)
 
-		// 如果数据被压缩，需要解压
+		// 先解密，再解压
+		if packetType.IsEncrypted() && ps.encMgr != nil {
+			bodyData, err = ps.encMgr.DecryptData(bodyData)
+			if err != nil {
+				return nil, totalBytes, err
+			}
+		}
 		if packetType.IsCompressed() {
 			bodyData, err = ps.decompressData(bodyData)
 			if err != nil {
@@ -420,6 +441,10 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	if useCompression {
 		packetType |= packet.Compressed
 	}
+	// 如果启用了加密，设置加密标志位
+	if ps.encMgr != nil {
+		packetType |= packet.Encrypted
+	}
 
 	typeByte := []byte{byte(packetType)}
 	_, err := ps.writer.Write(typeByte)
@@ -441,9 +466,15 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 			return totalBytes, errors.NewPacketError("json_marshal", "failed to marshal command packet", err)
 		}
 
-		// 如果需要压缩，先压缩数据
+		// 先压缩，再加密
 		if useCompression {
 			bodyData, err = ps.compressData(bodyData)
+			if err != nil {
+				return totalBytes, err
+			}
+		}
+		if ps.encMgr != nil {
+			bodyData, err = ps.encMgr.EncryptData(bodyData)
 			if err != nil {
 				return totalBytes, err
 			}
@@ -485,4 +516,27 @@ func (ps *StreamProcessor) Close() {
 // CloseWithResult 关闭并返回结果（新方法）
 func (ps *StreamProcessor) CloseWithResult() *utils.DisposeResult {
 	return ps.Dispose.Close()
+}
+
+// EnableEncryption 启用加密
+func (ps *StreamProcessor) EnableEncryption(key EncryptionKey) {
+	ps.encMgr = NewEncryptionManager(key, ps.Ctx())
+}
+
+// DisableEncryption 禁用加密
+func (ps *StreamProcessor) DisableEncryption() {
+	ps.encMgr = nil
+}
+
+// IsEncryptionEnabled 检查是否启用了加密
+func (ps *StreamProcessor) IsEncryptionEnabled() bool {
+	return ps.encMgr != nil
+}
+
+// GetEncryptionKey 获取加密密钥
+func (ps *StreamProcessor) GetEncryptionKey() EncryptionKey {
+	if ps.encMgr != nil {
+		return ps.encMgr.GetKey()
+	}
+	return nil
 }

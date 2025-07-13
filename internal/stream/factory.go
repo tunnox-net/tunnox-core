@@ -52,6 +52,8 @@ type StreamFactoryConfig struct {
 	BufferSize int
 	// 是否启用内存池
 	EnableMemoryPool bool
+	// 加密配置
+	EncryptionKey EncryptionKey
 }
 
 // ConfigurableStreamFactory 可配置的流工厂
@@ -70,7 +72,14 @@ func NewConfigurableStreamFactory(ctx context.Context, config StreamFactoryConfi
 
 // NewStreamProcessor 创建新的数据包流处理器（带配置）
 func (f *ConfigurableStreamFactory) NewStreamProcessor(reader io.Reader, writer io.Writer) PackageStreamer {
-	return NewStreamProcessor(reader, writer, f.ctx)
+	processor := NewStreamProcessor(reader, writer, f.ctx)
+
+	// 如果配置了加密密钥，启用加密
+	if f.config.EncryptionKey != nil {
+		processor.EnableEncryption(f.config.EncryptionKey)
+	}
+
+	return processor
 }
 
 // NewRateLimiterReader 创建限速读取器（使用默认配置）
@@ -97,6 +106,30 @@ func (f *ConfigurableStreamFactory) NewCompressionReader(reader io.Reader) Compr
 // NewCompressionWriter 创建压缩写入器
 func (f *ConfigurableStreamFactory) NewCompressionWriter(writer io.Writer) CompressionWriter {
 	return NewGzipWriter(writer, f.ctx)
+}
+
+// NewEncryptionReader 创建加密读取器
+func (f *ConfigurableStreamFactory) NewEncryptionReader(reader io.Reader) *EncryptionReader {
+	if f.config.EncryptionKey != nil {
+		return NewEncryptionReader(reader, f.config.EncryptionKey, f.ctx)
+	}
+	return nil
+}
+
+// NewEncryptionWriter 创建加密写入器
+func (f *ConfigurableStreamFactory) NewEncryptionWriter(writer io.Writer) *EncryptionWriter {
+	if f.config.EncryptionKey != nil {
+		return NewEncryptionWriter(writer, f.config.EncryptionKey, f.ctx)
+	}
+	return nil
+}
+
+// NewEncryptionManager 创建加密管理器
+func (f *ConfigurableStreamFactory) NewEncryptionManager() *EncryptionManager {
+	if f.config.EncryptionKey != nil {
+		return NewEncryptionManager(f.config.EncryptionKey, f.ctx)
+	}
+	return nil
 }
 
 // GetConfig 获取工厂配置
