@@ -1,25 +1,26 @@
-package command
+package tests
 
 import (
 	"testing"
+	"tunnox-core/internal/command"
 	"tunnox-core/internal/packet"
 )
 
 // MockCommandHandler 模拟命令处理器
 type MockCommandHandler struct {
 	commandType  packet.CommandType
-	responseType ResponseType
-	handleFunc   func(*CommandContext) (*CommandResponse, error)
+	responseType command.ResponseType
+	handleFunc   func(*command.CommandContext) (*command.CommandResponse, error)
 }
 
-func (m *MockCommandHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
+func (m *MockCommandHandler) Handle(ctx *command.CommandContext) (*command.CommandResponse, error) {
 	if m.handleFunc != nil {
 		return m.handleFunc(ctx)
 	}
-	return &CommandResponse{Success: true}, nil
+	return &command.CommandResponse{Success: true}, nil
 }
 
-func (m *MockCommandHandler) GetResponseType() ResponseType {
+func (m *MockCommandHandler) GetResponseType() command.ResponseType {
 	return m.responseType
 }
 
@@ -28,7 +29,7 @@ func (m *MockCommandHandler) GetCommandType() packet.CommandType {
 }
 
 func TestNewCommandRegistry(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := command.NewCommandRegistry()
 
 	if cr == nil {
 		t.Fatal("NewCommandRegistry returned nil")
@@ -44,12 +45,12 @@ func TestNewCommandRegistry(t *testing.T) {
 }
 
 func TestCommandRegistry_Register(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := command.NewCommandRegistry()
 
 	// 创建有效的处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Oneway,
+		responseType: command.Oneway,
 	}
 
 	// 注册处理器
@@ -75,12 +76,12 @@ func TestCommandRegistry_Register(t *testing.T) {
 }
 
 func TestCommandRegistry_RegisterInvalidCommandType(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := command.NewCommandRegistry()
 
 	// 创建无效的处理器（命令类型为0）
 	handler := &MockCommandHandler{
 		commandType:  0,
-		responseType: Oneway,
+		responseType: command.Oneway,
 	}
 
 	// 尝试注册无效处理器
@@ -96,18 +97,18 @@ func TestCommandRegistry_RegisterInvalidCommandType(t *testing.T) {
 }
 
 func TestCommandRegistry_RegisterDuplicate(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := command.NewCommandRegistry()
 
 	// 创建第一个处理器
 	handler1 := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Oneway,
+		responseType: command.Oneway,
 	}
 
 	// 创建第二个处理器（相同命令类型）
 	handler2 := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Duplex,
+		responseType: command.Duplex,
 	}
 
 	// 注册第一个处理器
@@ -139,12 +140,12 @@ func TestCommandRegistry_RegisterDuplicate(t *testing.T) {
 }
 
 func TestCommandRegistry_Unregister(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := command.NewCommandRegistry()
 
 	// 注册处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.HttpMap,
-		responseType: Duplex,
+		responseType: command.Duplex,
 	}
 
 	err := cr.Register(handler)
@@ -176,7 +177,7 @@ func TestCommandRegistry_Unregister(t *testing.T) {
 }
 
 func TestCommandRegistry_UnregisterNonExistent(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := command.NewCommandRegistry()
 
 	// 尝试注销不存在的处理器
 	err := cr.Unregister(packet.SocksMap)
@@ -186,13 +187,13 @@ func TestCommandRegistry_UnregisterNonExistent(t *testing.T) {
 }
 
 func TestCommandRegistry_GetHandler(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := command.NewCommandRegistry()
 
 	// 注册多个处理器
 	handlers := map[packet.CommandType]*MockCommandHandler{
-		packet.TcpMap:   {commandType: packet.TcpMap, responseType: Oneway},
-		packet.HttpMap:  {commandType: packet.HttpMap, responseType: Duplex},
-		packet.SocksMap: {commandType: packet.SocksMap, responseType: Oneway},
+		packet.TcpMap:   {commandType: packet.TcpMap, responseType: command.Oneway},
+		packet.HttpMap:  {commandType: packet.HttpMap, responseType: command.Duplex},
+		packet.SocksMap: {commandType: packet.SocksMap, responseType: command.Oneway},
 	}
 
 	for _, handler := range handlers {
@@ -222,7 +223,7 @@ func TestCommandRegistry_GetHandler(t *testing.T) {
 }
 
 func TestCommandRegistry_ListHandlers(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := command.NewCommandRegistry()
 
 	// 注册多个处理器
 	expectedTypes := []packet.CommandType{
@@ -234,7 +235,7 @@ func TestCommandRegistry_ListHandlers(t *testing.T) {
 	for _, commandType := range expectedTypes {
 		handler := &MockCommandHandler{
 			commandType:  commandType,
-			responseType: Oneway,
+			responseType: command.Oneway,
 		}
 		err := cr.Register(handler)
 		if err != nil {
@@ -264,7 +265,7 @@ func TestCommandRegistry_ListHandlers(t *testing.T) {
 }
 
 func TestCommandRegistry_GetHandlerCount(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := command.NewCommandRegistry()
 
 	// 初始数量应该为0
 	count := cr.GetHandlerCount()
@@ -273,8 +274,8 @@ func TestCommandRegistry_GetHandlerCount(t *testing.T) {
 	}
 
 	// 注册处理器
-	handler1 := &MockCommandHandler{commandType: packet.TcpMap, responseType: Oneway}
-	handler2 := &MockCommandHandler{commandType: packet.HttpMap, responseType: Duplex}
+	handler1 := &MockCommandHandler{commandType: packet.TcpMap, responseType: command.Oneway}
+	handler2 := &MockCommandHandler{commandType: packet.HttpMap, responseType: command.Duplex}
 
 	cr.Register(handler1)
 	cr.Register(handler2)
@@ -296,7 +297,7 @@ func TestCommandRegistry_GetHandlerCount(t *testing.T) {
 }
 
 func TestCommandRegistry_ConcurrentAccess(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := command.NewCommandRegistry()
 	done := make(chan bool, 10)
 
 	// 并发注册和注销处理器
@@ -305,7 +306,7 @@ func TestCommandRegistry_ConcurrentAccess(t *testing.T) {
 			commandType := packet.CommandType(id + 1)
 			handler := &MockCommandHandler{
 				commandType:  commandType,
-				responseType: Oneway,
+				responseType: command.Oneway,
 			}
 
 			// 注册

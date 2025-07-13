@@ -1,4 +1,4 @@
-package command
+package tests
 
 import (
 	"context"
@@ -7,20 +7,21 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tunnox-core/internal/command"
 	"tunnox-core/internal/packet"
 )
 
 // TestRPCIntegration 测试完整的RPC集成流程
 func TestRPCIntegration(t *testing.T) {
 	// 创建组件
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建双工处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
 			// 模拟处理时间
 			time.Sleep(10 * time.Millisecond)
 
@@ -29,14 +30,14 @@ func TestRPCIntegration(t *testing.T) {
 				Port int `json:"port"`
 			}
 			if err := json.Unmarshal([]byte(ctx.RequestBody), &request); err != nil {
-				return &CommandResponse{
+				return &command.CommandResponse{
 					Success: false,
 					Error:   "invalid request format",
 				}, nil
 			}
 
 			// 返回成功响应
-			return &CommandResponse{
+			return &command.CommandResponse{
 				Success: true,
 				Data: map[string]interface{}{
 					"port":      request.Port,
@@ -67,15 +68,15 @@ func TestRPCIntegration(t *testing.T) {
 
 // TestRPCWithMiddleware 测试带中间件的RPC流程
 func TestRPCWithMiddleware(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.HttpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
-			return &CommandResponse{
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
+			return &command.CommandResponse{
 				Success: true,
 				Data:    "handler result",
 			}, nil
@@ -88,10 +89,10 @@ func TestRPCWithMiddleware(t *testing.T) {
 	// 创建认证中间件
 	authMiddleware := &MockMiddleware{
 		name: "auth-middleware",
-		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
+		processFunc: func(ctx *command.CommandContext, next func(*command.CommandContext) (*command.CommandResponse, error)) (*command.CommandResponse, error) {
 			// 检查认证信息
 			if ctx.SenderID == "" {
-				return &CommandResponse{
+				return &command.CommandResponse{
 					Success: false,
 					Error:   "unauthorized",
 				}, nil
@@ -108,7 +109,7 @@ func TestRPCWithMiddleware(t *testing.T) {
 	// 创建日志中间件
 	logMiddleware := &MockMiddleware{
 		name: "log-middleware",
-		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
+		processFunc: func(ctx *command.CommandContext, next func(*command.CommandContext) (*command.CommandResponse, error)) (*command.CommandResponse, error) {
 			// 记录请求开始
 			ctx.Metadata["start_time"] = time.Now().Unix()
 
@@ -140,20 +141,20 @@ func TestRPCWithMiddleware(t *testing.T) {
 
 // TestRPCErrorHandling 测试RPC错误处理
 func TestRPCErrorHandling(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建会返回错误的处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.SocksMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
 			// 模拟业务逻辑错误
 			var request struct {
 				Port int `json:"port"`
 			}
 			if err := json.Unmarshal([]byte(ctx.RequestBody), &request); err != nil {
-				return &CommandResponse{
+				return &command.CommandResponse{
 					Success: false,
 					Error:   "invalid JSON format",
 				}, nil
@@ -161,7 +162,7 @@ func TestRPCErrorHandling(t *testing.T) {
 
 			// 检查端口范围
 			if request.Port < 1 || request.Port > 65535 {
-				return &CommandResponse{
+				return &command.CommandResponse{
 					Success: false,
 					Error:   "port out of range",
 				}, nil
@@ -172,7 +173,7 @@ func TestRPCErrorHandling(t *testing.T) {
 				return nil, errors.New("system error")
 			}
 
-			return &CommandResponse{
+			return &command.CommandResponse{
 				Success: true,
 				Data:    "port mapped successfully",
 			}, nil
@@ -213,18 +214,18 @@ func TestRPCErrorHandling(t *testing.T) {
 
 // TestRPCConcurrency 测试RPC并发处理
 func TestRPCConcurrency(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
 			// 模拟处理时间
 			time.Sleep(50 * time.Millisecond)
 
-			return &CommandResponse{
+			return &command.CommandResponse{
 				Success: true,
 				Data:    ctx.RequestID,
 			}, nil
@@ -264,23 +265,23 @@ func TestRPCConcurrency(t *testing.T) {
 
 // TestRPCRequestIDGeneration 测试请求ID生成
 func TestRPCRequestIDGeneration(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
 			// 验证请求ID不为空
 			if ctx.RequestID == "" {
-				return &CommandResponse{
+				return &command.CommandResponse{
 					Success: false,
 					Error:   "missing request ID",
 				}, nil
 			}
 
-			return &CommandResponse{
+			return &command.CommandResponse{
 				Success: true,
 				Data:    ctx.RequestID,
 			}, nil
@@ -302,37 +303,37 @@ func TestRPCRequestIDGeneration(t *testing.T) {
 
 // TestRPCContextPropagation 测试上下文传播
 func TestRPCContextPropagation(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.HttpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
 			// 验证上下文字段
 			if ctx.ConnectionID == "" {
-				return &CommandResponse{
+				return &command.CommandResponse{
 					Success: false,
 					Error:   "missing connection ID",
 				}, nil
 			}
 
 			if ctx.SenderID == "" {
-				return &CommandResponse{
+				return &command.CommandResponse{
 					Success: false,
 					Error:   "missing sender ID",
 				}, nil
 			}
 
 			if ctx.ReceiverID == "" {
-				return &CommandResponse{
+				return &command.CommandResponse{
 					Success: false,
 					Error:   "missing receiver ID",
 				}, nil
 			}
 
-			return &CommandResponse{
+			return &command.CommandResponse{
 				Success: true,
 				Data: map[string]interface{}{
 					"connection_id": ctx.ConnectionID,
@@ -359,16 +360,16 @@ func TestRPCContextPropagation(t *testing.T) {
 
 // TestRPCResponseSerialization 测试响应序列化
 func TestRPCResponseSerialization(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
 			// 创建复杂响应
-			response := &CommandResponse{
+			response := &command.CommandResponse{
 				Success: true,
 				Data: map[string]interface{}{
 					"string": "test string",
@@ -405,25 +406,25 @@ func TestRPCResponseSerialization(t *testing.T) {
 
 // TestRPCGracefulShutdown 测试优雅关闭
 func TestRPCGracefulShutdown(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
 			// 检查上下文是否被取消
 			select {
 			case <-ctx.Context.Done():
-				return &CommandResponse{
+				return &command.CommandResponse{
 					Success: false,
 					Error:   "context cancelled",
 				}, nil
 			default:
 				// 模拟处理时间
 				time.Sleep(100 * time.Millisecond)
-				return &CommandResponse{Success: true}, nil
+				return &command.CommandResponse{Success: true}, nil
 			}
 		},
 	}

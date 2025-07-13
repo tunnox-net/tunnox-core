@@ -1,9 +1,10 @@
-package command
+package tests
 
 import (
 	"errors"
 	"testing"
 	"time"
+	"tunnox-core/internal/command"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol"
 )
@@ -35,8 +36,8 @@ func createMockStreamPacket(commandType packet.CommandType, body string) *protoc
 }
 
 func TestNewCommandExecutor(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	if executor == nil {
 		t.Fatal("NewCommandExecutor returned nil")
@@ -56,8 +57,8 @@ func TestNewCommandExecutor(t *testing.T) {
 }
 
 func TestCommandExecutor_AddMiddleware(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建模拟中间件
 	middleware1 := &MockMiddleware{name: "middleware1"}
@@ -83,15 +84,15 @@ func TestCommandExecutor_AddMiddleware(t *testing.T) {
 }
 
 func TestCommandExecutor_ExecuteOneway(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建单向处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Oneway,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
-			return &CommandResponse{Success: true, Data: "oneway success"}, nil
+		responseType: command.Oneway,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
+			return &command.CommandResponse{Success: true, Data: "oneway success"}, nil
 		},
 	}
 
@@ -112,15 +113,15 @@ func TestCommandExecutor_ExecuteOneway(t *testing.T) {
 }
 
 func TestCommandExecutor_ExecuteDuplex(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建双工处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.HttpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
-			return &CommandResponse{Success: true, Data: "duplex success"}, nil
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
+			return &command.CommandResponse{Success: true, Data: "duplex success"}, nil
 		},
 	}
 
@@ -138,14 +139,14 @@ func TestCommandExecutor_ExecuteDuplex(t *testing.T) {
 }
 
 func TestCommandExecutor_ExecuteWithError(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建会返回错误的处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.SocksMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
 			return nil, errors.New("handler error")
 		},
 	}
@@ -164,8 +165,8 @@ func TestCommandExecutor_ExecuteWithError(t *testing.T) {
 }
 
 func TestCommandExecutor_ExecuteUnknownHandler(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建流数据包（未注册的处理器）
 	streamPacket := createMockStreamPacket(packet.DataIn, `{"port": 8080}`)
@@ -178,15 +179,15 @@ func TestCommandExecutor_ExecuteUnknownHandler(t *testing.T) {
 }
 
 func TestCommandExecutor_ExecuteWithMiddleware(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
-			return &CommandResponse{Success: true, Data: "handler result"}, nil
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
+			return &command.CommandResponse{Success: true, Data: "handler result"}, nil
 		},
 	}
 
@@ -196,7 +197,7 @@ func TestCommandExecutor_ExecuteWithMiddleware(t *testing.T) {
 	// 创建中间件
 	middleware := &MockMiddleware{
 		name: "test-middleware",
-		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
+		processFunc: func(ctx *command.CommandContext, next func(*command.CommandContext) (*command.CommandResponse, error)) (*command.CommandResponse, error) {
 			// 在调用处理器前添加元数据
 			ctx.Metadata["middleware_processed"] = true
 
@@ -226,8 +227,8 @@ func TestCommandExecutor_ExecuteWithMiddleware(t *testing.T) {
 }
 
 func TestCommandExecutor_CreateCommandContext(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建流数据包
 	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
@@ -266,8 +267,8 @@ func TestCommandExecutor_CreateCommandContext(t *testing.T) {
 }
 
 func TestCommandExecutor_GenerateRequestID(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 生成多个请求ID
 	requestID1 := executor.generateRequestID()
@@ -295,8 +296,8 @@ func TestCommandExecutor_GenerateRequestID(t *testing.T) {
 }
 
 func TestCommandExecutor_DuplexTimeout(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 设置较短的超时时间
 	executor.rpcManager.SetTimeout(100 * time.Millisecond)
@@ -304,11 +305,11 @@ func TestCommandExecutor_DuplexTimeout(t *testing.T) {
 	// 创建会延迟的处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
 			// 延迟超过超时时间
 			time.Sleep(200 * time.Millisecond)
-			return &CommandResponse{Success: true}, nil
+			return &command.CommandResponse{Success: true}, nil
 		},
 	}
 
@@ -331,15 +332,15 @@ func TestCommandExecutor_DuplexTimeout(t *testing.T) {
 }
 
 func TestCommandExecutor_ConcurrentExecution(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
-			return &CommandResponse{Success: true, Data: ctx.RequestID}, nil
+		responseType: command.Duplex,
+		handleFunc: func(ctx *command.CommandContext) (*command.CommandResponse, error) {
+			return &command.CommandResponse{Success: true, Data: ctx.RequestID}, nil
 		},
 	}
 
@@ -369,10 +370,10 @@ func TestCommandExecutor_ConcurrentExecution(t *testing.T) {
 // MockMiddleware 模拟中间件
 type MockMiddleware struct {
 	name        string
-	processFunc func(*CommandContext, func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error)
+	processFunc func(*command.CommandContext, func(*command.CommandContext) (*command.CommandResponse, error)) (*command.CommandResponse, error)
 }
 
-func (m *MockMiddleware) Process(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
+func (m *MockMiddleware) Process(ctx *command.CommandContext, next func(*command.CommandContext) (*command.CommandResponse, error)) (*command.CommandResponse, error) {
 	if m.processFunc != nil {
 		return m.processFunc(ctx, next)
 	}
@@ -380,11 +381,11 @@ func (m *MockMiddleware) Process(ctx *CommandContext, next func(*CommandContext)
 }
 
 func TestCommandExecutor_SendResponse(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建响应
-	response := &CommandResponse{
+	response := &command.CommandResponse{
 		Success:   true,
 		Data:      "test data",
 		RequestID: "test-request-123",
@@ -399,11 +400,11 @@ func TestCommandExecutor_SendResponse(t *testing.T) {
 }
 
 func TestCommandExecutor_SendResponseWithInvalidJSON(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := command.NewCommandRegistry()
+	executor := command.NewCommandExecutor(registry)
 
 	// 创建包含无法序列化数据的响应
-	response := &CommandResponse{
+	response := &command.CommandResponse{
 		Success: true,
 		Data:    make(chan int), // 无法序列化的类型
 	}
