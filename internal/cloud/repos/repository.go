@@ -619,10 +619,11 @@ func NewConnectionRepo(repo *Repository) *ConnectionRepo {
 	return cr
 }
 
-func (cr *ConnectionRepo) onClose() {
+func (cr *ConnectionRepo) onClose() error {
 	if cr.Repository != nil {
-		cr.Repository.Dispose.Close()
+		return cr.Repository.Dispose.Close()
 	}
+	return nil
 }
 
 // SaveConnection 保存连接信息（创建或更新）

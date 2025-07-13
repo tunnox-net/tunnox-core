@@ -48,9 +48,10 @@ func NewTokenBucket(rate int64, parentCtx context.Context) (*TokenBucket, error)
 }
 
 // onClose 资源释放回调
-func (tb *TokenBucket) onClose() {
+func (tb *TokenBucket) onClose() error {
 	// TokenBucket 本身没有需要特殊清理的资源
 	// context 的取消由 Dispose 自动处理
+	return nil
 }
 
 // WaitForTokens 等待足够的令牌

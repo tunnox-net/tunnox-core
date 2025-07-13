@@ -177,10 +177,13 @@ func (s *Server) getEnabledProtocols() map[string]ProtocolConfig {
 }
 
 // onClose 资源释放回调
-func (s *Server) onClose() {
+func (s *Server) onClose() error {
 	// 优雅关闭协议适配器
 	if s.protocolMgr != nil {
-		s.protocolMgr.CloseAll()
+		err := s.protocolMgr.CloseAll()
+		if err != nil {
+			return err
+		}
 	}
 
 	// 关闭云控制器
@@ -188,10 +191,13 @@ func (s *Server) onClose() {
 		utils.Info(constants.MsgClosingCloudControl)
 		if err := s.cloudControl.Close(); err != nil {
 			utils.Errorf("Cloud control closed with error: %v", err)
+			return err
 		} else {
 			utils.Info(constants.MsgCloudControlClosed)
 		}
 	}
+
+	return nil
 }
 
 // Start 启动服务器

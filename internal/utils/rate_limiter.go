@@ -36,7 +36,7 @@ func NewRateLimiter(limit int, window time.Duration, parentCtx context.Context) 
 }
 
 // onClose 资源释放回调
-func (r *RateLimiter) onClose() {
+func (r *RateLimiter) onClose() error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
@@ -47,6 +47,7 @@ func (r *RateLimiter) onClose() {
 
 	close(r.done)
 	r.tokens = nil
+	return nil
 }
 
 // Allow 检查是否允许请求

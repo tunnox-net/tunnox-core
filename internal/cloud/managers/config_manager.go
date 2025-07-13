@@ -42,7 +42,7 @@ func NewConfigManager(storage storages.Storage, initialConfig *ControlConfig, pa
 }
 
 // onClose 资源清理回调
-func (cm *ConfigManager) onClose() {
+func (cm *ConfigManager) onClose() error {
 	utils.Infof("Config manager resources cleaned up")
 	// 停止配置监听
 	cm.mu.Lock()
@@ -55,6 +55,7 @@ func (cm *ConfigManager) onClose() {
 
 	// 清空监听器
 	cm.watchers = nil
+	return nil
 }
 
 // GetConfig 获取当前配置

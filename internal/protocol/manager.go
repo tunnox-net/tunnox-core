@@ -35,18 +35,26 @@ func (pm *Manager) StartAll() error {
 	return nil
 }
 
-func (pm *Manager) CloseAll() {
-	pm.Dispose.Close()
+func (pm *Manager) CloseAll() error {
+	return pm.Dispose.Close()
 }
 
-func (pm *Manager) onClose() {
+func (pm *Manager) onClose() error {
 	hasAdapters := len(pm.adapters) > 0
 
 	if hasAdapters {
+		var lastErr error
 		for _, adapter := range pm.adapters {
-			adapter.Close()
+			if err := adapter.Close(); err != nil {
+				utils.Errorf("Failed to close adapter %s: %v", adapter.Name(), err)
+				lastErr = err
+			}
+		}
+		if lastErr != nil {
+			return lastErr
 		}
 	}
 
 	pm.adapters = nil
+	return nil
 }

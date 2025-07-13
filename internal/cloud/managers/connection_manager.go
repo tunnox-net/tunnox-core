@@ -27,8 +27,9 @@ func NewConnectionManager(connRepo *repos.ConnectionRepo, idManager *generators.
 }
 
 // onClose 资源清理回调
-func (cm *ConnectionManager) onClose() {
+func (cm *ConnectionManager) onClose() error {
 	utils.Infof("Connection manager resources cleaned up")
+	return nil
 }
 
 // RegisterConnection 注册连接

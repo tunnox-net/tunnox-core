@@ -70,8 +70,9 @@ func NewStorageBasedIDGenerator[T any](storage storages.Storage, prefix, keyPref
 }
 
 // onClose 资源清理回调
-func (g *StorageBasedIDGenerator[T]) onClose() {
+func (g *StorageBasedIDGenerator[T]) onClose() error {
 	utils.Infof("Storage-based ID generator resources cleaned up")
+	return nil
 }
 
 // getKey 生成存储键
@@ -176,8 +177,9 @@ func NewClientIDGenerator(storage storages.Storage, parentCtx context.Context) *
 }
 
 // onClose 资源清理回调
-func (g *ClientIDGenerator) onClose() {
+func (g *ClientIDGenerator) onClose() error {
 	utils.Infof("Client ID generator resources cleaned up")
+	return nil
 }
 
 // Generate 生成客户端ID
@@ -283,46 +285,69 @@ func NewIDManager(storage storages.Storage, parentCtx context.Context) *IDManage
 }
 
 // onClose 资源清理回调
-func (m *IDManager) onClose() {
+func (m *IDManager) onClose() error {
 	utils.Infof("Cleaning up ID manager resources...")
 
 	// 关闭所有生成器
 	if m.clientIDGen != nil {
-		m.clientIDGen.Close()
+		err := m.clientIDGen.Close()
+		if err != nil {
+			return err
+		}
 		utils.Infof("Closed client ID generator")
 	}
 
 	if m.nodeIDGen != nil {
-		m.nodeIDGen.Close()
+		err := m.nodeIDGen.Close()
+		if err != nil {
+			return err
+		}
 		utils.Infof("Closed node ID generator")
 	}
 
 	if m.connectionIDGen != nil {
-		m.connectionIDGen.Close()
+		err := m.connectionIDGen.Close()
+		if err != nil {
+			return err
+		}
 		utils.Infof("Closed connection ID generator")
 	}
 
 	if m.portMappingIDGen != nil {
-		m.portMappingIDGen.Close()
+
+		err := m.portMappingIDGen.Close()
+		if err != nil {
+			return err
+		}
 		utils.Infof("Closed port mapping ID generator")
 	}
 
 	if m.portMappingInstanceIDGen != nil {
-		m.portMappingInstanceIDGen.Close()
+		err := m.portMappingInstanceIDGen.Close()
+		if err != nil {
+			return err
+		}
 		utils.Infof("Closed port mapping instance ID generator")
 	}
 
 	if m.userIDGen != nil {
-		m.userIDGen.Close()
+		err := m.userIDGen.Close()
+		if err != nil {
+			return err
+		}
 		utils.Infof("Closed user ID generator")
 	}
 
 	if m.tunnelIDGen != nil {
-		m.tunnelIDGen.Close()
+		err := m.tunnelIDGen.Close()
+		if err != nil {
+			return err
+		}
 		utils.Infof("Closed tunnel ID generator")
 	}
 
 	utils.Infof("ID manager resources cleanup completed")
+	return nil
 }
 
 // 便捷方法

@@ -87,7 +87,7 @@ func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudCont
 }
 
 // onClose 资源清理回调
-func (b *CloudControl) onClose() {
+func (b *CloudControl) onClose() error {
 	utils.Infof("Cleaning up cloud control resources...")
 	time.Sleep(100 * time.Millisecond)
 	if b.idManager != nil {
@@ -104,6 +104,7 @@ func (b *CloudControl) onClose() {
 		utils.Infof("Distributed lock resources cleaned up")
 	}
 	utils.Infof("Cloud control resources cleanup completed")
+	return nil
 }
 
 // 这里实现 CloudControlAPI 的大部分方法，所有数据操作都用 b.storage

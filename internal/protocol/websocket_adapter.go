@@ -162,12 +162,12 @@ func (w *WebSocketAdapter) ListenFrom(listenAddr string) error {
 }
 
 // onClose WebSocket 特定的资源清理
-func (w *WebSocketAdapter) onClose() {
+func (w *WebSocketAdapter) onClose() error {
 	if w.server != nil {
 		w.server.Shutdown(context.Background())
 		w.server = nil
 	}
-	w.BaseAdapter.onClose()
+	return w.BaseAdapter.onClose()
 }
 
 // handleWebSocket 处理WebSocket连接

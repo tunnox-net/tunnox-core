@@ -82,13 +82,14 @@ func NewMemoryStorage(parentCtx context.Context) *MemoryStorage {
 }
 
 // onClose 资源释放回调
-func (m *MemoryStorage) onClose() {
+func (m *MemoryStorage) onClose() error {
 	m.StopCleanup()
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.data = nil
+	return nil
 }
 
 // Set 设置键值对

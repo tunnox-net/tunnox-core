@@ -27,8 +27,9 @@ func NewSearchManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRe
 }
 
 // onClose 资源清理回调
-func (sm *SearchManager) onClose() {
+func (sm *SearchManager) onClose() error {
 	utils.Infof("Search manager resources cleaned up")
+	return nil
 }
 
 // SearchUsers 搜索用户

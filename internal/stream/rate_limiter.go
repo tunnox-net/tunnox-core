@@ -83,22 +83,25 @@ func (w *RateLimiterWriter) Write(p []byte) (n int, err error) {
 }
 
 // onClose 资源释放
-func (r *RateLimiterReader) onClose() {
+func (r *RateLimiterReader) onClose() error {
 	if r.tokenBucket != nil {
 		r.tokenBucket.Close()
 	}
+	return nil
 }
 
-func (w *RateLimiterWriter) onClose() {
+func (w *RateLimiterWriter) onClose() error {
 	if w.tokenBucket != nil {
 		w.tokenBucket.Close()
 	}
+	return nil
 }
 
-func (r *RateLimiter) onClose() {
+func (r *RateLimiter) onClose() error {
 	if r.tokenBucket != nil {
 		r.tokenBucket.Close()
 	}
+	return nil
 }
 
 // NewRateLimiterReader 创建限速读取器

@@ -31,8 +31,9 @@ func NewStatsManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRep
 }
 
 // onClose 资源清理回调
-func (sm *StatsManager) onClose() {
+func (sm *StatsManager) onClose() error {
 	utils.Infof("Stats manager resources cleaned up")
+	return nil
 	// 清理统计缓存和临时数据
 	// 这里可以添加清理统计缓存的逻辑
 }

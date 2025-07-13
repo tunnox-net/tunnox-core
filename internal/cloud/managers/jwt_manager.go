@@ -71,12 +71,13 @@ func NewJWTManager(config *ControlConfig, repo *repos.Repository) *JWTManager {
 }
 
 // onClose 资源清理回调
-func (m *JWTManager) onClose() {
+func (m *JWTManager) onClose() error {
 	utils.Infof("JWT manager resources cleaned up")
 	// 清理Token缓存
 	if m.cache != nil {
 		m.cache.Close()
 	}
+	return nil
 }
 
 // GenerateTokenPair 生成Token对（访问Token + 刷新Token）

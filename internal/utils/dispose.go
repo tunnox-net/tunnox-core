@@ -112,14 +112,6 @@ func (c *Dispose) AddCleanHandler(f func() error) {
 	c.cleanHandlers = append(c.cleanHandlers, f)
 }
 
-// AddCleanHandlerNoError 添加不返回错误的清理处理器（向后兼容）
-func (c *Dispose) AddCleanHandlerNoError(f func()) {
-	c.AddCleanHandler(func() error {
-		f()
-		return nil
-	})
-}
-
 // GetErrors 获取清理过程中的错误
 func (c *Dispose) GetErrors() []*DisposeError {
 	c.currentLock.Lock()
@@ -127,7 +119,7 @@ func (c *Dispose) GetErrors() []*DisposeError {
 	return c.errors
 }
 
-func (c *Dispose) SetCtx(parent context.Context, onClose func()) {
+func (c *Dispose) SetCtx(parent context.Context, onClose func() error) {
 	if c.ctx != nil {
 		Warn("ctx already set")
 		return
@@ -140,7 +132,7 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func()) {
 
 	// 只有当 onClose 不为 nil 时才添加到清理处理器
 	if onClose != nil {
-		c.AddCleanHandlerNoError(onClose)
+		c.AddCleanHandler(onClose)
 	}
 
 	if curParent != nil {

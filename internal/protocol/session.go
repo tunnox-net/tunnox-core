@@ -212,7 +212,7 @@ func (s *ConnectionSession) handleDisconnectCommand(connPacket *StreamPacket) er
 }
 
 // onClose 资源清理回调
-func (s *ConnectionSession) onClose() {
+func (s *ConnectionSession) onClose() error {
 	utils.Infof("Cleaning up connection session resources...")
 
 	// 获取所有连接信息的副本，避免在锁内调用 Close
@@ -231,6 +231,7 @@ func (s *ConnectionSession) onClose() {
 	}
 
 	utils.Infof("Connection session resources cleanup completed")
+	return nil
 }
 
 // GetStreamConnectionInfo 获取连接信息（用于调试和监控）

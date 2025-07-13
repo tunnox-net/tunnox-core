@@ -75,10 +75,10 @@ func (t *TcpAdapter) ListenFrom(listenAddr string) error {
 }
 
 // onClose TCP 特定的资源清理
-func (t *TcpAdapter) onClose() {
+func (t *TcpAdapter) onClose() error {
 	if t.listener != nil {
 		_ = t.listener.Close()
 		t.listener = nil
 	}
-	t.BaseAdapter.onClose()
+	return t.BaseAdapter.onClose()
 }

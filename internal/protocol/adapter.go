@@ -239,7 +239,7 @@ func (b *BaseAdapter) Close() error {
 }
 
 // onClose 通用资源清理
-func (b *BaseAdapter) onClose() {
+func (b *BaseAdapter) onClose() error {
 	b.active = false
 
 	b.streamMutex.Lock()
@@ -250,4 +250,5 @@ func (b *BaseAdapter) onClose() {
 	b.streamMutex.Unlock()
 
 	utils.Infof("%s adapter closed", b.name)
+	return nil
 }

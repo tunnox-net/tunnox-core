@@ -32,10 +32,11 @@ func NewAnonymousManager(clientRepo *repos.ClientRepository, mappingRepo *repos.
 }
 
 // onClose 资源清理回调
-func (am *AnonymousManager) onClose() {
+func (am *AnonymousManager) onClose() error {
 	utils.Infof("Anonymous manager resources cleaned up")
 	// 清理匿名客户端缓存和临时数据
 	// 这里可以添加清理匿名资源的逻辑
+	return nil
 }
 
 // GenerateAnonymousCredentials 生成匿名客户端凭据

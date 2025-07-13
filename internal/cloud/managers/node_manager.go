@@ -23,10 +23,11 @@ func NewNodeManager(nodeRepo *repos.NodeRepository) *NodeManager {
 }
 
 // onClose 资源清理回调
-func (nm *NodeManager) onClose() {
+func (nm *NodeManager) onClose() error {
 	utils.Infof("Node manager resources cleaned up")
 	// 清理节点缓存和连接信息
 	// 这里可以添加清理节点资源的逻辑
+	return nil
 }
 
 // GetNodeServiceInfo 获取节点服务信息

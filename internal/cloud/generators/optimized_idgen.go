@@ -201,11 +201,11 @@ func NewOptimizedClientIDGenerator(storage storages.Storage, parentCtx context.C
 }
 
 // onClose 资源清理回调
-func (g *OptimizedClientIDGenerator) onClose() {
+func (g *OptimizedClientIDGenerator) onClose() error {
 	utils.Infof("Optimized client ID generator resources cleaned up")
 
 	// 保存所有段数据
-	g.saveAllSegments()
+	return g.saveAllSegments()
 }
 
 // loadAllSegments 加载所有段数据
@@ -221,14 +221,15 @@ func (g *OptimizedClientIDGenerator) loadAllSegments() {
 }
 
 // saveAllSegments 保存所有段数据
-func (g *OptimizedClientIDGenerator) saveAllSegments() {
-	for i, segment := range g.segments {
+func (g *OptimizedClientIDGenerator) saveAllSegments() error {
+	for _, segment := range g.segments {
 		if err := segment.saveToStorage(); err != nil {
-			utils.Errorf("Failed to save segment %d: %v", i, err)
+			return err
 		}
 	}
 
 	utils.Infof("Saved all segment data")
+	return nil
 }
 
 // updateSegmentStats 更新段统计信息

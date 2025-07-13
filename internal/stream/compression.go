@@ -39,11 +39,14 @@ func (r *GzipReader) Read(p []byte) (n int, err error) {
 	return r.gzipReader.Read(p)
 }
 
-func (r *GzipReader) onClose() {
+func (r *GzipReader) onClose() error {
 	if r.gzipReader != nil {
-		_ = r.gzipReader.Close()
-		r.gzipReader = nil
+		defer func() {
+			r.gzipReader = nil
+		}()
+		return r.gzipReader.Close()
 	}
+	return nil
 }
 
 func NewGzipReader(reader io.Reader, parentCtx context.Context) *GzipReader {
@@ -72,19 +75,23 @@ func (w *GzipWriter) Write(p []byte) (n int, err error) {
 	return w.gWriter.Write(p)
 }
 
-func (w *GzipWriter) onClose() {
+func (w *GzipWriter) onClose() error {
 	w.closeMutex.Lock()
 	defer w.closeMutex.Unlock()
 
 	if w.closed {
-		return
+		return nil
 	}
 	w.closed = true
 
 	if w.gWriter != nil {
-		_ = w.gWriter.Close()
-		w.gWriter = nil
+		defer func() {
+			w.gWriter = nil
+		}()
+		return w.gWriter.Close()
 	}
+
+	return nil
 }
 
 func NewGzipWriter(writer io.Writer, parentCtx context.Context) *GzipWriter {

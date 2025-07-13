@@ -121,12 +121,12 @@ func (q *QuicAdapter) ListenFrom(listenAddr string) error {
 }
 
 // onClose QUIC 特定的资源清理
-func (q *QuicAdapter) onClose() {
+func (q *QuicAdapter) onClose() error {
 	if q.listener != nil {
 		q.listener.Close()
 		q.listener = nil
 	}
-	q.BaseAdapter.onClose()
+	return q.BaseAdapter.onClose()
 }
 
 // generateTLSConfig 生成TLS配置（用于QUIC）

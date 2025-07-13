@@ -91,7 +91,7 @@ func (m *StreamManager) GetStreamCount() int {
 }
 
 // CloseAllStreams 关闭所有流
-func (m *StreamManager) CloseAllStreams() {
+func (m *StreamManager) CloseAllStreams() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -100,11 +100,12 @@ func (m *StreamManager) CloseAllStreams() {
 		utils.Debugf("Closed stream: %s", id)
 	}
 	m.streams = make(map[string]PackageStreamer)
+	return nil
 }
 
 // onClose 资源释放回调
-func (m *StreamManager) onClose() {
-	m.CloseAllStreams()
+func (m *StreamManager) onClose() error {
+	return m.CloseAllStreams()
 }
 
 // StreamConfig 流配置

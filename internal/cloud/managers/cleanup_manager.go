@@ -42,7 +42,7 @@ func NewCleanupManager(storage storages.Storage, lock distributed.DistributedLoc
 }
 
 // onClose 资源清理回调
-func (cm *CleanupManager) onClose() {
+func (cm *CleanupManager) onClose() error {
 	utils.Infof("Cleanup manager resources cleaned up")
 
 	// 停止清理任务
@@ -58,6 +58,7 @@ func (cm *CleanupManager) onClose() {
 	if cm.storage != nil {
 		utils.Infof("Cleanup storage resources cleaned up")
 	}
+	return nil
 }
 
 // RegisterCleanupTask 注册清理任务

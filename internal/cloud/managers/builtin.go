@@ -45,7 +45,7 @@ func (b *BuiltinCloudControl) Close() error {
 }
 
 // onClose 资源清理回调
-func (b *BuiltinCloudControl) onClose() {
+func (b *BuiltinCloudControl) onClose() error {
 	utils.Infof("Cleaning up cloud control resources...")
 
 	// 等待清理例程完全退出
@@ -66,6 +66,7 @@ func (b *BuiltinCloudControl) onClose() {
 	}
 
 	utils.Infof("Cloud control resources cleanup completed")
+	return nil
 }
 
 // cleanupRoutine 清理例程

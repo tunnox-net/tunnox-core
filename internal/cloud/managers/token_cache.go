@@ -178,11 +178,12 @@ func (m *TokenCacheManager) IsRefreshTokenRevoked(ctx context.Context, refreshTo
 }
 
 // onClose 资源清理回调
-func (mgr *TokenCacheManager) onClose() {
+func (mgr *TokenCacheManager) onClose() error {
 	utils.Infof("Token cache manager resources cleaned up")
 	// 清理所有缓存的Token
 	if mgr.storage != nil {
 		// 这里可以添加清理过期Token的逻辑
 		utils.Infof("Token cache storage resources cleaned up")
 	}
+	return nil
 }
