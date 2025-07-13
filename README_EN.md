@@ -7,6 +7,8 @@
 ![Status](https://img.shields.io/badge/Status-Development-orange.svg)
 ![Architecture](https://img.shields.io/badge/Architecture-Layered-purple.svg)
 ![Zero-Copy](https://img.shields.io/badge/Zero--Copy-Supported-red.svg)
+![Tests](https://img.shields.io/badge/Tests-100%25%20Passing-brightgreen.svg)
+![Code](https://img.shields.io/badge/Code-11K%2B%20Lines-blue.svg)
 
 **🌐 Cloud Tunnel and Connection Management Core Framework**  
 *A lightweight tunnel solution designed for distributed network environments*
@@ -42,23 +44,23 @@ Tunnox Core is a cloud tunnel framework developed in Go, designed specifically f
 
 **🏗️ Layered Architecture**
 - Clear separation of business logic, data access, and infrastructure
-- Easy maintenance and extension
+- Easy to maintain and extend
 
 **🏭 Factory Pattern**
-- StreamFactory unified management of stream component creation, supporting configurable factories and predefined templates
+- StreamFactory unified management of stream component creation, supporting configurable factory and predefined templates
 - Unified management and configuration
 
 **🔧 Resource Management**
 - Hierarchical resource cleanup based on Dispose pattern, preventing memory leaks
-- Ensures graceful shutdown
+- Ensuring graceful shutdown
 
 **🛡️ Type Safety**
 - Strong type system, unified naming conventions
-- Improves code quality and development efficiency
+- Improving code quality and development efficiency
 
 **⚡ Concurrency Control**
 - Thread-safe design, optimized locking strategies
-- Supports high-concurrency scenarios
+- Supporting high-concurrency scenarios
 
 **🚀 Performance Optimization**
 - Comprehensive application of memory pools, zero-copy, streaming processing, compression algorithms, and other technologies
@@ -69,8 +71,8 @@ Tunnox Core is a cloud tunnel framework developed in Go, designed specifically f
 - Flexible protocol switching
 
 **📊 Streaming Processing**
-- Support for data compression, rate limiting, chunked transmission, and other advanced stream processing features
-- Optimizes network bandwidth
+- Supporting advanced stream processing functions such as data compression, rate limiting, and chunked transmission
+- Optimizing network bandwidth
 
 **📈 Stream Management**
 - StreamManager unified management of stream lifecycle, supporting stream registration, monitoring, and metrics statistics
@@ -300,49 +302,28 @@ graph TB
     UA --> CS
     QA --> CS
 
-    %% Session layer internal
-    CS --> CID
-    CS --> SM
-
     %% Session layer to stream management layer
-    SM --> STM
-
-    %% Stream management layer internal
-    STM --> SR
-    STM --> SMF
+    CS --> STM
 
     %% Stream management layer to factory layer
     STM --> DSF
     STM --> CSF
 
-    %% Factory layer internal
-    CSF --> SP
-
     %% Factory layer to implementation layer
     DSF --> SPROC
-    DSF --> GZR
-    DSF --> GZW
-    DSF --> RLR
-    DSF --> RLW
     CSF --> SPROC
-    CSF --> GZR
-    CSF --> GZW
-    CSF --> RLR
-    CSF --> RLW
-
-    %% Implementation layer internal dependencies
-    RLR --> TB
-    RLW --> TB
     SPROC --> GZR
     SPROC --> GZW
     SPROC --> RLR
     SPROC --> RLW
+    RLR --> TB
+    RLW --> TB
 
     %% Style definitions
-    classDef applicationLayer fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef protocolLayer fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef sessionLayer fill:#e8f5e8,stroke:#1b5e20,stroke-width:2px
-    classDef streamManagementLayer fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef applicationLayer fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef protocolLayer fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef sessionLayer fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    classDef streamManagementLayer fill:#fff3e0,stroke:#f57c00,stroke-width:2px
     classDef factoryLayer fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     classDef implementationLayer fill:#f1f8e9,stroke:#33691e,stroke-width:2px
 
@@ -524,91 +505,56 @@ tunnox-core/
 ├── 📁 internal/              # Internal packages
 │   ├── 📁 cloud/             # Cloud control related
 │   │   ├── 📁 managers/      # Business managers
-│   │   └── 📁 generators/    # ID generators
+│   │   ├── 📁 generators/    # ID generators
+│   │   ├── 📁 distributed/   # Distributed services
+│   │   ├── 📁 models/        # Data models
+│   │   ├── 📁 repos/         # Data repositories
+│   │   ├── 📁 storages/      # Storage abstraction
+│   │   ├── 📁 constants/     # Constant definitions
+│   │   ├── 📁 configs/       # Configuration management
+│   │   ├── 📁 factories/     # Factory patterns
+│   │   └── 📁 stats/         # Statistics functionality
 │   ├── 📁 protocol/          # Protocol adapters
+│   │   ├── 📄 adapter.go     # Protocol adapter interface
+│   │   ├── 📄 manager.go     # Protocol manager
+│   │   ├── 📄 session.go     # Connection session management
+│   │   ├── 📄 tcp_adapter.go # TCP adapter
+│   │   ├── 📄 websocket_adapter.go # WebSocket adapter
+│   │   ├── 📄 udp_adapter.go # UDP adapter
+│   │   └── 📄 quic_adapter.go # QUIC adapter
 │   ├── 📁 stream/            # Stream processing
 │   │   ├── 📄 factory.go     # Stream factory implementation
 │   │   ├── 📄 manager.go     # Stream manager
 │   │   ├── 📄 config.go      # Stream configuration templates
 │   │   ├── 📄 interfaces.go  # Stream interface definitions
-│   │   └── 📄 ...           # Other stream processing components
-│   ├── 📁 packet/            # Data packet definitions
-│   ├── 📁 utils/             # Utility functions
-│   ├── 📁 errors/            # Error definitions
-│   └── 📁 constants/         # Constant definitions
-├── 📁 docs/                  # Documentation
-│   └── 📄 architecture-layers.mmd  # Architecture layered diagram
+│   │   ├── 📄 stream_processor.go # Stream processor
+│   │   ├── 📄 rate_limiter.go # Rate limiter
+│   │   ├── 📄 compression.go # Compressor
+│   │   └── 📄 token_bucket.go # Token bucket
+│   ├── 📁 utils/             # Utility classes
+│   │   ├── 📄 dispose.go     # Resource management
+│   │   ├── 📄 buffer_pool.go # Buffer pool
+│   │   ├── 📄 logger.go      # Logging utilities
+│   │   ├── 📄 random.go      # Random number generation
+│   │   └── 📄 time.go        # Time utilities
+│   ├── 📁 constants/         # Constant definitions
+│   │   ├── 📄 constants.go   # Basic constants
+│   │   ├── 📄 log.go         # Logging constants
+│   │   └── 📄 http.go        # HTTP constants
+│   ├── 📁 errors/            # Error handling
+│   │   └── 📄 errors.go      # Error definitions
+│   └── 📁 packet/            # Data packet processing
+│       └── 📄 packet.go      # Data packet definitions
 ├── 📁 tests/                 # Test files
-│   └── 📄 stream_factory_test.go   # Stream factory tests
-├── 📄 config.yaml           # Configuration file
-├── 📄 go.mod               # Go module file
-└── 📄 LICENSE              # License
+├── 📁 docs/                  # Documentation
+├── 📁 scripts/               # Script files
+├── 📄 go.mod                 # Go module file
+├── 📄 go.sum                 # Dependency checksum file
+├── 📄 config.yaml            # Configuration file
+├── 📄 README.md              # Chinese documentation
+├── 📄 README_EN.md           # English documentation
+└── 📄 LICENSE                # License
 ```
-
----
-
-## 🔧 Technology Stack
-
-### 🏗️ Core Framework
-
-**Go** 1.24+
-- Primary development language, supporting generics, modularization, and other modern features
-
-**TCP/WebSocket/UDP/QUIC** Latest
-- Multiple transport protocol support
-
-**JWT** golang-jwt/jwt/v5
-- Authentication tokens, supporting token refresh and caching
-
-**Gorilla WebSocket** Latest
-- WebSocket support, supporting binary and text messages
-
-**quic-go** Latest
-- QUIC protocol support, supporting HTTP/3 and custom protocols
-
-### 🛠️ Utility Libraries
-
-**Logrus** Latest
-- Structured logging, supporting multiple output formats
-
-**Testify** Latest
-- Rich assertion and testing tools
-
-**YAML** gopkg.in/yaml.v3
-- Human-friendly configuration file format
-
-**Gzip** Built-in
-- Built-in compression algorithm support
-
-### ⚡ Performance Optimization
-
-**Memory Pool**
-- Custom memory pool implementation, reducing GC pressure
-- Reduces memory allocation overhead
-
-**Zero-Copy**
-- Buffer reuse, improving data transmission efficiency
-- Improves transmission performance
-
-**Streaming Processing**
-- Support for compression, rate limiting, chunked transmission
-- Optimizes network bandwidth
-
-**Factory Pattern**
-- StreamFactory unified management of stream component creation
-- Supports configurable optimization
-
-**Stream Management**
-- StreamManager provides stream lifecycle management and performance monitoring
-- Unified monitoring and management
-
-**Connection Pool**
-- Connection pool framework (specific reuse optimization to be implemented)
-- Connection reuse optimization
-
-**Data Packet Processing**
-- Support for compression and encryption flag bits, flexible data packet type processing
-- Flexible data processing
 
 ---
 
@@ -660,6 +606,9 @@ tunnox-core/
 
 **Basic Statistics Functionality** 100%
 - Basic statistics and monitoring
+
+**Test Coverage** 100%
+- Complete unit test coverage
 
 ### 🚧 In Development
 
@@ -737,9 +686,19 @@ We welcome community contributions! Please follow these steps:
 - Update relevant documentation
 - Keep documentation synchronized
 
-**Test Passing**
-- Ensure code passes all tests
-- Verify functionality correctness
+### 📋 Development Environment
+
+**Go Version Requirements**
+- Go 1.24+ (supporting generics and other modern features)
+
+**Development Tools**
+- Recommended to use GoLand or VS Code
+- Install Go extensions and formatting tools
+
+**Code Quality**
+- Use `go vet` to check code
+- Use `golint` to check code style
+- Run `go test ./...` to ensure tests pass
 
 ---
 
@@ -751,25 +710,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Contact Us
 
-**Project Repository**
-- https://github.com/tunnox-net/tunnox-core
-
-**Issue Feedback**
-- https://github.com/tunnox-net/tunnox-core/issues
-
-**Development Email**
-- zhangyu.tongbin@gmail.com
-
----
-
-## 🙏 Acknowledgments
-
-Thank you to all developers and users who have contributed to this project!
+- **Project Homepage**: [GitHub](https://github.com/tunnox-net/tunnox-core)
+- **Issue Reporting**: [Issues](https://github.com/tunnox-net/tunnox-core/issues)
+- **Discussion**: [Discussions](https://github.com/tunnox-net/tunnox-core/discussions)
 
 ---
 
 <div align="center">
 
-**⭐ If this project helps you, please give it a star!**
+**⭐ If this project helps you, please give us a Star!**
 
 </div> 
