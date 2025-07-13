@@ -5,18 +5,18 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
-	"syscall"
+	"time"
 	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/protocol"
+	"tunnox-core/internal/stream"
+	"tunnox-core/internal/utils"
 
 	"gopkg.in/yaml.v3"
 
 	"tunnox-core/internal/constants"
-	"tunnox-core/internal/protocol"
-	"tunnox-core/internal/utils"
 )
 
 // ProtocolConfig 协议配置
@@ -78,18 +78,79 @@ func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Contex
 	}
 }
 
-// Server 服务器结构
+// CloudService 云控制服务适配器
+type CloudService struct {
+	cloudControl managers.CloudControlAPI
+	name         string
+}
+
+// NewCloudService 创建云控制服务
+func NewCloudService(name string, cloudControl managers.CloudControlAPI) *CloudService {
+	return &CloudService{
+		cloudControl: cloudControl,
+		name:         name,
+	}
+}
+
+func (cs *CloudService) Name() string {
+	return cs.name
+}
+
+func (cs *CloudService) Start(ctx context.Context) error {
+	utils.Infof("Starting cloud service: %s", cs.name)
+	// 云控制器通常不需要显式启动
+	return nil
+}
+
+func (cs *CloudService) Stop(ctx context.Context) error {
+	utils.Infof("Stopping cloud service: %s", cs.name)
+	if cs.cloudControl != nil {
+		return cs.cloudControl.Close()
+	}
+	return nil
+}
+
+// StorageService 存储服务适配器
+type StorageService struct {
+	storage storages.Storage
+	name    string
+}
+
+// NewStorageService 创建存储服务
+func NewStorageService(name string, storage storages.Storage) *StorageService {
+	return &StorageService{
+		storage: storage,
+		name:    name,
+	}
+}
+
+func (ss *StorageService) Name() string {
+	return ss.name
+}
+
+func (ss *StorageService) Start(ctx context.Context) error {
+	utils.Infof("Starting storage service: %s", ss.name)
+	// 存储服务通常不需要显式启动
+	return nil
+}
+
+func (ss *StorageService) Stop(ctx context.Context) error {
+	utils.Infof("Stopping storage service: %s", ss.name)
+	// 存储服务通常不需要显式停止
+	return nil
+}
+
+// Server 服务器结构（使用ServiceManager）
 type Server struct {
 	config          *AppConfig
-	cloudControl    managers.CloudControlAPI
+	serviceManager  *utils.ServiceManager
 	protocolMgr     *protocol.Manager
 	serverId        string
 	storage         storages.Storage
 	idManager       *generators.IDManager
 	session         *protocol.ConnectionSession
 	protocolFactory *ProtocolFactory
-
-	utils.Dispose
+	cloudControl    managers.CloudControlAPI
 }
 
 // NewServer 创建新服务器
@@ -99,38 +160,75 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 		utils.Fatalf("Failed to initialize logger: %v", err)
 	}
 
+	// 创建服务管理器
+	serviceConfig := utils.DefaultServiceConfig()
+	serviceConfig.EnableSignalHandling = true
+	serviceConfig.GracefulShutdownTimeout = 30 * time.Second
+	serviceConfig.ResourceDisposeTimeout = 10 * time.Second
+
+	serviceManager := utils.NewServiceManager(serviceConfig)
+
 	// 创建云控制器
 	cloudControl := managers.NewBuiltinCloudControl(nil)
 
 	// 创建服务器
 	server := &Server{
-		config:       config,
-		cloudControl: cloudControl,
+		config:         config,
+		serviceManager: serviceManager,
+		cloudControl:   cloudControl,
 	}
 
-	server.SetCtx(parentCtx, server.onClose)
-
 	// 创建存储和ID管理器
-	server.storage = storages.NewMemoryStorage(server.Ctx())
-	server.idManager = generators.NewIDManager(server.storage, server.Ctx())
+	server.storage = storages.NewMemoryStorage(parentCtx)
+	server.idManager = generators.NewIDManager(server.storage, parentCtx)
 
-	// 创建 ConnectionSession（使用新的架构）
-	server.session = protocol.NewConnectionSession(server.idManager, server.Ctx())
+	// 创建 ConnectionSession
+	server.session = protocol.NewConnectionSession(server.idManager, parentCtx)
 
 	// 创建协议工厂
 	server.protocolFactory = NewProtocolFactory(server.session)
 
-	// 创建协议适配器管理器，纳入Dispose树
-	server.protocolMgr = protocol.NewManager(server.Ctx())
+	// 创建协议适配器管理器
+	server.protocolMgr = protocol.NewManager(parentCtx)
 
 	server.serverId, _ = server.idManager.GenerateConnectionID()
+
+	// 注册服务到服务管理器
+	server.registerServices()
 
 	return server
 }
 
+// registerServices 注册所有服务到服务管理器
+func (s *Server) registerServices() {
+	// 注册云控制服务
+	cloudService := NewCloudService("Cloud-Control", s.cloudControl)
+	s.serviceManager.RegisterService(cloudService)
+
+	// 注册存储服务
+	storageService := NewStorageService("Storage", s.storage)
+	s.serviceManager.RegisterService(storageService)
+
+	// 注册协议服务
+	protocolService := protocol.NewProtocolService("Protocol-Manager", s.protocolMgr)
+	s.serviceManager.RegisterService(protocolService)
+
+	// 注册流服务
+	streamFactory := stream.NewDefaultStreamFactory(s.serviceManager.GetContext())
+	streamManager := stream.NewStreamManager(streamFactory, s.serviceManager.GetContext())
+	streamService := stream.NewStreamService("Stream-Manager", streamManager)
+	s.serviceManager.RegisterService(streamService)
+
+	// 注册资源（只注册实现了Disposable接口的资源）
+	// 注意：session、idManager、protocolFactory需要实现Disposable接口才能注册
+
+	utils.Infof("Registered %d services and %d resources",
+		s.serviceManager.GetServiceCount(),
+		s.serviceManager.GetResourceCount())
+}
+
 // setupProtocolAdapters 设置协议适配器
 func (s *Server) setupProtocolAdapters() error {
-
 	// 获取启用的协议配置
 	enabledProtocols := s.getEnabledProtocols()
 	if len(enabledProtocols) == 0 {
@@ -143,7 +241,7 @@ func (s *Server) setupProtocolAdapters() error {
 
 	for protocolName, config := range enabledProtocols {
 		// 创建适配器
-		adapter, err := s.protocolFactory.CreateAdapter(protocolName, s.protocolMgr.Ctx())
+		adapter, err := s.protocolFactory.CreateAdapter(protocolName, s.serviceManager.GetContext())
 		if err != nil {
 			return fmt.Errorf("failed to create %s adapter: %v", protocolName, err)
 		}
@@ -176,30 +274,6 @@ func (s *Server) getEnabledProtocols() map[string]ProtocolConfig {
 	return enabled
 }
 
-// onClose 资源释放回调
-func (s *Server) onClose() error {
-	// 优雅关闭协议适配器
-	if s.protocolMgr != nil {
-		err := s.protocolMgr.CloseAll()
-		if err != nil {
-			return err
-		}
-	}
-
-	// 关闭云控制器
-	if s.cloudControl != nil {
-		utils.Info(constants.MsgClosingCloudControl)
-		if err := s.cloudControl.Close(); err != nil {
-			utils.Errorf("Cloud control closed with error: %v", err)
-			return err
-		} else {
-			utils.Info(constants.MsgCloudControlClosed)
-		}
-	}
-
-	return nil
-}
-
 // Start 启动服务器
 func (s *Server) Start() error {
 	utils.Info(constants.MsgStartingServer)
@@ -209,15 +283,9 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to setup protocol adapters: %v", err)
 	}
 
-	// 启动所有协议适配器
-	if s.protocolMgr != nil {
-		utils.Info("Starting all protocol adapters...")
-		if err := s.protocolMgr.StartAll(); err != nil {
-			return fmt.Errorf("failed to start protocol adapters: %v", err)
-		}
-		utils.Info(constants.MsgAllAdaptersStarted)
-	} else {
-		utils.Warn("Protocol manager is nil")
+	// 使用服务管理器启动所有服务
+	if err := s.serviceManager.StartAllServices(); err != nil {
+		return fmt.Errorf("failed to start services: %v", err)
 	}
 
 	utils.Info(constants.MsgServerStarted)
@@ -228,49 +296,39 @@ func (s *Server) Start() error {
 func (s *Server) Stop() error {
 	utils.Info(constants.MsgShuttingDownServer)
 
-	// 关闭协议适配器
-	if s.protocolMgr != nil {
-		s.protocolMgr.CloseAll()
-		utils.Info(constants.MsgAllProtocolManagerClosed)
+	// 使用服务管理器停止所有服务
+	if err := s.serviceManager.StopAllServices(); err != nil {
+		utils.Errorf("Failed to stop services: %v", err)
 	}
 
-	// 关闭云控制器
-	if s.cloudControl != nil {
-		utils.Info(constants.MsgClosingCloudControl)
-		if err := s.cloudControl.Close(); err != nil {
-			utils.Errorf("Cloud control closed with error: %v", err)
-		} else {
-			utils.Info(constants.MsgCloudControlClosed)
-		}
-	}
-
-	s.Ctx().Done()
 	utils.Info(constants.MsgServerShutdownCompleted)
 	return nil
 }
 
-// WaitForShutdown 等待关闭信号
-func (s *Server) WaitForShutdown() {
-	// 创建信号通道
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+// Run 运行服务器（使用ServiceManager的优雅关闭）
+func (s *Server) Run() error {
+	utils.Info("Starting Tunnox Core with ServiceManager...")
 
-	// 等待信号
-	<-quit
-
-	utils.Info(constants.MsgReceivedShutdownSignal)
-
-	// 停止服务器
-	if err := s.Stop(); err != nil {
-		utils.Errorf("Failed to stop server: %v", err)
-		os.Exit(1)
+	// 设置协议适配器（但不启动服务）
+	if err := s.setupProtocolAdapters(); err != nil {
+		return fmt.Errorf("failed to setup protocol adapters: %v", err)
 	}
 
-	// 确保所有资源都被清理
-	utils.Info(constants.MsgCleaningUpServerResources)
-	s.Dispose.Close()
+	// 使用服务管理器运行（包含信号处理和优雅关闭）
+	return s.serviceManager.Run()
+}
 
-	utils.Info(constants.MsgServerShutdownMainExited)
+// RunWithContext 使用指定上下文运行服务器
+func (s *Server) RunWithContext(ctx context.Context) error {
+	utils.Info("Starting Tunnox Core with ServiceManager...")
+
+	// 设置协议适配器（但不启动服务）
+	if err := s.setupProtocolAdapters(); err != nil {
+		return fmt.Errorf("failed to setup protocol adapters: %v", err)
+	}
+
+	// 使用服务管理器运行（包含信号处理和优雅关闭）
+	return s.serviceManager.RunWithContext(ctx)
 }
 
 // loadConfig 加载配置文件
@@ -451,11 +509,10 @@ func main() {
 	// 创建服务器
 	server := NewServer(config, context.Background())
 
-	// 启动服务器
-	if err := server.Start(); err != nil {
-		utils.Fatalf("Failed to start server: %v", err)
+	// 使用ServiceManager运行服务器（包含信号处理和优雅关闭）
+	if err := server.Run(); err != nil {
+		utils.Fatalf("Failed to run server: %v", err)
 	}
 
-	// 等待关闭信号并处理关闭
-	server.WaitForShutdown()
+	utils.Info("Tunnox Core server exited gracefully")
 }

@@ -4,6 +4,7 @@
 # Binaries for programs and plugins
 
 ### VisualStudioCode template
+**/*.log
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json

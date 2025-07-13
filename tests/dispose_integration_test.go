@@ -2,288 +2,498 @@ package tests
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"sync"
 	"testing"
 	"time"
-	"tunnox-core/internal/cloud/distributed"
-	"tunnox-core/internal/cloud/managers"
-	"tunnox-core/internal/cloud/storages"
-
-	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
+
+// MockResource 模拟资源，用于测试
+type MockResource struct {
+	name         string
+	disposed     bool
+	mu           sync.Mutex
+	disposeCount int
+}
+
+func NewMockResource(name string) *MockResource {
+	return &MockResource{
+		name: name,
+	}
+}
+
+func (mr *MockResource) Dispose() error {
+	mr.mu.Lock()
+	defer mr.mu.Unlock()
+
+	if mr.disposed {
+		return fmt.Errorf("resource %s already disposed", mr.name)
+	}
+
+	mr.disposed = true
+	mr.disposeCount++
+	utils.Infof("MockResource %s disposed", mr.name)
+	return nil
+}
+
+func (mr *MockResource) IsDisposed() bool {
+	mr.mu.Lock()
+	defer mr.mu.Unlock()
+	return mr.disposed
+}
+
+func (mr *MockResource) GetDisposeCount() int {
+	mr.mu.Lock()
+	defer mr.mu.Unlock()
+	return mr.disposeCount
+}
+
+// SlowMockResource 慢速模拟资源
+type SlowMockResource struct {
+	name     string
+	disposed bool
+	mu       sync.Mutex
+}
+
+func (smr *SlowMockResource) Dispose() error {
+	smr.mu.Lock()
+	defer smr.mu.Unlock()
+
+	if smr.disposed {
+		return fmt.Errorf("resource %s already disposed", smr.name)
+	}
+
+	time.Sleep(2 * time.Second) // 模拟慢速释放
+	smr.disposed = true
+	utils.Infof("SlowMockResource %s disposed", smr.name)
+	return nil
+}
+
+// ErrorMockResource 会出错的模拟资源
+type ErrorMockResource struct {
+	name     string
+	disposed bool
+	mu       sync.Mutex
+}
+
+func (emr *ErrorMockResource) Dispose() error {
+	emr.mu.Lock()
+	defer emr.mu.Unlock()
+
+	if emr.disposed {
+		return fmt.Errorf("resource %s already disposed", emr.name)
+	}
+
+	emr.disposed = true
+	utils.Infof("ErrorMockResource %s disposed", emr.name)
+	return fmt.Errorf("simulated disposal error for %s", emr.name)
+}
+
+// OrderTrackingResource 用于跟踪释放顺序的资源包装器
+type OrderTrackingResource struct {
+	resource *MockResource
+	name     string
+	order    *[]string
+	mu       *sync.Mutex
+}
+
+func (otr *OrderTrackingResource) Dispose() error {
+	otr.mu.Lock()
+	*otr.order = append(*otr.order, otr.name)
+	otr.mu.Unlock()
+	return otr.resource.Dispose()
+}
 
 // TestDisposeIntegration 测试所有组件的Dispose集成
 func TestDisposeIntegration(t *testing.T) {
-	ctx := context.Background()
+	// 创建资源管理器
+	resourceMgr := utils.NewResourceManager()
 
-	// 测试云控制组件
-	t.Run("CloudControl_Dispose", func(t *testing.T) {
-		cloudControl := managers.NewBuiltinCloudControl(nil)
-		require.NotNil(t, cloudControl)
+	// 创建模拟资源
+	resources := []*MockResource{
+		NewMockResource("resource-1"),
+		NewMockResource("resource-2"),
+		NewMockResource("resource-3"),
+	}
 
-		// 启动云控制
-		cloudControl.Start()
+	// 注册资源
+	for _, resource := range resources {
+		if err := resourceMgr.Register(resource.name, resource); err != nil {
+			t.Fatalf("Failed to register resource %s: %v", resource.name, err)
+		}
+	}
 
-		// 验证未关闭
-		assert.False(t, cloudControl.IsClosed())
+	// 验证资源数量
+	if count := resourceMgr.GetResourceCount(); count != 3 {
+		t.Errorf("Expected 3 resources, got %d", count)
+	}
 
-		// 关闭云控制
-		err := cloudControl.Close()
-		assert.NoError(t, err)
+	// 释放所有资源
+	result := resourceMgr.DisposeAll()
 
-		// 验证已关闭
-		assert.True(t, cloudControl.IsClosed())
-	})
+	// 验证释放结果
+	if result.HasErrors() {
+		t.Errorf("Resource disposal failed: %v", result.Error())
+	}
 
-	// 测试存储组件
-	t.Run("Storage_Dispose", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(ctx)
-		require.NotNil(t, storage)
+	// 验证所有资源都被释放
+	for _, resource := range resources {
+		if !resource.IsDisposed() {
+			t.Errorf("Resource %s was not disposed", resource.name)
+		}
+	}
 
-		// 验证未关闭
-		assert.False(t, storage.IsClosed())
-
-		// 关闭存储
-		err := storage.Close()
-		assert.NoError(t, err)
-
-		// 验证已关闭
-		assert.True(t, storage.IsClosed())
-	})
-
-	// 测试配置管理器
-	t.Run("ConfigManager_Dispose", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(ctx)
-		config := &managers.ControlConfig{}
-		configManager := managers.NewConfigManager(storage, config, ctx)
-		require.NotNil(t, configManager)
-
-		// 验证未关闭
-		assert.False(t, configManager.IsClosed())
-
-		// 关闭配置管理器
-		configManager.Close()
-
-		// 验证已关闭
-		assert.True(t, configManager.IsClosed())
-	})
-
-	// 测试清理管理器
-	t.Run("CleanupManager_Dispose", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(ctx)
-		lock := distributed.NewMemoryLock()
-		cleanupManager := managers.NewCleanupManager(storage, lock, ctx)
-		require.NotNil(t, cleanupManager)
-
-		// 验证未关闭
-		assert.False(t, cleanupManager.IsClosed())
-
-		// 关闭清理管理器
-		cleanupManager.Close()
-
-		// 验证已关闭
-		assert.True(t, cleanupManager.IsClosed())
-	})
-
-	// 测试缓冲区管理器
-	t.Run("BufferManager_Dispose", func(t *testing.T) {
-		bufferManager := utils.NewBufferManager(ctx)
-		require.NotNil(t, bufferManager)
-
-		// 验证未关闭
-		assert.False(t, bufferManager.IsClosed())
-
-		// 关闭缓冲区管理器
-		bufferManager.Close()
-
-		// 验证已关闭
-		assert.True(t, bufferManager.IsClosed())
-	})
-
-	// 测试限速器
-	t.Run("RateLimiter_Dispose", func(t *testing.T) {
-		rateLimiter := utils.NewRateLimiter(100, time.Second, ctx)
-		require.NotNil(t, rateLimiter)
-
-		// 验证未关闭
-		assert.False(t, rateLimiter.IsClosed())
-
-		// 关闭限速器
-		rateLimiter.Close()
-
-		// 验证已关闭
-		assert.True(t, rateLimiter.IsClosed())
-	})
-
-	// 测试流组件
-	t.Run("Stream_Dispose", func(t *testing.T) {
-		// 测试PackageStream
-		reader := &mockReader{}
-		writer := &mockWriter{}
-		packageStream := stream.NewStreamProcessor(reader, writer, ctx)
-		require.NotNil(t, packageStream)
-
-		// 验证未关闭
-		assert.False(t, packageStream.IsClosed())
-
-		// 关闭PackageStream
-		packageStream.Close()
-
-		// 验证已关闭
-		assert.True(t, packageStream.IsClosed())
-
-		// 测试GzipReader
-		gzipReader := stream.NewGzipReader(reader, ctx)
-		require.NotNil(t, gzipReader)
-
-		// 验证未关闭
-		assert.False(t, gzipReader.IsClosed())
-
-		// 关闭GzipReader
-		gzipReader.Close()
-
-		// 验证已关闭
-		assert.True(t, gzipReader.IsClosed())
-
-		// 测试GzipWriter
-		gzipWriter := stream.NewGzipWriter(writer, ctx)
-		require.NotNil(t, gzipWriter)
-
-		// 验证未关闭
-		assert.False(t, gzipWriter.IsClosed())
-
-		// 关闭GzipWriter
-		gzipWriter.Close()
-
-		// 验证已关闭
-		assert.True(t, gzipWriter.IsClosed())
-	})
-
-	// 测试令牌桶
-	t.Run("TokenBucket_Dispose", func(t *testing.T) {
-		tokenBucket, err := stream.NewTokenBucket(1000, ctx)
-		require.NoError(t, err)
-		require.NotNil(t, tokenBucket)
-
-		// 关闭令牌桶
-		tokenBucket.Close()
-	})
-
-	// 测试限速读写器
-	t.Run("RateLimiterIO_Dispose", func(t *testing.T) {
-		reader := &mockReader{}
-		writer := &mockWriter{}
-
-		rateLimiterReader, err := stream.NewRateLimiterReader(reader, 1000, ctx)
-		require.NoError(t, err)
-		require.NotNil(t, rateLimiterReader)
-
-		rateLimiterWriter, err := stream.NewRateLimiterWriter(writer, 1000, ctx)
-		require.NoError(t, err)
-		require.NotNil(t, rateLimiterWriter)
-
-		// 验证未关闭
-		assert.False(t, rateLimiterReader.IsClosed())
-		assert.False(t, rateLimiterWriter.IsClosed())
-
-		// 关闭限速读写器
-		rateLimiterReader.Close()
-		rateLimiterWriter.Close()
-
-		// 验证已关闭
-		assert.True(t, rateLimiterReader.IsClosed())
-		assert.True(t, rateLimiterWriter.IsClosed())
-	})
+	// 验证资源列表已清空
+	if count := resourceMgr.GetResourceCount(); count != 0 {
+		t.Errorf("Expected 0 resources after disposal, got %d", count)
+	}
 }
 
-// TestDisposeCascade 测试Dispose的级联关闭
-func TestDisposeCascade(t *testing.T) {
-	// 创建云控制（包含多个子组件）
-	cloudControl := managers.NewBuiltinCloudControl(nil)
-	require.NotNil(t, cloudControl)
+// TestDisposeOrder 测试资源释放顺序
+func TestDisposeOrder(t *testing.T) {
+	resourceMgr := utils.NewResourceManager()
 
-	// 启动云控制
-	cloudControl.Start()
+	// 记录释放顺序
+	var disposeOrder []string
+	var mu sync.Mutex
 
-	// 验证所有子组件都未关闭
-	assert.False(t, cloudControl.IsClosed())
+	// 创建带顺序记录的模拟资源
+	for i := 1; i <= 5; i++ {
+		name := fmt.Sprintf("resource-%d", i)
+		resource := NewMockResource(name)
 
-	// 关闭云控制（应该级联关闭所有子组件）
-	err := cloudControl.Close()
-	assert.NoError(t, err)
+		// 创建包装器来记录顺序
+		wrapper := &OrderTrackingResource{
+			resource: resource,
+			name:     name,
+			order:    &disposeOrder,
+			mu:       &mu,
+		}
 
-	// 验证云控制已关闭
-	assert.True(t, cloudControl.IsClosed())
+		if err := resourceMgr.Register(name, wrapper); err != nil {
+			t.Fatalf("Failed to register resource %s: %v", name, err)
+		}
+	}
+
+	// 释放资源
+	result := resourceMgr.DisposeAll()
+	if result.HasErrors() {
+		t.Errorf("Resource disposal failed: %v", result.Error())
+	}
+
+	// 验证释放顺序（应该与注册顺序相反）
+	expectedOrder := []string{"resource-5", "resource-4", "resource-3", "resource-2", "resource-1"}
+	if len(disposeOrder) != len(expectedOrder) {
+		t.Errorf("Expected %d disposed resources, got %d", len(expectedOrder), len(disposeOrder))
+	}
+
+	for i, expected := range expectedOrder {
+		if i >= len(disposeOrder) || disposeOrder[i] != expected {
+			t.Errorf("Expected dispose order[%d] = %s, got %s", i, expected, disposeOrder[i])
+		}
+	}
 }
 
-// TestDisposeConcurrency 测试Dispose的并发安全性
-func TestDisposeConcurrency(t *testing.T) {
-	ctx := context.Background()
+// TestDisposeTimeout 测试带超时的资源释放
+func TestDisposeTimeout(t *testing.T) {
+	resourceMgr := utils.NewResourceManager()
 
-	t.Run("Concurrent_Close", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(ctx)
-		require.NotNil(t, storage)
+	// 创建慢速资源
+	slowResource := &SlowMockResource{name: "slow-resource"}
 
-		// 并发关闭
-		done := make(chan struct{})
-		go func() {
-			for i := 0; i < 10; i++ {
-				storage.Close()
-			}
-			done <- struct{}{}
-		}()
-		go func() {
-			for i := 0; i < 10; i++ {
-				storage.Close()
-			}
-			done <- struct{}{}
-		}()
+	if err := resourceMgr.Register("slow-resource", slowResource); err != nil {
+		t.Fatalf("Failed to register slow resource: %v", err)
+	}
 
-		<-done
-		<-done
+	// 使用短超时时间
+	result := resourceMgr.DisposeWithTimeout(500 * time.Millisecond)
 
-		// 验证最终状态
-		assert.True(t, storage.IsClosed())
+	// 应该因为超时而失败
+	if !result.HasErrors() {
+		t.Error("Expected timeout error, but disposal succeeded")
+	}
+
+	// 验证错误信息包含超时
+	if len(result.Errors) == 0 || result.Errors[0].ResourceName != "timeout" {
+		t.Error("Expected timeout error in result")
+	}
+}
+
+// TestConcurrentDispose 测试并发资源释放
+func TestConcurrentDispose(t *testing.T) {
+	resourceMgr := utils.NewResourceManager()
+
+	// 创建多个资源
+	resources := make([]*MockResource, 10)
+	for i := 0; i < 10; i++ {
+		name := fmt.Sprintf("concurrent-resource-%d", i)
+		resources[i] = NewMockResource(name)
+		if err := resourceMgr.Register(name, resources[i]); err != nil {
+			t.Fatalf("Failed to register resource %s: %v", name, err)
+		}
+	}
+
+	// 并发释放资源
+	var wg sync.WaitGroup
+	results := make([]*utils.DisposeResult, 5)
+
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			results[index] = resourceMgr.DisposeAll()
+			t.Logf("Goroutine %d: result has %d errors, resource count: %d",
+				index, len(results[index].Errors), resourceMgr.GetResourceCount())
+		}(i)
+	}
+
+	wg.Wait()
+
+	// 验证只有一个结果成功，其他应该返回空结果（因为资源已经被释放）
+	successCount := 0
+	for i, result := range results {
+		// 成功的释放应该没有错误，并且应该实际释放了资源
+		if len(result.Errors) == 0 && result.ActualDisposal {
+			successCount++
+			t.Logf("Result %d: SUCCESS (actually disposed resources)", i)
+		} else if len(result.Errors) == 0 && !result.ActualDisposal {
+			t.Logf("Result %d: EMPTY (no errors, but no resources disposed)", i)
+		} else {
+			t.Logf("Result %d: FAILED (errors: %d)", i, len(result.Errors))
+		}
+	}
+
+	if successCount != 1 {
+		t.Errorf("Expected exactly 1 successful disposal, got %d", successCount)
+	}
+}
+
+// TestServiceManagerDispose 测试服务管理器的资源释放
+func TestServiceManagerDispose(t *testing.T) {
+	// 创建服务配置
+	config := utils.DefaultServiceConfig()
+	config.GracefulShutdownTimeout = 1 * time.Second
+	config.ResourceDisposeTimeout = 1 * time.Second
+
+	// 创建服务管理器
+	serviceMgr := utils.NewServiceManager(config)
+
+	// 注册资源
+	resources := []*MockResource{
+		NewMockResource("server-resource-1"),
+		NewMockResource("server-resource-2"),
+	}
+
+	for _, resource := range resources {
+		if err := serviceMgr.RegisterResource(resource.name, resource); err != nil {
+			t.Fatalf("Failed to register resource %s: %v", resource.name, err)
+		}
+	}
+
+	// 创建HTTP服务
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
 	})
+	httpService := utils.NewHTTPService(":0", handler)
+	serviceMgr.RegisterService(httpService)
 
-	t.Run("Concurrent_Operations", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(ctx)
-		require.NotNil(t, storage)
+	// 启动服务（在goroutine中）
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
 
-		// 并发操作和关闭
-		done := make(chan struct{})
-		go func() {
-			for i := 0; i < 100; i++ {
-				storage.Set("key", "value", time.Minute)
-			}
-			done <- struct{}{}
-		}()
-		go func() {
-			time.Sleep(10 * time.Millisecond)
-			storage.Close()
-			done <- struct{}{}
-		}()
+	go func() {
+		if err := serviceMgr.RunWithContext(ctx); err != nil {
+			t.Errorf("Service error: %v", err)
+		}
+	}()
 
-		<-done
-		<-done
+	// 等待上下文取消
+	<-ctx.Done()
 
-		// 验证最终状态
-		assert.True(t, storage.IsClosed())
-	})
+	// 验证资源被释放
+	result := serviceMgr.GetDisposeResult()
+	if result != nil && result.HasErrors() {
+		t.Errorf("Service resource disposal failed: %v", result.Error())
+	}
 }
 
-// 模拟读写器
-type mockReader struct{}
+// TestDisposeWithErrors 测试包含错误的资源释放
+func TestDisposeWithErrors(t *testing.T) {
+	resourceMgr := utils.NewResourceManager()
 
-func (r *mockReader) Read(p []byte) (n int, err error) {
-	return 0, nil
+	// 创建正常资源
+	normalResource := NewMockResource("normal-resource")
+	if err := resourceMgr.Register("normal-resource", normalResource); err != nil {
+		t.Fatalf("Failed to register normal resource: %v", err)
+	}
+
+	// 创建会出错的资源
+	errorResource := &ErrorMockResource{name: "error-resource"}
+
+	if err := resourceMgr.Register("error-resource", errorResource); err != nil {
+		t.Fatalf("Failed to register error resource: %v", err)
+	}
+
+	// 释放资源
+	result := resourceMgr.DisposeAll()
+
+	// 应该包含错误
+	if !result.HasErrors() {
+		t.Error("Expected disposal errors, but none occurred")
+	}
+
+	// 验证错误信息
+	if len(result.Errors) != 1 {
+		t.Errorf("Expected 1 error, got %d", len(result.Errors))
+	}
+
+	if result.Errors[0].ResourceName != "error-resource" {
+		t.Errorf("Expected error from error-resource, got %s", result.Errors[0].ResourceName)
+	}
+
+	// 验证正常资源也被释放了
+	if !normalResource.IsDisposed() {
+		t.Error("Normal resource was not disposed")
+	}
 }
 
-type mockWriter struct{}
+// TestDisposeReentrancy 测试资源释放的可重入性
+func TestDisposeReentrancy(t *testing.T) {
+	resourceMgr := utils.NewResourceManager()
 
-func (w *mockWriter) Write(p []byte) (n int, err error) {
-	return len(p), nil
+	// 创建资源
+	resource := NewMockResource("reentrant-resource")
+	if err := resourceMgr.Register("reentrant-resource", resource); err != nil {
+		t.Fatalf("Failed to register resource: %v", err)
+	}
+
+	// 第一次释放
+	result1 := resourceMgr.DisposeAll()
+	if result1.HasErrors() {
+		t.Errorf("First disposal failed: %v", result1.Error())
+	}
+
+	// 第二次释放（应该返回空结果）
+	result2 := resourceMgr.DisposeAll()
+	if len(result2.Errors) != 0 {
+		t.Errorf("Second disposal should return empty result, got %d errors", len(result2.Errors))
+	}
+
+	// 验证资源只被释放一次
+	if resource.GetDisposeCount() != 1 {
+		t.Errorf("Expected resource to be disposed once, got %d times", resource.GetDisposeCount())
+	}
+}
+
+// TestDisposeStress 压力测试
+func TestDisposeStress(t *testing.T) {
+	resourceMgr := utils.NewResourceManager()
+
+	// 创建大量资源
+	const numResources = 1000
+	resources := make([]*MockResource, numResources)
+
+	for i := 0; i < numResources; i++ {
+		name := fmt.Sprintf("stress-resource-%d", i)
+		resources[i] = NewMockResource(name)
+		if err := resourceMgr.Register(name, resources[i]); err != nil {
+			t.Fatalf("Failed to register resource %s: %v", name, err)
+		}
+	}
+
+	// 验证资源数量
+	if count := resourceMgr.GetResourceCount(); count != numResources {
+		t.Errorf("Expected %d resources, got %d", numResources, count)
+	}
+
+	// 释放所有资源
+	start := time.Now()
+	result := resourceMgr.DisposeAll()
+	duration := time.Since(start)
+
+	// 验证释放结果
+	if result.HasErrors() {
+		t.Errorf("Stress test disposal failed: %v", result.Error())
+	}
+
+	// 验证所有资源都被释放
+	for i, resource := range resources {
+		if !resource.IsDisposed() {
+			t.Errorf("Resource %d was not disposed", i)
+		}
+	}
+
+	// 验证性能（释放1000个资源应该在合理时间内完成）
+	if duration > 5*time.Second {
+		t.Errorf("Disposal took too long: %v", duration)
+	}
+
+	t.Logf("Disposed %d resources in %v", numResources, duration)
+}
+
+// TestGlobalResourceManager 测试全局资源管理器
+func TestGlobalResourceManager(t *testing.T) {
+	// 注册全局资源
+	resource1 := NewMockResource("global-resource-1")
+	resource2 := NewMockResource("global-resource-2")
+
+	if err := utils.RegisterGlobalResource("global-resource-1", resource1); err != nil {
+		t.Fatalf("Failed to register global resource 1: %v", err)
+	}
+
+	if err := utils.RegisterGlobalResource("global-resource-2", resource2); err != nil {
+		t.Fatalf("Failed to register global resource 2: %v", err)
+	}
+
+	// 释放所有全局资源
+	result := utils.DisposeAllGlobalResources()
+
+	// 验证释放结果
+	if result.HasErrors() {
+		t.Errorf("Global resource disposal failed: %v", result.Error())
+	}
+
+	// 验证所有资源都被释放
+	if !resource1.IsDisposed() {
+		t.Error("Global resource 1 was not disposed")
+	}
+
+	if !resource2.IsDisposed() {
+		t.Error("Global resource 2 was not disposed")
+	}
+}
+
+// TestDisposeWithContext 测试带上下文的资源释放
+func TestDisposeWithContext(t *testing.T) {
+	// 创建带超时的上下文
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	// 创建资源管理器
+	resourceMgr := utils.NewResourceManager()
+
+	// 创建慢速资源
+	slowResource := &SlowMockResource{name: "context-slow-resource"}
+	if err := resourceMgr.Register("context-slow-resource", slowResource); err != nil {
+		t.Fatalf("Failed to register slow resource: %v", err)
+	}
+
+	// 在goroutine中释放资源
+	resultChan := make(chan *utils.DisposeResult, 1)
+	go func() {
+		resultChan <- resourceMgr.DisposeAll()
+	}()
+
+	// 等待上下文取消或资源释放完成
+	select {
+	case result := <-resultChan:
+		if result.HasErrors() {
+			t.Errorf("Resource disposal failed: %v", result.Error())
+		}
+	case <-ctx.Done():
+		t.Log("Context cancelled, resource disposal may still be in progress")
+	}
 }

@@ -7,14 +7,19 @@ import (
 )
 
 type Manager struct {
-	utils.Dispose
+	dispose  utils.Dispose
 	adapters []Adapter
 	lock     sync.Mutex
 }
 
+// Dispose 实现Disposable接口
+func (pm *Manager) Dispose() error {
+	return pm.CloseAll()
+}
+
 func NewManager(parentCtx context.Context) *Manager {
 	pm := &Manager{}
-	pm.SetCtx(parentCtx, pm.onClose)
+	pm.dispose.SetCtx(parentCtx, pm.onClose)
 	return pm
 }
 
@@ -36,7 +41,7 @@ func (pm *Manager) StartAll() error {
 }
 
 func (pm *Manager) CloseAll() error {
-	return pm.Dispose.Close()
+	return pm.dispose.CloseWithError()
 }
 
 func (pm *Manager) onClose() error {

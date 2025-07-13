@@ -13,7 +13,12 @@ type StreamManager struct {
 	factory StreamFactory
 	streams map[string]PackageStreamer
 	mu      sync.RWMutex
-	utils.Dispose
+	dispose utils.Dispose
+}
+
+// Dispose 实现Disposable接口
+func (m *StreamManager) Dispose() error {
+	return m.CloseAllStreams()
 }
 
 // NewStreamManager 创建新的流管理器
@@ -22,7 +27,7 @@ func NewStreamManager(factory StreamFactory, parentCtx context.Context) *StreamM
 		factory: factory,
 		streams: make(map[string]PackageStreamer),
 	}
-	manager.SetCtx(parentCtx, manager.onClose)
+	manager.dispose.SetCtx(parentCtx, manager.onClose)
 	return manager
 }
 
