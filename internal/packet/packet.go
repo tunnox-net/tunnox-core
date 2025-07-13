@@ -39,6 +39,7 @@ const (
 	Forward    CommandType = 6 //服务端检测到需要经其他的服务端中转，通知其他的服务端准备透传 Server->Server
 	DataOut    CommandType = 7 //服务端通知目标客户端，准备开始透传 Server -> Client
 	Disconnect CommandType = 8 //连接断开，可以任何方向
+	RpcInvoke  CommandType = 9 //与连接无关的RPC命令，供系统扩展使用，会提供二级Key
 )
 
 // InitPacket 初始化数据包

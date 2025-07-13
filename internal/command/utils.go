@@ -276,3 +276,7 @@ func (cu *CommandUtils) DataOut() *CommandUtils {
 func (cu *CommandUtils) Disconnect() *CommandUtils {
 	return cu.WithCommand(packet.Disconnect)
 }
+
+func (cu *CommandUtils) RpcInvoke() *CommandUtils {
+	return cu.WithCommand(packet.RpcInvoke)
+}

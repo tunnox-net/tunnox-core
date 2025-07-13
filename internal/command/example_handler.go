@@ -1,302 +1,196 @@
 package command
 
 import (
-	"encoding/json"
 	"fmt"
-	"time"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
 
-// BaseHandler 基础命令处理器
-type BaseHandler struct {
-	commandType  packet.CommandType
-	responseType ResponseType
+// TcpMapRequest TCP映射请求结构
+type TcpMapRequest struct {
+	SourcePort int    `json:"source_port"`
+	TargetPort int    `json:"target_port"`
+	TargetHost string `json:"target_host"`
+	Protocol   string `json:"protocol"`
 }
 
-// NewBaseHandler 创建基础处理器
-func NewBaseHandler(commandType packet.CommandType, responseType ResponseType) *BaseHandler {
-	return &BaseHandler{
-		commandType:  commandType,
-		responseType: responseType,
-	}
-}
-
-// GetCommandType 获取命令类型
-func (bh *BaseHandler) GetCommandType() packet.CommandType {
-	return bh.commandType
-}
-
-// GetResponseType 获取响应类型
-func (bh *BaseHandler) GetResponseType() ResponseType {
-	return bh.responseType
+// TcpMapResponse TCP映射响应结构
+type TcpMapResponse struct {
+	MappingID  string `json:"mapping_id"`
+	Status     string `json:"status"`
+	LocalPort  int    `json:"local_port"`
+	RemotePort int    `json:"remote_port"`
 }
 
 // TcpMapHandler TCP映射命令处理器
 type TcpMapHandler struct {
-	*BaseHandler
+	*BaseCommandHandler[TcpMapRequest, TcpMapResponse]
 }
 
 // NewTcpMapHandler 创建TCP映射处理器
 func NewTcpMapHandler() *TcpMapHandler {
+	base := NewBaseCommandHandler[TcpMapRequest, TcpMapResponse](
+		packet.TcpMap,
+		Oneway,  // 单向调用
+		Simplex, // 单工模式
+	)
+
 	return &TcpMapHandler{
-		BaseHandler: NewBaseHandler(packet.TcpMap, Duplex),
+		BaseCommandHandler: base,
 	}
 }
 
-// Handle 处理TCP映射命令
-func (h *TcpMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	// 解析请求数据
-	var requestData map[string]interface{}
-	if err := json.Unmarshal([]byte(ctx.RequestBody), &requestData); err != nil {
-		return &CommandResponse{
-			Success: false,
-			Error:   fmt.Sprintf("failed to parse request: %v", err),
-		}, nil
+// ValidateRequest 重写验证方法
+func (h *TcpMapHandler) ValidateRequest(request *TcpMapRequest) error {
+	if request.SourcePort <= 0 || request.SourcePort > 65535 {
+		return fmt.Errorf("invalid source port: %d", request.SourcePort)
+	}
+	if request.TargetPort <= 0 || request.TargetPort > 65535 {
+		return fmt.Errorf("invalid target port: %d", request.TargetPort)
+	}
+	if request.TargetHost == "" {
+		return fmt.Errorf("target host is required")
+	}
+	return nil
+}
+
+// PreProcess 重写预处理方法
+func (h *TcpMapHandler) PreProcess(ctx *CommandContext, request *TcpMapRequest) error {
+	// 记录请求日志
+	h.LogRequest(ctx, request)
+
+	// 验证上下文
+	if err := h.ValidateContext(ctx); err != nil {
+		return err
 	}
 
-	// 记录处理信息
-	utils.Debugf("Processing TCP mapping for connection: %s, request: %+v",
-		ctx.ConnectionID, requestData)
+	utils.Infof("Preparing TCP mapping: %s:%d -> %s:%d",
+		request.TargetHost, request.TargetPort,
+		request.TargetHost, request.TargetPort)
 
-	// TODO: 实现具体的TCP映射逻辑
-	// 这里只是示例，实际实现需要根据业务需求
+	return nil
+}
 
-	// 返回成功响应
-	return &CommandResponse{
-		Success: true,
-		Data: map[string]interface{}{
-			"mapping_id": fmt.Sprintf("tcp_%s_%d", ctx.ConnectionID, time.Now().Unix()),
-			"status":     "created",
-			"request":    requestData,
-		},
-		Metadata: map[string]interface{}{
-			"connection_id": ctx.ConnectionID,
-			"command_type":  ctx.CommandType,
-		},
-	}, nil
+// ProcessRequest 实现核心处理逻辑
+func (h *TcpMapHandler) ProcessRequest(ctx *CommandContext, request *TcpMapRequest) (*TcpMapResponse, error) {
+	// 这里实现实际的TCP映射逻辑
+	// 例如：创建端口映射、启动代理服务等
+
+	mappingID := fmt.Sprintf("tcp_%s_%d_%d", ctx.ConnectionID, request.SourcePort, request.TargetPort)
+
+	response := &TcpMapResponse{
+		MappingID:  mappingID,
+		Status:     "active",
+		LocalPort:  request.SourcePort,
+		RemotePort: request.TargetPort,
+	}
+
+	utils.Infof("TCP mapping created: %s", mappingID)
+
+	return response, nil
+}
+
+// PostProcess 重写后处理方法
+func (h *TcpMapHandler) PostProcess(ctx *CommandContext, response *TcpMapResponse) error {
+	// 记录响应日志
+	h.LogResponse(ctx, response, nil)
+
+	utils.Infof("TCP mapping completed: %s", response.MappingID)
+
+	return nil
+}
+
+// HttpMapRequest HTTP映射请求结构
+type HttpMapRequest struct {
+	Domain     string `json:"domain"`
+	LocalPort  int    `json:"local_port"`
+	SSLEnabled bool   `json:"ssl_enabled"`
+}
+
+// HttpMapResponse HTTP映射响应结构
+type HttpMapResponse struct {
+	MappingID  string `json:"mapping_id"`
+	Status     string `json:"status"`
+	PublicURL  string `json:"public_url"`
+	LocalPort  int    `json:"local_port"`
+	SSLEnabled bool   `json:"ssl_enabled"`
 }
 
 // HttpMapHandler HTTP映射命令处理器
 type HttpMapHandler struct {
-	*BaseHandler
+	*BaseCommandHandler[HttpMapRequest, HttpMapResponse]
 }
 
 // NewHttpMapHandler 创建HTTP映射处理器
 func NewHttpMapHandler() *HttpMapHandler {
+	base := NewBaseCommandHandler[HttpMapRequest, HttpMapResponse](
+		packet.HttpMap,
+		Duplex,     // 双工调用
+		DuplexMode, // 双工模式
+	)
+
 	return &HttpMapHandler{
-		BaseHandler: NewBaseHandler(packet.HttpMap, Duplex),
+		BaseCommandHandler: base,
 	}
 }
 
-// Handle 处理HTTP映射命令
-func (h *HttpMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	// 解析请求数据
-	var requestData map[string]interface{}
-	if err := json.Unmarshal([]byte(ctx.RequestBody), &requestData); err != nil {
-		return &CommandResponse{
-			Success: false,
-			Error:   fmt.Sprintf("failed to parse request: %v", err),
-		}, nil
+// ValidateRequest 重写验证方法
+func (h *HttpMapHandler) ValidateRequest(request *HttpMapRequest) error {
+	if request.Domain == "" {
+		return fmt.Errorf("domain is required")
+	}
+	if request.LocalPort <= 0 || request.LocalPort > 65535 {
+		return fmt.Errorf("invalid local port: %d", request.LocalPort)
+	}
+	return nil
+}
+
+// PreProcess 重写预处理方法
+func (h *HttpMapHandler) PreProcess(ctx *CommandContext, request *HttpMapRequest) error {
+	h.LogRequest(ctx, request)
+
+	if err := h.ValidateContext(ctx); err != nil {
+		return err
 	}
 
-	// 记录处理信息
-	utils.Debugf("Processing HTTP mapping for connection: %s, request: %+v",
-		ctx.ConnectionID, requestData)
+	utils.Infof("Preparing HTTP mapping: %s -> localhost:%d (SSL: %v)",
+		request.Domain, request.LocalPort, request.SSLEnabled)
 
-	// TODO: 实现具体的HTTP映射逻辑
-
-	// 返回成功响应
-	return &CommandResponse{
-		Success: true,
-		Data: map[string]interface{}{
-			"mapping_id": fmt.Sprintf("http_%s_%d", ctx.ConnectionID, time.Now().Unix()),
-			"status":     "created",
-			"request":    requestData,
-		},
-		Metadata: map[string]interface{}{
-			"connection_id": ctx.ConnectionID,
-			"command_type":  ctx.CommandType,
-		},
-	}, nil
+	return nil
 }
 
-// DisconnectHandler 断开连接命令处理器
-type DisconnectHandler struct {
-	*BaseHandler
-}
+// ProcessRequest 实现核心处理逻辑
+func (h *HttpMapHandler) ProcessRequest(ctx *CommandContext, request *HttpMapRequest) (*HttpMapResponse, error) {
+	// 这里实现实际的HTTP映射逻辑
+	// 例如：配置反向代理、SSL证书管理等
 
-// NewDisconnectHandler 创建断开连接处理器
-func NewDisconnectHandler() *DisconnectHandler {
-	return &DisconnectHandler{
-		BaseHandler: NewBaseHandler(packet.Disconnect, Oneway),
-	}
-}
+	mappingID := fmt.Sprintf("http_%s_%d", ctx.ConnectionID, request.LocalPort)
 
-// Handle 处理断开连接命令
-func (h *DisconnectHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	// 解析请求数据
-	var requestData map[string]interface{}
-	if err := json.Unmarshal([]byte(ctx.RequestBody), &requestData); err != nil {
-		utils.Warnf("Failed to parse disconnect request: %v", err)
-		// 单向命令，即使解析失败也继续处理
+	protocol := "http"
+	if request.SSLEnabled {
+		protocol = "https"
 	}
 
-	// 记录处理信息
-	utils.Infof("Processing disconnect for connection: %s, reason: %v",
-		ctx.ConnectionID, requestData)
+	publicURL := fmt.Sprintf("%s://%s", protocol, request.Domain)
 
-	// TODO: 实现具体的断开连接逻辑
-	// 可能需要通知其他组件关闭相关资源
-
-	// 单向命令不需要返回响应
-	return nil, nil
-}
-
-// DataInHandler 数据输入命令处理器
-type DataInHandler struct {
-	*BaseHandler
-}
-
-// NewDataInHandler 创建数据输入处理器
-func NewDataInHandler() *DataInHandler {
-	return &DataInHandler{
-		BaseHandler: NewBaseHandler(packet.DataIn, Oneway),
-	}
-}
-
-// Handle 处理数据输入命令
-func (h *DataInHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	// 解析请求数据
-	var requestData map[string]interface{}
-	if err := json.Unmarshal([]byte(ctx.RequestBody), &requestData); err != nil {
-		utils.Warnf("Failed to parse data in request: %v", err)
+	response := &HttpMapResponse{
+		MappingID:  mappingID,
+		Status:     "active",
+		PublicURL:  publicURL,
+		LocalPort:  request.LocalPort,
+		SSLEnabled: request.SSLEnabled,
 	}
 
-	// 记录处理信息
-	utils.Debugf("Processing data in for connection: %s, data: %+v",
-		ctx.ConnectionID, requestData)
+	utils.Infof("HTTP mapping created: %s -> %s", publicURL, mappingID)
 
-	// TODO: 实现具体的数据输入处理逻辑
-
-	// 单向命令不需要返回响应
-	return nil, nil
+	return response, nil
 }
 
-// ForwardHandler 转发命令处理器
-type ForwardHandler struct {
-	*BaseHandler
-}
+// PostProcess 重写后处理方法
+func (h *HttpMapHandler) PostProcess(ctx *CommandContext, response *HttpMapResponse) error {
+	h.LogResponse(ctx, response, nil)
 
-// NewForwardHandler 创建转发处理器
-func NewForwardHandler() *ForwardHandler {
-	return &ForwardHandler{
-		BaseHandler: NewBaseHandler(packet.Forward, Duplex),
-	}
-}
+	utils.Infof("HTTP mapping completed: %s", response.MappingID)
 
-// Handle 处理转发命令
-func (h *ForwardHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	// 解析请求数据
-	var requestData map[string]interface{}
-	if err := json.Unmarshal([]byte(ctx.RequestBody), &requestData); err != nil {
-		return &CommandResponse{
-			Success: false,
-			Error:   fmt.Sprintf("failed to parse request: %v", err),
-		}, nil
-	}
-
-	// 记录处理信息
-	utils.Debugf("Processing forward for connection: %s, request: %+v",
-		ctx.ConnectionID, requestData)
-
-	// TODO: 实现具体的转发逻辑
-
-	// 返回成功响应
-	return &CommandResponse{
-		Success: true,
-		Data: map[string]interface{}{
-			"forward_id": fmt.Sprintf("forward_%s_%d", ctx.ConnectionID, time.Now().Unix()),
-			"status":     "ready",
-			"request":    requestData,
-		},
-		Metadata: map[string]interface{}{
-			"connection_id": ctx.ConnectionID,
-			"command_type":  ctx.CommandType,
-		},
-	}, nil
-}
-
-// DataOutHandler 数据输出命令处理器
-type DataOutHandler struct {
-	*BaseHandler
-}
-
-// NewDataOutHandler 创建数据输出处理器
-func NewDataOutHandler() *DataOutHandler {
-	return &DataOutHandler{
-		BaseHandler: NewBaseHandler(packet.DataOut, Oneway),
-	}
-}
-
-// Handle 处理数据输出命令
-func (h *DataOutHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	// 解析请求数据
-	var requestData map[string]interface{}
-	if err := json.Unmarshal([]byte(ctx.RequestBody), &requestData); err != nil {
-		utils.Warnf("Failed to parse data out request: %v", err)
-	}
-
-	// 记录处理信息
-	utils.Debugf("Processing data out for connection: %s, data: %+v",
-		ctx.ConnectionID, requestData)
-
-	// TODO: 实现具体的数据输出处理逻辑
-
-	// 单向命令不需要返回响应
-	return nil, nil
-}
-
-// SocksMapHandler SOCKS映射命令处理器
-type SocksMapHandler struct {
-	*BaseHandler
-}
-
-// NewSocksMapHandler 创建SOCKS映射处理器
-func NewSocksMapHandler() *SocksMapHandler {
-	return &SocksMapHandler{
-		BaseHandler: NewBaseHandler(packet.SocksMap, Duplex),
-	}
-}
-
-// Handle 处理SOCKS映射命令
-func (h *SocksMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	// 解析请求数据
-	var requestData map[string]interface{}
-	if err := json.Unmarshal([]byte(ctx.RequestBody), &requestData); err != nil {
-		return &CommandResponse{
-			Success: false,
-			Error:   fmt.Sprintf("failed to parse request: %v", err),
-		}, nil
-	}
-
-	// 记录处理信息
-	utils.Debugf("Processing SOCKS mapping for connection: %s, request: %+v",
-		ctx.ConnectionID, requestData)
-
-	// TODO: 实现具体的SOCKS映射逻辑
-
-	// 返回成功响应
-	return &CommandResponse{
-		Success: true,
-		Data: map[string]interface{}{
-			"mapping_id": fmt.Sprintf("socks_%s_%d", ctx.ConnectionID, time.Now().Unix()),
-			"status":     "created",
-			"request":    requestData,
-		},
-		Metadata: map[string]interface{}{
-			"connection_id": ctx.ConnectionID,
-			"command_type":  ctx.CommandType,
-		},
-	}, nil
+	return nil
 }

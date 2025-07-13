@@ -88,7 +88,10 @@ func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
 
 	// UDP 是面向数据包的，这里应该阻塞等待数据包
 	// 设置超时避免无限阻塞
-	u.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+	err := u.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+	if err != nil {
+		return nil, fmt.Errorf("failed to set read deadline: %w", err)
+	}
 
 	buffer := make([]byte, 1024)
 	n, addr, err := u.conn.ReadFrom(buffer)
