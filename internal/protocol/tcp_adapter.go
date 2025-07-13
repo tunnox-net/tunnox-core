@@ -2,203 +2,110 @@ package protocol
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"net"
-	"sync"
-	"time"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
+
+// TcpConn TCP连接包装器
+type TcpConn struct {
+	net.Conn
+}
+
+func (t *TcpConn) Close() error {
+	return t.Conn.Close()
+}
+
+// TcpListener TCP监听器包装器
+type TcpListener struct {
+	net.Listener
+}
+
+func (t *TcpListener) Accept() (ProtocolConn, error) {
+	conn, err := t.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return &TcpConn{Conn: conn}, nil
+}
+
+// TcpDialer TCP连接器
+type TcpDialer struct{}
+
+func (t *TcpDialer) Dial(addr string) (ProtocolConn, error) {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	return &TcpConn{Conn: conn}, nil
+}
 
 type TcpAdapter struct {
 	BaseAdapter
-	conn        net.Conn
-	listener    net.Listener
-	active      bool
-	connMutex   sync.RWMutex
-	stream      stream.PackageStreamer
-	streamMutex sync.RWMutex
-	session     Session
+	listener net.Listener
 }
 
 func NewTcpAdapter(parentCtx context.Context, session Session) *TcpAdapter {
-	t := &TcpAdapter{
-		session: session,
-	}
+	t := &TcpAdapter{}
 	t.SetName("tcp")
+	t.SetSession(session)
 	t.SetCtx(parentCtx, t.onClose)
 	return t
 }
 
-func (t *TcpAdapter) ConnectTo(serverAddr string) error {
-	t.connMutex.Lock()
-	defer t.connMutex.Unlock()
+// 实现 ProtocolAdapter 接口
+func (t *TcpAdapter) createDialer() ProtocolDialer {
+	return &TcpDialer{}
+}
 
-	if t.conn != nil {
-		return fmt.Errorf("already connected")
-	}
-
-	conn, err := net.Dial("tcp", serverAddr)
+func (t *TcpAdapter) createListener(addr string) (ProtocolListener, error) {
+	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to connect to tcp server: %w", err)
+		return nil, err
 	}
+	t.listener = listener
+	return &TcpListener{Listener: listener}, nil
+}
 
-	t.conn = conn
-	t.SetAddr(serverAddr)
+func (t *TcpAdapter) handleProtocolSpecific(conn ProtocolConn) error {
+	// TCP 特定的 echo 处理
+	ctx, cancel := context.WithCancel(t.Ctx())
+	defer cancel()
+	ps := stream.NewStreamProcessor(conn, conn, ctx)
+	defer ps.Close()
 
-	t.streamMutex.Lock()
-	t.stream = stream.NewStreamProcessor(conn, conn, t.Ctx())
-	t.streamMutex.Unlock()
-
+	buf := make([]byte, 1024)
+	for {
+		n, err := ps.GetReader().Read(buf)
+		if err != nil {
+			break
+		}
+		if n > 0 {
+			if _, err := ps.GetWriter().Write(buf[:n]); err != nil {
+				break
+			}
+		}
+	}
 	return nil
+}
+
+func (t *TcpAdapter) getConnectionType() string {
+	return "TCP"
+}
+
+// 重写 ConnectTo 和 ListenFrom 以使用 BaseAdapter 的通用逻辑
+func (t *TcpAdapter) ConnectTo(serverAddr string) error {
+	return t.BaseAdapter.ConnectTo(t, serverAddr)
 }
 
 func (t *TcpAdapter) ListenFrom(listenAddr string) error {
-	t.SetAddr(listenAddr)
-	if t.Addr() == "" {
-		return fmt.Errorf("address not set")
-	}
-
-	ln, err := net.Listen("tcp", t.Addr())
-	if err != nil {
-		return fmt.Errorf("failed to listen: %w", err)
-	}
-	t.listener = ln
-	t.active = true
-	go t.acceptLoop()
-	return nil
+	return t.BaseAdapter.ListenFrom(t, listenAddr)
 }
 
-func (t *TcpAdapter) Start(ctx context.Context) error {
-
-	return nil
-}
-
-func (t *TcpAdapter) acceptLoop() {
-	for t.active {
-		conn, err := t.listener.Accept()
-		if err != nil {
-			if !t.IsClosed() {
-				utils.Errorf("TCP accept error: %v", err)
-			}
-			return
-		}
-
-		if t.IsClosed() {
-			utils.Warnf("TCP connection closed")
-			return
-		}
-
-		go t.handleConn(conn)
-	}
-}
-
-func (t *TcpAdapter) handleConn(conn net.Conn) {
-	defer func() { _ = conn.Close() }()
-	utils.Infof("TCP adapter handling connection from %s", conn.RemoteAddr())
-
-	// 使用新的 Session 接口处理连接
-	if t.session != nil {
-		// 初始化连接
-		connInfo, err := t.session.InitConnection(conn, conn)
-		if err != nil {
-			utils.Errorf("Failed to initialize connection: %v", err)
-			return
-		}
-		defer func(session Session, connectionId string) {
-			err := session.CloseConnection(connectionId)
-			if err != nil {
-				utils.Errorf("Failed to close connection: %v", err)
-			}
-		}(t.session, connInfo.ID)
-
-		// 处理数据流
-		for {
-			packet, _, err := connInfo.Stream.ReadPacket()
-			if err != nil {
-				if err == io.EOF {
-					utils.Infof("Connection closed by peer: %s", connInfo.ID)
-				} else {
-					utils.Errorf("Failed to read packet: %v", err)
-				}
-				break
-			}
-
-			utils.Debugf("Received packet type: %v", packet.PacketType)
-
-			// 包装成 StreamPacket
-			connPacket := &StreamPacket{
-				ConnectionID: connInfo.ID,
-				Packet:       packet,
-				Timestamp:    time.Now(),
-			}
-
-			// 处理数据包
-			if err := t.session.HandlePacket(connPacket); err != nil {
-				utils.Errorf("Failed to handle packet: %v", err)
-				break
-			}
-		}
-	} else {
-		// 如果没有session，使用默认的echo处理
-		ctx, cancel := context.WithCancel(t.Ctx())
-		defer cancel()
-		ps := stream.NewStreamProcessor(conn, conn, ctx)
-		defer ps.Close()
-
-		buf := make([]byte, 1024)
-		for {
-			n, err := ps.GetReader().Read(buf)
-			if err != nil {
-				break
-			}
-			if n > 0 {
-				if _, err := ps.GetWriter().Write(buf[:n]); err != nil {
-					break
-				}
-			}
-		}
-	}
-}
-
-func (t *TcpAdapter) GetReader() io.Reader {
-	t.streamMutex.RLock()
-	defer t.streamMutex.RUnlock()
-	if t.stream != nil {
-		return t.stream.GetReader()
-	}
-	return nil
-}
-
-func (t *TcpAdapter) GetWriter() io.Writer {
-	t.streamMutex.RLock()
-	defer t.streamMutex.RUnlock()
-	if t.stream != nil {
-		return t.stream.GetWriter()
-	}
-	return nil
-}
-
+// onClose TCP 特定的资源清理
 func (t *TcpAdapter) onClose() {
-	t.active = false
 	if t.listener != nil {
 		_ = t.listener.Close()
 		t.listener = nil
 	}
-	t.connMutex.Lock()
-	defer t.connMutex.Unlock()
-
-	if t.conn != nil {
-		_ = t.conn.Close()
-		t.conn = nil
-	}
-
-	t.streamMutex.Lock()
-	defer t.streamMutex.Unlock()
-	if t.stream != nil {
-		t.stream.Close()
-		t.stream = nil
-	}
-	utils.Infof("TCP adapter closed")
+	t.BaseAdapter.onClose()
 }

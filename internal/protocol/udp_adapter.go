@@ -5,215 +5,163 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 	"time"
-	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
 
-// UdpConnWrapper UDP连接包装器，实现io.Reader和io.Writer接口
-type UdpConnWrapper struct {
+// UdpConn UDP连接包装器
+type UdpConn struct {
 	conn net.PacketConn
 	addr net.Addr
-	buf  []byte
-	pos  int
 }
 
-// Read 实现io.Reader接口
-func (u *UdpConnWrapper) Read(p []byte) (n int, err error) {
-	if u.pos >= len(u.buf) {
-		// 读取新的UDP数据包
-		u.buf = make([]byte, 65507) // UDP最大包大小
-		n, u.addr, err = u.conn.ReadFrom(u.buf)
-		if err != nil {
-			return 0, err
-		}
-		u.buf = u.buf[:n]
-		u.pos = 0
-	}
-
-	// 从缓冲区复制数据
-	copyLen := len(u.buf) - u.pos
-	if copyLen > len(p) {
-		copyLen = len(p)
-	}
-	copy(p, u.buf[u.pos:u.pos+copyLen])
-	u.pos += copyLen
-	return copyLen, nil
+func (u *UdpConn) Read(p []byte) (n int, err error) {
+	n, _, err = u.conn.ReadFrom(p)
+	return n, err
 }
 
-// Write 实现io.Writer接口
-func (u *UdpConnWrapper) Write(p []byte) (n int, err error) {
+func (u *UdpConn) Write(p []byte) (n int, err error) {
 	if u.addr == nil {
 		return 0, fmt.Errorf("no target address set")
 	}
 	return u.conn.WriteTo(p, u.addr)
 }
 
+func (u *UdpConn) Close() error {
+	return u.conn.Close()
+}
+
+// UdpListener UDP监听器包装器
+type UdpListener struct {
+	conn net.PacketConn
+}
+
+func (u *UdpListener) Accept() (ProtocolConn, error) {
+	// UDP 是面向数据包的，这里应该阻塞等待数据包
+	// 设置超时避免无限阻塞
+	u.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+
+	buffer := make([]byte, 1024)
+	n, addr, err := u.conn.ReadFrom(buffer)
+	if err != nil {
+		// 如果是超时错误，返回自定义超时错误
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return nil, &TimeoutError{Protocol: "UDP packet"}
+		}
+		return nil, err
+	}
+
+	// 创建一个虚拟连接来处理这个数据包
+	return &UdpVirtualConn{
+		data: buffer[:n],
+		addr: addr,
+		conn: u.conn,
+		pos:  0,
+	}, nil
+}
+
+func (u *UdpListener) Close() error {
+	return u.conn.Close()
+}
+
+// UdpDialer UDP连接器
+type UdpDialer struct{}
+
+func (u *UdpDialer) Dial(addr string) (ProtocolConn, error) {
+	// 解析服务器地址
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve UDP address: %w", err)
+	}
+
+	// 创建UDP连接
+	conn, err := net.DialUDP("udp", nil, udpAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to UDP server: %w", err)
+	}
+
+	return &UdpConn{conn: conn, addr: udpAddr}, nil
+}
+
 // UdpAdapter UDP协议适配器
 type UdpAdapter struct {
 	BaseAdapter
-	conn        net.PacketConn
-	clientConn  net.Conn
-	active      bool
-	connMutex   sync.RWMutex
-	stream      stream.PackageStreamer
-	streamMutex sync.RWMutex
-	session     Session
+	conn net.PacketConn
 }
 
 // NewUdpAdapter 创建新的UDP适配器
 func NewUdpAdapter(parentCtx context.Context, session Session) *UdpAdapter {
-	adapter := &UdpAdapter{
-		session: session,
-	}
+	adapter := &UdpAdapter{}
 	adapter.SetName("udp")
+	adapter.SetSession(session)
 	adapter.SetCtx(parentCtx, adapter.onClose)
 	return adapter
 }
 
-// ConnectTo 连接到UDP服务器
-func (u *UdpAdapter) ConnectTo(serverAddr string) error {
-	u.connMutex.Lock()
-	defer u.connMutex.Unlock()
-
-	if u.clientConn != nil {
-		return fmt.Errorf("already connected")
-	}
-
-	// 解析服务器地址
-	addr, err := net.ResolveUDPAddr("udp", serverAddr)
-	if err != nil {
-		return fmt.Errorf("failed to resolve UDP address: %w", err)
-	}
-
-	// 创建UDP连接
-	conn, err := net.DialUDP("udp", nil, addr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to UDP server: %w", err)
-	}
-
-	u.clientConn = conn
-	u.SetAddr(serverAddr)
-
-	// 创建数据流
-	u.streamMutex.Lock()
-	u.stream = stream.NewStreamProcessor(conn, conn, u.Ctx())
-	u.streamMutex.Unlock()
-
-	return nil
+// 实现 ProtocolAdapter 接口
+func (u *UdpAdapter) createDialer() ProtocolDialer {
+	return &UdpDialer{}
 }
 
-// ListenFrom 设置UDP监听地址
-func (u *UdpAdapter) ListenFrom(listenAddr string) error {
-	u.SetAddr(listenAddr)
-	if u.Addr() == "" {
-		return fmt.Errorf("address not set")
-	}
-
+func (u *UdpAdapter) createListener(addr string) (ProtocolListener, error) {
 	// 解析监听地址
-	addr, err := net.ResolveUDPAddr("udp", u.Addr())
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to resolve UDP address: %w", err)
+		return nil, fmt.Errorf("failed to resolve UDP address: %w", err)
 	}
 
 	// 创建UDP监听器
-	conn, err := net.ListenUDP("udp", addr)
+	conn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on UDP: %w", err)
+		return nil, fmt.Errorf("failed to listen on UDP: %w", err)
 	}
 
 	u.conn = conn
-	u.active = true
-	go u.receiveLoop()
-	return nil
+	return &UdpListener{conn: conn}, nil
 }
 
-// Start 启动UDP服务器
-func (u *UdpAdapter) Start(ctx context.Context) error {
-
-	return nil
-}
-
-// receiveLoop UDP接收循环
-func (u *UdpAdapter) receiveLoop() {
-	buffer := make([]byte, 65507) // UDP最大包大小
-
-	for u.active {
-		n, addr, err := u.conn.ReadFrom(buffer)
-		if err != nil {
-			if !u.IsClosed() {
-				utils.Errorf("UDP read error: %v", err)
-			}
-			utils.Infof("UDP adapter closed")
-			return
+func (u *UdpAdapter) handleProtocolSpecific(conn ProtocolConn) error {
+	// UDP 特定的处理 - 简单echo数据包
+	if virtualConn, ok := conn.(*UdpVirtualConn); ok {
+		// 读取数据
+		buffer := make([]byte, 1024)
+		n, err := virtualConn.Read(buffer)
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("failed to read UDP data: %w", err)
 		}
 
-		if u.IsClosed() {
-			utils.Warnf("TCP connection closed")
-			return
-		}
-
-		// 为每个客户端创建独立的goroutine处理
-		go u.handlePacket(buffer[:n], addr)
-	}
-}
-
-// handlePacket 处理UDP数据包
-func (u *UdpAdapter) handlePacket(data []byte, addr net.Addr) {
-	utils.Infof("UDP adapter handling packet from %s, size: %d", addr, len(data))
-
-	// 使用新的 Session 接口处理连接
-	if u.session != nil {
-		// 创建虚拟连接包装器
-		virtualConn := &UdpVirtualConn{
-			data: data,
-			addr: addr,
-			conn: u.conn,
-		}
-
-		// 初始化连接
-		connInfo, err := u.session.InitConnection(virtualConn, virtualConn)
-		if err != nil {
-			utils.Errorf("Failed to initialize UDP connection: %v", err)
-			return
-		}
-		defer u.session.CloseConnection(connInfo.ID)
-
-		// 处理数据流
-		for {
-			packet, _, err := connInfo.Stream.ReadPacket()
+		if n > 0 {
+			// Echo数据包
+			_, err = virtualConn.Write(buffer[:n])
 			if err != nil {
-				if err == io.EOF {
-					utils.Infof("UDP connection closed by peer: %s", connInfo.ID)
-				} else {
-					utils.Errorf("Failed to read UDP packet: %v", err)
-				}
-				break
+				return fmt.Errorf("failed to echo UDP data: %w", err)
 			}
-
-			utils.Debugf("Received packet type: %v", packet.PacketType)
-
-			// 包装成 StreamPacket
-			connPacket := &StreamPacket{
-				ConnectionID: connInfo.ID,
-				Packet:       packet,
-				Timestamp:    time.Now(),
-			}
-
-			// 处理数据包
-			if err := u.session.HandlePacket(connPacket); err != nil {
-				utils.Errorf("Failed to handle UDP packet: %v", err)
-				break
-			}
-		}
-	} else {
-		// 如果没有session，使用默认的echo处理
-		utils.Infof("Echoing UDP packet back to %s", addr)
-		if _, err := u.conn.WriteTo(data, addr); err != nil {
-			utils.Errorf("Failed to echo UDP packet: %v", err)
+			utils.Infof("UDP packet echoed: %d bytes", n)
 		}
 	}
+	return nil
+}
+
+func (u *UdpAdapter) getConnectionType() string {
+	return "UDP"
+}
+
+// 重写 ConnectTo 和 ListenFrom 以使用 BaseAdapter 的通用逻辑
+func (u *UdpAdapter) ConnectTo(serverAddr string) error {
+	return u.BaseAdapter.ConnectTo(u, serverAddr)
+}
+
+func (u *UdpAdapter) ListenFrom(listenAddr string) error {
+	return u.BaseAdapter.ListenFrom(u, listenAddr)
+}
+
+// onClose UDP 特定的资源清理
+func (u *UdpAdapter) onClose() {
+	if u.conn != nil {
+		u.conn.Close()
+		u.conn = nil
+	}
+	u.BaseAdapter.onClose()
 }
 
 // UdpVirtualConn UDP虚拟连接，用于单次数据包处理
@@ -243,49 +191,7 @@ func (u *UdpVirtualConn) Write(p []byte) (n int, err error) {
 	return u.conn.WriteTo(p, u.addr)
 }
 
-// Stop 停止UDP适配器
-func (u *UdpAdapter) Stop() error {
-
+// Close 实现io.Closer接口
+func (u *UdpVirtualConn) Close() error {
 	return nil
-}
-
-// GetReader 获取读取器
-func (u *UdpAdapter) GetReader() io.Reader {
-	u.streamMutex.RLock()
-	defer u.streamMutex.RUnlock()
-	if u.stream != nil {
-		return u.stream.GetReader()
-	}
-	return nil
-}
-
-// GetWriter 获取写入器
-func (u *UdpAdapter) GetWriter() io.Writer {
-	u.streamMutex.RLock()
-	defer u.streamMutex.RUnlock()
-	if u.stream != nil {
-		return u.stream.GetWriter()
-	}
-	return nil
-}
-
-// onClose 关闭回调
-func (u *UdpAdapter) onClose() {
-	u.active = false
-	if u.conn != nil {
-		u.conn.Close()
-		u.conn = nil
-	}
-	u.connMutex.Lock()
-	if u.clientConn != nil {
-		u.clientConn.Close()
-		u.clientConn = nil
-	}
-	u.connMutex.Unlock()
-	u.streamMutex.Lock()
-	if u.stream != nil {
-		u.stream.Close()
-		u.stream = nil
-	}
-	u.streamMutex.Unlock()
 }

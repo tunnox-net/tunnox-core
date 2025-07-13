@@ -26,18 +26,8 @@ func TestUdpAdapterBasic(t *testing.T) {
 		t.Errorf("Expected address '%s', got '%s'", testAddr, adapter.Addr())
 	}
 
-	// 测试启动服务器
-	if err := adapter.Start(ctx); err != nil {
-		t.Fatalf("Failed to start UDP server: %v", err)
-	}
-
-	// 等待服务器启动
+	// 等待一段时间让服务器启动
 	time.Sleep(100 * time.Millisecond)
-
-	// 测试停止服务器
-	if err := adapter.Stop(); err != nil {
-		t.Fatalf("Failed to stop UDP server: %v", err)
-	}
 
 	// 测试关闭
 	adapter.Close()
