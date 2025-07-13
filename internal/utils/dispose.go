@@ -177,6 +177,9 @@ func (rm *ResourceManager) DisposeAll() *DisposeResult {
 	// 添加一个特殊标记表示这是实际执行释放的结果
 	result.ActualDisposal = true
 
+	// 增加释放计数用于监控
+	IncrementDisposeCount()
+
 	return result
 }
 
