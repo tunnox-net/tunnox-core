@@ -52,16 +52,27 @@ func (r *UserRepository) SaveUser(user *models.User) error {
 	}
 
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUser, user.ID)
-	return r.storage.Set(key, string(data), constants2.DefaultUserDataTTL)
+	utils.Infof("SaveUser: storing user %s with key %s, data type: %T, data length: %d", user.ID, key, string(data), len(string(data)))
+	err = r.storage.Set(key, string(data), constants2.DefaultUserDataTTL)
+	if err != nil {
+		utils.Errorf("SaveUser: failed to store user %s: %v", user.ID, err)
+		return err
+	}
+	utils.Infof("SaveUser: successfully stored user %s", user.ID)
+	return nil
 }
 
 // CreateUser 创建新用户（仅创建，不允许覆盖）
 func (r *UserRepository) CreateUser(user *models.User) error {
+	utils.Infof("CreateUser: checking if user %s already exists", user.ID)
 	// 检查用户是否已存在
 	existingUser, err := r.GetUser(user.ID)
 	if err == nil && existingUser != nil {
+		utils.Errorf("CreateUser: user %s already exists", user.ID)
 		return fmt.Errorf("user with ID %s already exists", user.ID)
 	}
+	// 如果err != nil，说明用户不存在，可以创建
+	utils.Infof("CreateUser: user %s does not exist, creating new user", user.ID)
 
 	return r.SaveUser(user)
 }
@@ -80,21 +91,27 @@ func (r *UserRepository) UpdateUser(user *models.User) error {
 // GetUser 获取用户
 func (r *UserRepository) GetUser(userID string) (*models.User, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUser, userID)
+	utils.Infof("GetUser: retrieving user %s with key %s", userID, key)
 	data, err := r.storage.Get(key)
 	if err != nil {
+		utils.Errorf("GetUser: failed to get user %s: %v", userID, err)
 		return nil, err
 	}
 
+	utils.Infof("GetUser: retrieved data for user %s, data type: %T, data value: %v", userID, data, data)
 	userData, ok := data.(string)
 	if !ok {
+		utils.Errorf("GetUser: invalid user data type for user %s, expected string, got %T", userID, data)
 		return nil, fmt.Errorf("invalid user data type")
 	}
 
 	var user models.User
 	if err := json.Unmarshal([]byte(userData), &user); err != nil {
+		utils.Errorf("GetUser: failed to unmarshal user %s: %v", userID, err)
 		return nil, fmt.Errorf("unmarshal user failed: %w", err)
 	}
 
+	utils.Infof("GetUser: successfully retrieved user %s", userID)
 	return &user, nil
 }
 

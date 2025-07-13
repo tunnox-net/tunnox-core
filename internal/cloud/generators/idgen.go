@@ -199,8 +199,8 @@ func (g *ClientIDGenerator) Generate() (int64, error) {
 
 	// 标记ID为已使用
 	if err := g.markAsUsed(clientID); err != nil {
-		// 如果标记失败，尝试回滚计数器（简化处理）
-		utils.Errorf("Failed to mark client ID %d as used: %v", clientID, err)
+		// 如果标记失败，返回错误而不是继续
+		return 0, fmt.Errorf("failed to mark client ID %d as used: %w", clientID, err)
 	}
 
 	return clientID, nil

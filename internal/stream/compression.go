@@ -93,3 +93,13 @@ func NewGzipWriter(writer io.Writer, parentCtx context.Context) *GzipWriter {
 	w.SetCtx(parentCtx, w.onClose)
 	return w
 }
+
+// Close 关闭Gzip读取器（兼容接口）
+func (r *GzipReader) Close() {
+	r.Dispose.Close()
+}
+
+// Close 关闭Gzip写入器（兼容接口）
+func (w *GzipWriter) Close() {
+	w.Dispose.Close()
+}

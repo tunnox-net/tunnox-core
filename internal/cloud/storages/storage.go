@@ -96,11 +96,23 @@ func (m *MemoryStorage) Set(key string, value interface{}, ttl time.Duration) er
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	expiration := time.Now().Add(ttl)
+	// 修复：如果 m.data 为 nil，重新初始化
+	if m.data == nil {
+		m.data = make(map[string]*storageItem)
+	}
+
+	var expiration time.Time
+	if ttl <= 0 {
+		expiration = time.Time{} // 零值，表示永不过期
+	} else {
+		expiration = time.Now().Add(ttl)
+	}
+
 	m.data[key] = &storageItem{
 		value:      value,
 		expiration: expiration,
 	}
+	utils.Infof("MemoryStorage.Set: stored key %s, value type: %T, expiration: %v", key, value, expiration)
 	return nil
 }
 
@@ -109,16 +121,26 @@ func (m *MemoryStorage) Get(key string) (interface{}, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	item, exists := m.data[key]
-	if !exists {
+	utils.Infof("MemoryStorage.Get: retrieving key %s, data map size: %d", key, len(m.data))
+	if m.data == nil {
+		utils.Errorf("MemoryStorage.Get: data map is nil for key %s", key)
 		return nil, ErrKeyNotFound
 	}
 
-	if time.Now().After(item.expiration) {
+	item, exists := m.data[key]
+	if !exists {
+		utils.Errorf("MemoryStorage.Get: key %s not found in data map", key)
+		return nil, ErrKeyNotFound
+	}
+
+	// 只有 expiration 非零且已过期才删除
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+		utils.Infof("MemoryStorage.Get: key %s expired, deleting", key)
 		delete(m.data, key)
 		return nil, ErrKeyNotFound
 	}
 
+	utils.Infof("MemoryStorage.Get: successfully retrieved key %s, value type: %T", key, item.value)
 	return item.value, nil
 }
 
@@ -136,16 +158,26 @@ func (m *MemoryStorage) Exists(key string) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	item, exists := m.data[key]
-	if !exists {
+	utils.Infof("MemoryStorage.Exists: checking key %s, data map size: %d", key, len(m.data))
+	if m.data == nil {
+		utils.Errorf("MemoryStorage.Exists: data map is nil for key %s", key)
 		return false, nil
 	}
 
-	if time.Now().After(item.expiration) {
+	item, exists := m.data[key]
+	if !exists {
+		utils.Errorf("MemoryStorage.Exists: key %s not found in data map", key)
+		return false, nil
+	}
+
+	// 修复：零值时间表示永不过期
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+		utils.Infof("MemoryStorage.Exists: key %s expired, deleting", key)
 		delete(m.data, key)
 		return false, nil
 	}
 
+	utils.Infof("MemoryStorage.Exists: key %s exists and not expired", key)
 	return true, nil
 }
 
@@ -182,7 +214,8 @@ func (m *MemoryStorage) AppendToList(key string, value interface{}) error {
 		return nil
 	}
 
-	if time.Now().After(item.expiration) {
+	// 修复：零值时间表示永不过期
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		m.data[key] = &storageItem{
 			value:      []interface{}{value},
 			expiration: time.Now().Add(constants.DefaultDataTTL),
@@ -208,7 +241,8 @@ func (m *MemoryStorage) RemoveFromList(key string, value interface{}) error {
 		return nil
 	}
 
-	if time.Now().After(item.expiration) {
+	// 修复：零值时间表示永不过期
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		delete(m.data, key)
 		return nil
 	}
@@ -232,6 +266,11 @@ func (m *MemoryStorage) SetHash(key string, field string, value interface{}) err
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// 修复：如果 m.data 为 nil，重新初始化
+	if m.data == nil {
+		m.data = make(map[string]*storageItem)
+	}
+
 	item, exists := m.data[key]
 	if !exists {
 		item = &storageItem{
@@ -241,17 +280,23 @@ func (m *MemoryStorage) SetHash(key string, field string, value interface{}) err
 		m.data[key] = item
 	}
 
-	if time.Now().After(item.expiration) {
+	// 修复：零值时间表示永不过期
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		item.value = make(map[string]interface{})
 		item.expiration = time.Now().Add(constants.DefaultDataTTL)
 	}
 
+	// 如果现有值不是map类型，重新初始化为map
 	if hash, ok := item.value.(map[string]interface{}); ok {
 		hash[field] = value
 		return nil
 	}
 
-	return ErrInvalidType
+	// 如果类型不匹配，重新初始化为map
+	item.value = make(map[string]interface{})
+	hash := item.value.(map[string]interface{})
+	hash[field] = value
+	return nil
 }
 
 // GetHash 获取哈希字段
@@ -264,7 +309,8 @@ func (m *MemoryStorage) GetHash(key string, field string) (interface{}, error) {
 		return nil, ErrKeyNotFound
 	}
 
-	if time.Now().After(item.expiration) {
+	// 修复：零值时间表示永不过期
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		delete(m.data, key)
 		return nil, ErrKeyNotFound
 	}
@@ -289,7 +335,8 @@ func (m *MemoryStorage) GetAllHash(key string) (map[string]interface{}, error) {
 		return nil, ErrKeyNotFound
 	}
 
-	if time.Now().After(item.expiration) {
+	// 修复：零值时间表示永不过期
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		delete(m.data, key)
 		return nil, ErrKeyNotFound
 	}
@@ -315,7 +362,8 @@ func (m *MemoryStorage) DeleteHash(key string, field string) error {
 		return nil
 	}
 
-	if time.Now().After(item.expiration) {
+	// 修复：零值时间表示永不过期
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		delete(m.data, key)
 		return nil
 	}
@@ -347,7 +395,8 @@ func (m *MemoryStorage) IncrBy(key string, value int64) (int64, error) {
 		m.data[key] = item
 	}
 
-	if time.Now().After(item.expiration) {
+	// 修复：零值时间表示永不过期
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		item.value = int64(0)
 		item.expiration = time.Now().Add(constants.DefaultDataTTL)
 	}
@@ -385,7 +434,8 @@ func (m *MemoryStorage) GetExpiration(key string) (time.Duration, error) {
 		return 0, ErrKeyNotFound
 	}
 
-	if time.Now().After(item.expiration) {
+	// 修复：零值时间表示永不过期
+	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		delete(m.data, key)
 		return 0, ErrKeyNotFound
 	}
@@ -400,7 +450,8 @@ func (m *MemoryStorage) CleanupExpired() error {
 
 	now := time.Now()
 	for key, item := range m.data {
-		if now.After(item.expiration) {
+		// 修复：零值时间表示永不过期
+		if !item.expiration.IsZero() && now.After(item.expiration) {
 			delete(m.data, key)
 		}
 	}

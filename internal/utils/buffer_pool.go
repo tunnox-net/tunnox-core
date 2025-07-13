@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync"
 )
@@ -19,18 +20,20 @@ func NewBufferPool(parentCtx context.Context) *BufferPool {
 	pool := &BufferPool{
 		pools: make(map[int]*sync.Pool),
 	}
-	pool.SetCtx(parentCtx, pool.onClose)
+	pool.SetCtx(parentCtx, nil)
+	pool.AddCleanHandler(pool.onClose)
 	return pool
 }
 
 // onClose 资源释放回调
-func (bp *BufferPool) onClose() {
+func (bp *BufferPool) onClose() error {
 	bp.mu.Lock()
 	defer bp.mu.Unlock()
 
 	for k := range bp.pools {
 		delete(bp.pools, k)
 	}
+	return nil
 }
 
 // Get(size int) []byte 获取指定大小的缓冲区
@@ -91,15 +94,20 @@ func NewBufferManager(parentCtx context.Context) *BufferManager {
 	bm := &BufferManager{
 		pool: NewBufferPool(parentCtx),
 	}
-	bm.SetCtx(parentCtx, bm.onClose)
+	bm.SetCtx(parentCtx, nil)
+	bm.AddCleanHandler(bm.onClose)
 	return bm
 }
 
 // onClose 资源释放回调
-func (bm *BufferManager) onClose() {
+func (bm *BufferManager) onClose() error {
 	if bm.pool != nil {
-		bm.pool.Close()
+		result := bm.pool.Close()
+		if result.HasErrors() {
+			return fmt.Errorf("buffer pool cleanup failed: %v", result.Error())
+		}
 	}
+	return nil
 }
 
 // Allocate(size int) []byte 分配缓冲区

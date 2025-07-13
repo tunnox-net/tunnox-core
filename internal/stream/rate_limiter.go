@@ -235,3 +235,18 @@ func (r *RateLimiterReader) SetRate(bytesPerSecond int64) error {
 func (w *RateLimiterWriter) SetRate(bytesPerSecond int64) error {
 	return w.tokenBucket.SetRate(bytesPerSecond)
 }
+
+// Close 关闭限速读取器（兼容接口）
+func (r *RateLimiterReader) Close() {
+	r.Dispose.Close()
+}
+
+// Close 关闭限速写入器（兼容接口）
+func (w *RateLimiterWriter) Close() {
+	w.Dispose.Close()
+}
+
+// Close 关闭限速器（兼容接口）
+func (r *RateLimiter) Close() {
+	r.Dispose.Close()
+}

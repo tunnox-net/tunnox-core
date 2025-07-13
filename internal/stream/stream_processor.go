@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"io"
 	"sync"
 	"tunnox-core/internal/constants"
@@ -35,14 +36,19 @@ func NewStreamProcessor(reader io.Reader, writer io.Writer, parentCtx context.Co
 		writer:    writer,
 		bufferMgr: utils.NewBufferManager(parentCtx),
 	}
-	stream.SetCtx(parentCtx, stream.onClose)
+	stream.SetCtx(parentCtx, nil)
+	stream.AddCleanHandler(stream.onClose)
 	return stream
 }
 
-func (ps *StreamProcessor) onClose() {
+func (ps *StreamProcessor) onClose() error {
 	if ps.bufferMgr != nil {
-		ps.bufferMgr.Close()
+		result := ps.bufferMgr.Close()
+		if result.HasErrors() {
+			return fmt.Errorf("buffer manager cleanup failed: %v", result.Error())
+		}
 	}
+	return nil
 }
 
 // readLock 获取读取锁并检查状态
@@ -469,4 +475,14 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	}
 
 	return totalBytes, nil
+}
+
+// Close 关闭流处理器（兼容接口）
+func (ps *StreamProcessor) Close() {
+	ps.Dispose.Close()
+}
+
+// CloseWithResult 关闭并返回结果（新方法）
+func (ps *StreamProcessor) CloseWithResult() *utils.DisposeResult {
+	return ps.Dispose.Close()
 }
