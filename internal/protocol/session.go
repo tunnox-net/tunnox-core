@@ -25,7 +25,7 @@ type Session = common.Session
 type ConnectionSession struct {
 	connMap       map[string]*StreamConnectionInfo
 	connLock      sync.RWMutex
-	idGen         generators.IDGenerator[string]
+	idManager     *generators.IDManager
 	streamMgr     *stream.StreamManager
 	streamFactory stream.StreamFactory
 
@@ -33,7 +33,7 @@ type ConnectionSession struct {
 }
 
 // NewConnectionSession 创建新的连接会话
-func NewConnectionSession(idGen generators.IDGenerator[string], parentCtx context.Context) *ConnectionSession {
+func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Context) *ConnectionSession {
 	// 创建默认流工厂
 	streamFactory := stream.NewDefaultStreamFactory(parentCtx)
 
@@ -42,7 +42,7 @@ func NewConnectionSession(idGen generators.IDGenerator[string], parentCtx contex
 
 	session := &ConnectionSession{
 		connMap:       make(map[string]*StreamConnectionInfo),
-		idGen:         idGen,
+		idManager:     idManager,
 		streamMgr:     streamMgr,
 		streamFactory: streamFactory,
 	}
@@ -53,7 +53,7 @@ func NewConnectionSession(idGen generators.IDGenerator[string], parentCtx contex
 // InitConnection 初始化连接
 func (s *ConnectionSession) InitConnection(reader io.Reader, writer io.Writer) (*StreamConnectionInfo, error) {
 	// 生成连接ID
-	connID, err := s.idGen.Generate()
+	connID, err := s.idManager.GenerateConnectionID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate connection ID: %w", err)
 	}

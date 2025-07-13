@@ -106,7 +106,12 @@ func (t *TcpAdapter) handleConn(conn net.Conn) {
 			utils.Errorf("Failed to initialize connection: %v", err)
 			return
 		}
-		defer t.session.CloseConnection(connInfo.ID)
+		defer func(session Session, connectionId string) {
+			err := session.CloseConnection(connectionId)
+			if err != nil {
+				utils.Errorf("Failed to close connection: %v", err)
+			}
+		}(t.session, connInfo.ID)
 
 		// 处理数据流
 		for {

@@ -113,12 +113,12 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 
 // setupProtocolAdapters 设置协议适配器
 func (s *Server) setupProtocolAdapters() error {
-	// 创建存储和ID生成器
+	// 创建存储和ID管理器
 	storage := storages.NewMemoryStorage(s.Ctx())
-	idGen := generators.NewStorageBasedIDGenerator[string](storage, generators.PrefixConnectionID, "tunnox:id:used:conn", s.Ctx())
+	idManager := generators.NewIDManager(storage, s.Ctx())
 
 	// 创建 ConnectionSession（使用新的架构）
-	session := protocol.NewConnectionSession(idGen, s.Ctx())
+	session := protocol.NewConnectionSession(idManager, s.Ctx())
 
 	// 创建协议工厂
 	factory := NewProtocolFactory(session)
