@@ -102,8 +102,9 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 	taskID := fmt.Sprintf("cleanup_%s", taskType)
 	lockKey := fmt.Sprintf("lock:cleanup_task:%s", taskID)
 
-	// 获取分布式锁
-	acquired, err := cm.lock.Acquire(lockKey, 5*time.Minute) // 5分钟锁超时
+	// 使用存储层的原子操作获取锁
+	lockValue := fmt.Sprintf("cleanup_manager:%d", time.Now().UnixNano())
+	acquired, err := cm.storage.SetNX(lockKey, lockValue, 5*time.Minute) // 5分钟锁超时
 	if err != nil {
 		return nil, false, fmt.Errorf("acquire lock failed: %w", err)
 	}
@@ -115,26 +116,26 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 	key := fmt.Sprintf("%s:cleanup_task:%s", constants.KeyPrefixCleanup, taskID)
 	data, err := cm.storage.Get(key)
 	if err != nil {
-		cm.lock.Release(lockKey)
+		cm.storage.Delete(lockKey) // 释放锁
 		return nil, false, fmt.Errorf("get task failed: %w", err)
 	}
 
 	taskData, ok := data.(string)
 	if !ok {
-		cm.lock.Release(lockKey)
+		cm.storage.Delete(lockKey) // 释放锁
 		return nil, false, fmt.Errorf("invalid task data type")
 	}
 
 	var task CleanupTask
 	if err := json.Unmarshal([]byte(taskData), &task); err != nil {
-		cm.lock.Release(lockKey)
+		cm.storage.Delete(lockKey) // 释放锁
 		return nil, false, fmt.Errorf("unmarshal task failed: %w", err)
 	}
 
 	// 检查是否需要执行
 	if time.Now().Before(task.NextRun) {
-		cm.lock.Release(lockKey)
-		return nil, false, nil // 还未到执行时间
+		cm.storage.Delete(lockKey) // 释放锁
+		return nil, false, nil     // 还未到执行时间
 	}
 
 	// 更新任务状态为运行中
@@ -144,13 +145,20 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 
 	dataBytes, err := json.Marshal(task)
 	if err != nil {
-		cm.lock.Release(lockKey)
+		cm.storage.Delete(lockKey) // 释放锁
 		return nil, false, fmt.Errorf("marshal updated task failed: %w", err)
 	}
 
-	if err := cm.storage.Set(key, string(dataBytes), 0); err != nil {
-		cm.lock.Release(lockKey)
+	// 使用原子操作更新任务状态
+	success, err := cm.storage.CompareAndSwap(key, taskData, string(dataBytes), 0)
+	if err != nil {
+		cm.storage.Delete(lockKey) // 释放锁
 		return nil, false, fmt.Errorf("update task failed: %w", err)
+	}
+
+	if !success {
+		cm.storage.Delete(lockKey) // 释放锁
+		return nil, false, fmt.Errorf("task was modified by another process")
 	}
 
 	return &task, true, nil
@@ -161,7 +169,7 @@ func (cm *CleanupManager) CompleteCleanupTask(ctx context.Context, taskType stri
 	taskID := fmt.Sprintf("cleanup_%s", taskType)
 	lockKey := fmt.Sprintf("lock:cleanup_task:%s", taskID)
 
-	defer cm.lock.Release(lockKey)
+	defer cm.storage.Delete(lockKey) // 释放锁
 
 	// 更新任务状态
 	key := fmt.Sprintf("%s:cleanup_task:%s", constants.KeyPrefixCleanup, taskID)
@@ -193,8 +201,14 @@ func (cm *CleanupManager) CompleteCleanupTask(ctx context.Context, taskType stri
 		return fmt.Errorf("marshal completed task failed: %w", err)
 	}
 
-	if err := cm.storage.Set(key, string(dataBytes), 0); err != nil {
+	// 使用原子操作更新任务状态
+	success, err := cm.storage.CompareAndSwap(key, taskData, string(dataBytes), 0)
+	if err != nil {
 		return fmt.Errorf("update completed task failed: %w", err)
+	}
+
+	if !success {
+		return fmt.Errorf("task was modified by another process")
 	}
 
 	return nil

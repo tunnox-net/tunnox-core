@@ -99,15 +99,15 @@ func TestIDManager_Basic(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("Generate Config ID", func(t *testing.T) {
-		configID, err := manager.GenerateConfigID()
+	t.Run("Generate Port Mapping ID", func(t *testing.T) {
+		portMappingID, err := manager.GeneratePortMappingID()
 		require.NoError(t, err)
 
-		// 验证格式：cfg_timestamp_randomString
-		assert.True(t, strings.HasPrefix(configID, "cfg_"))
-		parts := strings.Split(configID, "_")
+		// 验证格式：pmap_timestamp_randomString
+		assert.True(t, strings.HasPrefix(portMappingID, "pmap_"))
+		parts := strings.Split(portMappingID, "_")
 		assert.Len(t, parts, 3)
-		assert.Equal(t, "cfg", parts[0])
+		assert.Equal(t, "pmap", parts[0])
 
 		// 验证时间戳部分（13位数字）
 		assert.Len(t, parts[1], 13)
@@ -116,16 +116,16 @@ func TestIDManager_Basic(t *testing.T) {
 		assert.Len(t, parts[2], 8)
 
 		// 检查唯一性
-		used, err := manager.IsConfigIDUsed(configID)
+		used, err := manager.IsPortMappingIDUsed(portMappingID)
 		require.NoError(t, err)
 		assert.True(t, used)
 
 		// 释放ID
-		err = manager.ReleaseConfigID(configID)
+		err = manager.ReleasePortMappingID(portMappingID)
 		require.NoError(t, err)
 
 		// 检查释放后状态
-		used, err = manager.IsConfigIDUsed(configID)
+		used, err = manager.IsPortMappingIDUsed(portMappingID)
 		require.NoError(t, err)
 		assert.False(t, used)
 	})
@@ -212,14 +212,14 @@ func TestIDManager_Uniqueness(t *testing.T) {
 		assert.Len(t, ids, numIDs)
 	})
 
-	t.Run("Config ID Uniqueness", func(t *testing.T) {
+	t.Run("Port Mapping ID Uniqueness", func(t *testing.T) {
 		ids := make(map[string]bool)
 		const numIDs = 100
 
 		for i := 0; i < numIDs; i++ {
-			id, err := manager.GenerateConfigID()
+			id, err := manager.GeneratePortMappingID()
 			require.NoError(t, err)
-			assert.False(t, ids[id], "Duplicate config ID generated: %s", id)
+			assert.False(t, ids[id], "Duplicate port mapping ID generated: %s", id)
 			ids[id] = true
 		}
 
@@ -374,14 +374,14 @@ func TestIDManager_FormatConsistency(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("Config ID Format", func(t *testing.T) {
-		configID, err := manager.GenerateConfigID()
+	t.Run("Port Mapping ID Format", func(t *testing.T) {
+		portMappingID, err := manager.GeneratePortMappingID()
 		require.NoError(t, err)
 
-		// 验证格式：cfg_timestamp_randomString
-		parts := strings.Split(configID, "_")
+		// 验证格式：pmap_timestamp_randomString
+		parts := strings.Split(portMappingID, "_")
 		assert.Len(t, parts, 3)
-		assert.Equal(t, "cfg", parts[0])
+		assert.Equal(t, "pmap", parts[0])
 		assert.Len(t, parts[1], 13) // 时间戳
 		assert.Len(t, parts[2], 8)  // 随机字符串
 	})

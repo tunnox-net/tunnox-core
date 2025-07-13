@@ -763,6 +763,8 @@ func (r *ConnectionRepo) AddConnectionToMapping(mappingID string, connInfo *mode
 	}
 
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixMappingConnections, mappingID)
+
+	// 使用存储层的原子列表操作
 	return r.storage.AppendToList(key, string(data))
 }
 

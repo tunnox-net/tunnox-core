@@ -6,13 +6,12 @@ import (
 )
 
 type Dispose struct {
-	currentLock sync.Mutex
-	closed      bool
-	ctx         context.Context
-	cancel      context.CancelFunc
-	onClose     func()
-	closeLinks  []func()
-	linkLock    sync.Mutex
+	currentLock   sync.Mutex
+	closed        bool
+	ctx           context.Context
+	cancel        context.CancelFunc
+	cleanHandlers []func()
+	linkLock      sync.Mutex
 }
 
 func (c *Dispose) Ctx() context.Context {
@@ -35,29 +34,26 @@ func (c *Dispose) Close() {
 	if c.cancel != nil {
 		c.cancel()
 	}
-	if c.onClose != nil {
-		c.onClose()
-	}
-	c.closeLinksRun()
+	c.runCleanHandlers()
 }
 
-func (c *Dispose) closeLinksRun() {
-	if (c.closeLinks != nil) && (len(c.closeLinks) > 0) {
-		for i, closeLink := range c.closeLinks {
+func (c *Dispose) runCleanHandlers() {
+	if (c.cleanHandlers != nil) && (len(c.cleanHandlers) > 0) {
+		for i, closeLink := range c.cleanHandlers {
 			closeLink()
 			_ = i // 避免 linter 错误
 		}
 	}
 }
 
-func (c *Dispose) AddCloseFunc(f func()) {
+func (c *Dispose) AddCleanHandler(f func()) {
 	c.linkLock.Lock()
 	defer c.linkLock.Unlock()
 
-	if c.closeLinks == nil {
-		c.closeLinks = make([]func(), 0)
+	if c.cleanHandlers == nil {
+		c.cleanHandlers = make([]func(), 0)
 	}
-	c.closeLinks = append(c.closeLinks, f)
+	c.cleanHandlers = append(c.cleanHandlers, f)
 }
 
 func (c *Dispose) SetCtx(parent context.Context, onClose func()) {
@@ -71,11 +67,15 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func()) {
 		curParent = context.Background()
 	}
 
+	// 只有当 onClose 不为 nil 时才添加到清理处理器
+	if onClose != nil {
+		c.AddCleanHandler(onClose)
+	}
+
 	if curParent != nil {
 		if c.ctx != nil && !c.closed {
 			Warn("context is not nil and context is not closed")
 		}
-		c.onClose = onClose
 		c.ctx, c.cancel = context.WithCancel(curParent)
 		c.closed = false
 		go func() {
@@ -85,10 +85,7 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func()) {
 				c.currentLock.Lock()
 
 				if !c.closed {
-					if c.onClose != nil {
-						c.onClose()
-						c.closeLinksRun()
-					}
+					c.runCleanHandlers()
 					c.closed = true
 				}
 			}

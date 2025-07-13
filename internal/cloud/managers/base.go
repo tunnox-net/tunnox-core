@@ -45,7 +45,11 @@ type CloudControl struct {
 func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudControl {
 	ctx := context.Background()
 	repo := repos.NewRepository(storage)
-	lock := distributed.NewMemoryLock() // 可替换为分布式锁
+
+	// 使用锁工厂创建分布式锁
+	lockFactory := distributed.NewLockFactory(storage)
+	owner := fmt.Sprintf("cloud_control_%d", time.Now().UnixNano())
+	lock := lockFactory.CreateDefaultLock(owner)
 
 	// 创建仓库实例
 	userRepo := repos.NewUserRepository(repo)
@@ -289,7 +293,7 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 	// 生成端口映射ID，确保不重复
 	var mappingID string
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
-		generatedID, err := b.idManager.GenerateMappingID()
+		generatedID, err := b.idManager.GeneratePortMappingID()
 		if err != nil {
 			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
 		}
@@ -304,7 +308,7 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 
 		if existingMapping != nil {
 			// 端口映射已存在，释放ID并重试
-			_ = b.idManager.ReleaseMappingID(generatedID)
+			_ = b.idManager.ReleasePortMappingID(generatedID)
 			continue
 		}
 
@@ -322,7 +326,7 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 
 	if err := b.mappingRepo.CreatePortMapping(mapping); err != nil {
 		// 如果保存失败，释放ID
-		_ = b.idManager.ReleaseMappingID(mappingID)
+		_ = b.idManager.ReleasePortMappingID(mappingID)
 		return nil, fmt.Errorf("save port mapping failed: %w", err)
 	}
 
@@ -330,7 +334,7 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 	if err := b.mappingRepo.AddMappingToUser(mapping.UserID, mapping); err != nil {
 		// 如果添加到用户失败，删除端口映射并释放ID
 		_ = b.mappingRepo.DeletePortMapping(mappingID)
-		_ = b.idManager.ReleaseMappingID(mappingID)
+		_ = b.idManager.ReleasePortMappingID(mappingID)
 		return nil, fmt.Errorf("add mapping to user failed: %w", err)
 	}
 
@@ -355,7 +359,7 @@ func (b *CloudControl) DeletePortMapping(mappingID string) error {
 	mapping, err := b.mappingRepo.GetPortMapping(mappingID)
 	if err == nil && mapping != nil {
 		// 释放端口映射ID
-		_ = b.idManager.ReleaseMappingID(mappingID)
+		_ = b.idManager.ReleasePortMappingID(mappingID)
 	}
 	return b.mappingRepo.DeletePortMapping(mappingID)
 }

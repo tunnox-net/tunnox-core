@@ -5,14 +5,23 @@ import (
 	"context"
 	"testing"
 	"time"
+	"tunnox-core/internal/cloud/generators"
+	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/utils"
 )
 
+// createTestIDGenerator 创建测试用的ID生成器
+func createTestIDGenerator() generators.IDGenerator[string] {
+	storage := storages.NewMemoryStorage(context.Background())
+	return generators.NewStorageBasedIDGenerator[string](storage, generators.PrefixConnectionID, "tunnox:id:used:conn", context.Background())
+}
+
 func TestNewConnectionSession(t *testing.T) {
 	// 创建新的连接会话
-	session := protocol.NewConnectionSession(context.Background())
+	idGen := createTestIDGenerator()
+	session := protocol.NewConnectionSession(idGen, context.Background())
 	defer session.Close()
 
 	// 验证初始状态
@@ -24,7 +33,8 @@ func TestNewConnectionSession(t *testing.T) {
 
 func TestSessionInitConnection(t *testing.T) {
 	// 创建会话
-	session := protocol.NewConnectionSession(context.Background())
+	idGen := createTestIDGenerator()
+	session := protocol.NewConnectionSession(idGen, context.Background())
 	defer session.Close()
 
 	// 创建测试数据
@@ -67,7 +77,8 @@ func TestSessionInitConnection(t *testing.T) {
 
 func TestSessionCloseConnection(t *testing.T) {
 	// 创建会话
-	session := protocol.NewConnectionSession(context.Background())
+	session := idGen := createTestIDGenerator()
+	session := protocol.NewConnectionSession(idGen, context.Background())
 	defer session.Close()
 
 	// 创建测试数据
@@ -108,7 +119,8 @@ func TestSessionCloseConnection(t *testing.T) {
 
 func TestSessionHandlePacket(t *testing.T) {
 	// 创建会话
-	session := protocol.NewConnectionSession(context.Background())
+	session := idGen := createTestIDGenerator()
+	session := protocol.NewConnectionSession(idGen, context.Background())
 	defer session.Close()
 
 	// 创建测试数据包
@@ -129,7 +141,8 @@ func TestSessionHandlePacket(t *testing.T) {
 
 func TestSessionMultipleConnections(t *testing.T) {
 	// 创建会话
-	session := protocol.NewConnectionSession(context.Background())
+	session := idGen := createTestIDGenerator()
+	session := protocol.NewConnectionSession(idGen, context.Background())
 	defer session.Close()
 
 	// 创建多个连接
@@ -168,7 +181,8 @@ func TestSessionMultipleConnections(t *testing.T) {
 
 func TestSessionCloseNonExistentConnection(t *testing.T) {
 	// 创建会话
-	session := protocol.NewConnectionSession(context.Background())
+	session := idGen := createTestIDGenerator()
+	session := protocol.NewConnectionSession(idGen, context.Background())
 	defer session.Close()
 
 	// 尝试关闭不存在的连接
@@ -180,7 +194,8 @@ func TestSessionCloseNonExistentConnection(t *testing.T) {
 
 func TestSessionConnectionIDGenerator(t *testing.T) {
 	// 创建会话
-	session := protocol.NewConnectionSession(context.Background())
+	session := idGen := createTestIDGenerator()
+	session := protocol.NewConnectionSession(idGen, context.Background())
 	defer session.Close()
 
 	// 创建多个连接，验证ID唯一性
@@ -213,7 +228,8 @@ func TestSessionConnectionIDGenerator(t *testing.T) {
 
 func TestSessionCleanup(t *testing.T) {
 	// 创建会话
-	session := protocol.NewConnectionSession(context.Background())
+	session := idGen := createTestIDGenerator()
+	session := protocol.NewConnectionSession(idGen, context.Background())
 
 	// 创建连接
 	var buf bytes.Buffer

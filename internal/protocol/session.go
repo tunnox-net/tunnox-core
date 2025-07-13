@@ -45,7 +45,7 @@ type Session interface {
 type ConnectionSession struct {
 	connMap       map[string]*StreamConnectionInfo
 	connLock      sync.RWMutex
-	idGen         *generators.ConnectionIDGenerator
+	idGen         generators.IDGenerator[string]
 	streamMgr     *stream.StreamManager
 	streamFactory stream.StreamFactory
 
@@ -53,7 +53,7 @@ type ConnectionSession struct {
 }
 
 // NewConnectionSession 创建新的连接会话
-func NewConnectionSession(parentCtx context.Context) *ConnectionSession {
+func NewConnectionSession(idGen generators.IDGenerator[string], parentCtx context.Context) *ConnectionSession {
 	// 创建默认流工厂
 	streamFactory := stream.NewDefaultStreamFactory(parentCtx)
 
@@ -62,7 +62,7 @@ func NewConnectionSession(parentCtx context.Context) *ConnectionSession {
 
 	session := &ConnectionSession{
 		connMap:       make(map[string]*StreamConnectionInfo),
-		idGen:         generators.NewConnectionIDGenerator(parentCtx),
+		idGen:         idGen,
 		streamMgr:     streamMgr,
 		streamFactory: streamFactory,
 	}

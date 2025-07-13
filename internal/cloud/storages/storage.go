@@ -46,6 +46,12 @@ type Storage interface {
 	// 清理过期数据
 	CleanupExpired() error
 
+	// 分布式操作
+	SetNX(key string, value interface{}, ttl time.Duration) (bool, error)                       // 原子设置，仅当键不存在时
+	CompareAndSwap(key string, oldValue, newValue interface{}, ttl time.Duration) (bool, error) // 原子比较并交换
+	Watch(key string, callback func(interface{})) error                                         // 监听键变化
+	Unwatch(key string) error                                                                   // 取消监听
+
 	// 关闭存储
 	Close() error
 }
@@ -443,6 +449,84 @@ func (m *MemoryStorage) StopCleanup() {
 	}
 	close(m.cleanupStop)
 	m.cleanupRunning = false
+}
+
+// SetNX 原子设置，仅当键不存在时
+func (m *MemoryStorage) SetNX(key string, value interface{}, ttl time.Duration) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// 检查键是否已存在
+	if _, exists := m.data[key]; exists {
+		return false, nil // 键已存在，设置失败
+	}
+
+	// 键不存在，设置成功
+	expiration := time.Now().Add(ttl)
+	m.data[key] = &storageItem{
+		value:      value,
+		expiration: expiration,
+	}
+	return true, nil
+}
+
+// CompareAndSwap 原子比较并交换
+func (m *MemoryStorage) CompareAndSwap(key string, oldValue, newValue interface{}, ttl time.Duration) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	item, exists := m.data[key]
+	if !exists {
+		// 键不存在，如果oldValue为nil则设置成功
+		if oldValue == nil {
+			expiration := time.Now().Add(ttl)
+			m.data[key] = &storageItem{
+				value:      newValue,
+				expiration: expiration,
+			}
+			return true, nil
+		}
+		return false, nil // 键不存在但期望值不为nil，交换失败
+	}
+
+	// 检查是否过期
+	if time.Now().After(item.expiration) {
+		delete(m.data, key)
+		if oldValue == nil {
+			expiration := time.Now().Add(ttl)
+			m.data[key] = &storageItem{
+				value:      newValue,
+				expiration: expiration,
+			}
+			return true, nil
+		}
+		return false, nil
+	}
+
+	// 比较当前值
+	if item.value != oldValue {
+		return false, nil // 值不匹配，交换失败
+	}
+
+	// 值匹配，执行交换
+	item.value = newValue
+	item.expiration = time.Now().Add(ttl)
+	return true, nil
+}
+
+// Watch 监听键变化（简化实现，实际应该支持事件通知）
+func (m *MemoryStorage) Watch(key string, callback func(interface{})) error {
+	// 简化实现：立即执行一次回调
+	if item, exists := m.data[key]; exists && time.Now().Before(item.expiration) {
+		callback(item.value)
+	}
+	return nil
+}
+
+// Unwatch 取消监听
+func (m *MemoryStorage) Unwatch(key string) error {
+	// 简化实现：无操作
+	return nil
 }
 
 // Close 关闭存储（实现Storage接口）

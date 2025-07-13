@@ -140,7 +140,7 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 	// 生成端口映射ID，确保不重复
 	var mappingID string
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
-		generatedID, err := am.idManager.GenerateMappingID()
+		generatedID, err := am.idManager.GeneratePortMappingID()
 		if err != nil {
 			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
 		}
@@ -155,7 +155,7 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 
 		if existingMapping != nil {
 			// 端口映射已存在，释放ID并重试
-			_ = am.idManager.ReleaseMappingID(generatedID)
+			_ = am.idManager.ReleasePortMappingID(generatedID)
 			continue
 		}
 
@@ -185,14 +185,14 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 
 	if err := am.mappingRepo.CreatePortMapping(mapping); err != nil {
 		// 如果保存失败，释放ID
-		_ = am.idManager.ReleaseMappingID(mappingID)
+		_ = am.idManager.ReleasePortMappingID(mappingID)
 		return nil, fmt.Errorf("save anonymous mapping failed: %w", err)
 	}
 
 	if err := am.mappingRepo.AddMappingToUser("", mapping); err != nil {
 		// 如果添加到匿名列表失败，删除映射并释放ID
 		_ = am.mappingRepo.DeletePortMapping(mappingID)
-		_ = am.idManager.ReleaseMappingID(mappingID)
+		_ = am.idManager.ReleasePortMappingID(mappingID)
 		return nil, fmt.Errorf("add anonymous mapping to list failed: %w", err)
 	}
 

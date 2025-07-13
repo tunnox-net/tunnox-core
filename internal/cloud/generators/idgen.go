@@ -30,10 +30,12 @@ const (
 	RandomPartLength = 8
 
 	// ID类型前缀
-	PrefixNodeID       = "node_"
-	PrefixConnectionID = "conn_"
-	PrefixConfigID     = "cfg_"
-	PrefixTunnelID     = "tun_"
+	PrefixNodeID                = "node_"
+	PrefixConnectionID          = "conn_"
+	PrefixPortMappingID         = "pmap_"
+	PrefixPortMappingInstanceID = "pmi_"
+	PrefixUserID                = "user_"
+	PrefixTunnelID              = "tun_"
 
 	MaxAttempts = 100
 )
@@ -180,30 +182,28 @@ func (g *ClientIDGenerator) onClose() {
 
 // Generate 生成客户端ID
 func (g *ClientIDGenerator) Generate() (int64, error) {
-	// 使用优化的分段位图算法
-	// 这里简化实现，实际应该使用optimized_idgen.go中的算法
-	for attempts := 0; attempts < MaxAttempts; attempts++ {
-		randomInt, err := utils.GenerateRandomInt64(ClientIDMin, ClientIDMax)
-		if err != nil {
-			continue
-		}
+	// 使用存储层的原子操作生成ID
+	counterKey := "tunnox:id:client_counter"
 
-		// 检查ID是否已被使用
-		used, err := g.IsUsed(randomInt)
-		if err != nil {
-			continue
-		}
-
-		if !used {
-			// 标记ID为已使用
-			if err := g.markAsUsed(randomInt); err != nil {
-				continue
-			}
-			return randomInt, nil
-		}
+	// 使用原子递增操作
+	counter, err := g.storage.Incr(counterKey)
+	if err != nil {
+		return 0, fmt.Errorf("increment counter failed: %w", err)
 	}
 
-	return 0, ErrIDExhausted
+	// 转换为客户端ID格式
+	clientID := ClientIDMin + counter
+	if clientID > ClientIDMax {
+		return 0, ErrIDExhausted
+	}
+
+	// 标记ID为已使用
+	if err := g.markAsUsed(clientID); err != nil {
+		// 如果标记失败，尝试回滚计数器（简化处理）
+		utils.Errorf("Failed to mark client ID %d as used: %v", clientID, err)
+	}
+
+	return clientID, nil
 }
 
 // Release 释放客户端ID
@@ -247,68 +247,18 @@ func (g *ClientIDGenerator) Close() error {
 	return nil
 }
 
-// ConnectionIDGenerator 连接ID生成器（基于时间戳和计数器）
-type ConnectionIDGenerator struct {
-	counter int64
-	mu      sync.Mutex
-	utils.Dispose
-}
-
-// NewConnectionIDGenerator 创建连接ID生成器
-func NewConnectionIDGenerator(parentCtx context.Context) *ConnectionIDGenerator {
-	generator := &ConnectionIDGenerator{}
-	generator.SetCtx(parentCtx, generator.onClose)
-	return generator
-}
-
-// onClose 资源清理回调
-func (g *ConnectionIDGenerator) onClose() {
-	utils.Infof("Connection ID generator resources cleaned up")
-}
-
-// Generate 生成连接ID
-func (g *ConnectionIDGenerator) Generate() (string, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.counter++
-	return fmt.Sprintf("%s%d_%d", PrefixConnectionID, time.Now().UnixMilli(), g.counter), nil
-}
-
-// Release 释放连接ID（连接ID不需要释放，因为基于时间戳）
-func (g *ConnectionIDGenerator) Release(id string) error {
-	// 连接ID基于时间戳，不需要释放
-	return nil
-}
-
-// IsUsed 检查连接ID是否已使用（连接ID天然唯一）
-func (g *ConnectionIDGenerator) IsUsed(id string) (bool, error) {
-	// 连接ID基于时间戳+计数器，天然唯一
-	return false, nil
-}
-
-// GetUsedCount 获取已使用的连接ID数量
-func (g *ConnectionIDGenerator) GetUsedCount() int {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	return int(g.counter)
-}
-
-// Close 关闭生成器
-func (g *ConnectionIDGenerator) Close() error {
-	g.Dispose.Close()
-	return nil
-}
-
 // IDManager 统一ID管理器
 type IDManager struct {
 	storage storages.Storage
 
 	// 不同类型的专门生成器实例
-	clientIDGen     IDGenerator[int64]
-	nodeIDGen       IDGenerator[string]
-	connectionIDGen IDGenerator[string]
-	configIDGen     IDGenerator[string]
-	tunnelIDGen     IDGenerator[string]
+	clientIDGen              IDGenerator[int64]
+	nodeIDGen                IDGenerator[string]
+	connectionIDGen          IDGenerator[string]
+	portMappingIDGen         IDGenerator[string]
+	portMappingInstanceIDGen IDGenerator[string]
+	userIDGen                IDGenerator[string]
+	tunnelIDGen              IDGenerator[string]
 
 	utils.Dispose
 }
@@ -322,8 +272,10 @@ func NewIDManager(storage storages.Storage, parentCtx context.Context) *IDManage
 	// 初始化各种ID生成器
 	manager.clientIDGen = NewClientIDGenerator(storage, parentCtx)
 	manager.nodeIDGen = NewStorageBasedIDGenerator[string](storage, PrefixNodeID, "tunnox:id:used:node", parentCtx)
-	manager.connectionIDGen = NewConnectionIDGenerator(parentCtx)
-	manager.configIDGen = NewStorageBasedIDGenerator[string](storage, PrefixConfigID, "tunnox:id:used:config", parentCtx)
+	manager.connectionIDGen = NewStorageBasedIDGenerator[string](storage, PrefixConnectionID, "tunnox:id:used:conn", parentCtx)
+	manager.portMappingIDGen = NewStorageBasedIDGenerator[string](storage, PrefixPortMappingID, "tunnox:id:used:pmap", parentCtx)
+	manager.portMappingInstanceIDGen = NewStorageBasedIDGenerator[string](storage, PrefixPortMappingInstanceID, "tunnox:id:used:pmi", parentCtx)
+	manager.userIDGen = NewStorageBasedIDGenerator[string](storage, PrefixUserID, "tunnox:id:used:user", parentCtx)
 	manager.tunnelIDGen = NewStorageBasedIDGenerator[string](storage, PrefixTunnelID, "tunnox:id:used:tunnel", parentCtx)
 
 	manager.SetCtx(parentCtx, manager.onClose)
@@ -350,9 +302,19 @@ func (m *IDManager) onClose() {
 		utils.Infof("Closed connection ID generator")
 	}
 
-	if m.configIDGen != nil {
-		m.configIDGen.Close()
-		utils.Infof("Closed config ID generator")
+	if m.portMappingIDGen != nil {
+		m.portMappingIDGen.Close()
+		utils.Infof("Closed port mapping ID generator")
+	}
+
+	if m.portMappingInstanceIDGen != nil {
+		m.portMappingInstanceIDGen.Close()
+		utils.Infof("Closed port mapping instance ID generator")
+	}
+
+	if m.userIDGen != nil {
+		m.userIDGen.Close()
+		utils.Infof("Closed user ID generator")
 	}
 
 	if m.tunnelIDGen != nil {
@@ -373,21 +335,19 @@ func (m *IDManager) GenerateNodeID() (string, error) {
 }
 
 func (m *IDManager) GenerateUserID() (string, error) {
-	// 使用随机字符串生成用户ID
-	return utils.GenerateRandomString(16)
+	return m.userIDGen.Generate()
 }
 
-func (m *IDManager) GenerateMappingID() (string, error) {
-	// 使用随机字符串生成端口映射ID
-	return utils.GenerateRandomString(12)
+func (m *IDManager) GeneratePortMappingID() (string, error) {
+	return m.portMappingIDGen.Generate()
+}
+
+func (m *IDManager) GeneratePortMappingInstanceID() (string, error) {
+	return m.portMappingInstanceIDGen.Generate()
 }
 
 func (m *IDManager) GenerateConnectionID() (string, error) {
 	return m.connectionIDGen.Generate()
-}
-
-func (m *IDManager) GenerateConfigID() (string, error) {
-	return m.configIDGen.Generate()
 }
 
 func (m *IDManager) GenerateTunnelID() (string, error) {
@@ -403,21 +363,19 @@ func (m *IDManager) ReleaseNodeID(id string) error {
 }
 
 func (m *IDManager) ReleaseUserID(id string) error {
-	// 用户ID使用随机字符串，不需要释放
-	return nil
+	return m.userIDGen.Release(id)
 }
 
-func (m *IDManager) ReleaseMappingID(id string) error {
-	// 端口映射ID使用随机字符串，不需要释放
-	return nil
+func (m *IDManager) ReleasePortMappingID(id string) error {
+	return m.portMappingIDGen.Release(id)
+}
+
+func (m *IDManager) ReleasePortMappingInstanceID(id string) error {
+	return m.portMappingInstanceIDGen.Release(id)
 }
 
 func (m *IDManager) ReleaseConnectionID(id string) error {
 	return m.connectionIDGen.Release(id)
-}
-
-func (m *IDManager) ReleaseConfigID(id string) error {
-	return m.configIDGen.Release(id)
 }
 
 func (m *IDManager) ReleaseTunnelID(id string) error {
@@ -433,21 +391,19 @@ func (m *IDManager) IsNodeIDUsed(id string) (bool, error) {
 }
 
 func (m *IDManager) IsUserIDUsed(id string) (bool, error) {
-	// 用户ID使用随机字符串，天然唯一
-	return false, nil
+	return m.userIDGen.IsUsed(id)
 }
 
-func (m *IDManager) IsMappingIDUsed(id string) (bool, error) {
-	// 端口映射ID使用随机字符串，天然唯一
-	return false, nil
+func (m *IDManager) IsPortMappingIDUsed(id string) (bool, error) {
+	return m.portMappingIDGen.IsUsed(id)
+}
+
+func (m *IDManager) IsPortMappingInstanceIDUsed(id string) (bool, error) {
+	return m.portMappingInstanceIDGen.IsUsed(id)
 }
 
 func (m *IDManager) IsConnectionIDUsed(id string) (bool, error) {
 	return m.connectionIDGen.IsUsed(id)
-}
-
-func (m *IDManager) IsConfigIDUsed(id string) (bool, error) {
-	return m.configIDGen.IsUsed(id)
 }
 
 func (m *IDManager) IsTunnelIDUsed(id string) (bool, error) {
