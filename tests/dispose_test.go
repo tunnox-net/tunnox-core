@@ -89,8 +89,9 @@ func TestDisposeSetCtxWithOnClose(t *testing.T) {
 	dispose := &utils.Dispose{}
 
 	called := false
-	onClose := func() {
+	onClose := func() error {
 		called = true
+		return nil
 	}
 
 	// 设置上下文和清理函数
@@ -119,8 +120,9 @@ func TestDisposeContextCancellation(t *testing.T) {
 	dispose := &utils.Dispose{}
 
 	called := false
-	onClose := func() {
+	onClose := func() error {
 		called = true
+		return nil
 	}
 
 	// 设置上下文和清理函数
