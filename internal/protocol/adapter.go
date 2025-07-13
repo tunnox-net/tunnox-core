@@ -235,7 +235,11 @@ func (b *BaseAdapter) GetWriter() io.Writer {
 // Close 关闭适配器（实现Adapter接口）
 func (b *BaseAdapter) Close() error {
 	b.active = false
-	return b.Dispose.Close()
+	result := b.Dispose.Close()
+	if result.HasErrors() {
+		return fmt.Errorf("dispose cleanup failed: %s", result.Error())
+	}
+	return nil
 }
 
 // onClose 通用资源清理
@@ -244,7 +248,17 @@ func (b *BaseAdapter) onClose() error {
 
 	b.streamMutex.Lock()
 	if b.stream != nil {
-		b.stream.Close()
+		// 使用类型断言来调用CloseWithResult方法
+		if streamProcessor, ok := b.stream.(interface{ CloseWithResult() *utils.DisposeResult }); ok {
+			result := streamProcessor.CloseWithResult()
+			if result.HasErrors() {
+				b.streamMutex.Unlock()
+				return fmt.Errorf("stream processor cleanup failed: %v", result.Error())
+			}
+		} else {
+			// 如果类型断言失败，使用普通的Close方法
+			b.stream.Close()
+		}
 		b.stream = nil
 	}
 	b.streamMutex.Unlock()

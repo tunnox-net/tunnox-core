@@ -163,11 +163,18 @@ func (w *WebSocketAdapter) ListenFrom(listenAddr string) error {
 
 // onClose WebSocket 特定的资源清理
 func (w *WebSocketAdapter) onClose() error {
+	var err error
 	if w.server != nil {
-		w.server.Shutdown(context.Background())
+		err = w.server.Shutdown(context.Background())
 		w.server = nil
 	}
-	return w.BaseAdapter.onClose()
+
+	// 调用基类的清理方法
+	baseErr := w.BaseAdapter.onClose()
+	if err != nil {
+		return err
+	}
+	return baseErr
 }
 
 // handleWebSocket 处理WebSocket连接

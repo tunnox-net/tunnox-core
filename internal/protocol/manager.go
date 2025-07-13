@@ -14,7 +14,8 @@ type Manager struct {
 
 // Dispose 实现Disposable接口
 func (pm *Manager) Dispose() error {
-	return pm.CloseAll()
+	// 直接调用onClose逻辑，避免递归调用
+	return pm.onClose()
 }
 
 func NewManager(parentCtx context.Context) *Manager {

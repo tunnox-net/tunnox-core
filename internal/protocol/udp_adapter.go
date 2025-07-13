@@ -127,11 +127,18 @@ func (u *UdpAdapter) ListenFrom(listenAddr string) error {
 
 // onClose UDP 特定的资源清理
 func (u *UdpAdapter) onClose() error {
+	var err error
 	if u.conn != nil {
-		u.conn.Close()
+		err = u.conn.Close()
 		u.conn = nil
 	}
-	return u.BaseAdapter.onClose()
+
+	// 调用基类的清理方法
+	baseErr := u.BaseAdapter.onClose()
+	if err != nil {
+		return err
+	}
+	return baseErr
 }
 
 // UdpVirtualConn UDP虚拟连接，用于单次数据包处理

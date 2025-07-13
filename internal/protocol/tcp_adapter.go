@@ -76,9 +76,16 @@ func (t *TcpAdapter) ListenFrom(listenAddr string) error {
 
 // onClose TCP 特定的资源清理
 func (t *TcpAdapter) onClose() error {
+	var err error
 	if t.listener != nil {
-		_ = t.listener.Close()
+		err = t.listener.Close()
 		t.listener = nil
 	}
-	return t.BaseAdapter.onClose()
+
+	// 调用基类的清理方法
+	baseErr := t.BaseAdapter.onClose()
+	if err != nil {
+		return err
+	}
+	return baseErr
 }
