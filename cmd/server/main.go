@@ -219,8 +219,32 @@ func (s *Server) registerServices() {
 	streamService := stream.NewStreamService("Stream-Manager", streamManager)
 	s.serviceManager.RegisterService(streamService)
 
-	// 注册资源（只注册实现了Disposable接口的资源）
-	// 注意：session、idManager、protocolFactory需要实现Disposable接口才能注册
+	// 注册实现了Disposable接口的资源
+	// 注意：只有实现了Disposable接口的组件才能被注册为资源
+
+	// 注册协议管理器（已实现Disposable接口）
+	if err := s.serviceManager.RegisterResource("protocol-manager", s.protocolMgr); err != nil {
+		utils.Errorf("Failed to register protocol manager: %v", err)
+	}
+
+	// 注册流管理器（已实现Disposable接口）
+	if err := s.serviceManager.RegisterResource("stream-manager", streamManager); err != nil {
+		utils.Errorf("Failed to register stream manager: %v", err)
+	}
+
+	// 注册存储组件（如果实现了Disposable接口）
+	if disposable, ok := s.storage.(utils.Disposable); ok {
+		if err := s.serviceManager.RegisterResource("storage", disposable); err != nil {
+			utils.Errorf("Failed to register storage: %v", err)
+		}
+	}
+
+	// 注册云控制器（如果实现了Disposable接口）
+	if disposable, ok := s.cloudControl.(utils.Disposable); ok {
+		if err := s.serviceManager.RegisterResource("cloud-control", disposable); err != nil {
+			utils.Errorf("Failed to register cloud control: %v", err)
+		}
+	}
 
 	utils.Infof("Registered %d services and %d resources",
 		s.serviceManager.GetServiceCount(),
