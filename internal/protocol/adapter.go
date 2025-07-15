@@ -171,7 +171,7 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 	}
 
 	// 初始化连接
-	connInfo, err := b.session.InitConnection(conn, conn)
+	connInfo, err := b.session.AcceptConnection(conn, conn)
 	if err != nil {
 		utils.Errorf("Failed to initialize connection: %v", err)
 		return

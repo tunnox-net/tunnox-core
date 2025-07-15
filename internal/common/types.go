@@ -9,8 +9,8 @@ import (
 
 // Session 会话接口
 type Session interface {
-	// InitConnection 初始化连接
-	InitConnection(reader io.Reader, writer io.Writer) (*StreamConnectionInfo, error)
+	// AcceptConnection 初始化连接
+	AcceptConnection(reader io.Reader, writer io.Writer) (*StreamConnectionInfo, error)
 
 	// HandlePacket 处理数据包
 	HandlePacket(connPacket *StreamPacket) error

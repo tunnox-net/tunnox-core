@@ -47,7 +47,7 @@ func TestSessionInitConnection(t *testing.T) {
 	writer := &buf
 
 	// 初始化连接
-	connInfo, err := session.InitConnection(reader, writer)
+	connInfo, err := session.AcceptConnection(reader, writer)
 	require.NoError(t, err, "Failed to initialize connection")
 
 	// 验证连接信息
@@ -79,7 +79,7 @@ func TestSessionCloseConnection(t *testing.T) {
 	writer := &buf
 
 	// 初始化连接
-	connInfo, err := session.InitConnection(reader, writer)
+	connInfo, err := session.AcceptConnection(reader, writer)
 	require.NoError(t, err, "Failed to initialize connection")
 
 	// 验证连接存在
@@ -137,7 +137,7 @@ func TestSessionMultipleConnections(t *testing.T) {
 		var buf bytes.Buffer
 		bufs = append(bufs, buf)
 
-		connInfo, err := session.InitConnection(&buf, &buf)
+		connInfo, err := session.AcceptConnection(&buf, &buf)
 		require.NoError(t, err, "Failed to initialize connection %d", i)
 		connInfos = append(connInfos, connInfo)
 	}
@@ -178,10 +178,10 @@ func TestSessionConnectionIDGenerator(t *testing.T) {
 
 	// 创建多个连接，验证ID唯一性
 	var buf bytes.Buffer
-	connInfo1, err := session.InitConnection(&buf, &buf)
+	connInfo1, err := session.AcceptConnection(&buf, &buf)
 	require.NoError(t, err, "Failed to initialize first connection")
 
-	connInfo2, err := session.InitConnection(&buf, &buf)
+	connInfo2, err := session.AcceptConnection(&buf, &buf)
 	require.NoError(t, err, "Failed to initialize second connection")
 
 	// 验证ID唯一性
@@ -218,7 +218,7 @@ func TestSessionDispose(t *testing.T) {
 
 	// 创建一些连接
 	var buf bytes.Buffer
-	_, err := session.InitConnection(&buf, &buf)
+	_, err := session.AcceptConnection(&buf, &buf)
 	require.NoError(t, err, "Failed to initialize connection")
 
 	// 验证连接存在

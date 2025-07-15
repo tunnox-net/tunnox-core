@@ -1,7 +1,6 @@
 package models
 
 import (
-	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/stats"
@@ -170,71 +169,18 @@ const (
 	MappingStatusError    MappingStatus = "error"
 )
 
-type ConnectionType byte
-
-const (
-	// ClientControl 客户端到服务端的指令连接
-	// 用于客户端向服务端发送控制指令
-	ClientControl ConnectionType = 1
-
-	// ServerControlReply 跨服务端指令转发通道
-	// 当客户端a连到服务端A，客户端b连到服务端B时
-	// a和b之间的通信需要A和B之间的指令转发
-	ServerControlReply ConnectionType = 2
-
-	// DataTransfer 客户端间数据传输通道
-	// 同一服务端内的客户端可以直接透传数据
-	DataTransfer ConnectionType = 3
-
-	// DataTransferReply 跨服务端数据传输通道
-	// 类似ServerControlReply，但用于数据而非指令
-	DataTransferReply ConnectionType = 4
-)
-
-// String 返回连接类型的字符串表示
-func (ct ConnectionType) String() string {
-	switch ct {
-	case ClientControl:
-		return "ClientControl"
-	case ServerControlReply:
-		return "ServerControlReply"
-	case DataTransfer:
-		return "DataTransfer"
-	case DataTransferReply:
-		return "DataTransferReply"
-	default:
-		return fmt.Sprintf("Unknown(%d)", ct)
-	}
-}
-
-// IsControl 判断是否为控制类连接
-func (ct ConnectionType) IsControl() bool {
-	return ct == ClientControl || ct == ServerControlReply
-}
-
-// IsData 判断是否为数据类连接
-func (ct ConnectionType) IsData() bool {
-	return ct == DataTransfer || ct == DataTransferReply
-}
-
-// IsReply 判断是否为回复/转发类连接
-func (ct ConnectionType) IsReply() bool {
-	return ct == ServerControlReply || ct == DataTransferReply
-}
-
 // ConnectionInfo 连接信息
 type ConnectionInfo struct {
-	ConnID        string         `json:"conn_id"`        // 连接ID
-	ConnType      ConnectionType `json:"conn_type"`      // 连接类型
-	MappingID     string         `json:"mapping_id"`     // 所属映射ID
-	ClientID      int64          `json:"client_id"`      // 所属客户端ID
-	SourceIP      string         `json:"source_ip"`      // 源IP地址
-	EstablishedAt time.Time      `json:"established_at"` // 建立时间
-	LastActivity  time.Time      `json:"last_activity"`  // 最后活动时间
-	UpdatedAt     time.Time      `json:"updated_at"`     // 更新时间
-	BytesSent     int64          `json:"bytes_sent"`     // 发送字节数
-	BytesReceived int64          `json:"bytes_received"` // 接收字节数
-	Status        string         `json:"status"`         // 连接状态
+	ConnID        string    `json:"conn_id"`        // 连接ID
+	MappingID     string    `json:"mapping_id"`     // 所属映射ID
+	ClientID      int64     `json:"client_id"`      // 所属客户端ID
+	SourceIP      string    `json:"source_ip"`      // 源IP地址
+	EstablishedAt time.Time `json:"established_at"` // 建立时间
+	LastActivity  time.Time `json:"last_activity"`  // 最后活动时间
+	UpdatedAt     time.Time `json:"updated_at"`     // 更新时间
+	BytesSent     int64     `json:"bytes_sent"`     // 发送字节数
+	BytesReceived int64     `json:"bytes_received"` // 接收字节数
+	Status        string    `json:"status"`         // 连接状态
 }
 
 type Node struct {

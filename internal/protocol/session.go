@@ -50,8 +50,8 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 	return session
 }
 
-// InitConnection 初始化连接
-func (s *ConnectionSession) InitConnection(reader io.Reader, writer io.Writer) (*StreamConnectionInfo, error) {
+// AcceptConnection 初始化连接
+func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) (*StreamConnectionInfo, error) {
 	// 生成连接ID
 	connID, err := s.idManager.GenerateConnectionID()
 	if err != nil {

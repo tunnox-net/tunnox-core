@@ -198,7 +198,7 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 				return
 			default:
 				// 初始化连接
-				connInfo, err := w.GetSession().InitConnection(wrapper, wrapper)
+				connInfo, err := w.GetSession().AcceptConnection(wrapper, wrapper)
 				if err != nil {
 					utils.Errorf("Failed to initialize WebSocket connection: %v", err)
 					return
