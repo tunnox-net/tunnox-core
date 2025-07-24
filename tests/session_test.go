@@ -131,7 +131,7 @@ func TestSessionMultipleConnections(t *testing.T) {
 
 	// 创建多个连接
 	var bufs []bytes.Buffer
-	var connInfos []*protocol.StreamConnectionInfo
+	var connInfos []*protocol.StreamConnection
 
 	for i := 0; i < 3; i++ {
 		var buf bytes.Buffer

@@ -197,45 +197,10 @@ func (w *WebSocketAdapter) handleWebSocket(writer http.ResponseWriter, request *
 				utils.Infof(constants.MsgWebSocketHandlerExited, conn.RemoteAddr())
 				return
 			default:
-				// 初始化连接
-				connInfo, err := w.GetSession().AcceptConnection(wrapper, wrapper)
+				_, err := w.GetSession().AcceptConnection(wrapper, wrapper)
 				if err != nil {
 					utils.Errorf("Failed to initialize WebSocket connection: %v", err)
 					return
-				}
-				defer func(session Session, connectionId string) {
-					err := session.CloseConnection(connectionId)
-					if err != nil {
-						utils.Errorf("Failed to close WebSocket connection: %v", err)
-					}
-				}(w.GetSession(), connInfo.ID)
-
-				// 处理数据流
-				for {
-					packet, _, err := connInfo.Stream.ReadPacket()
-					if err != nil {
-						if err == io.EOF {
-							utils.Infof("WebSocket connection closed by peer: %s", connInfo.ID)
-						} else {
-							utils.Errorf("Failed to read WebSocket packet: %v", err)
-						}
-						break
-					}
-
-					utils.Debugf("Received packet type: %v", packet.PacketType)
-
-					// 包装成 StreamPacket
-					connPacket := &StreamPacket{
-						ConnectionID: connInfo.ID,
-						Packet:       packet,
-						Timestamp:    time.Now(),
-					}
-
-					// 处理数据包
-					if err := w.GetSession().HandlePacket(connPacket); err != nil {
-						utils.Errorf("Failed to handle WebSocket packet: %v", err)
-						break
-					}
 				}
 			}
 		}()

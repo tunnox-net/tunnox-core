@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
@@ -15,15 +16,21 @@ import (
 // StreamPacket 包装结构，包含连接信息
 type StreamPacket = common.StreamPacket
 
-// StreamConnectionInfo 连接信息
-type StreamConnectionInfo = common.StreamConnectionInfo
+// StreamConnection 连接信息
+type StreamConnection = common.StreamConnection
 
 // Session 接口定义
 type Session = common.Session
 
+// Connection 连接信息
+type Connection = common.Connection
+
+// ConnectionState 连接状态
+type ConnectionState = common.ConnectionState
+
 // ConnectionSession 实现 Session 接口
 type ConnectionSession struct {
-	connMap       map[string]*StreamConnectionInfo
+	connMap       map[string]*Connection
 	connLock      sync.RWMutex
 	idManager     *generators.IDManager
 	streamMgr     *stream.StreamManager
@@ -41,7 +48,7 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 	streamMgr := stream.NewStreamManager(streamFactory, parentCtx)
 
 	session := &ConnectionSession{
-		connMap:       make(map[string]*StreamConnectionInfo),
+		connMap:       make(map[string]*Connection),
 		idManager:     idManager,
 		streamMgr:     streamMgr,
 		streamFactory: streamFactory,
@@ -50,8 +57,8 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 	return session
 }
 
-// AcceptConnection 初始化连接
-func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) (*StreamConnectionInfo, error) {
+// CreateConnection 创建新连接（新接口）
+func (s *ConnectionSession) CreateConnection(reader io.Reader, writer io.Writer) (*Connection, error) {
 	// 生成连接ID
 	connID, err := s.idManager.GenerateConnectionID()
 	if err != nil {
@@ -64,23 +71,97 @@ func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer)
 		return nil, fmt.Errorf("failed to create stream: %w", err)
 	}
 
-	// 创建连接信息
-	connInfo := &StreamConnectionInfo{
-		ID:       connID,
-		Stream:   ps,
-		Metadata: make(map[string]interface{}),
+	now := time.Now()
+	connection := &Connection{
+		ID:        connID,
+		State:     common.StateInitializing,
+		Stream:    ps,
+		CreatedAt: now,
+		UpdatedAt: now,
+		Metadata:  make(map[string]interface{}),
 	}
 
 	// 保存连接信息
 	s.connLock.Lock()
-	s.connMap[connID] = connInfo
+	s.connMap[connID] = connection
 	s.connLock.Unlock()
 
-	utils.Infof("Connection initialized: %s", connID)
-	return connInfo, nil
+	utils.Infof("Connection created: %s", connID)
+	return connection, nil
 }
 
-// HandlePacket 处理数据包
+// AcceptConnection 初始化连接（保持向后兼容）
+func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) (*StreamConnection, error) {
+	// 使用新的CreateConnection方法
+	conn, err := s.CreateConnection(reader, writer)
+	if err != nil {
+		return nil, err
+	}
+
+	// 读取初始数据包
+	initPacket, _, err := conn.Stream.ReadPacket()
+	if err != nil {
+		return nil, fmt.Errorf("failed to read packet: %w", err)
+	}
+
+	if !initPacket.PacketType.IsJsonCommand() {
+		return nil, fmt.Errorf("invalid packet type: %s", initPacket.PacketType)
+	}
+
+	// 更新连接状态为已连接
+	s.UpdateConnectionState(conn.ID, common.StateConnected)
+
+	utils.Infof("Connection initialized: %s", conn.ID)
+
+	// 处理心跳包
+	streamPacket := &StreamPacket{
+		ConnectionID: conn.ID,
+		Packet:       initPacket,
+		Timestamp:    time.Now(),
+	}
+
+	err = s.handleHeartbeat(streamPacket)
+	if err != nil {
+		return nil, err
+	}
+
+	// 返回兼容的StreamConnection
+	return &StreamConnection{
+		ID:     conn.ID,
+		Stream: conn.Stream,
+	}, err
+}
+
+// ProcessPacket 处理数据包（新接口）
+func (s *ConnectionSession) ProcessPacket(connID string, packet *packet.TransferPacket) error {
+	utils.Debugf("Processing packet for connection: %s, type: %v", connID, packet.PacketType)
+
+	// 处理心跳包
+	if packet.PacketType.IsHeartbeat() {
+		streamPacket := &StreamPacket{
+			ConnectionID: connID,
+			Packet:       packet,
+			Timestamp:    time.Now(),
+		}
+		return s.handleHeartbeat(streamPacket)
+	}
+
+	// 处理JSON命令包
+	if packet.PacketType.IsJsonCommand() && packet.CommandPacket != nil {
+		streamPacket := &StreamPacket{
+			ConnectionID: connID,
+			Packet:       packet,
+			Timestamp:    time.Now(),
+		}
+		return s.handleCommandPacket(streamPacket)
+	}
+
+	// 处理其他类型的包
+	utils.Warnf("Unsupported packet type for connection %s: %v", connID, packet.PacketType)
+	return nil
+}
+
+// HandlePacket 处理数据包（保持向后兼容）
 func (s *ConnectionSession) HandlePacket(connPacket *StreamPacket) error {
 	utils.Debugf("Handling packet for connection: %s, type: %v",
 		connPacket.ConnectionID, connPacket.Packet.PacketType)
@@ -101,15 +182,58 @@ func (s *ConnectionSession) HandlePacket(connPacket *StreamPacket) error {
 	return nil
 }
 
+// GetConnection 获取连接信息（新接口）
+func (s *ConnectionSession) GetConnection(connID string) (*Connection, bool) {
+	s.connLock.RLock()
+	defer s.connLock.RUnlock()
+
+	conn, exists := s.connMap[connID]
+	return conn, exists
+}
+
+// ListConnections 列出所有连接（新接口）
+func (s *ConnectionSession) ListConnections() []*Connection {
+	s.connLock.RLock()
+	defer s.connLock.RUnlock()
+
+	connections := make([]*Connection, 0, len(s.connMap))
+	for _, conn := range s.connMap {
+		connections = append(connections, conn)
+	}
+	return connections
+}
+
+// UpdateConnectionState 更新连接状态（新接口）
+func (s *ConnectionSession) UpdateConnectionState(connID string, state ConnectionState) error {
+	s.connLock.Lock()
+	defer s.connLock.Unlock()
+
+	conn, exists := s.connMap[connID]
+	if !exists {
+		return fmt.Errorf("connection not found: %s", connID)
+	}
+
+	oldState := conn.State
+	conn.State = state
+	conn.UpdatedAt = time.Now()
+
+	utils.Infof("Connection %s state changed: %s -> %s", connID, oldState, state)
+	return nil
+}
+
 // CloseConnection 关闭连接
 func (s *ConnectionSession) CloseConnection(connectionId string) error {
 	s.connLock.Lock()
 	defer s.connLock.Unlock()
 
-	_, exists := s.connMap[connectionId]
+	conn, exists := s.connMap[connectionId]
 	if !exists {
 		return fmt.Errorf("connection not found: %s", connectionId)
 	}
+
+	// 更新状态为关闭中
+	conn.State = common.StateClosing
+	conn.UpdatedAt = time.Now()
 
 	// 从流管理器中移除流
 	if err := s.streamMgr.RemoveStream(connectionId); err != nil {
@@ -126,6 +250,36 @@ func (s *ConnectionSession) CloseConnection(connectionId string) error {
 // GetStreamManager 获取流管理器
 func (s *ConnectionSession) GetStreamManager() *stream.StreamManager {
 	return s.streamMgr
+}
+
+// GetStreamConnectionInfo 获取连接信息（保持向后兼容）
+func (s *ConnectionSession) GetStreamConnectionInfo(connectionId string) (*StreamConnection, bool) {
+	s.connLock.RLock()
+	defer s.connLock.RUnlock()
+
+	conn, exists := s.connMap[connectionId]
+	if !exists {
+		return nil, false
+	}
+
+	return &StreamConnection{
+		ID:     conn.ID,
+		Stream: conn.Stream,
+	}, true
+}
+
+// GetActiveConnections 获取活跃连接数量
+func (s *ConnectionSession) GetActiveConnections() int {
+	s.connLock.RLock()
+	defer s.connLock.RUnlock()
+
+	count := 0
+	for _, conn := range s.connMap {
+		if conn.State != common.StateClosed {
+			count++
+		}
+	}
+	return count
 }
 
 // handleHeartbeat 处理心跳包
@@ -216,13 +370,13 @@ func (s *ConnectionSession) onClose() error {
 	utils.Infof("Cleaning up connection session resources...")
 
 	// 获取所有连接信息的副本，避免在锁内调用 Close
-	var connections []*StreamConnectionInfo
+	var connections []*Connection
 	s.connLock.Lock()
 	for _, connInfo := range s.connMap {
 		connections = append(connections, connInfo)
 	}
 	// 清空连接映射
-	s.connMap = make(map[string]*StreamConnectionInfo)
+	s.connMap = make(map[string]*Connection)
 	s.connLock.Unlock()
 
 	// 在锁外记录清理的连接
@@ -232,21 +386,4 @@ func (s *ConnectionSession) onClose() error {
 
 	utils.Infof("Connection session resources cleanup completed")
 	return nil
-}
-
-// GetStreamConnectionInfo 获取连接信息（用于调试和监控）
-func (s *ConnectionSession) GetStreamConnectionInfo(connectionId string) (*StreamConnectionInfo, bool) {
-	s.connLock.RLock()
-	defer s.connLock.RUnlock()
-
-	connInfo, exists := s.connMap[connectionId]
-	return connInfo, exists
-}
-
-// GetActiveConnections 获取活跃连接数量
-func (s *ConnectionSession) GetActiveConnections() int {
-	s.connLock.RLock()
-	defer s.connLock.RUnlock()
-
-	return len(s.connMap)
 }
