@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -22,14 +23,18 @@ type StorageManager interface {
 
 // StorageManagerImpl 存储管理器实现
 type StorageManagerImpl struct {
+	*dispose.ResourceBase
 	storage storage.Storage
 }
 
 // NewStorageManager 创建新的存储管理器
-func NewStorageManager(storage storage.Storage) *StorageManagerImpl {
-	return &StorageManagerImpl{
-		storage: storage,
+func NewStorageManager(storage storage.Storage, parentCtx context.Context) *StorageManagerImpl {
+	manager := &StorageManagerImpl{
+		ResourceBase: dispose.NewResourceBase("StorageManager"),
+		storage:      storage,
 	}
+	manager.Initialize(parentCtx)
+	return manager
 }
 
 // GetStorage 获取存储实例

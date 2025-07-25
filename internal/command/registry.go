@@ -1,23 +1,29 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
 
 // CommandRegistry 命令注册表，实现 common.CommandRegistry 接口
 type CommandRegistry struct {
+	*dispose.ResourceBase
 	handlers map[packet.CommandType]CommandHandler
 	mu       sync.RWMutex
 }
 
 // NewCommandRegistry 创建命令注册表
-func NewCommandRegistry() *CommandRegistry {
-	return &CommandRegistry{
-		handlers: make(map[packet.CommandType]CommandHandler),
+func NewCommandRegistry(parentCtx context.Context) *CommandRegistry {
+	registry := &CommandRegistry{
+		ResourceBase: dispose.NewResourceBase("CommandRegistry"),
+		handlers:     make(map[packet.CommandType]CommandHandler),
 	}
+	registry.Initialize(parentCtx)
+	return registry
 }
 
 // Register 注册命令处理器

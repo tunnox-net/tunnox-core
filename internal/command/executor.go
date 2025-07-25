@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/utils"
 )
 
 // CommandExecutor 命令执行器
 type CommandExecutor struct {
+	*dispose.ResourceBase
 	registry   *CommandRegistry
 	middleware []Middleware
 	rpcManager *RPCManager
@@ -19,13 +21,16 @@ type CommandExecutor struct {
 }
 
 // NewCommandExecutor 创建新的命令执行器
-func NewCommandExecutor(registry *CommandRegistry) *CommandExecutor {
-	return &CommandExecutor{
-		registry:   registry,
-		middleware: make([]Middleware, 0),
-		rpcManager: NewRPCManager(),
-		session:    nil,
+func NewCommandExecutor(registry *CommandRegistry, parentCtx context.Context) *CommandExecutor {
+	executor := &CommandExecutor{
+		ResourceBase: dispose.NewResourceBase("CommandExecutor"),
+		registry:     registry,
+		middleware:   make([]Middleware, 0),
+		rpcManager:   NewRPCManager(parentCtx),
+		session:      nil,
 	}
+	executor.Initialize(parentCtx)
+	return executor
 }
 
 // AddMiddleware 添加中间件

@@ -96,6 +96,7 @@ func (h *HTTPService) Stop(ctx context.Context) error {
 
 // ServiceManager 服务管理器，支持多协议服务
 type ServiceManager struct {
+	Dispose
 	config        *ServiceConfig
 	services      map[string]Service
 	resourceMgr   *ResourceManager
@@ -120,7 +121,7 @@ func NewServiceManager(config *ServiceConfig) *ServiceManager {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &ServiceManager{
+	manager := &ServiceManager{
 		config:       config,
 		services:     make(map[string]Service),
 		resourceMgr:  resourceMgr,
@@ -128,6 +129,8 @@ func NewServiceManager(config *ServiceConfig) *ServiceManager {
 		ctx:          ctx,
 		cancel:       cancel,
 	}
+	manager.SetCtx(ctx, manager.onClose)
+	return manager
 }
 
 // RegisterService 注册服务
@@ -382,6 +385,24 @@ func (sm *ServiceManager) TriggerShutdown() {
 // GetContext 获取服务管理器的上下文
 func (sm *ServiceManager) GetContext() context.Context {
 	return sm.ctx
+}
+
+// onClose 资源清理回调
+func (sm *ServiceManager) onClose() error {
+	Infof("Cleaning up service manager resources...")
+
+	// 停止所有服务
+	if err := sm.StopAllServices(); err != nil {
+		Errorf("Failed to stop all services: %v", err)
+	}
+
+	// 关闭上下文
+	if sm.cancel != nil {
+		sm.cancel()
+	}
+
+	Infof("Service manager resources cleanup completed")
+	return nil
 }
 
 // 便捷函数

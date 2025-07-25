@@ -63,54 +63,43 @@ func (w *WebSocketConn) Close() error {
 }
 
 // WebSocketAdapter WebSocket协议适配器
+// 只实现协议相关方法，其余继承 BaseAdapter
 type WebSocketAdapter struct {
 	BaseAdapter
 	upgrader websocket.Upgrader
 	server   *http.Server
 }
 
-// NewWebSocketAdapter 创建新的WebSocket适配器
 func NewWebSocketAdapter(parentCtx context.Context, session session.Session) *WebSocketAdapter {
-	adapter := &WebSocketAdapter{
-		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true // 允许所有来源，生产环境中应该更严格
-			},
-		},
+	w := &WebSocketAdapter{}
+	w.BaseAdapter = BaseAdapter{} // 初始化 BaseAdapter
+	w.upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
 	}
-	adapter.SetName("websocket")
-	adapter.SetSession(session)
-	adapter.SetCtx(parentCtx, adapter.onClose)
-	return adapter
+	w.SetName("websocket")
+	w.SetSession(session)
+	w.SetCtx(parentCtx, w.onClose)
+	return w
 }
 
-// Dial 实现连接功能
 func (w *WebSocketAdapter) Dial(addr string) (io.ReadWriteCloser, error) {
-	// 确保地址以ws://或wss://开头
 	if len(addr) < 3 || (len(addr) >= 3 && addr[:3] != "ws:" && len(addr) >= 4 && addr[:4] != "wss:") {
 		addr = "ws://" + addr
 	}
-
 	conn, _, err := websocket.DefaultDialer.Dial(addr, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to websocket server: %w", err)
 	}
-
 	return &WebSocketConn{conn: conn}, nil
 }
 
-// Listen 实现监听功能
 func (w *WebSocketAdapter) Listen(addr string) error {
-	// 创建HTTP服务器处理WebSocket升级
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", w.handleWebSocket)
-
 	w.server = &http.Server{
 		Addr:    addr,
 		Handler: mux,
 	}
-
-	// 启动服务器
 	go func() {
 		if w.server != nil {
 			if err := w.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -121,8 +110,6 @@ func (w *WebSocketAdapter) Listen(addr string) error {
 			utils.Infof("WebSocket server goroutine exited on %s", addr)
 		}
 	}()
-
-	// 监听上下文取消，优雅关闭服务器
 	go func() {
 		<-w.Ctx().Done()
 		srv := w.server
@@ -134,17 +121,12 @@ func (w *WebSocketAdapter) Listen(addr string) error {
 		}
 		utils.Infof("WebSocket shutdown goroutine exited on %s", addr)
 	}()
-
 	return nil
 }
 
-// Accept 实现接受连接功能
 func (w *WebSocketAdapter) Accept() (io.ReadWriteCloser, error) {
-	// WebSocket 监听器通过 HTTP 升级处理
-	// 实际的连接在 handleWebSocket 中处理
-	// 这里返回一个阻塞的虚拟连接，避免无限循环
 	select {
-	case <-time.After(100 * time.Millisecond): // 使用更短的超时时间
+	case <-time.After(100 * time.Millisecond):
 		return nil, &TimeoutError{Protocol: "WebSocket connection"}
 	}
 }
@@ -153,28 +135,54 @@ func (w *WebSocketAdapter) getConnectionType() string {
 	return "WebSocket"
 }
 
-// 重写 ConnectTo 和 ListenFrom 以使用 BaseAdapter 的通用逻辑
-func (w *WebSocketAdapter) ConnectTo(serverAddr string) error {
-	return w.BaseAdapter.ConnectTo(w, serverAddr)
+// ListenFrom 重写BaseAdapter的ListenFrom方法
+func (w *WebSocketAdapter) ListenFrom(listenAddr string) error {
+	w.SetAddr(listenAddr)
+	if w.Addr() == "" {
+		return fmt.Errorf("address not set")
+	}
+
+	utils.Infof("WebSocketAdapter.ListenFrom called for adapter: %s, type: %T", w.Name(), w)
+
+	// 直接使用自身作为ProtocolAdapter
+	if err := w.Listen(w.Addr()); err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", w.getConnectionType(), err)
+	}
+
+	w.active = true
+	go w.acceptLoop(w)
+	return nil
 }
 
-func (w *WebSocketAdapter) ListenFrom(listenAddr string) error {
-	return w.BaseAdapter.ListenFrom(w, listenAddr)
+// ConnectTo 重写BaseAdapter的ConnectTo方法
+func (w *WebSocketAdapter) ConnectTo(serverAddr string) error {
+	w.connMutex.Lock()
+	defer w.connMutex.Unlock()
+
+	if w.stream != nil {
+		return fmt.Errorf("already connected")
+	}
+
+	// 直接使用自身作为ProtocolAdapter
+	conn, err := w.Dial(serverAddr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to %s server: %w", w.getConnectionType(), err)
+	}
+
+	w.SetAddr(serverAddr)
+
+	w.streamMutex.Lock()
+	w.stream = stream.NewStreamProcessor(conn, conn, w.Ctx())
+	w.streamMutex.Unlock()
+
+	return nil
 }
 
 // onClose WebSocket 特定的资源清理
 func (w *WebSocketAdapter) onClose() error {
-	var err error
-	if w.server != nil {
-		err = w.server.Shutdown(context.Background())
-		w.server = nil
-	}
-
-	// 调用基类的清理方法
+	// WebSocket upgrader 不需要显式关闭，只需要清理引用
+	w.upgrader = websocket.Upgrader{}
 	baseErr := w.BaseAdapter.onClose()
-	if err != nil {
-		return err
-	}
 	return baseErr
 }
 

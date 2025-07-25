@@ -61,7 +61,7 @@ func (b *BaseAdapter) GetSession() session.Session {
 }
 
 // ConnectTo 通用连接逻辑
-func (b *BaseAdapter) ConnectTo(adapter ProtocolAdapter, serverAddr string) error {
+func (b *BaseAdapter) ConnectTo(serverAddr string) error {
 	b.connMutex.Lock()
 	defer b.connMutex.Unlock()
 
@@ -69,9 +69,15 @@ func (b *BaseAdapter) ConnectTo(adapter ProtocolAdapter, serverAddr string) erro
 		return fmt.Errorf("already connected")
 	}
 
-	conn, err := adapter.Dial(serverAddr)
+	// 通过类型断言获取协议适配器
+	protocolAdapter, ok := any(b).(ProtocolAdapter)
+	if !ok {
+		return fmt.Errorf("not a ProtocolAdapter: %T", b)
+	}
+
+	conn, err := protocolAdapter.Dial(serverAddr)
 	if err != nil {
-		return fmt.Errorf("failed to connect to %s server: %w", adapter.getConnectionType(), err)
+		return fmt.Errorf("failed to connect to %s server: %w", protocolAdapter.getConnectionType(), err)
 	}
 
 	b.SetAddr(serverAddr)
@@ -84,19 +90,27 @@ func (b *BaseAdapter) ConnectTo(adapter ProtocolAdapter, serverAddr string) erro
 }
 
 // ListenFrom 通用监听逻辑
-func (b *BaseAdapter) ListenFrom(adapter ProtocolAdapter, listenAddr string) error {
+func (b *BaseAdapter) ListenFrom(listenAddr string) error {
 	b.SetAddr(listenAddr)
 	if b.Addr() == "" {
 		return fmt.Errorf("address not set")
 	}
 
+	utils.Infof("BaseAdapter.ListenFrom called for adapter: %s, type: %T", b.Name(), b)
+
+	// 通过类型断言获取协议适配器
+	protocolAdapter, ok := any(b).(ProtocolAdapter)
+	if !ok {
+		return fmt.Errorf("not a ProtocolAdapter: %T", b)
+	}
+
 	// 适配器直接启动监听
-	if err := adapter.Listen(b.Addr()); err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", adapter.getConnectionType(), err)
+	if err := protocolAdapter.Listen(b.Addr()); err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", protocolAdapter.getConnectionType(), err)
 	}
 
 	b.active = true
-	go b.acceptLoop(adapter)
+	go b.acceptLoop(protocolAdapter)
 	return nil
 }
 
@@ -216,4 +230,22 @@ func (b *BaseAdapter) onClose() error {
 
 	utils.Infof("%s adapter closed", b.name)
 	return nil
+}
+
+// TimeoutError 超时错误类型
+// 兼容 base.go 的超时错误定义
+// 只保留一份
+
+type TimeoutError struct {
+	Protocol string
+}
+
+func (e *TimeoutError) Error() string {
+	return fmt.Sprintf("timeout waiting for %s", e.Protocol)
+}
+
+// IsTimeoutError 检查是否为超时错误
+func IsTimeoutError(err error) bool {
+	_, ok := err.(*TimeoutError)
+	return ok
 }

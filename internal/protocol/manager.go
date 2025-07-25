@@ -40,10 +40,13 @@ func (pm *ProtocolManager) Register(adapter adapter.Adapter) {
 func (pm *ProtocolManager) StartAll() error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	for _, a := range pm.adapters {
+	for name, a := range pm.adapters {
+		utils.Infof("Starting adapter: %s, type: %T", name, a)
 		if err := a.ListenFrom(a.GetAddr()); err != nil {
+			utils.Errorf("Failed to start adapter %s: %v", name, err)
 			return err
 		}
+		utils.Infof("Successfully started adapter: %s", name)
 	}
 	return nil
 }

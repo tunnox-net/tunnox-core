@@ -8,7 +8,7 @@ import (
 
 // CreateDefaultRegistry 创建默认的命令注册表
 func CreateDefaultRegistry() types.CommandRegistry {
-	registry := NewCommandRegistry()
+	registry := NewCommandRegistry(context.Background())
 	RegisterDefaultHandlers(registry)
 	return registry
 }

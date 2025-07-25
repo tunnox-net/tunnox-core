@@ -1,23 +1,29 @@
 package command
 
 import (
+	"context"
 	"sync"
 	"time"
+	"tunnox-core/internal/core/dispose"
 )
 
 // RPCManager RPC管理器，用于管理双工命令的请求-响应
 type RPCManager struct {
+	*dispose.ResourceBase
 	pendingRequests map[string]chan *CommandResponse
 	timeout         time.Duration
 	mu              sync.RWMutex
 }
 
 // NewRPCManager 创建新的RPC管理器
-func NewRPCManager() *RPCManager {
-	return &RPCManager{
+func NewRPCManager(parentCtx context.Context) *RPCManager {
+	manager := &RPCManager{
+		ResourceBase:    dispose.NewResourceBase("RPCManager"),
 		pendingRequests: make(map[string]chan *CommandResponse),
 		timeout:         30 * time.Second,
 	}
+	manager.Initialize(parentCtx)
+	return manager
 }
 
 // RegisterRequest 注册请求

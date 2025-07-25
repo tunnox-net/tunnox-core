@@ -6,146 +6,81 @@ import (
 	"time"
 )
 
-// RateLimiter 简单限流器
+// RateLimiter 速率限制器
 type RateLimiter struct {
-	limit       int
-	window      time.Duration
-	tokens      map[string][]time.Time
-	mutex       sync.RWMutex
-	cleanupTick *time.Ticker
-	done        chan bool
 	Dispose
+	rate     float64
+	capacity int64
+	tokens   int64
+	lastTime time.Time
+	mu       sync.RWMutex
 }
 
-// NewRateLimiter 创建新的限流器
-func NewRateLimiter(limit int, window time.Duration, parentCtx context.Context) *RateLimiter {
+// NewRateLimiter 创建新的速率限制器
+func NewRateLimiter(rate float64, capacity int64, parentCtx context.Context) *RateLimiter {
 	limiter := &RateLimiter{
-		limit:       limit,
-		window:      window,
-		tokens:      make(map[string][]time.Time),
-		cleanupTick: time.NewTicker(window),
-		done:        make(chan bool),
+		rate:     rate,
+		capacity: capacity,
+		tokens:   capacity,
+		lastTime: time.Now(),
 	}
-
 	limiter.SetCtx(parentCtx, limiter.onClose)
-
-	// 启动清理协程
-	go limiter.cleanupRoutine()
-
 	return limiter
 }
 
 // onClose 资源释放回调
 func (r *RateLimiter) onClose() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	if r.cleanupTick != nil {
-		r.cleanupTick.Stop()
-		r.cleanupTick = nil
-	}
-
-	close(r.done)
-	r.tokens = nil
+	r.tokens = 0
+	r.lastTime = time.Time{}
 	return nil
 }
 
 // Allow 检查是否允许请求
 func (r *RateLimiter) Allow() bool {
-	return r.AllowWithKey("default")
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := time.Now()
+	elapsed := now.Sub(r.lastTime)
+	generatedTokens := int64(float64(elapsed) * r.rate)
+
+	if generatedTokens > 0 {
+		r.tokens = min(r.tokens+generatedTokens, r.capacity)
+		r.lastTime = now
+	}
+
+	if r.tokens <= 0 {
+		return false
+	}
+
+	r.tokens--
+	return true
 }
 
 // AllowWithKey 根据键检查是否允许请求
 func (r *RateLimiter) AllowWithKey(key string) bool {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	now := time.Now()
-	windowStart := now.Add(-r.window)
-
-	// 获取或创建时间戳列表
-	timestamps, exists := r.tokens[key]
-	if !exists {
-		timestamps = make([]time.Time, 0)
-	}
-
-	// 清理过期的令牌
-	validTokens := make([]time.Time, 0)
-	for _, ts := range timestamps {
-		if ts.After(windowStart) {
-			validTokens = append(validTokens, ts)
-		}
-	}
-
-	// 检查是否超过限制
-	if len(validTokens) >= r.limit {
-		return false
-	}
-
-	// 添加新令牌
-	validTokens = append(validTokens, now)
-	r.tokens[key] = validTokens
-
-	return true
+	// 简化实现，忽略 key 参数
+	return r.Allow()
 }
-
-// cleanupRoutine 清理协程
-func (r *RateLimiter) cleanupRoutine() {
-	for {
-		r.mutex.RLock()
-		tick := r.cleanupTick
-		r.mutex.RUnlock()
-
-		if tick == nil {
-			return
-		}
-
-		select {
-		case <-tick.C:
-			r.cleanupTokens()
-		case <-r.done:
-			return
-		case <-r.Ctx().Done():
-			return
-		}
-	}
-}
-
-// cleanupTokens 清理过期的令牌
-func (r *RateLimiter) cleanupTokens() {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	now := time.Now()
-	windowStart := now.Add(-r.window)
-
-	for key, timestamps := range r.tokens {
-		validTokens := make([]time.Time, 0)
-		for _, ts := range timestamps {
-			if ts.After(windowStart) {
-				validTokens = append(validTokens, ts)
-			}
-		}
-
-		if len(validTokens) == 0 {
-			delete(r.tokens, key)
-		} else {
-			r.tokens[key] = validTokens
-		}
-	}
-}
-
-// Close 方法由 utils.Dispose 提供，无需重复实现
 
 // GetStats 获取统计信息
 func (r *RateLimiter) GetStats() map[string]int {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
 	stats := make(map[string]int)
-	for key, timestamps := range r.tokens {
-		stats[key] = len(timestamps)
-	}
-
+	stats["tokens"] = int(r.tokens)
+	stats["capacity"] = int(r.capacity)
+	stats["rate"] = int(r.rate)
 	return stats
+}
+
+func min(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"sync"
@@ -110,8 +111,8 @@ func (s *simpleMockMiddleware) Process(ctx *CommandContext, next func(*CommandCo
 
 // SetupTestExecutor 设置测试执行器
 func (th *TestHelper) SetupTestExecutor() (*CommandRegistry, *CommandExecutor) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 	return registry, executor
 }
 
@@ -241,8 +242,8 @@ type BenchmarkHelper struct {
 
 // NewBenchmarkHelper 创建基准测试辅助对象
 func NewBenchmarkHelper() *BenchmarkHelper {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 创建测试数据包
 	streamPacket := &types.StreamPacket{

@@ -13,6 +13,7 @@ import (
 	"net"
 	"time"
 	"tunnox-core/internal/protocol/session"
+	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
 	"github.com/quic-go/quic-go"
@@ -36,75 +37,60 @@ func (q *QuicConn) Close() error {
 }
 
 // QuicAdapter QUIC协议适配器
+// 只实现协议相关方法，其余继承 BaseAdapter
 type QuicAdapter struct {
 	BaseAdapter
 	listener  *quic.Listener
 	tlsConfig *tls.Config
 }
 
-// NewQuicAdapter 创建新的QUIC适配器
 func NewQuicAdapter(parentCtx context.Context, session session.Session) *QuicAdapter {
-	adapter := &QuicAdapter{
-		tlsConfig: generateTLSConfig(),
-	}
-	adapter.SetName("quic")
-	adapter.SetSession(session)
-	adapter.SetCtx(parentCtx, adapter.onClose)
-	return adapter
+	q := &QuicAdapter{}
+	q.BaseAdapter = BaseAdapter{} // 初始化 BaseAdapter
+	q.tlsConfig = generateTLSConfig()
+	q.SetName("quic")
+	q.SetSession(session)
+	q.SetCtx(parentCtx, q.onClose)
+	return q
 }
 
-// Dial 实现连接功能
 func (q *QuicAdapter) Dial(addr string) (io.ReadWriteCloser, error) {
-	// 连接到QUIC服务器
 	conn, err := quic.DialAddr(context.Background(), addr, q.tlsConfig, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to QUIC server: %w", err)
 	}
-
-	// 打开流
 	stream, err := conn.OpenStreamSync(context.Background())
 	if err != nil {
 		conn.CloseWithError(0, "failed to open stream")
 		return nil, fmt.Errorf("failed to open QUIC stream: %w", err)
 	}
-
 	return &QuicConn{stream: stream}, nil
 }
 
-// Listen 实现监听功能
 func (q *QuicAdapter) Listen(addr string) error {
-	// 创建QUIC监听器
 	listener, err := quic.ListenAddr(addr, q.tlsConfig, nil)
 	if err != nil {
 		return fmt.Errorf("failed to listen on QUIC: %w", err)
 	}
-
 	q.listener = listener
 	return nil
 }
 
-// Accept 实现接受连接功能
 func (q *QuicAdapter) Accept() (io.ReadWriteCloser, error) {
 	if q.listener == nil {
 		return nil, fmt.Errorf("QUIC listener not initialized")
 	}
-
-	// 使用带超时的Accept，以便能够响应上下文取消
 	acceptCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	conn, err := q.listener.Accept(acceptCtx)
 	cancel()
-
 	if err != nil {
 		return nil, err
 	}
-
-	// 打开流
 	stream, err := conn.OpenStreamSync(context.Background())
 	if err != nil {
 		conn.CloseWithError(0, "failed to open stream")
 		return nil, fmt.Errorf("failed to open QUIC stream: %w", err)
 	}
-
 	return &QuicConn{stream: stream}, nil
 }
 
@@ -112,13 +98,47 @@ func (q *QuicAdapter) getConnectionType() string {
 	return "QUIC"
 }
 
-// 重写 ConnectTo 和 ListenFrom 以使用 BaseAdapter 的通用逻辑
-func (q *QuicAdapter) ConnectTo(serverAddr string) error {
-	return q.BaseAdapter.ConnectTo(q, serverAddr)
+// ListenFrom 重写BaseAdapter的ListenFrom方法
+func (q *QuicAdapter) ListenFrom(listenAddr string) error {
+	q.SetAddr(listenAddr)
+	if q.Addr() == "" {
+		return fmt.Errorf("address not set")
+	}
+
+	utils.Infof("QuicAdapter.ListenFrom called for adapter: %s, type: %T", q.Name(), q)
+
+	// 直接使用自身作为ProtocolAdapter
+	if err := q.Listen(q.Addr()); err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", q.getConnectionType(), err)
+	}
+
+	q.active = true
+	go q.acceptLoop(q)
+	return nil
 }
 
-func (q *QuicAdapter) ListenFrom(listenAddr string) error {
-	return q.BaseAdapter.ListenFrom(q, listenAddr)
+// ConnectTo 重写BaseAdapter的ConnectTo方法
+func (q *QuicAdapter) ConnectTo(serverAddr string) error {
+	q.connMutex.Lock()
+	defer q.connMutex.Unlock()
+
+	if q.stream != nil {
+		return fmt.Errorf("already connected")
+	}
+
+	// 直接使用自身作为ProtocolAdapter
+	conn, err := q.Dial(serverAddr)
+	if err != nil {
+		return fmt.Errorf("failed to connect to %s server: %w", q.getConnectionType(), err)
+	}
+
+	q.SetAddr(serverAddr)
+
+	q.streamMutex.Lock()
+	q.stream = stream.NewStreamProcessor(conn, conn, q.Ctx())
+	q.streamMutex.Unlock()
+
+	return nil
 }
 
 // onClose QUIC 特定的资源清理
@@ -128,8 +148,6 @@ func (q *QuicAdapter) onClose() error {
 		err = q.listener.Close()
 		q.listener = nil
 	}
-
-	// 调用基类的清理方法
 	baseErr := q.BaseAdapter.onClose()
 	if err != nil {
 		return err

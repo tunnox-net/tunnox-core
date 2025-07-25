@@ -140,8 +140,8 @@ type CommandServiceImpl struct {
 
 // NewCommandService 创建新的命令服务
 func NewCommandService(parentCtx context.Context) CommandService {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(parentCtx)
+	executor := NewCommandExecutor(registry, parentCtx)
 
 	service := &CommandServiceImpl{
 		registry:   registry,
