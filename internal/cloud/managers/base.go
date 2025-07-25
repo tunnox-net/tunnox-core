@@ -11,8 +11,8 @@ import (
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
-	"tunnox-core/internal/utils"
 )
 
 // CloudControl 基础云控实现，所有存储操作通过 Storage 接口
@@ -20,6 +20,7 @@ import (
 // 子类只需注入不同的 Storage 实现
 
 type CloudControl struct {
+	*dispose.ResourceBase
 	config            *ControlConfig
 	storage           storages.Storage
 	idManager         *idgen.IDManager
@@ -39,7 +40,6 @@ type CloudControl struct {
 	lock              distributed.DistributedLock
 	cleanupTicker     *time.Ticker
 	done              chan bool
-	utils.Dispose
 }
 
 func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudControl {
@@ -62,6 +62,7 @@ func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudCont
 	idManager := idgen.NewIDManager(storage, ctx)
 
 	base := &CloudControl{
+		ResourceBase:      dispose.NewResourceBase("CloudControl"),
 		config:            config,
 		storage:           storage,
 		idManager:         idManager,
@@ -82,29 +83,8 @@ func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudCont
 		cleanupTicker:     time.NewTicker(constants.DefaultCleanupInterval),
 		done:              make(chan bool),
 	}
-	base.SetCtx(ctx, base.onClose)
+	base.Initialize(ctx)
 	return base
-}
-
-// onClose 资源清理回调
-func (b *CloudControl) onClose() error {
-	utils.Infof("Cleaning up cloud control resources...")
-	time.Sleep(100 * time.Millisecond)
-	if b.idManager != nil {
-		b.idManager.Close()
-		utils.Infof("ID manager resources cleaned up")
-	}
-	if b.jwtManager != nil {
-		utils.Infof("JWT manager resources cleaned up")
-	}
-	if b.cleanupManager != nil {
-		utils.Infof("Cleanup manager resources cleaned up")
-	}
-	if b.lock != nil {
-		utils.Infof("Distributed lock resources cleaned up")
-	}
-	utils.Infof("Cloud control resources cleanup completed")
-	return nil
 }
 
 // 这里实现 CloudControlAPI 的大部分方法，所有数据操作都用 b.storage

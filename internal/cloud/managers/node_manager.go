@@ -1,33 +1,27 @@
 package managers
 
 import (
+	"context"
 	"fmt"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/core/dispose"
 )
 
-// NodeManager 节点管理服务
+// NodeManager 节点管理器
 type NodeManager struct {
+	*dispose.ResourceBase
 	nodeRepo *repos.NodeRepository
-	utils.Dispose
 }
 
-// NewNodeManager 创建节点管理服务
+// NewNodeManager 创建新的节点管理器
 func NewNodeManager(nodeRepo *repos.NodeRepository) *NodeManager {
 	manager := &NodeManager{
-		nodeRepo: nodeRepo,
+		ResourceBase: dispose.NewResourceBase("NodeManager"),
+		nodeRepo:     nodeRepo,
 	}
-	manager.SetCtx(nil, manager.onClose)
+	manager.Initialize(context.Background())
 	return manager
-}
-
-// onClose 资源清理回调
-func (nm *NodeManager) onClose() error {
-	utils.Infof("Node manager resources cleaned up")
-	// 清理节点缓存和连接信息
-	// 这里可以添加清理节点资源的逻辑
-	return nil
 }
 
 // GetNodeServiceInfo 获取节点服务信息

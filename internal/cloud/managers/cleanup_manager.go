@@ -4,20 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 	"tunnox-core/internal/cloud/distributed"
 	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/core/dispose"
 )
 
-// CleanupManager 分布式清理管理器
+// CleanupManager 清理管理器
 type CleanupManager struct {
+	*dispose.ResourceBase
 	storage storages.Storage
 	lock    distributed.DistributedLock
-	mu      sync.Mutex
-	utils.Dispose
+	ticker  *time.Ticker
+	done    chan bool
 }
 
 // CleanupTask 清理任务信息
@@ -31,34 +31,17 @@ type CleanupTask struct {
 	Error    string        `json:"error,omitempty"`
 }
 
-// NewCleanupManager 创建清理管理器
-func NewCleanupManager(storage storages.Storage, lock distributed.DistributedLock, parentCtx context.Context) *CleanupManager {
-	cm := &CleanupManager{
-		storage: storage,
-		lock:    lock,
+// NewCleanupManager 创建新的清理管理器
+func NewCleanupManager(storage storages.Storage, lock distributed.DistributedLock, ctx context.Context) *CleanupManager {
+	manager := &CleanupManager{
+		ResourceBase: dispose.NewResourceBase("CleanupManager"),
+		storage:      storage,
+		lock:         lock,
+		ticker:       time.NewTicker(5 * time.Minute), // 每5分钟清理一次
+		done:         make(chan bool),
 	}
-	cm.SetCtx(parentCtx, cm.onClose)
-	return cm
-}
-
-// onClose 资源清理回调
-func (cm *CleanupManager) onClose() error {
-	utils.Infof("Cleanup manager resources cleaned up")
-
-	// 停止清理任务
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	// 释放分布式锁
-	if cm.lock != nil {
-		utils.Infof("Distributed lock resources cleaned up")
-	}
-
-	// 清理存储资源
-	if cm.storage != nil {
-		utils.Infof("Cleanup storage resources cleaned up")
-	}
-	return nil
+	manager.Initialize(ctx)
+	return manager
 }
 
 // RegisterCleanupTask 注册清理任务

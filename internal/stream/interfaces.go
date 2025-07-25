@@ -3,6 +3,7 @@ package stream
 import (
 	"io"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/stream/compression"
 )
 
 // PackageStreamer 数据包流接口
@@ -39,8 +40,8 @@ type StreamFactory interface {
 	NewRateLimiterWriter(writer io.Writer, bytesPerSecond int64) (*RateLimiterWriter, error)
 
 	// NewCompressionReader 创建压缩读取器
-	NewCompressionReader(reader io.Reader) *GzipReader
+	NewCompressionReader(reader io.Reader) *compression.GzipReader
 
 	// NewCompressionWriter 创建压缩写入器
-	NewCompressionWriter(writer io.Writer) *GzipWriter
+	NewCompressionWriter(writer io.Writer) *compression.GzipWriter
 }

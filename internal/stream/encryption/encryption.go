@@ -1,4 +1,4 @@
-package stream
+package encryption
 
 import (
 	"bytes"

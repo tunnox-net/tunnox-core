@@ -7,7 +7,6 @@ import (
 	"io"
 	"testing"
 	"time"
-	io2 "tunnox-core/internal/stream"
 )
 
 func TestGzipReader(t *testing.T) {
@@ -29,7 +28,7 @@ func TestGzipReader(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	reader := io2.NewGzipReader(bytes.NewReader(compressedData), ctx)
+	reader := NewGzipReader(bytes.NewReader(compressedData), ctx)
 	defer reader.Close()
 
 	// 读取解压缩后的数据
@@ -50,7 +49,7 @@ func TestGzipReaderClose(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	reader := io2.NewGzipReader(bytes.NewReader([]byte{}), ctx)
+	reader := NewGzipReader(bytes.NewReader([]byte{}), ctx)
 
 	// 关闭reader
 	reader.Close()
@@ -86,7 +85,7 @@ func TestGzipReaderWithLargeData(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	reader := io2.NewGzipReader(bytes.NewReader(compressedData), ctx)
+	reader := NewGzipReader(bytes.NewReader(compressedData), ctx)
 	defer reader.Close()
 
 	// 读取解压缩后的数据
@@ -109,7 +108,7 @@ func TestGzipReaderInvalidData(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	reader := io2.NewGzipReader(bytes.NewReader(invalidData), ctx)
+	reader := NewGzipReader(bytes.NewReader(invalidData), ctx)
 	defer reader.Close()
 
 	// 尝试读取应该会失败
@@ -138,7 +137,7 @@ func TestGzipReaderMultipleReads(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	reader := io2.NewGzipReader(bytes.NewReader(compressedData), ctx)
+	reader := NewGzipReader(bytes.NewReader(compressedData), ctx)
 	defer reader.Close()
 
 	// 多次读取
@@ -182,7 +181,7 @@ func TestGzipReaderAfterClose(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	reader := io2.NewGzipReader(bytes.NewReader(compressedData), ctx)
+	reader := NewGzipReader(bytes.NewReader(compressedData), ctx)
 
 	// 关闭reader
 	reader.Close()
@@ -207,7 +206,7 @@ func TestGzipWriter(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	writer := io2.NewGzipWriter(&buf, ctx)
+	writer := NewGzipWriter(&buf, ctx)
 
 	// 写入数据
 	_, err := writer.Write(originalData)
@@ -246,7 +245,7 @@ func TestGzipWriterClose(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	writer := io2.NewGzipWriter(&buf, ctx)
+	writer := NewGzipWriter(&buf, ctx)
 
 	// 关闭writer
 	writer.Close()
@@ -271,7 +270,7 @@ func TestGzipWriterWithLargeData(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	writer := io2.NewGzipWriter(&buf, ctx)
+	writer := NewGzipWriter(&buf, ctx)
 
 	// 写入大数据
 	_, err := writer.Write(largeData)
@@ -314,7 +313,7 @@ func TestGzipWriterMultipleWrites(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	writer := io2.NewGzipWriter(&buf, ctx)
+	writer := NewGzipWriter(&buf, ctx)
 
 	// 多次写入
 	_, err := writer.Write(testData1)
@@ -364,7 +363,7 @@ func TestGzipWriterAfterClose(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	writer := io2.NewGzipWriter(&buf, ctx)
+	writer := NewGzipWriter(&buf, ctx)
 
 	// 关闭writer
 	writer.Close()
@@ -384,7 +383,7 @@ func TestGzipWriterContextCancellation(t *testing.T) {
 	var buf bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 
-	writer := io2.NewGzipWriter(&buf, ctx)
+	writer := NewGzipWriter(&buf, ctx)
 
 	// 取消上下文
 	cancel()

@@ -3,6 +3,7 @@ package stream
 import (
 	"context"
 	"fmt"
+	"tunnox-core/internal/stream/encryption"
 )
 
 // StreamType 流类型枚举
@@ -24,7 +25,7 @@ type StreamProfile struct {
 	BufferSize           int
 	EnableMemoryPool     bool
 	MaxConcurrentStreams int
-	EncryptionKey        EncryptionKey // 加密密钥
+	EncryptionKey        encryption.EncryptionKey // 加密密钥
 }
 
 // PredefinedProfiles 预定义的流配置模板
@@ -93,12 +94,17 @@ func CreateFactoryFromProfile(ctx context.Context, profileName string) (StreamFa
 		return nil, err
 	}
 
-	config := StreamFactoryConfig{
-		DefaultCompression: profile.DefaultCompression,
-		DefaultRateLimit:   profile.DefaultRateLimit,
-		BufferSize:         profile.BufferSize,
-		EnableMemoryPool:   profile.EnableMemoryPool,
-		EncryptionKey:      profile.EncryptionKey,
+	config := &StreamFactoryConfig{
+		EnableCompression: profile.DefaultCompression,
+		RateLimitBytes:    profile.DefaultRateLimit,
+		BufferSize:        profile.BufferSize,
+		// EnableMemoryPool: profile.EnableMemoryPool, // 如需保留请加到StreamFactoryConfig
+		EncryptionKey: nil,
+	}
+	if profile.EncryptionKey != nil {
+		if keyer, ok := profile.EncryptionKey.(interface{ GetKey() []byte }); ok {
+			config.EncryptionKey = keyer.GetKey()
+		}
 	}
 
 	return NewConfigurableStreamFactory(ctx, config), nil

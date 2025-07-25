@@ -1,16 +1,14 @@
-package factory
+package stream
 
 import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/stream"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestStreamFactory_BasicCreation(t *testing.T) {
@@ -18,7 +16,7 @@ func TestStreamFactory_BasicCreation(t *testing.T) {
 	defer cancel()
 
 	// 创建默认流工厂
-	factory := stream.NewDefaultStreamFactory(ctx)
+	factory := NewDefaultStreamFactory(ctx)
 
 	// 测试创建流处理器
 	var buf bytes.Buffer
@@ -54,7 +52,7 @@ func TestConfigurableStreamFactory(t *testing.T) {
 	defer cancel()
 
 	// 创建配置
-	config := stream.StreamFactoryConfig{
+	config := StreamFactoryConfig{
 		DefaultCompression: true,
 		DefaultRateLimit:   1024,
 		BufferSize:         4096,
@@ -62,7 +60,7 @@ func TestConfigurableStreamFactory(t *testing.T) {
 	}
 
 	// 创建可配置流工厂
-	factory := stream.NewConfigurableStreamFactory(ctx, config)
+	factory := NewConfigurableStreamFactory(ctx, config)
 	require.NotNil(t, factory)
 
 	// 验证配置
@@ -78,8 +76,8 @@ func TestStreamManager_BasicOperations(t *testing.T) {
 	defer cancel()
 
 	// 创建流工厂和管理器
-	factory := stream.NewDefaultStreamFactory(ctx)
-	manager := stream.NewStreamManager(factory, ctx)
+	factory := NewDefaultStreamFactory(ctx)
+	manager := NewStreamManager(factory, ctx)
 	require.NotNil(t, manager)
 
 	// 测试创建流
@@ -127,8 +125,8 @@ func TestStreamManager_WithPacketOperations(t *testing.T) {
 	defer cancel()
 
 	// 创建流工厂和管理器
-	factory := stream.NewDefaultStreamFactory(ctx)
-	manager := stream.NewStreamManager(factory, ctx)
+	factory := NewDefaultStreamFactory(ctx)
+	manager := NewStreamManager(factory, ctx)
 
 	// 创建测试数据包
 	commandPacket := &packet.CommandPacket{
@@ -172,22 +170,22 @@ func TestStreamProfiles(t *testing.T) {
 	defer cancel()
 
 	// 测试获取预定义配置
-	profile, err := stream.GetProfile("default")
+	profile, err := GetProfile("default")
 	require.NoError(t, err)
 	require.Equal(t, "default", profile.Name)
-	require.Equal(t, stream.StreamTypeBasic, profile.Type)
+	require.Equal(t, StreamTypeBasic, profile.Type)
 
 	// 测试获取不存在的配置
-	_, err = stream.GetProfile("nonexistent")
+	_, err = GetProfile("nonexistent")
 	require.Error(t, err)
 
 	// 测试从配置创建工厂
-	factory, err := stream.CreateFactoryFromProfile(ctx, "high_performance")
+	factory, err := CreateFactoryFromProfile(ctx, "high_performance")
 	require.NoError(t, err)
 	require.NotNil(t, factory)
 
 	// 测试从配置创建管理器
-	manager, err := stream.CreateManagerFromProfile(ctx, "bandwidth_saving")
+	manager, err := CreateManagerFromProfile(ctx, "bandwidth_saving")
 	require.NoError(t, err)
 	require.NotNil(t, manager)
 
@@ -202,8 +200,8 @@ func TestStreamManager_ConcurrentOperations(t *testing.T) {
 	defer cancel()
 
 	// 创建流管理器
-	factory := stream.NewDefaultStreamFactory(ctx)
-	manager := stream.NewStreamManager(factory, ctx)
+	factory := NewDefaultStreamFactory(ctx)
+	manager := NewStreamManager(factory, ctx)
 
 	// 并发创建多个流
 	const numStreams = 10

@@ -1,13 +1,13 @@
 package managers
 
 import (
+	"context"
 	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
-	"tunnox-core/internal/utils"
 )
 
 // ConnectionManager 连接管理器
@@ -17,21 +17,15 @@ type ConnectionManager struct {
 	idManager *idgen.IDManager
 }
 
-// NewConnectionManager 创建连接管理器
+// NewConnectionManager 创建新的连接管理器
 func NewConnectionManager(connRepo *repos.ConnectionRepo, idManager *idgen.IDManager) *ConnectionManager {
 	manager := &ConnectionManager{
 		ResourceBase: dispose.NewResourceBase("ConnectionManager"),
 		connRepo:     connRepo,
 		idManager:    idManager,
 	}
-	manager.Initialize(nil)
+	manager.Initialize(context.Background())
 	return manager
-}
-
-// onClose 资源清理回调
-func (cm *ConnectionManager) onClose() error {
-	utils.Infof("Connection manager resources cleaned up")
-	return nil
 }
 
 // RegisterConnection 注册连接

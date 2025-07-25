@@ -11,6 +11,8 @@ import (
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/errors"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/stream/compression"
+	"tunnox-core/internal/stream/encryption"
 	"tunnox-core/internal/utils"
 )
 
@@ -19,7 +21,7 @@ type StreamProcessor struct {
 	writer    io.Writer
 	transLock sync.Mutex
 	bufferMgr *utils.BufferManager
-	encMgr    *EncryptionManager // 加密管理器
+	encMgr    *encryption.EncryptionManager // 加密管理器
 	utils.Dispose
 }
 
@@ -44,12 +46,12 @@ func NewStreamProcessor(reader io.Reader, writer io.Writer, parentCtx context.Co
 }
 
 // NewStreamProcessorWithEncryption 创建带加密的流处理器
-func NewStreamProcessorWithEncryption(reader io.Reader, writer io.Writer, key EncryptionKey, parentCtx context.Context) *StreamProcessor {
+func NewStreamProcessorWithEncryption(reader io.Reader, writer io.Writer, key encryption.EncryptionKey, parentCtx context.Context) *StreamProcessor {
 	stream := &StreamProcessor{
 		reader:    reader,
 		writer:    writer,
 		bufferMgr: utils.NewBufferManager(parentCtx),
-		encMgr:    NewEncryptionManager(key, parentCtx),
+		encMgr:    encryption.NewEncryptionManager(key, parentCtx),
 	}
 	stream.SetCtx(parentCtx, nil)
 	stream.AddCleanHandler(stream.onClose)
@@ -298,7 +300,7 @@ func (ps *StreamProcessor) readPacketBody(bodySize uint32) ([]byte, error) {
 
 // decompressData 解压数据
 func (ps *StreamProcessor) decompressData(compressedData []byte) ([]byte, error) {
-	gzipReader := NewGzipReader(bytes.NewReader(compressedData), ps.Ctx())
+	gzipReader := compression.NewGzipReader(bytes.NewReader(compressedData), ps.Ctx())
 	defer gzipReader.Close()
 
 	var decompressedData bytes.Buffer
@@ -387,7 +389,7 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 // compressData 压缩数据
 func (ps *StreamProcessor) compressData(data []byte) ([]byte, error) {
 	var compressedData bytes.Buffer
-	gzipWriter := NewGzipWriter(&compressedData, ps.Ctx())
+	gzipWriter := compression.NewGzipWriter(&compressedData, ps.Ctx())
 
 	_, err := gzipWriter.Write(data)
 	if err != nil {
@@ -519,8 +521,8 @@ func (ps *StreamProcessor) CloseWithResult() *utils.DisposeResult {
 }
 
 // EnableEncryption 启用加密
-func (ps *StreamProcessor) EnableEncryption(key EncryptionKey) {
-	ps.encMgr = NewEncryptionManager(key, ps.Ctx())
+func (ps *StreamProcessor) EnableEncryption(key encryption.EncryptionKey) {
+	ps.encMgr = encryption.NewEncryptionManager(key, ps.Ctx())
 }
 
 // DisableEncryption 禁用加密
@@ -534,7 +536,7 @@ func (ps *StreamProcessor) IsEncryptionEnabled() bool {
 }
 
 // GetEncryptionKey 获取加密密钥
-func (ps *StreamProcessor) GetEncryptionKey() EncryptionKey {
+func (ps *StreamProcessor) GetEncryptionKey() encryption.EncryptionKey {
 	if ps.encMgr != nil {
 		return ps.encMgr.GetKey()
 	}
