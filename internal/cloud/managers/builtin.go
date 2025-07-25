@@ -4,14 +4,12 @@ import (
 	"context"
 	"time"
 	"tunnox-core/internal/cloud/storages"
-	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
 
 // BuiltinCloudControl 内置云控实现，继承 CloudControl，注入 MemoryStorage
 type BuiltinCloudControl struct {
 	*CloudControl
-	*dispose.ResourceBase
 }
 
 func NewBuiltinCloudControl(config *ControlConfig) *BuiltinCloudControl {
@@ -19,9 +17,7 @@ func NewBuiltinCloudControl(config *ControlConfig) *BuiltinCloudControl {
 	base := NewCloudControl(config, memoryStorage)
 	control := &BuiltinCloudControl{
 		CloudControl: base,
-		ResourceBase: dispose.NewResourceBase("BuiltinCloudControl"),
 	}
-	control.Initialize(context.Background())
 	return control
 }
 
@@ -30,9 +26,7 @@ func NewBuiltinCloudControlWithStorage(config *ControlConfig, storage storages.S
 	base := NewCloudControl(config, storage)
 	control := &BuiltinCloudControl{
 		CloudControl: base,
-		ResourceBase: dispose.NewResourceBase("BuiltinCloudControl"),
 	}
-	control.Initialize(context.Background())
 	return control
 }
 
@@ -74,7 +68,7 @@ func (b *BuiltinCloudControl) cleanupRoutine() {
 			utils.Debugf("Performing cleanup tasks...")
 			// 这里可以添加具体的清理逻辑
 
-		case <-b.ResourceBase.Dispose.Ctx().Done():
+		case <-b.CloudControl.ResourceBase.Dispose.Ctx().Done():
 			utils.Infof("Cleanup routine stopped")
 			return
 		}

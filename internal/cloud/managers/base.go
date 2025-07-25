@@ -725,5 +725,9 @@ func (b *CloudControl) Close() error {
 	close(b.done)
 
 	// 调用 ResourceBase 的清理逻辑
-	return b.ResourceBase.Dispose.Close()
+	result := b.ResourceBase.Dispose.Close()
+	if result.HasErrors() {
+		return result
+	}
+	return nil
 }
