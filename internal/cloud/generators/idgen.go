@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
 
@@ -40,14 +41,8 @@ const (
 	MaxAttempts = 100
 )
 
-// IDGenerator 泛型ID生成器接口
-type IDGenerator[T any] interface {
-	Generate() (T, error)
-	Release(id T) error
-	IsUsed(id T) (bool, error)
-	GetUsedCount() int
-	Close() error
-}
+// 使用core/idgen包中的IDGenerator接口
+type IDGenerator[T any] = idgen.IDGenerator[T]
 
 // StorageBasedIDGenerator 基于Storage的泛型ID生成器
 type StorageBasedIDGenerator[T any] struct {

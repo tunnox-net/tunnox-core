@@ -9,32 +9,27 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/core/dispose"
 )
 
 // UserServiceImpl 用户服务实现
 type UserServiceImpl struct {
+	*dispose.ResourceBase
 	userRepo  *repos.UserRepository
 	idManager *generators.IDManager
 	statsMgr  *managers.StatsManager
-	utils.Dispose
 }
 
 // NewUserService 创建用户服务
 func NewUserService(userRepo *repos.UserRepository, idManager *generators.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) UserService {
 	service := &UserServiceImpl{
-		userRepo:  userRepo,
-		idManager: idManager,
-		statsMgr:  statsMgr,
+		ResourceBase: dispose.NewResourceBase("UserService"),
+		userRepo:     userRepo,
+		idManager:    idManager,
+		statsMgr:     statsMgr,
 	}
-	service.SetCtx(parentCtx, service.onClose)
+	service.Initialize(parentCtx)
 	return service
-}
-
-// onClose 资源清理回调
-func (s *UserServiceImpl) onClose() error {
-	utils.Infof("User service resources cleaned up")
-	return nil
 }
 
 // CreateUser 创建用户
@@ -63,7 +58,6 @@ func (s *UserServiceImpl) CreateUser(username, email string) (*models.User, erro
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	utils.Infof("Created user: %s (ID: %s)", username, userID)
 	return user, nil
 }
 
@@ -82,7 +76,6 @@ func (s *UserServiceImpl) UpdateUser(user *models.User) error {
 	if err := s.userRepo.UpdateUser(user); err != nil {
 		return fmt.Errorf("failed to update user %s: %w", user.ID, err)
 	}
-	utils.Infof("Updated user: %s", user.ID)
 	return nil
 }
 
@@ -94,10 +87,9 @@ func (s *UserServiceImpl) DeleteUser(userID string) error {
 
 	// 释放用户ID
 	if err := s.idManager.ReleaseUserID(userID); err != nil {
-		utils.Warnf("Failed to release user ID %s: %v", userID, err)
+		return fmt.Errorf("failed to release user ID %s: %w", userID, err)
 	}
 
-	utils.Infof("Deleted user: %s", userID)
 	return nil
 }
 
@@ -114,7 +106,6 @@ func (s *UserServiceImpl) ListUsers(userType models.UserType) ([]*models.User, e
 func (s *UserServiceImpl) SearchUsers(keyword string) ([]*models.User, error) {
 	// 暂时返回空列表，因为UserRepository没有Search方法
 	// TODO: 实现搜索功能
-	utils.Warnf("SearchUsers not implemented yet")
 	return []*models.User{}, nil
 }
 

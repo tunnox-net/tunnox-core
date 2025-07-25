@@ -3,6 +3,7 @@ package factory
 import (
 	"context"
 	"io"
+	"tunnox-core/internal/stream"
 	"tunnox-core/internal/stream/compression"
 	"tunnox-core/internal/stream/encryption"
 	"tunnox-core/internal/stream/processor"
@@ -23,7 +24,7 @@ type StreamFactoryConfig struct {
 // DefaultStreamFactoryConfig 默认流工厂配置
 func DefaultStreamFactoryConfig() *StreamFactoryConfig {
 	return &StreamFactoryConfig{
-		EnableCompression: false,
+		EnableCompression: true,
 		EnableEncryption:  false,
 		EnableRateLimit:   false,
 		CompressionLevel:  6,
@@ -33,20 +34,8 @@ func DefaultStreamFactoryConfig() *StreamFactoryConfig {
 	}
 }
 
-// StreamFactory 流工厂接口
-type StreamFactory interface {
-	// CreateStreamProcessor 创建流处理器
-	CreateStreamProcessor(reader io.Reader, writer io.Writer) processor.StreamProcessor
-
-	// CreateStreamProcessorWithConfig 使用配置创建流处理器
-	CreateStreamProcessorWithConfig(reader io.Reader, writer io.Writer, config *StreamFactoryConfig) processor.StreamProcessor
-
-	// GetConfig 获取配置
-	GetConfig() *StreamFactoryConfig
-
-	// SetConfig 设置配置
-	SetConfig(config *StreamFactoryConfig)
-}
+// 使用stream包中的StreamFactory接口
+type StreamFactory = stream.StreamFactory
 
 // DefaultStreamFactory 默认流工厂实现
 type DefaultStreamFactory struct {

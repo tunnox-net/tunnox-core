@@ -2,59 +2,15 @@ package storages
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
 	"tunnox-core/internal/cloud/constants"
+	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
 
-// 存储相关错误
-var (
-	ErrKeyNotFound = errors.New("key not found")
-	ErrInvalidType = errors.New("invalid type")
-)
-
-// Storage 存储接口
-type Storage interface {
-	// 基础操作
-	Set(key string, value interface{}, ttl time.Duration) error
-	Get(key string) (interface{}, error)
-	Delete(key string) error
-	Exists(key string) (bool, error)
-
-	// 列表操作
-	SetList(key string, values []interface{}, ttl time.Duration) error
-	GetList(key string) ([]interface{}, error)
-	AppendToList(key string, value interface{}) error
-	RemoveFromList(key string, value interface{}) error
-
-	// 哈希操作
-	SetHash(key string, field string, value interface{}) error
-	GetHash(key string, field string) (interface{}, error)
-	GetAllHash(key string) (map[string]interface{}, error)
-	DeleteHash(key string, field string) error
-
-	// 计数器操作
-	Incr(key string) (int64, error)
-	IncrBy(key string, value int64) (int64, error)
-
-	// 过期时间
-	SetExpiration(key string, ttl time.Duration) error
-	GetExpiration(key string) (time.Duration, error)
-
-	// 清理过期数据
-	CleanupExpired() error
-
-	// 分布式操作
-	SetNX(key string, value interface{}, ttl time.Duration) (bool, error)                       // 原子设置，仅当键不存在时
-	CompareAndSwap(key string, oldValue, newValue interface{}, ttl time.Duration) (bool, error) // 原子比较并交换
-	Watch(key string, callback func(interface{})) error                                         // 监听键变化
-	Unwatch(key string) error                                                                   // 取消监听
-
-	// 关闭存储
-	Close() error
-}
+// 使用core/storage包中的Storage接口和错误定义
+type Storage = storage.Storage
 
 // MemoryStorage 内存存储实现
 type MemoryStorage struct {
@@ -125,20 +81,20 @@ func (m *MemoryStorage) Get(key string) (interface{}, error) {
 	utils.Infof("MemoryStorage.Get: retrieving key %s, data map size: %d", key, len(m.data))
 	if m.data == nil {
 		utils.Debugf("MemoryStorage.Get: data map is nil for key %s", key)
-		return nil, ErrKeyNotFound
+		return nil, storage.ErrKeyNotFound
 	}
 
 	item, exists := m.data[key]
 	if !exists {
 		utils.Debugf("MemoryStorage.Get: key %s not found in data map", key)
-		return nil, ErrKeyNotFound
+		return nil, storage.ErrKeyNotFound
 	}
 
 	// 只有 expiration 非零且已过期才删除
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		utils.Infof("MemoryStorage.Get: key %s expired, deleting", key)
 		delete(m.data, key)
-		return nil, ErrKeyNotFound
+		return nil, storage.ErrKeyNotFound
 	}
 
 	utils.Infof("MemoryStorage.Get: successfully retrieved key %s, value type: %T", key, item.value)
@@ -198,7 +154,7 @@ func (m *MemoryStorage) GetList(key string) ([]interface{}, error) {
 		return list, nil
 	}
 
-	return nil, ErrInvalidType
+	return nil, storage.ErrInvalidType
 }
 
 // AppendToList 追加到列表
@@ -229,7 +185,7 @@ func (m *MemoryStorage) AppendToList(key string, value interface{}) error {
 		return nil
 	}
 
-	return ErrInvalidType
+	return storage.ErrInvalidType
 }
 
 // RemoveFromList 从列表中移除
@@ -259,7 +215,7 @@ func (m *MemoryStorage) RemoveFromList(key string, value interface{}) error {
 		return nil
 	}
 
-	return ErrInvalidType
+	return storage.ErrInvalidType
 }
 
 // SetHash 设置哈希字段
@@ -307,23 +263,23 @@ func (m *MemoryStorage) GetHash(key string, field string) (interface{}, error) {
 
 	item, exists := m.data[key]
 	if !exists {
-		return nil, ErrKeyNotFound
+		return nil, storage.ErrKeyNotFound
 	}
 
 	// 修复：零值时间表示永不过期
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		delete(m.data, key)
-		return nil, ErrKeyNotFound
+		return nil, storage.ErrKeyNotFound
 	}
 
 	if hash, ok := item.value.(map[string]interface{}); ok {
 		if value, exists := hash[field]; exists {
 			return value, nil
 		}
-		return nil, ErrKeyNotFound
+		return nil, storage.ErrKeyNotFound
 	}
 
-	return nil, ErrInvalidType
+	return nil, storage.ErrInvalidType
 }
 
 // GetAllHash 获取所有哈希字段
@@ -333,13 +289,13 @@ func (m *MemoryStorage) GetAllHash(key string) (map[string]interface{}, error) {
 
 	item, exists := m.data[key]
 	if !exists {
-		return nil, ErrKeyNotFound
+		return nil, storage.ErrKeyNotFound
 	}
 
 	// 修复：零值时间表示永不过期
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		delete(m.data, key)
-		return nil, ErrKeyNotFound
+		return nil, storage.ErrKeyNotFound
 	}
 
 	if hash, ok := item.value.(map[string]interface{}); ok {
@@ -350,7 +306,7 @@ func (m *MemoryStorage) GetAllHash(key string) (map[string]interface{}, error) {
 		return result, nil
 	}
 
-	return nil, ErrInvalidType
+	return nil, storage.ErrInvalidType
 }
 
 // DeleteHash 删除哈希字段
@@ -374,7 +330,7 @@ func (m *MemoryStorage) DeleteHash(key string, field string) error {
 		return nil
 	}
 
-	return ErrInvalidType
+	return storage.ErrInvalidType
 }
 
 // Incr 递增计数器
@@ -408,7 +364,7 @@ func (m *MemoryStorage) IncrBy(key string, value int64) (int64, error) {
 		return newValue, nil
 	}
 
-	return 0, ErrInvalidType
+	return 0, storage.ErrInvalidType
 }
 
 // SetExpiration 设置过期时间
@@ -418,7 +374,7 @@ func (m *MemoryStorage) SetExpiration(key string, ttl time.Duration) error {
 
 	item, exists := m.data[key]
 	if !exists {
-		return ErrKeyNotFound
+		return storage.ErrKeyNotFound
 	}
 
 	item.expiration = time.Now().Add(ttl)
@@ -432,13 +388,13 @@ func (m *MemoryStorage) GetExpiration(key string) (time.Duration, error) {
 
 	item, exists := m.data[key]
 	if !exists {
-		return 0, ErrKeyNotFound
+		return 0, storage.ErrKeyNotFound
 	}
 
 	// 修复：零值时间表示永不过期
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
 		delete(m.data, key)
-		return 0, ErrKeyNotFound
+		return 0, storage.ErrKeyNotFound
 	}
 
 	return time.Until(item.expiration), nil
