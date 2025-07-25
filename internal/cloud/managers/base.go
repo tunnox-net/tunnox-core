@@ -457,12 +457,12 @@ func (b *CloudControl) GenerateJWTToken(clientID int64) (*JWTTokenInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	return b.jwtManager.GenerateTokenPair(b.Ctx(), client)
+	return b.jwtManager.GenerateTokenPair(b.ResourceBase.Dispose.Ctx(), client)
 }
 
 func (b *CloudControl) RefreshJWTToken(refreshToken string) (*JWTTokenInfo, error) {
 	// 验证刷新令牌
-	claims, err := b.jwtManager.ValidateRefreshToken(b.Ctx(), refreshToken)
+	claims, err := b.jwtManager.ValidateRefreshToken(b.ResourceBase.Dispose.Ctx(), refreshToken)
 	if err != nil {
 		return nil, fmt.Errorf("invalid refresh token: %w", err)
 	}
@@ -474,11 +474,11 @@ func (b *CloudControl) RefreshJWTToken(refreshToken string) (*JWTTokenInfo, erro
 	}
 
 	// 生成新的令牌对
-	return b.jwtManager.GenerateTokenPair(b.Ctx(), client)
+	return b.jwtManager.GenerateTokenPair(b.ResourceBase.Dispose.Ctx(), client)
 }
 
 func (b *CloudControl) ValidateJWTToken(token string) (*JWTTokenInfo, error) {
-	claims, err := b.jwtManager.ValidateAccessToken(b.Ctx(), token)
+	claims, err := b.jwtManager.ValidateAccessToken(b.ResourceBase.Dispose.Ctx(), token)
 	if err != nil {
 		return nil, err
 	}
@@ -497,13 +497,13 @@ func (b *CloudControl) ValidateJWTToken(token string) (*JWTTokenInfo, error) {
 
 func (b *CloudControl) RevokeJWTToken(token string) error {
 	// 验证令牌以获取客户端ID
-	claims, err := b.jwtManager.ValidateAccessToken(b.Ctx(), token)
+	claims, err := b.jwtManager.ValidateAccessToken(b.ResourceBase.Dispose.Ctx(), token)
 	if err != nil {
 		return fmt.Errorf("invalid token: %w", err)
 	}
 
 	// 将令牌加入黑名单
-	return b.jwtManager.RevokeToken(b.Ctx(), claims.ID)
+	return b.jwtManager.RevokeToken(b.ResourceBase.Dispose.Ctx(), claims.ID)
 }
 
 // 核心节点管理
@@ -654,7 +654,7 @@ func (b *CloudControl) Authenticate(req *models.AuthRequest) (*models.AuthRespon
 	}
 
 	// 生成JWT令牌
-	tokenInfo, err := b.jwtManager.GenerateTokenPair(b.Ctx(), client)
+	tokenInfo, err := b.jwtManager.GenerateTokenPair(b.ResourceBase.Dispose.Ctx(), client)
 	if err != nil {
 		return &models.AuthResponse{
 			Success: false,
@@ -677,7 +677,7 @@ func (b *CloudControl) Authenticate(req *models.AuthRequest) (*models.AuthRespon
 
 func (b *CloudControl) ValidateToken(token string) (*models.AuthResponse, error) {
 	// 验证JWT令牌
-	claims, err := b.jwtManager.ValidateAccessToken(b.Ctx(), token)
+	claims, err := b.jwtManager.ValidateAccessToken(b.ResourceBase.Dispose.Ctx(), token)
 	if err != nil {
 		return &models.AuthResponse{
 			Success: false,
@@ -712,4 +712,18 @@ func (b *CloudControl) ValidateToken(token string) (*models.AuthResponse, error)
 		ExpiresAt: claims.ExpiresAt.Time,
 		Message:   "Token validated successfully",
 	}, nil
+}
+
+// Close 实现 CloudControlAPI 接口的 Close 方法
+func (b *CloudControl) Close() error {
+	// 停止清理定时器
+	if b.cleanupTicker != nil {
+		b.cleanupTicker.Stop()
+	}
+
+	// 关闭 done 通道
+	close(b.done)
+
+	// 调用 ResourceBase 的清理逻辑
+	return b.ResourceBase.Dispose.Close()
 }

@@ -1,35 +1,32 @@
 package managers
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/core/dispose"
 )
 
-// SearchManager 搜索管理服务
+// SearchManager 搜索管理器
 type SearchManager struct {
+	*dispose.ResourceBase
 	userRepo    *repos.UserRepository
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
-	utils.Dispose
 }
 
-// NewSearchManager 创建搜索管理服务
+// NewSearchManager 创建新的搜索管理器
 func NewSearchManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo) *SearchManager {
 	manager := &SearchManager{
-		userRepo:    userRepo,
-		clientRepo:  clientRepo,
-		mappingRepo: mappingRepo,
+		ResourceBase: dispose.NewResourceBase("SearchManager"),
+		userRepo:     userRepo,
+		clientRepo:   clientRepo,
+		mappingRepo:  mappingRepo,
 	}
-	manager.SetCtx(nil, manager.onClose)
+	manager.Initialize(context.Background())
 	return manager
-}
-
-// onClose 资源清理回调
-func (sm *SearchManager) onClose() error {
-	utils.Infof("Search manager resources cleaned up")
-	return nil
 }
 
 // SearchUsers 搜索用户
@@ -61,7 +58,7 @@ func (sm *SearchManager) SearchClients(keyword string) ([]*models.Client, error)
 	for _, client := range clients {
 		if strings.Contains(strings.ToLower(client.Name), strings.ToLower(keyword)) ||
 			strings.Contains(client.AuthCode, keyword) ||
-			strings.Contains(utils.Int64ToString(client.ID), keyword) {
+			strings.Contains(fmt.Sprintf("%d", client.ID), keyword) {
 			results = append(results, client)
 		}
 	}
@@ -79,8 +76,8 @@ func (sm *SearchManager) SearchPortMappings(keyword string) ([]*models.PortMappi
 	var results []*models.PortMapping
 	for _, mapping := range mappings {
 		if strings.Contains(mapping.ID, keyword) ||
-			strings.Contains(utils.Int64ToString(mapping.SourceClientID), keyword) ||
-			strings.Contains(utils.Int64ToString(mapping.TargetClientID), keyword) ||
+			strings.Contains(fmt.Sprintf("%d", mapping.SourceClientID), keyword) ||
+			strings.Contains(fmt.Sprintf("%d", mapping.TargetClientID), keyword) ||
 			strings.Contains(string(mapping.Protocol), strings.ToLower(keyword)) {
 			results = append(results, mapping)
 		}

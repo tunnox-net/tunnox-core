@@ -7,23 +7,23 @@ import (
 	"time"
 	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
-
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/core/dispose"
 )
 
 // TokenCacheManager Token缓存管理器
 type TokenCacheManager struct {
+	*dispose.ResourceBase
 	storage storages.Storage
-	utils.Dispose
 }
 
-// NewTokenCacheManager 创建Token缓存管理器
+// NewTokenCacheManager 创建新的Token缓存管理器
 func NewTokenCacheManager(storage storages.Storage) *TokenCacheManager {
-	mgr := &TokenCacheManager{
-		storage: storage,
+	manager := &TokenCacheManager{
+		ResourceBase: dispose.NewResourceBase("TokenCacheManager"),
+		storage:      storage,
 	}
-	mgr.Dispose.SetCtx(context.Background(), nil)
-	return mgr
+	manager.Initialize(context.Background())
+	return manager
 }
 
 // StoreAccessToken 存储访问Token信息
@@ -175,15 +175,4 @@ func (m *TokenCacheManager) IsRefreshTokenRevoked(ctx context.Context, refreshTo
 		return false, err
 	}
 	return !exists, nil
-}
-
-// onClose 资源清理回调
-func (mgr *TokenCacheManager) onClose() error {
-	utils.Infof("Token cache manager resources cleaned up")
-	// 清理所有缓存的Token
-	if mgr.storage != nil {
-		// 这里可以添加清理过期Token的逻辑
-		utils.Infof("Token cache storage resources cleaned up")
-	}
-	return nil
 }

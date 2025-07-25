@@ -1,41 +1,35 @@
 package managers
 
 import (
+	"context"
 	"time"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
 
-// StatsManager 统计管理服务
+// StatsManager 统计管理器
 type StatsManager struct {
+	*dispose.ResourceBase
 	userRepo    *repos.UserRepository
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
 	nodeRepo    *repos.NodeRepository
-	utils.Dispose
 }
 
-// NewStatsManager 创建统计管理服务
-func NewStatsManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository,
-	mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository) *StatsManager {
+// NewStatsManager 创建新的统计管理器
+func NewStatsManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository) *StatsManager {
 	manager := &StatsManager{
-		userRepo:    userRepo,
-		clientRepo:  clientRepo,
-		mappingRepo: mappingRepo,
-		nodeRepo:    nodeRepo,
+		ResourceBase: dispose.NewResourceBase("StatsManager"),
+		userRepo:     userRepo,
+		clientRepo:   clientRepo,
+		mappingRepo:  mappingRepo,
+		nodeRepo:     nodeRepo,
 	}
-	manager.SetCtx(nil, manager.onClose)
+	manager.Initialize(context.Background())
 	return manager
-}
-
-// onClose 资源清理回调
-func (sm *StatsManager) onClose() error {
-	utils.Infof("Stats manager resources cleaned up")
-	return nil
-	// 清理统计缓存和临时数据
-	// 这里可以添加清理统计缓存的逻辑
 }
 
 // GetUserStats 获取用户统计信息

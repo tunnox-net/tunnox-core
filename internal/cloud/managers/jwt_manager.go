@@ -2,20 +2,24 @@ package managers
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// JWTManager JWT Token管理器
+// JWTManager JWT令牌管理器
 type JWTManager struct {
+	*dispose.ResourceBase
 	config *ControlConfig
+	repo   *repos.Repository
 	cache  *TokenCacheManager
-	utils.Dispose
 }
 
 // JWTClaims JWT声明
@@ -60,24 +64,16 @@ type JWTTokenInfo struct {
 	TokenID      string
 }
 
-// NewJWTManager 创建JWT管理器
+// NewJWTManager 创建新的JWT管理器
 func NewJWTManager(config *ControlConfig, repo *repos.Repository) *JWTManager {
 	manager := &JWTManager{
-		config: config,
-		cache:  NewTokenCacheManager(repo.GetStorage()),
+		ResourceBase: dispose.NewResourceBase("JWTManager"),
+		config:       config,
+		repo:         repo,
+		cache:        NewTokenCacheManager(repo.GetStorage()),
 	}
-	manager.SetCtx(context.Background(), manager.onClose)
+	manager.Initialize(context.Background())
 	return manager
-}
-
-// onClose 资源清理回调
-func (m *JWTManager) onClose() error {
-	utils.Infof("JWT manager resources cleaned up")
-	// 清理Token缓存
-	if m.cache != nil {
-		m.cache.Close()
-	}
-	return nil
 }
 
 // GenerateTokenPair 生成Token对（访问Token + 刷新Token）
@@ -359,7 +355,11 @@ func (m *JWTManager) RevokeToken(ctx context.Context, tokenID string) error {
 
 // generateTokenID 生成Token ID
 func (m *JWTManager) generateTokenID() (string, error) {
-	return utils.GenerateRandomString(32)
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
 }
 
 // contains 检查字符串切片是否包含指定字符串

@@ -9,6 +9,7 @@ import (
 	"io"
 	"sync"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream/compression"
@@ -17,12 +18,12 @@ import (
 )
 
 type StreamProcessor struct {
+	*dispose.ResourceBase
 	reader    io.Reader
 	writer    io.Writer
-	transLock sync.Mutex
+	lock      sync.Mutex
 	bufferMgr *utils.BufferManager
 	encMgr    *encryption.EncryptionManager // 加密管理器
-	utils.Dispose
 }
 
 func (ps *StreamProcessor) GetReader() io.Reader {
@@ -34,28 +35,28 @@ func (ps *StreamProcessor) GetWriter() io.Writer {
 }
 
 func NewStreamProcessor(reader io.Reader, writer io.Writer, parentCtx context.Context) *StreamProcessor {
-	stream := &StreamProcessor{
-		reader:    reader,
-		writer:    writer,
-		bufferMgr: utils.NewBufferManager(parentCtx),
-		encMgr:    nil, // 默认不启用加密
+	sp := &StreamProcessor{
+		ResourceBase: dispose.NewResourceBase("StreamProcessor"),
+		reader:       reader,
+		writer:       writer,
+		bufferMgr:    utils.NewBufferManager(parentCtx),
+		encMgr:       nil, // 默认不启用加密
 	}
-	stream.SetCtx(parentCtx, nil)
-	stream.AddCleanHandler(stream.onClose)
-	return stream
+	sp.Initialize(parentCtx)
+	return sp
 }
 
 // NewStreamProcessorWithEncryption 创建带加密的流处理器
 func NewStreamProcessorWithEncryption(reader io.Reader, writer io.Writer, key encryption.EncryptionKey, parentCtx context.Context) *StreamProcessor {
-	stream := &StreamProcessor{
-		reader:    reader,
-		writer:    writer,
-		bufferMgr: utils.NewBufferManager(parentCtx),
-		encMgr:    encryption.NewEncryptionManager(key, parentCtx),
+	sp := &StreamProcessor{
+		ResourceBase: dispose.NewResourceBase("StreamProcessor"),
+		reader:       reader,
+		writer:       writer,
+		bufferMgr:    utils.NewBufferManager(parentCtx),
+		encMgr:       encryption.NewEncryptionManager(key, parentCtx),
 	}
-	stream.SetCtx(parentCtx, nil)
-	stream.AddCleanHandler(stream.onClose)
-	return stream
+	sp.Initialize(parentCtx)
+	return sp
 }
 
 func (ps *StreamProcessor) onClose() error {
@@ -70,12 +71,12 @@ func (ps *StreamProcessor) onClose() error {
 
 // readLock 获取读取锁并检查状态
 func (ps *StreamProcessor) readLock() error {
-	if ps.IsClosed() {
+	if ps.ResourceBase.Dispose.IsClosed() {
 		return io.EOF
 	}
-	ps.transLock.Lock()
+	ps.lock.Lock()
 	if ps.reader == nil {
-		ps.transLock.Unlock()
+		ps.lock.Unlock()
 		return errors.ErrReaderNil
 	}
 	return nil
@@ -83,12 +84,12 @@ func (ps *StreamProcessor) readLock() error {
 
 // writeLock 获取写入锁并检查状态
 func (ps *StreamProcessor) writeLock() error {
-	if ps.IsClosed() {
+	if ps.ResourceBase.Dispose.IsClosed() {
 		return errors.ErrStreamClosed
 	}
-	ps.transLock.Lock()
+	ps.lock.Lock()
 	if ps.writer == nil {
-		ps.transLock.Unlock()
+		ps.lock.Unlock()
 		return errors.ErrWriterNil
 	}
 	return nil
@@ -100,7 +101,7 @@ func (ps *StreamProcessor) ReadExact(length int) ([]byte, error) {
 	if err := ps.readLock(); err != nil {
 		return nil, err
 	}
-	defer ps.transLock.Unlock()
+	defer ps.lock.Unlock()
 
 	// 从内存池获取缓冲区
 	buffer := ps.bufferMgr.Allocate(length)
@@ -112,8 +113,8 @@ func (ps *StreamProcessor) ReadExact(length int) ([]byte, error) {
 	for totalRead < length {
 		// 检查上下文是否已取消
 		select {
-		case <-ps.Ctx().Done():
-			return nil, ps.Ctx().Err()
+		case <-ps.ResourceBase.Dispose.Ctx().Done():
+			return nil, ps.ResourceBase.Dispose.Ctx().Err()
 		default:
 		}
 
@@ -162,7 +163,7 @@ func (ps *StreamProcessor) ReadExactZeroCopy(length int) (*utils.ZeroCopyBuffer,
 	if err := ps.readLock(); err != nil {
 		return nil, err
 	}
-	defer ps.transLock.Unlock()
+	defer ps.lock.Unlock()
 
 	// 从内存池获取缓冲区
 	buffer := ps.bufferMgr.Allocate(length)
@@ -173,9 +174,9 @@ func (ps *StreamProcessor) ReadExactZeroCopy(length int) (*utils.ZeroCopyBuffer,
 	for totalRead < length {
 		// 检查上下文是否已取消
 		select {
-		case <-ps.Ctx().Done():
+		case <-ps.ResourceBase.Dispose.Ctx().Done():
 			ps.bufferMgr.Release(buffer)
-			return nil, ps.Ctx().Err()
+			return nil, ps.ResourceBase.Dispose.Ctx().Err()
 		default:
 		}
 
@@ -216,7 +217,7 @@ func (ps *StreamProcessor) WriteExact(data []byte) error {
 	if err := ps.writeLock(); err != nil {
 		return err
 	}
-	defer ps.transLock.Unlock()
+	defer ps.lock.Unlock()
 
 	totalWritten := 0
 	dataLength := len(data)
@@ -225,8 +226,8 @@ func (ps *StreamProcessor) WriteExact(data []byte) error {
 	for totalWritten < dataLength {
 		// 检查上下文是否已取消
 		select {
-		case <-ps.Ctx().Done():
-			return ps.Ctx().Err()
+		case <-ps.ResourceBase.Dispose.Ctx().Done():
+			return ps.ResourceBase.Dispose.Ctx().Err()
 		default:
 		}
 
@@ -300,7 +301,7 @@ func (ps *StreamProcessor) readPacketBody(bodySize uint32) ([]byte, error) {
 
 // decompressData 解压数据
 func (ps *StreamProcessor) decompressData(compressedData []byte) ([]byte, error) {
-	gzipReader := compression.NewGzipReader(bytes.NewReader(compressedData), ps.Ctx())
+	gzipReader := compression.NewGzipReader(bytes.NewReader(compressedData), ps.ResourceBase.Dispose.Ctx())
 	defer gzipReader.Close()
 
 	var decompressedData bytes.Buffer
@@ -317,7 +318,7 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 	if err := ps.readLock(); err != nil {
 		return nil, 0, err
 	}
-	defer ps.transLock.Unlock()
+	defer ps.lock.Unlock()
 
 	totalBytes := 0
 
@@ -389,7 +390,7 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 // compressData 压缩数据
 func (ps *StreamProcessor) compressData(data []byte) ([]byte, error) {
 	var compressedData bytes.Buffer
-	gzipWriter := compression.NewGzipWriter(&compressedData, ps.Ctx())
+	gzipWriter := compression.NewGzipWriter(&compressedData, ps.ResourceBase.Dispose.Ctx())
 
 	_, err := gzipWriter.Write(data)
 	if err != nil {
@@ -406,7 +407,7 @@ func (ps *StreamProcessor) compressData(data []byte) ([]byte, error) {
 // writeRateLimitedData 限速写入数据
 func (ps *StreamProcessor) writeRateLimitedData(data []byte, rateLimitBytesPerSecond int64) error {
 	// 使用限速写入器
-	rateLimitedWriter, err := NewRateLimiterWriter(ps.writer, rateLimitBytesPerSecond, ps.Ctx())
+	rateLimitedWriter, err := NewRateLimiterWriter(ps.writer, rateLimitBytesPerSecond, ps.ResourceBase.Dispose.Ctx())
 	if err != nil {
 		return errors.NewStreamError("write_rate_limited", "failed to create rate limited writer", err)
 	}
@@ -429,7 +430,7 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	if err := ps.writeLock(); err != nil {
 		return 0, err
 	}
-	defer ps.transLock.Unlock()
+	defer ps.lock.Unlock()
 
 	// 检查数据包是否为nil
 	if pkt == nil {
@@ -512,17 +513,17 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 
 // Close 关闭流处理器（兼容接口）
 func (ps *StreamProcessor) Close() {
-	ps.Dispose.Close()
+	ps.ResourceBase.Dispose.Close()
 }
 
 // CloseWithResult 关闭并返回结果（新方法）
 func (ps *StreamProcessor) CloseWithResult() *utils.DisposeResult {
-	return ps.Dispose.Close()
+	return ps.ResourceBase.Dispose.Close()
 }
 
 // EnableEncryption 启用加密
 func (ps *StreamProcessor) EnableEncryption(key encryption.EncryptionKey) {
-	ps.encMgr = encryption.NewEncryptionManager(key, ps.Ctx())
+	ps.encMgr = encryption.NewEncryptionManager(key, ps.ResourceBase.Dispose.Ctx())
 }
 
 // DisableEncryption 禁用加密

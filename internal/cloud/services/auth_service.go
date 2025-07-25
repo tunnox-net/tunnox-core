@@ -7,33 +7,29 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
 
 // AuthServiceImpl 认证服务实现
 type AuthServiceImpl struct {
+	*dispose.ResourceBase
 	clientRepo *repos.ClientRepository
 	nodeRepo   *repos.NodeRepository
 	jwtManager *managers.JWTManager
-	utils.Dispose
 }
 
-// NewAuthService 创建认证服务
-func NewAuthService(clientRepo *repos.ClientRepository, nodeRepo *repos.NodeRepository,
-	jwtManager *managers.JWTManager, parentCtx context.Context) AuthService {
+// NewAuthServiceImpl 创建新的认证服务实现
+func NewAuthServiceImpl(clientRepo *repos.ClientRepository, nodeRepo *repos.NodeRepository,
+	jwtManager *managers.JWTManager) *AuthServiceImpl {
 	service := &AuthServiceImpl{
-		clientRepo: clientRepo,
-		nodeRepo:   nodeRepo,
-		jwtManager: jwtManager,
+		ResourceBase: dispose.NewResourceBase("AuthServiceImpl"),
+		clientRepo:   clientRepo,
+		nodeRepo:     nodeRepo,
+		jwtManager:   jwtManager,
 	}
-	service.SetCtx(parentCtx, service.onClose)
+	service.Initialize(context.Background())
 	return service
-}
-
-// onClose 资源清理回调
-func (s *AuthServiceImpl) onClose() error {
-	utils.Infof("Auth service resources cleaned up")
-	return nil
 }
 
 // Authenticate 认证客户端

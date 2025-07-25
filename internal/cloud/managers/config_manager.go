@@ -8,16 +8,16 @@ import (
 	"time"
 	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/core/dispose"
 )
 
 // ConfigManager 配置管理器
 type ConfigManager struct {
+	*dispose.ResourceBase
 	storage  storages.Storage
 	config   *ControlConfig
-	mu       sync.RWMutex
 	watchers []ConfigWatcher
-	utils.Dispose
+	mu       sync.RWMutex
 }
 
 // ConfigWatcher 配置变更监听器
@@ -25,37 +25,16 @@ type ConfigWatcher interface {
 	OnConfigChanged(config *ControlConfig)
 }
 
-// NewConfigManager 创建配置管理器
-func NewConfigManager(storage storages.Storage, initialConfig *ControlConfig, parentCtx context.Context) *ConfigManager {
-	cm := &ConfigManager{
-		storage:  storage,
-		config:   initialConfig,
-		watchers: make([]ConfigWatcher, 0),
+// NewConfigManager 创建新的配置管理器
+func NewConfigManager(storage storages.Storage, config *ControlConfig, ctx context.Context) *ConfigManager {
+	manager := &ConfigManager{
+		ResourceBase: dispose.NewResourceBase("ConfigManager"),
+		storage:      storage,
+		config:       config,
+		watchers:     make([]ConfigWatcher, 0),
 	}
-
-	cm.SetCtx(parentCtx, cm.onClose)
-
-	// 启动配置监听
-	go cm.watchConfigChanges()
-
-	return cm
-}
-
-// onClose 资源清理回调
-func (cm *ConfigManager) onClose() error {
-	utils.Infof("Config manager resources cleaned up")
-	// 停止配置监听
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	// 清理配置缓存
-	if cm.storage != nil {
-		utils.Infof("Config storage resources cleaned up")
-	}
-
-	// 清空监听器
-	cm.watchers = nil
-	return nil
+	manager.Initialize(ctx)
+	return manager
 }
 
 // GetConfig 获取当前配置

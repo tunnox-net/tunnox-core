@@ -7,11 +7,13 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
 
 // CloudControlAPI 重构后的云控API，使用依赖注入容器
 type CloudControlAPI struct {
+	*dispose.ResourceBase
 	container *container.Container
 
 	// 各个业务服务
@@ -23,8 +25,6 @@ type CloudControlAPI struct {
 	anonymousService  AnonymousService
 	connectionService ConnectionService
 	statsService      StatsService
-
-	utils.Dispose
 }
 
 // NewCloudControlAPI 创建新的云控API
@@ -44,7 +44,8 @@ func NewCloudControlAPI(config *managers.ControlConfig, storage interface{}, par
 
 	// 创建API实例
 	api := &CloudControlAPI{
-		container: container,
+		ResourceBase: dispose.NewResourceBase("CloudControlAPI"),
+		container:    container,
 	}
 
 	// 解析各个服务
@@ -52,21 +53,8 @@ func NewCloudControlAPI(config *managers.ControlConfig, storage interface{}, par
 		return nil, fmt.Errorf("failed to resolve services: %w", err)
 	}
 
-	api.SetCtx(parentCtx, api.onClose)
+	api.Initialize(parentCtx)
 	return api, nil
-}
-
-// onClose 资源清理回调
-func (api *CloudControlAPI) onClose() error {
-	utils.Infof("Cleaning up CloudControlAPI resources...")
-
-	// 关闭容器（会自动关闭所有注册的服务）
-	if err := api.container.Close(); err != nil {
-		utils.Errorf("Failed to close container: %v", err)
-	}
-
-	utils.Infof("CloudControlAPI resources cleanup completed")
-	return nil
 }
 
 // resolveServices 解析各个服务
@@ -337,7 +325,7 @@ func (api *CloudControlAPI) GetConnectionStats(timeRange string) ([]*stats.Conne
 
 // Close 关闭API
 func (api *CloudControlAPI) Close() error {
-	result := api.Dispose.Close()
+	result := api.ResourceBase.Close()
 	if result.HasErrors() {
 		return fmt.Errorf("cloud control API cleanup failed: %s", result.Error())
 	}

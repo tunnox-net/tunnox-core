@@ -381,7 +381,7 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("jwt manager is not of type *managers.JWTManager")
 		}
 
-		authService := NewAuthService(clientRepo, nodeRepo, jwtManager, parentCtx)
+		authService := NewAuthServiceImpl(clientRepo, nodeRepo, jwtManager)
 		return authService, nil
 	})
 
@@ -449,17 +449,47 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 
 	// 注册统计服务
 	container.RegisterSingleton("stats_service", func() (interface{}, error) {
-		statsManagerInstance, err := container.Resolve("stats_manager")
+		userRepoInstance, err := container.Resolve("user_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve stats manager: %w", err)
+			return nil, fmt.Errorf("failed to resolve user repository: %w", err)
 		}
 
-		statsManager, ok := statsManagerInstance.(*managers.StatsManager)
+		clientRepoInstance, err := container.Resolve("client_repository")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve client repository: %w", err)
+		}
+
+		mappingRepoInstance, err := container.Resolve("mapping_repository")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve mapping repository: %w", err)
+		}
+
+		nodeRepoInstance, err := container.Resolve("node_repository")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve node repository: %w", err)
+		}
+
+		userRepo, ok := userRepoInstance.(*repos.UserRepository)
 		if !ok {
-			return nil, fmt.Errorf("stats manager is not of type *managers.StatsManager")
+			return nil, fmt.Errorf("user repository is not of type *repos.UserRepository")
 		}
 
-		statsService := NewStatsService(statsManager, parentCtx)
+		clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
+		if !ok {
+			return nil, fmt.Errorf("client repository is not of type *repos.ClientRepository")
+		}
+
+		mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
+		if !ok {
+			return nil, fmt.Errorf("mapping repository is not of type *repos.PortMappingRepo")
+		}
+
+		nodeRepo, ok := nodeRepoInstance.(*repos.NodeRepository)
+		if !ok {
+			return nil, fmt.Errorf("node repository is not of type *repos.NodeRepository")
+		}
+
+		statsService := NewStatsServiceImpl(userRepo, clientRepo, mappingRepo, nodeRepo)
 		return statsService, nil
 	})
 
