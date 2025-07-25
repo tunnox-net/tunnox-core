@@ -96,6 +96,24 @@
   - `internal/core/dispose/resource_base.go`
 - **收益**: 统一了Disposable接口定义
 
+#### 1.8 加密接口统一
+- **问题**: 加密相关接口在多个包中重复定义
+  - `internal/stream/encryption.go` - 定义了EncryptionKey接口
+  - `internal/stream/encryption/encryption.go` - 定义了Encryption接口
+- **解决方案**:
+  - 统一使用 `internal/stream/encryption.go` 中的EncryptionKey接口
+  - 删除 `internal/stream/encryption/encryption.go` 和其测试文件
+  - 更新所有引用，使用stream包中的加密接口
+- **删除文件**:
+  - `internal/stream/encryption/encryption.go`
+  - `internal/stream/encryption/encryption_test.go`
+- **删除目录**:
+  - `internal/stream/encryption/`
+- **更新文件**:
+  - `internal/stream/factory/factory.go`
+  - `internal/stream/processor/processor.go`
+- **收益**: 统一了加密接口定义
+
 ### 2. 结构体重复定义清理
 
 #### 2.1 BufferManager结构体统一
@@ -281,7 +299,7 @@
 ## 📊 清理统计
 
 ### 代码行数减少
-- **接口重复定义**: 约350行代码
+- **接口重复定义**: 约400行代码
 - **ID生成器重复实现**: 约800行代码
 - **限流接口重复**: 约150行代码
 - **压缩接口重复**: 约100行代码
@@ -294,13 +312,14 @@
 - **CloudControlAPI重复**: 约150行代码
 - **Disposable接口重复**: 约50行代码
 - **BufferManager重复**: 约200行代码
+- **加密接口重复**: 约100行代码
 
 ### 文件影响范围
 - **新增文件**: 3个
   - `internal/core/dispose/resource_base.go`
   - `internal/core/errors/standard_errors.go`
   - `internal/testutils/common_test_helpers.go`
-- **删除文件**: 15个
+- **删除文件**: 17个
   - `internal/cloud/generators/idgen.go`
   - `internal/cloud/generators/optimized_idgen.go`
   - `internal/cloud/generators/optimized_idgen_test.go`
@@ -314,9 +333,12 @@
   - `internal/utils/buffer/pool.go`
   - `internal/utils/buffer/memory_pool_test.go`
   - `internal/utils/buffer/zero_copy_test.go`
-- **删除目录**: 1个
+  - `internal/stream/encryption/encryption.go`
+  - `internal/stream/encryption/encryption_test.go`
+- **删除目录**: 2个
   - `internal/utils/buffer/`
-- **修改文件**: 28个
+  - `internal/stream/encryption/`
+- **修改文件**: 30个
   - `internal/cloud/storages/storage.go`
   - `internal/cloud/storages/redis_storage.go`
   - `internal/cloud/storages/redis_storage_test.go`
@@ -352,7 +374,7 @@
 
 ### 1. 维护性提升
 - **统一接口**: 消除了接口重复定义，提高了接口的一致性
-- **统一实现**: 消除了ID生成器、限流器、压缩器、随机数生成器的重复实现，统一使用核心实现
+- **统一实现**: 消除了ID生成器、限流器、压缩器、随机数生成器、加密器的重复实现，统一使用核心实现
 - **统一资源管理**: 通过ResourceBase基类统一了资源管理模式，减少了资源泄漏风险
 - **标准错误**: 统一的错误处理策略，便于错误追踪和调试
 - **编译稳定性**: 修复了所有编译错误，确保代码可以正常构建
