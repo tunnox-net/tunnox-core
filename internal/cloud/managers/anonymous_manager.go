@@ -5,38 +5,32 @@ import (
 	"time"
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/constants"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
 
-// AnonymousManager 匿名用户管理服务
+// AnonymousManager 匿名用户管理器
 type AnonymousManager struct {
+	*dispose.ResourceBase
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
-	idManager   *generators.IDManager
-	utils.Dispose
+	idManager   *idgen.IDManager
 }
 
-// NewAnonymousManager 创建匿名用户管理服务
-func NewAnonymousManager(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *generators.IDManager) *AnonymousManager {
+// NewAnonymousManager 创建匿名用户管理器
+func NewAnonymousManager(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager) *AnonymousManager {
 	manager := &AnonymousManager{
-		clientRepo:  clientRepo,
-		mappingRepo: mappingRepo,
-		idManager:   idManager,
+		ResourceBase: dispose.NewResourceBase("AnonymousManager"),
+		clientRepo:   clientRepo,
+		mappingRepo:  mappingRepo,
+		idManager:    idManager,
 	}
-	manager.SetCtx(nil, manager.onClose)
+	manager.Initialize(nil)
 	return manager
-}
-
-// onClose 资源清理回调
-func (am *AnonymousManager) onClose() error {
-	utils.Infof("Anonymous manager resources cleaned up")
-	// 清理匿名客户端缓存和临时数据
-	// 这里可以添加清理匿名资源的逻辑
-	return nil
 }
 
 // GenerateAnonymousCredentials 生成匿名客户端凭据

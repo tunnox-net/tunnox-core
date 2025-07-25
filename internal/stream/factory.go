@@ -23,22 +23,22 @@ func (f *DefaultStreamFactory) NewStreamProcessor(reader io.Reader, writer io.Wr
 }
 
 // NewRateLimiterReader 创建限速读取器
-func (f *DefaultStreamFactory) NewRateLimiterReader(reader io.Reader, bytesPerSecond int64) (RateLimiterReaderInterface, error) {
+func (f *DefaultStreamFactory) NewRateLimiterReader(reader io.Reader, bytesPerSecond int64) (*RateLimiterReader, error) {
 	return NewRateLimiterReader(reader, bytesPerSecond, f.ctx)
 }
 
 // NewRateLimiterWriter 创建限速写入器
-func (f *DefaultStreamFactory) NewRateLimiterWriter(writer io.Writer, bytesPerSecond int64) (RateLimiterWriterInterface, error) {
+func (f *DefaultStreamFactory) NewRateLimiterWriter(writer io.Writer, bytesPerSecond int64) (*RateLimiterWriter, error) {
 	return NewRateLimiterWriter(writer, bytesPerSecond, f.ctx)
 }
 
 // NewCompressionReader 创建压缩读取器
-func (f *DefaultStreamFactory) NewCompressionReader(reader io.Reader) CompressionReader {
+func (f *DefaultStreamFactory) NewCompressionReader(reader io.Reader) *GzipReader {
 	return NewGzipReader(reader, f.ctx)
 }
 
 // NewCompressionWriter 创建压缩写入器
-func (f *DefaultStreamFactory) NewCompressionWriter(writer io.Writer) CompressionWriter {
+func (f *DefaultStreamFactory) NewCompressionWriter(writer io.Writer) *GzipWriter {
 	return NewGzipWriter(writer, f.ctx)
 }
 
@@ -83,7 +83,7 @@ func (f *ConfigurableStreamFactory) NewStreamProcessor(reader io.Reader, writer 
 }
 
 // NewRateLimiterReader 创建限速读取器（使用默认配置）
-func (f *ConfigurableStreamFactory) NewRateLimiterReader(reader io.Reader, bytesPerSecond int64) (RateLimiterReaderInterface, error) {
+func (f *ConfigurableStreamFactory) NewRateLimiterReader(reader io.Reader, bytesPerSecond int64) (*RateLimiterReader, error) {
 	if bytesPerSecond <= 0 {
 		bytesPerSecond = f.config.DefaultRateLimit
 	}
@@ -91,7 +91,7 @@ func (f *ConfigurableStreamFactory) NewRateLimiterReader(reader io.Reader, bytes
 }
 
 // NewRateLimiterWriter 创建限速写入器（使用默认配置）
-func (f *ConfigurableStreamFactory) NewRateLimiterWriter(writer io.Writer, bytesPerSecond int64) (RateLimiterWriterInterface, error) {
+func (f *ConfigurableStreamFactory) NewRateLimiterWriter(writer io.Writer, bytesPerSecond int64) (*RateLimiterWriter, error) {
 	if bytesPerSecond <= 0 {
 		bytesPerSecond = f.config.DefaultRateLimit
 	}
@@ -99,12 +99,12 @@ func (f *ConfigurableStreamFactory) NewRateLimiterWriter(writer io.Writer, bytes
 }
 
 // NewCompressionReader 创建压缩读取器
-func (f *ConfigurableStreamFactory) NewCompressionReader(reader io.Reader) CompressionReader {
+func (f *ConfigurableStreamFactory) NewCompressionReader(reader io.Reader) *GzipReader {
 	return NewGzipReader(reader, f.ctx)
 }
 
 // NewCompressionWriter 创建压缩写入器
-func (f *ConfigurableStreamFactory) NewCompressionWriter(writer io.Writer) CompressionWriter {
+func (f *ConfigurableStreamFactory) NewCompressionWriter(writer io.Writer) *GzipWriter {
 	return NewGzipWriter(writer, f.ctx)
 }
 

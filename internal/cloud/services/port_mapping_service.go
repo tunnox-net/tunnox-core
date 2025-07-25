@@ -5,34 +5,30 @@ import (
 	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/configs"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
 
 // PortMappingServiceImpl 端口映射服务实现
 type PortMappingServiceImpl struct {
+	*dispose.ResourceBase
 	mappingRepo *repos.PortMappingRepo
-	idManager   *generators.IDManager
-	utils.Dispose
+	idManager   *idgen.IDManager
 }
 
 // NewPortMappingService 创建端口映射服务
-func NewPortMappingService(mappingRepo *repos.PortMappingRepo, idManager *generators.IDManager, parentCtx context.Context) PortMappingService {
+func NewPortMappingService(mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) PortMappingService {
 	service := &PortMappingServiceImpl{
-		mappingRepo: mappingRepo,
-		idManager:   idManager,
+		ResourceBase: dispose.NewResourceBase("PortMappingService"),
+		mappingRepo:  mappingRepo,
+		idManager:    idManager,
 	}
-	service.SetCtx(parentCtx, service.onClose)
+	service.Initialize(parentCtx)
 	return service
-}
-
-// onClose 资源清理回调
-func (s *PortMappingServiceImpl) onClose() error {
-	utils.Infof("Port mapping service resources cleaned up")
-	return nil
 }
 
 // CreatePortMapping 创建端口映射

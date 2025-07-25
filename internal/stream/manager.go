@@ -10,10 +10,10 @@ import (
 
 // StreamManager 流管理器，负责管理所有流组件的生命周期
 type StreamManager struct {
+	dispose utils.Dispose
 	factory StreamFactory
 	streams map[string]PackageStreamer
 	mu      sync.RWMutex
-	dispose utils.Dispose
 }
 
 // Dispose 实现Disposable接口

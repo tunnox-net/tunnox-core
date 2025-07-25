@@ -93,9 +93,13 @@ func (g *StorageIDGenerator[T]) Generate() (T, error) {
 		switch any(zero).(type) {
 		case string:
 			// 使用统一格式生成有序随机串
-			orderedStr, err := utils.GenerateOrderedRandomString(g.prefix, RandomPartLength)
+			orderedStr, err := utils.GenerateRandomString(RandomPartLength)
 			if err != nil {
 				continue
+			}
+			// 添加前缀
+			if g.prefix != "" {
+				orderedStr = g.prefix + orderedStr
 			}
 			candidate = any(orderedStr).(T)
 		default:

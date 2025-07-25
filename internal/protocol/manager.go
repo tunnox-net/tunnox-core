@@ -3,37 +3,43 @@ package protocol
 import (
 	"context"
 	"sync"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/utils"
 )
 
-type Manager struct {
+// ProtocolManager 协议管理器
+type ProtocolManager struct {
+	*dispose.ResourceBase
 	dispose  utils.Dispose
-	adapters []adapter.Adapter
-	lock     sync.Mutex
+	adapters map[string]adapter.Adapter
+	mu       sync.RWMutex
 }
 
 // Dispose 实现Disposable接口
-func (pm *Manager) Dispose() error {
-	// 直接调用onClose逻辑，避免递归调用
-	return pm.onClose()
+func (pm *ProtocolManager) Dispose() error {
+	return pm.CloseAll()
 }
 
-func NewManager(parentCtx context.Context) *Manager {
-	pm := &Manager{}
-	pm.dispose.SetCtx(parentCtx, pm.onClose)
-	return pm
+// NewProtocolManager 创建协议管理器
+func NewProtocolManager(parentCtx context.Context) *ProtocolManager {
+	manager := &ProtocolManager{
+		ResourceBase: dispose.NewResourceBase("ProtocolManager"),
+		adapters:     make(map[string]adapter.Adapter),
+	}
+	manager.Initialize(parentCtx)
+	return manager
 }
 
-func (pm *Manager) Register(adapter adapter.Adapter) {
-	pm.lock.Lock()
-	defer pm.lock.Unlock()
-	pm.adapters = append(pm.adapters, adapter)
+func (pm *ProtocolManager) Register(adapter adapter.Adapter) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	pm.adapters[adapter.Name()] = adapter
 }
 
-func (pm *Manager) StartAll() error {
-	pm.lock.Lock()
-	defer pm.lock.Unlock()
+func (pm *ProtocolManager) StartAll() error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	for _, a := range pm.adapters {
 		if err := a.ListenFrom(a.GetAddr()); err != nil {
 			return err
@@ -42,11 +48,11 @@ func (pm *Manager) StartAll() error {
 	return nil
 }
 
-func (pm *Manager) CloseAll() error {
+func (pm *ProtocolManager) CloseAll() error {
 	return pm.dispose.CloseWithError()
 }
 
-func (pm *Manager) onClose() error {
+func (pm *ProtocolManager) onClose() error {
 	hasAdapters := len(pm.adapters) > 0
 
 	if hasAdapters {

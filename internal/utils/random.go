@@ -5,12 +5,16 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
+	"sync"
 )
 
 // 错误定义
 var (
-	ErrRandomFailed = errors.New("failed to generate random bytes")
+	ErrRandomFailed  = errors.New("failed to generate random bytes")
+	ErrInvalidRange  = errors.New("invalid range: min must be less than max")
+	ErrInvalidLength = errors.New("invalid length")
 )
 
 // 常量定义
@@ -21,6 +25,117 @@ const (
 	// 数字字符集
 	DigitCharset = "0123456789"
 )
+
+// RandomGenerator 随机数生成器接口
+type RandomGenerator interface {
+	// GenerateBytes 生成随机字节
+	GenerateBytes(length int) ([]byte, error)
+
+	// GenerateInt 生成随机整数
+	GenerateInt(min, max int64) (int64, error)
+
+	// GenerateString 生成随机字符串
+	GenerateString(length int, charset string) (string, error)
+
+	// GenerateUUID 生成UUID
+	GenerateUUID() (string, error)
+
+	// GenerateID 生成ID
+	GenerateID(prefix string) (string, error)
+}
+
+// DefaultRandomGenerator 默认随机数生成器
+type DefaultRandomGenerator struct {
+	mutex sync.Mutex
+}
+
+// NewDefaultRandomGenerator 创建新的默认随机数生成器
+func NewDefaultRandomGenerator() *DefaultRandomGenerator {
+	return &DefaultRandomGenerator{}
+}
+
+// GenerateBytes 生成随机字节
+func (rg *DefaultRandomGenerator) GenerateBytes(length int) ([]byte, error) {
+	rg.mutex.Lock()
+	defer rg.mutex.Unlock()
+
+	bytes := make([]byte, length)
+	_, err := rand.Read(bytes)
+	return bytes, err
+}
+
+// GenerateInt 生成随机整数
+func (rg *DefaultRandomGenerator) GenerateInt(min, max int64) (int64, error) {
+	if min >= max {
+		return 0, ErrInvalidRange
+	}
+
+	delta := max - min
+	bigDelta := big.NewInt(delta)
+
+	randomBigInt, err := rand.Int(rand.Reader, bigDelta)
+	if err != nil {
+		return 0, err
+	}
+
+	return min + randomBigInt.Int64(), nil
+}
+
+// GenerateString 生成随机字符串
+func (rg *DefaultRandomGenerator) GenerateString(length int, charset string) (string, error) {
+	if length <= 0 {
+		return "", ErrInvalidLength
+	}
+
+	if charset == "" {
+		charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	}
+
+	charsetLen := big.NewInt(int64(len(charset)))
+	result := make([]byte, length)
+
+	for i := 0; i < length; i++ {
+		randomIndex, err := rand.Int(rand.Reader, charsetLen)
+		if err != nil {
+			return "", err
+		}
+		result[i] = charset[randomIndex.Int64()]
+	}
+
+	return string(result), nil
+}
+
+// GenerateUUID 生成UUID
+func (rg *DefaultRandomGenerator) GenerateUUID() (string, error) {
+	bytes, err := rg.GenerateBytes(16)
+	if err != nil {
+		return "", err
+	}
+
+	// 设置版本和变体位
+	bytes[6] = (bytes[6] & 0x0f) | 0x40 // 版本4
+	bytes[8] = (bytes[8] & 0x3f) | 0x80 // 变体位
+
+	// 格式化为UUID字符串
+	return formatUUID(bytes), nil
+}
+
+// GenerateID 生成ID
+func (rg *DefaultRandomGenerator) GenerateID(prefix string) (string, error) {
+	randomPart, err := rg.GenerateString(8, "0123456789abcdef")
+	if err != nil {
+		return "", err
+	}
+
+	if prefix == "" {
+		return randomPart, nil
+	}
+
+	return prefix + "_" + randomPart, nil
+}
+
+// 全局默认随机数生成器实例
+var defaultGenerator = NewDefaultRandomGenerator()
 
 // GenerateRandomBytes 生成指定长度的随机字节
 func GenerateRandomBytes(length int) ([]byte, error) {
@@ -58,7 +173,7 @@ func GenerateRandomDigits(length int) (string, error) {
 // GenerateRandomInt64 生成指定范围内的随机int64
 func GenerateRandomInt64(min, max int64) (int64, error) {
 	if min >= max {
-		return 0, errors.New("invalid range: min must be less than max")
+		return 0, ErrInvalidRange
 	}
 
 	bytes, err := GenerateRandomBytes(8)
@@ -79,7 +194,7 @@ func GenerateRandomInt64(min, max int64) (int64, error) {
 // GenerateRandomInt 生成指定范围内的随机int
 func GenerateRandomInt(min, max int) (int, error) {
 	if min >= max {
-		return 0, errors.New("invalid range: min must be less than max")
+		return 0, ErrInvalidRange
 	}
 
 	bytes, err := GenerateRandomBytes(4)
@@ -118,7 +233,7 @@ func GenerateRandomFloat64() (float64, error) {
 // GenerateRandomFloat64Range 生成指定范围内的随机浮点数
 func GenerateRandomFloat64Range(min, max float64) (float64, error) {
 	if min >= max {
-		return 0, errors.New("invalid range: min must be less than max")
+		return 0, ErrInvalidRange
 	}
 
 	randomFloat, err := GenerateRandomFloat64()

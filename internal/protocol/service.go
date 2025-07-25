@@ -9,13 +9,13 @@ import (
 
 // ProtocolService 协议服务适配器，让协议管理器能够作为服务运行
 type ProtocolService struct {
-	manager *Manager
+	manager *ProtocolManager
 	name    string
 	ctx     context.Context
 }
 
 // NewProtocolService 创建协议服务
-func NewProtocolService(name string, manager *Manager) *ProtocolService {
+func NewProtocolService(name string, manager *ProtocolManager) *ProtocolService {
 	return &ProtocolService{
 		manager: manager,
 		name:    name,
@@ -55,7 +55,7 @@ func (ps *ProtocolService) Stop(ctx context.Context) error {
 }
 
 // GetManager 获取协议管理器
-func (ps *ProtocolService) GetManager() *Manager {
+func (ps *ProtocolService) GetManager() *ProtocolManager {
 	return ps.manager
 }
 

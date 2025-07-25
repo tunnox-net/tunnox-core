@@ -4,33 +4,29 @@ import (
 	"context"
 	"fmt"
 	"time"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
 
 // ConnectionServiceImpl 连接服务实现
 type ConnectionServiceImpl struct {
+	*dispose.ResourceBase
 	connRepo  *repos.ConnectionRepo
-	idManager *generators.IDManager
-	utils.Dispose
+	idManager *idgen.IDManager
 }
 
 // NewConnectionService 创建连接服务
-func NewConnectionService(connRepo *repos.ConnectionRepo, idManager *generators.IDManager, parentCtx context.Context) ConnectionService {
+func NewConnectionService(connRepo *repos.ConnectionRepo, idManager *idgen.IDManager, parentCtx context.Context) ConnectionService {
 	service := &ConnectionServiceImpl{
-		connRepo:  connRepo,
-		idManager: idManager,
+		ResourceBase: dispose.NewResourceBase("ConnectionService"),
+		connRepo:     connRepo,
+		idManager:    idManager,
 	}
-	service.SetCtx(parentCtx, service.onClose)
+	service.Initialize(parentCtx)
 	return service
-}
-
-// onClose 资源清理回调
-func (s *ConnectionServiceImpl) onClose() error {
-	utils.Infof("Connection service resources cleaned up")
-	return nil
 }
 
 // RegisterConnection 注册连接

@@ -9,28 +9,30 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// MemoryStorage 内存存储实现
-type MemoryStorage struct {
-	data           map[string]*storageItem
-	mu             sync.RWMutex
-	cleanupTicker  *time.Ticker
-	cleanupStop    chan struct{}
-	cleanupRunning bool
-	dispose.Dispose
-}
-
+// storageItem 存储项
 type storageItem struct {
 	value      interface{}
 	expiration time.Time
 }
 
-// NewMemoryStorage 创建新的内存存储
-func NewMemoryStorage(parentCtx context.Context) *MemoryStorage {
+// MemoryStorage 内存存储实现
+type MemoryStorage struct {
+	*dispose.ResourceBase
+	data           map[string]*storageItem
+	mu             sync.RWMutex
+	cleanupTicker  *time.Ticker
+	cleanupStop    chan struct{}
+	cleanupRunning bool
+}
+
+// NewMemoryStorage 创建内存存储
+func NewMemoryStorage(parentCtx context.Context) Storage {
 	storage := &MemoryStorage{
-		data:        make(map[string]*storageItem),
-		cleanupStop: make(chan struct{}),
+		ResourceBase: dispose.NewResourceBase("MemoryStorage"),
+		data:         make(map[string]*storageItem),
+		cleanupStop:  make(chan struct{}),
 	}
-	storage.SetCtx(parentCtx, storage.onClose)
+	storage.Initialize(parentCtx)
 	return storage
 }
 

@@ -145,7 +145,7 @@ func (ss *StorageService) Stop(ctx context.Context) error {
 type Server struct {
 	config          *AppConfig
 	serviceManager  *utils.ServiceManager
-	protocolMgr     *protocol.Manager
+	protocolMgr     *protocol.ProtocolManager
 	serverId        string
 	storage         storages.Storage
 	idManager       *idgen.IDManager
@@ -190,7 +190,7 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 	server.protocolFactory = NewProtocolFactory(server.session)
 
 	// 创建协议适配器管理器
-	server.protocolMgr = protocol.NewManager(parentCtx)
+	server.protocolMgr = protocol.NewProtocolManager(parentCtx)
 
 	server.serverId, _ = server.idManager.GenerateConnectionID()
 

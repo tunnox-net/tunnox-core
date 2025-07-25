@@ -5,40 +5,35 @@ import (
 	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/configs"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
 
 // ClientServiceImpl 客户端服务实现
 type ClientServiceImpl struct {
+	*dispose.ResourceBase
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
-	idManager   *generators.IDManager
+	idManager   *idgen.IDManager
 	statsMgr    *managers.StatsManager
-	utils.Dispose
 }
 
 // NewClientService 创建客户端服务
-func NewClientService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo,
-	idManager *generators.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) ClientService {
+func NewClientService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) ClientService {
 	service := &ClientServiceImpl{
-		clientRepo:  clientRepo,
-		mappingRepo: mappingRepo,
-		idManager:   idManager,
-		statsMgr:    statsMgr,
+		ResourceBase: dispose.NewResourceBase("ClientService"),
+		clientRepo:   clientRepo,
+		mappingRepo:  mappingRepo,
+		idManager:    idManager,
+		statsMgr:     statsMgr,
 	}
-	service.SetCtx(parentCtx, service.onClose)
+	service.Initialize(parentCtx)
 	return service
-}
-
-// onClose 资源清理回调
-func (s *ClientServiceImpl) onClose() error {
-	utils.Infof("Client service resources cleaned up")
-	return nil
 }
 
 // CreateClient 创建客户端

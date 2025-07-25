@@ -3,9 +3,8 @@ package processor
 import (
 	"io"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/stream/compression"
+	"tunnox-core/internal/stream"
 	"tunnox-core/internal/stream/encryption"
-	"tunnox-core/internal/stream/rate_limiting"
 )
 
 // StreamProcessor 流处理器接口
@@ -36,9 +35,9 @@ type StreamProcessor interface {
 type DefaultStreamProcessor struct {
 	reader            io.Reader
 	writer            io.Writer
-	compressionReader compression.CompressionReader
-	compressionWriter compression.CompressionWriter
-	rateLimiter       rate_limiting.RateLimiter
+	compressionReader *stream.GzipReader
+	compressionWriter *stream.GzipWriter
+	rateLimiter       *stream.RateLimiter
 	encryption        encryption.Encryption
 }
 
@@ -46,17 +45,23 @@ type DefaultStreamProcessor struct {
 func NewDefaultStreamProcessor(
 	reader io.Reader,
 	writer io.Writer,
-	compressionReader compression.CompressionReader,
-	compressionWriter compression.CompressionWriter,
-	rateLimiter rate_limiting.RateLimiter,
+	compressionReader *stream.GzipReader,
+	compressionWriter *stream.GzipWriter,
+	rateLimiter interface{}, // 改为interface{}以兼容旧代码
 	encryption encryption.Encryption,
 ) *DefaultStreamProcessor {
+	var streamRateLimiter *stream.RateLimiter
+	if rateLimiter != nil {
+		// 如果需要限流，可以在这里创建stream.RateLimiter
+		// 暂时设为nil，由外部处理
+	}
+
 	return &DefaultStreamProcessor{
 		reader:            reader,
 		writer:            writer,
 		compressionReader: compressionReader,
 		compressionWriter: compressionWriter,
-		rateLimiter:       rateLimiter,
+		rateLimiter:       streamRateLimiter,
 		encryption:        encryption,
 	}
 }

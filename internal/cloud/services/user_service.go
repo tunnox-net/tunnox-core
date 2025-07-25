@@ -4,24 +4,24 @@ import (
 	"context"
 	"fmt"
 	"time"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/idgen"
 )
 
 // UserServiceImpl 用户服务实现
 type UserServiceImpl struct {
 	*dispose.ResourceBase
 	userRepo  *repos.UserRepository
-	idManager *generators.IDManager
+	idManager *idgen.IDManager
 	statsMgr  *managers.StatsManager
 }
 
 // NewUserService 创建用户服务
-func NewUserService(userRepo *repos.UserRepository, idManager *generators.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) UserService {
+func NewUserService(userRepo *repos.UserRepository, idManager *idgen.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) UserService {
 	service := &UserServiceImpl{
 		ResourceBase: dispose.NewResourceBase("UserService"),
 		userRepo:     userRepo,

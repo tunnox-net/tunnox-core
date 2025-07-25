@@ -3,26 +3,28 @@ package managers
 import (
 	"fmt"
 	"time"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
 
-// ConnectionManager 连接管理服务
+// ConnectionManager 连接管理器
 type ConnectionManager struct {
+	*dispose.ResourceBase
 	connRepo  *repos.ConnectionRepo
-	idManager *generators.IDManager
-	utils.Dispose
+	idManager *idgen.IDManager
 }
 
-// NewConnectionManager 创建连接管理服务
-func NewConnectionManager(connRepo *repos.ConnectionRepo, idManager *generators.IDManager) *ConnectionManager {
+// NewConnectionManager 创建连接管理器
+func NewConnectionManager(connRepo *repos.ConnectionRepo, idManager *idgen.IDManager) *ConnectionManager {
 	manager := &ConnectionManager{
-		connRepo:  connRepo,
-		idManager: idManager,
+		ResourceBase: dispose.NewResourceBase("ConnectionManager"),
+		connRepo:     connRepo,
+		idManager:    idManager,
 	}
-	manager.SetCtx(nil, manager.onClose)
+	manager.Initialize(nil)
 	return manager
 }
 

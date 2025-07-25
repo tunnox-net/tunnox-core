@@ -4,33 +4,29 @@ import (
 	"context"
 	"fmt"
 	"time"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
 
 // NodeServiceImpl 节点服务实现
 type NodeServiceImpl struct {
+	*dispose.ResourceBase
 	nodeRepo  *repos.NodeRepository
-	idManager *generators.IDManager
-	utils.Dispose
+	idManager *idgen.IDManager
 }
 
 // NewNodeService 创建节点服务
-func NewNodeService(nodeRepo *repos.NodeRepository, idManager *generators.IDManager, parentCtx context.Context) NodeService {
+func NewNodeService(nodeRepo *repos.NodeRepository, idManager *idgen.IDManager, parentCtx context.Context) NodeService {
 	service := &NodeServiceImpl{
-		nodeRepo:  nodeRepo,
-		idManager: idManager,
+		ResourceBase: dispose.NewResourceBase("NodeService"),
+		nodeRepo:     nodeRepo,
+		idManager:    idManager,
 	}
-	service.SetCtx(parentCtx, service.onClose)
+	service.Initialize(parentCtx)
 	return service
-}
-
-// onClose 资源清理回调
-func (s *NodeServiceImpl) onClose() error {
-	utils.Infof("Node service resources cleaned up")
-	return nil
 }
 
 // NodeRegister 节点注册

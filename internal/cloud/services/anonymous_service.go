@@ -5,37 +5,32 @@ import (
 	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/configs"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
 
 // AnonymousServiceImpl 匿名用户服务实现
 type AnonymousServiceImpl struct {
+	*dispose.ResourceBase
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
-	idManager   *generators.IDManager
-	utils.Dispose
+	idManager   *idgen.IDManager
 }
 
 // NewAnonymousService 创建匿名用户服务
-func NewAnonymousService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo,
-	idManager *generators.IDManager, parentCtx context.Context) AnonymousService {
+func NewAnonymousService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) AnonymousService {
 	service := &AnonymousServiceImpl{
-		clientRepo:  clientRepo,
-		mappingRepo: mappingRepo,
-		idManager:   idManager,
+		ResourceBase: dispose.NewResourceBase("AnonymousService"),
+		clientRepo:   clientRepo,
+		mappingRepo:  mappingRepo,
+		idManager:    idManager,
 	}
-	service.SetCtx(parentCtx, service.onClose)
+	service.Initialize(parentCtx)
 	return service
-}
-
-// onClose 资源清理回调
-func (s *AnonymousServiceImpl) onClose() error {
-	utils.Infof("Anonymous service resources cleaned up")
-	return nil
 }
 
 // GenerateAnonymousCredentials 生成匿名客户端凭据
@@ -158,30 +153,27 @@ func (s *AnonymousServiceImpl) CreateAnonymousMapping(sourceClientID, targetClie
 		return nil, fmt.Errorf("target client %d not found: %w", targetClientID, err)
 	}
 
-	// 创建映射
-	mapping := &models.PortMapping{
-		UserID:         "", // 匿名映射没有UserID
-		SourceClientID: sourceClientID,
-		TargetClientID: targetClientID,
-		Protocol:       protocol,
-		SourcePort:     sourcePort,
-		TargetHost:     "localhost", // 匿名映射默认目标为localhost
-		TargetPort:     targetPort,
-		Type:           models.MappingTypeAnonymous,
-		Status:         models.MappingStatusInactive,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-		Config:         configs.MappingConfig{}, // 使用默认配置
-	}
-
-	// 使用端口映射服务创建映射
-	// 这里需要注入端口映射服务，暂时直接调用repository
+	// 生成映射ID
 	mappingID, err := s.idManager.GeneratePortMappingID()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate mapping ID: %w", err)
 	}
 
-	mapping.ID = mappingID
+	// 创建映射
+	mapping := &models.PortMapping{
+		ID:             mappingID,
+		SourceClientID: sourceClientID,
+		TargetClientID: targetClientID,
+		Protocol:       protocol,
+		SourcePort:     sourcePort,
+		TargetPort:     targetPort,
+		Status:         models.MappingStatusInactive,
+		Type:           models.MappingTypeAnonymous,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		Config:         configs.MappingConfig{}, // 使用默认配置
+	}
+
 	mapping.TrafficStats = stats.TrafficStats{
 		LastUpdated: time.Now(),
 	}

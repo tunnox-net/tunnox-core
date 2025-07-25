@@ -7,11 +7,11 @@ import (
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/distributed"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
 
@@ -22,7 +22,7 @@ import (
 type CloudControl struct {
 	config            *ControlConfig
 	storage           storages.Storage
-	idManager         *generators.IDManager
+	idManager         *idgen.IDManager
 	userRepo          *repos.UserRepository
 	clientRepo        *repos.ClientRepository
 	mappingRepo       *repos.PortMappingRepo
@@ -59,7 +59,7 @@ func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudCont
 	connRepo := repos.NewConnectionRepo(repo)
 
 	// 创建ID管理器
-	idManager := generators.NewIDManager(storage, ctx)
+	idManager := idgen.NewIDManager(storage, ctx)
 
 	base := &CloudControl{
 		config:            config,

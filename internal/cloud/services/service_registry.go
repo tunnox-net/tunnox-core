@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"tunnox-core/internal/cloud/container"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
 
@@ -41,7 +41,7 @@ func registerInfrastructureServices(container *container.Container, config *mana
 			return nil, fmt.Errorf("storage is not of type storages.Storage")
 		}
 
-		idManager := generators.NewIDManager(storageImpl, parentCtx)
+		idManager := idgen.NewIDManager(storageImpl, parentCtx)
 		return idManager, nil
 	})
 
@@ -237,9 +237,9 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("user repository is not of type *repos.UserRepository")
 		}
 
-		idManager, ok := idManagerInstance.(*generators.IDManager)
+		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *generators.IDManager")
+			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
 		}
 
 		statsManager, ok := statsManagerInstance.(*managers.StatsManager)
@@ -283,9 +283,9 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("mapping repository is not of type *repos.PortMappingRepo")
 		}
 
-		idManager, ok := idManagerInstance.(*generators.IDManager)
+		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *generators.IDManager")
+			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
 		}
 
 		statsManager, ok := statsManagerInstance.(*managers.StatsManager)
@@ -314,9 +314,9 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("mapping repository is not of type *repos.PortMappingRepo")
 		}
 
-		idManager, ok := idManagerInstance.(*generators.IDManager)
+		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *generators.IDManager")
+			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
 		}
 
 		mappingService := NewPortMappingService(mappingRepo, idManager, parentCtx)
@@ -340,9 +340,9 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("node repository is not of type *repos.NodeRepository")
 		}
 
-		idManager, ok := idManagerInstance.(*generators.IDManager)
+		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *generators.IDManager")
+			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
 		}
 
 		nodeService := NewNodeService(nodeRepo, idManager, parentCtx)
@@ -412,9 +412,9 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("mapping repository is not of type *repos.PortMappingRepo")
 		}
 
-		idManager, ok := idManagerInstance.(*generators.IDManager)
+		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *generators.IDManager")
+			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
 		}
 
 		anonymousService := NewAnonymousService(clientRepo, mappingRepo, idManager, parentCtx)
@@ -438,9 +438,9 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("connection repository is not of type *repos.ConnectionRepo")
 		}
 
-		idManager, ok := idManagerInstance.(*generators.IDManager)
+		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *generators.IDManager")
+			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
 		}
 
 		connectionService := NewConnectionService(connRepo, idManager, parentCtx)
