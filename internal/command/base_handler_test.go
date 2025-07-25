@@ -212,6 +212,7 @@ func TestBaseCommandHandler_ValidateContext(t *testing.T) {
 	ctx := &CommandContext{
 		ConnectionID: "conn_123",
 		RequestID:    "req_456",
+		CommandType:  packet.TcpMap,
 	}
 
 	err := handler.ValidateContext(ctx)
@@ -226,14 +227,15 @@ func TestBaseCommandHandler_ValidateContext(t *testing.T) {
 	ctx.ConnectionID = ""
 	err = handler.ValidateContext(ctx)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "connection ID is required")
+	assert.Contains(t, err.Error(), "connection ID is empty")
 
 	// 测试缺少请求ID
 	ctx.ConnectionID = "conn_123"
 	ctx.RequestID = ""
+	ctx.CommandType = 0 // 设置为无效的命令类型
 	err = handler.ValidateContext(ctx)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "request ID is required")
+	assert.Contains(t, err.Error(), "command type is invalid")
 }
 
 func TestBaseCommandHandler_CommunicationModes(t *testing.T) {

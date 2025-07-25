@@ -83,9 +83,12 @@ func (ce *CommandExecutor) executeDuplex(ctx *CommandContext, handler CommandHan
 	ce.rpcManager.RegisterRequest(requestID, responseChan)
 	defer ce.rpcManager.UnregisterRequest(requestID)
 
+	// 获取超时时间
+	timeout := ce.rpcManager.GetTimeout()
+
 	// 异步执行命令
 	go func() {
-		execCtx, cancel := context.WithTimeout(ctx.Context, 30*time.Second)
+		execCtx, cancel := context.WithTimeout(ctx.Context, timeout)
 		defer cancel()
 
 		ctx.Context = execCtx
@@ -117,8 +120,8 @@ func (ce *CommandExecutor) executeDuplex(ctx *CommandContext, handler CommandHan
 			return fmt.Errorf("command execution failed: %s", response.Error)
 		}
 		return nil
-	case <-time.After(30 * time.Second):
-		return fmt.Errorf("command execution timeout")
+	case <-time.After(timeout):
+		return fmt.Errorf("command timeout")
 	}
 }
 

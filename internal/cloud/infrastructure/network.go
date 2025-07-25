@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"net"
+	"strconv"
 	"time"
 )
 
@@ -43,7 +44,7 @@ func (nm *NetworkManagerImpl) GetAvailablePort(startPort, endPort int) (int, err
 
 // IsPortAvailable 检查端口是否可用
 func (nm *NetworkManagerImpl) IsPortAvailable(port int) bool {
-	ln, err := net.Listen("tcp", ":"+string(port))
+	ln, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 	if err != nil {
 		return false
 	}
@@ -70,7 +71,7 @@ func (nm *NetworkManagerImpl) GetLocalIP() (string, error) {
 
 // CheckConnectivity 检查网络连接
 func (nm *NetworkManagerImpl) CheckConnectivity(host string, port int, timeout time.Duration) error {
-	conn, err := net.DialTimeout("tcp", host+":"+string(port), timeout)
+	conn, err := net.DialTimeout("tcp", host+":"+strconv.Itoa(port), timeout)
 	if err != nil {
 		return err
 	}
