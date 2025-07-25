@@ -1,11 +1,10 @@
-package tests
+package storages
 
 import (
 	"context"
 	"fmt"
 	"testing"
 	"time"
-	"tunnox-core/internal/cloud/storages"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,14 +18,14 @@ func TestRedisStorage_Basic(t *testing.T) {
 	ctx := context.Background()
 
 	// 创建Redis存储
-	config := &storages.RedisConfig{
+	config := &RedisConfig{
 		Addr:     "localhost:6379",
 		Password: "",
 		DB:       0,
 		PoolSize: 10,
 	}
 
-	storage, err := storages.NewRedisStorage(ctx, config)
+	storage, err := NewRedisStorage(ctx, config)
 	if err != nil {
 		t.Skipf("Redis not available, skipping test: %v", err)
 	}
@@ -110,7 +109,7 @@ func TestRedisStorage_Basic(t *testing.T) {
 		// 过期后应该不存在
 		_, err = storage.Get(key)
 		assert.Error(t, err)
-		assert.Equal(t, storages.ErrKeyNotFound, err)
+		assert.Equal(t, ErrKeyNotFound, err)
 	})
 
 	// 测试列表操作
@@ -182,7 +181,7 @@ func TestRedisStorage_Basic(t *testing.T) {
 		// 验证删除
 		_, err = storage.GetHash(key, "field1")
 		assert.Error(t, err)
-		assert.Equal(t, storages.ErrKeyNotFound, err)
+		assert.Equal(t, ErrKeyNotFound, err)
 
 		// 清理
 		storage.Delete(key)
@@ -271,14 +270,14 @@ func TestRedisStorage_Basic(t *testing.T) {
 func TestRedisStorage_Concurrency(t *testing.T) {
 	ctx := context.Background()
 
-	config := &storages.RedisConfig{
+	config := &RedisConfig{
 		Addr:     "localhost:6379",
 		Password: "",
 		DB:       0,
 		PoolSize: 10,
 	}
 
-	storage, err := storages.NewRedisStorage(ctx, config)
+	storage, err := NewRedisStorage(ctx, config)
 	if err != nil {
 		t.Skipf("Redis not available, skipping test: %v", err)
 	}
@@ -339,7 +338,7 @@ func TestRedisStorage_Concurrency(t *testing.T) {
 func TestRedisStorage_Factory(t *testing.T) {
 	ctx := context.Background()
 
-	factory := storages.NewStorageFactory(ctx)
+	factory := NewStorageFactory(ctx)
 
 	t.Run("Factory_Create_Redis", func(t *testing.T) {
 		config := map[string]interface{}{

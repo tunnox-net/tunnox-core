@@ -1,11 +1,10 @@
-package tests
+package generators
 
 import (
 	"context"
 	"strings"
 	"testing"
 	"time"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/storages"
 
 	"github.com/stretchr/testify/assert"
@@ -17,7 +16,7 @@ func TestIDManager_Basic(t *testing.T) {
 	storage := storages.NewMemoryStorage(ctx)
 	defer storage.Close()
 
-	manager := generators.NewIDManager(storage, ctx)
+	manager := NewIDManager(storage, ctx)
 	defer manager.Close()
 
 	t.Run("Generate Client ID", func(t *testing.T) {
@@ -167,7 +166,7 @@ func TestIDManager_Uniqueness(t *testing.T) {
 	storage := storages.NewMemoryStorage(ctx)
 	defer storage.Close()
 
-	manager := generators.NewIDManager(storage, ctx)
+	manager := NewIDManager(storage, ctx)
 	defer manager.Close()
 
 	t.Run("Client ID Uniqueness", func(t *testing.T) {
@@ -246,7 +245,7 @@ func TestIDManager_Dispose(t *testing.T) {
 	storage := storages.NewMemoryStorage(ctx)
 	defer storage.Close()
 
-	manager := generators.NewIDManager(storage, ctx)
+	manager := NewIDManager(storage, ctx)
 
 	// 验证未关闭
 	assert.False(t, manager.IsClosed())
@@ -268,7 +267,7 @@ func TestIDManager_Concurrent(t *testing.T) {
 	storage := storages.NewMemoryStorage(ctx)
 	defer storage.Close()
 
-	manager := generators.NewIDManager(storage, ctx)
+	manager := NewIDManager(storage, ctx)
 	defer manager.Close()
 
 	t.Run("Concurrent Client ID Generation", func(t *testing.T) {
@@ -330,7 +329,7 @@ func TestIDManager_StoragePersistence(t *testing.T) {
 	defer storage.Close()
 
 	// 第一个管理器生成ID
-	manager1 := generators.NewIDManager(storage, ctx)
+	manager1 := NewIDManager(storage, ctx)
 	clientID, err := manager1.GenerateClientID()
 	require.NoError(t, err)
 	nodeID, err := manager1.GenerateNodeID()
@@ -338,7 +337,7 @@ func TestIDManager_StoragePersistence(t *testing.T) {
 	manager1.Close()
 
 	// 第二个管理器应该能看到相同的ID已被使用
-	manager2 := generators.NewIDManager(storage, ctx)
+	manager2 := NewIDManager(storage, ctx)
 	defer manager2.Close()
 
 	used, err := manager2.IsClientIDUsed(clientID)
@@ -355,7 +354,7 @@ func TestIDManager_FormatConsistency(t *testing.T) {
 	storage := storages.NewMemoryStorage(ctx)
 	defer storage.Close()
 
-	manager := generators.NewIDManager(storage, ctx)
+	manager := NewIDManager(storage, ctx)
 	defer manager.Close()
 
 	t.Run("Node ID Format", func(t *testing.T) {

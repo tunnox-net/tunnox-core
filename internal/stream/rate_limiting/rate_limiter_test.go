@@ -1,4 +1,4 @@
-package tests
+package rate_limiting
 
 import (
 	"bytes"

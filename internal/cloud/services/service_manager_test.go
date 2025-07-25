@@ -1,4 +1,4 @@
-package tests
+package services
 
 import (
 	"context"
@@ -20,6 +20,30 @@ type MockService struct {
 	startErr error
 	stopErr  error
 	mu       sync.Mutex
+}
+
+// MockResource 模拟资源
+type MockResource struct {
+	name      string
+	disposed  bool
+	disposeMu sync.Mutex
+}
+
+func NewMockResource(name string) *MockResource {
+	return &MockResource{name: name}
+}
+
+func (mr *MockResource) Dispose() error {
+	mr.disposeMu.Lock()
+	defer mr.disposeMu.Unlock()
+	mr.disposed = true
+	return nil
+}
+
+func (mr *MockResource) IsDisposed() bool {
+	mr.disposeMu.Lock()
+	defer mr.disposeMu.Unlock()
+	return mr.disposed
 }
 
 func NewMockService(name string) *MockService {

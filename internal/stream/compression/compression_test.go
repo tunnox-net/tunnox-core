@@ -1,4 +1,4 @@
-package tests
+package compression
 
 import (
 	"bytes"

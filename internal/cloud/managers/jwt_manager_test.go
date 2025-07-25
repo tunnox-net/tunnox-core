@@ -1,11 +1,11 @@
-package tests
+package managers
 
 import (
 	"context"
 	"fmt"
 	"testing"
 	"time"
-	"tunnox-core/internal/cloud/managers"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/storages"
@@ -15,14 +15,14 @@ import (
 )
 
 func TestJWTManager_GenerateTokenPair(t *testing.T) {
-	config := &managers.ControlConfig{
+	config := &ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 	}
 
 	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := managers.NewJWTManager(config, repo)
+	manager := NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
@@ -62,14 +62,14 @@ func TestJWTManager_GenerateTokenPair(t *testing.T) {
 }
 
 func TestJWTManager_RefreshToken(t *testing.T) {
-	config := &managers.ControlConfig{
+	config := &ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 	}
 
 	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := managers.NewJWTManager(config, repo)
+	manager := NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
@@ -108,14 +108,14 @@ func TestJWTManager_RefreshToken(t *testing.T) {
 }
 
 func TestJWTManager_RevokeToken(t *testing.T) {
-	config := &managers.ControlConfig{
+	config := &ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 	}
 
 	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := managers.NewJWTManager(config, repo)
+	manager := NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
@@ -146,14 +146,14 @@ func TestJWTManager_RevokeToken(t *testing.T) {
 }
 
 func TestJWTManager_Concurrency(t *testing.T) {
-	config := &managers.ControlConfig{
+	config := &ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 	}
 
 	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := managers.NewJWTManager(config, repo)
+	manager := NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
@@ -191,14 +191,14 @@ func TestJWTManager_Concurrency(t *testing.T) {
 }
 
 func TestJWTManager_Dispose(t *testing.T) {
-	config := &managers.ControlConfig{
+	config := &ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 		UseBuiltIn:        true,
 	}
 	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := managers.NewJWTManager(config, repo)
+	manager := NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	// 验证未关闭
@@ -212,14 +212,14 @@ func TestJWTManager_Dispose(t *testing.T) {
 }
 
 func TestJWTManager_Dispose_Concurrent(t *testing.T) {
-	config := &managers.ControlConfig{
+	config := &ControlConfig{
 		JWTSecretKey:      "test-secret",
 		JWTExpiration:     1 * time.Hour,
 		RefreshExpiration: 24 * time.Hour,
 		UseBuiltIn:        true,
 	}
 	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := managers.NewJWTManager(config, repo)
+	manager := NewJWTManager(config, repo)
 	require.NotNil(t, manager)
 
 	// 并发关闭

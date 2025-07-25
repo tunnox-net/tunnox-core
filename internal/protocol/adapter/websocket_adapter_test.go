@@ -1,22 +1,21 @@
-package tests
+package adapter
 
 import (
 	"context"
 	"testing"
-	"time"
 	"tunnox-core/internal/protocol"
 )
 
-func TestUdpAdapterBasic(t *testing.T) {
+func TestWebSocketAdapterBasic(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// 测试基本功能
-	adapter := protocol.NewUdpAdapter(ctx, nil)
+	adapter := protocol.NewWebSocketAdapter(ctx, nil)
 
 	// 测试名称
-	if adapter.Name() != "udp" {
-		t.Errorf("Expected name 'udp', got '%s'", adapter.Name())
+	if adapter.Name() != "websocket" {
+		t.Errorf("Expected name 'websocket', got '%s'", adapter.Name())
 	}
 
 	// 测试地址设置
@@ -26,29 +25,26 @@ func TestUdpAdapterBasic(t *testing.T) {
 		t.Errorf("Expected address '%s', got '%s'", testAddr, adapter.Addr())
 	}
 
-	// 等待一段时间让服务器启动
-	time.Sleep(100 * time.Millisecond)
-
-	// 测试关闭
+	// 立即关闭，避免启动服务器
 	adapter.Close()
 }
 
-func TestUdpAdapterName(t *testing.T) {
+func TestWebSocketAdapterName(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	adapter := protocol.NewUdpAdapter(ctx, nil)
+	adapter := protocol.NewWebSocketAdapter(ctx, nil)
 
-	if adapter.Name() != "udp" {
-		t.Errorf("Expected name 'udp', got '%s'", adapter.Name())
+	if adapter.Name() != "websocket" {
+		t.Errorf("Expected name 'websocket', got '%s'", adapter.Name())
 	}
 }
 
-func TestUdpAdapterAddress(t *testing.T) {
+func TestWebSocketAdapterAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	adapter := protocol.NewUdpAdapter(ctx, nil)
+	adapter := protocol.NewWebSocketAdapter(ctx, nil)
 	testAddr := "localhost:8080"
 
 	adapter.ListenFrom(testAddr)
@@ -56,4 +52,7 @@ func TestUdpAdapterAddress(t *testing.T) {
 	if adapter.Addr() != testAddr {
 		t.Errorf("Expected address '%s', got '%s'", testAddr, adapter.Addr())
 	}
+
+	// 立即关闭，避免启动服务器
+	adapter.Close()
 }

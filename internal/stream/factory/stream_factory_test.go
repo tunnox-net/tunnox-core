@@ -1,4 +1,4 @@
-package tests
+package factory
 
 import (
 	"bytes"

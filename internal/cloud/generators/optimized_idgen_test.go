@@ -1,4 +1,4 @@
-package tests
+package generators
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"tunnox-core/internal/cloud/generators"
+
 	"tunnox-core/internal/cloud/storages"
 )
 
@@ -14,7 +14,7 @@ func TestOptimizedClientIDGenerator_Basic(t *testing.T) {
 	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	generator := generators.NewOptimizedClientIDGenerator(storage, context.Background())
+	generator := NewOptimizedClientIDGenerator(storage, context.Background())
 	defer generator.Close()
 
 	// 等待段数据加载完成
@@ -31,8 +31,8 @@ func TestOptimizedClientIDGenerator_Basic(t *testing.T) {
 			}
 
 			// 检查ID范围
-			if id < generators.ClientIDMin || id > generators.ClientIDMax {
-				t.Errorf("Generated ID %d is out of range [%d, %d]", id, generators.ClientIDMin, generators.ClientIDMax)
+			if id < ClientIDMin || id > ClientIDMax {
+				t.Errorf("Generated ID %d is out of range [%d, %d]", id, ClientIDMin, ClientIDMax)
 			}
 
 			// 检查唯一性
@@ -86,8 +86,8 @@ func TestOptimizedClientIDGenerator_Basic(t *testing.T) {
 
 		// 验证重新生成的ID可能是相同的（因为随机选择）
 		// 这里我们只验证ID在有效范围内
-		if newID < generators.ClientIDMin || newID > generators.ClientIDMax {
-			t.Errorf("Regenerated ID %d is out of range [%d, %d]", newID, generators.ClientIDMin, generators.ClientIDMax)
+		if newID < ClientIDMin || newID > ClientIDMax {
+			t.Errorf("Regenerated ID %d is out of range [%d, %d]", newID, ClientIDMin, ClientIDMax)
 		}
 	})
 }
@@ -96,7 +96,7 @@ func TestOptimizedClientIDGenerator_Concurrency(t *testing.T) {
 	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	generator := generators.NewOptimizedClientIDGenerator(storage, context.Background())
+	generator := NewOptimizedClientIDGenerator(storage, context.Background())
 	defer generator.Close()
 
 	// 等待段数据加载完成
@@ -142,8 +142,8 @@ func TestOptimizedClientIDGenerator_Concurrency(t *testing.T) {
 		count := 0
 		for id := range ids {
 			count++
-			if id < generators.ClientIDMin || id > generators.ClientIDMax {
-				t.Errorf("Generated ID %d is out of range [%d, %d]", id, generators.ClientIDMin, generators.ClientIDMax)
+			if id < ClientIDMin || id > ClientIDMax {
+				t.Errorf("Generated ID %d is out of range [%d, %d]", id, ClientIDMin, ClientIDMax)
 			}
 			if uniqueIDs[id] {
 				t.Errorf("Duplicate ID generated: %d", id)
@@ -165,7 +165,7 @@ func TestOptimizedClientIDGenerator_Performance(t *testing.T) {
 	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	generator := generators.NewOptimizedClientIDGenerator(storage, context.Background())
+	generator := NewOptimizedClientIDGenerator(storage, context.Background())
 	defer generator.Close()
 
 	// 等待段数据加载完成
@@ -232,7 +232,7 @@ func TestOptimizedClientIDGenerator_SegmentStats(t *testing.T) {
 	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	generator := generators.NewOptimizedClientIDGenerator(storage, context.Background())
+	generator := NewOptimizedClientIDGenerator(storage, context.Background())
 	defer generator.Close()
 
 	// 等待段数据加载完成
@@ -278,7 +278,7 @@ func TestOptimizedClientIDGenerator_EdgeCases(t *testing.T) {
 	storage := storages.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	generator := generators.NewOptimizedClientIDGenerator(storage, context.Background())
+	generator := NewOptimizedClientIDGenerator(storage, context.Background())
 	defer generator.Close()
 
 	// 等待段数据加载完成
@@ -287,8 +287,8 @@ func TestOptimizedClientIDGenerator_EdgeCases(t *testing.T) {
 	t.Run("Invalid ID Operations", func(t *testing.T) {
 		// 测试无效ID范围
 		invalidIDs := []int64{
-			generators.ClientIDMin - 1,
-			generators.ClientIDMax + 1,
+			ClientIDMin - 1,
+			ClientIDMax + 1,
 			-1,
 			0,
 		}
@@ -308,7 +308,7 @@ func TestOptimizedClientIDGenerator_EdgeCases(t *testing.T) {
 
 	t.Run("Release Unused ID", func(t *testing.T) {
 		// 尝试释放一个未使用的ID
-		unusedID := generators.ClientIDMin + 12345
+		unusedID := ClientIDMin + 12345
 		err := generator.ReleaseClientID(unusedID)
 		if err == nil {
 			t.Error("Expected error when releasing unused ID")
@@ -320,7 +320,7 @@ func TestOptimizedClientIDGenerator_Persistence(t *testing.T) {
 	storage := storages.NewMemoryStorage(context.Background())
 
 	// 第一个生成器实例
-	generator1 := generators.NewOptimizedClientIDGenerator(storage, context.Background())
+	generator1 := NewOptimizedClientIDGenerator(storage, context.Background())
 
 	// 等待段数据加载完成
 	time.Sleep(100 * time.Millisecond)
@@ -340,7 +340,7 @@ func TestOptimizedClientIDGenerator_Persistence(t *testing.T) {
 	generator1.Close()
 
 	// 创建第二个生成器实例（使用相同的存储）
-	generator2 := generators.NewOptimizedClientIDGenerator(storage, context.Background())
+	generator2 := NewOptimizedClientIDGenerator(storage, context.Background())
 	defer generator2.Close()
 
 	// 等待段数据加载完成

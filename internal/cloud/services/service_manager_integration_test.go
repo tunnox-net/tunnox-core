@@ -1,4 +1,4 @@
-package tests
+package services
 
 import (
 	"context"
@@ -17,8 +17,8 @@ func TestServiceManagerResourceRegistration(t *testing.T) {
 	manager := utils.NewServiceManager(config)
 
 	// 创建一些测试资源
-	resource1 := NewMockResource("test-resource-1")
-	resource2 := NewMockResource("test-resource-2")
+	resource1 := &MockResource{name: "test-resource-1"}
+	resource2 := &MockResource{name: "test-resource-2"}
 
 	// 注册资源
 	if err := manager.RegisterResource("resource-1", resource1); err != nil {
@@ -75,8 +75,8 @@ func TestServiceManagerResourceDisposal(t *testing.T) {
 	manager := utils.NewServiceManager(config)
 
 	// 创建测试资源
-	resource1 := NewMockResource("dispose-test-1")
-	resource2 := NewMockResource("dispose-test-2")
+	resource1 := &MockResource{name: "dispose-test-1"}
+	resource2 := &MockResource{name: "dispose-test-2"}
 
 	// 注册资源
 	if err := manager.RegisterResource("dispose-1", resource1); err != nil {
@@ -125,7 +125,7 @@ func TestServiceManagerWithContext(t *testing.T) {
 	manager := utils.NewServiceManager(config)
 
 	// 创建测试资源
-	resource := NewMockResource("context-test")
+	resource := &MockResource{name: "context-test"}
 
 	// 注册资源
 	if err := manager.RegisterResource("context-resource", resource); err != nil {

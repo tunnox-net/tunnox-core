@@ -1,10 +1,9 @@
-package tests
+package distributed
 
 import (
 	"context"
 	"testing"
 	"time"
-	"tunnox-core/internal/cloud/distributed"
 	"tunnox-core/internal/cloud/storages"
 )
 
@@ -13,8 +12,8 @@ func TestStorageBasedLock(t *testing.T) {
 	defer storage.Close()
 
 	// 创建基于存储的分布式锁
-	lock1 := distributed.NewStorageBasedLock(storage, "test_owner_1")
-	lock2 := distributed.NewStorageBasedLock(storage, "test_owner_2")
+	lock1 := NewStorageBasedLock(storage, "test_owner_1")
+	lock2 := NewStorageBasedLock(storage, "test_owner_2")
 
 	t.Run("Basic Lock Operations", func(t *testing.T) {
 		// 测试获取锁
