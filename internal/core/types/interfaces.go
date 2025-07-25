@@ -90,6 +90,25 @@ type Session interface {
 
 	// GetEventBus 获取事件总线
 	GetEventBus() interface{}
+
+	// ==================== Command集成相关方法 ====================
+	// RegisterCommandHandler 注册命令处理器
+	RegisterCommandHandler(cmdType packet.CommandType, handler CommandHandler) error
+
+	// UnregisterCommandHandler 注销命令处理器
+	UnregisterCommandHandler(cmdType packet.CommandType) error
+
+	// ProcessCommand 处理命令（直接处理，不通过事件总线）
+	ProcessCommand(connID string, cmd *packet.CommandPacket) (*CommandResponse, error)
+
+	// GetCommandRegistry 获取命令注册表
+	GetCommandRegistry() CommandRegistry
+
+	// GetCommandExecutor 获取命令执行器
+	GetCommandExecutor() CommandExecutor
+
+	// SetCommandExecutor 设置命令执行器
+	SetCommandExecutor(executor CommandExecutor) error
 }
 
 // StreamPacket 包装结构，包含连接信息
@@ -224,4 +243,19 @@ type CommandRegistry interface {
 type Middleware interface {
 	// Process 处理中间件逻辑
 	Process(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error)
+}
+
+// CommandExecutor 命令执行器接口
+type CommandExecutor interface {
+	// Execute 执行命令
+	Execute(streamPacket *StreamPacket) error
+
+	// AddMiddleware 添加中间件
+	AddMiddleware(middleware Middleware)
+
+	// SetSession 设置会话引用
+	SetSession(session Session)
+
+	// GetRegistry 获取命令注册表
+	GetRegistry() CommandRegistry
 }

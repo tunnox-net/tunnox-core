@@ -63,6 +63,32 @@ func (m *UtilsMockSession) GetEventBus() interface{} {
 	return nil
 }
 
+// ==================== Command集成相关方法 ====================
+
+func (m *UtilsMockSession) RegisterCommandHandler(cmdType packet.CommandType, handler types.CommandHandler) error {
+	return nil
+}
+
+func (m *UtilsMockSession) UnregisterCommandHandler(cmdType packet.CommandType) error {
+	return nil
+}
+
+func (m *UtilsMockSession) ProcessCommand(connID string, cmd *packet.CommandPacket) (*types.CommandResponse, error) {
+	return &types.CommandResponse{Success: true}, nil
+}
+
+func (m *UtilsMockSession) GetCommandRegistry() types.CommandRegistry {
+	return nil
+}
+
+func (m *UtilsMockSession) GetCommandExecutor() types.CommandExecutor {
+	return nil
+}
+
+func (m *UtilsMockSession) SetCommandExecutor(executor types.CommandExecutor) error {
+	return nil
+}
+
 func TestCommandUtils_NewCommands(t *testing.T) {
 	session := &UtilsMockSession{}
 	utils := NewCommandUtils(session)

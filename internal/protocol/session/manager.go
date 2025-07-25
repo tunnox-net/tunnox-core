@@ -26,6 +26,11 @@ type SessionManager struct {
 	// 事件驱动架构
 	eventBus        events.EventBus
 	responseManager *ResponseManager
+
+	// Command集成
+	commandRegistry types.CommandRegistry
+	commandExecutor types.CommandExecutor
+
 	dispose.Dispose
 }
 
@@ -92,6 +97,78 @@ func (s *SessionManager) GetEventBus() interface{} {
 // GetResponseManager 获取响应管理器
 func (s *SessionManager) GetResponseManager() *ResponseManager {
 	return s.responseManager
+}
+
+// ==================== Command集成相关方法实现 ====================
+
+// RegisterCommandHandler 注册命令处理器
+func (s *SessionManager) RegisterCommandHandler(cmdType packet.CommandType, handler types.CommandHandler) error {
+	if s.commandRegistry == nil {
+		return fmt.Errorf("command registry not initialized")
+	}
+	return s.commandRegistry.Register(handler)
+}
+
+// UnregisterCommandHandler 注销命令处理器
+func (s *SessionManager) UnregisterCommandHandler(cmdType packet.CommandType) error {
+	if s.commandRegistry == nil {
+		return fmt.Errorf("command registry not initialized")
+	}
+	return s.commandRegistry.Unregister(cmdType)
+}
+
+// ProcessCommand 处理命令（直接处理，不通过事件总线）
+func (s *SessionManager) ProcessCommand(connID string, cmd *packet.CommandPacket) (*types.CommandResponse, error) {
+	if s.commandExecutor == nil {
+		return &types.CommandResponse{
+			Success: false,
+			Error:   "command executor not initialized",
+		}, fmt.Errorf("command executor not initialized")
+	}
+
+	// 创建流数据包
+	streamPacket := &types.StreamPacket{
+		ConnectionID: connID,
+		Packet: &packet.TransferPacket{
+			CommandPacket: cmd,
+		},
+		Timestamp: time.Now(),
+	}
+
+	// 通过命令执行器处理
+	err := s.commandExecutor.Execute(streamPacket)
+	if err != nil {
+		return &types.CommandResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, err
+	}
+
+	return &types.CommandResponse{
+		Success: true,
+	}, nil
+}
+
+// GetCommandRegistry 获取命令注册表
+func (s *SessionManager) GetCommandRegistry() types.CommandRegistry {
+	return s.commandRegistry
+}
+
+// GetCommandExecutor 获取命令执行器
+func (s *SessionManager) GetCommandExecutor() types.CommandExecutor {
+	return s.commandExecutor
+}
+
+// SetCommandExecutor 设置命令执行器
+func (s *SessionManager) SetCommandExecutor(executor types.CommandExecutor) error {
+	if executor == nil {
+		return fmt.Errorf("command executor cannot be nil")
+	}
+
+	s.commandExecutor = executor
+	// 设置会话引用
+	executor.SetSession(s)
+	return nil
 }
 
 // CreateConnection 创建新连接
@@ -221,30 +298,43 @@ func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) err
 	utils.Infof("Processing command packet for connection: %s, command: %v",
 		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
-	// 检查事件总线是否已设置
-	if s.eventBus == nil {
-		utils.Warnf("Event bus is nil, using default command handler")
-		return s.handleDefaultCommand(connPacket)
+	// 优先使用Command集成处理
+	if s.commandExecutor != nil {
+		// 直接通过命令执行器处理
+		err := s.commandExecutor.Execute(connPacket)
+		if err != nil {
+			utils.Errorf("Command execution failed for connection %s: %v", connPacket.ConnectionID, err)
+			return err
+		}
+		utils.Infof("Command executed successfully for connection %s", connPacket.ConnectionID)
+		return nil
 	}
 
-	// 发布命令接收事件
-	event := events.NewCommandReceivedEvent(
-		connPacket.ConnectionID,
-		connPacket.Packet.CommandPacket.CommandType,
-		connPacket.Packet.CommandPacket.CommandId,
-		connPacket.Packet.CommandPacket.Token,
-		connPacket.Packet.CommandPacket.SenderId,
-		connPacket.Packet.CommandPacket.ReceiverId,
-		connPacket.Packet.CommandPacket.CommandBody,
-	)
+	// 如果命令执行器不可用，回退到事件总线
+	if s.eventBus != nil {
+		// 发布命令接收事件
+		event := events.NewCommandReceivedEvent(
+			connPacket.ConnectionID,
+			connPacket.Packet.CommandPacket.CommandType,
+			connPacket.Packet.CommandPacket.CommandId,
+			connPacket.Packet.CommandPacket.Token,
+			connPacket.Packet.CommandPacket.SenderId,
+			connPacket.Packet.CommandPacket.ReceiverId,
+			connPacket.Packet.CommandPacket.CommandBody,
+		)
 
-	if err := s.eventBus.Publish(event); err != nil {
-		utils.Errorf("Failed to publish command received event for connection %s: %v", connPacket.ConnectionID, err)
-		return err
+		if err := s.eventBus.Publish(event); err != nil {
+			utils.Errorf("Failed to publish command received event for connection %s: %v", connPacket.ConnectionID, err)
+			return err
+		}
+
+		utils.Infof("Command received event published for connection %s", connPacket.ConnectionID)
+		return nil
 	}
 
-	utils.Infof("Command received event published for connection %s", connPacket.ConnectionID)
-	return nil
+	// 最后回退到默认处理
+	utils.Warnf("No command executor or event bus available, using default command handler")
+	return s.handleDefaultCommand(connPacket)
 }
 
 // handleDefaultCommand 处理默认命令（临时实现）

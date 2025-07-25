@@ -14,6 +14,7 @@ type CommandExecutor struct {
 	registry   *CommandRegistry
 	middleware []Middleware
 	rpcManager *RPCManager
+	session    types.Session // 添加会话引用
 	mu         sync.RWMutex
 }
 
@@ -23,11 +24,12 @@ func NewCommandExecutor(registry *CommandRegistry) *CommandExecutor {
 		registry:   registry,
 		middleware: make([]Middleware, 0),
 		rpcManager: NewRPCManager(),
+		session:    nil,
 	}
 }
 
 // AddMiddleware 添加中间件
-func (ce *CommandExecutor) AddMiddleware(middleware Middleware) {
+func (ce *CommandExecutor) AddMiddleware(middleware types.Middleware) {
 	ce.mu.Lock()
 	defer ce.mu.Unlock()
 	ce.middleware = append(ce.middleware, middleware)
@@ -46,9 +48,9 @@ func (ce *CommandExecutor) Execute(streamPacket *types.StreamPacket) error {
 
 	// 根据响应类型处理
 	switch handler.GetDirection() {
-	case DirectionOneway:
+	case types.DirectionOneway:
 		return ce.executeOneway(ctx, handler)
-	case DirectionDuplex:
+	case types.DirectionDuplex:
 		return ce.executeDuplex(ctx, handler)
 	default:
 		return fmt.Errorf("unknown response type: %v", handler.GetDirection())
@@ -56,7 +58,7 @@ func (ce *CommandExecutor) Execute(streamPacket *types.StreamPacket) error {
 }
 
 // executeOneway 执行单向命令
-func (ce *CommandExecutor) executeOneway(ctx *CommandContext, handler CommandHandler) error {
+func (ce *CommandExecutor) executeOneway(ctx *types.CommandContext, handler types.CommandHandler) error {
 	// 异步执行，不等待响应
 	go func() {
 		execCtx, cancel := context.WithTimeout(ctx.Context, 30*time.Second)
@@ -73,13 +75,13 @@ func (ce *CommandExecutor) executeOneway(ctx *CommandContext, handler CommandHan
 }
 
 // executeDuplex 执行双工命令
-func (ce *CommandExecutor) executeDuplex(ctx *CommandContext, handler CommandHandler) error {
+func (ce *CommandExecutor) executeDuplex(ctx *types.CommandContext, handler types.CommandHandler) error {
 	// 生成请求ID
 	requestID := ce.generateRequestID()
 	ctx.RequestID = requestID
 
 	// 创建响应通道
-	responseChan := make(chan *CommandResponse, 1)
+	responseChan := make(chan *types.CommandResponse, 1)
 	ce.rpcManager.RegisterRequest(requestID, responseChan)
 	defer ce.rpcManager.UnregisterRequest(requestID)
 
@@ -94,7 +96,7 @@ func (ce *CommandExecutor) executeDuplex(ctx *CommandContext, handler CommandHan
 		ctx.Context = execCtx
 		response, err := ce.executeWithMiddleware(ctx, handler)
 		if err != nil {
-			response = &CommandResponse{
+			response = &types.CommandResponse{
 				Success: false,
 				Error:   err.Error(),
 			}
@@ -126,15 +128,15 @@ func (ce *CommandExecutor) executeDuplex(ctx *CommandContext, handler CommandHan
 }
 
 // executeWithMiddleware 使用中间件执行命令
-func (ce *CommandExecutor) executeWithMiddleware(ctx *CommandContext, handler CommandHandler) (*CommandResponse, error) {
+func (ce *CommandExecutor) executeWithMiddleware(ctx *types.CommandContext, handler types.CommandHandler) (*types.CommandResponse, error) {
 	ce.mu.RLock()
-	middleware := make([]Middleware, len(ce.middleware))
+	middleware := make([]types.Middleware, len(ce.middleware))
 	copy(middleware, ce.middleware)
 	ce.mu.RUnlock()
 
 	// 构建中间件链
-	var next func(*CommandContext) (*CommandResponse, error)
-	next = func(ctx *CommandContext) (*CommandResponse, error) {
+	var next func(*types.CommandContext) (*types.CommandResponse, error)
+	next = func(ctx *types.CommandContext) (*types.CommandResponse, error) {
 		return handler.Handle(ctx)
 	}
 
@@ -142,7 +144,7 @@ func (ce *CommandExecutor) executeWithMiddleware(ctx *CommandContext, handler Co
 	for i := len(middleware) - 1; i >= 0; i-- {
 		current := middleware[i]
 		nextFunc := next
-		next = func(ctx *CommandContext) (*CommandResponse, error) {
+		next = func(ctx *types.CommandContext) (*types.CommandResponse, error) {
 			return current.Process(ctx, nextFunc)
 		}
 	}
@@ -151,8 +153,8 @@ func (ce *CommandExecutor) executeWithMiddleware(ctx *CommandContext, handler Co
 }
 
 // createCommandContext 创建命令上下文
-func (ce *CommandExecutor) createCommandContext(streamPacket *types.StreamPacket) *CommandContext {
-	return &CommandContext{
+func (ce *CommandExecutor) createCommandContext(streamPacket *types.StreamPacket) *types.CommandContext {
+	return &types.CommandContext{
 		ConnectionID:    streamPacket.ConnectionID,
 		CommandType:     streamPacket.Packet.CommandPacket.CommandType,
 		CommandId:       streamPacket.Packet.CommandPacket.CommandId,
@@ -169,10 +171,15 @@ func (ce *CommandExecutor) createCommandContext(streamPacket *types.StreamPacket
 }
 
 // sendResponse 发送响应
-func (ce *CommandExecutor) sendResponse(connectionID string, response *CommandResponse) error {
-	// 这里应该实现具体的响应发送逻辑
-	// 目前只是记录日志
-	utils.Infof("Sending response to connection %s: success=%v", connectionID, response.Success)
+func (ce *CommandExecutor) sendResponse(connectionID string, response *types.CommandResponse) error {
+	// 如果有会话引用，通过会话发送响应
+	if ce.session != nil {
+		// 这里可以通过会话的流管理器发送响应
+		utils.Infof("Sending response to connection %s via session: success=%v", connectionID, response.Success)
+	} else {
+		// 否则只是记录日志
+		utils.Infof("Sending response to connection %s: success=%v", connectionID, response.Success)
+	}
 	return nil
 }
 
@@ -183,6 +190,13 @@ func (ce *CommandExecutor) generateRequestID() string {
 
 // SetSession 设置会话
 func (ce *CommandExecutor) SetSession(session types.Session) {
-	// 这里可以保存会话引用，用于后续的响应发送
+	ce.mu.Lock()
+	defer ce.mu.Unlock()
+	ce.session = session
 	utils.Infof("Session set in command executor")
+}
+
+// GetRegistry 获取命令注册表
+func (ce *CommandExecutor) GetRegistry() types.CommandRegistry {
+	return ce.registry
 }

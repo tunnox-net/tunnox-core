@@ -6,6 +6,7 @@ import (
 	"io"
 	"sync"
 	"time"
+	"tunnox-core/internal/command"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/idgen"
@@ -38,6 +39,11 @@ type ConnectionSession struct {
 	// 事件驱动架构
 	eventBus        events.EventBus
 	responseManager *session.ResponseManager
+
+	// Command集成
+	commandRegistry *command.CommandRegistry
+	commandExecutor *command.CommandExecutor
+
 	dispose.Dispose
 }
 
@@ -49,6 +55,12 @@ func NewConnectionSession(idManager *idgen.IDManager, parentCtx context.Context)
 	// 创建流管理器
 	streamMgr := stream.NewStreamManager(streamFactory, parentCtx)
 
+	// 创建命令注册表
+	commandRegistry := command.NewCommandRegistry()
+
+	// 创建命令执行器
+	commandExecutor := command.NewCommandExecutor(commandRegistry)
+
 	session := &ConnectionSession{
 		connMap:       make(map[string]*Connection),
 		idManager:     idManager,
@@ -57,7 +69,13 @@ func NewConnectionSession(idManager *idgen.IDManager, parentCtx context.Context)
 		// 事件驱动架构将在后续设置
 		eventBus:        nil,
 		responseManager: nil,
+		// Command集成
+		commandRegistry: commandRegistry,
+		commandExecutor: commandExecutor,
 	}
+
+	// 设置命令执行器的会话引用
+	commandExecutor.SetSession(session)
 
 	// 设置资源清理回调
 	session.SetCtx(parentCtx, session.onClose)
@@ -104,6 +122,70 @@ func (s *ConnectionSession) GetEventBus() interface{} {
 // GetResponseManager 获取响应管理器
 func (s *ConnectionSession) GetResponseManager() *session.ResponseManager {
 	return s.responseManager
+}
+
+// ==================== Command集成相关方法实现 ====================
+
+// RegisterCommandHandler 注册命令处理器
+func (s *ConnectionSession) RegisterCommandHandler(cmdType packet.CommandType, handler types.CommandHandler) error {
+	return s.commandRegistry.Register(handler)
+}
+
+// UnregisterCommandHandler 注销命令处理器
+func (s *ConnectionSession) UnregisterCommandHandler(cmdType packet.CommandType) error {
+	return s.commandRegistry.Unregister(cmdType)
+}
+
+// ProcessCommand 处理命令（直接处理，不通过事件总线）
+func (s *ConnectionSession) ProcessCommand(connID string, cmd *packet.CommandPacket) (*types.CommandResponse, error) {
+	// 创建流数据包
+	streamPacket := &types.StreamPacket{
+		ConnectionID: connID,
+		Packet: &packet.TransferPacket{
+			CommandPacket: cmd,
+		},
+		Timestamp: time.Now(),
+	}
+
+	// 通过命令执行器处理
+	err := s.commandExecutor.Execute(streamPacket)
+	if err != nil {
+		return &types.CommandResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, err
+	}
+
+	return &types.CommandResponse{
+		Success: true,
+	}, nil
+}
+
+// GetCommandRegistry 获取命令注册表
+func (s *ConnectionSession) GetCommandRegistry() types.CommandRegistry {
+	return s.commandRegistry
+}
+
+// GetCommandExecutor 获取命令执行器
+func (s *ConnectionSession) GetCommandExecutor() types.CommandExecutor {
+	return s.commandExecutor
+}
+
+// SetCommandExecutor 设置命令执行器
+func (s *ConnectionSession) SetCommandExecutor(executor types.CommandExecutor) error {
+	if executor == nil {
+		return fmt.Errorf("command executor cannot be nil")
+	}
+
+	// 类型断言
+	if cmdExecutor, ok := executor.(*command.CommandExecutor); ok {
+		s.commandExecutor = cmdExecutor
+		// 设置会话引用
+		cmdExecutor.SetSession(s)
+		return nil
+	}
+
+	return fmt.Errorf("invalid command executor type")
 }
 
 // CreateConnection 创建新连接
@@ -209,30 +291,43 @@ func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error 
 	utils.Infof("Processing command packet for connection: %s, command: %v",
 		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
-	// 检查事件总线是否已设置
-	if s.eventBus == nil {
-		utils.Warnf("Event bus is nil, using default command handler")
-		return s.handleDefaultCommand(connPacket)
+	// 优先使用Command集成处理
+	if s.commandExecutor != nil {
+		// 直接通过命令执行器处理
+		err := s.commandExecutor.Execute(connPacket)
+		if err != nil {
+			utils.Errorf("Command execution failed for connection %s: %v", connPacket.ConnectionID, err)
+			return err
+		}
+		utils.Infof("Command executed successfully for connection %s", connPacket.ConnectionID)
+		return nil
 	}
 
-	// 发布命令接收事件
-	event := events.NewCommandReceivedEvent(
-		connPacket.ConnectionID,
-		connPacket.Packet.CommandPacket.CommandType,
-		connPacket.Packet.CommandPacket.CommandId,
-		connPacket.Packet.CommandPacket.Token,
-		connPacket.Packet.CommandPacket.SenderId,
-		connPacket.Packet.CommandPacket.ReceiverId,
-		connPacket.Packet.CommandPacket.CommandBody,
-	)
+	// 如果命令执行器不可用，回退到事件总线
+	if s.eventBus != nil {
+		// 发布命令接收事件
+		event := events.NewCommandReceivedEvent(
+			connPacket.ConnectionID,
+			connPacket.Packet.CommandPacket.CommandType,
+			connPacket.Packet.CommandPacket.CommandId,
+			connPacket.Packet.CommandPacket.Token,
+			connPacket.Packet.CommandPacket.SenderId,
+			connPacket.Packet.CommandPacket.ReceiverId,
+			connPacket.Packet.CommandPacket.CommandBody,
+		)
 
-	if err := s.eventBus.Publish(event); err != nil {
-		utils.Errorf("Failed to publish command received event for connection %s: %v", connPacket.ConnectionID, err)
-		return err
+		if err := s.eventBus.Publish(event); err != nil {
+			utils.Errorf("Failed to publish command received event for connection %s: %v", connPacket.ConnectionID, err)
+			return err
+		}
+
+		utils.Infof("Command received event published for connection %s", connPacket.ConnectionID)
+		return nil
 	}
 
-	utils.Infof("Command received event published for connection %s", connPacket.ConnectionID)
-	return nil
+	// 最后回退到默认处理
+	utils.Warnf("No command executor or event bus available, using default command handler")
+	return s.handleDefaultCommand(connPacket)
 }
 
 // handleDefaultCommand 处理默认命令（临时实现）
@@ -434,6 +529,17 @@ func (s *ConnectionSession) onClose() error {
 			utils.Errorf("Failed to close event bus: %v", err)
 		}
 		utils.Infof("Event bus resources cleaned up")
+	}
+
+	// 清理Command相关资源
+	if s.commandExecutor != nil {
+		// 命令执行器会通过Dispose自动清理
+		utils.Infof("Command executor resources cleaned up")
+	}
+
+	if s.commandRegistry != nil {
+		// 命令注册表不需要特殊清理
+		utils.Infof("Command registry resources cleaned up")
 	}
 
 	utils.Infof("Connection session resources cleanup completed")
