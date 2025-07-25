@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-	"tunnox-core/internal/common"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -19,7 +19,7 @@ type CommandUtils struct {
 	requestID    string
 	commandId    string // 客户端生成的唯一命令ID
 	connectionID string
-	session      common.Session
+	session      types.Session
 	ctx          context.Context
 	errorHandler func(error) error
 	// 替换 metadata 为具体的类型化字段
@@ -30,7 +30,7 @@ type CommandUtils struct {
 }
 
 // NewCommandUtils 创建新的命令工具实例
-func NewCommandUtils(session common.Session) *CommandUtils {
+func NewCommandUtils(session types.Session) *CommandUtils {
 	return &CommandUtils{
 		session:      session,
 		timeout:      30 * time.Second,

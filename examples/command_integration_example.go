@@ -20,11 +20,11 @@ func ExampleCommandIntegration() {
 	// 创建会话
 	session := protocol.NewConnectionSession(idManager, ctx)
 
-	// 创建并配置命令注册表
-	commandRegistry := command.CreateDefaultRegistry()
+	// 创建并配置命令服务
+	commandService := command.NewCommandService(ctx)
 
-	// 设置命令注册表到会话
-	session.SetCommandRegistry(commandRegistry)
+	// 设置命令服务到会话
+	session.SetCommandService(commandService)
 
 	log.Println("Command system integrated successfully!")
 

@@ -2,7 +2,7 @@ package command
 
 import (
 	"testing"
-	"tunnox-core/internal/common"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 )
 
@@ -86,7 +86,7 @@ func BenchmarkCommandExecutor_ExecuteOneway(b *testing.B) {
 	registry.Register(handler)
 
 	// 创建流数据包
-	streamPacket := &common.StreamPacket{
+	streamPacket := &types.StreamPacket{
 		ConnectionID: "benchmark-connection",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
@@ -122,7 +122,7 @@ func BenchmarkCommandExecutor_ExecuteDuplex(b *testing.B) {
 	registry.Register(handler)
 
 	// 创建流数据包
-	streamPacket := &common.StreamPacket{
+	streamPacket := &types.StreamPacket{
 		ConnectionID: "benchmark-connection",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
@@ -167,7 +167,7 @@ func BenchmarkCommandExecutor_ExecuteWithMiddleware(b *testing.B) {
 	executor.AddMiddleware(middleware)
 
 	// 创建流数据包
-	streamPacket := &common.StreamPacket{
+	streamPacket := &types.StreamPacket{
 		ConnectionID: "benchmark-connection",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
@@ -214,7 +214,7 @@ func BenchmarkCommandExecutor_ExecuteMultipleMiddleware(b *testing.B) {
 	}
 
 	// 创建流数据包
-	streamPacket := &common.StreamPacket{
+	streamPacket := &types.StreamPacket{
 		ConnectionID: "benchmark-connection",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
@@ -250,7 +250,7 @@ func BenchmarkConcurrentExecution(b *testing.B) {
 	registry.Register(handler)
 
 	// 创建流数据包
-	streamPacket := &common.StreamPacket{
+	streamPacket := &types.StreamPacket{
 		ConnectionID: "benchmark-connection",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
@@ -289,7 +289,7 @@ func BenchmarkContextCreation(b *testing.B) {
 	executor := NewCommandExecutor(registry)
 
 	// 创建流数据包
-	streamPacket := &common.StreamPacket{
+	streamPacket := &types.StreamPacket{
 		ConnectionID: "benchmark-connection",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,

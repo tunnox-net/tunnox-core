@@ -8,7 +8,7 @@ import (
 	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/command"
-	"tunnox-core/internal/common"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/utils"
@@ -48,8 +48,8 @@ func (h *MockCommandHandler) GetDirection() command.CommandDirection {
 	return command.DirectionOneway
 }
 
-func (h *MockCommandHandler) GetResponseType() command.ResponseType {
-	return command.Oneway
+func (h *MockCommandHandler) GetResponseType() types.CommandResponseType {
+	return types.ResponseOneway
 }
 
 func TestCommandRefactor(t *testing.T) {
@@ -141,8 +141,8 @@ func TestCommandRefactor(t *testing.T) {
 			t.Fatal("Connection not found after processing")
 		}
 
-		if updatedConn.State != common.StateActive {
-			t.Errorf("Expected state %v, got %v", common.StateActive, updatedConn.State)
+		if updatedConn.State != types.StateActive {
+			t.Errorf("Expected state %v, got %v", types.StateActive, updatedConn.State)
 		}
 
 		// 清理连接
@@ -167,12 +167,12 @@ func TestCommandRefactor(t *testing.T) {
 			t.Error("Connection ID should not be empty")
 		}
 
-		if conn.State != common.StateInitializing {
-			t.Errorf("Expected state %v, got %v", common.StateInitializing, conn.State)
+		if conn.State != types.StateInitializing {
+			t.Errorf("Expected state %v, got %v", types.StateInitializing, conn.State)
 		}
 
 		// 测试状态更新
-		err = session.UpdateConnectionState(conn.ID, common.StateConnected)
+		err = session.UpdateConnectionState(conn.ID, types.StateConnected)
 		if err != nil {
 			t.Fatalf("Failed to update connection state: %v", err)
 		}
@@ -182,8 +182,8 @@ func TestCommandRefactor(t *testing.T) {
 			t.Fatal("Connection not found after update")
 		}
 
-		if updatedConn.State != common.StateConnected {
-			t.Errorf("Expected state %v, got %v", common.StateConnected, updatedConn.State)
+		if updatedConn.State != types.StateConnected {
+			t.Errorf("Expected state %v, got %v", types.StateConnected, updatedConn.State)
 		}
 
 		// 测试连接列表
@@ -230,7 +230,7 @@ func TestCommandRefactor(t *testing.T) {
 					}
 
 					// 更新状态
-					if err := session.UpdateConnectionState(conn.ID, common.StateActive); err != nil {
+					if err := session.UpdateConnectionState(conn.ID, types.StateActive); err != nil {
 						utils.Errorf("Failed to update state: %v", err)
 					}
 

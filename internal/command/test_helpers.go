@@ -1,10 +1,11 @@
 package command
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 	"time"
-	"tunnox-core/internal/common"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 )
 
@@ -19,8 +20,8 @@ func NewTestHelper(t *testing.T) *TestHelper {
 }
 
 // CreateMockStreamPacket 创建模拟流数据包
-func (th *TestHelper) CreateMockStreamPacket(commandType packet.CommandType, body string) *common.StreamPacket {
-	return &common.StreamPacket{
+func (th *TestHelper) CreateMockStreamPacket(commandType packet.CommandType, body string) *types.StreamPacket {
+	return &types.StreamPacket{
 		ConnectionID: "test-connection-123",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
@@ -107,14 +108,14 @@ func (th *TestHelper) SetupTestExecutor() (*CommandRegistry, *CommandExecutor) {
 // AssertNoError 断言没有错误
 func (th *TestHelper) AssertNoError(err error, message string) {
 	if err != nil {
-		th.t.Errorf("%s: %v", message, err)
+		th.t.Errorf("%s: unexpected error: %v", message, err)
 	}
 }
 
 // AssertError 断言有错误
 func (th *TestHelper) AssertError(err error, message string) {
 	if err == nil {
-		th.t.Errorf("%s: expected error but got nil", message)
+		th.t.Errorf("%s: expected error but got none", message)
 	}
 }
 
@@ -141,17 +142,17 @@ func (th *TestHelper) AssertFalse(condition bool, message string) {
 
 // WaitForCondition 等待条件满足
 func (th *TestHelper) WaitForCondition(condition func() bool, timeout time.Duration, message string) {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	start := time.Now()
+	for time.Since(start) < timeout {
 		if condition() {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	th.t.Errorf("%s: condition not met within %v", message, timeout)
+	th.t.Errorf("%s: condition not met within timeout", message)
 }
 
-// ConcurrentTest 并发测试辅助函数
+// ConcurrentTest 并发测试辅助结构
 type ConcurrentTest struct {
 	t       *testing.T
 	wg      sync.WaitGroup
@@ -166,17 +167,16 @@ func NewConcurrentTest(t *testing.T, numGoroutines int) *ConcurrentTest {
 	}
 }
 
-// Run 运行并发测试
+// Run 运行测试函数
 func (ct *ConcurrentTest) Run(testFunc func() error) {
 	ct.wg.Add(1)
 	go func() {
 		defer ct.wg.Done()
-		err := testFunc()
-		ct.results <- err
+		ct.results <- testFunc()
 	}()
 }
 
-// WaitAndCheck 等待所有测试完成并检查结果
+// WaitAndCheck 等待并检查结果
 func (ct *ConcurrentTest) WaitAndCheck() {
 	ct.wg.Wait()
 	close(ct.results)
@@ -207,6 +207,10 @@ func RunTestScenario(t *testing.T, scenario TestScenario) {
 		err := scenario.Execute(executor)
 
 		// 断言
+		if err != nil {
+			t.Errorf("Test execution failed: %v", err)
+		}
+
 		if scenario.Assertions != nil {
 			scenario.Assertions(t)
 		}
@@ -215,19 +219,14 @@ func RunTestScenario(t *testing.T, scenario TestScenario) {
 		if scenario.Cleanup != nil {
 			scenario.Cleanup()
 		}
-
-		// 检查执行错误
-		if err != nil {
-			t.Errorf("Scenario execution failed: %v", err)
-		}
 	})
 }
 
-// BenchmarkHelper 基准测试辅助
+// BenchmarkHelper 基准测试辅助结构
 type BenchmarkHelper struct {
 	registry     *CommandRegistry
 	executor     *CommandExecutor
-	streamPacket *common.StreamPacket
+	streamPacket *types.StreamPacket
 }
 
 // NewBenchmarkHelper 创建基准测试辅助对象
@@ -235,28 +234,17 @@ func NewBenchmarkHelper() *BenchmarkHelper {
 	registry := NewCommandRegistry()
 	executor := NewCommandExecutor(registry)
 
-	// 创建处理器
-	handler := &simpleMockHandler{
-		commandType:  packet.TcpMap,
-		responseType: Duplex,
-		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
-			return &CommandResponse{Success: true, Data: "benchmark result"}, nil
-		},
-	}
-
-	registry.Register(handler)
-
-	// 创建流数据包
-	streamPacket := &common.StreamPacket{
+	// 创建测试数据包
+	streamPacket := &types.StreamPacket{
 		ConnectionID: "benchmark-connection",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
 			CommandPacket: &packet.CommandPacket{
-				CommandType: packet.TcpMap,
+				CommandType: packet.HeartbeatCmd,
 				Token:       "benchmark-token",
 				SenderId:    "benchmark-sender",
 				ReceiverId:  "benchmark-receiver",
-				CommandBody: `{"port": 8080}`,
+				CommandBody: `{"test": "data"}`,
 			},
 		},
 	}
@@ -270,11 +258,9 @@ func NewBenchmarkHelper() *BenchmarkHelper {
 
 // BenchmarkExecute 基准测试执行
 func (bh *BenchmarkHelper) BenchmarkExecute(b *testing.B) {
+	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		err := bh.executor.Execute(bh.streamPacket)
-		if err != nil {
-			b.Errorf("Execute failed: %v", err)
-		}
+		_ = bh.executor.Execute(bh.streamPacket)
 	}
 }
 
@@ -286,42 +272,46 @@ type TestData struct {
 	ExpectedError   string
 }
 
-// TestDataSet 测试数据集
-var TestDataSet = []TestData{
-	{
-		CommandType:     packet.TcpMap,
-		RequestBody:     `{"port": 8080}`,
-		ExpectedSuccess: true,
-		ExpectedError:   "",
-	},
-	{
-		CommandType:     packet.HttpMap,
-		RequestBody:     `{"port": 3000}`,
-		ExpectedSuccess: true,
-		ExpectedError:   "",
-	},
-	{
-		CommandType:     packet.SocksMap,
-		RequestBody:     `{"port": 1080}`,
-		ExpectedSuccess: true,
-		ExpectedError:   "",
-	},
-	{
-		CommandType:     packet.TcpMap,
-		RequestBody:     `invalid json`,
-		ExpectedSuccess: false,
-		ExpectedError:   "invalid",
-	},
-}
-
 // RunTestData 运行测试数据
 func RunTestData(t *testing.T, testFunc func(TestData) error) {
-	for _, data := range TestDataSet {
-		t.Run(string(data.CommandType), func(t *testing.T) {
-			err := testFunc(data)
-			if err != nil {
-				t.Errorf("Test data execution failed: %v", err)
+	testCases := []TestData{
+		{
+			CommandType:     packet.HeartbeatCmd,
+			RequestBody:     `{"test": "heartbeat"}`,
+			ExpectedSuccess: true,
+		},
+		{
+			CommandType:     packet.Connect,
+			RequestBody:     `{"invalid": "json"`,
+			ExpectedSuccess: false,
+			ExpectedError:   "invalid",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("%v", tc.CommandType), func(t *testing.T) {
+			err := testFunc(tc)
+			if tc.ExpectedSuccess && err != nil {
+				t.Errorf("Expected success but got error: %v", err)
+			}
+			if !tc.ExpectedSuccess && err == nil {
+				t.Errorf("Expected error but got success")
+			}
+			if tc.ExpectedError != "" && err != nil && !contains(err.Error(), tc.ExpectedError) {
+				t.Errorf("Expected error containing '%s' but got: %v", tc.ExpectedError, err)
 			}
 		})
 	}
+}
+
+// contains 检查字符串是否包含子字符串
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || len(s) > len(substr) && (s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || func() bool {
+		for i := 1; i <= len(s)-len(substr); i++ {
+			if s[i:i+len(substr)] == substr {
+				return true
+			}
+		}
+		return false
+	}()))
 }

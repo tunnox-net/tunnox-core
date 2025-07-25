@@ -2,12 +2,12 @@ package command
 
 import (
 	"context"
-	"tunnox-core/internal/common"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/utils"
 )
 
 // CreateDefaultRegistry 创建默认的命令注册表
-func CreateDefaultRegistry() common.CommandRegistry {
+func CreateDefaultRegistry() types.CommandRegistry {
 	registry := NewCommandRegistry()
 	RegisterDefaultHandlers(registry)
 	return registry
@@ -21,9 +21,9 @@ func CreateDefaultService(parentCtx context.Context) CommandService {
 }
 
 // RegisterDefaultHandlers 注册默认命令处理器
-func RegisterDefaultHandlers(registry common.CommandRegistry) {
+func RegisterDefaultHandlers(registry types.CommandRegistry) {
 	// 注册所有默认命令处理器
-	handlers := []common.CommandHandler{
+	handlers := []types.CommandHandler{
 		NewTcpMapHandler(),
 		NewHttpMapHandler(),
 		NewSocksMapHandler(),
@@ -49,7 +49,7 @@ func RegisterDefaultHandlers(registry common.CommandRegistry) {
 // RegisterDefaultHandlersToService 注册默认命令处理器到服务
 func RegisterDefaultHandlersToService(service CommandService) {
 	// 注册所有默认命令处理器
-	handlers := []common.CommandHandler{
+	handlers := []types.CommandHandler{
 		NewTcpMapHandler(),
 		NewHttpMapHandler(),
 		NewSocksMapHandler(),

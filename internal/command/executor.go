@@ -2,12 +2,10 @@ package command
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
-	"tunnox-core/internal/common"
-	"tunnox-core/internal/packet"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/utils"
 )
 
@@ -36,7 +34,7 @@ func (ce *CommandExecutor) AddMiddleware(middleware Middleware) {
 }
 
 // Execute 执行命令
-func (ce *CommandExecutor) Execute(streamPacket *common.StreamPacket) error {
+func (ce *CommandExecutor) Execute(streamPacket *types.StreamPacket) error {
 	// 创建命令上下文
 	ctx := ce.createCommandContext(streamPacket)
 
@@ -99,21 +97,32 @@ func (ce *CommandExecutor) executeDuplex(ctx *CommandContext, handler CommandHan
 			}
 		}
 
-		response.RequestID = requestID
-		response.CommandId = ctx.CommandId // 设置对应的命令ID
-		responseChan <- response
+		// 发送响应
+		if err := ce.sendResponse(ctx.ConnectionID, response); err != nil {
+			utils.Errorf("Failed to send response: %v", err)
+		}
+
+		// 将响应发送到通道
+		select {
+		case responseChan <- response:
+		default:
+			utils.Warnf("Response channel is full, dropping response")
+		}
 	}()
 
 	// 等待响应
 	select {
 	case response := <-responseChan:
-		return ce.sendResponse(ctx.ConnectionID, response)
-	case <-time.After(ce.rpcManager.GetTimeout()):
-		return fmt.Errorf("command timeout")
+		if !response.Success {
+			return fmt.Errorf("command execution failed: %s", response.Error)
+		}
+		return nil
+	case <-time.After(30 * time.Second):
+		return fmt.Errorf("command execution timeout")
 	}
 }
 
-// executeWithMiddleware 执行带中间件的命令
+// executeWithMiddleware 使用中间件执行命令
 func (ce *CommandExecutor) executeWithMiddleware(ctx *CommandContext, handler CommandHandler) (*CommandResponse, error) {
 	ce.mu.RLock()
 	middleware := make([]Middleware, len(ce.middleware))
@@ -126,12 +135,12 @@ func (ce *CommandExecutor) executeWithMiddleware(ctx *CommandContext, handler Co
 		return handler.Handle(ctx)
 	}
 
-	// 从后往前包装中间件
+	// 从后往前应用中间件
 	for i := len(middleware) - 1; i >= 0; i-- {
-		currentMiddleware := middleware[i]
-		currentNext := next
+		current := middleware[i]
+		nextFunc := next
 		next = func(ctx *CommandContext) (*CommandResponse, error) {
-			return currentMiddleware.Process(ctx, currentNext)
+			return current.Process(ctx, nextFunc)
 		}
 	}
 
@@ -139,18 +148,16 @@ func (ce *CommandExecutor) executeWithMiddleware(ctx *CommandContext, handler Co
 }
 
 // createCommandContext 创建命令上下文
-func (ce *CommandExecutor) createCommandContext(streamPacket *common.StreamPacket) *CommandContext {
-	commandPacket := streamPacket.Packet.CommandPacket
-
+func (ce *CommandExecutor) createCommandContext(streamPacket *types.StreamPacket) *CommandContext {
 	return &CommandContext{
 		ConnectionID:    streamPacket.ConnectionID,
-		CommandType:     commandPacket.CommandType,
-		CommandId:       commandPacket.CommandId,
-		RequestID:       commandPacket.Token,
-		SenderID:        commandPacket.SenderId,
-		ReceiverID:      commandPacket.ReceiverId,
-		RequestBody:     commandPacket.CommandBody,
-		Session:         nil, // 需要从外部设置
+		CommandType:     streamPacket.Packet.CommandPacket.CommandType,
+		CommandId:       streamPacket.Packet.CommandPacket.CommandId,
+		RequestID:       streamPacket.Packet.CommandPacket.Token,
+		SenderID:        streamPacket.Packet.CommandPacket.SenderId,
+		ReceiverID:      streamPacket.Packet.CommandPacket.ReceiverId,
+		RequestBody:     streamPacket.Packet.CommandPacket.CommandBody,
+		Session:         nil, // 将在外部设置
 		Context:         context.Background(),
 		IsAuthenticated: false,
 		UserID:          "",
@@ -161,32 +168,9 @@ func (ce *CommandExecutor) createCommandContext(streamPacket *common.StreamPacke
 
 // sendResponse 发送响应
 func (ce *CommandExecutor) sendResponse(connectionID string, response *CommandResponse) error {
-	// 序列化响应
-	responseData, err := json.Marshal(response)
-	if err != nil {
-		return fmt.Errorf("failed to marshal response: %w", err)
-	}
-
-	// 创建响应包
-	responsePacket := &packet.CommandPacket{
-		CommandType: 0,                  // 响应包使用特殊类型
-		CommandId:   response.CommandId, // 包含对应的命令ID
-		Token:       response.RequestID,
-		SenderId:    "", // 服务端发送
-		ReceiverId:  connectionID,
-		CommandBody: string(responseData),
-	}
-
-	// 创建传输包
-	transferPacket := &packet.TransferPacket{
-		PacketType:    packet.JsonCommand,
-		CommandPacket: responsePacket,
-	}
-
-	// 获取连接并发送
-	// 这里需要从Session获取Stream，暂时返回nil
-	// TODO: 实现从Session获取Stream的逻辑
-	_ = transferPacket // 避免未使用变量警告
+	// 这里应该实现具体的响应发送逻辑
+	// 目前只是记录日志
+	utils.Infof("Sending response to connection %s: success=%v", connectionID, response.Success)
 	return nil
 }
 
@@ -195,9 +179,8 @@ func (ce *CommandExecutor) generateRequestID() string {
 	return fmt.Sprintf("req_%d", time.Now().UnixNano())
 }
 
-// SetSession 设置会话对象
-func (ce *CommandExecutor) SetSession(session common.Session) {
-	// 这个方法需要在外部调用时设置Session
-	// 暂时为空实现，因为需要避免循环导入
-	// TODO: 实现 Session 设置逻辑
+// SetSession 设置会话
+func (ce *CommandExecutor) SetSession(session types.Session) {
+	// 这里可以保存会话引用，用于后续的响应发送
+	utils.Infof("Session set in command executor")
 }

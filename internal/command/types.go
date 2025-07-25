@@ -1,32 +1,32 @@
 package command
 
 import (
-	"tunnox-core/internal/common"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 )
 
-// 使用 common 包中定义的接口和类型
-type CommandHandler = common.CommandHandler
-type CommandContext = common.CommandContext
-type CommandResponse = common.CommandResponse
-type CommandCategory = common.CommandCategory
-type CommandDirection = common.CommandDirection
-type CommandResponseType = common.CommandResponseType
-type Middleware = common.Middleware
+// 使用 core/types 包中定义的接口和类型
+type CommandHandler = types.CommandHandler
+type CommandContext = types.CommandContext
+type CommandResponse = types.CommandResponse
+type CommandCategory = types.CommandCategory
+type CommandDirection = types.CommandDirection
+type CommandResponseType = types.CommandResponseType
+type Middleware = types.Middleware
 
 // 导出常量
 const (
-	CategoryConnection = common.CategoryConnection
-	CategoryMapping    = common.CategoryMapping
-	CategoryTransport  = common.CategoryTransport
-	CategoryManagement = common.CategoryManagement
-	CategoryRPC        = common.CategoryRPC
+	CategoryConnection = types.CategoryConnection
+	CategoryMapping    = types.CategoryMapping
+	CategoryTransport  = types.CategoryTransport
+	CategoryManagement = types.CategoryManagement
+	CategoryRPC        = types.CategoryRPC
 
-	DirectionOneway = common.DirectionOneway
-	DirectionDuplex = common.DirectionDuplex
+	DirectionOneway = types.DirectionOneway
+	DirectionDuplex = types.DirectionDuplex
 
-	Oneway = common.ResponseOneway
-	Duplex = common.ResponseDuplex
+	Oneway = types.ResponseOneway
+	Duplex = types.ResponseDuplex
 )
 
 // CommandType 重新定义的命令类型

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/storages"
-	"tunnox-core/internal/common"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol"
 )
@@ -51,8 +51,8 @@ func TestSessionRefactor(t *testing.T) {
 		}
 
 		// 验证连接状态
-		if conn.State != common.StateInitializing {
-			t.Errorf("Expected state %s, got %s", common.StateInitializing, conn.State)
+		if conn.State != types.StateInitializing {
+			t.Errorf("Expected state %s, got %s", types.StateInitializing, conn.State)
 		}
 
 		if conn.ID == "" {
@@ -82,7 +82,7 @@ func TestSessionRefactor(t *testing.T) {
 		}
 
 		// 测试状态更新
-		err = session.UpdateConnectionState(conn.ID, common.StateConnected)
+		err = session.UpdateConnectionState(conn.ID, types.StateConnected)
 		if err != nil {
 			t.Fatalf("UpdateConnectionState failed: %v", err)
 		}
@@ -93,8 +93,8 @@ func TestSessionRefactor(t *testing.T) {
 			t.Fatal("Connection should exist")
 		}
 
-		if updatedConn.State != common.StateConnected {
-			t.Errorf("Expected state %s, got %s", common.StateConnected, updatedConn.State)
+		if updatedConn.State != types.StateConnected {
+			t.Errorf("Expected state %s, got %s", types.StateConnected, updatedConn.State)
 		}
 	})
 
@@ -282,13 +282,13 @@ func TestConnectionStateTransitions(t *testing.T) {
 	}
 
 	// 测试状态转换
-	states := []common.ConnectionState{
-		common.StateInitializing,
-		common.StateConnected,
-		common.StateAuthenticated,
-		common.StateActive,
-		common.StateClosing,
-		common.StateClosed,
+	states := []types.ConnectionState{
+		types.StateInitializing,
+		types.StateConnected,
+		types.StateAuthenticated,
+		types.StateActive,
+		types.StateClosing,
+		types.StateClosed,
 	}
 
 	for _, state := range states {
@@ -335,7 +335,7 @@ func TestSessionConcurrency(t *testing.T) {
 				}
 
 				// 更新状态
-				err = session.UpdateConnectionState(conn.ID, common.StateConnected)
+				err = session.UpdateConnectionState(conn.ID, types.StateConnected)
 				if err != nil {
 					t.Errorf("Goroutine %d: UpdateConnectionState failed: %v", id, err)
 					return

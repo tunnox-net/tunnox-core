@@ -3,7 +3,7 @@ package command
 import (
 	"io"
 	"testing"
-	"tunnox-core/internal/common"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 )
@@ -11,11 +11,11 @@ import (
 // UtilsMockSession 模拟会话对象
 type UtilsMockSession struct{}
 
-func (m *UtilsMockSession) AcceptConnection(reader io.Reader, writer io.Writer) (*common.StreamConnection, error) {
+func (m *UtilsMockSession) AcceptConnection(reader io.Reader, writer io.Writer) (*types.StreamConnection, error) {
 	return nil, nil
 }
 
-func (m *UtilsMockSession) HandlePacket(connPacket *common.StreamPacket) error {
+func (m *UtilsMockSession) HandlePacket(connPacket *types.StreamPacket) error {
 	return nil
 }
 
@@ -27,7 +27,7 @@ func (m *UtilsMockSession) GetStreamManager() *stream.StreamManager {
 	return nil
 }
 
-func (m *UtilsMockSession) GetStreamConnectionInfo(connectionId string) (*common.StreamConnection, bool) {
+func (m *UtilsMockSession) GetStreamConnectionInfo(connectionId string) (*types.StreamConnection, bool) {
 	return nil, false
 }
 
@@ -35,7 +35,7 @@ func (m *UtilsMockSession) GetActiveConnections() int {
 	return 0
 }
 
-func (m *UtilsMockSession) CreateConnection(reader io.Reader, writer io.Writer) (*common.Connection, error) {
+func (m *UtilsMockSession) CreateConnection(reader io.Reader, writer io.Writer) (*types.Connection, error) {
 	return nil, nil
 }
 
@@ -43,15 +43,15 @@ func (m *UtilsMockSession) ProcessPacket(connID string, packet *packet.TransferP
 	return nil
 }
 
-func (m *UtilsMockSession) GetConnection(connID string) (*common.Connection, bool) {
+func (m *UtilsMockSession) GetConnection(connID string) (*types.Connection, bool) {
 	return nil, false
 }
 
-func (m *UtilsMockSession) ListConnections() []*common.Connection {
+func (m *UtilsMockSession) ListConnections() []*types.Connection {
 	return nil
 }
 
-func (m *UtilsMockSession) UpdateConnectionState(connID string, state common.ConnectionState) error {
+func (m *UtilsMockSession) UpdateConnectionState(connID string, state types.ConnectionState) error {
 	return nil
 }
 

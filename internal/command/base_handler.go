@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"tunnox-core/internal/common"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -24,7 +24,7 @@ type BaseCommandHandler[TRequest any, TResponse any] struct {
 	responseType      CommandResponseType
 	communicationMode CommunicationMode
 	streamProcessor   stream.PackageStreamer
-	session           common.Session
+	session           types.Session
 }
 
 // NewBaseCommandHandler 创建基础命令处理器
@@ -46,7 +46,7 @@ func (b *BaseCommandHandler[TRequest, TResponse]) SetStreamProcessor(processor s
 }
 
 // SetSession 设置会话
-func (b *BaseCommandHandler[TRequest, TResponse]) SetSession(session common.Session) {
+func (b *BaseCommandHandler[TRequest, TResponse]) SetSession(session types.Session) {
 	b.session = session
 }
 
@@ -125,26 +125,22 @@ func (b *BaseCommandHandler[TRequest, TResponse]) CreateErrorResponse(
 
 // ValidateRequest 验证请求（子类可以重写）
 func (b *BaseCommandHandler[TRequest, TResponse]) ValidateRequest(request *TRequest) error {
-	// 默认实现：无验证
 	return nil
 }
 
 // PreProcess 预处理（子类可以重写）
 func (b *BaseCommandHandler[TRequest, TResponse]) PreProcess(ctx *CommandContext, request *TRequest) error {
-	// 默认实现：无预处理
 	return nil
 }
 
 // PostProcess 后处理（子类可以重写）
 func (b *BaseCommandHandler[TRequest, TResponse]) PostProcess(ctx *CommandContext, response *TResponse) error {
-	// 默认实现：无后处理
 	return nil
 }
 
-// ProcessRequest 处理请求的核心逻辑（子类必须实现）
+// ProcessRequest 处理请求（子类必须实现）
 func (b *BaseCommandHandler[TRequest, TResponse]) ProcessRequest(ctx *CommandContext, request *TRequest) (*TResponse, error) {
-	// 子类必须实现这个方法
-	panic("ProcessRequest must be implemented by subclass")
+	return nil, fmt.Errorf("ProcessRequest not implemented")
 }
 
 // GetStreamProcessor 获取流处理器
@@ -153,22 +149,21 @@ func (b *BaseCommandHandler[TRequest, TResponse]) GetStreamProcessor() stream.Pa
 }
 
 // GetSession 获取会话
-func (b *BaseCommandHandler[TRequest, TResponse]) GetSession() common.Session {
+func (b *BaseCommandHandler[TRequest, TResponse]) GetSession() types.Session {
 	return b.session
 }
 
 // LogRequest 记录请求日志
 func (b *BaseCommandHandler[TRequest, TResponse]) LogRequest(ctx *CommandContext, request *TRequest) {
-	utils.Debugf("Processing %v request from %s to %s",
-		b.commandType, ctx.SenderID, ctx.ReceiverID)
+	utils.Debugf("Processing request for command type: %v, connection: %s", b.commandType, ctx.ConnectionID)
 }
 
 // LogResponse 记录响应日志
 func (b *BaseCommandHandler[TRequest, TResponse]) LogResponse(ctx *CommandContext, response *TResponse, err error) {
 	if err != nil {
-		utils.Errorf("Failed to process %v request: %v", b.commandType, err)
+		utils.Errorf("Command handler failed for type: %v, connection: %s, error: %v", b.commandType, ctx.ConnectionID, err)
 	} else {
-		utils.Debugf("Successfully processed %v request", b.commandType)
+		utils.Debugf("Command handler succeeded for type: %v, connection: %s", b.commandType, ctx.ConnectionID)
 	}
 }
 
@@ -195,11 +190,14 @@ func (b *BaseCommandHandler[TRequest, TResponse]) ValidateContext(ctx *CommandCo
 	if ctx == nil {
 		return fmt.Errorf("command context is nil")
 	}
+
 	if ctx.ConnectionID == "" {
-		return fmt.Errorf("connection ID is required")
+		return fmt.Errorf("connection ID is empty")
 	}
-	if ctx.RequestID == "" {
-		return fmt.Errorf("request ID is required")
+
+	if ctx.CommandType == 0 {
+		return fmt.Errorf("command type is invalid")
 	}
+
 	return nil
 }

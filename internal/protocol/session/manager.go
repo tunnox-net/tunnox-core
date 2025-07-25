@@ -1,4 +1,4 @@
-package protocol
+package session
 
 import (
 	"context"
@@ -6,61 +6,39 @@ import (
 	"io"
 	"sync"
 	"time"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/command"
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
 
-// StreamPacket 包装结构，包含连接信息
-type StreamPacket = types.StreamPacket
-
-// StreamConnection 连接信息
-type StreamConnection = types.StreamConnection
-
-// Session 接口定义
-type Session = types.Session
-
-// Connection 连接信息
-type Connection = types.Connection
-
-// ConnectionState 连接状态
-type ConnectionState = types.ConnectionState
-
-// 从 core/types 包导入命令相关类型
-type CommandHandler = types.CommandHandler
-type CommandContext = types.CommandContext
-type CommandResponse = types.CommandResponse
-type CommandRegistry = types.CommandRegistry
-
-// ConnectionSession 实现 Session 接口
-type ConnectionSession struct {
-	connMap       map[string]*Connection
+// SessionManager 实现 Session 接口 (Renamed from ConnectionSession)
+type SessionManager struct {
+	connMap       map[string]*types.Connection
 	connLock      sync.RWMutex
-	idManager     *generators.IDManager
+	idManager     *idgen.IDManager
 	streamMgr     *stream.StreamManager
 	streamFactory stream.StreamFactory
 
 	// 新的命令处理架构
-	commandService  command.CommandService   // 替换 commandRegistry
-	responseManager *session.ResponseManager // 新增：响应管理
-
-	utils.Dispose
+	commandService  command.CommandService // 替换 commandRegistry
+	responseManager *ResponseManager       // 新增：响应管理
+	dispose.Dispose
 }
 
-// NewConnectionSession 创建新的连接会话
-func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Context) *ConnectionSession {
+// NewSessionManager 创建新的连接会话 (Renamed from NewConnectionSession)
+func NewSessionManager(idManager *idgen.IDManager, parentCtx context.Context) *SessionManager {
 	// 创建默认流工厂
 	streamFactory := stream.NewDefaultStreamFactory(parentCtx)
 
 	// 创建流管理器
 	streamMgr := stream.NewStreamManager(streamFactory, parentCtx)
 
-	session := &ConnectionSession{
-		connMap:       make(map[string]*Connection),
+	session := &SessionManager{
+		connMap:       make(map[string]*types.Connection),
 		idManager:     idManager,
 		streamMgr:     streamMgr,
 		streamFactory: streamFactory,
@@ -76,11 +54,11 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 }
 
 // SetCommandService 设置命令服务
-func (s *ConnectionSession) SetCommandService(commandService command.CommandService) {
+func (s *SessionManager) SetCommandService(commandService command.CommandService) {
 	s.commandService = commandService
 
 	// 创建响应管理器
-	s.responseManager = session.NewResponseManager(s, s.Ctx())
+	s.responseManager = NewResponseManager(s, s.Ctx())
 
 	// 设置响应发送器到命令服务
 	if commandService != nil {
@@ -91,33 +69,39 @@ func (s *ConnectionSession) SetCommandService(commandService command.CommandServ
 }
 
 // GetCommandService 获取命令服务
-func (s *ConnectionSession) GetCommandService() command.CommandService {
+func (s *SessionManager) GetCommandService() command.CommandService {
 	return s.commandService
 }
 
 // GetResponseManager 获取响应管理器
-func (s *ConnectionSession) GetResponseManager() *session.ResponseManager {
+func (s *SessionManager) GetResponseManager() *ResponseManager {
 	return s.responseManager
 }
 
 // CreateConnection 创建新连接
-func (s *ConnectionSession) CreateConnection(reader io.Reader, writer io.Writer) (*Connection, error) {
+func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*types.Connection, error) {
 	// 生成连接ID
 	connID, err := s.idManager.GenerateConnectionID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate connection ID: %w", err)
+		return nil, fmt.Errorf("failed to generate connection ID: %v", err)
 	}
 
-	// 创建流连接
-	streamConn := s.streamFactory.NewStreamProcessor(reader, writer)
+	// 创建流处理器
+	streamProcessor, err := s.streamMgr.CreateStream(connID, reader, writer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stream processor: %v", err)
+	}
 
-	// 创建连接对象
-	conn := &Connection{
-		ID:        connID,
-		State:     types.StateInitializing,
-		Stream:    streamConn,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+	// 创建连接信息
+	conn := &types.Connection{
+		ID:            connID,
+		State:         types.StateInitializing,
+		Stream:        streamProcessor,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		LastHeartbeat: time.Now(),
+		ClientInfo:    "",
+		Protocol:      "",
 	}
 
 	// 添加到连接映射
@@ -129,35 +113,56 @@ func (s *ConnectionSession) CreateConnection(reader io.Reader, writer io.Writer)
 	return conn, nil
 }
 
-// AcceptConnection 接受连接（实现 Session 接口）
-func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer) (*StreamConnection, error) {
+// AcceptConnection 初始化连接
+func (s *SessionManager) AcceptConnection(reader io.Reader, writer io.Writer) (*types.StreamConnection, error) {
 	// 创建连接
 	conn, err := s.CreateConnection(reader, writer)
 	if err != nil {
 		return nil, err
 	}
 
-	// 更新连接状态为已连接
+	// 更新连接状态
 	if err := s.UpdateConnectionState(conn.ID, types.StateConnected); err != nil {
-		utils.Warnf("Failed to update connection state: %v", err)
+		return nil, err
 	}
 
-	// 返回流连接
-	return &StreamConnection{
+	// 尝试读取第一个数据包来确定连接类型
+	streamConn := &types.StreamConnection{
 		ID:     conn.ID,
 		Stream: conn.Stream,
-	}, nil
+	}
+
+	// 读取数据包
+	packet, _, err := conn.Stream.ReadPacket()
+	if err != nil {
+		utils.Warnf("Failed to read initial packet for connection %s: %v", conn.ID, err)
+		// 即使读取失败，也返回连接信息，让上层决定如何处理
+		return streamConn, nil
+	}
+
+	// 处理数据包
+	if err := s.ProcessPacket(conn.ID, packet); err != nil {
+		utils.Warnf("Failed to process initial packet for connection %s: %v", conn.ID, err)
+	}
+
+	return streamConn, nil
 }
 
 // ProcessPacket 处理数据包
-func (s *ConnectionSession) ProcessPacket(connID string, packet *packet.TransferPacket) error {
-	// 更新连接状态为活跃
-	if err := s.UpdateConnectionState(connID, types.StateActive); err != nil {
-		utils.Warnf("Failed to update connection state: %v", err)
+func (s *SessionManager) ProcessPacket(connID string, packet *packet.TransferPacket) error {
+	// 获取连接信息
+	_, exists := s.GetConnection(connID)
+	if !exists {
+		return fmt.Errorf("connection %s not found", connID)
 	}
 
-	// 创建流数据包
-	streamPacket := &StreamPacket{
+	// 更新连接状态
+	if err := s.UpdateConnectionState(connID, types.StateActive); err != nil {
+		return err
+	}
+
+	// 创建数据包上下文
+	streamPacket := &types.StreamPacket{
 		ConnectionID: connID,
 		Packet:       packet,
 		Timestamp:    time.Now(),
@@ -168,7 +173,7 @@ func (s *ConnectionSession) ProcessPacket(connID string, packet *packet.Transfer
 }
 
 // HandlePacket 处理数据包
-func (s *ConnectionSession) HandlePacket(connPacket *StreamPacket) error {
+func (s *SessionManager) HandlePacket(connPacket *types.StreamPacket) error {
 	utils.Infof("Processing packet for connection: %s, type: %v",
 		connPacket.ConnectionID, connPacket.Packet.PacketType)
 
@@ -188,7 +193,7 @@ func (s *ConnectionSession) HandlePacket(connPacket *StreamPacket) error {
 }
 
 // handleCommandPacket 处理命令包
-func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error {
+func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) error {
 	utils.Infof("Processing command packet for connection: %s, command: %v",
 		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
@@ -231,7 +236,7 @@ func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error 
 }
 
 // handleDefaultCommand 处理默认命令（临时实现）
-func (s *ConnectionSession) handleDefaultCommand(connPacket *StreamPacket) error {
+func (s *SessionManager) handleDefaultCommand(connPacket *types.StreamPacket) error {
 	utils.Infof("Handling default command for connection: %s, type: %v",
 		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
@@ -250,7 +255,7 @@ func (s *ConnectionSession) handleDefaultCommand(connPacket *StreamPacket) error
 }
 
 // handleHeartbeat 处理心跳包
-func (s *ConnectionSession) handleHeartbeat(connPacket *StreamPacket) error {
+func (s *SessionManager) handleHeartbeat(connPacket *types.StreamPacket) error {
 	utils.Debugf("Received heartbeat for connection: %s", connPacket.ConnectionID)
 
 	// 更新连接的最后活动时间
@@ -266,7 +271,7 @@ func (s *ConnectionSession) handleHeartbeat(connPacket *StreamPacket) error {
 }
 
 // GetConnection 获取连接信息
-func (s *ConnectionSession) GetConnection(connID string) (*Connection, bool) {
+func (s *SessionManager) GetConnection(connID string) (*types.Connection, bool) {
 	s.connLock.RLock()
 	defer s.connLock.RUnlock()
 	conn, exists := s.connMap[connID]
@@ -274,11 +279,11 @@ func (s *ConnectionSession) GetConnection(connID string) (*Connection, bool) {
 }
 
 // ListConnections 列出所有连接
-func (s *ConnectionSession) ListConnections() []*Connection {
+func (s *SessionManager) ListConnections() []*types.Connection {
 	s.connLock.RLock()
 	defer s.connLock.RUnlock()
 
-	connections := make([]*Connection, 0, len(s.connMap))
+	connections := make([]*types.Connection, 0, len(s.connMap))
 	for _, conn := range s.connMap {
 		connections = append(connections, conn)
 	}
@@ -286,7 +291,7 @@ func (s *ConnectionSession) ListConnections() []*Connection {
 }
 
 // UpdateConnectionState 更新连接状态
-func (s *ConnectionSession) UpdateConnectionState(connID string, state ConnectionState) error {
+func (s *SessionManager) UpdateConnectionState(connID string, state types.ConnectionState) error {
 	s.connLock.Lock()
 	defer s.connLock.Unlock()
 
@@ -304,7 +309,7 @@ func (s *ConnectionSession) UpdateConnectionState(connID string, state Connectio
 }
 
 // CloseConnection 关闭连接
-func (s *ConnectionSession) CloseConnection(connectionId string) error {
+func (s *SessionManager) CloseConnection(connectionId string) error {
 	s.connLock.Lock()
 	defer s.connLock.Unlock()
 
@@ -317,7 +322,7 @@ func (s *ConnectionSession) CloseConnection(connectionId string) error {
 	conn.State = types.StateClosing
 	conn.UpdatedAt = time.Now()
 
-	// 关闭流
+	// 关闭流处理器
 	if conn.Stream != nil {
 		conn.Stream.Close()
 	}
@@ -330,25 +335,25 @@ func (s *ConnectionSession) CloseConnection(connectionId string) error {
 }
 
 // GetStreamManager 获取流管理器
-func (s *ConnectionSession) GetStreamManager() *stream.StreamManager {
+func (s *SessionManager) GetStreamManager() *stream.StreamManager {
 	return s.streamMgr
 }
 
 // GetStreamConnectionInfo 获取流连接信息
-func (s *ConnectionSession) GetStreamConnectionInfo(connectionId string) (*StreamConnection, bool) {
+func (s *SessionManager) GetStreamConnectionInfo(connectionId string) (*types.StreamConnection, bool) {
 	conn, exists := s.GetConnection(connectionId)
 	if !exists {
 		return nil, false
 	}
 
-	return &StreamConnection{
+	return &types.StreamConnection{
 		ID:     conn.ID,
 		Stream: conn.Stream,
 	}, true
 }
 
 // GetActiveConnections 获取活跃连接数
-func (s *ConnectionSession) GetActiveConnections() int {
+func (s *SessionManager) GetActiveConnections() int {
 	s.connLock.RLock()
 	defer s.connLock.RUnlock()
 
@@ -362,7 +367,7 @@ func (s *ConnectionSession) GetActiveConnections() int {
 }
 
 // onClose 资源清理回调
-func (s *ConnectionSession) onClose() error {
+func (s *SessionManager) onClose() error {
 	utils.Infof("Cleaning up connection session resources...")
 
 	// 清理命令服务
@@ -382,13 +387,13 @@ func (s *ConnectionSession) onClose() error {
 	}
 
 	// 获取所有连接信息的副本，避免在锁内调用 Close
-	var connections []*Connection
+	var connections []*types.Connection
 	s.connLock.Lock()
 	for _, connInfo := range s.connMap {
 		connections = append(connections, connInfo)
 	}
 	// 清空连接映射
-	s.connMap = make(map[string]*Connection)
+	s.connMap = make(map[string]*types.Connection)
 	s.connLock.Unlock()
 
 	// 在锁外记录清理的连接
