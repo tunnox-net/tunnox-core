@@ -198,5 +198,6 @@ func (ce *CommandExecutor) generateRequestID() string {
 // SetSession 设置会话对象
 func (ce *CommandExecutor) SetSession(session common.Session) {
 	// 这个方法需要在外部调用时设置Session
-	// 暂时为空实现
+	// 暂时为空实现，因为需要避免循环导入
+	// TODO: 实现 Session 设置逻辑
 }

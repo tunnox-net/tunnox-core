@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/cloud/generators"
-	"tunnox-core/internal/command"
 	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -29,11 +28,11 @@ type Connection = common.Connection
 // ConnectionState 连接状态
 type ConnectionState = common.ConnectionState
 
-// 从 command 包导入类型
-type CommandHandler = command.CommandHandler
-type CommandContext = command.CommandContext
-type CommandResponse = command.CommandResponse
-type CommandRegistry = command.CommandRegistry
+// 从 common 包导入命令相关类型
+type CommandHandler = common.CommandHandler
+type CommandContext = common.CommandContext
+type CommandResponse = common.CommandResponse
+type CommandRegistry = common.CommandRegistry
 
 // ConnectionSession 实现 Session 接口
 type ConnectionSession struct {
@@ -42,7 +41,7 @@ type ConnectionSession struct {
 	idManager       *generators.IDManager
 	streamMgr       *stream.StreamManager
 	streamFactory   stream.StreamFactory
-	commandRegistry *CommandRegistry
+	commandRegistry CommandRegistry
 
 	utils.Dispose
 }
@@ -60,11 +59,8 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 		idManager:       idManager,
 		streamMgr:       streamMgr,
 		streamFactory:   streamFactory,
-		commandRegistry: command.NewCommandRegistry(),
+		commandRegistry: nil, // 暂时设为 nil，通过 SetCommandRegistry 方法设置
 	}
-
-	// 注册默认命令处理器
-	session.registerDefaultHandlers()
 
 	// 设置资源清理回调
 	session.SetCtx(parentCtx, session.onClose)
@@ -72,11 +68,22 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 	return session
 }
 
+// SetCommandRegistry 设置命令注册表
+func (s *ConnectionSession) SetCommandRegistry(registry CommandRegistry) {
+	s.commandRegistry = registry
+	// 注册默认命令处理器
+	s.registerDefaultHandlers()
+}
+
 // registerDefaultHandlers 注册默认命令处理器
 func (s *ConnectionSession) registerDefaultHandlers() {
-	// 暂时使用空的处理器列表，避免循环导入
-	// TODO: 在重构完成后，将具体的处理器实现移到这里
-	utils.Infof("Command handlers will be registered after refactoring")
+	if s.commandRegistry == nil {
+		utils.Warnf("Command registry is nil, skipping handler registration")
+		return
+	}
+
+	// 注意：处理器注册应该在外部通过 SetCommandRegistry 方法传入已配置的注册表
+	utils.Infof("Command registry set, handlers should be pre-registered")
 }
 
 // CreateConnection 创建新连接
@@ -198,6 +205,12 @@ func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error 
 	utils.Infof("Processing command packet for connection: %s, command: %v",
 		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
+	// 检查命令注册表是否已设置
+	if s.commandRegistry == nil {
+		utils.Warnf("Command registry is nil, using default command handler")
+		return s.handleDefaultCommand(connPacket)
+	}
+
 	// 获取命令处理器
 	handler, exists := s.commandRegistry.GetHandler(connPacket.Packet.CommandPacket.CommandType)
 	if !exists {
@@ -244,27 +257,15 @@ func (s *ConnectionSession) handleDefaultCommand(connPacket *StreamPacket) error
 	utils.Infof("Handling default command for connection: %s, type: %v",
 		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
-	// 根据命令类型进行简单处理
-	switch connPacket.Packet.CommandPacket.CommandType {
-	case packet.TcpMap:
-		utils.Infof("TODO: Handle TCP mapping command")
-	case packet.HttpMap:
-		utils.Infof("TODO: Handle HTTP mapping command")
-	case packet.SocksMap:
-		utils.Infof("TODO: Handle SOCKS mapping command")
-	case packet.DataIn:
-		utils.Infof("TODO: Handle DataIn command")
-	case packet.DataOut:
-		utils.Infof("TODO: Handle DataOut command")
-	case packet.Forward:
-		utils.Infof("TODO: Handle Forward command")
-	case packet.Disconnect:
-		utils.Infof("TODO: Handle Disconnect command")
+	// 对于未知命令类型，记录警告并返回
+	utils.Warnf("Unknown command type: %v for connection %s",
+		connPacket.Packet.CommandPacket.CommandType, connPacket.ConnectionID)
+
+	// 特殊处理断开连接命令
+	if connPacket.Packet.CommandPacket.CommandType == packet.Disconnect {
 		if err := s.CloseConnection(connPacket.ConnectionID); err != nil {
 			utils.Warnf("Failed to close connection %s: %v", connPacket.ConnectionID, err)
 		}
-	default:
-		utils.Warnf("Unknown command type: %v", connPacket.Packet.CommandPacket.CommandType)
 	}
 
 	return nil

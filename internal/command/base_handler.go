@@ -21,7 +21,7 @@ const (
 // BaseCommandHandler 基础命令处理器，提供通用的辅助方法和类型安全
 type BaseCommandHandler[TRequest any, TResponse any] struct {
 	commandType       packet.CommandType
-	responseType      ResponseType
+	responseType      CommandResponseType
 	communicationMode CommunicationMode
 	streamProcessor   stream.PackageStreamer
 	session           common.Session
@@ -30,7 +30,7 @@ type BaseCommandHandler[TRequest any, TResponse any] struct {
 // NewBaseCommandHandler 创建基础命令处理器
 func NewBaseCommandHandler[TRequest any, TResponse any](
 	commandType packet.CommandType,
-	responseType ResponseType,
+	responseType CommandResponseType,
 	communicationMode CommunicationMode,
 ) *BaseCommandHandler[TRequest, TResponse] {
 	return &BaseCommandHandler[TRequest, TResponse]{
@@ -56,7 +56,7 @@ func (b *BaseCommandHandler[TRequest, TResponse]) GetCommandType() packet.Comman
 }
 
 // GetResponseType 获取响应类型
-func (b *BaseCommandHandler[TRequest, TResponse]) GetResponseType() ResponseType {
+func (b *BaseCommandHandler[TRequest, TResponse]) GetResponseType() CommandResponseType {
 	return b.responseType
 }
 

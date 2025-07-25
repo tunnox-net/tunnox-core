@@ -7,7 +7,7 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// CommandRegistry 命令注册表
+// CommandRegistry 命令注册表，实现 common.CommandRegistry 接口
 type CommandRegistry struct {
 	handlers map[packet.CommandType]CommandHandler
 	mu       sync.RWMutex

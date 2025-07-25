@@ -9,7 +9,7 @@ import (
 // MockCommandHandler 模拟命令处理器
 type MockCommandHandler struct {
 	commandType  packet.CommandType
-	responseType ResponseType
+	responseType CommandResponseType
 	handleFunc   func(*CommandContext) (*CommandResponse, error)
 }
 
@@ -21,7 +21,7 @@ func (m *MockCommandHandler) Handle(ctx *CommandContext) (*CommandResponse, erro
 	return &CommandResponse{Success: true, Data: string(data)}, nil
 }
 
-func (m *MockCommandHandler) GetResponseType() ResponseType {
+func (m *MockCommandHandler) GetResponseType() CommandResponseType {
 	return m.responseType
 }
 

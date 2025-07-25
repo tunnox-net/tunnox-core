@@ -27,10 +27,10 @@ func NewBaseHandler(cmdType packet.CommandType, category CommandCategory, direct
 	}
 }
 
-func (h *BaseHandler) GetCommandType() packet.CommandType { return h.commandType }
-func (h *BaseHandler) GetCategory() CommandCategory       { return h.category }
-func (h *BaseHandler) GetDirection() CommandDirection     { return h.direction }
-func (h *BaseHandler) GetResponseType() ResponseType      { return ResponseType(h.direction) }
+func (h *BaseHandler) GetCommandType() packet.CommandType   { return h.commandType }
+func (h *BaseHandler) GetCategory() CommandCategory         { return h.category }
+func (h *BaseHandler) GetDirection() CommandDirection       { return h.direction }
+func (h *BaseHandler) GetResponseType() CommandResponseType { return CommandResponseType(h.direction) }
 
 // TcpMapHandler TCP映射处理器
 type TcpMapHandler struct {
