@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 	"time"
-	"tunnox-core/internal/protocol"
 )
 
 func TestUdpAdapterBasic(t *testing.T) {
@@ -12,7 +11,7 @@ func TestUdpAdapterBasic(t *testing.T) {
 	defer cancel()
 
 	// 测试基本功能
-	adapter := protocol.NewUdpAdapter(ctx, nil)
+	adapter := NewUdpAdapter(ctx, nil)
 
 	// 测试名称
 	if adapter.Name() != "udp" {
@@ -37,7 +36,7 @@ func TestUdpAdapterName(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	adapter := protocol.NewUdpAdapter(ctx, nil)
+	adapter := NewUdpAdapter(ctx, nil)
 
 	if adapter.Name() != "udp" {
 		t.Errorf("Expected name 'udp', got '%s'", adapter.Name())
@@ -48,7 +47,7 @@ func TestUdpAdapterAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	adapter := protocol.NewUdpAdapter(ctx, nil)
+	adapter := NewUdpAdapter(ctx, nil)
 	testAddr := "localhost:8080"
 
 	adapter.ListenFrom(testAddr)

@@ -1,10 +1,11 @@
-package protocol
+package adapter
 
 import (
 	"context"
 	"fmt"
 	"io"
 	"net"
+	"tunnox-core/internal/protocol/session"
 )
 
 // TcpConn TCP连接包装器
@@ -21,7 +22,7 @@ type TcpAdapter struct {
 	listener net.Listener
 }
 
-func NewTcpAdapter(parentCtx context.Context, session Session) *TcpAdapter {
+func NewTcpAdapter(parentCtx context.Context, session session.Session) *TcpAdapter {
 	t := &TcpAdapter{}
 	t.SetName("tcp")
 	t.SetSession(session)

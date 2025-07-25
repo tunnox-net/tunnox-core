@@ -1,4 +1,4 @@
-package protocol
+package adapter
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"net"
 	"time"
+	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/utils"
 
 	"github.com/quic-go/quic-go"
@@ -42,7 +43,7 @@ type QuicAdapter struct {
 }
 
 // NewQuicAdapter 创建新的QUIC适配器
-func NewQuicAdapter(parentCtx context.Context, session Session) *QuicAdapter {
+func NewQuicAdapter(parentCtx context.Context, session session.Session) *QuicAdapter {
 	adapter := &QuicAdapter{
 		tlsConfig: generateTLSConfig(),
 	}

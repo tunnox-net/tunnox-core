@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"fmt"
+	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/utils"
 )
 
@@ -59,7 +60,7 @@ func (ps *ProtocolService) GetManager() *Manager {
 }
 
 // RegisterAdapter 注册协议适配器
-func (ps *ProtocolService) RegisterAdapter(adapter Adapter) {
+func (ps *ProtocolService) RegisterAdapter(adapter adapter.Adapter) {
 	ps.manager.Register(adapter)
 }
 

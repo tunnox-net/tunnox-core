@@ -3,7 +3,6 @@ package adapter
 import (
 	"context"
 	"testing"
-	"tunnox-core/internal/protocol"
 )
 
 func TestWebSocketAdapterBasic(t *testing.T) {
@@ -11,7 +10,7 @@ func TestWebSocketAdapterBasic(t *testing.T) {
 	defer cancel()
 
 	// 测试基本功能
-	adapter := protocol.NewWebSocketAdapter(ctx, nil)
+	adapter := NewWebSocketAdapter(ctx, nil)
 
 	// 测试名称
 	if adapter.Name() != "websocket" {
@@ -33,7 +32,7 @@ func TestWebSocketAdapterName(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	adapter := protocol.NewWebSocketAdapter(ctx, nil)
+	adapter := NewWebSocketAdapter(ctx, nil)
 
 	if adapter.Name() != "websocket" {
 		t.Errorf("Expected name 'websocket', got '%s'", adapter.Name())
@@ -44,7 +43,7 @@ func TestWebSocketAdapterAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	adapter := protocol.NewWebSocketAdapter(ctx, nil)
+	adapter := NewWebSocketAdapter(ctx, nil)
 	testAddr := "localhost:8080"
 
 	adapter.ListenFrom(testAddr)

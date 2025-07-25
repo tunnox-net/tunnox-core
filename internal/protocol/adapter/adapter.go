@@ -1,28 +1,14 @@
-package protocol
+package adapter
 
 import (
 	"fmt"
 	"io"
 	"net"
 	"sync"
+	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
-
-// TimeoutError 超时错误类型
-type TimeoutError struct {
-	Protocol string
-}
-
-func (e *TimeoutError) Error() string {
-	return fmt.Sprintf("timeout waiting for %s", e.Protocol)
-}
-
-// IsTimeoutError 检查是否为超时错误
-func IsTimeoutError(err error) bool {
-	_, ok := err.(*TimeoutError)
-	return ok
-}
 
 // Adapter 协议适配器统一接口
 type Adapter interface {
@@ -41,7 +27,7 @@ type BaseAdapter struct {
 	utils.Dispose
 	name        string
 	addr        string
-	session     Session
+	session     session.Session
 	active      bool
 	connMutex   sync.RWMutex
 	stream      stream.PackageStreamer
@@ -65,12 +51,12 @@ func (b *BaseAdapter) SetName(n string) { b.name = n }
 func (b *BaseAdapter) SetAddr(a string) { b.addr = a }
 
 // SetSession 设置会话
-func (b *BaseAdapter) SetSession(session Session) {
+func (b *BaseAdapter) SetSession(session session.Session) {
 	b.session = session
 }
 
 // GetSession 获取会话
-func (b *BaseAdapter) GetSession() Session {
+func (b *BaseAdapter) GetSession() session.Session {
 	return b.session
 }
 

@@ -12,6 +12,7 @@ import (
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/protocol"
+	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -63,16 +64,16 @@ func NewProtocolFactory(session *session.SessionManager) *ProtocolFactory {
 }
 
 // CreateAdapter 创建协议适配器
-func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Context) (protocol.Adapter, error) {
+func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Context) (adapter.Adapter, error) {
 	switch protocolName {
 	case "tcp":
-		return protocol.NewTcpAdapter(ctx, pf.session), nil
+		return adapter.NewTcpAdapter(ctx, pf.session), nil
 	case "websocket":
-		return protocol.NewWebSocketAdapter(ctx, pf.session), nil
+		return adapter.NewWebSocketAdapter(ctx, pf.session), nil
 	case "udp":
-		return protocol.NewUdpAdapter(ctx, pf.session), nil
+		return adapter.NewUdpAdapter(ctx, pf.session), nil
 	case "quic":
-		return protocol.NewQuicAdapter(ctx, pf.session), nil
+		return adapter.NewQuicAdapter(ctx, pf.session), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %s", protocolName)
 	}

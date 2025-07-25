@@ -3,12 +3,13 @@ package protocol
 import (
 	"context"
 	"sync"
+	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/utils"
 )
 
 type Manager struct {
 	dispose  utils.Dispose
-	adapters []Adapter
+	adapters []adapter.Adapter
 	lock     sync.Mutex
 }
 
@@ -24,7 +25,7 @@ func NewManager(parentCtx context.Context) *Manager {
 	return pm
 }
 
-func (pm *Manager) Register(adapter Adapter) {
+func (pm *Manager) Register(adapter adapter.Adapter) {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
 	pm.adapters = append(pm.adapters, adapter)

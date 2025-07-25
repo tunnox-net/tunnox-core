@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 	"time"
-	"tunnox-core/internal/protocol"
 )
 
 func TestQuicAdapterBasic(t *testing.T) {
@@ -12,7 +11,7 @@ func TestQuicAdapterBasic(t *testing.T) {
 	defer cancel()
 
 	// 测试基本功能
-	adapter := protocol.NewQuicAdapter(ctx, nil)
+	adapter := NewQuicAdapter(ctx, nil)
 
 	// 测试名称
 	if adapter.Name() != "quic" {
@@ -48,7 +47,7 @@ func TestQuicAdapterName(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	adapter := protocol.NewQuicAdapter(ctx, nil)
+	adapter := NewQuicAdapter(ctx, nil)
 
 	if adapter.Name() != "quic" {
 		t.Errorf("Expected name 'quic', got '%s'", adapter.Name())
@@ -59,7 +58,7 @@ func TestQuicAdapterAddress(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	adapter := protocol.NewQuicAdapter(ctx, nil)
+	adapter := NewQuicAdapter(ctx, nil)
 	testAddr := "localhost:8080"
 
 	adapter.ListenFrom(testAddr)

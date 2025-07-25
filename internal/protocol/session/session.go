@@ -1,4 +1,4 @@
-package protocol
+package session
 
 import (
 	"tunnox-core/internal/core/types"

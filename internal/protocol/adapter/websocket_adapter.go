@@ -1,4 +1,4 @@
-package protocol
+package adapter
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
@@ -69,7 +70,7 @@ type WebSocketAdapter struct {
 }
 
 // NewWebSocketAdapter 创建新的WebSocket适配器
-func NewWebSocketAdapter(parentCtx context.Context, session Session) *WebSocketAdapter {
+func NewWebSocketAdapter(parentCtx context.Context, session session.Session) *WebSocketAdapter {
 	adapter := &WebSocketAdapter{
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {

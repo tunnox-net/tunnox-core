@@ -3,7 +3,6 @@ package adapter
 import (
 	"fmt"
 	"io"
-	"net"
 	"sync"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/types"
@@ -26,18 +25,6 @@ func IsTimeoutError(err error) bool {
 	return ok
 }
 
-// Adapter 协议适配器统一接口
-type Adapter interface {
-	ConnectTo(serverAddr string) error
-	ListenFrom(serverAddr string) error
-	Name() string
-	GetReader() io.Reader
-	GetWriter() io.Writer
-	Close() error
-	SetAddr(addr string)
-	GetAddr() string
-}
-
 // ProtocolAdapterBase 基础适配器，提供通用的连接管理和流处理逻辑 (Renamed from BaseAdapter)
 type ProtocolAdapterBase struct {
 	dispose.Dispose
@@ -48,16 +35,6 @@ type ProtocolAdapterBase struct {
 	connMutex   sync.RWMutex
 	stream      stream.PackageStreamer
 	streamMutex sync.RWMutex
-}
-
-// 协议适配器接口，子类需要实现
-type ProtocolAdapter interface {
-	Adapter
-	// 协议特定的方法
-	Dial(addr string) (io.ReadWriteCloser, error)
-	Listen(addr string) error            // 直接启动监听，不需要返回监听器
-	Accept() (io.ReadWriteCloser, error) // 直接在适配器中实现Accept
-	getConnectionType() string
 }
 
 func (b *ProtocolAdapterBase) GetAddr() string  { return b.addr }
@@ -138,21 +115,6 @@ func (b *ProtocolAdapterBase) acceptLoop(adapter ProtocolAdapter) {
 
 		go b.handleConnection(adapter, conn)
 	}
-}
-
-// isIgnorableError 检查是否为可忽略的错误
-func isIgnorableError(err error) bool {
-	// 检查是否为自定义超时错误
-	if IsTimeoutError(err) {
-		return true
-	}
-
-	// 检查是否为网络超时错误
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-		return true
-	}
-
-	return false
 }
 
 // handleConnection 通用连接处理逻辑

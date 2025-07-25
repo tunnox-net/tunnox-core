@@ -1,4 +1,4 @@
-package protocol
+package adapter
 
 import (
 	"context"
@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"time"
+	"tunnox-core/internal/protocol/session"
 )
 
 // UdpConn UDP连接包装器
@@ -37,7 +38,7 @@ type UdpAdapter struct {
 }
 
 // NewUdpAdapter 创建新的UDP适配器
-func NewUdpAdapter(parentCtx context.Context, session Session) *UdpAdapter {
+func NewUdpAdapter(parentCtx context.Context, session session.Session) *UdpAdapter {
 	adapter := &UdpAdapter{}
 	adapter.SetName("udp")
 	adapter.SetSession(session)
