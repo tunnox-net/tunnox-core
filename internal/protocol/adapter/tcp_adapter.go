@@ -75,7 +75,8 @@ func (t *TcpAdapter) ListenFrom(listenAddr string) error {
 		return fmt.Errorf("address not set")
 	}
 
-	utils.Infof("TcpAdapter.ListenFrom called for adapter: %s, type: %T", t.Name(), t)
+	// 精简日志：只在调试模式下输出适配器监听信息
+	utils.Debugf("TcpAdapter.ListenFrom called for adapter: %s", t.Name())
 
 	// 直接使用自身作为ProtocolAdapter
 	if err := t.Listen(t.Addr()); err != nil {

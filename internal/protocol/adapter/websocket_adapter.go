@@ -142,7 +142,8 @@ func (w *WebSocketAdapter) ListenFrom(listenAddr string) error {
 		return fmt.Errorf("address not set")
 	}
 
-	utils.Infof("WebSocketAdapter.ListenFrom called for adapter: %s, type: %T", w.Name(), w)
+	// 精简日志：只在调试模式下输出适配器监听信息
+	utils.Debugf("WebSocketAdapter.ListenFrom called for adapter: %s", w.Name())
 
 	// 直接使用自身作为ProtocolAdapter
 	if err := w.Listen(w.Addr()); err != nil {

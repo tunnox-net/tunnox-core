@@ -30,10 +30,12 @@ func NewLockFactory(storage storages.Storage) *LockFactory {
 func (f *LockFactory) CreateLock(lockType LockType, owner string) (DistributedLock, error) {
 	switch lockType {
 	case LockTypeMemory:
-		utils.Infof("Creating memory-based distributed lock")
+		// 精简日志：只在调试模式下输出锁创建信息
+		utils.Debugf("Creating memory-based distributed lock")
 		return NewMemoryLock(), nil
 	case LockTypeStorage:
-		utils.Infof("Creating storage-based distributed lock for owner: %s", owner)
+		// 精简日志：只在调试模式下输出锁创建信息
+		utils.Debugf("Creating storage-based distributed lock for owner: %s", owner)
 		return NewStorageBasedLock(f.storage, owner), nil
 	default:
 		return nil, fmt.Errorf("unsupported lock type: %s", lockType)

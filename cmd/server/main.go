@@ -98,7 +98,8 @@ func (cs *CloudService) Name() string {
 }
 
 func (cs *CloudService) Start(ctx context.Context) error {
-	utils.Infof("Starting cloud service: %s", cs.name)
+	// 精简日志：只在调试模式下输出服务启动信息
+	utils.Debugf("Starting cloud service: %s", cs.name)
 	// 云控制器通常不需要显式启动
 	return nil
 }
@@ -247,9 +248,7 @@ func (s *Server) registerServices() {
 		}
 	}
 
-	utils.Infof("Registered %d services and %d resources",
-		s.serviceManager.GetServiceCount(),
-		s.serviceManager.GetResourceCount())
+	utils.Infof("Registered %d services", s.serviceManager.GetServiceCount())
 }
 
 // setupProtocolAdapters 设置协议适配器
@@ -279,10 +278,11 @@ func (s *Server) setupProtocolAdapters() error {
 		s.protocolMgr.Register(adapter)
 		registeredProtocols = append(registeredProtocols, protocolName)
 
-		utils.Infof(constants.MsgAdapterConfigured, capitalize(protocolName), addr)
+		// 精简日志：只在调试模式下输出适配器配置信息
+		utils.Debugf(constants.MsgAdapterConfigured, capitalize(protocolName), addr)
 	}
 
-	utils.Infof(constants.MsgRegisteredAdapters, len(registeredProtocols), registeredProtocols)
+	utils.Infof("Registered %d protocol adapters", len(registeredProtocols))
 	return nil
 }
 

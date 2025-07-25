@@ -105,7 +105,8 @@ func (q *QuicAdapter) ListenFrom(listenAddr string) error {
 		return fmt.Errorf("address not set")
 	}
 
-	utils.Infof("QuicAdapter.ListenFrom called for adapter: %s, type: %T", q.Name(), q)
+	// 精简日志：只在调试模式下输出适配器监听信息
+	utils.Debugf("QuicAdapter.ListenFrom called for adapter: %s", q.Name())
 
 	// 直接使用自身作为ProtocolAdapter
 	if err := q.Listen(q.Addr()); err != nil {

@@ -96,7 +96,8 @@ func (b *BaseAdapter) ListenFrom(listenAddr string) error {
 		return fmt.Errorf("address not set")
 	}
 
-	utils.Infof("BaseAdapter.ListenFrom called for adapter: %s, type: %T", b.Name(), b)
+	// 精简日志：只在调试模式下输出适配器监听信息
+	utils.Debugf("BaseAdapter.ListenFrom called for adapter: %s", b.Name())
 
 	// 通过类型断言获取协议适配器
 	protocolAdapter, ok := any(b).(ProtocolAdapter)

@@ -30,14 +30,16 @@ func (ps *ProtocolService) Name() string {
 // Start 启动协议服务
 func (ps *ProtocolService) Start(ctx context.Context) error {
 	ps.ctx = ctx
-	utils.Infof("Starting protocol service: %s", ps.name)
+	// 精简日志：只在调试模式下输出服务启动信息
+	utils.Debugf("Starting protocol service: %s", ps.name)
 
 	// 启动所有协议适配器
 	if err := ps.manager.StartAll(); err != nil {
 		return fmt.Errorf("failed to start protocol service %s: %v", ps.name, err)
 	}
 
-	utils.Infof("Protocol service started: %s", ps.name)
+	// 精简日志：只在调试模式下输出服务启动完成信息
+	utils.Debugf("Protocol service started: %s", ps.name)
 	return nil
 }
 

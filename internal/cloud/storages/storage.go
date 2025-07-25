@@ -69,7 +69,8 @@ func (m *MemoryStorage) Set(key string, value interface{}, ttl time.Duration) er
 		value:      value,
 		expiration: expiration,
 	}
-	utils.Infof("MemoryStorage.Set: stored key %s, value type: %T, expiration: %v", key, value, expiration)
+	// 精简日志：只在调试模式下输出存储设置信息
+	utils.Debugf("MemoryStorage.Set: stored key %s", key)
 	return nil
 }
 
@@ -115,7 +116,8 @@ func (m *MemoryStorage) Exists(key string) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	utils.Infof("MemoryStorage.Exists: checking key %s, data map size: %d", key, len(m.data))
+	// 精简日志：只在调试模式下输出存储检查信息
+	utils.Debugf("MemoryStorage.Exists: checking key %s", key)
 	if m.data == nil {
 		utils.Debugf("MemoryStorage.Exists: data map is nil for key %s", key)
 		return false, nil
@@ -129,12 +131,14 @@ func (m *MemoryStorage) Exists(key string) (bool, error) {
 
 	// 修复：零值时间表示永不过期
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		utils.Infof("MemoryStorage.Exists: key %s expired, deleting", key)
+		// 精简日志：只在调试模式下输出存储过期信息
+		utils.Debugf("MemoryStorage.Exists: key %s expired, deleting", key)
 		delete(m.data, key)
 		return false, nil
 	}
 
-	utils.Infof("MemoryStorage.Exists: key %s exists and not expired", key)
+	// 精简日志：只在调试模式下输出存储存在信息
+	utils.Debugf("MemoryStorage.Exists: key %s exists and not expired", key)
 	return true, nil
 }
 

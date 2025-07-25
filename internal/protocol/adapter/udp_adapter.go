@@ -110,7 +110,8 @@ func (u *UdpAdapter) ListenFrom(listenAddr string) error {
 		return fmt.Errorf("address not set")
 	}
 
-	utils.Infof("UdpAdapter.ListenFrom called for adapter: %s, type: %T", u.Name(), u)
+	// 精简日志：只在调试模式下输出适配器监听信息
+	utils.Debugf("UdpAdapter.ListenFrom called for adapter: %s", u.Name())
 
 	// 直接使用自身作为ProtocolAdapter
 	if err := u.Listen(u.Addr()); err != nil {
