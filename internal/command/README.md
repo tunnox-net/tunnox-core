@@ -114,14 +114,14 @@ executor.AddMiddleware(NewRetryMiddleware(3, backoff, retryable))
 
 ### 3. 集成到Session
 ```go
-// 在ConnectionSession中集成
-type ConnectionSession struct {
+// 在SessionManager中集成
+type SessionManager struct {
     // ... 其他字段
     commandExecutor *command.CommandExecutor
 }
 
 // 在handleCommandPacket中使用
-func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error {
+func (s *SessionManager) handleCommandPacket(connPacket *StreamPacket) error {
     return s.commandExecutor.Execute(connPacket)
 }
 ```

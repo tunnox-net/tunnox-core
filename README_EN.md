@@ -207,7 +207,7 @@ graph TB
 
 **Session Layer**
 - Connection session management and lifecycle control
-- Main components: ConnectionSession, StreamManager
+- Main components: SessionManager, StreamManager
 
 **Stream Management Layer**
 - Unified management and registration of stream components
@@ -245,7 +245,7 @@ graph TB
     %% Session Layer (Session Layer)
     subgraph SL["Session Layer (Session Layer)"]
         style SL fill:#e8f5e8
-        CS[ConnectionSession<br/>Connection Session]
+        CS[SessionManager<br/>Session Manager]
         subgraph CS_INNER["Session Components"]
             CID[ConnectionID<br/>Connection ID Generator]
             SM[StreamManager<br/>Stream Manager]

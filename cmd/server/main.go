@@ -12,6 +12,7 @@ import (
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/protocol"
+	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
@@ -51,11 +52,11 @@ type AppConfig struct {
 
 // ProtocolFactory 协议工厂
 type ProtocolFactory struct {
-	session *protocol.ConnectionSession
+	session *session.SessionManager
 }
 
 // NewProtocolFactory 创建协议工厂
-func NewProtocolFactory(session *protocol.ConnectionSession) *ProtocolFactory {
+func NewProtocolFactory(session *session.SessionManager) *ProtocolFactory {
 	return &ProtocolFactory{
 		session: session,
 	}
@@ -147,7 +148,7 @@ type Server struct {
 	serverId        string
 	storage         storages.Storage
 	idManager       *idgen.IDManager
-	session         *protocol.ConnectionSession
+	session         *session.SessionManager
 	protocolFactory *ProtocolFactory
 	cloudControl    managers.CloudControlAPI
 }
@@ -181,8 +182,8 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 	server.storage = storages.NewMemoryStorage(parentCtx)
 	server.idManager = idgen.NewIDManager(server.storage, parentCtx)
 
-	// 创建 ConnectionSession
-	server.session = protocol.NewConnectionSession(server.idManager, parentCtx)
+	// 创建 SessionManager
+	server.session = session.NewSessionManager(server.idManager, parentCtx)
 
 	// 创建协议工厂
 	server.protocolFactory = NewProtocolFactory(server.session)

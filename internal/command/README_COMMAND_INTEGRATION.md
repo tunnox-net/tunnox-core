@@ -37,9 +37,9 @@ type CommandExecutor interface {
 }
 ```
 
-### 3. ConnectionSession实现
+### 3. SessionManager实现
 
-在`ConnectionSession`中实现了完整的Command集成：
+在`SessionManager`中实现了完整的Command集成：
 
 - 自动创建`CommandRegistry`和`CommandExecutor`
 - 在构造函数中建立双向引用关系
@@ -51,7 +51,7 @@ type CommandExecutor interface {
 
 ```go
 // 创建会话
-session := protocol.NewConnectionSession(idManager, ctx)
+session := session.NewSessionManager(idManager, ctx)
 
 // 注册命令处理器
 connectHandler := NewConnectHandler()

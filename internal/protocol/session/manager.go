@@ -15,7 +15,7 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// SessionManager 实现 Session 接口 (Renamed from ConnectionSession)
+// SessionManager 实现 Session 接口
 type SessionManager struct {
 	connMap       map[string]*types.Connection
 	connLock      sync.RWMutex
@@ -34,7 +34,7 @@ type SessionManager struct {
 	dispose.Dispose
 }
 
-// NewSessionManager 创建新的连接会话 (Renamed from NewConnectionSession)
+// NewSessionManager 创建新的会话管理器
 func NewSessionManager(idManager *idgen.IDManager, parentCtx context.Context) *SessionManager {
 	// 创建默认流工厂
 	streamFactory := stream.NewDefaultStreamFactory(parentCtx)

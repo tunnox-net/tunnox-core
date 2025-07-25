@@ -26,7 +26,7 @@
 
 ### 2. 实现更新
 
-#### ConnectionSession实现
+#### SessionManager实现
 - ✅ 自动创建`CommandRegistry`和`CommandExecutor`
 - ✅ 在构造函数中建立双向引用关系
 - ✅ 实现完整的命令处理流程
@@ -35,7 +35,7 @@
 #### SessionManager实现
 - ✅ 添加Command相关字段
 - ✅ 实现所有Command接口方法
-- ✅ 保持与ConnectionSession的一致性
+- ✅ 保持与SessionManager的一致性
 
 #### CommandExecutor实现
 - ✅ 实现`types.CommandExecutor`接口
@@ -71,7 +71,7 @@
 ### 基本用法
 ```go
 // 创建会话
-session := protocol.NewConnectionSession(idManager, ctx)
+session := session.NewSessionManager(idManager, ctx)
 
 // 注册命令处理器
 connectHandler := NewConnectHandler()

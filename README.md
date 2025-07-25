@@ -207,7 +207,7 @@ graph TB
 
 **会话层**
 - 连接会话管理和生命周期控制
-- 主要组件：ConnectionSession, StreamManager
+- 主要组件：SessionManager, StreamManager
 
 **流管理层**
 - 流组件的统一管理和注册
@@ -245,7 +245,7 @@ graph TB
     %% 会话层 (Session Layer)
     subgraph SL["会话层 (Session Layer)"]
         style SL fill:#e8f5e8
-        CS[ConnectionSession<br/>连接会话]
+        CS[SessionManager<br/>会话管理器]
         subgraph CS_INNER["会话组件"]
             CID[ConnectionID<br/>连接ID生成器]
             SM[StreamManager<br/>流管理器]

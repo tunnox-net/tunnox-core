@@ -20,8 +20,8 @@ func createTestIDManager() *idgen.IDManager {
 	return idgen.NewIDManager(storage, context.Background())
 }
 
-func TestNewConnectionSession(t *testing.T) {
-	// 创建新的连接会话
+func TestNewSessionManager(t *testing.T) {
+	// 创建新的会话管理器
 	idManager := createTestIDManager()
 	defer idManager.Close()
 
