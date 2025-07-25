@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -88,10 +89,10 @@ func (cs *CommandStats) GetStats() CommandStats {
 
 // CommandService 命令服务接口
 type CommandService interface {
-	// Execute 执行命令
+	// Execute 执行命令（保持向后兼容）
 	Execute(ctx *CommandContext) (*CommandResponse, error)
 
-	// ExecuteAsync 异步执行命令
+	// ExecuteAsync 异步执行命令（保持向后兼容）
 	ExecuteAsync(ctx *CommandContext) (<-chan *CommandResponse, <-chan error)
 
 	// Use 注册中间件
@@ -109,6 +110,12 @@ type CommandService interface {
 	// SetResponseSender 设置响应发送器
 	SetResponseSender(sender ResponseSender)
 
+	// SetEventBus 设置事件总线
+	SetEventBus(eventBus events.EventBus) error
+
+	// Start 启动命令服务（开始监听事件）
+	Start() error
+
 	// Close 关闭服务
 	Close() error
 }
@@ -125,6 +132,7 @@ type CommandServiceImpl struct {
 	middleware     []Middleware
 	stats          *CommandStats
 	responseSender ResponseSender
+	eventBus       events.EventBus
 	mu             sync.RWMutex
 
 	utils.Dispose
@@ -146,6 +154,111 @@ func NewCommandService(parentCtx context.Context) CommandService {
 	service.SetCtx(parentCtx, service.onClose)
 
 	return service
+}
+
+// SetEventBus 设置事件总线
+func (cs *CommandServiceImpl) SetEventBus(eventBus events.EventBus) error {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+
+	cs.eventBus = eventBus
+	utils.Infof("Event bus set for command service")
+	return nil
+}
+
+// Start 启动命令服务
+func (cs *CommandServiceImpl) Start() error {
+	cs.mu.RLock()
+	eventBus := cs.eventBus
+	cs.mu.RUnlock()
+
+	if eventBus == nil {
+		return fmt.Errorf("event bus not set")
+	}
+
+	// 订阅命令接收事件
+	if err := eventBus.Subscribe("CommandReceived", cs.handleCommandEvent); err != nil {
+		return fmt.Errorf("failed to subscribe to CommandReceived events: %w", err)
+	}
+
+	utils.Infof("Command service started, listening for events")
+	return nil
+}
+
+// handleCommandEvent 处理命令事件
+func (cs *CommandServiceImpl) handleCommandEvent(event events.Event) error {
+	cmdEvent, ok := event.(*events.CommandReceivedEvent)
+	if !ok {
+		return fmt.Errorf("invalid event type: expected CommandReceivedEvent")
+	}
+
+	utils.Infof("Handling command event for connection: %s, command: %v",
+		cmdEvent.ConnectionID, cmdEvent.CommandType)
+
+	// 创建命令上下文
+	ctx := &CommandContext{
+		ConnectionID:    cmdEvent.ConnectionID,
+		CommandType:     cmdEvent.CommandType,
+		CommandId:       cmdEvent.CommandId,
+		RequestID:       cmdEvent.RequestID,
+		SenderID:        cmdEvent.SenderID,
+		ReceiverID:      cmdEvent.ReceiverID,
+		RequestBody:     cmdEvent.CommandBody,
+		Context:         context.Background(),
+		IsAuthenticated: false,
+		UserID:          "",
+		StartTime:       time.Now(),
+		EndTime:         time.Time{},
+	}
+
+	// 执行命令
+	response, err := cs.Execute(ctx)
+
+	// 获取事件总线引用
+	cs.mu.RLock()
+	eventBus := cs.eventBus
+	cs.mu.RUnlock()
+
+	// 特殊处理断开连接命令
+	if cmdEvent.CommandType == packet.Disconnect && eventBus != nil {
+		// 发布断开连接请求事件
+		disconnectEvent := events.NewDisconnectRequestEvent(
+			cmdEvent.ConnectionID,
+			cmdEvent.RequestID,
+			cmdEvent.CommandId,
+		)
+		if err := eventBus.Publish(disconnectEvent); err != nil {
+			utils.Errorf("Failed to publish disconnect request event: %v", err)
+		}
+	}
+
+	// 发布命令完成事件
+	processingTime := time.Since(ctx.StartTime)
+	var responseStr, errorStr string
+	if response != nil {
+		responseStr = response.Data
+	}
+	if err != nil {
+		errorStr = err.Error()
+	}
+
+	completedEvent := events.NewCommandCompletedEvent(
+		cmdEvent.ConnectionID,
+		cmdEvent.CommandId,
+		cmdEvent.RequestID,
+		err == nil,
+		responseStr,
+		errorStr,
+		processingTime,
+	)
+
+	if eventBus != nil {
+		if err := eventBus.Publish(completedEvent); err != nil {
+			utils.Errorf("Failed to publish command completed event: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // Execute 执行命令
@@ -243,19 +356,30 @@ func (cs *CommandServiceImpl) SetResponseSender(sender ResponseSender) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.responseSender = sender
+	utils.Infof("Response sender set")
 }
 
 // onClose 资源清理回调
 func (cs *CommandServiceImpl) onClose() error {
 	utils.Infof("Cleaning up command service resources...")
 
-	// 清理统计信息
-	cs.stats = &CommandStats{}
+	// 取消事件订阅
+	cs.mu.RLock()
+	eventBus := cs.eventBus
+	cs.mu.RUnlock()
 
-	// 清理中间件
+	if eventBus != nil {
+		// 取消订阅命令接收事件
+		if err := eventBus.Unsubscribe("CommandReceived", cs.handleCommandEvent); err != nil {
+			utils.Warnf("Failed to unsubscribe from CommandReceived events: %v", err)
+		}
+		utils.Infof("Unsubscribed from command events")
+	}
+
+	// 清理响应发送器
 	cs.mu.Lock()
-	cs.middleware = make([]Middleware, 0)
 	cs.responseSender = nil
+	cs.eventBus = nil
 	cs.mu.Unlock()
 
 	utils.Infof("Command service resources cleanup completed")
@@ -264,25 +388,22 @@ func (cs *CommandServiceImpl) onClose() error {
 
 // Close 关闭服务
 func (cs *CommandServiceImpl) Close() error {
-	result := cs.Dispose.Close()
-	if result.HasErrors() {
-		return fmt.Errorf("command service cleanup failed: %s", result.Error())
-	}
-	return nil
+	return cs.Dispose.CloseWithError()
 }
 
 // buildPipeline 构建命令处理管道
 func (cs *CommandServiceImpl) buildPipeline(ctx *CommandContext) *CommandPipeline {
 	cs.mu.RLock()
-	defer cs.mu.RUnlock()
+	middleware := make([]Middleware, len(cs.middleware))
+	copy(middleware, cs.middleware)
+	cs.mu.RUnlock()
 
 	// 获取命令处理器
 	handler, exists := cs.registry.GetHandler(ctx.CommandType)
 	if !exists {
 		// 使用默认处理器
-		handler = NewDefaultHandler()
+		handler, _ = cs.registry.GetHandler(0) // 默认处理器
 	}
 
-	// 创建管道
-	return NewCommandPipeline(cs.middleware, handler)
+	return NewCommandPipeline(middleware, handler)
 }

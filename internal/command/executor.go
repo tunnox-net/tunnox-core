@@ -160,7 +160,6 @@ func (ce *CommandExecutor) createCommandContext(streamPacket *types.StreamPacket
 		SenderID:        streamPacket.Packet.CommandPacket.SenderId,
 		ReceiverID:      streamPacket.Packet.CommandPacket.ReceiverId,
 		RequestBody:     streamPacket.Packet.CommandPacket.CommandBody,
-		Session:         nil, // 将在外部设置
 		Context:         context.Background(),
 		IsAuthenticated: false,
 		UserID:          "",

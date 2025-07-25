@@ -251,14 +251,11 @@ func NewDisconnectHandler() *DisconnectHandler {
 func (h *DisconnectHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 	utils.Infof("Handling Disconnect command for connection: %s", ctx.ConnectionID)
 
-	// 关闭连接
-	if ctx.Session != nil {
-		if err := ctx.Session.CloseConnection(ctx.ConnectionID); err != nil {
-			utils.Warnf("Failed to close connection %s: %v", ctx.ConnectionID, err)
-		}
-	}
+	// 在事件驱动架构中，连接关闭应该通过事件总线处理
+	// Session会监听命令完成事件，然后执行实际的连接关闭操作
+	// 这里我们只返回成功响应，实际的关闭操作由Session处理
 
-	data, _ := json.Marshal(map[string]interface{}{"message": "Connection disconnected"})
+	data, _ := json.Marshal(map[string]interface{}{"message": "Connection disconnect command received"})
 	return &CommandResponse{
 		Success:   true,
 		Data:      string(data),

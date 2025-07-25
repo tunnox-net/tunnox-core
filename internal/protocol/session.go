@@ -6,8 +6,9 @@ import (
 	"io"
 	"sync"
 	"time"
-	"tunnox-core/internal/cloud/generators"
-	"tunnox-core/internal/command"
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/events"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
@@ -15,44 +16,33 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// StreamPacket 包装结构，包含连接信息
+// 类型别名，保持向后兼容
 type StreamPacket = types.StreamPacket
-
-// StreamConnection 连接信息
 type StreamConnection = types.StreamConnection
-
-// Session 接口定义
 type Session = types.Session
-
-// Connection 连接信息
 type Connection = types.Connection
-
-// ConnectionState 连接状态
 type ConnectionState = types.ConnectionState
-
-// 从 core/types 包导入命令相关类型
 type CommandHandler = types.CommandHandler
 type CommandContext = types.CommandContext
 type CommandResponse = types.CommandResponse
 type CommandRegistry = types.CommandRegistry
 
-// ConnectionSession 实现 Session 接口
+// ConnectionSession 实现 Session 接口 (已废弃，请使用 SessionManager)
 type ConnectionSession struct {
 	connMap       map[string]*Connection
 	connLock      sync.RWMutex
-	idManager     *generators.IDManager
+	idManager     *idgen.IDManager
 	streamMgr     *stream.StreamManager
 	streamFactory stream.StreamFactory
 
-	// 新的命令处理架构
-	commandService  command.CommandService   // 替换 commandRegistry
-	responseManager *session.ResponseManager // 新增：响应管理
-
-	utils.Dispose
+	// 事件驱动架构
+	eventBus        events.EventBus
+	responseManager *session.ResponseManager
+	dispose.Dispose
 }
 
-// NewConnectionSession 创建新的连接会话
-func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Context) *ConnectionSession {
+// NewConnectionSession 创建新的连接会话 (已废弃，请使用 NewSessionManager)
+func NewConnectionSession(idManager *idgen.IDManager, parentCtx context.Context) *ConnectionSession {
 	// 创建默认流工厂
 	streamFactory := stream.NewDefaultStreamFactory(parentCtx)
 
@@ -64,8 +54,8 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 		idManager:     idManager,
 		streamMgr:     streamMgr,
 		streamFactory: streamFactory,
-		// 新的命令处理架构将在后续设置
-		commandService:  nil,
+		// 事件驱动架构将在后续设置
+		eventBus:        nil,
 		responseManager: nil,
 	}
 
@@ -75,24 +65,40 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 	return session
 }
 
-// SetCommandService 设置命令服务
-func (s *ConnectionSession) SetCommandService(commandService command.CommandService) {
-	s.commandService = commandService
+// SetEventBus 设置事件总线
+func (s *ConnectionSession) SetEventBus(eventBus interface{}) error {
+	if eventBus == nil {
+		return fmt.Errorf("event bus cannot be nil")
+	}
+
+	// 类型断言
+	bus, ok := eventBus.(events.EventBus)
+	if !ok {
+		return fmt.Errorf("invalid event bus type: expected events.EventBus")
+	}
+
+	s.eventBus = bus
 
 	// 创建响应管理器
 	s.responseManager = session.NewResponseManager(s, s.Ctx())
 
-	// 设置响应发送器到命令服务
-	if commandService != nil {
-		commandService.SetResponseSender(s.responseManager)
+	// 设置响应管理器的事件总线
+	if err := s.responseManager.SetEventBus(bus); err != nil {
+		return fmt.Errorf("failed to set event bus for response manager: %w", err)
 	}
 
-	utils.Infof("Command service set with response manager")
+	// 订阅断开连接请求事件
+	if err := bus.Subscribe("DisconnectRequest", s.handleDisconnectRequestEvent); err != nil {
+		return fmt.Errorf("failed to subscribe to DisconnectRequest events: %w", err)
+	}
+
+	utils.Infof("Event bus set with response manager and disconnect handler")
+	return nil
 }
 
-// GetCommandService 获取命令服务
-func (s *ConnectionSession) GetCommandService() command.CommandService {
-	return s.commandService
+// GetEventBus 获取事件总线
+func (s *ConnectionSession) GetEventBus() interface{} {
+	return s.eventBus
 }
 
 // GetResponseManager 获取响应管理器
@@ -113,11 +119,14 @@ func (s *ConnectionSession) CreateConnection(reader io.Reader, writer io.Writer)
 
 	// 创建连接对象
 	conn := &Connection{
-		ID:        connID,
-		State:     types.StateInitializing,
-		Stream:    streamConn,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:            connID,
+		State:         types.StateInitializing,
+		Stream:        streamConn,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		LastHeartbeat: time.Now(),
+		ClientInfo:    "",
+		Protocol:      "",
 	}
 
 	// 添加到连接映射
@@ -140,6 +149,14 @@ func (s *ConnectionSession) AcceptConnection(reader io.Reader, writer io.Writer)
 	// 更新连接状态为已连接
 	if err := s.UpdateConnectionState(conn.ID, types.StateConnected); err != nil {
 		utils.Warnf("Failed to update connection state: %v", err)
+	}
+
+	// 发布连接建立事件
+	if s.eventBus != nil {
+		event := events.NewConnectionEstablishedEvent(conn.ID, conn.ClientInfo, conn.Protocol)
+		if err := s.eventBus.Publish(event); err != nil {
+			utils.Warnf("Failed to publish connection established event: %v", err)
+		}
 	}
 
 	// 返回流连接
@@ -192,41 +209,29 @@ func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error 
 	utils.Infof("Processing command packet for connection: %s, command: %v",
 		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
-	// 检查命令服务是否已设置
-	if s.commandService == nil {
-		utils.Warnf("Command service is nil, using default command handler")
+	// 检查事件总线是否已设置
+	if s.eventBus == nil {
+		utils.Warnf("Event bus is nil, using default command handler")
 		return s.handleDefaultCommand(connPacket)
 	}
 
-	// 创建命令上下文
-	cmdCtx := &command.CommandContext{
-		ConnectionID:    connPacket.ConnectionID,
-		CommandType:     connPacket.Packet.CommandPacket.CommandType,
-		CommandId:       connPacket.Packet.CommandPacket.CommandId,
-		RequestID:       connPacket.Packet.CommandPacket.Token,
-		SenderID:        connPacket.Packet.CommandPacket.SenderId,
-		ReceiverID:      connPacket.Packet.CommandPacket.ReceiverId,
-		RequestBody:     connPacket.Packet.CommandPacket.CommandBody,
-		Session:         s,
-		Context:         context.Background(),
-		IsAuthenticated: false,
-		UserID:          "",
-		StartTime:       time.Now(),
-		EndTime:         time.Time{},
-	}
+	// 发布命令接收事件
+	event := events.NewCommandReceivedEvent(
+		connPacket.ConnectionID,
+		connPacket.Packet.CommandPacket.CommandType,
+		connPacket.Packet.CommandPacket.CommandId,
+		connPacket.Packet.CommandPacket.Token,
+		connPacket.Packet.CommandPacket.SenderId,
+		connPacket.Packet.CommandPacket.ReceiverId,
+		connPacket.Packet.CommandPacket.CommandBody,
+	)
 
-	// 使用命令服务执行命令
-	response, err := s.commandService.Execute(cmdCtx)
-	if err != nil {
-		utils.Errorf("Failed to execute command for connection %s: %v", connPacket.ConnectionID, err)
+	if err := s.eventBus.Publish(event); err != nil {
+		utils.Errorf("Failed to publish command received event for connection %s: %v", connPacket.ConnectionID, err)
 		return err
 	}
 
-	// 响应处理由CommandService自动完成
-	if response != nil {
-		utils.Infof("Command executed for connection %s: success=%v", connPacket.ConnectionID, response.Success)
-	}
-
+	utils.Infof("Command received event published for connection %s", connPacket.ConnectionID)
 	return nil
 }
 
@@ -235,16 +240,18 @@ func (s *ConnectionSession) handleDefaultCommand(connPacket *StreamPacket) error
 	utils.Infof("Handling default command for connection: %s, type: %v",
 		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
-	// 对于未知命令类型，记录警告并返回
-	utils.Warnf("Unknown command type: %v for connection %s",
-		connPacket.Packet.CommandPacket.CommandType, connPacket.ConnectionID)
-
 	// 特殊处理断开连接命令
 	if connPacket.Packet.CommandPacket.CommandType == packet.Disconnect {
+		utils.Infof("Processing disconnect command for connection: %s", connPacket.ConnectionID)
 		if err := s.CloseConnection(connPacket.ConnectionID); err != nil {
 			utils.Warnf("Failed to close connection %s: %v", connPacket.ConnectionID, err)
 		}
+		return nil
 	}
+
+	// 对于其他未知命令类型，记录警告并返回
+	utils.Warnf("Unknown command type: %v for connection %s",
+		connPacket.Packet.CommandPacket.CommandType, connPacket.ConnectionID)
 
 	return nil
 }
@@ -259,9 +266,33 @@ func (s *ConnectionSession) handleHeartbeat(connPacket *StreamPacket) error {
 		conn.LastHeartbeat = time.Now()
 	}
 
-	// - 记录心跳时间
-	// - 可选：发送心跳响应
+	// 发布心跳事件
+	if s.eventBus != nil {
+		event := events.NewHeartbeatEvent(connPacket.ConnectionID)
+		if err := s.eventBus.Publish(event); err != nil {
+			utils.Warnf("Failed to publish heartbeat event: %v", err)
+		}
+	}
 
+	return nil
+}
+
+// handleDisconnectRequestEvent 处理断开连接请求事件
+func (s *ConnectionSession) handleDisconnectRequestEvent(event events.Event) error {
+	disconnectEvent, ok := event.(*events.DisconnectRequestEvent)
+	if !ok {
+		return fmt.Errorf("invalid event type: expected DisconnectRequestEvent")
+	}
+
+	utils.Infof("Handling disconnect request event for connection: %s", disconnectEvent.ConnectionID)
+
+	// 执行实际的连接关闭操作
+	if err := s.CloseConnection(disconnectEvent.ConnectionID); err != nil {
+		utils.Errorf("Failed to close connection %s: %v", disconnectEvent.ConnectionID, err)
+		return err
+	}
+
+	utils.Infof("Successfully closed connection %s in response to disconnect request", disconnectEvent.ConnectionID)
 	return nil
 }
 
@@ -317,13 +348,21 @@ func (s *ConnectionSession) CloseConnection(connectionId string) error {
 	conn.State = types.StateClosing
 	conn.UpdatedAt = time.Now()
 
-	// 关闭流
+	// 关闭流处理器
 	if conn.Stream != nil {
 		conn.Stream.Close()
 	}
 
 	// 从映射中移除
 	delete(s.connMap, connectionId)
+
+	// 发布连接关闭事件
+	if s.eventBus != nil {
+		event := events.NewConnectionClosedEvent(connectionId, "manual_close")
+		if err := s.eventBus.Publish(event); err != nil {
+			utils.Warnf("Failed to publish connection closed event: %v", err)
+		}
+	}
 
 	utils.Infof("Closed connection: %s", connectionId)
 	return nil
@@ -365,35 +404,36 @@ func (s *ConnectionSession) GetActiveConnections() int {
 func (s *ConnectionSession) onClose() error {
 	utils.Infof("Cleaning up connection session resources...")
 
-	// 清理命令服务
-	if s.commandService != nil {
-		if err := s.commandService.Close(); err != nil {
-			utils.Errorf("Failed to close command service: %v", err)
+	// 取消事件订阅
+	if s.eventBus != nil {
+		if err := s.eventBus.Unsubscribe("DisconnectRequest", s.handleDisconnectRequestEvent); err != nil {
+			utils.Warnf("Failed to unsubscribe from DisconnectRequest events: %v", err)
 		}
-		s.commandService = nil
+		utils.Infof("Unsubscribed from disconnect request events")
 	}
 
-	// 清理响应管理器
-	if s.responseManager != nil {
-		if err := s.responseManager.Dispose.Close(); err != nil {
-			utils.Errorf("Failed to close response manager: %v", err)
-		}
-		s.responseManager = nil
-	}
-
-	// 获取所有连接信息的副本，避免在锁内调用 Close
-	var connections []*Connection
+	// 关闭所有连接
 	s.connLock.Lock()
-	for _, connInfo := range s.connMap {
-		connections = append(connections, connInfo)
+	for connID, conn := range s.connMap {
+		if conn.Stream != nil {
+			conn.Stream.Close()
+		}
+		utils.Infof("Closed connection: %s", connID)
 	}
-	// 清空连接映射
 	s.connMap = make(map[string]*Connection)
 	s.connLock.Unlock()
 
-	// 在锁外记录清理的连接
-	for _, connInfo := range connections {
-		utils.Infof("Cleaned up connection: %s", connInfo.ID)
+	// 关闭流管理器
+	if s.streamMgr != nil {
+		utils.Infof("Stream manager resources cleaned up")
+	}
+
+	// 关闭事件总线
+	if s.eventBus != nil {
+		if err := s.eventBus.Close(); err != nil {
+			utils.Errorf("Failed to close event bus: %v", err)
+		}
+		utils.Infof("Event bus resources cleaned up")
 	}
 
 	utils.Infof("Connection session resources cleanup completed")

@@ -55,6 +55,14 @@ func (m *UtilsMockSession) UpdateConnectionState(connID string, state types.Conn
 	return nil
 }
 
+func (m *UtilsMockSession) SetEventBus(eventBus interface{}) error {
+	return nil
+}
+
+func (m *UtilsMockSession) GetEventBus() interface{} {
+	return nil
+}
+
 func TestCommandUtils_NewCommands(t *testing.T) {
 	session := &UtilsMockSession{}
 	utils := NewCommandUtils(session)

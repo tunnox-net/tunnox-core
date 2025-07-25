@@ -7,16 +7,15 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
 	"gopkg.in/yaml.v3"
-
-	"tunnox-core/internal/constants"
 )
 
 // ProtocolConfig 协议配置
@@ -147,7 +146,7 @@ type Server struct {
 	protocolMgr     *protocol.Manager
 	serverId        string
 	storage         storages.Storage
-	idManager       *generators.IDManager
+	idManager       *idgen.IDManager
 	session         *protocol.ConnectionSession
 	protocolFactory *ProtocolFactory
 	cloudControl    managers.CloudControlAPI
@@ -180,7 +179,7 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 
 	// 创建存储和ID管理器
 	server.storage = storages.NewMemoryStorage(parentCtx)
-	server.idManager = generators.NewIDManager(server.storage, parentCtx)
+	server.idManager = idgen.NewIDManager(server.storage, parentCtx)
 
 	// 创建 ConnectionSession
 	server.session = protocol.NewConnectionSession(server.idManager, parentCtx)

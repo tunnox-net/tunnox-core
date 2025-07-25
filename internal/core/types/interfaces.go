@@ -83,6 +83,13 @@ type Session interface {
 
 	// UpdateConnectionState 更新连接状态
 	UpdateConnectionState(connID string, state ConnectionState) error
+
+	// 事件驱动相关方法
+	// SetEventBus 设置事件总线
+	SetEventBus(eventBus interface{}) error
+
+	// GetEventBus 获取事件总线
+	GetEventBus() interface{}
 }
 
 // StreamPacket 包装结构，包含连接信息
@@ -175,7 +182,6 @@ type CommandContext struct {
 	SenderID     string             // 发送者ID
 	ReceiverID   string             // 接收者ID
 	RequestBody  string             // JSON请求字符串
-	Session      Session            // 会话对象
 	Context      context.Context    // 上下文
 	// 具体的类型化字段
 	IsAuthenticated bool      // 是否已认证
