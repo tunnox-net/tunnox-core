@@ -2,6 +2,7 @@ package dispose
 
 import (
 	"context"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/utils"
 )
 
@@ -44,7 +45,7 @@ type DisposableResource interface {
 	Initialize(context.Context)
 	GetName() string
 	SetName(string)
-	utils.Disposable
+	types.Disposable
 }
 
 // NewDisposableResource 创建可释放资源的通用构造函数

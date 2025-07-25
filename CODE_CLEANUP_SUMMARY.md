@@ -73,9 +73,49 @@
   - `internal/stream/factory.go`
 - **收益**: 统一了压缩接口，消除了重复定义
 
-### 2. 随机数生成器合并清理
+#### 1.6 CloudControlAPI接口统一
+- **问题**: 存在两个相同名称但不同定义的CloudControlAPI接口
+  - `internal/cloud/api/interfaces.go` - 定义了CloudControlAPI接口
+  - `internal/cloud/managers/api.go` - 也定义了CloudControlAPI接口
+- **解决方案**:
+  - 删除未使用的 `internal/cloud/api/interfaces.go` 和 `internal/cloud/api/implementation.go`
+  - 保留 `internal/cloud/managers/api.go` 中的接口定义
+- **删除文件**:
+  - `internal/cloud/api/interfaces.go`
+  - `internal/cloud/api/implementation.go`
+- **收益**: 消除了CloudControlAPI接口重复定义
 
-#### 2.1 合并重复的随机数生成器实现
+#### 1.7 Disposable接口统一
+- **问题**: Disposable接口在多个包中重复定义
+  - `internal/utils/dispose.go` - 定义了Disposable接口
+  - `internal/core/types/interfaces.go` - 也定义了Disposable接口
+- **解决方案**:
+  - 统一使用 `internal/core/types/interfaces.go` 中的Disposable接口
+  - 更新 `internal/core/dispose/resource_base.go` 中的引用
+- **更新文件**:
+  - `internal/core/dispose/resource_base.go`
+- **收益**: 统一了Disposable接口定义
+
+### 2. 结构体重复定义清理
+
+#### 2.1 BufferManager结构体统一
+- **问题**: BufferManager结构体在多个文件中重复定义
+  - `internal/utils/buffer/pool.go` - 定义了BufferManager
+  - `internal/utils/buffer_pool.go` - 也定义了BufferManager
+- **解决方案**:
+  - 删除未使用的 `internal/utils/buffer/` 目录及其所有文件
+  - 保留 `internal/utils/buffer_pool.go` 中的实现
+- **删除文件**:
+  - `internal/utils/buffer/pool.go`
+  - `internal/utils/buffer/memory_pool_test.go`
+  - `internal/utils/buffer/zero_copy_test.go`
+- **删除目录**:
+  - `internal/utils/buffer/`
+- **收益**: 消除了BufferManager结构体重复定义
+
+### 3. 随机数生成器合并清理
+
+#### 3.1 合并重复的随机数生成器实现
 - **问题**: 存在3个随机数生成器的重复实现
   - `internal/utils/random/generator.go` - 有完整的接口和实现
   - `internal/utils/random.go` - 有简单的函数实现
@@ -93,9 +133,9 @@
   - `internal/core/idgen/generator.go`
 - **收益**: 统一了随机数生成器，消除了重复实现
 
-### 3. ID生成器重复实现清理
+### 4. ID生成器重复实现清理
 
-#### 3.1 删除重复的ID生成器实现
+#### 4.1 删除重复的ID生成器实现
 - **问题**: 存在3个相同功能的ID生成器实现
   - `internal/cloud/generators/idgen.go` - 基础实现
   - `internal/core/idgen/generator.go` - 核心实现  
@@ -122,9 +162,9 @@
   - `internal/cloud/managers/connection_manager.go`
 - **收益**: 消除了ID生成器的重复实现，统一使用核心实现
 
-### 4. ResourceBase基类迁移清理
+### 5. ResourceBase基类迁移清理
 
-#### 4.1 服务类迁移到ResourceBase
+#### 5.1 服务类迁移到ResourceBase
 - **问题**: 多个服务类使用早期的 `SetCtx` / `onClose` 模式，存在重复的资源管理代码
 - **解决方案**:
   - 将服务类迁移到使用 `ResourceBase` 基类
@@ -138,7 +178,7 @@
   - `internal/cloud/services/anonymous_service.go`
 - **收益**: 统一了服务类的资源管理，减少了重复代码
 
-#### 4.2 管理器类迁移到ResourceBase
+#### 5.2 管理器类迁移到ResourceBase
 - **问题**: 多个管理器类使用早期的 `SetCtx` / `onClose` 模式
 - **解决方案**:
   - 将管理器类迁移到使用 `ResourceBase` 基类
@@ -148,7 +188,7 @@
   - `internal/cloud/managers/connection_manager.go`
 - **收益**: 统一了管理器类的资源管理
 
-#### 4.3 核心组件迁移到ResourceBase
+#### 5.3 核心组件迁移到ResourceBase
 - **问题**: 核心组件使用早期的 `SetCtx` / `onClose` 模式
 - **解决方案**:
   - 将核心组件迁移到使用 `ResourceBase` 基类
@@ -161,9 +201,9 @@
   - `cmd/server/main.go`
 - **收益**: 统一了核心组件的资源管理
 
-### 5. 错误引用修复
+### 6. 错误引用修复
 
-#### 5.1 Redis存储错误引用修复
+#### 6.1 Redis存储错误引用修复
 - **问题**: `internal/cloud/storages/redis_storage.go` 中使用了未定义的 `ErrKeyNotFound`
 - **解决方案**:
   - 添加 `"tunnox-core/internal/core/storage"` 导入
@@ -172,7 +212,7 @@
 - **影响文件**: `internal/cloud/storages/redis_storage.go`
 - **收益**: 修复了编译错误，统一了错误处理
 
-#### 5.2 测试文件错误引用修复
+#### 6.2 测试文件错误引用修复
 - **问题**: `internal/cloud/storages/redis_storage_test.go` 中使用了未定义的 `ErrKeyNotFound`
 - **解决方案**:
   - 添加 `storageCore "tunnox-core/internal/core/storage"` 导入
@@ -181,9 +221,9 @@
 - **影响文件**: `internal/cloud/storages/redis_storage_test.go`
 - **收益**: 修复了测试编译错误
 
-### 6. 通用资源管理基类创建
+### 7. 通用资源管理基类创建
 
-#### 6.1 ResourceBase基类
+#### 7.1 ResourceBase基类
 - **创建文件**: `internal/core/dispose/resource_base.go`
 - **功能**:
   - 提供通用的资源管理基类 `ResourceBase`
@@ -196,12 +236,12 @@
       Initialize(context.Context)
       GetName() string
       SetName(string)
-      utils.Disposable
+      types.Disposable
   }
   ```
 - **收益**: 大幅减少重复的 `onClose` 和 `SetCtx` 代码
 
-#### 6.2 服务类重构示例
+#### 7.2 服务类重构示例
 - **更新文件**: `internal/cloud/services/user_service.go`
 - **改进**:
   - 使用 `ResourceBase` 替代原有的 `utils.Dispose` 嵌入
@@ -209,9 +249,9 @@
   - 使用 `Initialize()` 方法统一初始化
 - **代码减少**: 约30行重复代码
 
-### 7. 标准错误处理系统
+### 8. 标准错误处理系统
 
-#### 7.1 标准错误类型
+#### 8.1 标准错误类型
 - **创建文件**: `internal/core/errors/standard_errors.go`
 - **功能**:
   - 定义标准错误码 `ErrorCode`
@@ -225,9 +265,9 @@
   - 业务错误码 (4000-4999)
 - **收益**: 统一错误处理策略，提高错误处理的一致性
 
-### 8. 通用测试工具包
+### 9. 通用测试工具包
 
-#### 8.1 测试辅助工具
+#### 9.1 测试辅助工具
 - **创建文件**: `internal/testutils/common_test_helpers.go`
 - **功能**:
   - `TestHelper`: 提供通用的断言方法
@@ -241,7 +281,7 @@
 ## 📊 清理统计
 
 ### 代码行数减少
-- **接口重复定义**: 约250行代码
+- **接口重复定义**: 约350行代码
 - **ID生成器重复实现**: 约800行代码
 - **限流接口重复**: 约150行代码
 - **压缩接口重复**: 约100行代码
@@ -251,13 +291,16 @@
 - **资源管理重复**: 约200行代码 (通过ResourceBase基类)
 - **错误处理统一**: 约100行代码
 - **测试代码优化**: 约80行代码
+- **CloudControlAPI重复**: 约150行代码
+- **Disposable接口重复**: 约50行代码
+- **BufferManager重复**: 约200行代码
 
 ### 文件影响范围
 - **新增文件**: 3个
   - `internal/core/dispose/resource_base.go`
   - `internal/core/errors/standard_errors.go`
   - `internal/testutils/common_test_helpers.go`
-- **删除文件**: 8个
+- **删除文件**: 15个
   - `internal/cloud/generators/idgen.go`
   - `internal/cloud/generators/optimized_idgen.go`
   - `internal/cloud/generators/optimized_idgen_test.go`
@@ -266,11 +309,17 @@
   - `internal/stream/compression/compression.go`
   - `internal/utils/random/generator.go`
   - `internal/utils/ordered_random.go`
-- **修改文件**: 25个
+  - `internal/cloud/api/interfaces.go`
+  - `internal/cloud/api/implementation.go`
+  - `internal/utils/buffer/pool.go`
+  - `internal/utils/buffer/memory_pool_test.go`
+  - `internal/utils/buffer/zero_copy_test.go`
+- **删除目录**: 1个
+  - `internal/utils/buffer/`
+- **修改文件**: 28个
   - `internal/cloud/storages/storage.go`
   - `internal/cloud/storages/redis_storage.go`
   - `internal/cloud/storages/redis_storage_test.go`
-  - `internal/cloud/generators/idgen.go` (已删除)
   - `internal/stream/factory/factory.go`
   - `internal/stream/interfaces.go`
   - `internal/stream/processor/processor.go`
@@ -292,6 +341,7 @@
   - `cmd/server/main.go`
   - `internal/cloud/services/service_registry.go`
   - `internal/cloud/managers/base.go`
+  - `internal/core/dispose/resource_base.go`
 
 ### 编译错误修复
 - **修复的编译错误**: 6个
