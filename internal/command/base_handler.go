@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -200,4 +201,45 @@ func (b *BaseCommandHandler[TRequest, TResponse]) ValidateContext(ctx *CommandCo
 	}
 
 	return nil
+}
+
+// GetCategory 获取命令分类
+func (b *BaseCommandHandler[TRequest, TResponse]) GetCategory() CommandCategory {
+	// 根据命令类型推断分类，子类可以重写此方法
+	switch b.commandType {
+	case packet.Connect, packet.Disconnect, packet.Reconnect, packet.HeartbeatCmd:
+		return CategoryConnection
+	case packet.TcpMapCreate, packet.TcpMapDelete, packet.TcpMapUpdate, packet.TcpMapList, packet.TcpMapStatus,
+		packet.HttpMapCreate, packet.HttpMapDelete, packet.HttpMapUpdate, packet.HttpMapList, packet.HttpMapStatus,
+		packet.SocksMapCreate, packet.SocksMapDelete, packet.SocksMapUpdate, packet.SocksMapList, packet.SocksMapStatus:
+		return CategoryMapping
+	case packet.DataTransferStart, packet.DataTransferStop, packet.DataTransferStatus, packet.ProxyForward:
+		return CategoryTransport
+	case packet.ConfigGet, packet.ConfigSet, packet.StatsGet, packet.LogGet, packet.HealthCheck:
+		return CategoryManagement
+	case packet.RpcInvoke, packet.RpcRegister, packet.RpcUnregister, packet.RpcList:
+		return CategoryRPC
+	default:
+		return CategoryManagement
+	}
+}
+
+// GetRequestType 获取请求类型
+func (b *BaseCommandHandler[TRequest, TResponse]) GetRequestType() reflect.Type {
+	var zero TRequest
+	// 检查是否为零值类型（如interface{}）
+	if reflect.TypeOf(zero) == reflect.TypeOf((*interface{})(nil)).Elem() {
+		return nil // 返回nil表示无请求体
+	}
+	return reflect.TypeOf(zero)
+}
+
+// GetResponseType 获取响应类型
+func (b *BaseCommandHandler[TRequest, TResponse]) GetResponseType() reflect.Type {
+	var zero TResponse
+	// 检查是否为零值类型（如interface{}）
+	if reflect.TypeOf(zero) == reflect.TypeOf((*interface{})(nil)).Elem() {
+		return nil // 返回nil表示无响应体
+	}
+	return reflect.TypeOf(zero)
 }

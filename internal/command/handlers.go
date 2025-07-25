@@ -3,6 +3,7 @@ package command
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -30,6 +31,12 @@ func NewBaseHandler(cmdType packet.CommandType, category CommandCategory, direct
 func (h *BaseHandler) GetCommandType() packet.CommandType { return h.commandType }
 func (h *BaseHandler) GetCategory() CommandCategory       { return h.category }
 func (h *BaseHandler) GetDirection() CommandDirection     { return h.direction }
+
+// GetRequestType 获取请求类型（向后兼容，返回nil）
+func (h *BaseHandler) GetRequestType() reflect.Type { return nil }
+
+// GetResponseType 获取响应类型（向后兼容，返回nil）
+func (h *BaseHandler) GetResponseType() reflect.Type { return nil }
 
 // TcpMapHandler TCP映射处理器
 type TcpMapHandler struct {

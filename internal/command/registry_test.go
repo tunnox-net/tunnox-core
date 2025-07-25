@@ -2,6 +2,7 @@ package command
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 	"tunnox-core/internal/packet"
 )
@@ -32,6 +33,12 @@ func (m *MockCommandHandler) GetCommandType() packet.CommandType {
 func (m *MockCommandHandler) GetCategory() CommandCategory {
 	return CategoryMapping
 }
+
+// GetRequestType 获取请求类型（向后兼容，返回nil）
+func (m *MockCommandHandler) GetRequestType() reflect.Type { return nil }
+
+// GetResponseType 获取响应类型（向后兼容，返回nil）
+func (m *MockCommandHandler) GetResponseType() reflect.Type { return nil }
 
 func TestNewCommandRegistry(t *testing.T) {
 	cr := NewCommandRegistry()

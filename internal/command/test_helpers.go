@@ -2,6 +2,7 @@ package command
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -85,8 +86,14 @@ func (s *simpleMockHandler) GetCategory() CommandCategory {
 }
 
 func (s *simpleMockHandler) GetDirection() CommandDirection {
-	return DirectionOneway // 默认方向
+	return s.direction
 }
+
+// GetRequestType 获取请求类型（向后兼容，返回nil）
+func (s *simpleMockHandler) GetRequestType() reflect.Type { return nil }
+
+// GetResponseType 获取响应类型（向后兼容，返回nil）
+func (s *simpleMockHandler) GetResponseType() reflect.Type { return nil }
 
 // simpleMockMiddleware 简单的模拟中间件实现
 type simpleMockMiddleware struct {

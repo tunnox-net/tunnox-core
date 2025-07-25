@@ -3,6 +3,7 @@ package types
 import (
 	"context"
 	"io"
+	"reflect"
 	"time"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -110,6 +111,12 @@ type CommandHandler interface {
 
 	// GetCategory 获取命令分类
 	GetCategory() CommandCategory
+
+	// GetRequestType 获取请求类型（可以为nil，表示无请求体）
+	GetRequestType() reflect.Type
+
+	// GetResponseType 获取响应类型（可以为nil，表示无响应体）
+	GetResponseType() reflect.Type
 }
 
 // CommandCategory 命令分类
