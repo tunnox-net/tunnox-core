@@ -45,13 +45,13 @@ func (ce *CommandExecutor) Execute(streamPacket *types.StreamPacket) error {
 	}
 
 	// 根据响应类型处理
-	switch handler.GetResponseType() {
-	case Oneway:
+	switch handler.GetDirection() {
+	case DirectionOneway:
 		return ce.executeOneway(ctx, handler)
-	case Duplex:
+	case DirectionDuplex:
 		return ce.executeDuplex(ctx, handler)
 	default:
-		return fmt.Errorf("unknown response type: %v", handler.GetResponseType())
+		return fmt.Errorf("unknown response type: %v", handler.GetDirection())
 	}
 }
 

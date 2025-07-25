@@ -8,9 +8,9 @@ import (
 
 // MockCommandHandler 模拟命令处理器
 type MockCommandHandler struct {
-	commandType  packet.CommandType
-	responseType CommandResponseType
-	handleFunc   func(*CommandContext) (*CommandResponse, error)
+	commandType packet.CommandType
+	direction   CommandDirection // 替换 responseType
+	handleFunc  func(*CommandContext) (*CommandResponse, error)
 }
 
 func (m *MockCommandHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
@@ -21,8 +21,8 @@ func (m *MockCommandHandler) Handle(ctx *CommandContext) (*CommandResponse, erro
 	return &CommandResponse{Success: true, Data: string(data)}, nil
 }
 
-func (m *MockCommandHandler) GetResponseType() CommandResponseType {
-	return m.responseType
+func (m *MockCommandHandler) GetDirection() CommandDirection {
+	return m.direction
 }
 
 func (m *MockCommandHandler) GetCommandType() packet.CommandType {
@@ -31,10 +31,6 @@ func (m *MockCommandHandler) GetCommandType() packet.CommandType {
 
 func (m *MockCommandHandler) GetCategory() CommandCategory {
 	return CategoryMapping
-}
-
-func (m *MockCommandHandler) GetDirection() CommandDirection {
-	return DirectionOneway
 }
 
 func TestNewCommandRegistry(t *testing.T) {
@@ -58,8 +54,8 @@ func TestCommandRegistry_Register(t *testing.T) {
 
 	// 创建有效的处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Oneway,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionOneway, // 替换 Oneway
 	}
 
 	// 注册处理器
@@ -89,8 +85,8 @@ func TestCommandRegistry_RegisterInvalidCommandType(t *testing.T) {
 
 	// 创建无效的处理器（命令类型为0）
 	handler := &MockCommandHandler{
-		commandType:  0,
-		responseType: Oneway,
+		commandType: 0,
+		direction:   DirectionOneway,
 	}
 
 	// 尝试注册无效处理器
@@ -110,14 +106,14 @@ func TestCommandRegistry_RegisterDuplicate(t *testing.T) {
 
 	// 创建第一个处理器
 	handler1 := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Oneway,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionOneway,
 	}
 
 	// 创建第二个处理器（相同命令类型）
 	handler2 := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 	}
 
 	// 注册第一个处理器
@@ -153,8 +149,8 @@ func TestCommandRegistry_Unregister(t *testing.T) {
 
 	// 注册处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.HttpMapCreate,
-		responseType: Duplex,
+		commandType: packet.HttpMapCreate,
+		direction:   DirectionDuplex,
 	}
 
 	err := cr.Register(handler)
@@ -200,9 +196,9 @@ func TestCommandRegistry_GetHandler(t *testing.T) {
 
 	// 注册多个处理器
 	handlers := map[packet.CommandType]*MockCommandHandler{
-		packet.TcpMapCreate:   {commandType: packet.TcpMapCreate, responseType: Oneway},
-		packet.HttpMapCreate:  {commandType: packet.HttpMapCreate, responseType: Duplex},
-		packet.SocksMapCreate: {commandType: packet.SocksMapCreate, responseType: Oneway},
+		packet.TcpMapCreate:   {commandType: packet.TcpMapCreate, direction: DirectionOneway},
+		packet.HttpMapCreate:  {commandType: packet.HttpMapCreate, direction: DirectionDuplex},
+		packet.SocksMapCreate: {commandType: packet.SocksMapCreate, direction: DirectionOneway},
 	}
 
 	for _, handler := range handlers {
@@ -243,8 +239,8 @@ func TestCommandRegistry_ListHandlers(t *testing.T) {
 
 	for _, commandType := range expectedTypes {
 		handler := &MockCommandHandler{
-			commandType:  commandType,
-			responseType: Oneway,
+			commandType: commandType,
+			direction:   DirectionOneway,
 		}
 		err := cr.Register(handler)
 		if err != nil {
@@ -283,8 +279,8 @@ func TestCommandRegistry_GetHandlerCount(t *testing.T) {
 	}
 
 	// 注册处理器
-	handler1 := &MockCommandHandler{commandType: packet.TcpMapCreate, responseType: Oneway}
-	handler2 := &MockCommandHandler{commandType: packet.HttpMapCreate, responseType: Duplex}
+	handler1 := &MockCommandHandler{commandType: packet.TcpMapCreate, direction: DirectionOneway}
+	handler2 := &MockCommandHandler{commandType: packet.HttpMapCreate, direction: DirectionDuplex}
 
 	cr.Register(handler1)
 	cr.Register(handler2)
@@ -314,8 +310,8 @@ func TestCommandRegistry_ConcurrentAccess(t *testing.T) {
 		go func(id int) {
 			commandType := packet.CommandType(id + 1)
 			handler := &MockCommandHandler{
-				commandType:  commandType,
-				responseType: Oneway,
+				commandType: commandType,
+				direction:   DirectionOneway,
 			}
 
 			// 注册

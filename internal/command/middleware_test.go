@@ -78,8 +78,8 @@ func TestMiddlewareChain_Execution(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true, Data: "handler result"}, nil
 		},
@@ -152,8 +152,8 @@ func TestMiddlewareChain_ErrorHandling(t *testing.T) {
 
 	// 创建会返回错误的处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return nil, errors.New("handler error")
 		},
@@ -199,8 +199,8 @@ func TestMiddlewareChain_ShortCircuit(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true, Data: "handler result"}, nil
 		},
@@ -251,8 +251,8 @@ func TestMiddlewareChain_ContextModification(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 验证中间件修改的上下文
 			if !ctx.IsAuthenticated {
@@ -299,8 +299,8 @@ func TestMiddlewareChain_ResponseModification(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true, Data: "original data"}, nil
 		},
@@ -346,8 +346,8 @@ func TestMiddlewareChain_ConcurrentAccess(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true, Data: "concurrent result"}, nil
 		},
@@ -394,8 +394,8 @@ func TestMiddlewareChain_EmptyChain(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true, Data: "no middleware"}, nil
 		},

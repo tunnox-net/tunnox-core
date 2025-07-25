@@ -37,12 +37,12 @@ func (th *TestHelper) CreateMockStreamPacket(commandType packet.CommandType, bod
 }
 
 // CreateMockCommandHandler 创建模拟命令处理器
-func (th *TestHelper) CreateMockCommandHandler(commandType packet.CommandType, responseType CommandResponseType, handleFunc func(*CommandContext) (*CommandResponse, error)) CommandHandler {
+func (th *TestHelper) CreateMockCommandHandler(commandType packet.CommandType, direction CommandDirection, handleFunc func(*CommandContext) (*CommandResponse, error)) CommandHandler {
 	// 这里返回一个简单的实现，实际使用时需要在测试文件中定义具体的MockCommandHandler
 	return &simpleMockHandler{
-		commandType:  commandType,
-		responseType: responseType,
-		handleFunc:   handleFunc,
+		commandType: commandType,
+		direction:   direction,
+		handleFunc:  handleFunc,
 	}
 }
 
@@ -55,11 +55,18 @@ func (th *TestHelper) CreateMockMiddleware(name string, processFunc func(*Comman
 	}
 }
 
-// simpleMockHandler 简单的模拟处理器实现
+// simpleMockHandler 简单的模拟处理器
 type simpleMockHandler struct {
-	commandType  packet.CommandType
-	responseType CommandResponseType
-	handleFunc   func(*CommandContext) (*CommandResponse, error)
+	commandType packet.CommandType
+	direction   CommandDirection // 替换 responseType
+	handleFunc  func(*CommandContext) (*CommandResponse, error)
+}
+
+func newSimpleMockHandler(commandType packet.CommandType, direction CommandDirection) *simpleMockHandler {
+	return &simpleMockHandler{
+		commandType: commandType,
+		direction:   direction,
+	}
 }
 
 func (s *simpleMockHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
@@ -67,10 +74,6 @@ func (s *simpleMockHandler) Handle(ctx *CommandContext) (*CommandResponse, error
 		return s.handleFunc(ctx)
 	}
 	return &CommandResponse{Success: true}, nil
-}
-
-func (s *simpleMockHandler) GetResponseType() CommandResponseType {
-	return s.responseType
 }
 
 func (s *simpleMockHandler) GetCommandType() packet.CommandType {

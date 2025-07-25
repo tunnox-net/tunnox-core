@@ -102,17 +102,14 @@ type CommandHandler interface {
 	// Handle 处理命令
 	Handle(ctx *CommandContext) (*CommandResponse, error)
 
-	// GetResponseType 获取响应类型
-	GetResponseType() CommandResponseType
+	// GetDirection 获取命令流向（同时表示响应类型）
+	GetDirection() CommandDirection
 
 	// GetCommandType 获取命令类型
 	GetCommandType() packet.CommandType
 
 	// GetCategory 获取命令分类
 	GetCategory() CommandCategory
-
-	// GetDirection 获取命令流向
-	GetDirection() CommandDirection
 }
 
 // CommandCategory 命令分类
@@ -161,14 +158,6 @@ func (d CommandDirection) String() string {
 		return "unknown"
 	}
 }
-
-// CommandResponseType 响应类型
-type CommandResponseType = CommandDirection
-
-const (
-	ResponseOneway CommandResponseType = DirectionOneway
-	ResponseDuplex CommandResponseType = DirectionDuplex
-)
 
 // CommandContext 命令上下文
 type CommandContext struct {

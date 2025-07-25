@@ -43,8 +43,8 @@ func BenchmarkCommandRegistry_Register(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		handler := &simpleMockHandler{
-			commandType:  packet.CommandType(i % 10),
-			responseType: Oneway,
+			commandType: packet.CommandType(i % 10),
+			direction:   DirectionOneway,
 		}
 		cr.Register(handler)
 	}
@@ -57,8 +57,8 @@ func BenchmarkCommandRegistry_GetHandler(b *testing.B) {
 	// 预先注册一些处理器
 	for i := 0; i < 100; i++ {
 		handler := &simpleMockHandler{
-			commandType:  packet.CommandType(i),
-			responseType: Oneway,
+			commandType: packet.CommandType(i),
+			direction:   DirectionOneway,
 		}
 		cr.Register(handler)
 	}
@@ -77,8 +77,8 @@ func BenchmarkCommandExecutor_ExecuteOneway(b *testing.B) {
 
 	// 注册单向处理器
 	handler := &simpleMockHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Oneway,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionOneway,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true}, nil
 		},
@@ -113,8 +113,8 @@ func BenchmarkCommandExecutor_ExecuteDuplex(b *testing.B) {
 
 	// 注册双工处理器
 	handler := &simpleMockHandler{
-		commandType:  packet.HttpMapCreate,
-		responseType: Duplex,
+		commandType: packet.HttpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true}, nil
 		},
@@ -149,8 +149,8 @@ func BenchmarkCommandExecutor_ExecuteWithMiddleware(b *testing.B) {
 
 	// 注册处理器
 	handler := &simpleMockHandler{
-		commandType:  packet.SocksMapCreate,
-		responseType: Duplex,
+		commandType: packet.SocksMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true}, nil
 		},
@@ -194,8 +194,8 @@ func BenchmarkCommandExecutor_ExecuteMultipleMiddleware(b *testing.B) {
 
 	// 注册处理器
 	handler := &simpleMockHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true}, nil
 		},
@@ -241,8 +241,8 @@ func BenchmarkConcurrentExecution(b *testing.B) {
 
 	// 注册处理器
 	handler := &simpleMockHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true}, nil
 		},

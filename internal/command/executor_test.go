@@ -89,8 +89,8 @@ func TestCommandExecutor_ExecuteOneway(t *testing.T) {
 
 	// 创建单向处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Oneway,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionOneway,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			data, _ := json.Marshal("oneway success")
 			return &CommandResponse{Success: true, Data: string(data)}, nil
@@ -119,8 +119,8 @@ func TestCommandExecutor_ExecuteDuplex(t *testing.T) {
 
 	// 创建双工处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.HttpMapCreate,
-		responseType: Duplex,
+		commandType: packet.HttpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			data, _ := json.Marshal("duplex success")
 			return &CommandResponse{Success: true, Data: string(data)}, nil
@@ -146,8 +146,8 @@ func TestCommandExecutor_ExecuteWithError(t *testing.T) {
 
 	// 创建会返回错误的处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.SocksMapCreate,
-		responseType: Duplex,
+		commandType: packet.SocksMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return nil, errors.New("handler error")
 		},
@@ -185,8 +185,8 @@ func TestCommandExecutor_ExecuteWithMiddleware(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			data, _ := json.Marshal("oneway success")
 			return &CommandResponse{Success: true, Data: string(data)}, nil
@@ -310,8 +310,8 @@ func TestCommandExecutor_DuplexTimeout(t *testing.T) {
 
 	// 创建会延迟的处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 延迟超过超时时间
 			time.Sleep(200 * time.Millisecond)
@@ -344,8 +344,8 @@ func TestCommandExecutor_ConcurrentExecution(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			data, _ := json.Marshal(ctx.RequestID)
 			return &CommandResponse{Success: true, Data: string(data)}, nil

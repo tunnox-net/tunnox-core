@@ -17,8 +17,8 @@ func TestRPCIntegration(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex, // 替换 responseType 和 Duplex
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 解析请求数据
 			var request struct {
@@ -68,14 +68,11 @@ func TestRPCWithMiddleware(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.HttpMapCreate,
-		responseType: Duplex,
+		commandType: packet.HttpMapCreate,
+		direction:   DirectionDuplex, // 替换 responseType 和 Duplex
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			data, _ := json.Marshal("handler result")
-			return &CommandResponse{
-				Success: true,
-				Data:    string(data),
-			}, nil
+			return &CommandResponse{Success: true, Data: string(data)}, nil
 		},
 	}
 
@@ -142,8 +139,8 @@ func TestRPCErrorHandling(t *testing.T) {
 
 	// 创建会返回错误的处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.SocksMapCreate,
-		responseType: Duplex,
+		commandType: packet.SocksMapCreate,
+		direction:   DirectionDuplex, // 替换 responseType 和 Duplex
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 模拟业务逻辑错误
 			var request struct {
@@ -170,10 +167,7 @@ func TestRPCErrorHandling(t *testing.T) {
 			}
 
 			data, _ := json.Marshal("port mapped successfully")
-			return &CommandResponse{
-				Success: true,
-				Data:    string(data),
-			}, nil
+			return &CommandResponse{Success: true, Data: string(data)}, nil
 		},
 	}
 
@@ -207,8 +201,8 @@ func TestRPCConcurrency(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex, // 替换 responseType 和 Duplex
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 模拟处理时间
 			time.Sleep(50 * time.Millisecond)
@@ -216,10 +210,7 @@ func TestRPCConcurrency(t *testing.T) {
 			data, _ := json.Marshal(map[string]interface{}{
 				"port": 8080,
 			})
-			return &CommandResponse{
-				Success: true,
-				Data:    string(data),
-			}, nil
+			return &CommandResponse{Success: true, Data: string(data)}, nil
 		},
 	}
 
@@ -261,8 +252,8 @@ func TestRPCRequestIDGeneration(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex, // 替换 responseType 和 Duplex
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 验证请求ID不为空
 			if ctx.RequestID == "" {
@@ -275,10 +266,7 @@ func TestRPCRequestIDGeneration(t *testing.T) {
 			data, _ := json.Marshal(map[string]interface{}{
 				"port": 8080,
 			})
-			return &CommandResponse{
-				Success: true,
-				Data:    string(data),
-			}, nil
+			return &CommandResponse{Success: true, Data: string(data)}, nil
 		},
 	}
 
@@ -302,8 +290,8 @@ func TestRPCContextPropagation(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.HttpMapCreate,
-		responseType: Duplex,
+		commandType: packet.HttpMapCreate,
+		direction:   DirectionDuplex, // 替换 responseType 和 Duplex
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 验证上下文字段
 			if ctx.ConnectionID == "" {
@@ -333,10 +321,7 @@ func TestRPCContextPropagation(t *testing.T) {
 				"receiver_id":   ctx.ReceiverID,
 				"command_type":  ctx.CommandType,
 			})
-			return &CommandResponse{
-				Success: true,
-				Data:    string(data),
-			}, nil
+			return &CommandResponse{Success: true, Data: string(data)}, nil
 		},
 	}
 
@@ -360,8 +345,8 @@ func TestRPCResponseSerialization(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex, // 替换 responseType 和 Duplex
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 创建复杂响应
 			data, _ := json.Marshal(map[string]interface{}{
@@ -405,8 +390,8 @@ func TestRPCGracefulShutdown(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMapCreate,
-		responseType: Duplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionDuplex, // 替换 responseType 和 Duplex
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 检查上下文是否被取消
 			select {

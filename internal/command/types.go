@@ -11,7 +11,8 @@ type CommandContext = types.CommandContext
 type CommandResponse = types.CommandResponse
 type CommandCategory = types.CommandCategory
 type CommandDirection = types.CommandDirection
-type CommandResponseType = types.CommandResponseType
+
+// 移除 CommandResponseType = types.CommandResponseType
 type Middleware = types.Middleware
 
 // 导出常量
@@ -25,8 +26,8 @@ const (
 	DirectionOneway = types.DirectionOneway
 	DirectionDuplex = types.DirectionDuplex
 
-	Oneway = types.ResponseOneway
-	Duplex = types.ResponseDuplex
+	// 移除 Oneway = types.ResponseOneway
+	// 移除 Duplex = types.ResponseDuplex
 )
 
 // CommandType 重新定义的命令类型
