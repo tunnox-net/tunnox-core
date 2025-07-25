@@ -10,21 +10,17 @@ import (
 	"tunnox-core/internal/packet"
 )
 
-// TestRPCIntegration 测试完整的RPC集成流程
+// TestRPCIntegration 测试RPC集成流程
 func TestRPCIntegration(t *testing.T) {
-	// 创建组件
 	registry := NewCommandRegistry()
 	executor := NewCommandExecutor(registry)
 
-	// 创建双工处理器
+	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType:  packet.TcpMap,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
-			// 模拟处理时间
-			time.Sleep(10 * time.Millisecond)
-
-			// 解析请求体
+			// 解析请求数据
 			var request struct {
 				Port int `json:"port"`
 			}
@@ -35,17 +31,17 @@ func TestRPCIntegration(t *testing.T) {
 				}, nil
 			}
 
-			// 返回成功响应
+			// 处理请求
+			data, _ := json.Marshal(map[string]interface{}{
+				"port":      request.Port,
+				"status":    "mapped",
+				"requestID": ctx.RequestID,
+			})
 			return &CommandResponse{
-				Success: true,
-				Data: map[string]interface{}{
-					"port":      request.Port,
-					"status":    "mapped",
-					"requestID": ctx.RequestID,
-				},
-				Metadata: map[string]interface{}{
-					"processed_at": time.Now().Unix(),
-				},
+				Success:        true,
+				Data:           string(data),
+				ProcessingTime: time.Since(ctx.StartTime),
+				HandlerName:    "tcp_map_handler",
 			}, nil
 		},
 	}
@@ -75,9 +71,10 @@ func TestRPCWithMiddleware(t *testing.T) {
 		commandType:  packet.HttpMap,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
+			data, _ := json.Marshal("handler result")
 			return &CommandResponse{
 				Success: true,
-				Data:    "handler result",
+				Data:    string(data),
 			}, nil
 		},
 	}
@@ -98,8 +95,8 @@ func TestRPCWithMiddleware(t *testing.T) {
 			}
 
 			// 添加认证信息到上下文
-			ctx.Metadata["authenticated"] = true
-			ctx.Metadata["user_id"] = ctx.SenderID
+			ctx.IsAuthenticated = true
+			ctx.UserID = ctx.SenderID
 
 			return next(ctx)
 		},
@@ -110,7 +107,7 @@ func TestRPCWithMiddleware(t *testing.T) {
 		name: "log-middleware",
 		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
 			// 记录请求开始
-			ctx.Metadata["start_time"] = time.Now().Unix()
+			ctx.StartTime = time.Now()
 
 			response, err := next(ctx)
 			if err != nil {
@@ -118,7 +115,7 @@ func TestRPCWithMiddleware(t *testing.T) {
 			}
 
 			// 记录请求结束
-			ctx.Metadata["end_time"] = time.Now().Unix()
+			ctx.EndTime = time.Now()
 
 			return response, nil
 		},
@@ -172,9 +169,10 @@ func TestRPCErrorHandling(t *testing.T) {
 				return nil, errors.New("system error")
 			}
 
+			data, _ := json.Marshal("port mapped successfully")
 			return &CommandResponse{
 				Success: true,
-				Data:    "port mapped successfully",
+				Data:    string(data),
 			}, nil
 		},
 	}
@@ -224,9 +222,12 @@ func TestRPCConcurrency(t *testing.T) {
 			// 模拟处理时间
 			time.Sleep(50 * time.Millisecond)
 
+			data, _ := json.Marshal(map[string]interface{}{
+				"port": 8080,
+			})
 			return &CommandResponse{
 				Success: true,
-				Data:    ctx.RequestID,
+				Data:    string(data),
 			}, nil
 		},
 	}
@@ -280,9 +281,12 @@ func TestRPCRequestIDGeneration(t *testing.T) {
 				}, nil
 			}
 
+			data, _ := json.Marshal(map[string]interface{}{
+				"port": 8080,
+			})
 			return &CommandResponse{
 				Success: true,
-				Data:    ctx.RequestID,
+				Data:    string(data),
 			}, nil
 		},
 	}
@@ -332,14 +336,15 @@ func TestRPCContextPropagation(t *testing.T) {
 				}, nil
 			}
 
+			data, _ := json.Marshal(map[string]interface{}{
+				"connection_id": ctx.ConnectionID,
+				"sender_id":     ctx.SenderID,
+				"receiver_id":   ctx.ReceiverID,
+				"command_type":  ctx.CommandType,
+			})
 			return &CommandResponse{
 				Success: true,
-				Data: map[string]interface{}{
-					"connection_id": ctx.ConnectionID,
-					"sender_id":     ctx.SenderID,
-					"receiver_id":   ctx.ReceiverID,
-					"command_type":  ctx.CommandType,
-				},
+				Data:    string(data),
 			}, nil
 		},
 	}
@@ -368,22 +373,21 @@ func TestRPCResponseSerialization(t *testing.T) {
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 创建复杂响应
+			data, _ := json.Marshal(map[string]interface{}{
+				"string": "test string",
+				"int":    123,
+				"float":  3.14,
+				"bool":   true,
+				"array":  []string{"a", "b", "c"},
+				"object": map[string]interface{}{"key": "value"},
+				"null":   nil,
+			})
 			response := &CommandResponse{
-				Success: true,
-				Data: map[string]interface{}{
-					"string": "test string",
-					"int":    123,
-					"float":  3.14,
-					"bool":   true,
-					"array":  []string{"a", "b", "c"},
-					"object": map[string]interface{}{"key": "value"},
-					"null":   nil,
-				},
-				Metadata: map[string]interface{}{
-					"timestamp": time.Now().Unix(),
-					"version":   "1.0.0",
-				},
-				RequestID: ctx.RequestID,
+				Success:        true,
+				Data:           string(data),
+				ProcessingTime: time.Since(ctx.StartTime),
+				HandlerName:    "serialization_test_handler",
+				RequestID:      ctx.RequestID,
 			}
 
 			return response, nil

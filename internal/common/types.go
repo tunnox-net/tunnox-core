@@ -45,7 +45,10 @@ type Connection struct {
 	Stream    stream.PackageStreamer
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	Metadata  map[string]interface{}
+	// 移除 Metadata map[string]interface{}，添加具体的字段
+	LastHeartbeat time.Time // 最后心跳时间
+	ClientInfo    string    // 客户端信息
+	Protocol      string    // 协议类型
 }
 
 // Session 会话接口

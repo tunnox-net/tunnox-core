@@ -1,6 +1,7 @@
 package command
 
 import (
+	"encoding/json"
 	"testing"
 	"tunnox-core/internal/packet"
 )
@@ -16,7 +17,8 @@ func (m *MockCommandHandler) Handle(ctx *CommandContext) (*CommandResponse, erro
 	if m.handleFunc != nil {
 		return m.handleFunc(ctx)
 	}
-	return &CommandResponse{Success: true}, nil
+	data, _ := json.Marshal("registry result")
+	return &CommandResponse{Success: true, Data: string(data)}, nil
 }
 
 func (m *MockCommandHandler) GetResponseType() ResponseType {
@@ -25,6 +27,14 @@ func (m *MockCommandHandler) GetResponseType() ResponseType {
 
 func (m *MockCommandHandler) GetCommandType() packet.CommandType {
 	return m.commandType
+}
+
+func (m *MockCommandHandler) GetCategory() CommandCategory {
+	return CategoryMapping
+}
+
+func (m *MockCommandHandler) GetDirection() CommandDirection {
+	return DirectionOneway
 }
 
 func TestNewCommandRegistry(t *testing.T) {

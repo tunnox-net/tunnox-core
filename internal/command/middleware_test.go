@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 	"tunnox-core/internal/packet"
 )
 
 func TestMiddlewareFunc_Process(t *testing.T) {
 	// 创建中间件函数
 	middlewareFunc := MiddlewareFunc(func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
-		// 在调用前添加元数据
-		ctx.Metadata["middleware_called"] = true
+		// 在调用前设置开始时间
+		ctx.StartTime = time.Now()
 
 		// 调用下一个处理器
 		response, err := next(ctx)
@@ -19,8 +20,10 @@ func TestMiddlewareFunc_Process(t *testing.T) {
 			return nil, err
 		}
 
-		// 修改响应
-		response.Metadata = map[string]interface{}{"middleware": "func"}
+		// 设置结束时间和处理时间
+		ctx.EndTime = time.Now()
+		response.ProcessingTime = ctx.EndTime.Sub(ctx.StartTime)
+		response.HandlerName = "middleware_func"
 		return response, nil
 	})
 
@@ -29,7 +32,6 @@ func TestMiddlewareFunc_Process(t *testing.T) {
 		ConnectionID: "test-connection",
 		CommandType:  packet.TcpMap,
 		RequestID:    "test-request",
-		Metadata:     make(map[string]interface{}),
 		Context:      context.Background(),
 	}
 
@@ -53,12 +55,20 @@ func TestMiddlewareFunc_Process(t *testing.T) {
 		t.Errorf("Expected data 'next result', got %v", response.Data)
 	}
 
-	if response.Metadata["middleware"] != "func" {
-		t.Error("Middleware should add metadata to response")
+	if response.HandlerName != "middleware_func" {
+		t.Error("Middleware should set handler name")
 	}
 
-	if !ctx.Metadata["middleware_called"].(bool) {
-		t.Error("Middleware should add metadata to context")
+	if response.ProcessingTime <= 0 {
+		t.Error("Middleware should set processing time")
+	}
+
+	if ctx.StartTime.IsZero() {
+		t.Error("Middleware should set start time")
+	}
+
+	if ctx.EndTime.IsZero() {
+		t.Error("Middleware should set end time")
 	}
 }
 
@@ -82,15 +92,13 @@ func TestMiddlewareChain_Execution(t *testing.T) {
 	middleware1 := &MockMiddleware{
 		name: "middleware1",
 		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
-			ctx.Metadata["middleware1"] = true
+			ctx.StartTime = time.Now()
 			response, err := next(ctx)
 			if err != nil {
 				return nil, err
 			}
-			if response.Metadata == nil {
-				response.Metadata = make(map[string]interface{})
-			}
-			response.Metadata["middleware1"] = "processed"
+			response.HandlerName = "middleware1"
+			response.ProcessingTime = time.Since(ctx.StartTime)
 			return response, nil
 		},
 	}
@@ -98,15 +106,13 @@ func TestMiddlewareChain_Execution(t *testing.T) {
 	middleware2 := &MockMiddleware{
 		name: "middleware2",
 		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
-			ctx.Metadata["middleware2"] = true
+			ctx.StartTime = time.Now()
 			response, err := next(ctx)
 			if err != nil {
 				return nil, err
 			}
-			if response.Metadata == nil {
-				response.Metadata = make(map[string]interface{})
-			}
-			response.Metadata["middleware2"] = "processed"
+			response.HandlerName = "middleware2"
+			response.ProcessingTime = time.Since(ctx.StartTime)
 			return response, nil
 		},
 	}
@@ -114,15 +120,13 @@ func TestMiddlewareChain_Execution(t *testing.T) {
 	middleware3 := &MockMiddleware{
 		name: "middleware3",
 		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
-			ctx.Metadata["middleware3"] = true
+			ctx.StartTime = time.Now()
 			response, err := next(ctx)
 			if err != nil {
 				return nil, err
 			}
-			if response.Metadata == nil {
-				response.Metadata = make(map[string]interface{})
-			}
-			response.Metadata["middleware3"] = "processed"
+			response.HandlerName = "middleware3"
+			response.ProcessingTime = time.Since(ctx.StartTime)
 			return response, nil
 		},
 	}
@@ -162,14 +166,16 @@ func TestMiddlewareChain_ErrorHandling(t *testing.T) {
 	middleware := &MockMiddleware{
 		name: "error-handling-middleware",
 		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
-			ctx.Metadata["middleware_called"] = true
+			ctx.StartTime = time.Now()
 
 			response, err := next(ctx)
 			if err != nil {
 				// 捕获错误并返回错误响应
 				return &CommandResponse{
-					Success: false,
-					Error:   "middleware caught: " + err.Error(),
+					Success:        false,
+					Error:          "middleware caught: " + err.Error(),
+					HandlerName:    "error-handling-middleware",
+					ProcessingTime: time.Since(ctx.StartTime),
 				}, nil
 			}
 
@@ -213,8 +219,9 @@ func TestMiddlewareChain_ShortCircuit(t *testing.T) {
 			// 检查请求体，如果是特定值则短路
 			if ctx.RequestBody == `{"short_circuit": true}` {
 				return &CommandResponse{
-					Success: true,
-					Data:    "short circuit response",
+					Success:     true,
+					Data:        "short circuit response",
+					HandlerName: "short-circuit-middleware",
 				}, nil
 			}
 
@@ -251,10 +258,13 @@ func TestMiddlewareChain_ContextModification(t *testing.T) {
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 验证中间件修改的上下文
-			if ctx.Metadata["modified"] != true {
-				t.Error("Context should be modified by middleware")
+			if !ctx.IsAuthenticated {
+				t.Error("Context should be authenticated by middleware")
 			}
-			return &CommandResponse{Success: true, Data: ctx.Metadata["value"]}, nil
+			if ctx.UserID == "" {
+				t.Error("Context should have user ID set by middleware")
+			}
+			return &CommandResponse{Success: true, Data: ctx.UserID}, nil
 		},
 	}
 
@@ -266,8 +276,8 @@ func TestMiddlewareChain_ContextModification(t *testing.T) {
 		name: "context-modification-middleware",
 		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
 			// 修改上下文
-			ctx.Metadata["modified"] = true
-			ctx.Metadata["value"] = "modified value"
+			ctx.IsAuthenticated = true
+			ctx.UserID = "modified_user_id"
 
 			return next(ctx)
 		},
@@ -313,7 +323,8 @@ func TestMiddlewareChain_ResponseModification(t *testing.T) {
 
 			// 修改响应
 			response.Data = "modified data"
-			response.Metadata = map[string]interface{}{"modified": true}
+			response.HandlerName = "response-modification-middleware"
+			response.ProcessingTime = 100 * time.Millisecond
 
 			return response, nil
 		},
@@ -352,7 +363,7 @@ func TestMiddlewareChain_ConcurrentAccess(t *testing.T) {
 	middleware := &MockMiddleware{
 		name: "concurrent-middleware",
 		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
-			ctx.Metadata["concurrent"] = true
+			ctx.StartTime = time.Now()
 			return next(ctx)
 		},
 	}

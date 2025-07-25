@@ -1,6 +1,7 @@
 package command
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"tunnox-core/internal/packet"
@@ -130,31 +131,37 @@ func TestBaseCommandHandler_ParseRequest_InvalidJSON(t *testing.T) {
 func TestBaseCommandHandler_CreateResponse(t *testing.T) {
 	handler := NewTestHandler()
 
-	response := &TestResponse{
+	testData := &TestResponse{
 		ID:      "test_123",
 		Status:  "success",
 		Message: "Hello World",
 	}
 
-	cmdResponse := handler.CreateSuccessResponse(response, "req_123")
-	assert.NotNil(t, cmdResponse)
-	assert.True(t, cmdResponse.Success)
-	assert.Equal(t, "req_123", cmdResponse.RequestID)
-	assert.Equal(t, response, cmdResponse.Data)
-	assert.Empty(t, cmdResponse.Error)
+	response := handler.CreateSuccessResponse(testData, "req_456")
+
+	assert.NotNil(t, response)
+	assert.True(t, response.Success)
+	assert.Equal(t, "req_456", response.RequestID)
+
+	// 验证响应数据是JSON字符串
+	var data TestResponse
+	err := json.Unmarshal([]byte(response.Data), &data)
+	require.NoError(t, err)
+	assert.Equal(t, "test_123", data.ID)
+	assert.Equal(t, "success", data.Status)
+	assert.Equal(t, "Hello World", data.Message)
 }
 
 func TestBaseCommandHandler_CreateErrorResponse(t *testing.T) {
 	handler := NewTestHandler()
 
-	err := fmt.Errorf("test error")
-	cmdResponse := handler.CreateErrorResponse(err, "req_123")
+	response := handler.CreateErrorResponse(fmt.Errorf("test error"), "req_456")
 
-	assert.NotNil(t, cmdResponse)
-	assert.False(t, cmdResponse.Success)
-	assert.Equal(t, "req_123", cmdResponse.RequestID)
-	assert.Nil(t, cmdResponse.Data)
-	assert.Contains(t, cmdResponse.Error, "test error")
+	assert.NotNil(t, response)
+	assert.False(t, response.Success)
+	assert.Equal(t, "req_456", response.RequestID)
+	assert.Equal(t, "test error", response.Error)
+	assert.Equal(t, "", response.Data) // Data 字段为空字符串
 }
 
 func TestBaseCommandHandler_Handle_Success(t *testing.T) {
@@ -173,8 +180,9 @@ func TestBaseCommandHandler_Handle_Success(t *testing.T) {
 	assert.Equal(t, "req_456", response.RequestID)
 
 	// 验证响应数据
-	data, ok := response.Data.(*TestResponse)
-	assert.True(t, ok)
+	var data TestResponse
+	err = json.Unmarshal([]byte(response.Data), &data)
+	require.NoError(t, err)
 	assert.Equal(t, "test_123", data.ID)
 	assert.Equal(t, "success", data.Status)
 	assert.Equal(t, "Hello Alice", data.Message)

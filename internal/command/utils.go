@@ -16,20 +16,23 @@ type CommandUtils struct {
 	requestData  interface{}
 	responseData interface{}
 	timeout      time.Duration
-	metadata     map[string]interface{}
 	requestID    string
 	commandId    string // 客户端生成的唯一命令ID
 	connectionID string
 	session      protocol.Session
 	ctx          context.Context
 	errorHandler func(error) error
+	// 替换 metadata 为具体的类型化字段
+	isAuthenticated bool
+	userID          string
+	startTime       time.Time
+	endTime         time.Time
 }
 
 // NewCommandUtils 创建新的命令工具实例
 func NewCommandUtils(session protocol.Session) *CommandUtils {
 	return &CommandUtils{
 		session:      session,
-		metadata:     make(map[string]interface{}),
 		timeout:      30 * time.Second,
 		errorHandler: defaultErrorHandler,
 	}
@@ -59,9 +62,27 @@ func (cu *CommandUtils) Timeout(timeout time.Duration) *CommandUtils {
 	return cu
 }
 
-// WithMetadata 添加元数据
-func (cu *CommandUtils) WithMetadata(key string, value interface{}) *CommandUtils {
-	cu.metadata[key] = value
+// WithAuthentication 设置认证状态
+func (cu *CommandUtils) WithAuthentication(isAuthenticated bool) *CommandUtils {
+	cu.isAuthenticated = isAuthenticated
+	return cu
+}
+
+// WithUserID 设置用户ID
+func (cu *CommandUtils) WithUserID(userID string) *CommandUtils {
+	cu.userID = userID
+	return cu
+}
+
+// WithStartTime 设置开始时间
+func (cu *CommandUtils) WithStartTime(startTime time.Time) *CommandUtils {
+	cu.startTime = startTime
+	return cu
+}
+
+// WithEndTime 设置结束时间
+func (cu *CommandUtils) WithEndTime(endTime time.Time) *CommandUtils {
+	cu.endTime = endTime
 	return cu
 }
 
@@ -123,6 +144,11 @@ func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 		cu.commandId = cu.generateCommandId()
 	}
 
+	// 设置开始时间（如果未设置）
+	if cu.startTime.IsZero() {
+		cu.startTime = time.Now()
+	}
+
 	// 序列化请求数据
 	var commandBody string
 	if cu.requestData != nil {
@@ -169,9 +195,14 @@ func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 		return cu.waitForResponse()
 	}
 
+	// 设置结束时间
+	cu.endTime = time.Now()
+
 	return &CommandResponse{
-		Success: true,
-		Data:    nil,
+		Success:        true,
+		Data:           "",
+		ProcessingTime: cu.endTime.Sub(cu.startTime),
+		HandlerName:    "command_utils",
 	}, nil
 }
 
@@ -236,13 +267,8 @@ func (cu *CommandUtils) waitForResponse() (*CommandResponse, error) {
 					}
 
 					// 如果指定了响应数据结构，尝试解析
-					if cu.responseData != nil && response.Data != nil {
-						dataBytes, err := json.Marshal(response.Data)
-						if err != nil {
-							return nil, cu.errorHandler(fmt.Errorf("failed to marshal response data: %w", err))
-						}
-
-						if err := json.Unmarshal(dataBytes, cu.responseData); err != nil {
+					if cu.responseData != nil && response.Data != "" {
+						if err := json.Unmarshal([]byte(response.Data), cu.responseData); err != nil {
 							return nil, cu.errorHandler(fmt.Errorf("failed to unmarshal response data: %w", err))
 						}
 					}

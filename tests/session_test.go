@@ -53,7 +53,6 @@ func TestSessionInitConnection(t *testing.T) {
 	// 验证连接信息
 	assert.NotEmpty(t, connInfo.ID, "Expected non-empty connection ID")
 	assert.NotNil(t, connInfo.Stream, "Expected non-nil stream")
-	assert.NotNil(t, connInfo.Metadata, "Expected non-nil metadata")
 
 	// 验证活跃连接数量
 	activeCount := session.GetActiveConnections()

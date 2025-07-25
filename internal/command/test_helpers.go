@@ -76,6 +76,14 @@ func (s *simpleMockHandler) GetCommandType() packet.CommandType {
 	return s.commandType
 }
 
+func (s *simpleMockHandler) GetCategory() CommandCategory {
+	return CategoryMapping // 默认分类
+}
+
+func (s *simpleMockHandler) GetDirection() CommandDirection {
+	return DirectionOneway // 默认方向
+}
+
 // simpleMockMiddleware 简单的模拟中间件实现
 type simpleMockMiddleware struct {
 	name        string

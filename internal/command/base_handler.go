@@ -96,7 +96,12 @@ func (b *BaseCommandHandler[TRequest, TResponse]) CreateResponse(
 	}
 
 	if data != nil {
-		response.Data = data
+		// 将 data 序列化为 JSON 字符串
+		if jsonData, jsonErr := json.Marshal(data); jsonErr == nil {
+			response.Data = string(jsonData)
+		} else {
+			response.Error = fmt.Sprintf("failed to marshal response data: %v", jsonErr)
+		}
 	}
 
 	return response

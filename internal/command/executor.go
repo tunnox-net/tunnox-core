@@ -143,16 +143,19 @@ func (ce *CommandExecutor) createCommandContext(streamPacket *common.StreamPacke
 	commandPacket := streamPacket.Packet.CommandPacket
 
 	return &CommandContext{
-		ConnectionID: streamPacket.ConnectionID,
-		CommandType:  commandPacket.CommandType,
-		CommandId:    commandPacket.CommandId,
-		RequestID:    commandPacket.Token,
-		SenderID:     commandPacket.SenderId,
-		ReceiverID:   commandPacket.ReceiverId,
-		RequestBody:  commandPacket.CommandBody,
-		Session:      nil, // 需要从外部设置
-		Context:      context.Background(),
-		Metadata:     make(map[string]interface{}),
+		ConnectionID:    streamPacket.ConnectionID,
+		CommandType:     commandPacket.CommandType,
+		CommandId:       commandPacket.CommandId,
+		RequestID:       commandPacket.Token,
+		SenderID:        commandPacket.SenderId,
+		ReceiverID:      commandPacket.ReceiverId,
+		RequestBody:     commandPacket.CommandBody,
+		Session:         nil, // 需要从外部设置
+		Context:         context.Background(),
+		IsAuthenticated: false,
+		UserID:          "",
+		StartTime:       time.Now(),
+		EndTime:         time.Time{},
 	}
 }
 
