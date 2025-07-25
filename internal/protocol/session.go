@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/cloud/generators"
+	"tunnox-core/internal/command"
 	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -36,12 +37,15 @@ type CommandRegistry = common.CommandRegistry
 
 // ConnectionSession 实现 Session 接口
 type ConnectionSession struct {
-	connMap         map[string]*Connection
-	connLock        sync.RWMutex
-	idManager       *generators.IDManager
-	streamMgr       *stream.StreamManager
-	streamFactory   stream.StreamFactory
-	commandRegistry CommandRegistry
+	connMap       map[string]*Connection
+	connLock      sync.RWMutex
+	idManager     *generators.IDManager
+	streamMgr     *stream.StreamManager
+	streamFactory stream.StreamFactory
+
+	// 新的命令处理架构
+	commandService  command.CommandService // 替换 commandRegistry
+	responseManager *ResponseManager       // 新增：响应管理
 
 	utils.Dispose
 }
@@ -55,11 +59,13 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 	streamMgr := stream.NewStreamManager(streamFactory, parentCtx)
 
 	session := &ConnectionSession{
-		connMap:         make(map[string]*Connection),
-		idManager:       idManager,
-		streamMgr:       streamMgr,
-		streamFactory:   streamFactory,
-		commandRegistry: nil, // 暂时设为 nil，通过 SetCommandRegistry 方法设置
+		connMap:       make(map[string]*Connection),
+		idManager:     idManager,
+		streamMgr:     streamMgr,
+		streamFactory: streamFactory,
+		// 新的命令处理架构将在后续设置
+		commandService:  nil,
+		responseManager: nil,
 	}
 
 	// 设置资源清理回调
@@ -68,22 +74,29 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 	return session
 }
 
-// SetCommandRegistry 设置命令注册表
-func (s *ConnectionSession) SetCommandRegistry(registry CommandRegistry) {
-	s.commandRegistry = registry
-	// 注册默认命令处理器
-	s.registerDefaultHandlers()
-}
+// SetCommandService 设置命令服务
+func (s *ConnectionSession) SetCommandService(commandService command.CommandService) {
+	s.commandService = commandService
 
-// registerDefaultHandlers 注册默认命令处理器
-func (s *ConnectionSession) registerDefaultHandlers() {
-	if s.commandRegistry == nil {
-		utils.Warnf("Command registry is nil, skipping handler registration")
-		return
+	// 创建响应管理器
+	s.responseManager = NewResponseManager(s, s.Ctx())
+
+	// 设置响应发送器到命令服务
+	if commandService != nil {
+		commandService.SetResponseSender(s.responseManager)
 	}
 
-	// 注意：处理器注册应该在外部通过 SetCommandRegistry 方法传入已配置的注册表
-	utils.Infof("Command registry set, handlers should be pre-registered")
+	utils.Infof("Command service set with response manager")
+}
+
+// GetCommandService 获取命令服务
+func (s *ConnectionSession) GetCommandService() command.CommandService {
+	return s.commandService
+}
+
+// GetResponseManager 获取响应管理器
+func (s *ConnectionSession) GetResponseManager() *ResponseManager {
+	return s.responseManager
 }
 
 // CreateConnection 创建新连接
@@ -205,22 +218,14 @@ func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error 
 	utils.Infof("Processing command packet for connection: %s, command: %v",
 		connPacket.ConnectionID, connPacket.Packet.CommandPacket.CommandType)
 
-	// 检查命令注册表是否已设置
-	if s.commandRegistry == nil {
-		utils.Warnf("Command registry is nil, using default command handler")
-		return s.handleDefaultCommand(connPacket)
-	}
-
-	// 获取命令处理器
-	handler, exists := s.commandRegistry.GetHandler(connPacket.Packet.CommandPacket.CommandType)
-	if !exists {
-		utils.Warnf("No handler found for command type %v", connPacket.Packet.CommandPacket.CommandType)
-		// 暂时使用简单的处理逻辑
+	// 检查命令服务是否已设置
+	if s.commandService == nil {
+		utils.Warnf("Command service is nil, using default command handler")
 		return s.handleDefaultCommand(connPacket)
 	}
 
 	// 创建命令上下文
-	cmdCtx := &CommandContext{
+	cmdCtx := &command.CommandContext{
 		ConnectionID:    connPacket.ConnectionID,
 		CommandType:     connPacket.Packet.CommandPacket.CommandType,
 		CommandId:       connPacket.Packet.CommandPacket.CommandId,
@@ -236,17 +241,16 @@ func (s *ConnectionSession) handleCommandPacket(connPacket *StreamPacket) error 
 		EndTime:         time.Time{},
 	}
 
-	// 执行命令处理
-	response, err := handler.Handle(cmdCtx)
+	// 使用命令服务执行命令
+	response, err := s.commandService.Execute(cmdCtx)
 	if err != nil {
-		utils.Errorf("Failed to handle command for connection %s: %v", connPacket.ConnectionID, err)
+		utils.Errorf("Failed to execute command for connection %s: %v", connPacket.ConnectionID, err)
 		return err
 	}
 
-	// 处理响应
+	// 响应处理由CommandService自动完成
 	if response != nil {
-		utils.Infof("Command response for connection %s: success=%v", connPacket.ConnectionID, response.Success)
-		// TODO: 发送响应给客户端
+		utils.Infof("Command executed for connection %s: success=%v", connPacket.ConnectionID, response.Success)
 	}
 
 	return nil
@@ -386,6 +390,22 @@ func (s *ConnectionSession) GetActiveConnections() int {
 // onClose 资源清理回调
 func (s *ConnectionSession) onClose() error {
 	utils.Infof("Cleaning up connection session resources...")
+
+	// 清理命令服务
+	if s.commandService != nil {
+		if err := s.commandService.Close(); err != nil {
+			utils.Errorf("Failed to close command service: %v", err)
+		}
+		s.commandService = nil
+	}
+
+	// 清理响应管理器
+	if s.responseManager != nil {
+		if err := s.responseManager.Dispose.Close(); err != nil {
+			utils.Errorf("Failed to close response manager: %v", err)
+		}
+		s.responseManager = nil
+	}
 
 	// 获取所有连接信息的副本，避免在锁内调用 Close
 	var connections []*Connection
