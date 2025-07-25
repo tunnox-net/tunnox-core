@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/stream/encryption"
 	"tunnox-core/internal/stream/processor"
 )
 
@@ -22,7 +21,7 @@ type StreamFactoryConfig struct {
 // DefaultStreamFactoryConfig 默认流工厂配置
 func DefaultStreamFactoryConfig() *StreamFactoryConfig {
 	return &StreamFactoryConfig{
-		EnableCompression: true,
+		EnableCompression: false,
 		EnableEncryption:  false,
 		EnableRateLimit:   false,
 		CompressionLevel:  6,
@@ -38,7 +37,7 @@ type StreamFactory = stream.StreamFactory
 // DefaultStreamFactory 默认流工厂实现
 type DefaultStreamFactory struct {
 	config     *StreamFactoryConfig
-	encryption encryption.Encryption
+	encryption stream.EncryptionKey
 }
 
 // NewDefaultStreamFactory 创建新的默认流工厂
@@ -46,7 +45,7 @@ func NewDefaultStreamFactory(ctx context.Context) *DefaultStreamFactory {
 	config := DefaultStreamFactoryConfig()
 	return &DefaultStreamFactory{
 		config:     config,
-		encryption: encryption.NewNoEncryption(),
+		encryption: nil, // 默认无加密
 	}
 }
 
@@ -62,9 +61,7 @@ func NewConfigurableStreamFactory(ctx context.Context, config *StreamFactoryConf
 
 	// 根据配置设置加密
 	if config.EnableEncryption && config.EncryptionKey != nil {
-		if enc, err := encryption.NewAESEncryption(config.EncryptionKey); err == nil {
-			factory.encryption = enc
-		}
+		factory.encryption = stream.NewStaticKey(config.EncryptionKey, "default")
 	}
 
 	return factory
