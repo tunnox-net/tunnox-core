@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/utils"
 )
 
@@ -42,7 +41,7 @@ func (r *DisposeResult) Error() string {
 
 // ResourceManager 资源管理器，负责统一管理所有可释放资源
 type ResourceManager struct {
-	resources map[string]types.Disposable
+	resources map[string]utils.Disposable
 	mu        sync.RWMutex
 	order     []string // 资源释放顺序
 	disposing bool     // 标记是否正在释放资源
@@ -51,13 +50,13 @@ type ResourceManager struct {
 // NewResourceManager 创建新的资源管理器
 func NewResourceManager() *ResourceManager {
 	return &ResourceManager{
-		resources: make(map[string]types.Disposable),
+		resources: make(map[string]utils.Disposable),
 		order:     make([]string, 0),
 	}
 }
 
 // Register 注册资源，按注册顺序进行释放
-func (rm *ResourceManager) Register(name string, resource types.Disposable) error {
+func (rm *ResourceManager) Register(name string, resource utils.Disposable) error {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
@@ -93,7 +92,7 @@ func (rm *ResourceManager) Unregister(name string) error {
 }
 
 // GetResource 获取指定名称的资源
-func (rm *ResourceManager) GetResource(name string) (types.Disposable, bool) {
+func (rm *ResourceManager) GetResource(name string) (utils.Disposable, bool) {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 
@@ -132,7 +131,7 @@ func (rm *ResourceManager) DisposeAll() *DisposeResult {
 	rm.disposing = true
 
 	// 保存当前资源列表的副本
-	resources := make(map[string]types.Disposable)
+	resources := make(map[string]utils.Disposable)
 	order := make([]string, len(rm.order))
 	copy(order, rm.order)
 
@@ -141,7 +140,7 @@ func (rm *ResourceManager) DisposeAll() *DisposeResult {
 	}
 
 	// 清空资源列表
-	rm.resources = make(map[string]types.Disposable)
+	rm.resources = make(map[string]utils.Disposable)
 	rm.order = make([]string, 0)
 
 	rm.mu.Unlock()
@@ -339,7 +338,7 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func() error) {
 var globalResourceManager = NewResourceManager()
 
 // RegisterGlobalResource 注册全局资源
-func RegisterGlobalResource(name string, resource types.Disposable) error {
+func RegisterGlobalResource(name string, resource utils.Disposable) error {
 	return globalResourceManager.Register(name, resource)
 }
 

@@ -9,11 +9,6 @@ import (
 	"tunnox-core/internal/stream"
 )
 
-// Disposable 统一的资源释放接口
-type Disposable interface {
-	Dispose() error
-}
-
 // ConnectionState 连接状态
 type ConnectionState int
 
