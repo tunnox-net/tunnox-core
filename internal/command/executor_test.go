@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/protocol"
 )
 
 // MockSession 模拟会话对象
@@ -19,8 +19,8 @@ func (m *MockSession) GetConnectionID() string {
 }
 
 // MockStreamPacket 模拟流数据包
-func createMockStreamPacket(commandType packet.CommandType, body string) *protocol.StreamPacket {
-	return &protocol.StreamPacket{
+func createMockStreamPacket(commandType packet.CommandType, body string) *common.StreamPacket {
+	return &common.StreamPacket{
 		ConnectionID: "test-connection-123",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,

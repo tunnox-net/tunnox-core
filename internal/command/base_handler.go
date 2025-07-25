@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
@@ -24,7 +24,7 @@ type BaseCommandHandler[TRequest any, TResponse any] struct {
 	responseType      ResponseType
 	communicationMode CommunicationMode
 	streamProcessor   stream.PackageStreamer
-	session           protocol.Session
+	session           common.Session
 }
 
 // NewBaseCommandHandler 创建基础命令处理器
@@ -46,7 +46,7 @@ func (b *BaseCommandHandler[TRequest, TResponse]) SetStreamProcessor(processor s
 }
 
 // SetSession 设置会话
-func (b *BaseCommandHandler[TRequest, TResponse]) SetSession(session protocol.Session) {
+func (b *BaseCommandHandler[TRequest, TResponse]) SetSession(session common.Session) {
 	b.session = session
 }
 
@@ -153,7 +153,7 @@ func (b *BaseCommandHandler[TRequest, TResponse]) GetStreamProcessor() stream.Pa
 }
 
 // GetSession 获取会话
-func (b *BaseCommandHandler[TRequest, TResponse]) GetSession() protocol.Session {
+func (b *BaseCommandHandler[TRequest, TResponse]) GetSession() common.Session {
 	return b.session
 }
 

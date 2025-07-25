@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/utils"
 )
 
@@ -19,7 +19,7 @@ type CommandUtils struct {
 	requestID    string
 	commandId    string // 客户端生成的唯一命令ID
 	connectionID string
-	session      protocol.Session
+	session      common.Session
 	ctx          context.Context
 	errorHandler func(error) error
 	// 替换 metadata 为具体的类型化字段
@@ -30,7 +30,7 @@ type CommandUtils struct {
 }
 
 // NewCommandUtils 创建新的命令工具实例
-func NewCommandUtils(session protocol.Session) *CommandUtils {
+func NewCommandUtils(session common.Session) *CommandUtils {
 	return &CommandUtils{
 		session:      session,
 		timeout:      30 * time.Second,
@@ -292,41 +292,179 @@ func defaultErrorHandler(err error) error {
 	return err
 }
 
-// 便捷方法：创建TCP映射命令
-func (cu *CommandUtils) TcpMap() *CommandUtils {
-	return cu.WithCommand(packet.TcpMap)
+// ==================== 连接管理类命令 ====================
+
+// Connect 建立连接命令
+func (cu *CommandUtils) Connect() *CommandUtils {
+	return cu.WithCommand(packet.Connect)
 }
 
-// 便捷方法：创建HTTP映射命令
-func (cu *CommandUtils) HttpMap() *CommandUtils {
-	return cu.WithCommand(packet.HttpMap)
+// Reconnect 重新连接命令
+func (cu *CommandUtils) Reconnect() *CommandUtils {
+	return cu.WithCommand(packet.Reconnect)
 }
 
-// 便捷方法：创建SOCKS映射命令
-func (cu *CommandUtils) SocksMap() *CommandUtils {
-	return cu.WithCommand(packet.SocksMap)
-}
-
-// 便捷方法：创建数据输入命令
-func (cu *CommandUtils) DataIn() *CommandUtils {
-	return cu.WithCommand(packet.DataIn)
-}
-
-// 便捷方法：创建转发命令
-func (cu *CommandUtils) Forward() *CommandUtils {
-	return cu.WithCommand(packet.Forward)
-}
-
-// 便捷方法：创建数据输出命令
-func (cu *CommandUtils) DataOut() *CommandUtils {
-	return cu.WithCommand(packet.DataOut)
-}
-
-// 便捷方法：创建断开连接命令
+// Disconnect 断开连接命令
 func (cu *CommandUtils) Disconnect() *CommandUtils {
 	return cu.WithCommand(packet.Disconnect)
 }
 
+// Heartbeat 心跳保活命令
+func (cu *CommandUtils) Heartbeat() *CommandUtils {
+	return cu.WithCommand(packet.HeartbeatCmd)
+}
+
+// ==================== 端口映射类命令 ====================
+
+// TCP映射相关命令
+func (cu *CommandUtils) TcpMapCreate() *CommandUtils {
+	return cu.WithCommand(packet.TcpMapCreate)
+}
+
+func (cu *CommandUtils) TcpMapDelete() *CommandUtils {
+	return cu.WithCommand(packet.TcpMapDelete)
+}
+
+func (cu *CommandUtils) TcpMapUpdate() *CommandUtils {
+	return cu.WithCommand(packet.TcpMapUpdate)
+}
+
+func (cu *CommandUtils) TcpMapList() *CommandUtils {
+	return cu.WithCommand(packet.TcpMapList)
+}
+
+func (cu *CommandUtils) TcpMapStatus() *CommandUtils {
+	return cu.WithCommand(packet.TcpMapStatus)
+}
+
+// HTTP映射相关命令
+func (cu *CommandUtils) HttpMapCreate() *CommandUtils {
+	return cu.WithCommand(packet.HttpMapCreate)
+}
+
+func (cu *CommandUtils) HttpMapDelete() *CommandUtils {
+	return cu.WithCommand(packet.HttpMapDelete)
+}
+
+func (cu *CommandUtils) HttpMapUpdate() *CommandUtils {
+	return cu.WithCommand(packet.HttpMapUpdate)
+}
+
+func (cu *CommandUtils) HttpMapList() *CommandUtils {
+	return cu.WithCommand(packet.HttpMapList)
+}
+
+func (cu *CommandUtils) HttpMapStatus() *CommandUtils {
+	return cu.WithCommand(packet.HttpMapStatus)
+}
+
+// SOCKS映射相关命令
+func (cu *CommandUtils) SocksMapCreate() *CommandUtils {
+	return cu.WithCommand(packet.SocksMapCreate)
+}
+
+func (cu *CommandUtils) SocksMapDelete() *CommandUtils {
+	return cu.WithCommand(packet.SocksMapDelete)
+}
+
+func (cu *CommandUtils) SocksMapUpdate() *CommandUtils {
+	return cu.WithCommand(packet.SocksMapUpdate)
+}
+
+func (cu *CommandUtils) SocksMapList() *CommandUtils {
+	return cu.WithCommand(packet.SocksMapList)
+}
+
+func (cu *CommandUtils) SocksMapStatus() *CommandUtils {
+	return cu.WithCommand(packet.SocksMapStatus)
+}
+
+// ==================== 数据传输类命令 ====================
+
+func (cu *CommandUtils) DataTransferStart() *CommandUtils {
+	return cu.WithCommand(packet.DataTransferStart)
+}
+
+func (cu *CommandUtils) DataTransferStop() *CommandUtils {
+	return cu.WithCommand(packet.DataTransferStop)
+}
+
+func (cu *CommandUtils) DataTransferStatus() *CommandUtils {
+	return cu.WithCommand(packet.DataTransferStatus)
+}
+
+func (cu *CommandUtils) ProxyForward() *CommandUtils {
+	return cu.WithCommand(packet.ProxyForward)
+}
+
+// ==================== 系统管理类命令 ====================
+
+func (cu *CommandUtils) ConfigGet() *CommandUtils {
+	return cu.WithCommand(packet.ConfigGet)
+}
+
+func (cu *CommandUtils) ConfigSet() *CommandUtils {
+	return cu.WithCommand(packet.ConfigSet)
+}
+
+func (cu *CommandUtils) StatsGet() *CommandUtils {
+	return cu.WithCommand(packet.StatsGet)
+}
+
+func (cu *CommandUtils) LogGet() *CommandUtils {
+	return cu.WithCommand(packet.LogGet)
+}
+
+func (cu *CommandUtils) HealthCheck() *CommandUtils {
+	return cu.WithCommand(packet.HealthCheck)
+}
+
+// ==================== RPC类命令 ====================
+
 func (cu *CommandUtils) RpcInvoke() *CommandUtils {
 	return cu.WithCommand(packet.RpcInvoke)
+}
+
+func (cu *CommandUtils) RpcRegister() *CommandUtils {
+	return cu.WithCommand(packet.RpcRegister)
+}
+
+func (cu *CommandUtils) RpcUnregister() *CommandUtils {
+	return cu.WithCommand(packet.RpcUnregister)
+}
+
+func (cu *CommandUtils) RpcList() *CommandUtils {
+	return cu.WithCommand(packet.RpcList)
+}
+
+// ==================== 兼容性命令（保留原有方法） ====================
+
+// 便捷方法：创建TCP映射命令（兼容性）
+func (cu *CommandUtils) TcpMap() *CommandUtils {
+	return cu.WithCommand(packet.TcpMap)
+}
+
+// 便捷方法：创建HTTP映射命令（兼容性）
+func (cu *CommandUtils) HttpMap() *CommandUtils {
+	return cu.WithCommand(packet.HttpMap)
+}
+
+// 便捷方法：创建SOCKS映射命令（兼容性）
+func (cu *CommandUtils) SocksMap() *CommandUtils {
+	return cu.WithCommand(packet.SocksMap)
+}
+
+// 便捷方法：创建数据输入命令（兼容性）
+func (cu *CommandUtils) DataIn() *CommandUtils {
+	return cu.WithCommand(packet.DataIn)
+}
+
+// 便捷方法：创建转发命令（兼容性）
+func (cu *CommandUtils) Forward() *CommandUtils {
+	return cu.WithCommand(packet.Forward)
+}
+
+// 便捷方法：创建数据输出命令（兼容性）
+func (cu *CommandUtils) DataOut() *CommandUtils {
+	return cu.WithCommand(packet.DataOut)
 }

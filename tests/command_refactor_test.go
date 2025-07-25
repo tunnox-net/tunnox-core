@@ -3,11 +3,11 @@ package tests
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 	"tunnox-core/internal/cloud/generators"
 	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/command"
 	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol"
@@ -27,12 +27,10 @@ func NewMockCommandHandler(cmdType packet.CommandType) *MockCommandHandler {
 	}
 }
 
-func (h *MockCommandHandler) Handle(ctx *protocol.CommandContext) (*protocol.CommandResponse, error) {
+func (h *MockCommandHandler) Handle(ctx *command.CommandContext) (*command.CommandResponse, error) {
 	h.handleCount++
-	data, _ := json.Marshal(map[string]interface{}{"message": "Mock handler executed"})
-	return &protocol.CommandResponse{
+	return &command.CommandResponse{
 		Success:   true,
-		Data:      string(data),
 		RequestID: ctx.RequestID,
 		CommandId: ctx.CommandId,
 	}, nil
@@ -40,6 +38,18 @@ func (h *MockCommandHandler) Handle(ctx *protocol.CommandContext) (*protocol.Com
 
 func (h *MockCommandHandler) GetCommandType() packet.CommandType {
 	return h.commandType
+}
+
+func (h *MockCommandHandler) GetCategory() command.CommandCategory {
+	return command.CategoryMapping
+}
+
+func (h *MockCommandHandler) GetDirection() command.CommandDirection {
+	return command.DirectionOneway
+}
+
+func (h *MockCommandHandler) GetResponseType() command.ResponseType {
+	return command.Oneway
 }
 
 func TestCommandRefactor(t *testing.T) {
@@ -54,7 +64,7 @@ func TestCommandRefactor(t *testing.T) {
 	defer session.Close()
 
 	t.Run("CommandRegistry_Basic", func(t *testing.T) {
-		registry := protocol.NewCommandRegistry()
+		registry := command.NewCommandRegistry()
 
 		// 注册处理器
 		handler := NewMockCommandHandler(packet.TcpMap)
@@ -74,7 +84,7 @@ func TestCommandRefactor(t *testing.T) {
 		}
 
 		// 测试处理器
-		ctx := &protocol.CommandContext{
+		ctx := &command.CommandContext{
 			ConnectionID: "test-conn",
 			CommandType:  packet.TcpMap,
 			CommandId:    "test-cmd",

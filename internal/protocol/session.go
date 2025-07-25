@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/cloud/generators"
+	"tunnox-core/internal/command"
 	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -28,89 +29,11 @@ type Connection = common.Connection
 // ConnectionState 连接状态
 type ConnectionState = common.ConnectionState
 
-// CommandHandler 命令处理器接口（避免循环导入）
-type CommandHandler interface {
-	Handle(ctx *CommandContext) (*CommandResponse, error)
-	GetCommandType() packet.CommandType
-}
-
-// CommandContext 命令上下文
-type CommandContext struct {
-	ConnectionID string
-	CommandType  packet.CommandType
-	CommandId    string
-	RequestID    string
-	SenderID     string
-	ReceiverID   string
-	RequestBody  string
-	Session      Session
-	Context      context.Context
-	// 移除 Metadata map[string]interface{}，添加具体的字段
-	IsAuthenticated bool      // 是否已认证
-	UserID          string    // 用户ID
-	StartTime       time.Time // 开始时间
-	EndTime         time.Time // 结束时间
-}
-
-// CommandResponse 命令响应
-type CommandResponse struct {
-	Success   bool   `json:"success"`
-	Data      string `json:"data,omitempty"` // JSON字符串，避免数据丢失
-	Error     string `json:"error,omitempty"`
-	RequestID string `json:"request_id,omitempty"`
-	CommandId string `json:"command_id,omitempty"`
-	// 移除 Metadata map[string]interface{}，添加具体的字段
-	ProcessingTime time.Duration `json:"processing_time,omitempty"` // 处理时间
-	HandlerName    string        `json:"handler_name,omitempty"`    // 处理器名称
-}
-
-// CommandRegistry 命令注册表
-type CommandRegistry struct {
-	handlers map[packet.CommandType]CommandHandler
-	mu       sync.RWMutex
-}
-
-// NewCommandRegistry 创建命令注册表
-func NewCommandRegistry() *CommandRegistry {
-	return &CommandRegistry{
-		handlers: make(map[packet.CommandType]CommandHandler),
-	}
-}
-
-// Register 注册命令处理器
-func (r *CommandRegistry) Register(handler CommandHandler) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	commandType := handler.GetCommandType()
-	if commandType == 0 {
-		return fmt.Errorf("invalid command type: 0")
-	}
-
-	if _, exists := r.handlers[commandType]; exists {
-		return fmt.Errorf("handler for command type %v already registered", commandType)
-	}
-
-	r.handlers[commandType] = handler
-	utils.Debugf("Registered command handler for type: %v", commandType)
-	return nil
-}
-
-// GetHandler 获取命令处理器
-func (r *CommandRegistry) GetHandler(commandType packet.CommandType) (CommandHandler, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	handler, exists := r.handlers[commandType]
-	return handler, exists
-}
-
-// GetHandlerCount 获取处理器数量
-func (r *CommandRegistry) GetHandlerCount() int {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return len(r.handlers)
-}
+// 从 command 包导入类型
+type CommandHandler = command.CommandHandler
+type CommandContext = command.CommandContext
+type CommandResponse = command.CommandResponse
+type CommandRegistry = command.CommandRegistry
 
 // ConnectionSession 实现 Session 接口
 type ConnectionSession struct {
@@ -137,7 +60,7 @@ func NewConnectionSession(idManager *generators.IDManager, parentCtx context.Con
 		idManager:       idManager,
 		streamMgr:       streamMgr,
 		streamFactory:   streamFactory,
-		commandRegistry: NewCommandRegistry(),
+		commandRegistry: command.NewCommandRegistry(),
 	}
 
 	// 注册默认命令处理器

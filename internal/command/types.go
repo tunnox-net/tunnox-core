@@ -3,8 +3,8 @@ package command
 import (
 	"context"
 	"time"
+	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/protocol"
 )
 
 // CommandCategory 命令分类
@@ -73,72 +73,265 @@ type CommandType struct {
 
 // 预定义命令类型
 var (
-	// 连接管理类命令
-	TcpMapCmd = CommandType{
-		ID:          packet.TcpMap,
-		Category:    CategoryMapping,
-		Direction:   DirectionOneway,
-		Name:        "tcp_map",
-		Description: "TCP端口映射",
+	// ==================== 连接管理类命令 ====================
+	ConnectCmd = CommandType{
+		ID:          packet.Connect,
+		Category:    CategoryConnection,
+		Direction:   DirectionDuplex,
+		Name:        "connect",
+		Description: "建立连接",
 	}
 
-	HttpMapCmd = CommandType{
-		ID:          packet.HttpMap,
-		Category:    CategoryMapping,
-		Direction:   DirectionOneway,
-		Name:        "http_map",
-		Description: "HTTP端口映射",
-	}
-
-	SocksMapCmd = CommandType{
-		ID:          packet.SocksMap,
-		Category:    CategoryMapping,
-		Direction:   DirectionOneway,
-		Name:        "socks_map",
-		Description: "SOCKS代理映射",
-	}
-
-	// 数据传输类命令
-	DataInCmd = CommandType{
-		ID:          packet.DataIn,
-		Category:    CategoryTransport,
-		Direction:   DirectionOneway,
-		Name:        "data_in",
-		Description: "数据输入通知",
-	}
-
-	DataOutCmd = CommandType{
-		ID:          packet.DataOut,
-		Category:    CategoryTransport,
-		Direction:   DirectionOneway,
-		Name:        "data_out",
-		Description: "数据输出通知",
-	}
-
-	ForwardCmd = CommandType{
-		ID:          packet.Forward,
-		Category:    CategoryTransport,
-		Direction:   DirectionOneway,
-		Name:        "forward",
-		Description: "服务端间转发",
-	}
-
-	// 连接管理类命令
 	DisconnectCmd = CommandType{
 		ID:          packet.Disconnect,
 		Category:    CategoryConnection,
 		Direction:   DirectionOneway,
 		Name:        "disconnect",
-		Description: "连接断开",
+		Description: "断开连接",
 	}
 
-	// RPC类命令
+	ReconnectCmd = CommandType{
+		ID:          packet.Reconnect,
+		Category:    CategoryConnection,
+		Direction:   DirectionDuplex,
+		Name:        "reconnect",
+		Description: "重新连接",
+	}
+
+	HeartbeatCmd = CommandType{
+		ID:          packet.HeartbeatCmd,
+		Category:    CategoryConnection,
+		Direction:   DirectionOneway,
+		Name:        "heartbeat",
+		Description: "心跳保活",
+	}
+
+	// ==================== 端口映射类命令 ====================
+	TcpMapCreateCmd = CommandType{
+		ID:          packet.TcpMapCreate,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "tcp_map_create",
+		Description: "创建TCP端口映射",
+	}
+
+	TcpMapDeleteCmd = CommandType{
+		ID:          packet.TcpMapDelete,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "tcp_map_delete",
+		Description: "删除TCP端口映射",
+	}
+
+	TcpMapUpdateCmd = CommandType{
+		ID:          packet.TcpMapUpdate,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "tcp_map_update",
+		Description: "更新TCP端口映射",
+	}
+
+	TcpMapListCmd = CommandType{
+		ID:          packet.TcpMapList,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "tcp_map_list",
+		Description: "列出TCP端口映射",
+	}
+
+	TcpMapStatusCmd = CommandType{
+		ID:          packet.TcpMapStatus,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "tcp_map_status",
+		Description: "获取TCP端口映射状态",
+	}
+
+	HttpMapCreateCmd = CommandType{
+		ID:          packet.HttpMapCreate,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "http_map_create",
+		Description: "创建HTTP端口映射",
+	}
+
+	HttpMapDeleteCmd = CommandType{
+		ID:          packet.HttpMapDelete,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "http_map_delete",
+		Description: "删除HTTP端口映射",
+	}
+
+	HttpMapUpdateCmd = CommandType{
+		ID:          packet.HttpMapUpdate,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "http_map_update",
+		Description: "更新HTTP端口映射",
+	}
+
+	HttpMapListCmd = CommandType{
+		ID:          packet.HttpMapList,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "http_map_list",
+		Description: "列出HTTP端口映射",
+	}
+
+	HttpMapStatusCmd = CommandType{
+		ID:          packet.HttpMapStatus,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "http_map_status",
+		Description: "获取HTTP端口映射状态",
+	}
+
+	SocksMapCreateCmd = CommandType{
+		ID:          packet.SocksMapCreate,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "socks_map_create",
+		Description: "创建SOCKS代理映射",
+	}
+
+	SocksMapDeleteCmd = CommandType{
+		ID:          packet.SocksMapDelete,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "socks_map_delete",
+		Description: "删除SOCKS代理映射",
+	}
+
+	SocksMapUpdateCmd = CommandType{
+		ID:          packet.SocksMapUpdate,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "socks_map_update",
+		Description: "更新SOCKS代理映射",
+	}
+
+	SocksMapListCmd = CommandType{
+		ID:          packet.SocksMapList,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "socks_map_list",
+		Description: "列出SOCKS代理映射",
+	}
+
+	SocksMapStatusCmd = CommandType{
+		ID:          packet.SocksMapStatus,
+		Category:    CategoryMapping,
+		Direction:   DirectionDuplex,
+		Name:        "socks_map_status",
+		Description: "获取SOCKS代理映射状态",
+	}
+
+	// ==================== 数据传输类命令 ====================
+	DataTransferStartCmd = CommandType{
+		ID:          packet.DataTransferStart,
+		Category:    CategoryTransport,
+		Direction:   DirectionDuplex,
+		Name:        "data_transfer_start",
+		Description: "开始数据传输",
+	}
+
+	DataTransferStopCmd = CommandType{
+		ID:          packet.DataTransferStop,
+		Category:    CategoryTransport,
+		Direction:   DirectionOneway,
+		Name:        "data_transfer_stop",
+		Description: "停止数据传输",
+	}
+
+	DataTransferStatusCmd = CommandType{
+		ID:          packet.DataTransferStatus,
+		Category:    CategoryTransport,
+		Direction:   DirectionDuplex,
+		Name:        "data_transfer_status",
+		Description: "获取数据传输状态",
+	}
+
+	ProxyForwardCmd = CommandType{
+		ID:          packet.ProxyForward,
+		Category:    CategoryTransport,
+		Direction:   DirectionOneway,
+		Name:        "proxy_forward",
+		Description: "代理转发数据",
+	}
+
+	// ==================== 系统管理类命令 ====================
+	ConfigGetCmd = CommandType{
+		ID:          packet.ConfigGet,
+		Category:    CategoryManagement,
+		Direction:   DirectionDuplex,
+		Name:        "config_get",
+		Description: "获取配置信息",
+	}
+
+	ConfigSetCmd = CommandType{
+		ID:          packet.ConfigSet,
+		Category:    CategoryManagement,
+		Direction:   DirectionDuplex,
+		Name:        "config_set",
+		Description: "设置配置信息",
+	}
+
+	StatsGetCmd = CommandType{
+		ID:          packet.StatsGet,
+		Category:    CategoryManagement,
+		Direction:   DirectionDuplex,
+		Name:        "stats_get",
+		Description: "获取统计信息",
+	}
+
+	LogGetCmd = CommandType{
+		ID:          packet.LogGet,
+		Category:    CategoryManagement,
+		Direction:   DirectionDuplex,
+		Name:        "log_get",
+		Description: "获取日志信息",
+	}
+
+	HealthCheckCmd = CommandType{
+		ID:          packet.HealthCheck,
+		Category:    CategoryManagement,
+		Direction:   DirectionDuplex,
+		Name:        "health_check",
+		Description: "健康检查",
+	}
+
+	// ==================== RPC类命令 ====================
 	RpcInvokeCmd = CommandType{
 		ID:          packet.RpcInvoke,
 		Category:    CategoryRPC,
 		Direction:   DirectionDuplex,
 		Name:        "rpc_invoke",
 		Description: "RPC调用",
+	}
+
+	RpcRegisterCmd = CommandType{
+		ID:          packet.RpcRegister,
+		Category:    CategoryRPC,
+		Direction:   DirectionDuplex,
+		Name:        "rpc_register",
+		Description: "注册RPC服务",
+	}
+
+	RpcUnregisterCmd = CommandType{
+		ID:          packet.RpcUnregister,
+		Category:    CategoryRPC,
+		Direction:   DirectionDuplex,
+		Name:        "rpc_unregister",
+		Description: "注销RPC服务",
+	}
+
+	RpcListCmd = CommandType{
+		ID:          packet.RpcList,
+		Category:    CategoryRPC,
+		Direction:   DirectionDuplex,
+		Name:        "rpc_list",
+		Description: "列出RPC服务",
 	}
 )
 
@@ -151,7 +344,7 @@ type CommandContext struct {
 	SenderID     string             // 发送者ID
 	ReceiverID   string             // 接收者ID
 	RequestBody  string             // JSON请求字符串
-	Session      protocol.Session   // 会话对象
+	Session      common.Session     // 会话对象
 	Context      context.Context    // 上下文
 	// 移除 Metadata map[string]interface{}，添加具体的字段
 	IsAuthenticated bool      // 是否已认证

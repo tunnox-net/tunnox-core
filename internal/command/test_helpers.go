@@ -4,8 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"tunnox-core/internal/common"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/protocol"
 )
 
 // TestHelper 测试辅助结构
@@ -19,8 +19,8 @@ func NewTestHelper(t *testing.T) *TestHelper {
 }
 
 // CreateMockStreamPacket 创建模拟流数据包
-func (th *TestHelper) CreateMockStreamPacket(commandType packet.CommandType, body string) *protocol.StreamPacket {
-	return &protocol.StreamPacket{
+func (th *TestHelper) CreateMockStreamPacket(commandType packet.CommandType, body string) *common.StreamPacket {
+	return &common.StreamPacket{
 		ConnectionID: "test-connection-123",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
@@ -227,7 +227,7 @@ func RunTestScenario(t *testing.T, scenario TestScenario) {
 type BenchmarkHelper struct {
 	registry     *CommandRegistry
 	executor     *CommandExecutor
-	streamPacket *protocol.StreamPacket
+	streamPacket *common.StreamPacket
 }
 
 // NewBenchmarkHelper 创建基准测试辅助对象
@@ -247,7 +247,7 @@ func NewBenchmarkHelper() *BenchmarkHelper {
 	registry.Register(handler)
 
 	// 创建流数据包
-	streamPacket := &protocol.StreamPacket{
+	streamPacket := &common.StreamPacket{
 		ConnectionID: "benchmark-connection",
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
