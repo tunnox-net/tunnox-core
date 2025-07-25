@@ -32,57 +32,57 @@ func (t Type) IsEncrypted() bool {
 type CommandType byte
 
 const (
-	// ==================== 连接管理类命令 ====================
-	Connect      CommandType = 1  // 建立连接
-	Disconnect   CommandType = 8  // 连接断开，可以任何方向
-	Reconnect    CommandType = 10 // 重新连接
-	HeartbeatCmd CommandType = 11 // 心跳保活
+	// ==================== 连接管理类命令 (10-19) ====================
+	Connect      CommandType = 10 // 建立连接
+	Disconnect   CommandType = 11 // 连接断开，可以任何方向
+	Reconnect    CommandType = 12 // 重新连接
+	HeartbeatCmd CommandType = 13 // 心跳保活
 
-	// ==================== 端口映射类命令 ====================
-	TcpMapCreate CommandType = 2  // 创建TCP端口映射
-	TcpMapDelete CommandType = 12 // 删除TCP端口映射
-	TcpMapUpdate CommandType = 13 // 更新TCP端口映射
-	TcpMapList   CommandType = 14 // 列出TCP端口映射
-	TcpMapStatus CommandType = 15 // 获取TCP端口映射状态
+	// ==================== 端口映射类命令 (20-39) ====================
+	TcpMapCreate CommandType = 20 // 创建TCP端口映射
+	TcpMapDelete CommandType = 21 // 删除TCP端口映射
+	TcpMapUpdate CommandType = 22 // 更新TCP端口映射
+	TcpMapList   CommandType = 23 // 列出TCP端口映射
+	TcpMapStatus CommandType = 24 // 获取TCP端口映射状态
 
-	HttpMapCreate CommandType = 3  // 创建HTTP端口映射
-	HttpMapDelete CommandType = 16 // 删除HTTP端口映射
-	HttpMapUpdate CommandType = 17 // 更新HTTP端口映射
-	HttpMapList   CommandType = 18 // 列出HTTP端口映射
-	HttpMapStatus CommandType = 19 // 获取HTTP端口映射状态
+	HttpMapCreate CommandType = 25 // 创建HTTP端口映射
+	HttpMapDelete CommandType = 26 // 删除HTTP端口映射
+	HttpMapUpdate CommandType = 27 // 更新HTTP端口映射
+	HttpMapList   CommandType = 28 // 列出HTTP端口映射
+	HttpMapStatus CommandType = 29 // 获取HTTP端口映射状态
 
-	SocksMapCreate CommandType = 4  // 创建SOCKS代理映射
-	SocksMapDelete CommandType = 20 // 删除SOCKS代理映射
-	SocksMapUpdate CommandType = 21 // 更新SOCKS代理映射
-	SocksMapList   CommandType = 22 // 列出SOCKS代理映射
-	SocksMapStatus CommandType = 23 // 获取SOCKS代理映射状态
+	SocksMapCreate CommandType = 30 // 创建SOCKS代理映射
+	SocksMapDelete CommandType = 31 // 删除SOCKS代理映射
+	SocksMapUpdate CommandType = 32 // 更新SOCKS代理映射
+	SocksMapList   CommandType = 33 // 列出SOCKS代理映射
+	SocksMapStatus CommandType = 34 // 获取SOCKS代理映射状态
 
-	// ==================== 数据传输类命令 ====================
-	DataTransferStart  CommandType = 5  // 开始数据传输
-	DataTransferStop   CommandType = 24 // 停止数据传输
-	DataTransferStatus CommandType = 25 // 获取数据传输状态
-	ProxyForward       CommandType = 6  // 代理转发数据
+	// ==================== 数据传输类命令 (40-49) ====================
+	DataTransferStart  CommandType = 40 // 开始数据传输
+	DataTransferStop   CommandType = 41 // 停止数据传输
+	DataTransferStatus CommandType = 42 // 获取数据传输状态
+	ProxyForward       CommandType = 43 // 代理转发数据
 
-	// ==================== 系统管理类命令 ====================
-	ConfigGet   CommandType = 26 // 获取配置信息
-	ConfigSet   CommandType = 27 // 设置配置信息
-	StatsGet    CommandType = 28 // 获取统计信息
-	LogGet      CommandType = 29 // 获取日志信息
-	HealthCheck CommandType = 30 // 健康检查
+	// ==================== 系统管理类命令 (50-59) ====================
+	ConfigGet   CommandType = 50 // 获取配置信息
+	ConfigSet   CommandType = 51 // 设置配置信息
+	StatsGet    CommandType = 52 // 获取统计信息
+	LogGet      CommandType = 53 // 获取日志信息
+	HealthCheck CommandType = 54 // 健康检查
 
-	// ==================== RPC类命令 ====================
-	RpcInvoke     CommandType = 9  // RPC调用
-	RpcRegister   CommandType = 31 // 注册RPC服务
-	RpcUnregister CommandType = 32 // 注销RPC服务
-	RpcList       CommandType = 33 // 列出RPC服务
+	// ==================== RPC类命令 (60-69) ====================
+	RpcInvoke     CommandType = 60 // RPC调用
+	RpcRegister   CommandType = 61 // 注册RPC服务
+	RpcUnregister CommandType = 62 // 注销RPC服务
+	RpcList       CommandType = 63 // 列出RPC服务
 
 	// ==================== 兼容性命令（保留原有ID） ====================
-	TcpMap   CommandType = 2 // 兼容性：TCP端口映射
-	HttpMap  CommandType = 3 // 兼容性：HTTP端口映射
-	SocksMap CommandType = 4 // 兼容性：SOCKS代理映射
-	DataIn   CommandType = 5 // 兼容性：数据输入通知
-	Forward  CommandType = 6 // 兼容性：服务端间转发
-	DataOut  CommandType = 7 // 兼容性：数据输出通知
+	TcpMap   CommandType = 20 // 兼容性：TCP端口映射
+	HttpMap  CommandType = 25 // 兼容性：HTTP端口映射
+	SocksMap CommandType = 30 // 兼容性：SOCKS代理映射
+	DataIn   CommandType = 40 // 兼容性：数据输入通知
+	Forward  CommandType = 43 // 兼容性：服务端间转发
+	DataOut  CommandType = 44 // 兼容性：数据输出通知
 )
 
 // InitPacket 初始化数据包
