@@ -82,7 +82,7 @@ func TestCommandIdValidationMiddleware(t *testing.T) {
 	// 测试缺少CommandId
 	ctx := &CommandContext{
 		ConnectionID: "conn_123",
-		CommandType:  packet.TcpMap,
+		CommandType:  packet.TcpMapCreate,
 		CommandId:    "",
 		RequestID:    "req_123",
 	}
@@ -131,7 +131,7 @@ func TestCommandIdInExecute(t *testing.T) {
 	// 测试CommandId生成功能
 	cu := NewCommandUtils(nil)
 	cu.WithConnectionID("conn_123")
-	cu.WithCommand(packet.TcpMap)
+	cu.WithCommand(packet.TcpMapCreate)
 	cu.WithRequestID("req_456")
 
 	// 测试自动生成CommandId

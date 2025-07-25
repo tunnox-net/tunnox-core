@@ -77,7 +77,7 @@ func BenchmarkCommandExecutor_ExecuteOneway(b *testing.B) {
 
 	// 注册单向处理器
 	handler := &simpleMockHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Oneway,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true}, nil
@@ -91,7 +91,7 @@ func BenchmarkCommandExecutor_ExecuteOneway(b *testing.B) {
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
 			CommandPacket: &packet.CommandPacket{
-				CommandType: packet.TcpMap,
+				CommandType: packet.TcpMapCreate,
 				Token:       "benchmark-token",
 				SenderId:    "benchmark-sender",
 				ReceiverId:  "benchmark-receiver",
@@ -113,7 +113,7 @@ func BenchmarkCommandExecutor_ExecuteDuplex(b *testing.B) {
 
 	// 注册双工处理器
 	handler := &simpleMockHandler{
-		commandType:  packet.HttpMap,
+		commandType:  packet.HttpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true}, nil
@@ -127,7 +127,7 @@ func BenchmarkCommandExecutor_ExecuteDuplex(b *testing.B) {
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
 			CommandPacket: &packet.CommandPacket{
-				CommandType: packet.HttpMap,
+				CommandType: packet.HttpMapCreate,
 				Token:       "benchmark-token",
 				SenderId:    "benchmark-sender",
 				ReceiverId:  "benchmark-receiver",
@@ -149,7 +149,7 @@ func BenchmarkCommandExecutor_ExecuteWithMiddleware(b *testing.B) {
 
 	// 注册处理器
 	handler := &simpleMockHandler{
-		commandType:  packet.SocksMap,
+		commandType:  packet.SocksMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true}, nil
@@ -172,7 +172,7 @@ func BenchmarkCommandExecutor_ExecuteWithMiddleware(b *testing.B) {
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
 			CommandPacket: &packet.CommandPacket{
-				CommandType: packet.SocksMap,
+				CommandType: packet.SocksMapCreate,
 				Token:       "benchmark-token",
 				SenderId:    "benchmark-sender",
 				ReceiverId:  "benchmark-receiver",
@@ -194,7 +194,7 @@ func BenchmarkCommandExecutor_ExecuteMultipleMiddleware(b *testing.B) {
 
 	// 注册处理器
 	handler := &simpleMockHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true}, nil
@@ -219,7 +219,7 @@ func BenchmarkCommandExecutor_ExecuteMultipleMiddleware(b *testing.B) {
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
 			CommandPacket: &packet.CommandPacket{
-				CommandType: packet.TcpMap,
+				CommandType: packet.TcpMapCreate,
 				Token:       "benchmark-token",
 				SenderId:    "benchmark-sender",
 				ReceiverId:  "benchmark-receiver",
@@ -241,7 +241,7 @@ func BenchmarkConcurrentExecution(b *testing.B) {
 
 	// 注册处理器
 	handler := &simpleMockHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true}, nil
@@ -255,7 +255,7 @@ func BenchmarkConcurrentExecution(b *testing.B) {
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
 			CommandPacket: &packet.CommandPacket{
-				CommandType: packet.TcpMap,
+				CommandType: packet.TcpMapCreate,
 				Token:       "benchmark-token",
 				SenderId:    "benchmark-sender",
 				ReceiverId:  "benchmark-receiver",
@@ -294,7 +294,7 @@ func BenchmarkContextCreation(b *testing.B) {
 		Packet: &packet.TransferPacket{
 			PacketType: packet.JsonCommand,
 			CommandPacket: &packet.CommandPacket{
-				CommandType: packet.TcpMap,
+				CommandType: packet.TcpMapCreate,
 				Token:       "benchmark-token",
 				SenderId:    "benchmark-sender",
 				ReceiverId:  "benchmark-receiver",

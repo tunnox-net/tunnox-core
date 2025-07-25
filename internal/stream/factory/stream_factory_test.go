@@ -132,7 +132,7 @@ func TestStreamManager_WithPacketOperations(t *testing.T) {
 
 	// 创建测试数据包
 	commandPacket := &packet.CommandPacket{
-		CommandType: packet.TcpMap,
+		CommandType: packet.TcpMapCreate,
 		Token:       "test-token",
 		SenderId:    "sender-001",
 		ReceiverId:  "receiver-001",

@@ -58,7 +58,7 @@ func TestCommandRegistry_Register(t *testing.T) {
 
 	// 创建有效的处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Oneway,
 	}
 
@@ -74,7 +74,7 @@ func TestCommandRegistry_Register(t *testing.T) {
 	}
 
 	// 验证处理器存在
-	registeredHandler, exists := cr.GetHandler(packet.TcpMap)
+	registeredHandler, exists := cr.GetHandler(packet.TcpMapCreate)
 	if !exists {
 		t.Error("Handler should exist after registration")
 	}
@@ -110,13 +110,13 @@ func TestCommandRegistry_RegisterDuplicate(t *testing.T) {
 
 	// 创建第一个处理器
 	handler1 := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Oneway,
 	}
 
 	// 创建第二个处理器（相同命令类型）
 	handler2 := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 	}
 
@@ -138,7 +138,7 @@ func TestCommandRegistry_RegisterDuplicate(t *testing.T) {
 	}
 
 	// 验证获取到的是第一个处理器
-	registeredHandler, exists := cr.GetHandler(packet.TcpMap)
+	registeredHandler, exists := cr.GetHandler(packet.TcpMapCreate)
 	if !exists {
 		t.Error("Handler should exist")
 	}
@@ -153,7 +153,7 @@ func TestCommandRegistry_Unregister(t *testing.T) {
 
 	// 注册处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.HttpMap,
+		commandType:  packet.HttpMapCreate,
 		responseType: Duplex,
 	}
 
@@ -168,7 +168,7 @@ func TestCommandRegistry_Unregister(t *testing.T) {
 	}
 
 	// 注销处理器
-	err = cr.Unregister(packet.HttpMap)
+	err = cr.Unregister(packet.HttpMapCreate)
 	if err != nil {
 		t.Errorf("Failed to unregister handler: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestCommandRegistry_Unregister(t *testing.T) {
 	}
 
 	// 验证处理器不存在
-	_, exists := cr.GetHandler(packet.HttpMap)
+	_, exists := cr.GetHandler(packet.HttpMapCreate)
 	if exists {
 		t.Error("Handler should not exist after unregistration")
 	}
@@ -189,7 +189,7 @@ func TestCommandRegistry_UnregisterNonExistent(t *testing.T) {
 	cr := NewCommandRegistry()
 
 	// 尝试注销不存在的处理器
-	err := cr.Unregister(packet.SocksMap)
+	err := cr.Unregister(packet.SocksMapCreate)
 	if err == nil {
 		t.Error("Should return error for non-existent handler")
 	}
@@ -200,9 +200,9 @@ func TestCommandRegistry_GetHandler(t *testing.T) {
 
 	// 注册多个处理器
 	handlers := map[packet.CommandType]*MockCommandHandler{
-		packet.TcpMap:   {commandType: packet.TcpMap, responseType: Oneway},
-		packet.HttpMap:  {commandType: packet.HttpMap, responseType: Duplex},
-		packet.SocksMap: {commandType: packet.SocksMap, responseType: Oneway},
+		packet.TcpMapCreate:   {commandType: packet.TcpMapCreate, responseType: Oneway},
+		packet.HttpMapCreate:  {commandType: packet.HttpMapCreate, responseType: Duplex},
+		packet.SocksMapCreate: {commandType: packet.SocksMapCreate, responseType: Oneway},
 	}
 
 	for _, handler := range handlers {
@@ -225,7 +225,7 @@ func TestCommandRegistry_GetHandler(t *testing.T) {
 	}
 
 	// 测试获取不存在的处理器
-	_, exists := cr.GetHandler(packet.DataIn)
+	_, exists := cr.GetHandler(packet.DataTransferStart)
 	if exists {
 		t.Error("Non-existent handler should not exist")
 	}
@@ -236,9 +236,9 @@ func TestCommandRegistry_ListHandlers(t *testing.T) {
 
 	// 注册多个处理器
 	expectedTypes := []packet.CommandType{
-		packet.TcpMap,
-		packet.HttpMap,
-		packet.SocksMap,
+		packet.TcpMapCreate,
+		packet.HttpMapCreate,
+		packet.SocksMapCreate,
 	}
 
 	for _, commandType := range expectedTypes {
@@ -283,8 +283,8 @@ func TestCommandRegistry_GetHandlerCount(t *testing.T) {
 	}
 
 	// 注册处理器
-	handler1 := &MockCommandHandler{commandType: packet.TcpMap, responseType: Oneway}
-	handler2 := &MockCommandHandler{commandType: packet.HttpMap, responseType: Duplex}
+	handler1 := &MockCommandHandler{commandType: packet.TcpMapCreate, responseType: Oneway}
+	handler2 := &MockCommandHandler{commandType: packet.HttpMapCreate, responseType: Duplex}
 
 	cr.Register(handler1)
 	cr.Register(handler2)
@@ -296,7 +296,7 @@ func TestCommandRegistry_GetHandlerCount(t *testing.T) {
 	}
 
 	// 注销一个处理器
-	cr.Unregister(packet.TcpMap)
+	cr.Unregister(packet.TcpMapCreate)
 
 	// 验证数量
 	count = cr.GetHandlerCount()

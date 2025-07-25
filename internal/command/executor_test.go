@@ -89,7 +89,7 @@ func TestCommandExecutor_ExecuteOneway(t *testing.T) {
 
 	// 创建单向处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Oneway,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			data, _ := json.Marshal("oneway success")
@@ -101,7 +101,7 @@ func TestCommandExecutor_ExecuteOneway(t *testing.T) {
 	registry.Register(handler)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -119,7 +119,7 @@ func TestCommandExecutor_ExecuteDuplex(t *testing.T) {
 
 	// 创建双工处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.HttpMap,
+		commandType:  packet.HttpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			data, _ := json.Marshal("duplex success")
@@ -131,7 +131,7 @@ func TestCommandExecutor_ExecuteDuplex(t *testing.T) {
 	registry.Register(handler)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.HttpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.HttpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -146,7 +146,7 @@ func TestCommandExecutor_ExecuteWithError(t *testing.T) {
 
 	// 创建会返回错误的处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.SocksMap,
+		commandType:  packet.SocksMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return nil, errors.New("handler error")
@@ -157,7 +157,7 @@ func TestCommandExecutor_ExecuteWithError(t *testing.T) {
 	registry.Register(handler)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.SocksMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.SocksMapCreate, `{"port": 8080}`)
 
 	// 执行命令 - 双工命令会返回错误，这是预期的
 	_ = executor.Execute(streamPacket)
@@ -170,7 +170,7 @@ func TestCommandExecutor_ExecuteUnknownHandler(t *testing.T) {
 	executor := NewCommandExecutor(registry)
 
 	// 创建流数据包（未注册的处理器）
-	streamPacket := createMockStreamPacket(packet.DataIn, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.DataTransferStart, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -185,7 +185,7 @@ func TestCommandExecutor_ExecuteWithMiddleware(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			data, _ := json.Marshal("oneway success")
@@ -220,7 +220,7 @@ func TestCommandExecutor_ExecuteWithMiddleware(t *testing.T) {
 	executor.AddMiddleware(middleware)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -234,7 +234,7 @@ func TestCommandExecutor_CreateCommandContext(t *testing.T) {
 	executor := NewCommandExecutor(registry)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 创建命令上下文
 	ctx := executor.createCommandContext(streamPacket)
@@ -244,8 +244,8 @@ func TestCommandExecutor_CreateCommandContext(t *testing.T) {
 		t.Errorf("Expected connection ID %s, got %s", "test-connection-123", ctx.ConnectionID)
 	}
 
-	if ctx.CommandType != packet.TcpMap {
-		t.Errorf("Expected command type %v, got %v", packet.TcpMap, ctx.CommandType)
+	if ctx.CommandType != packet.TcpMapCreate {
+		t.Errorf("Expected command type %v, got %v", packet.TcpMapCreate, ctx.CommandType)
 	}
 
 	if ctx.RequestID != "test-token-456" {
@@ -310,7 +310,7 @@ func TestCommandExecutor_DuplexTimeout(t *testing.T) {
 
 	// 创建会延迟的处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 延迟超过超时时间
@@ -323,7 +323,7 @@ func TestCommandExecutor_DuplexTimeout(t *testing.T) {
 	registry.Register(handler)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -344,7 +344,7 @@ func TestCommandExecutor_ConcurrentExecution(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			data, _ := json.Marshal(ctx.RequestID)
@@ -360,7 +360,7 @@ func TestCommandExecutor_ConcurrentExecution(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		go func(id int) {
-			streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+			streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 			err := executor.Execute(streamPacket)
 			if err != nil {
 				t.Errorf("Execute failed: %v", err)

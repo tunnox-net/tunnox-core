@@ -40,7 +40,7 @@ type TcpMapHandler struct {
 func NewTcpMapHandler() *TcpMapHandler {
 	return &TcpMapHandler{
 		BaseHandler: NewBaseHandler(
-			packet.TcpMap,
+			packet.TcpMapCreate,
 			CategoryMapping,
 			DirectionOneway,
 			"tcp_map",
@@ -75,7 +75,7 @@ type HttpMapHandler struct {
 func NewHttpMapHandler() *HttpMapHandler {
 	return &HttpMapHandler{
 		BaseHandler: NewBaseHandler(
-			packet.HttpMap,
+			packet.HttpMapCreate,
 			CategoryMapping,
 			DirectionOneway,
 			"http_map",
@@ -106,7 +106,7 @@ type SocksMapHandler struct {
 func NewSocksMapHandler() *SocksMapHandler {
 	return &SocksMapHandler{
 		BaseHandler: NewBaseHandler(
-			packet.SocksMap,
+			packet.SocksMapCreate,
 			CategoryMapping,
 			DirectionOneway,
 			"socks_map",
@@ -137,7 +137,7 @@ type DataInHandler struct {
 func NewDataInHandler() *DataInHandler {
 	return &DataInHandler{
 		BaseHandler: NewBaseHandler(
-			packet.DataIn,
+			packet.DataTransferStart,
 			CategoryTransport,
 			DirectionOneway,
 			"data_in",
@@ -171,7 +171,7 @@ type DataOutHandler struct {
 func NewDataOutHandler() *DataOutHandler {
 	return &DataOutHandler{
 		BaseHandler: NewBaseHandler(
-			packet.DataOut,
+			packet.DataTransferOut,
 			CategoryTransport,
 			DirectionOneway,
 			"data_out",
@@ -202,7 +202,7 @@ type ForwardHandler struct {
 func NewForwardHandler() *ForwardHandler {
 	return &ForwardHandler{
 		BaseHandler: NewBaseHandler(
-			packet.Forward,
+			packet.ProxyForward,
 			CategoryTransport,
 			DirectionOneway,
 			"forward",

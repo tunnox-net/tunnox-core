@@ -96,10 +96,9 @@ func (v *DefaultPacketValidator) ValidateCommandType(commandType packet.CommandT
 		packet.TcpMapCreate: true, packet.TcpMapDelete: true, packet.TcpMapUpdate: true, packet.TcpMapList: true, packet.TcpMapStatus: true,
 		packet.HttpMapCreate: true, packet.HttpMapDelete: true, packet.HttpMapUpdate: true, packet.HttpMapList: true, packet.HttpMapStatus: true,
 		packet.SocksMapCreate: true, packet.SocksMapDelete: true, packet.SocksMapUpdate: true, packet.SocksMapList: true, packet.SocksMapStatus: true,
-		packet.DataTransferStart: true, packet.DataTransferStop: true, packet.DataTransferStatus: true, packet.ProxyForward: true,
+		packet.DataTransferStart: true, packet.DataTransferStop: true, packet.DataTransferStatus: true, packet.ProxyForward: true, packet.DataTransferOut: true,
 		packet.ConfigGet: true, packet.ConfigSet: true, packet.StatsGet: true, packet.LogGet: true, packet.HealthCheck: true,
 		packet.RpcInvoke: true, packet.RpcRegister: true, packet.RpcUnregister: true, packet.RpcList: true,
-		packet.DataOut: true,
 	}
 
 	if validCommands[commandType] {

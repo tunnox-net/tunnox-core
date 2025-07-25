@@ -30,7 +30,7 @@ func TestMiddlewareFunc_Process(t *testing.T) {
 	// 创建命令上下文
 	ctx := &CommandContext{
 		ConnectionID: "test-connection",
-		CommandType:  packet.TcpMap,
+		CommandType:  packet.TcpMapCreate,
 		RequestID:    "test-request",
 		Context:      context.Background(),
 	}
@@ -78,7 +78,7 @@ func TestMiddlewareChain_Execution(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true, Data: "handler result"}, nil
@@ -137,7 +137,7 @@ func TestMiddlewareChain_Execution(t *testing.T) {
 	executor.AddMiddleware(middleware3)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -152,7 +152,7 @@ func TestMiddlewareChain_ErrorHandling(t *testing.T) {
 
 	// 创建会返回错误的处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return nil, errors.New("handler error")
@@ -187,7 +187,7 @@ func TestMiddlewareChain_ErrorHandling(t *testing.T) {
 	executor.AddMiddleware(middleware)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令 - 双工命令会返回错误，这是预期的
 	_ = executor.Execute(streamPacket)
@@ -199,7 +199,7 @@ func TestMiddlewareChain_ShortCircuit(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true, Data: "handler result"}, nil
@@ -231,14 +231,14 @@ func TestMiddlewareChain_ShortCircuit(t *testing.T) {
 	executor.AddMiddleware(middleware)
 
 	// 测试短路情况
-	streamPacket1 := createMockStreamPacket(packet.TcpMap, `{"short_circuit": true}`)
+	streamPacket1 := createMockStreamPacket(packet.TcpMapCreate, `{"short_circuit": true}`)
 	err := executor.Execute(streamPacket1)
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
 	}
 
 	// 测试正常执行情况
-	streamPacket2 := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket2 := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 	err = executor.Execute(streamPacket2)
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
@@ -251,7 +251,7 @@ func TestMiddlewareChain_ContextModification(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 验证中间件修改的上下文
@@ -284,7 +284,7 @@ func TestMiddlewareChain_ContextModification(t *testing.T) {
 	executor.AddMiddleware(middleware)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -299,7 +299,7 @@ func TestMiddlewareChain_ResponseModification(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true, Data: "original data"}, nil
@@ -331,7 +331,7 @@ func TestMiddlewareChain_ResponseModification(t *testing.T) {
 	executor.AddMiddleware(middleware)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -346,7 +346,7 @@ func TestMiddlewareChain_ConcurrentAccess(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true, Data: "concurrent result"}, nil
@@ -373,7 +373,7 @@ func TestMiddlewareChain_ConcurrentAccess(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		go func(id int) {
-			streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+			streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 			err := executor.Execute(streamPacket)
 			if err != nil {
 				t.Errorf("Execute failed: %v", err)
@@ -394,7 +394,7 @@ func TestMiddlewareChain_EmptyChain(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			return &CommandResponse{Success: true, Data: "no middleware"}, nil
@@ -405,7 +405,7 @@ func TestMiddlewareChain_EmptyChain(t *testing.T) {
 	registry.Register(handler)
 
 	// 不添加任何中间件
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)

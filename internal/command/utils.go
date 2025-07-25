@@ -441,30 +441,30 @@ func (cu *CommandUtils) RpcList() *CommandUtils {
 
 // 便捷方法：创建TCP映射命令（兼容性）
 func (cu *CommandUtils) TcpMap() *CommandUtils {
-	return cu.WithCommand(packet.TcpMap)
+	return cu.WithCommand(packet.TcpMapCreate)
 }
 
 // 便捷方法：创建HTTP映射命令（兼容性）
 func (cu *CommandUtils) HttpMap() *CommandUtils {
-	return cu.WithCommand(packet.HttpMap)
+	return cu.WithCommand(packet.HttpMapCreate)
 }
 
 // 便捷方法：创建SOCKS映射命令（兼容性）
 func (cu *CommandUtils) SocksMap() *CommandUtils {
-	return cu.WithCommand(packet.SocksMap)
+	return cu.WithCommand(packet.SocksMapCreate)
 }
 
 // 便捷方法：创建数据输入命令（兼容性）
 func (cu *CommandUtils) DataIn() *CommandUtils {
-	return cu.WithCommand(packet.DataIn)
+	return cu.WithCommand(packet.DataTransferStart)
 }
 
 // 便捷方法：创建转发命令（兼容性）
 func (cu *CommandUtils) Forward() *CommandUtils {
-	return cu.WithCommand(packet.Forward)
+	return cu.WithCommand(packet.ProxyForward)
 }
 
 // 便捷方法：创建数据输出命令（兼容性）
 func (cu *CommandUtils) DataOut() *CommandUtils {
-	return cu.WithCommand(packet.DataOut)
+	return cu.WithCommand(packet.DataTransferOut)
 }

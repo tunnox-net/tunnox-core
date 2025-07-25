@@ -33,7 +33,7 @@ type TestHandler struct {
 // NewTestHandler 创建测试处理器
 func NewTestHandler() *TestHandler {
 	base := NewBaseCommandHandler[TestRequest, TestResponse](
-		packet.TcpMap,
+		packet.TcpMapCreate,
 		Duplex,
 		DuplexMode,
 	)
@@ -79,7 +79,7 @@ func TestNewBaseCommandHandler(t *testing.T) {
 	handler := NewTestHandler()
 
 	assert.NotNil(t, handler)
-	assert.Equal(t, packet.TcpMap, handler.GetCommandType())
+	assert.Equal(t, packet.TcpMapCreate, handler.GetCommandType())
 	assert.Equal(t, Duplex, handler.GetResponseType())
 	assert.Equal(t, DuplexMode, handler.GetCommunicationMode())
 	assert.True(t, handler.IsDuplex())
@@ -212,7 +212,7 @@ func TestBaseCommandHandler_ValidateContext(t *testing.T) {
 	ctx := &CommandContext{
 		ConnectionID: "conn_123",
 		RequestID:    "req_456",
-		CommandType:  packet.TcpMap,
+		CommandType:  packet.TcpMapCreate,
 	}
 
 	err := handler.ValidateContext(ctx)
@@ -241,7 +241,7 @@ func TestBaseCommandHandler_ValidateContext(t *testing.T) {
 func TestBaseCommandHandler_CommunicationModes(t *testing.T) {
 	// 测试单工模式
 	simplexHandler := NewBaseCommandHandler[TestRequest, TestResponse](
-		packet.TcpMap,
+		packet.TcpMapCreate,
 		Oneway,
 		Simplex,
 	)
@@ -251,7 +251,7 @@ func TestBaseCommandHandler_CommunicationModes(t *testing.T) {
 
 	// 测试双工模式
 	duplexHandler := NewBaseCommandHandler[TestRequest, TestResponse](
-		packet.HttpMap,
+		packet.HttpMapCreate,
 		Duplex,
 		DuplexMode,
 	)
@@ -268,7 +268,7 @@ type CustomValidationHandler struct {
 // NewCustomValidationHandler 创建自定义验证处理器
 func NewCustomValidationHandler() *CustomValidationHandler {
 	base := NewBaseCommandHandler[TestRequest, TestResponse](
-		packet.TcpMap,
+		packet.TcpMapCreate,
 		Duplex,
 		DuplexMode,
 	)

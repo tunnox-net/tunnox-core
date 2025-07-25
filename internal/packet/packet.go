@@ -62,6 +62,7 @@ const (
 	DataTransferStop   CommandType = 41 // 停止数据传输
 	DataTransferStatus CommandType = 42 // 获取数据传输状态
 	ProxyForward       CommandType = 43 // 代理转发数据
+	DataTransferOut    CommandType = 44 // 数据传输输出通知
 
 	// ==================== 系统管理类命令 (50-59) ====================
 	ConfigGet   CommandType = 50 // 获取配置信息
@@ -75,14 +76,6 @@ const (
 	RpcRegister   CommandType = 61 // 注册RPC服务
 	RpcUnregister CommandType = 62 // 注销RPC服务
 	RpcList       CommandType = 63 // 列出RPC服务
-
-	// ==================== 兼容性命令（保留原有ID） ====================
-	TcpMap   CommandType = 20 // 兼容性：TCP端口映射
-	HttpMap  CommandType = 25 // 兼容性：HTTP端口映射
-	SocksMap CommandType = 30 // 兼容性：SOCKS代理映射
-	DataIn   CommandType = 40 // 兼容性：数据输入通知
-	Forward  CommandType = 43 // 兼容性：服务端间转发
-	DataOut  CommandType = 44 // 兼容性：数据输出通知
 )
 
 // InitPacket 初始化数据包

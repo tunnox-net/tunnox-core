@@ -17,7 +17,7 @@ func TestRPCIntegration(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 解析请求数据
@@ -52,7 +52,7 @@ func TestRPCIntegration(t *testing.T) {
 	}
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -68,7 +68,7 @@ func TestRPCWithMiddleware(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.HttpMap,
+		commandType:  packet.HttpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			data, _ := json.Marshal("handler result")
@@ -126,7 +126,7 @@ func TestRPCWithMiddleware(t *testing.T) {
 	executor.AddMiddleware(logMiddleware)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.HttpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.HttpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -142,7 +142,7 @@ func TestRPCErrorHandling(t *testing.T) {
 
 	// 创建会返回错误的处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.SocksMap,
+		commandType:  packet.SocksMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 模拟业务逻辑错误
@@ -181,19 +181,19 @@ func TestRPCErrorHandling(t *testing.T) {
 	registry.Register(handler)
 
 	// 测试无效JSON - 双工命令会返回错误，这是预期的
-	streamPacket1 := createMockStreamPacket(packet.SocksMap, `invalid json`)
+	streamPacket1 := createMockStreamPacket(packet.SocksMapCreate, `invalid json`)
 	_ = executor.Execute(streamPacket1)
 
 	// 测试端口超出范围 - 双工命令会返回错误，这是预期的
-	streamPacket2 := createMockStreamPacket(packet.SocksMap, `{"port": 99999}`)
+	streamPacket2 := createMockStreamPacket(packet.SocksMapCreate, `{"port": 99999}`)
 	_ = executor.Execute(streamPacket2)
 
 	// 测试系统错误 - 双工命令会返回错误，这是预期的
-	streamPacket3 := createMockStreamPacket(packet.SocksMap, `{"port": 9999}`)
+	streamPacket3 := createMockStreamPacket(packet.SocksMapCreate, `{"port": 9999}`)
 	_ = executor.Execute(streamPacket3)
 
 	// 测试正常情况
-	streamPacket4 := createMockStreamPacket(packet.SocksMap, `{"port": 8080}`)
+	streamPacket4 := createMockStreamPacket(packet.SocksMapCreate, `{"port": 8080}`)
 	err := executor.Execute(streamPacket4)
 	if err != nil {
 		t.Errorf("Execute failed: %v", err)
@@ -207,7 +207,7 @@ func TestRPCConcurrency(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 模拟处理时间
@@ -236,7 +236,7 @@ func TestRPCConcurrency(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 
-			streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+			streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 			err := executor.Execute(streamPacket)
 			results <- err
 		}(i)
@@ -261,7 +261,7 @@ func TestRPCRequestIDGeneration(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 验证请求ID不为空
@@ -287,7 +287,7 @@ func TestRPCRequestIDGeneration(t *testing.T) {
 
 	// 执行多个请求，验证请求ID唯一性
 	for i := 0; i < 5; i++ {
-		streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+		streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 		err := executor.Execute(streamPacket)
 		if err != nil {
 			t.Errorf("Execute failed: %v", err)
@@ -302,7 +302,7 @@ func TestRPCContextPropagation(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.HttpMap,
+		commandType:  packet.HttpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 验证上下文字段
@@ -344,7 +344,7 @@ func TestRPCContextPropagation(t *testing.T) {
 	registry.Register(handler)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.HttpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.HttpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -360,7 +360,7 @@ func TestRPCResponseSerialization(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 创建复杂响应
@@ -389,7 +389,7 @@ func TestRPCResponseSerialization(t *testing.T) {
 	registry.Register(handler)
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)
@@ -405,7 +405,7 @@ func TestRPCGracefulShutdown(t *testing.T) {
 
 	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType:  packet.TcpMap,
+		commandType:  packet.TcpMapCreate,
 		responseType: Duplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
 			// 检查上下文是否被取消
@@ -431,7 +431,7 @@ func TestRPCGracefulShutdown(t *testing.T) {
 	defer cancel()
 
 	// 创建流数据包
-	streamPacket := createMockStreamPacket(packet.TcpMap, `{"port": 8080}`)
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令
 	err := executor.Execute(streamPacket)

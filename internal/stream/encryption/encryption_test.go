@@ -214,7 +214,7 @@ func TestStreamProcessorWithEncryption(t *testing.T) {
 	testPacket := &packet.TransferPacket{
 		PacketType: packet.JsonCommand,
 		CommandPacket: &packet.CommandPacket{
-			CommandType: packet.TcpMap,
+			CommandType: packet.TcpMapCreate,
 			CommandId:   "test-command-1",
 			Token:       "test-token",
 			SenderId:    "sender-1",
@@ -260,7 +260,7 @@ func TestStreamProcessorWithEncryption(t *testing.T) {
 		t.Fatalf("Command packet is nil")
 	}
 
-	if readPacket.CommandPacket.CommandType != packet.TcpMap {
+	if readPacket.CommandPacket.CommandType != packet.TcpMapCreate {
 		t.Errorf("Expected command type TcpMap, got %v", readPacket.CommandPacket.CommandType)
 	}
 

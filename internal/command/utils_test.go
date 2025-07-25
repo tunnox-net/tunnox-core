@@ -210,28 +210,28 @@ func TestCommandUtils_NewCommands(t *testing.T) {
 
 	// 测试兼容性命令
 	t.Run("Compatibility Commands", func(t *testing.T) {
-		if utils.TcpMap().commandType != packet.TcpMap {
-			t.Errorf("TcpMap() should set command type to %v, got %v", packet.TcpMap, utils.TcpMap().commandType)
+		if utils.TcpMap().commandType != packet.TcpMapCreate {
+			t.Errorf("TcpMap() should set command type to %v, got %v", packet.TcpMapCreate, utils.TcpMap().commandType)
 		}
 
-		if utils.HttpMap().commandType != packet.HttpMap {
-			t.Errorf("HttpMap() should set command type to %v, got %v", packet.HttpMap, utils.HttpMap().commandType)
+		if utils.HttpMap().commandType != packet.HttpMapCreate {
+			t.Errorf("HttpMap() should set command type to %v, got %v", packet.HttpMapCreate, utils.HttpMap().commandType)
 		}
 
-		if utils.SocksMap().commandType != packet.SocksMap {
-			t.Errorf("SocksMap() should set command type to %v, got %v", packet.SocksMap, utils.SocksMap().commandType)
+		if utils.SocksMap().commandType != packet.SocksMapCreate {
+			t.Errorf("SocksMap() should set command type to %v, got %v", packet.SocksMapCreate, utils.SocksMap().commandType)
 		}
 
-		if utils.DataIn().commandType != packet.DataIn {
-			t.Errorf("DataIn() should set command type to %v, got %v", packet.DataIn, utils.DataIn().commandType)
+		if utils.DataIn().commandType != packet.DataTransferStart {
+			t.Errorf("DataIn() should set command type to %v, got %v", packet.DataTransferStart, utils.DataIn().commandType)
 		}
 
-		if utils.Forward().commandType != packet.Forward {
-			t.Errorf("Forward() should set command type to %v, got %v", packet.Forward, utils.Forward().commandType)
+		if utils.Forward().commandType != packet.ProxyForward {
+			t.Errorf("Forward() should set command type to %v, got %v", packet.ProxyForward, utils.Forward().commandType)
 		}
 
-		if utils.DataOut().commandType != packet.DataOut {
-			t.Errorf("DataOut() should set command type to %v, got %v", packet.DataOut, utils.DataOut().commandType)
+		if utils.DataOut().commandType != packet.DataTransferOut {
+			t.Errorf("DataOut() should set command type to %v, got %v", packet.DataTransferOut, utils.DataOut().commandType)
 		}
 	})
 }
