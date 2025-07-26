@@ -169,3 +169,13 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func() error) {
 		}()
 	}
 }
+
+// SetCtxWithNoOpOnClose 设置上下文并使用空操作的清理回调
+func (c *Dispose) SetCtxWithNoOpOnClose(parent context.Context) {
+	c.SetCtx(parent, func() error { return nil })
+}
+
+// SetCtxWithSelfOnClose 设置上下文并使用自身的 onClose 方法
+func (c *Dispose) SetCtxWithSelfOnClose(parent context.Context, selfOnClose func() error) {
+	c.SetCtx(parent, selfOnClose)
+}

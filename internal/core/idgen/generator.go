@@ -66,14 +66,8 @@ func NewStorageIDGenerator[T any](storage storage.Storage, prefix, keyPrefix str
 		prefix:    prefix,
 		keyPrefix: keyPrefix,
 	}
-	generator.SetCtx(parentCtx, generator.onClose)
+	generator.SetCtxWithNoOpOnClose(parentCtx)
 	return generator
-}
-
-// onClose 资源清理回调
-func (g *StorageIDGenerator[T]) onClose() error {
-	utils.Infof("Storage-based ID generator resources cleaned up")
-	return nil
 }
 
 // getKey 生成存储键
@@ -177,11 +171,11 @@ func NewClientIDGenerator(storage storage.Storage, parentCtx context.Context) *C
 	generator := &ClientIDGenerator{
 		storage: storage,
 	}
-	generator.SetCtx(parentCtx, generator.onClose)
+	generator.SetCtxWithNoOpOnClose(parentCtx)
 	return generator
 }
 
-// onClose 资源清理回调
+// onClose 资源清理回调 - 已废弃，使用 SetCtxWithNoOpOnClose
 func (g *ClientIDGenerator) onClose() error {
 	utils.Infof("Client ID generator resources cleaned up")
 	return nil

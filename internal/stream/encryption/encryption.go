@@ -56,13 +56,8 @@ func NewEncryptionReader(reader io.Reader, key EncryptionKey, parentCtx context.
 		reader: reader,
 		key:    key,
 	}
-	er.SetCtx(parentCtx, er.onClose)
+	er.SetCtxWithNoOpOnClose(parentCtx)
 	return er
-}
-
-func (er *EncryptionReader) onClose() error {
-	// 加密读取器不需要特殊清理
-	return nil
 }
 
 // Read 读取并解密数据
@@ -169,10 +164,11 @@ func NewEncryptionWriter(writer io.Writer, key EncryptionKey, parentCtx context.
 		writer: writer,
 		key:    key,
 	}
-	ew.SetCtx(parentCtx, ew.onClose)
+	ew.SetCtxWithNoOpOnClose(parentCtx)
 	return ew
 }
 
+// onClose 资源清理回调 - 已废弃，使用 SetCtxWithNoOpOnClose
 func (ew *EncryptionWriter) onClose() error {
 	// 加密写入器不需要特殊清理
 	return nil
@@ -261,10 +257,11 @@ func NewEncryptionManager(key EncryptionKey, parentCtx context.Context) *Encrypt
 	em := &EncryptionManager{
 		key: key,
 	}
-	em.SetCtx(parentCtx, em.onClose)
+	em.SetCtxWithNoOpOnClose(parentCtx)
 	return em
 }
 
+// onClose 资源清理回调 - 已废弃，使用 SetCtxWithNoOpOnClose
 func (em *EncryptionManager) onClose() error {
 	// 加密管理器不需要特殊清理
 	return nil
