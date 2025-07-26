@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"tunnox-core/internal/command"
-	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/utils"
@@ -14,7 +13,7 @@ import (
 type ResponseManager struct {
 	session  types.Session
 	eventBus events.EventBus
-	dispose.Dispose
+	utils.Dispose
 }
 
 // NewResponseManager 创建新的响应管理器

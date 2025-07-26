@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
 
@@ -15,7 +14,7 @@ type EventBusImpl struct {
 	mu       sync.RWMutex
 	ctx      context.Context
 	cancel   context.CancelFunc
-	dispose.Dispose
+	utils.Dispose
 }
 
 // NewEventBus 创建新的事件总线

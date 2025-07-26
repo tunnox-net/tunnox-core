@@ -6,7 +6,6 @@ import (
 	"io"
 	"sync"
 	"time"
-	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/types"
@@ -31,7 +30,7 @@ type SessionManager struct {
 	commandRegistry types.CommandRegistry
 	commandExecutor types.CommandExecutor
 
-	dispose.Dispose
+	utils.Dispose
 }
 
 // NewSessionManager 创建新的会话管理器
