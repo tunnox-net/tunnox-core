@@ -9,6 +9,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/storage"
 
 	"tunnox-core/internal/utils"
@@ -17,7 +18,7 @@ import (
 // Repository 数据访问层
 type Repository struct {
 	storage storage.Storage
-	utils.Dispose
+	dispose.Dispose
 }
 
 // NewRepository 创建新的数据访问层
@@ -609,7 +610,7 @@ func (r *NodeRepository) AddNodeToList(node *models.Node) error {
 // ConnectionRepo 连接数据访问
 type ConnectionRepo struct {
 	*Repository
-	utils.Dispose
+	dispose.Dispose
 }
 
 // NewConnectionRepo 创建连接数据访问层

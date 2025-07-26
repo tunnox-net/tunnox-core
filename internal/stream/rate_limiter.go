@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/errors"
-	"tunnox-core/internal/utils"
 )
 
 // RateLimiter 实现限速传输的Reader和Writer
@@ -13,21 +13,21 @@ type RateLimiter struct {
 	reader      io.Reader
 	writer      io.Writer
 	tokenBucket *TokenBucket
-	utils.Dispose
+	dispose.Dispose
 }
 
 // RateLimiterReader 实现io.Reader的限速读取
 type RateLimiterReader struct {
 	reader      io.Reader
 	tokenBucket *TokenBucket
-	utils.Dispose
+	dispose.Dispose
 }
 
 // RateLimiterWriter 实现io.Writer的限速写入
 type RateLimiterWriter struct {
 	writer      io.Writer
 	tokenBucket *TokenBucket
-	utils.Dispose
+	dispose.Dispose
 }
 
 // Read 实现io.Reader接口，限速读取

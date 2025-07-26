@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -135,7 +136,7 @@ type CommandServiceImpl struct {
 	eventBus       events.EventBus
 	mu             sync.RWMutex
 
-	utils.Dispose
+	dispose.Dispose
 }
 
 // NewCommandService 创建新的命令服务

@@ -5,15 +5,11 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	"tunnox-core/internal/utils"
 )
-
-type DisposeError = utils.DisposeError
-type DisposeResult = utils.DisposeResult
 
 // ResourceManager 资源管理器，负责统一管理所有可释放资源
 type ResourceManager struct {
-	resources map[string]utils.Disposable
+	resources map[string]Disposable
 	mu        sync.RWMutex
 	order     []string // 资源释放顺序
 	disposing bool     // 标记是否正在释放资源
@@ -22,13 +18,13 @@ type ResourceManager struct {
 // NewResourceManager 创建新的资源管理器
 func NewResourceManager() *ResourceManager {
 	return &ResourceManager{
-		resources: make(map[string]utils.Disposable),
+		resources: make(map[string]Disposable),
 		order:     make([]string, 0),
 	}
 }
 
 // Register 注册资源，按注册顺序进行释放
-func (rm *ResourceManager) Register(name string, resource utils.Disposable) error {
+func (rm *ResourceManager) Register(name string, resource Disposable) error {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
@@ -38,7 +34,7 @@ func (rm *ResourceManager) Register(name string, resource utils.Disposable) erro
 
 	rm.resources[name] = resource
 	rm.order = append(rm.order, name)
-	utils.Debugf("Registered resource: %s", name)
+	Debugf("Registered resource: %s", name)
 	return nil
 }
 
@@ -59,12 +55,12 @@ func (rm *ResourceManager) Unregister(name string) error {
 			break
 		}
 	}
-	utils.Debugf("Unregistered resource: %s", name)
+	Debugf("Unregistered resource: %s", name)
 	return nil
 }
 
 // GetResource 获取指定名称的资源
-func (rm *ResourceManager) GetResource(name string) (utils.Disposable, bool) {
+func (rm *ResourceManager) GetResource(name string) (Disposable, bool) {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
 
@@ -99,54 +95,44 @@ func (rm *ResourceManager) DisposeAll() *DisposeResult {
 		return &DisposeResult{Errors: make([]*DisposeError, 0)}
 	}
 
-	// 标记正在释放
 	rm.disposing = true
 
 	// 保存当前资源列表的副本
-	resources := make(map[string]utils.Disposable)
+	resources := make(map[string]Disposable)
 	order := make([]string, len(rm.order))
 	copy(order, rm.order)
 
-	for name, resource := range rm.resources {
-		resources[name] = resource
-	}
-
 	// 清空资源列表
-	rm.resources = make(map[string]utils.Disposable)
+	rm.resources = make(map[string]Disposable)
 	rm.order = make([]string, 0)
 
 	rm.mu.Unlock()
 
+	// 按注册的相反顺序释放资源
 	result := &DisposeResult{Errors: make([]*DisposeError, 0)}
-
-	// 按相反顺序释放资源
 	for i := len(order) - 1; i >= 0; i-- {
 		name := order[i]
 		resource := resources[name]
 
-		if err := resource.Dispose(); err != nil {
-			disposeErr := &DisposeError{
-				HandlerIndex: len(order) - 1 - i,
-				ResourceName: name,
-				Err:          err,
+		if resource != nil {
+			IncrementDisposeCount()
+			if err := resource.Dispose(); err != nil {
+				disposeErr := &DisposeError{
+					HandlerIndex: len(order) - 1 - i,
+					ResourceName: name,
+					Err:          err,
+				}
+				result.Errors = append(result.Errors, disposeErr)
+				Errorf("Failed to dispose resource %s: %v", name, err)
+			} else {
+				Debugf("Successfully disposed resource: %s", name)
 			}
-			result.Errors = append(result.Errors, disposeErr)
-			utils.Errorf("Failed to dispose resource %s: %v", name, err)
-		} else {
-			utils.Debugf("Successfully disposed resource: %s", name)
 		}
 	}
 
-	// 重置释放标记
 	rm.mu.Lock()
 	rm.disposing = false
 	rm.mu.Unlock()
-
-	// 添加一个特殊标记表示这是实际执行释放的结果
-	result.ActualDisposal = true
-
-	// 增加释放计数用于监控
-	IncrementDisposeCount()
 
 	return result
 }
@@ -182,7 +168,7 @@ func (rm *ResourceManager) DisposeWithTimeout(timeout time.Duration) *DisposeRes
 var globalResourceManager = NewResourceManager()
 
 // RegisterGlobalResource 注册全局资源
-func RegisterGlobalResource(name string, resource utils.Disposable) error {
+func RegisterGlobalResource(name string, resource Disposable) error {
 	return globalResourceManager.Register(name, resource)
 }
 
@@ -201,7 +187,10 @@ func DisposeAllGlobalResourcesWithTimeout(timeout time.Duration) *DisposeResult 
 	return globalResourceManager.DisposeWithTimeout(timeout)
 }
 
+// 全局释放计数器
+var disposeCount int64
+
 // IncrementDisposeCount 增加释放计数（用于监控）
 func IncrementDisposeCount() {
-	// 这里可以实现更复杂的监控逻辑
+	disposeCount++
 }

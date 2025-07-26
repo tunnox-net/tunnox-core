@@ -8,8 +8,8 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"io"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/errors"
-	"tunnox-core/internal/utils"
 )
 
 // EncryptionKey 加密密钥接口
@@ -47,7 +47,7 @@ type EncryptionReader struct {
 	reader io.Reader
 	key    EncryptionKey
 	ctx    context.Context
-	utils.Dispose
+	dispose.Dispose
 }
 
 // NewEncryptionReader 创建加密读取器
@@ -160,7 +160,7 @@ type EncryptionWriter struct {
 	writer io.Writer
 	key    EncryptionKey
 	ctx    context.Context
-	utils.Dispose
+	dispose.Dispose
 }
 
 // NewEncryptionWriter 创建加密写入器
@@ -253,8 +253,7 @@ func (ew *EncryptionWriter) encrypt(plaintext []byte) ([]byte, error) {
 // EncryptionManager 加密管理器
 type EncryptionManager struct {
 	key EncryptionKey
-	ctx context.Context
-	utils.Dispose
+	dispose.Dispose
 }
 
 // NewEncryptionManager 创建加密管理器

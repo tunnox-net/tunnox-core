@@ -5,18 +5,18 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/errors"
-	"tunnox-core/internal/utils"
 )
 
-// TokenBucket 通用令牌桶实现
+// TokenBucket 令牌桶限流器
 type TokenBucket struct {
-	rate      int64      // 令牌产生速率（字节/秒）
-	burstSize int        // 突发大小
-	tokens    int        // 当前令牌数
-	lastTime  time.Time  // 上次更新时间
-	mu        sync.Mutex // 保护并发访问
-	utils.Dispose
+	capacity   int64
+	rate       int64
+	tokens     int64
+	lastRefill time.Time
+	mu         sync.Mutex
+	dispose.Dispose
 }
 
 // NewTokenBucket 创建新的令牌桶
@@ -35,10 +35,10 @@ func NewTokenBucket(rate int64, parentCtx context.Context) (*TokenBucket, error)
 	}
 
 	tokenBucket := &TokenBucket{
-		rate:      rate,
-		burstSize: burstSize,
-		tokens:    0, // 初始令牌数为0，需要等待产生
-		lastTime:  time.Now(),
+		rate:       rate,
+		capacity:   int64(burstSize),
+		tokens:     0, // 初始令牌数为0，需要等待产生
+		lastRefill: time.Now(),
 	}
 
 	// 使用Dispose的context管理
@@ -62,18 +62,18 @@ func (tb *TokenBucket) WaitForTokens(tokensNeeded int) error {
 	now := time.Now()
 
 	// 计算从上次到现在应该产生的令牌数
-	elapsed := now.Sub(tb.lastTime)
-	tokensToAdd := int(float64(tb.rate) * elapsed.Seconds())
+	elapsed := now.Sub(tb.lastRefill)
+	tokensToAdd := int64(float64(tb.rate) * elapsed.Seconds())
 	tb.tokens += tokensToAdd
 
 	// 限制令牌数量不超过burst大小
-	if tb.tokens > tb.burstSize {
-		tb.tokens = tb.burstSize
+	if tb.tokens > tb.capacity {
+		tb.tokens = tb.capacity
 	}
 
 	// 如果令牌不足，需要等待
-	if tb.tokens < tokensNeeded {
-		tokensNeeded -= tb.tokens
+	if tb.tokens < int64(tokensNeeded) {
+		tokensNeeded -= int(tb.tokens)
 		tb.tokens = 0
 
 		// 计算需要等待的时间
@@ -93,10 +93,10 @@ func (tb *TokenBucket) WaitForTokens(tokensNeeded int) error {
 			}
 		}
 	} else {
-		tb.tokens -= tokensNeeded
+		tb.tokens -= int64(tokensNeeded)
 	}
 
-	tb.lastTime = time.Now()
+	tb.lastRefill = time.Now()
 	return nil
 }
 
@@ -119,11 +119,11 @@ func (tb *TokenBucket) SetRate(rate int64) error {
 	if burstSize > int(rate) {
 		burstSize = int(rate) // 突发大小不应超过速率
 	}
-	tb.burstSize = burstSize
+	tb.capacity = int64(burstSize)
 
 	// 调整当前令牌数
-	if tb.tokens > burstSize {
-		tb.tokens = burstSize
+	if tb.tokens > int64(burstSize) {
+		tb.tokens = int64(burstSize)
 	}
 
 	return nil
@@ -140,14 +140,14 @@ func (tb *TokenBucket) GetRate() int64 {
 func (tb *TokenBucket) GetBurstSize() int {
 	tb.mu.Lock()
 	defer tb.mu.Unlock()
-	return tb.burstSize
+	return int(tb.capacity)
 }
 
 // GetTokens 获取当前令牌数
 func (tb *TokenBucket) GetTokens() int {
 	tb.mu.Lock()
 	defer tb.mu.Unlock()
-	return tb.tokens
+	return int(tb.tokens)
 }
 
 // Close 方法由 utils.Dispose 提供，无需重复实现

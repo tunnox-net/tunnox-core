@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -24,7 +25,7 @@ type Adapter interface {
 
 // BaseAdapter 基础适配器，提供通用的连接管理和流处理逻辑
 type BaseAdapter struct {
-	utils.Dispose
+	dispose.Dispose
 	name        string
 	addr        string
 	session     session.Session
@@ -215,7 +216,7 @@ func (b *BaseAdapter) onClose() error {
 	b.streamMutex.Lock()
 	if b.stream != nil {
 		// 使用类型断言来调用CloseWithResult方法
-		if streamProcessor, ok := b.stream.(interface{ CloseWithResult() *utils.DisposeResult }); ok {
+		if streamProcessor, ok := b.stream.(interface{ CloseWithResult() *dispose.DisposeResult }); ok {
 			result := streamProcessor.CloseWithResult()
 			if result.HasErrors() {
 				b.streamMutex.Unlock()

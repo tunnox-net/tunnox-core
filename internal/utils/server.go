@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"tunnox-core/internal/core/dispose"
 )
 
 // ServiceConfig 服务配置
@@ -20,7 +21,7 @@ type ServiceConfig struct {
 	// 是否启用信号处理
 	EnableSignalHandling bool
 	// 自定义资源管理器
-	ResourceManager *ResourceManager
+	ResourceManager *dispose.ResourceManager
 }
 
 // DefaultServiceConfig 默认服务配置
@@ -99,7 +100,7 @@ type ServiceManager struct {
 	Dispose
 	config        *ServiceConfig
 	services      map[string]Service
-	resourceMgr   *ResourceManager
+	resourceMgr   *dispose.ResourceManager
 	shutdownChan  chan struct{}
 	disposeResult *DisposeResult
 	mu            sync.RWMutex
@@ -116,7 +117,7 @@ func NewServiceManager(config *ServiceConfig) *ServiceManager {
 	// 使用配置的资源管理器或全局资源管理器
 	resourceMgr := config.ResourceManager
 	if resourceMgr == nil {
-		resourceMgr = globalResourceManager
+		resourceMgr = dispose.NewResourceManager()
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

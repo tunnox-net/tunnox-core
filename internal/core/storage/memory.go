@@ -6,7 +6,6 @@ import (
 	"time"
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // storageItem 存储项
@@ -68,7 +67,7 @@ func (m *MemoryStorage) Set(key string, value interface{}, ttl time.Duration) er
 		value:      value,
 		expiration: expiration,
 	}
-	utils.Infof("MemoryStorage.Set: stored key %s, value type: %T, expiration: %v", key, value, expiration)
+	dispose.Infof("MemoryStorage.Set: stored key %s, value type: %T, expiration: %v", key, value, expiration)
 	return nil
 }
 
@@ -77,26 +76,26 @@ func (m *MemoryStorage) Get(key string) (interface{}, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	utils.Infof("MemoryStorage.Get: retrieving key %s, data map size: %d", key, len(m.data))
+	dispose.Infof("MemoryStorage.Get: retrieving key %s, data map size: %d", key, len(m.data))
 	if m.data == nil {
-		utils.Debugf("MemoryStorage.Get: data map is nil for key %s", key)
+		dispose.Debugf("MemoryStorage.Get: data map is nil for key %s", key)
 		return nil, ErrKeyNotFound
 	}
 
 	item, exists := m.data[key]
 	if !exists {
-		utils.Debugf("MemoryStorage.Get: key %s not found in data map", key)
+		dispose.Debugf("MemoryStorage.Get: key %s not found in data map", key)
 		return nil, ErrKeyNotFound
 	}
 
 	// 只有 expiration 非零且已过期才删除
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		utils.Infof("MemoryStorage.Get: key %s expired, deleting", key)
+		dispose.Infof("MemoryStorage.Get: key %s expired, deleting", key)
 		delete(m.data, key)
 		return nil, ErrKeyNotFound
 	}
 
-	utils.Infof("MemoryStorage.Get: successfully retrieved key %s, value type: %T", key, item.value)
+	dispose.Infof("MemoryStorage.Get: successfully retrieved key %s, value type: %T", key, item.value)
 	return item.value, nil
 }
 
@@ -114,26 +113,26 @@ func (m *MemoryStorage) Exists(key string) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	utils.Infof("MemoryStorage.Exists: checking key %s, data map size: %d", key, len(m.data))
+	dispose.Infof("MemoryStorage.Exists: checking key %s, data map size: %d", key, len(m.data))
 	if m.data == nil {
-		utils.Debugf("MemoryStorage.Exists: data map is nil for key %s", key)
+		dispose.Debugf("MemoryStorage.Exists: data map is nil for key %s", key)
 		return false, nil
 	}
 
 	item, exists := m.data[key]
 	if !exists {
-		utils.Debugf("MemoryStorage.Exists: key %s not found in data map", key)
+		dispose.Debugf("MemoryStorage.Exists: key %s not found in data map", key)
 		return false, nil
 	}
 
 	// 修复：零值时间表示永不过期
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		utils.Infof("MemoryStorage.Exists: key %s expired, deleting", key)
+		dispose.Infof("MemoryStorage.Exists: key %s expired, deleting", key)
 		delete(m.data, key)
 		return false, nil
 	}
 
-	utils.Infof("MemoryStorage.Exists: key %s exists and not expired", key)
+	dispose.Infof("MemoryStorage.Exists: key %s exists and not expired", key)
 	return true, nil
 }
 

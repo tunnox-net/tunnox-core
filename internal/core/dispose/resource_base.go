@@ -2,12 +2,11 @@ package dispose
 
 import (
 	"context"
-	"tunnox-core/internal/utils"
 )
 
 // ResourceBase 通用资源管理基类
 type ResourceBase struct {
-	utils.Dispose
+	Dispose
 	name string
 }
 
@@ -25,7 +24,7 @@ func (r *ResourceBase) Initialize(parentCtx context.Context) {
 
 // onClose 通用资源清理回调
 func (r *ResourceBase) onClose() error {
-	utils.Infof("%s resources cleaned up", r.name)
+	Infof("%s resources cleaned up", r.name)
 	return nil
 }
 
@@ -44,7 +43,7 @@ type DisposableResource interface {
 	Initialize(context.Context)
 	GetName() string
 	SetName(string)
-	utils.Disposable
+	Disposable
 }
 
 // NewDisposableResource 创建可释放资源的通用构造函数

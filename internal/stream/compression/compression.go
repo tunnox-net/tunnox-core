@@ -5,16 +5,17 @@ import (
 	"context"
 	"io"
 	"sync"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/errors"
-	"tunnox-core/internal/utils"
 )
 
+// GzipReader Gzip解压缩读取器
 type GzipReader struct {
 	reader     io.Reader
 	gzipReader *gzip.Reader
 	initOnce   sync.Once
 	initErr    error
-	utils.Dispose
+	dispose.Dispose
 }
 
 func (r *GzipReader) Read(p []byte) (n int, err error) {
@@ -55,12 +56,13 @@ func NewGzipReader(reader io.Reader, parentCtx context.Context) *GzipReader {
 	return sReader
 }
 
+// GzipWriter Gzip压缩写入器
 type GzipWriter struct {
 	writer     io.Writer
 	gWriter    *gzip.Writer
 	closed     bool
 	closeMutex sync.Mutex
-	utils.Dispose
+	dispose.Dispose
 }
 
 func (w *GzipWriter) Write(p []byte) (n int, err error) {

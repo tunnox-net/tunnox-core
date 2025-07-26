@@ -6,7 +6,6 @@ import (
 	"tunnox-core/internal/cloud/container"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/repos"
-	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
@@ -36,9 +35,9 @@ func registerInfrastructureServices(container *container.Container, config *mana
 			return nil, fmt.Errorf("failed to resolve storage: %w", err)
 		}
 
-		storageImpl, ok := storageInstance.(storages.Storage)
+		storageImpl, ok := storageInstance.(storage.Storage)
 		if !ok {
-			return nil, fmt.Errorf("storage is not of type storages.Storage")
+			return nil, fmt.Errorf("storage is not of type storage.Storage")
 		}
 
 		idManager := idgen.NewIDManager(storageImpl, parentCtx)
@@ -52,9 +51,9 @@ func registerInfrastructureServices(container *container.Container, config *mana
 			return nil, fmt.Errorf("failed to resolve storage: %w", err)
 		}
 
-		storageImpl, ok := storageInstance.(storages.Storage)
+		storageImpl, ok := storageInstance.(storage.Storage)
 		if !ok {
-			return nil, fmt.Errorf("storage is not of type storages.Storage")
+			return nil, fmt.Errorf("storage is not of type storage.Storage")
 		}
 
 		repo := repos.NewRepository(storageImpl)

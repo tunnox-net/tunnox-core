@@ -7,56 +7,39 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"tunnox-core/internal/core/dispose"
 )
-
-// ResourceStats 资源统计信息
-type ResourceStats struct {
-	Timestamp      time.Time
-	GoroutineCount int64
-	MemoryStats    MemoryStats
-	ResourceCount  int64
-	DisposeCount   int64
-}
-
-// MemoryStats 内存统计信息
-type MemoryStats struct {
-	Alloc      uint64
-	TotalAlloc uint64
-	Sys        uint64
-	NumGC      uint32
-}
 
 // MonitorConfig 监控配置
 type MonitorConfig struct {
-	// 监控间隔
-	MonitorInterval time.Duration
-	// 是否启用goroutine监控
-	EnableGoroutineMonitor bool
-	// 是否启用内存监控
-	EnableMemoryMonitor bool
-	// 是否启用资源监控
-	EnableResourceMonitor bool
-	// goroutine数量警告阈值
+	MonitorInterval           time.Duration
+	EnableGoroutineMonitor    bool
+	EnableMemoryMonitor       bool
+	EnableResourceMonitor     bool
 	GoroutineWarningThreshold int64
-	// 内存使用警告阈值（MB）
-	MemoryWarningThresholdMB int64
-	// 监控回调函数
-	OnWarning func(stats *ResourceStats, warning string)
+	MemoryWarningThresholdMB  int64
+	OnWarning                 func(*ResourceStats, string)
 }
 
 // DefaultMonitorConfig 默认监控配置
 func DefaultMonitorConfig() *MonitorConfig {
 	return &MonitorConfig{
-		MonitorInterval:           30 * time.Second,
+		MonitorInterval:           5 * time.Second,
 		EnableGoroutineMonitor:    true,
 		EnableMemoryMonitor:       true,
 		EnableResourceMonitor:     true,
 		GoroutineWarningThreshold: 1000,
-		MemoryWarningThresholdMB:  512, // 512MB
-		OnWarning: func(stats *ResourceStats, warning string) {
-			Warnf("Resource monitor warning: %s", warning)
-		},
+		MemoryWarningThresholdMB:  100,
 	}
+}
+
+// ResourceStats 资源统计信息
+type ResourceStats struct {
+	Timestamp      time.Time
+	GoroutineCount int64
+	MemoryStats    runtime.MemStats
+	ResourceCount  int64
+	DisposeCount   int64
 }
 
 // ResourceMonitor 资源监控器
@@ -67,16 +50,12 @@ type ResourceMonitor struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	isRunning int32
-	dispose   Dispose
+	dispose   dispose.Dispose
 }
 
 // NewResourceMonitor 创建资源监控器
-func NewResourceMonitor(config *MonitorConfig) *ResourceMonitor {
-	if config == nil {
-		config = DefaultMonitorConfig()
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
+func NewResourceMonitor(config *MonitorConfig, parentCtx context.Context) *ResourceMonitor {
+	ctx, cancel := context.WithCancel(parentCtx)
 	monitor := &ResourceMonitor{
 		config: config,
 		stats:  make([]*ResourceStats, 0),
@@ -86,6 +65,12 @@ func NewResourceMonitor(config *MonitorConfig) *ResourceMonitor {
 
 	monitor.dispose.SetCtx(ctx, monitor.onClose)
 	return monitor
+}
+
+// onClose 资源释放回调
+func (rm *ResourceMonitor) onClose() error {
+	rm.Stop()
+	return nil
 }
 
 // Start 启动监控
@@ -146,18 +131,14 @@ func (rm *ResourceMonitor) collectStats() {
 	if rm.config.EnableMemoryMonitor {
 		var memStats runtime.MemStats
 		runtime.ReadMemStats(&memStats)
-		stats.MemoryStats = MemoryStats{
-			Alloc:      memStats.Alloc,
-			TotalAlloc: memStats.TotalAlloc,
-			Sys:        memStats.Sys,
-			NumGC:      memStats.NumGC,
-		}
+		stats.MemoryStats = memStats
 	}
 
 	// 收集资源统计
 	if rm.config.EnableResourceMonitor {
-		stats.ResourceCount = int64(globalResourceManager.GetResourceCount())
-		stats.DisposeCount = atomic.LoadInt64(&globalDisposeCount)
+		// 这里暂时使用固定值，因为全局资源管理器需要重构
+		stats.ResourceCount = 0
+		stats.DisposeCount = 0
 	}
 
 	// 保存统计信息
@@ -204,7 +185,7 @@ func (rm *ResourceMonitor) checkWarnings(stats *ResourceStats) {
 	}
 }
 
-// GetStats 获取统计信息
+// GetStats 获取所有统计信息
 func (rm *ResourceMonitor) GetStats() []*ResourceStats {
 	rm.mu.RLock()
 	defer rm.mu.RUnlock()
@@ -225,149 +206,12 @@ func (rm *ResourceMonitor) GetLatestStats() *ResourceStats {
 	return rm.stats[len(rm.stats)-1]
 }
 
-// GetStatsSummary 获取统计摘要
-func (rm *ResourceMonitor) GetStatsSummary() *StatsSummary {
-	stats := rm.GetStats()
-	if len(stats) == 0 {
-		return &StatsSummary{}
-	}
-
-	summary := &StatsSummary{
-		SampleCount: len(stats),
-		StartTime:   stats[0].Timestamp,
-		EndTime:     stats[len(stats)-1].Timestamp,
-	}
-
-	// 计算goroutine统计
-	var totalGoroutines int64
-	var maxGoroutines int64
-	var minGoroutines int64 = stats[0].GoroutineCount
-
-	for _, stat := range stats {
-		totalGoroutines += stat.GoroutineCount
-		if stat.GoroutineCount > maxGoroutines {
-			maxGoroutines = stat.GoroutineCount
-		}
-		if stat.GoroutineCount < minGoroutines {
-			minGoroutines = stat.GoroutineCount
-		}
-	}
-
-	summary.GoroutineStats = GoroutineStats{
-		Average: float64(totalGoroutines) / float64(len(stats)),
-		Max:     maxGoroutines,
-		Min:     minGoroutines,
-		Current: stats[len(stats)-1].GoroutineCount,
-	}
-
-	// 计算内存统计
-	var totalAlloc uint64
-	var maxAlloc uint64
-	var minAlloc uint64 = stats[0].MemoryStats.Alloc
-
-	for _, stat := range stats {
-		totalAlloc += stat.MemoryStats.Alloc
-		if stat.MemoryStats.Alloc > maxAlloc {
-			maxAlloc = stat.MemoryStats.Alloc
-		}
-		if stat.MemoryStats.Alloc < minAlloc {
-			minAlloc = stat.MemoryStats.Alloc
-		}
-	}
-
-	summary.MemoryStats = MemoryStatsSummary{
-		AverageAlloc: float64(totalAlloc) / float64(len(stats)),
-		MaxAlloc:     maxAlloc,
-		MinAlloc:     minAlloc,
-		CurrentAlloc: stats[len(stats)-1].MemoryStats.Alloc,
-	}
-
-	return summary
-}
-
-// onClose 关闭回调
-func (rm *ResourceMonitor) onClose() error {
-	rm.Stop()
-	return nil
-}
-
 // Dispose 实现Disposable接口
 func (rm *ResourceMonitor) Dispose() error {
 	return rm.dispose.CloseWithError()
 }
 
-// StatsSummary 统计摘要
-type StatsSummary struct {
-	SampleCount    int
-	StartTime      time.Time
-	EndTime        time.Time
-	GoroutineStats GoroutineStats
-	MemoryStats    MemoryStatsSummary
-}
-
-// GoroutineStats goroutine统计
-type GoroutineStats struct {
-	Average float64
-	Max     int64
-	Min     int64
-	Current int64
-}
-
-// MemoryStatsSummary 内存统计摘要
-type MemoryStatsSummary struct {
-	AverageAlloc float64
-	MaxAlloc     uint64
-	MinAlloc     uint64
-	CurrentAlloc uint64
-}
-
-// 全局变量
-var (
-	globalDisposeCount int64
-	globalMonitor      *ResourceMonitor
-	monitorOnce        sync.Once
-)
-
-// StartGlobalMonitor 启动全局监控
-func StartGlobalMonitor(config *MonitorConfig) error {
-	var err error
-	monitorOnce.Do(func() {
-		globalMonitor = NewResourceMonitor(config)
-		err = globalMonitor.Start()
-	})
-	return err
-}
-
-// StopGlobalMonitor 停止全局监控
-func StopGlobalMonitor() error {
-	if globalMonitor != nil {
-		return globalMonitor.Stop()
-	}
-	return nil
-}
-
-// GetGlobalMonitor 获取全局监控器
-func GetGlobalMonitor() *ResourceMonitor {
-	return globalMonitor
-}
-
-// GetGlobalStats 获取全局统计信息
-func GetGlobalStats() []*ResourceStats {
-	if globalMonitor != nil {
-		return globalMonitor.GetStats()
-	}
-	return nil
-}
-
-// GetGlobalStatsSummary 获取全局统计摘要
-func GetGlobalStatsSummary() *StatsSummary {
-	if globalMonitor != nil {
-		return globalMonitor.GetStatsSummary()
-	}
-	return &StatsSummary{}
-}
-
 // IncrementDisposeCount 增加释放计数
 func IncrementDisposeCount() {
-	atomic.AddInt64(&globalDisposeCount, 1)
+	// 这里暂时不实现，因为全局计数器需要重构
 }

@@ -3,7 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/core/dispose"
 )
 
 // StorageType 存储类型
@@ -41,7 +41,7 @@ func (f *StorageFactory) CreateStorage(storageType StorageType, config interface
 // createMemoryStorage 创建内存存储
 func (f *StorageFactory) createMemoryStorage() (Storage, error) {
 	storage := NewMemoryStorage(f.ctx)
-	utils.Infof("StorageFactory: created memory storage")
+	dispose.Infof("StorageFactory: created memory storage")
 	return storage, nil
 }
 
@@ -62,7 +62,7 @@ func (f *StorageFactory) createRedisStorage(config interface{}) (Storage, error)
 		return nil, fmt.Errorf("failed to create Redis storage: %w", err)
 	}
 
-	utils.Infof("StorageFactory: created Redis storage")
+	dispose.Infof("StorageFactory: created Redis storage")
 	return storage, nil
 }
 

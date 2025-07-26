@@ -5,16 +5,17 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
 
 // EventBusImpl 事件总线实现
 type EventBusImpl struct {
-	handlers map[string][]EventHandler
-	mu       sync.RWMutex
-	ctx      context.Context
-	cancel   context.CancelFunc
-	utils.Dispose
+	subscribers map[string][]EventHandler
+	mu          sync.RWMutex
+	ctx         context.Context
+	cancel      context.CancelFunc
+	dispose.Dispose
 }
 
 // NewEventBus 创建新的事件总线
@@ -22,9 +23,9 @@ func NewEventBus(parentCtx context.Context) EventBus {
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	bus := &EventBusImpl{
-		handlers: make(map[string][]EventHandler),
-		ctx:      ctx,
-		cancel:   cancel,
+		subscribers: make(map[string][]EventHandler),
+		ctx:         ctx,
+		cancel:      cancel,
 	}
 
 	bus.SetCtx(parentCtx, bus.onClose)
@@ -42,7 +43,7 @@ func (bus *EventBusImpl) onClose() error {
 
 	// 清空处理器
 	bus.mu.Lock()
-	bus.handlers = make(map[string][]EventHandler)
+	bus.subscribers = make(map[string][]EventHandler)
 	bus.mu.Unlock()
 
 	utils.Infof("Event bus resources cleanup completed")
@@ -58,7 +59,7 @@ func (bus *EventBusImpl) Publish(event Event) error {
 	eventType := event.Type()
 
 	bus.mu.RLock()
-	handlers, exists := bus.handlers[eventType]
+	handlers, exists := bus.subscribers[eventType]
 	if !exists {
 		bus.mu.RUnlock()
 		utils.Debugf("No handlers for event type: %s", eventType)
@@ -107,20 +108,20 @@ func (bus *EventBusImpl) Subscribe(eventType string, handler EventHandler) error
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
 
-	if bus.handlers[eventType] == nil {
-		bus.handlers[eventType] = make([]EventHandler, 0)
+	if bus.subscribers[eventType] == nil {
+		bus.subscribers[eventType] = make([]EventHandler, 0)
 	}
 
 	// 检查是否已经订阅
-	for _, existingHandler := range bus.handlers[eventType] {
+	for _, existingHandler := range bus.subscribers[eventType] {
 		if fmt.Sprintf("%p", existingHandler) == fmt.Sprintf("%p", handler) {
 			utils.Warnf("Handler already subscribed for event type: %s", eventType)
 			return nil
 		}
 	}
 
-	bus.handlers[eventType] = append(bus.handlers[eventType], handler)
-	utils.Infof("Subscribed handler for event type: %s, total handlers: %d", eventType, len(bus.handlers[eventType]))
+	bus.subscribers[eventType] = append(bus.subscribers[eventType], handler)
+	utils.Infof("Subscribed handler for event type: %s, total handlers: %d", eventType, len(bus.subscribers[eventType]))
 
 	return nil
 }
@@ -134,7 +135,7 @@ func (bus *EventBusImpl) Unsubscribe(eventType string, handler EventHandler) err
 	bus.mu.Lock()
 	defer bus.mu.Unlock()
 
-	handlers, exists := bus.handlers[eventType]
+	handlers, exists := bus.subscribers[eventType]
 	if !exists {
 		return fmt.Errorf("no handlers found for event type: %s", eventType)
 	}
@@ -143,8 +144,8 @@ func (bus *EventBusImpl) Unsubscribe(eventType string, handler EventHandler) err
 	for i, existingHandler := range handlers {
 		if fmt.Sprintf("%p", existingHandler) == handlerPtr {
 			// 移除处理器
-			bus.handlers[eventType] = append(handlers[:i], handlers[i+1:]...)
-			utils.Infof("Unsubscribed handler for event type: %s, remaining handlers: %d", eventType, len(bus.handlers[eventType]))
+			bus.subscribers[eventType] = append(handlers[:i], handlers[i+1:]...)
+			utils.Infof("Unsubscribed handler for event type: %s, remaining handlers: %d", eventType, len(bus.subscribers[eventType]))
 			return nil
 		}
 	}
@@ -162,7 +163,7 @@ func (bus *EventBusImpl) GetHandlerCount(eventType string) int {
 	bus.mu.RLock()
 	defer bus.mu.RUnlock()
 
-	handlers, exists := bus.handlers[eventType]
+	handlers, exists := bus.subscribers[eventType]
 	if !exists {
 		return 0
 	}
@@ -174,8 +175,8 @@ func (bus *EventBusImpl) GetEventTypes() []string {
 	bus.mu.RLock()
 	defer bus.mu.RUnlock()
 
-	eventTypes := make([]string, 0, len(bus.handlers))
-	for eventType := range bus.handlers {
+	eventTypes := make([]string, 0, len(bus.subscribers))
+	for eventType := range bus.subscribers {
 		eventTypes = append(eventTypes, eventType)
 	}
 	return eventTypes

@@ -517,7 +517,7 @@ func (ps *StreamProcessor) Close() {
 }
 
 // CloseWithResult 关闭并返回结果（新方法）
-func (ps *StreamProcessor) CloseWithResult() *utils.DisposeResult {
+func (ps *StreamProcessor) CloseWithResult() *dispose.DisposeResult {
 	return ps.ResourceBase.Dispose.Close()
 }
 

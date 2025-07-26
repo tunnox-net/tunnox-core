@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
 
@@ -96,7 +97,7 @@ type Container struct {
 	services map[string]ServiceProvider
 	mu       sync.RWMutex
 	ctx      context.Context
-	utils.Dispose
+	dispose.Dispose
 }
 
 // NewContainer 创建新的容器

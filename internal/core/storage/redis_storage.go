@@ -3,19 +3,13 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/constants"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/core/dispose"
 
 	"github.com/redis/go-redis/v9"
 )
-
-// RedisStorage Redis存储实现
-type RedisStorage struct {
-	client *redis.Client
-	ctx    context.Context
-	utils.Dispose
-}
 
 // RedisConfig Redis配置
 type RedisConfig struct {
@@ -25,15 +19,22 @@ type RedisConfig struct {
 	PoolSize int    `json:"pool_size" yaml:"pool_size"` // 连接池大小
 }
 
+// RedisStorage Redis存储实现
+type RedisStorage struct {
+	client *redis.Client
+	ctx    context.Context
+	dispose.Dispose
+}
+
 // NewRedisStorage 创建新的Redis存储
 func NewRedisStorage(parentCtx context.Context, config *RedisConfig) (*RedisStorage, error) {
 	if config == nil {
-		config = &RedisConfig{
-			Addr:     "localhost:6379",
-			Password: "",
-			DB:       0,
-			PoolSize: 10,
-		}
+		return nil, fmt.Errorf("redis config is required")
+	}
+
+	// 设置默认值
+	if config.PoolSize <= 0 {
+		config.PoolSize = 10
 	}
 
 	client := redis.NewClient(&redis.Options{
@@ -49,7 +50,7 @@ func NewRedisStorage(parentCtx context.Context, config *RedisConfig) (*RedisStor
 
 	if err := client.Ping(ctx).Err(); err != nil {
 		client.Close()
-		return nil, err
+		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
 	storage := &RedisStorage{
@@ -58,7 +59,7 @@ func NewRedisStorage(parentCtx context.Context, config *RedisConfig) (*RedisStor
 	}
 	storage.SetCtx(parentCtx, storage.onClose)
 
-	utils.Infof("RedisStorage: connected to Redis at %s, DB: %d", config.Addr, config.DB)
+	dispose.Infof("RedisStorage: connected to Redis at %s, DB: %d", config.Addr, config.DB)
 	return storage, nil
 }
 
@@ -72,96 +73,85 @@ func (r *RedisStorage) onClose() error {
 
 // Set 设置键值对
 func (r *RedisStorage) Set(key string, value interface{}, ttl time.Duration) error {
-	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
-	defer cancel()
-
 	// 序列化值
-	jsonData, err := json.Marshal(value)
+	data, err := json.Marshal(value)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal value: %w", err)
 	}
 
-	// 设置键值对和过期时间
+	// 设置到Redis
+	var result *redis.StatusCmd
 	if ttl > 0 {
-		err = r.client.Set(ctx, key, jsonData, ttl).Err()
+		result = r.client.Set(r.ctx, key, data, ttl)
 	} else {
-		err = r.client.Set(ctx, key, jsonData, 0).Err() // 0表示永不过期
+		result = r.client.Set(r.ctx, key, data, 0)
 	}
 
-	if err != nil {
-		utils.Errorf("RedisStorage.Set: failed to set key %s: %v", key, err)
-		return err
+	if result.Err() != nil {
+		dispose.Errorf("RedisStorage.Set: failed to set key %s: %v", key, err)
+		return fmt.Errorf("failed to set key %s: %w", key, result.Err())
 	}
 
-	utils.Infof("RedisStorage.Set: stored key %s, value type: %T, ttl: %v", key, value, ttl)
+	dispose.Infof("RedisStorage.Set: stored key %s, value type: %T, ttl: %v", key, value, ttl)
 	return nil
 }
 
 // Get 获取值
 func (r *RedisStorage) Get(key string) (interface{}, error) {
-	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
-	defer cancel()
+	dispose.Infof("RedisStorage.Get: retrieving key %s", key)
 
-	utils.Infof("RedisStorage.Get: retrieving key %s", key)
-
-	result := r.client.Get(ctx, key)
+	result := r.client.Get(r.ctx, key)
 	if result.Err() != nil {
 		if result.Err() == redis.Nil {
-			utils.Debugf("RedisStorage.Get: key %s not found", key)
+			dispose.Debugf("RedisStorage.Get: key %s not found", key)
 			return nil, ErrKeyNotFound
 		}
-		utils.Errorf("RedisStorage.Get: failed to get key %s: %v", key, result.Err())
-		return nil, result.Err()
+		dispose.Errorf("RedisStorage.Get: failed to get key %s: %v", key, result.Err())
+		return nil, fmt.Errorf("failed to get key %s: %w", key, result.Err())
 	}
 
-	// 获取原始字节数据
-	jsonData, err := result.Bytes()
+	// 获取字节数据
+	data, err := result.Bytes()
 	if err != nil {
-		utils.Errorf("RedisStorage.Get: failed to get bytes for key %s: %v", key, err)
-		return nil, err
+		dispose.Errorf("RedisStorage.Get: failed to get bytes for key %s: %v", key, err)
+		return nil, fmt.Errorf("failed to get bytes for key %s: %w", key, err)
 	}
 
-	// 尝试反序列化为interface{}
+	// 反序列化值
 	var value interface{}
-	if err := json.Unmarshal(jsonData, &value); err != nil {
-		utils.Errorf("RedisStorage.Get: failed to unmarshal value for key %s: %v", key, err)
-		return nil, err
+	if err := json.Unmarshal(data, &value); err != nil {
+		dispose.Errorf("RedisStorage.Get: failed to unmarshal value for key %s: %v", key, err)
+		return nil, fmt.Errorf("failed to unmarshal value for key %s: %w", key, err)
 	}
 
-	utils.Infof("RedisStorage.Get: successfully retrieved key %s, value type: %T", key, value)
+	dispose.Infof("RedisStorage.Get: successfully retrieved key %s, value type: %T", key, value)
 	return value, nil
 }
 
 // Delete 删除键
 func (r *RedisStorage) Delete(key string) error {
-	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
-	defer cancel()
-
-	result := r.client.Del(ctx, key)
+	result := r.client.Del(r.ctx, key)
 	if result.Err() != nil {
-		utils.Errorf("RedisStorage.Delete: failed to delete key %s: %v", key, result.Err())
-		return result.Err()
+		dispose.Errorf("RedisStorage.Delete: failed to delete key %s: %v", key, result.Err())
+		return fmt.Errorf("failed to delete key %s: %w", key, result.Err())
 	}
 
-	utils.Infof("RedisStorage.Delete: deleted key %s", key)
+	dispose.Infof("RedisStorage.Delete: deleted key %s", key)
 	return nil
 }
 
 // Exists 检查键是否存在
 func (r *RedisStorage) Exists(key string) (bool, error) {
-	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
-	defer cancel()
+	dispose.Infof("RedisStorage.Exists: checking key %s", key)
 
-	utils.Infof("RedisStorage.Exists: checking key %s", key)
-
-	result := r.client.Exists(ctx, key)
+	result := r.client.Exists(r.ctx, key)
 	if result.Err() != nil {
-		utils.Errorf("RedisStorage.Exists: failed to check key %s: %v", key, result.Err())
-		return false, result.Err()
+		dispose.Errorf("RedisStorage.Exists: failed to check key %s: %v", key, result.Err())
+		return false, fmt.Errorf("failed to check key %s: %w", key, result.Err())
 	}
 
 	exists := result.Val() > 0
-	utils.Infof("RedisStorage.Exists: key %s exists: %v", key, exists)
+	dispose.Infof("RedisStorage.Exists: key %s exists: %v", key, exists)
 	return exists, nil
 }
 
@@ -191,7 +181,7 @@ func (r *RedisStorage) SetList(key string, values []interface{}, ttl time.Durati
 		}
 	}
 
-	utils.Infof("RedisStorage.SetList: set list key %s with %d items, ttl: %v", key, len(values), ttl)
+	dispose.Infof("RedisStorage.SetList: set list key %s with %d items, ttl: %v", key, len(values), ttl)
 	return nil
 }
 
@@ -217,7 +207,7 @@ func (r *RedisStorage) GetList(key string) ([]interface{}, error) {
 		values = append(values, value)
 	}
 
-	utils.Infof("RedisStorage.GetList: retrieved list key %s with %d items", key, len(values))
+	dispose.Infof("RedisStorage.GetList: retrieved list key %s with %d items", key, len(values))
 	return values, nil
 }
 
@@ -242,7 +232,7 @@ func (r *RedisStorage) AppendToList(key string, value interface{}) error {
 		}
 	}
 
-	utils.Infof("RedisStorage.AppendToList: appended to list key %s", key)
+	dispose.Infof("RedisStorage.AppendToList: appended to list key %s", key)
 	return nil
 }
 
@@ -261,7 +251,7 @@ func (r *RedisStorage) RemoveFromList(key string, value interface{}) error {
 		return err
 	}
 
-	utils.Infof("RedisStorage.RemoveFromList: removed from list key %s", key)
+	dispose.Infof("RedisStorage.RemoveFromList: removed from list key %s", key)
 	return nil
 }
 
@@ -286,7 +276,7 @@ func (r *RedisStorage) SetHash(key string, field string, value interface{}) erro
 		}
 	}
 
-	utils.Infof("RedisStorage.SetHash: set hash field %s:%s", key, field)
+	dispose.Infof("RedisStorage.SetHash: set hash field %s:%s", key, field)
 	return nil
 }
 
@@ -313,7 +303,7 @@ func (r *RedisStorage) GetHash(key string, field string) (interface{}, error) {
 		return nil, err
 	}
 
-	utils.Infof("RedisStorage.GetHash: retrieved hash field %s:%s", key, field)
+	dispose.Infof("RedisStorage.GetHash: retrieved hash field %s:%s", key, field)
 	return value, nil
 }
 
@@ -336,7 +326,7 @@ func (r *RedisStorage) GetAllHash(key string) (map[string]interface{}, error) {
 		hash[field] = value
 	}
 
-	utils.Infof("RedisStorage.GetAllHash: retrieved all hash fields for key %s", key)
+	dispose.Infof("RedisStorage.GetAllHash: retrieved all hash fields for key %s", key)
 	return hash, nil
 }
 
@@ -349,7 +339,7 @@ func (r *RedisStorage) DeleteHash(key string, field string) error {
 		return err
 	}
 
-	utils.Infof("RedisStorage.DeleteHash: deleted hash field %s:%s", key, field)
+	dispose.Infof("RedisStorage.DeleteHash: deleted hash field %s:%s", key, field)
 	return nil
 }
 
@@ -375,7 +365,7 @@ func (r *RedisStorage) IncrBy(key string, value int64) (int64, error) {
 		}
 	}
 
-	utils.Infof("RedisStorage.IncrBy: incremented key %s by %d, new value: %d", key, value, result.Val())
+	dispose.Infof("RedisStorage.IncrBy: incremented key %s by %d, new value: %d", key, value, result.Val())
 	return result.Val(), nil
 }
 
@@ -394,7 +384,7 @@ func (r *RedisStorage) SetExpiration(key string, ttl time.Duration) error {
 		}
 	}
 
-	utils.Infof("RedisStorage.SetExpiration: set expiration for key %s to %v", key, ttl)
+	dispose.Infof("RedisStorage.SetExpiration: set expiration for key %s to %v", key, ttl)
 	return nil
 }
 
@@ -416,13 +406,13 @@ func (r *RedisStorage) GetExpiration(key string) (time.Duration, error) {
 		return 0, ErrKeyNotFound // 键不存在
 	}
 
-	utils.Infof("RedisStorage.GetExpiration: key %s TTL: %v", key, ttl)
+	dispose.Infof("RedisStorage.GetExpiration: key %s TTL: %v", key, ttl)
 	return ttl, nil
 }
 
 // CleanupExpired 清理过期数据（Redis自动处理，这里只是日志）
 func (r *RedisStorage) CleanupExpired() error {
-	utils.Infof("RedisStorage.CleanupExpired: Redis automatically handles expiration")
+	dispose.Infof("RedisStorage.CleanupExpired: Redis automatically handles expiration")
 	return nil
 }
 
@@ -446,7 +436,7 @@ func (r *RedisStorage) SetNX(key string, value interface{}, ttl time.Duration) (
 		return false, result.Err()
 	}
 
-	utils.Infof("RedisStorage.SetNX: set key %s with NX flag, success: %v", key, result.Val())
+	dispose.Infof("RedisStorage.SetNX: set key %s with NX flag, success: %v", key, result.Val())
 	return result.Val(), nil
 }
 
@@ -512,7 +502,7 @@ func (r *RedisStorage) CompareAndSwap(key string, oldValue, newValue interface{}
 	}
 
 	success := result.Val().(int64) == 1
-	utils.Infof("RedisStorage.CompareAndSwap: CAS operation for key %s, success: %v", key, success)
+	dispose.Infof("RedisStorage.CompareAndSwap: CAS operation for key %s, success: %v", key, success)
 	return success, nil
 }
 

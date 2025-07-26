@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
@@ -55,7 +56,7 @@ type StorageIDGenerator[T any] struct {
 	prefix    string
 	keyPrefix string
 	mu        sync.RWMutex
-	utils.Dispose
+	dispose.Dispose
 }
 
 // NewStorageIDGenerator 创建基于Storage的ID生成器 (Renamed from NewStorageBasedIDGenerator)
@@ -168,7 +169,7 @@ func (g *StorageIDGenerator[T]) Close() error {
 // ClientIDGenerator 客户端ID生成器（int64类型，使用分段位图算法）
 type ClientIDGenerator struct {
 	storage storage.Storage
-	utils.Dispose
+	dispose.Dispose
 }
 
 // NewClientIDGenerator 创建客户端ID生成器
@@ -266,7 +267,7 @@ type IDManager struct {
 	userIDGen                IDGenerator[string]
 	tunnelIDGen              IDGenerator[string]
 
-	utils.Dispose
+	dispose.Dispose
 }
 
 // NewIDManager 创建ID管理器

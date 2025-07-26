@@ -7,8 +7,7 @@ import (
 	"sync"
 )
 
-// BufferPool 高效的内存池
-// 用于复用不同大小的[]byte，减少GC压力
+// BufferPool 内存池，用于管理不同大小的缓冲区
 type BufferPool struct {
 	pools map[int]*sync.Pool
 	mu    sync.RWMutex
@@ -79,11 +78,7 @@ func (bp *BufferPool) Put(buf []byte) {
 	}
 }
 
-// BufferManager 缓冲区管理器
-// Allocate(size int) []byte 分配缓冲区
-// Release(buf []byte) 释放缓冲区
-// ReadIntoBuffer(reader io.Reader, size int) ([]byte, error) 读取数据到缓冲区
-// GetPool() *BufferPool 获取底层内存池
+// BufferManager 缓冲区管理器，提供高级的缓冲区操作接口
 type BufferManager struct {
 	pool *BufferPool
 	Dispose

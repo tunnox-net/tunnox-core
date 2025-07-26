@@ -11,7 +11,7 @@ import (
 // ProtocolManager 协议管理器
 type ProtocolManager struct {
 	*dispose.ResourceBase
-	dispose  utils.Dispose
+	dispose  dispose.Dispose
 	adapters map[string]adapter.Adapter
 	mu       sync.RWMutex
 }
