@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/storage"
 )
 
 // ConfigManager 配置管理器
 type ConfigManager struct {
 	*dispose.ResourceBase
-	storage  storages.Storage
+	storage  storage.Storage
 	config   *ControlConfig
 	watchers []ConfigWatcher
 	mu       sync.RWMutex
@@ -26,7 +26,7 @@ type ConfigWatcher interface {
 }
 
 // NewConfigManager 创建新的配置管理器
-func NewConfigManager(storage storages.Storage, config *ControlConfig, ctx context.Context) *ConfigManager {
+func NewConfigManager(storage storage.Storage, config *ControlConfig, ctx context.Context) *ConfigManager {
 	manager := &ConfigManager{
 		ResourceBase: dispose.NewResourceBase("ConfigManager"),
 		storage:      storage,

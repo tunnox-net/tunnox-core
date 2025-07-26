@@ -3,7 +3,7 @@ package managers
 import (
 	"context"
 	"time"
-	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
 
@@ -13,7 +13,7 @@ type BuiltinCloudControl struct {
 }
 
 func NewBuiltinCloudControl(config *ControlConfig) *BuiltinCloudControl {
-	memoryStorage := storages.NewMemoryStorage(context.Background())
+	memoryStorage := storage.NewMemoryStorage(context.Background())
 	base := NewCloudControl(config, memoryStorage)
 	control := &BuiltinCloudControl{
 		CloudControl: base,
@@ -22,7 +22,7 @@ func NewBuiltinCloudControl(config *ControlConfig) *BuiltinCloudControl {
 }
 
 // NewBuiltinCloudControlWithStorage 创建内置云控实例，使用指定的存储实例（主要用于测试）
-func NewBuiltinCloudControlWithStorage(config *ControlConfig, storage storages.Storage) *BuiltinCloudControl {
+func NewBuiltinCloudControlWithStorage(config *ControlConfig, storage storage.Storage) *BuiltinCloudControl {
 	base := NewCloudControl(config, storage)
 	control := &BuiltinCloudControl{
 		CloudControl: base,

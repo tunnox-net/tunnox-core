@@ -10,9 +10,9 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
-	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
+	"tunnox-core/internal/core/storage"
 )
 
 // CloudControl 基础云控实现，所有存储操作通过 Storage 接口
@@ -22,7 +22,7 @@ import (
 type CloudControl struct {
 	*dispose.ResourceBase
 	config            *ControlConfig
-	storage           storages.Storage
+	storage           storage.Storage
 	idManager         *idgen.IDManager
 	userRepo          *repos.UserRepository
 	clientRepo        *repos.ClientRepository
@@ -42,7 +42,7 @@ type CloudControl struct {
 	done              chan bool
 }
 
-func NewCloudControl(config *ControlConfig, storage storages.Storage) *CloudControl {
+func NewCloudControl(config *ControlConfig, storage storage.Storage) *CloudControl {
 	ctx := context.Background()
 	repo := repos.NewRepository(storage)
 

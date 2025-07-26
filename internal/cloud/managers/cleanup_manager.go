@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/distributed"
-	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/storage"
 )
 
 // CleanupManager 清理管理器
 type CleanupManager struct {
 	*dispose.ResourceBase
-	storage storages.Storage
+	storage storage.Storage
 	lock    distributed.DistributedLock
 	ticker  *time.Ticker
 	done    chan bool
@@ -32,7 +32,7 @@ type CleanupTask struct {
 }
 
 // NewCleanupManager 创建新的清理管理器
-func NewCleanupManager(storage storages.Storage, lock distributed.DistributedLock, ctx context.Context) *CleanupManager {
+func NewCleanupManager(storage storage.Storage, lock distributed.DistributedLock, ctx context.Context) *CleanupManager {
 	manager := &CleanupManager{
 		ResourceBase: dispose.NewResourceBase("CleanupManager"),
 		storage:      storage,

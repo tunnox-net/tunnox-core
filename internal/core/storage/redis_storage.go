@@ -1,11 +1,10 @@
-package storages
+package storage
 
 import (
 	"context"
 	"encoding/json"
 	"time"
 	"tunnox-core/internal/cloud/constants"
-	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 
 	"github.com/redis/go-redis/v9"
@@ -109,7 +108,7 @@ func (r *RedisStorage) Get(key string) (interface{}, error) {
 	if result.Err() != nil {
 		if result.Err() == redis.Nil {
 			utils.Debugf("RedisStorage.Get: key %s not found", key)
-			return nil, storage.ErrKeyNotFound
+			return nil, ErrKeyNotFound
 		}
 		utils.Errorf("RedisStorage.Get: failed to get key %s: %v", key, result.Err())
 		return nil, result.Err()
@@ -204,7 +203,7 @@ func (r *RedisStorage) GetList(key string) ([]interface{}, error) {
 	result := r.client.LRange(ctx, key, 0, -1)
 	if result.Err() != nil {
 		if result.Err() == redis.Nil {
-			return nil, storage.ErrKeyNotFound
+			return nil, ErrKeyNotFound
 		}
 		return nil, result.Err()
 	}
@@ -299,7 +298,7 @@ func (r *RedisStorage) GetHash(key string, field string) (interface{}, error) {
 	result := r.client.HGet(ctx, key, field)
 	if result.Err() != nil {
 		if result.Err() == redis.Nil {
-			return nil, storage.ErrKeyNotFound
+			return nil, ErrKeyNotFound
 		}
 		return nil, result.Err()
 	}
@@ -414,7 +413,7 @@ func (r *RedisStorage) GetExpiration(key string) (time.Duration, error) {
 		return 0, nil // 永不过期
 	}
 	if ttl == -2 {
-		return 0, storage.ErrKeyNotFound // 键不存在
+		return 0, ErrKeyNotFound // 键不存在
 	}
 
 	utils.Infof("RedisStorage.GetExpiration: key %s TTL: %v", key, ttl)

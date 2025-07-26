@@ -3,18 +3,18 @@ package distributed
 import (
 	"fmt"
 	"time"
-	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
 
 // StorageBasedLock 基于存储的分布式锁实现
 type StorageBasedLock struct {
-	storage storages.Storage
+	storage storage.Storage
 	owner   string
 }
 
 // NewStorageBasedLock 创建基于存储的分布式锁
-func NewStorageBasedLock(storage storages.Storage, owner string) *StorageBasedLock {
+func NewStorageBasedLock(storage storage.Storage, owner string) *StorageBasedLock {
 	return &StorageBasedLock{
 		storage: storage,
 		owner:   owner,

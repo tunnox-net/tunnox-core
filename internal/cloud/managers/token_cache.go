@@ -5,19 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/storage"
 )
 
 // TokenCacheManager Token缓存管理器
 type TokenCacheManager struct {
 	*dispose.ResourceBase
-	storage storages.Storage
+	storage storage.Storage
 }
 
 // NewTokenCacheManager 创建新的Token缓存管理器
-func NewTokenCacheManager(storage storages.Storage) *TokenCacheManager {
+func NewTokenCacheManager(storage storage.Storage) *TokenCacheManager {
 	manager := &TokenCacheManager{
 		ResourceBase: dispose.NewResourceBase("TokenCacheManager"),
 		storage:      storage,

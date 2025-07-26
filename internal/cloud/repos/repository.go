@@ -8,20 +8,20 @@ import (
 	constants2 "tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
-	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/storage"
 
 	"tunnox-core/internal/utils"
 )
 
 // Repository 数据访问层
 type Repository struct {
-	storage storages.Storage
+	storage storage.Storage
 	utils.Dispose
 }
 
 // NewRepository 创建新的数据访问层
-func NewRepository(storage storages.Storage) *Repository {
+func NewRepository(storage storage.Storage) *Repository {
 	repo := &Repository{
 		storage: storage,
 	}
@@ -30,7 +30,7 @@ func NewRepository(storage storages.Storage) *Repository {
 }
 
 // GetStorage 获取底层存储实例
-func (r *Repository) GetStorage() storages.Storage {
+func (r *Repository) GetStorage() storage.Storage {
 	return r.storage
 }
 

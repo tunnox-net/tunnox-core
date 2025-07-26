@@ -2,7 +2,7 @@ package distributed
 
 import (
 	"fmt"
-	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
 
@@ -16,11 +16,11 @@ const (
 
 // LockFactory 分布式锁工厂
 type LockFactory struct {
-	storage storages.Storage
+	storage storage.Storage
 }
 
 // NewLockFactory 创建分布式锁工厂
-func NewLockFactory(storage storages.Storage) *LockFactory {
+func NewLockFactory(storage storage.Storage) *LockFactory {
 	return &LockFactory{
 		storage: storage,
 	}

@@ -1,14 +1,12 @@
-package storages
+package storage
 
 import (
 	"context"
 	"fmt"
-	"testing"
-	"time"
-	storageCore "tunnox-core/internal/core/storage"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"testing"
+	"time"
 )
 
 // TestRedisStorage_Basic 测试Redis存储基本功能
@@ -110,7 +108,7 @@ func TestRedisStorage_Basic(t *testing.T) {
 		// 过期后应该不存在
 		_, err = storage.Get(key)
 		assert.Error(t, err)
-		assert.Equal(t, storageCore.ErrKeyNotFound, err)
+		assert.Equal(t, ErrKeyNotFound, err)
 	})
 
 	// 测试列表操作
@@ -182,7 +180,7 @@ func TestRedisStorage_Basic(t *testing.T) {
 		// 验证删除
 		_, err = storage.GetHash(key, "field1")
 		assert.Error(t, err)
-		assert.Equal(t, storageCore.ErrKeyNotFound, err)
+		assert.Equal(t, ErrKeyNotFound, err)
 
 		// 清理
 		storage.Delete(key)

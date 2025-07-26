@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"time"
 	"tunnox-core/internal/cloud/managers"
-	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/idgen"
+	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/protocol/session"
@@ -114,12 +114,12 @@ func (cs *CloudService) Stop(ctx context.Context) error {
 
 // StorageService 存储服务适配器
 type StorageService struct {
-	storage storages.Storage
+	storage storage.Storage
 	name    string
 }
 
 // NewStorageService 创建存储服务
-func NewStorageService(name string, storage storages.Storage) *StorageService {
+func NewStorageService(name string, storage storage.Storage) *StorageService {
 	return &StorageService{
 		storage: storage,
 		name:    name,
@@ -148,7 +148,7 @@ type Server struct {
 	serviceManager  *utils.ServiceManager
 	protocolMgr     *protocol.ProtocolManager
 	serverId        string
-	storage         storages.Storage
+	storage         storage.Storage
 	idManager       *idgen.IDManager
 	session         *session.SessionManager
 	protocolFactory *ProtocolFactory
@@ -181,7 +181,7 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 	}
 
 	// 创建存储和ID管理器
-	server.storage = storages.NewMemoryStorage(parentCtx)
+	server.storage = storage.NewMemoryStorage(parentCtx)
 	server.idManager = idgen.NewIDManager(server.storage, parentCtx)
 
 	// 创建 SessionManager
