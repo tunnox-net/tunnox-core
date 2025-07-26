@@ -14,7 +14,7 @@ import (
 
 // UserServiceImpl 用户服务实现
 type UserServiceImpl struct {
-	*dispose.ResourceBase
+	*dispose.ServiceBase
 	userRepo  *repos.UserRepository
 	idManager *idgen.IDManager
 	statsMgr  *managers.StatsManager
@@ -23,12 +23,11 @@ type UserServiceImpl struct {
 // NewUserService 创建用户服务
 func NewUserService(userRepo *repos.UserRepository, idManager *idgen.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) UserService {
 	service := &UserServiceImpl{
-		ResourceBase: dispose.NewResourceBase("UserService"),
-		userRepo:     userRepo,
-		idManager:    idManager,
-		statsMgr:     statsMgr,
+		ServiceBase: dispose.NewService("UserService", parentCtx),
+		userRepo:    userRepo,
+		idManager:   idManager,
+		statsMgr:    statsMgr,
 	}
-	service.Initialize(parentCtx)
 	return service
 }
 

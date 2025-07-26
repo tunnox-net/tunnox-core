@@ -13,7 +13,7 @@ import (
 
 // ConnectionServiceImpl 连接服务实现
 type ConnectionServiceImpl struct {
-	*dispose.ResourceBase
+	*dispose.ServiceBase
 	connRepo  *repos.ConnectionRepo
 	idManager *idgen.IDManager
 }
@@ -21,11 +21,10 @@ type ConnectionServiceImpl struct {
 // NewConnectionService 创建连接服务
 func NewConnectionService(connRepo *repos.ConnectionRepo, idManager *idgen.IDManager, parentCtx context.Context) ConnectionService {
 	service := &ConnectionServiceImpl{
-		ResourceBase: dispose.NewResourceBase("ConnectionService"),
-		connRepo:     connRepo,
-		idManager:    idManager,
+		ServiceBase: dispose.NewService("ConnectionService", parentCtx),
+		connRepo:    connRepo,
+		idManager:   idManager,
 	}
-	service.Initialize(parentCtx)
 	return service
 }
 

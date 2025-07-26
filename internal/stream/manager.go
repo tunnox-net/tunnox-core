@@ -9,9 +9,9 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// StreamManager 流管理器，负责管理所有流组件的生命周期
+// StreamManager 流管理器
 type StreamManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	factory StreamFactory
 	streams map[string]PackageStreamer
 	mu      sync.RWMutex
@@ -25,11 +25,10 @@ func (m *StreamManager) Dispose() error {
 // NewStreamManager 创建新的流管理器
 func NewStreamManager(factory StreamFactory, parentCtx context.Context) *StreamManager {
 	manager := &StreamManager{
-		ResourceBase: dispose.NewResourceBase("StreamManager"),
-		factory:      factory,
-		streams:      make(map[string]PackageStreamer),
+		ManagerBase: dispose.NewManager("StreamManager", parentCtx),
+		factory:     factory,
+		streams:     make(map[string]PackageStreamer),
 	}
-	manager.Initialize(parentCtx)
 	return manager
 }
 

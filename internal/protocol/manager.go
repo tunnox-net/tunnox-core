@@ -10,7 +10,7 @@ import (
 
 // ProtocolManager 协议管理器
 type ProtocolManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	dispose  dispose.Dispose
 	adapters map[string]adapter.Adapter
 	mu       sync.RWMutex
@@ -24,10 +24,9 @@ func (pm *ProtocolManager) Dispose() error {
 // NewProtocolManager 创建协议管理器
 func NewProtocolManager(parentCtx context.Context) *ProtocolManager {
 	manager := &ProtocolManager{
-		ResourceBase: dispose.NewResourceBase("ProtocolManager"),
-		adapters:     make(map[string]adapter.Adapter),
+		ManagerBase: dispose.NewManager("ProtocolManager", parentCtx),
+		adapters:    make(map[string]adapter.Adapter),
 	}
-	manager.Initialize(parentCtx)
 	return manager
 }
 

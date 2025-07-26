@@ -11,9 +11,9 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// CloudControlAPI 重构后的云控API，使用依赖注入容器
+// CloudControlAPI 云控API实现
 type CloudControlAPI struct {
-	*dispose.ResourceBase
+	*dispose.ServiceBase
 	container *container.Container
 
 	// 各个业务服务
@@ -44,8 +44,8 @@ func NewCloudControlAPI(config *managers.ControlConfig, storage interface{}, par
 
 	// 创建API实例
 	api := &CloudControlAPI{
-		ResourceBase: dispose.NewResourceBase("CloudControlAPI"),
-		container:    container,
+		ServiceBase: dispose.NewService("CloudControlAPI", parentCtx),
+		container:   container,
 	}
 
 	// 解析各个服务
@@ -53,7 +53,6 @@ func NewCloudControlAPI(config *managers.ControlConfig, storage interface{}, par
 		return nil, fmt.Errorf("failed to resolve services: %w", err)
 	}
 
-	api.Initialize(parentCtx)
 	return api, nil
 }
 
@@ -321,13 +320,4 @@ func (api *CloudControlAPI) GetTrafficStats(timeRange string) ([]*stats.TrafficD
 
 func (api *CloudControlAPI) GetConnectionStats(timeRange string) ([]*stats.ConnectionDataPoint, error) {
 	return api.statsService.GetConnectionStats(timeRange)
-}
-
-// Close 关闭API
-func (api *CloudControlAPI) Close() error {
-	result := api.ResourceBase.Close()
-	if result.HasErrors() {
-		return fmt.Errorf("cloud control API cleanup failed: %s", result.Error())
-	}
-	return nil
 }

@@ -10,17 +10,16 @@ import (
 
 // NodeManager 节点管理器
 type NodeManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	nodeRepo *repos.NodeRepository
 }
 
 // NewNodeManager 创建新的节点管理器
-func NewNodeManager(nodeRepo *repos.NodeRepository) *NodeManager {
+func NewNodeManager(nodeRepo *repos.NodeRepository, parentCtx context.Context) *NodeManager {
 	manager := &NodeManager{
-		ResourceBase: dispose.NewResourceBase("NodeManager"),
-		nodeRepo:     nodeRepo,
+		ManagerBase: dispose.NewManager("NodeManager", parentCtx),
+		nodeRepo:    nodeRepo,
 	}
-	manager.Initialize(context.Background())
 	return manager
 }
 

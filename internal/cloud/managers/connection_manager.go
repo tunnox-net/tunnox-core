@@ -12,19 +12,18 @@ import (
 
 // ConnectionManager 连接管理器
 type ConnectionManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	connRepo  *repos.ConnectionRepo
 	idManager *idgen.IDManager
 }
 
 // NewConnectionManager 创建新的连接管理器
-func NewConnectionManager(connRepo *repos.ConnectionRepo, idManager *idgen.IDManager) *ConnectionManager {
+func NewConnectionManager(connRepo *repos.ConnectionRepo, idManager *idgen.IDManager, parentCtx context.Context) *ConnectionManager {
 	manager := &ConnectionManager{
-		ResourceBase: dispose.NewResourceBase("ConnectionManager"),
-		connRepo:     connRepo,
-		idManager:    idManager,
+		ManagerBase: dispose.NewManager("ConnectionManager", parentCtx),
+		connRepo:    connRepo,
+		idManager:   idManager,
 	}
-	manager.Initialize(context.Background())
 	return manager
 }
 

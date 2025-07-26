@@ -11,7 +11,7 @@ import (
 
 // StatsServiceImpl 统计服务实现
 type StatsServiceImpl struct {
-	*dispose.ResourceBase
+	*dispose.ServiceBase
 	userRepo    *repos.UserRepository
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
@@ -19,15 +19,14 @@ type StatsServiceImpl struct {
 }
 
 // NewStatsServiceImpl 创建新的统计服务实现
-func NewStatsServiceImpl(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository) *StatsServiceImpl {
+func NewStatsServiceImpl(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository, parentCtx context.Context) *StatsServiceImpl {
 	service := &StatsServiceImpl{
-		ResourceBase: dispose.NewResourceBase("StatsServiceImpl"),
-		userRepo:     userRepo,
-		clientRepo:   clientRepo,
-		mappingRepo:  mappingRepo,
-		nodeRepo:     nodeRepo,
+		ServiceBase: dispose.NewService("StatsServiceImpl", parentCtx),
+		userRepo:    userRepo,
+		clientRepo:  clientRepo,
+		mappingRepo: mappingRepo,
+		nodeRepo:    nodeRepo,
 	}
-	service.Initialize(context.Background())
 	return service
 }
 

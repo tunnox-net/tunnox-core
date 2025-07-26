@@ -2,6 +2,7 @@ package dispose
 
 import (
 	"context"
+	"fmt"
 )
 
 // ResourceBase 通用资源管理基类
@@ -25,6 +26,15 @@ func (r *ResourceBase) Initialize(parentCtx context.Context) {
 // onClose 通用资源清理回调
 func (r *ResourceBase) onClose() error {
 	Infof("%s resources cleaned up", r.name)
+	return nil
+}
+
+// Close 统一的资源关闭方法
+func (r *ResourceBase) Close() error {
+	result := r.Dispose.Close()
+	if result.HasErrors() {
+		return fmt.Errorf("%s cleanup failed: %s", r.name, result.Error())
+	}
 	return nil
 }
 

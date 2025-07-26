@@ -12,7 +12,7 @@ import (
 
 // StatsManager 统计管理器
 type StatsManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	userRepo    *repos.UserRepository
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
@@ -20,15 +20,14 @@ type StatsManager struct {
 }
 
 // NewStatsManager 创建新的统计管理器
-func NewStatsManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository) *StatsManager {
+func NewStatsManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository, parentCtx context.Context) *StatsManager {
 	manager := &StatsManager{
-		ResourceBase: dispose.NewResourceBase("StatsManager"),
-		userRepo:     userRepo,
-		clientRepo:   clientRepo,
-		mappingRepo:  mappingRepo,
-		nodeRepo:     nodeRepo,
+		ManagerBase: dispose.NewManager("StatsManager", parentCtx),
+		userRepo:    userRepo,
+		clientRepo:  clientRepo,
+		mappingRepo: mappingRepo,
+		nodeRepo:    nodeRepo,
 	}
-	manager.Initialize(context.Background())
 	return manager
 }
 
