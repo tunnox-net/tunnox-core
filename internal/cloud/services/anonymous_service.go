@@ -13,18 +13,20 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// AnonymousServiceImpl 匿名用户服务实现
+// AnonymousServiceImpl 匿名服务实现
 type AnonymousServiceImpl struct {
 	*dispose.ServiceBase
+	baseService *BaseService
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
 	idManager   *idgen.IDManager
 }
 
-// NewAnonymousService 创建匿名用户服务
+// NewAnonymousService 创建匿名服务
 func NewAnonymousService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) AnonymousService {
 	service := &AnonymousServiceImpl{
 		ServiceBase: dispose.NewService("AnonymousService", parentCtx),
+		baseService: NewBaseService(),
 		clientRepo:  clientRepo,
 		mappingRepo: mappingRepo,
 		idManager:   idManager,
@@ -37,20 +39,18 @@ func (s *AnonymousServiceImpl) GenerateAnonymousCredentials() (*models.Client, e
 	// 生成客户端ID
 	clientID, err := s.idManager.GenerateClientID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate client ID: %w", err)
+		return nil, s.baseService.WrapError(err, "generate client ID")
 	}
 
 	// 生成认证码和密钥
 	authCode, err := s.idManager.GenerateAuthCode()
 	if err != nil {
-		_ = s.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("failed to generate auth code: %w", err)
+		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "generate auth code")
 	}
 
 	secretKey, err := s.idManager.GenerateSecretKey()
 	if err != nil {
-		_ = s.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("failed to generate secret key: %w", err)
+		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "generate secret key")
 	}
 
 	// 创建匿名客户端
@@ -62,19 +62,18 @@ func (s *AnonymousServiceImpl) GenerateAnonymousCredentials() (*models.Client, e
 		SecretKey: secretKey,
 		Status:    models.ClientStatusOffline,
 		Type:      models.ClientTypeAnonymous,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
 		Config:    configs.ClientConfig{}, // 使用默认配置
 	}
 
+	// 设置时间戳
+	s.baseService.SetTimestamps(&client.CreatedAt, &client.UpdatedAt)
+
 	// 保存到存储
 	if err := s.clientRepo.CreateClient(client); err != nil {
-		// 释放已生成的ID
-		_ = s.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("failed to create anonymous client: %w", err)
+		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "create anonymous client")
 	}
 
-	utils.Infof("Generated anonymous client: %d", clientID)
+	s.baseService.LogCreated("anonymous client", fmt.Sprintf("%d", clientID))
 	return client, nil
 }
 
@@ -98,7 +97,7 @@ func (s *AnonymousServiceImpl) DeleteAnonymousClient(clientID int64) error {
 	// 获取客户端信息
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
-		return fmt.Errorf("anonymous client %d not found: %w", clientID, err)
+		return s.baseService.WrapErrorWithInt64ID(err, "get anonymous client", clientID)
 	}
 
 	// 验证是否为匿名客户端
@@ -108,15 +107,15 @@ func (s *AnonymousServiceImpl) DeleteAnonymousClient(clientID int64) error {
 
 	// 删除客户端
 	if err := s.clientRepo.DeleteClient(utils.Int64ToString(clientID)); err != nil {
-		return fmt.Errorf("failed to delete anonymous client %d: %w", clientID, err)
+		return s.baseService.WrapErrorWithInt64ID(err, "delete anonymous client", clientID)
 	}
 
 	// 释放客户端ID
 	if err := s.idManager.ReleaseClientID(clientID); err != nil {
-		utils.Warnf("Failed to release anonymous client ID %d: %v", clientID, err)
+		s.baseService.LogWarning("release anonymous client ID", err, clientID)
 	}
 
-	utils.Infof("Deleted anonymous client: %d", clientID)
+	s.baseService.LogDeleted("anonymous client", fmt.Sprintf("%d", clientID))
 	return nil
 }
 
@@ -124,7 +123,7 @@ func (s *AnonymousServiceImpl) DeleteAnonymousClient(clientID int64) error {
 func (s *AnonymousServiceImpl) ListAnonymousClients() ([]*models.Client, error) {
 	clients, err := s.clientRepo.ListClients()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list clients: %w", err)
+		return nil, s.baseService.WrapError(err, "list clients")
 	}
 
 	// 过滤匿名客户端

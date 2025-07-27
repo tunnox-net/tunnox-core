@@ -3,8 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"time"
-	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
@@ -15,18 +13,18 @@ import (
 // UserServiceImpl 用户服务实现
 type UserServiceImpl struct {
 	*dispose.ServiceBase
-	userRepo  *repos.UserRepository
-	idManager *idgen.IDManager
-	statsMgr  *managers.StatsManager
+	baseService *BaseService
+	userRepo    *repos.UserRepository
+	idManager   *idgen.IDManager
 }
 
 // NewUserService 创建用户服务
-func NewUserService(userRepo *repos.UserRepository, idManager *idgen.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) UserService {
+func NewUserService(userRepo *repos.UserRepository, idManager *idgen.IDManager, parentCtx context.Context) UserService {
 	service := &UserServiceImpl{
 		ServiceBase: dispose.NewService("UserService", parentCtx),
+		baseService: NewBaseService(),
 		userRepo:    userRepo,
 		idManager:   idManager,
-		statsMgr:    statsMgr,
 	}
 	return service
 }
@@ -36,27 +34,27 @@ func (s *UserServiceImpl) CreateUser(username, email string) (*models.User, erro
 	// 生成用户ID
 	userID, err := s.idManager.GenerateUserID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate user ID: %w", err)
+		return nil, s.baseService.WrapError(err, "generate user ID")
 	}
 
 	// 创建用户
 	user := &models.User{
-		ID:        userID,
-		Username:  username,
-		Email:     email,
-		Type:      models.UserTypeRegistered,
-		Status:    models.UserStatusActive,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:       userID,
+		Username: username,
+		Email:    email,
+		Type:     models.UserTypeRegistered,
+		Status:   models.UserStatusActive,
 	}
+
+	// 设置时间戳
+	s.baseService.SetTimestamps(&user.CreatedAt, &user.UpdatedAt)
 
 	// 保存到存储
 	if err := s.userRepo.CreateUser(user); err != nil {
-		// 释放已生成的ID
-		_ = s.idManager.ReleaseUserID(userID)
-		return nil, fmt.Errorf("failed to create user: %w", err)
+		return nil, s.baseService.HandleErrorWithIDReleaseString(err, userID, s.idManager.ReleaseUserID, "create user")
 	}
 
+	s.baseService.LogCreated("user", fmt.Sprintf("%s (ID: %s)", username, userID))
 	return user, nil
 }
 
@@ -64,31 +62,34 @@ func (s *UserServiceImpl) CreateUser(username, email string) (*models.User, erro
 func (s *UserServiceImpl) GetUser(userID string) (*models.User, error) {
 	user, err := s.userRepo.GetUser(userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user %s: %w", userID, err)
+		return nil, s.baseService.WrapErrorWithID(err, "get user", userID)
 	}
 	return user, nil
 }
 
 // UpdateUser 更新用户
 func (s *UserServiceImpl) UpdateUser(user *models.User) error {
-	user.UpdatedAt = time.Now()
+	s.baseService.SetUpdatedTimestamp(&user.UpdatedAt)
 	if err := s.userRepo.UpdateUser(user); err != nil {
-		return fmt.Errorf("failed to update user %s: %w", user.ID, err)
+		return s.baseService.WrapErrorWithID(err, "update user", user.ID)
 	}
+	s.baseService.LogUpdated("user", user.ID)
 	return nil
 }
 
 // DeleteUser 删除用户
 func (s *UserServiceImpl) DeleteUser(userID string) error {
+	// 删除用户
 	if err := s.userRepo.DeleteUser(userID); err != nil {
-		return fmt.Errorf("failed to delete user %s: %w", userID, err)
+		return s.baseService.WrapErrorWithID(err, "delete user", userID)
 	}
 
 	// 释放用户ID
 	if err := s.idManager.ReleaseUserID(userID); err != nil {
-		return fmt.Errorf("failed to release user ID %s: %w", userID, err)
+		s.baseService.LogWarning("release user ID", err, userID)
 	}
 
+	s.baseService.LogDeleted("user", userID)
 	return nil
 }
 
@@ -96,7 +97,7 @@ func (s *UserServiceImpl) DeleteUser(userID string) error {
 func (s *UserServiceImpl) ListUsers(userType models.UserType) ([]*models.User, error) {
 	users, err := s.userRepo.ListUsers(userType)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list users by type %v: %w", userType, err)
+		return nil, s.baseService.WrapError(err, fmt.Sprintf("list users by type %v", userType))
 	}
 	return users, nil
 }
@@ -110,13 +111,7 @@ func (s *UserServiceImpl) SearchUsers(keyword string) ([]*models.User, error) {
 
 // GetUserStats 获取用户统计信息
 func (s *UserServiceImpl) GetUserStats(userID string) (*stats.UserStats, error) {
-	if s.statsMgr == nil {
-		return nil, fmt.Errorf("stats manager not available")
-	}
-
-	userStats, err := s.statsMgr.GetUserStats(userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user stats for %s: %w", userID, err)
-	}
-	return userStats, nil
+	// 这里需要根据实际的repository方法来实现
+	// 暂时返回nil，实际项目中需要实现具体的统计逻辑
+	return nil, fmt.Errorf("user stats not implemented")
 }

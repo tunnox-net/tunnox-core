@@ -8,20 +8,21 @@ import (
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
-	"tunnox-core/internal/utils"
 )
 
 // NodeServiceImpl 节点服务实现
 type NodeServiceImpl struct {
 	*dispose.ServiceBase
-	nodeRepo  *repos.NodeRepository
-	idManager *idgen.IDManager
+	baseService *BaseService
+	nodeRepo    *repos.NodeRepository
+	idManager   *idgen.IDManager
 }
 
 // NewNodeService 创建节点服务
 func NewNodeService(nodeRepo *repos.NodeRepository, idManager *idgen.IDManager, parentCtx context.Context) NodeService {
 	service := &NodeServiceImpl{
 		ServiceBase: dispose.NewService("NodeService", parentCtx),
+		baseService: NewBaseService(),
 		nodeRepo:    nodeRepo,
 		idManager:   idManager,
 	}
@@ -30,65 +31,51 @@ func NewNodeService(nodeRepo *repos.NodeRepository, idManager *idgen.IDManager, 
 
 // NodeRegister 节点注册
 func (s *NodeServiceImpl) NodeRegister(req *models.NodeRegisterRequest) (*models.NodeRegisterResponse, error) {
-	var nodeID string
-	var err error
-
-	// 如果请求中没有提供节点ID，生成一个新的
-	if req.NodeID == "" {
-		nodeID, err = s.idManager.GenerateNodeID()
-		if err != nil {
-			return &models.NodeRegisterResponse{
-				Success: false,
-				Message: fmt.Sprintf("Failed to generate node ID: %v", err),
-			}, nil
-		}
-	} else {
-		nodeID = req.NodeID
-	}
-
 	// 检查节点是否已存在
-	existingNode, err := s.nodeRepo.GetNode(nodeID)
+	existingNode, err := s.nodeRepo.GetNode(req.NodeID)
 	if err == nil && existingNode != nil {
 		// 节点已存在，更新信息
 		existingNode.Address = req.Address
-		existingNode.UpdatedAt = time.Now()
-		if req.Meta != nil {
-			existingNode.Meta = req.Meta
-		}
+		existingNode.Meta = req.Meta
+		s.baseService.SetUpdatedTimestamp(&existingNode.UpdatedAt)
 
 		if err := s.nodeRepo.UpdateNode(existingNode); err != nil {
-			return &models.NodeRegisterResponse{
-				Success: false,
-				Message: fmt.Sprintf("Failed to update existing node: %v", err),
-			}, nil
+			return nil, s.baseService.WrapErrorWithID(err, "update existing node", req.NodeID)
 		}
 
-		utils.Infof("Updated existing node: %s", nodeID)
-	} else {
-		// 创建新节点
-		node := &models.Node{
-			ID:        nodeID,
-			Name:      fmt.Sprintf("Node-%s", nodeID),
-			Address:   req.Address,
-			Meta:      req.Meta,
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-
-		if err := s.nodeRepo.CreateNode(node); err != nil {
-			// 释放已生成的ID
-			if req.NodeID == "" {
-				_ = s.idManager.ReleaseNodeID(nodeID)
-			}
-			return &models.NodeRegisterResponse{
-				Success: false,
-				Message: fmt.Sprintf("Failed to create node: %v", err),
-			}, nil
-		}
-
-		utils.Infof("Created new node: %s", nodeID)
+		s.baseService.LogUpdated("existing node", req.NodeID)
+		return &models.NodeRegisterResponse{
+			NodeID:  req.NodeID,
+			Success: true,
+			Message: "Node updated successfully",
+		}, nil
 	}
 
+	// 生成新的节点ID
+	nodeID, err := s.idManager.GenerateNodeID()
+	if err != nil {
+		return nil, s.baseService.WrapError(err, "generate node ID")
+	}
+
+	// 创建新节点
+	node := &models.Node{
+		ID:        nodeID,
+		Name:      fmt.Sprintf("Node-%s", nodeID),
+		Address:   req.Address,
+		Meta:      req.Meta,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// 设置时间戳
+	s.baseService.SetTimestamps(&node.CreatedAt, &node.UpdatedAt)
+
+	// 保存到存储
+	if err := s.nodeRepo.CreateNode(node); err != nil {
+		return nil, s.baseService.HandleErrorWithIDReleaseString(err, nodeID, s.idManager.ReleaseNodeID, "create node")
+	}
+
+	s.baseService.LogCreated("new node", nodeID)
 	return &models.NodeRegisterResponse{
 		NodeID:  nodeID,
 		Success: true,
@@ -101,52 +88,38 @@ func (s *NodeServiceImpl) NodeUnregister(req *models.NodeUnregisterRequest) erro
 	// 检查节点是否存在
 	_, err := s.nodeRepo.GetNode(req.NodeID)
 	if err != nil {
-		return fmt.Errorf("node %s not found: %w", req.NodeID, err)
+		return s.baseService.WrapErrorWithID(err, "get node", req.NodeID)
 	}
 
 	// 删除节点
 	if err := s.nodeRepo.DeleteNode(req.NodeID); err != nil {
-		return fmt.Errorf("failed to delete node %s: %w", req.NodeID, err)
+		return s.baseService.WrapErrorWithID(err, "delete node", req.NodeID)
 	}
 
 	// 释放节点ID
 	if err := s.idManager.ReleaseNodeID(req.NodeID); err != nil {
-		utils.Warnf("Failed to release node ID %s: %v", req.NodeID, err)
+		s.baseService.LogWarning("release node ID", err, req.NodeID)
 	}
 
-	utils.Infof("Unregistered node: %s", req.NodeID)
+	s.baseService.LogDeleted("node", req.NodeID)
 	return nil
 }
 
 // NodeHeartbeat 节点心跳
 func (s *NodeServiceImpl) NodeHeartbeat(req *models.NodeHeartbeatRequest) (*models.NodeHeartbeatResponse, error) {
-	// 检查节点是否存在
+	// 获取节点信息
 	node, err := s.nodeRepo.GetNode(req.NodeID)
 	if err != nil {
-		return &models.NodeHeartbeatResponse{
-			Success: false,
-			Message: fmt.Sprintf("Node %s not found", req.NodeID),
-		}, nil
+		return nil, s.baseService.WrapErrorWithID(err, "get node", req.NodeID)
 	}
 
 	// 更新节点信息
 	node.Address = req.Address
-	node.UpdatedAt = time.Now()
-	if req.Version != "" {
-		if node.Meta == nil {
-			node.Meta = make(map[string]string)
-		}
-		node.Meta["version"] = req.Version
-	}
+	s.baseService.SetUpdatedTimestamp(&node.UpdatedAt)
 
 	if err := s.nodeRepo.UpdateNode(node); err != nil {
-		return &models.NodeHeartbeatResponse{
-			Success: false,
-			Message: fmt.Sprintf("Failed to update node: %v", err),
-		}, nil
+		return nil, s.baseService.WrapErrorWithID(err, "update node", req.NodeID)
 	}
-
-	utils.Debugf("Node heartbeat: %s", req.NodeID)
 
 	return &models.NodeHeartbeatResponse{
 		Success: true,
@@ -158,7 +131,7 @@ func (s *NodeServiceImpl) NodeHeartbeat(req *models.NodeHeartbeatRequest) (*mode
 func (s *NodeServiceImpl) GetNodeServiceInfo(nodeID string) (*models.NodeServiceInfo, error) {
 	node, err := s.nodeRepo.GetNode(nodeID)
 	if err != nil {
-		return nil, fmt.Errorf("node %s not found: %w", nodeID, err)
+		return nil, s.baseService.WrapErrorWithID(err, "get node", nodeID)
 	}
 
 	return &models.NodeServiceInfo{
@@ -171,15 +144,15 @@ func (s *NodeServiceImpl) GetNodeServiceInfo(nodeID string) (*models.NodeService
 func (s *NodeServiceImpl) GetAllNodeServiceInfo() ([]*models.NodeServiceInfo, error) {
 	nodes, err := s.nodeRepo.ListNodes()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list nodes: %w", err)
+		return nil, s.baseService.WrapError(err, "list nodes")
 	}
 
-	infos := make([]*models.NodeServiceInfo, 0, len(nodes))
-	for _, node := range nodes {
-		infos = append(infos, &models.NodeServiceInfo{
+	infos := make([]*models.NodeServiceInfo, len(nodes))
+	for i, node := range nodes {
+		infos[i] = &models.NodeServiceInfo{
 			NodeID:  node.ID,
 			Address: node.Address,
-		})
+		}
 	}
 
 	return infos, nil
