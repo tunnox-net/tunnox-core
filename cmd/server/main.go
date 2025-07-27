@@ -211,44 +211,15 @@ func (s *Server) registerServices() {
 	storageService := NewStorageService("Storage", s.storage)
 	s.serviceManager.RegisterService(storageService)
 
-	// 注册协议服务
+	// 注册协议管理服务
 	protocolService := protocol.NewProtocolService("Protocol-Manager", s.protocolMgr)
 	s.serviceManager.RegisterService(protocolService)
 
-	// 注册流服务
+	// 注册流管理服务
 	streamFactory := stream.NewDefaultStreamFactory(s.serviceManager.GetContext())
 	streamManager := stream.NewStreamManager(streamFactory, s.serviceManager.GetContext())
 	streamService := stream.NewStreamService("Stream-Manager", streamManager)
 	s.serviceManager.RegisterService(streamService)
-
-	// 注册实现了Disposable接口的资源
-	// 注意：只有实现了Disposable接口的组件才能被注册为资源
-
-	// 注册协议管理器（已实现Disposable接口）
-	if err := s.serviceManager.RegisterResource("protocol-manager", s.protocolMgr); err != nil {
-		utils.Errorf("Failed to register protocol manager: %v", err)
-	}
-
-	// 注册流管理器（已实现Disposable接口）
-	if err := s.serviceManager.RegisterResource("stream-manager", streamManager); err != nil {
-		utils.Errorf("Failed to register stream manager: %v", err)
-	}
-
-	// 注册存储组件（如果实现了Disposable接口）
-	if disposable, ok := s.storage.(utils.Disposable); ok {
-		if err := s.serviceManager.RegisterResource("storage", disposable); err != nil {
-			utils.Errorf("Failed to register storage: %v", err)
-		}
-	}
-
-	// 注册云控制器（如果实现了Disposable接口）
-	if disposable, ok := s.cloudControl.(utils.Disposable); ok {
-		if err := s.serviceManager.RegisterResource("cloud-control", disposable); err != nil {
-			utils.Errorf("Failed to register cloud control: %v", err)
-		}
-	}
-
-	utils.Infof("Registered %d services", s.serviceManager.GetServiceCount())
 }
 
 // setupProtocolAdapters 设置协议适配器
@@ -277,9 +248,6 @@ func (s *Server) setupProtocolAdapters() error {
 		// 注册到管理器
 		s.protocolMgr.Register(adapter)
 		registeredProtocols = append(registeredProtocols, protocolName)
-
-		// 精简日志：只在调试模式下输出适配器配置信息
-		utils.Debugf(constants.MsgAdapterConfigured, capitalize(protocolName), addr)
 	}
 
 	utils.Infof("Registered %d protocol adapters", len(registeredProtocols))

@@ -217,18 +217,14 @@ func (sm *ServiceManager) StartAllServices() error {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	// 精简日志：只在调试模式下输出服务启动信息
-	Debugf("Starting %d services...", len(sm.services))
+	Infof("Starting %d services...", len(sm.services))
 
 	for name, service := range sm.services {
-		// 精简日志：只在调试模式下输出服务启动信息
-		Debugf("Starting service: %s", name)
 		if err := service.Start(sm.ctx); err != nil {
 			Errorf("Failed to start service %s: %v", name, err)
 			return fmt.Errorf("failed to start service %s: %v", name, err)
 		}
-		// 精简日志：只在调试模式下输出服务启动完成信息
-		Debugf("Service started: %s", name)
+		Infof("Service started: %s", name)
 	}
 
 	return nil

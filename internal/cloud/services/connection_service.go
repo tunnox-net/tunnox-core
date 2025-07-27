@@ -79,12 +79,12 @@ func (s *ConnectionServiceImpl) UnregisterConnection(connID string) error {
 	}
 
 	// 从映射连接列表中移除
-	if err := s.connRepo.RemoveConnectionFromMapping(connInfo.MappingID, connID); err != nil {
+	if err := s.connRepo.RemoveConnectionFromMapping(connInfo.MappingID, connInfo); err != nil {
 		utils.Warnf("Failed to remove connection from mapping list: %v", err)
 	}
 
 	// 从客户端连接列表中移除
-	if err := s.connRepo.RemoveConnectionFromClient(connInfo.ClientID, connID); err != nil {
+	if err := s.connRepo.RemoveConnectionFromClient(connInfo.ClientID, connInfo); err != nil {
 		utils.Warnf("Failed to remove connection from client list: %v", err)
 	}
 
@@ -99,7 +99,7 @@ func (s *ConnectionServiceImpl) UnregisterConnection(connID string) error {
 
 // GetConnections 获取映射的连接
 func (s *ConnectionServiceImpl) GetConnections(mappingID string) ([]*models.ConnectionInfo, error) {
-	connections, err := s.connRepo.ListConnections(mappingID)
+	connections, err := s.connRepo.ListMappingConns(mappingID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get connections for mapping %s: %w", mappingID, err)
 	}

@@ -79,6 +79,7 @@ func NewWebSocketAdapter(parentCtx context.Context, session session.Session) *We
 	w.SetName("websocket")
 	w.SetSession(session)
 	w.SetCtx(parentCtx, w.onClose)
+	w.SetProtocolAdapter(w) // 设置协议适配器引用
 	return w
 }
 
@@ -133,50 +134,6 @@ func (w *WebSocketAdapter) Accept() (io.ReadWriteCloser, error) {
 
 func (w *WebSocketAdapter) getConnectionType() string {
 	return "WebSocket"
-}
-
-// ListenFrom 重写BaseAdapter的ListenFrom方法
-func (w *WebSocketAdapter) ListenFrom(listenAddr string) error {
-	w.SetAddr(listenAddr)
-	if w.Addr() == "" {
-		return fmt.Errorf("address not set")
-	}
-
-	// 精简日志：只在调试模式下输出适配器监听信息
-	utils.Debugf("WebSocketAdapter.ListenFrom called for adapter: %s", w.Name())
-
-	// 直接使用自身作为ProtocolAdapter
-	if err := w.Listen(w.Addr()); err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", w.getConnectionType(), err)
-	}
-
-	w.active = true
-	go w.acceptLoop(w)
-	return nil
-}
-
-// ConnectTo 重写BaseAdapter的ConnectTo方法
-func (w *WebSocketAdapter) ConnectTo(serverAddr string) error {
-	w.connMutex.Lock()
-	defer w.connMutex.Unlock()
-
-	if w.stream != nil {
-		return fmt.Errorf("already connected")
-	}
-
-	// 直接使用自身作为ProtocolAdapter
-	conn, err := w.Dial(serverAddr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to %s server: %w", w.getConnectionType(), err)
-	}
-
-	w.SetAddr(serverAddr)
-
-	w.streamMutex.Lock()
-	w.stream = stream.NewStreamProcessor(conn, conn, w.Ctx())
-	w.streamMutex.Unlock()
-
-	return nil
 }
 
 // onClose WebSocket 特定的资源清理

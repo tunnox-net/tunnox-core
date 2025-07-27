@@ -54,7 +54,7 @@ func (cm *ConnectionManager) UnregisterConnection(connID string) error {
 
 // GetConnections 获取映射的所有连接
 func (cm *ConnectionManager) GetConnections(mappingID string) ([]*models.ConnectionInfo, error) {
-	return cm.connRepo.ListConnections(mappingID)
+	return cm.connRepo.ListMappingConns(mappingID)
 }
 
 // GetClientConnections 获取客户端的所有连接

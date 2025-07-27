@@ -15,6 +15,162 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+// GenericRepository 泛型Repository接口
+type GenericRepository[T any] interface {
+	// 基础CRUD操作
+	Save(entity T, keyPrefix string, ttl time.Duration) error
+	Create(entity T, keyPrefix string, ttl time.Duration) error
+	Update(entity T, keyPrefix string, ttl time.Duration) error
+	Get(id string, keyPrefix string) (T, error)
+	Delete(id string, keyPrefix string) error
+
+	// 列表操作
+	List(listKey string) ([]T, error)
+	AddToList(entity T, listKey string) error
+	RemoveFromList(entity T, listKey string) error
+}
+
+// GenericRepositoryImpl 泛型Repository实现
+type GenericRepositoryImpl[T any] struct {
+	*Repository
+	getIDFunc func(T) (string, error)
+}
+
+// NewGenericRepository 创建泛型Repository
+func NewGenericRepository[T any](repo *Repository, getIDFunc func(T) (string, error)) *GenericRepositoryImpl[T] {
+	return &GenericRepositoryImpl[T]{
+		Repository: repo,
+		getIDFunc:  getIDFunc,
+	}
+}
+
+// Save 保存实体（创建或更新）
+func (r *GenericRepositoryImpl[T]) Save(entity T, keyPrefix string, ttl time.Duration) error {
+	data, err := json.Marshal(entity)
+	if err != nil {
+		return fmt.Errorf("marshal entity failed: %w", err)
+	}
+
+	// 使用反射获取ID字段
+	id, err := r.getEntityID(entity)
+	if err != nil {
+		return fmt.Errorf("get entity ID failed: %w", err)
+	}
+
+	key := fmt.Sprintf("%s:%s", keyPrefix, id)
+	return r.storage.Set(key, string(data), ttl)
+}
+
+// Create 创建实体（仅创建，不允许覆盖）
+func (r *GenericRepositoryImpl[T]) Create(entity T, keyPrefix string, ttl time.Duration) error {
+	id, err := r.getEntityID(entity)
+	if err != nil {
+		return fmt.Errorf("get entity ID failed: %w", err)
+	}
+
+	// 检查实体是否已存在
+	_, err = r.Get(id, keyPrefix)
+	if err == nil {
+		// 如果获取成功，说明实体已存在
+		return fmt.Errorf("entity with ID %s already exists", id)
+	}
+
+	return r.Save(entity, keyPrefix, ttl)
+}
+
+// Update 更新实体（仅更新，不允许创建）
+func (r *GenericRepositoryImpl[T]) Update(entity T, keyPrefix string, ttl time.Duration) error {
+	id, err := r.getEntityID(entity)
+	if err != nil {
+		return fmt.Errorf("get entity ID failed: %w", err)
+	}
+
+	// 检查实体是否存在
+	_, err = r.Get(id, keyPrefix)
+	if err != nil {
+		return fmt.Errorf("entity with ID %s does not exist", id)
+	}
+
+	return r.Save(entity, keyPrefix, ttl)
+}
+
+// Get 获取实体
+func (r *GenericRepositoryImpl[T]) Get(id string, keyPrefix string) (T, error) {
+	var entity T
+
+	key := fmt.Sprintf("%s:%s", keyPrefix, id)
+	data, err := r.storage.Get(key)
+	if err != nil {
+		return entity, err
+	}
+
+	entityData, ok := data.(string)
+	if !ok {
+		return entity, fmt.Errorf("invalid entity data type")
+	}
+
+	if err := json.Unmarshal([]byte(entityData), &entity); err != nil {
+		return entity, fmt.Errorf("unmarshal entity failed: %w", err)
+	}
+
+	return entity, nil
+}
+
+// Delete 删除实体
+func (r *GenericRepositoryImpl[T]) Delete(id string, keyPrefix string) error {
+	key := fmt.Sprintf("%s:%s", keyPrefix, id)
+	return r.storage.Delete(key)
+}
+
+// List 列出实体
+func (r *GenericRepositoryImpl[T]) List(listKey string) ([]T, error) {
+	data, err := r.storage.GetList(listKey)
+	if err != nil {
+		return []T{}, nil
+	}
+
+	var entities []T
+	for _, item := range data {
+		if entityData, ok := item.(string); ok {
+			var entity T
+			if err := json.Unmarshal([]byte(entityData), &entity); err != nil {
+				continue
+			}
+			entities = append(entities, entity)
+		}
+	}
+
+	return entities, nil
+}
+
+// AddToList 添加实体到列表
+func (r *GenericRepositoryImpl[T]) AddToList(entity T, listKey string) error {
+	data, err := json.Marshal(entity)
+	if err != nil {
+		return err
+	}
+
+	return r.storage.AppendToList(listKey, string(data))
+}
+
+// RemoveFromList 从列表移除实体
+func (r *GenericRepositoryImpl[T]) RemoveFromList(entity T, listKey string) error {
+	data, err := json.Marshal(entity)
+	if err != nil {
+		return err
+	}
+
+	return r.storage.RemoveFromList(listKey, string(data))
+}
+
+// getEntityID 获取实体ID
+func (r *GenericRepositoryImpl[T]) getEntityID(entity T) (string, error) {
+	if r.getIDFunc == nil {
+		return "", fmt.Errorf("getIDFunc not set")
+	}
+	return r.getIDFunc(entity)
+}
+
 // Repository 数据访问层
 type Repository struct {
 	storage storage.Storage
@@ -37,110 +193,58 @@ func (r *Repository) GetStorage() storage.Storage {
 
 // UserRepository 用户数据访问
 type UserRepository struct {
-	*Repository
+	*GenericRepositoryImpl[*models.User]
 }
 
 // NewUserRepository 创建用户数据访问层
 func NewUserRepository(repo *Repository) *UserRepository {
-	return &UserRepository{Repository: repo}
+	genericRepo := NewGenericRepository[*models.User](repo, func(user *models.User) (string, error) {
+		return user.ID, nil
+	})
+	return &UserRepository{GenericRepositoryImpl: genericRepo}
 }
 
 // SaveUser 保存用户（创建或更新）
 func (r *UserRepository) SaveUser(user *models.User) error {
-	data, err := json.Marshal(user)
-	if err != nil {
-		return fmt.Errorf("marshal user failed: %w", err)
-	}
-
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUser, user.ID)
-	utils.Infof("SaveUser: storing user %s with key %s, data type: %T, data length: %d", user.ID, key, string(data), len(string(data)))
-	err = r.storage.Set(key, string(data), constants2.DefaultUserDataTTL)
-	if err != nil {
-		utils.Errorf("SaveUser: failed to store user %s: %v", user.ID, err)
-		return err
-	}
-	utils.Infof("SaveUser: successfully stored user %s", user.ID)
-	return nil
+	return r.Save(user, constants.KeyPrefixUser, constants2.DefaultUserDataTTL)
 }
 
 // CreateUser 创建新用户（仅创建，不允许覆盖）
 func (r *UserRepository) CreateUser(user *models.User) error {
-	utils.Infof("CreateUser: checking if user %s already exists", user.ID)
-	// 检查用户是否已存在
-	existingUser, err := r.GetUser(user.ID)
-	if err == nil && existingUser != nil {
-		utils.Errorf("CreateUser: user %s already exists", user.ID)
-		return fmt.Errorf("user with ID %s already exists", user.ID)
-	}
-	// 如果err != nil，说明用户不存在，可以创建
-	utils.Infof("CreateUser: user %s does not exist, creating new user", user.ID)
-
-	return r.SaveUser(user)
+	return r.Create(user, constants.KeyPrefixUser, constants2.DefaultUserDataTTL)
 }
 
 // UpdateUser 更新用户（仅更新，不允许创建）
 func (r *UserRepository) UpdateUser(user *models.User) error {
-	// 检查用户是否存在
-	existingUser, _ := r.GetUser(user.ID)
-	if existingUser == nil {
-		return fmt.Errorf("user with ID %s does not exist", user.ID)
-	}
-
-	return r.SaveUser(user)
+	return r.Update(user, constants.KeyPrefixUser, constants2.DefaultUserDataTTL)
 }
 
 // GetUser 获取用户
 func (r *UserRepository) GetUser(userID string) (*models.User, error) {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUser, userID)
-	utils.Infof("GetUser: retrieving user %s with key %s", userID, key)
-	data, err := r.storage.Get(key)
-	if err != nil {
-		utils.Errorf("GetUser: failed to get user %s: %v", userID, err)
-		return nil, err
-	}
-
-	utils.Infof("GetUser: retrieved data for user %s, data type: %T, data value: %v", userID, data, data)
-	userData, ok := data.(string)
-	if !ok {
-		utils.Errorf("GetUser: invalid user data type for user %s, expected string, got %T", userID, data)
-		return nil, fmt.Errorf("invalid user data type")
-	}
-
-	var user models.User
-	if err := json.Unmarshal([]byte(userData), &user); err != nil {
-		utils.Errorf("GetUser: failed to unmarshal user %s: %v", userID, err)
-		return nil, fmt.Errorf("unmarshal user failed: %w", err)
-	}
-
-	utils.Infof("GetUser: successfully retrieved user %s", userID)
-	return &user, nil
+	return r.Get(userID, constants.KeyPrefixUser)
 }
 
 // DeleteUser 删除用户
 func (r *UserRepository) DeleteUser(userID string) error {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUser, userID)
-	return r.storage.Delete(key)
+	return r.Delete(userID, constants.KeyPrefixUser)
 }
 
 // ListUsers 列出用户
 func (r *UserRepository) ListUsers(userType models.UserType) ([]*models.User, error) {
-	key := constants.KeyPrefixUserList
-	data, err := r.storage.GetList(key)
+	users, err := r.List(constants.KeyPrefixUserList)
 	if err != nil {
 		return []*models.User{}, nil
 	}
 
-	var users []*models.User
-	for _, item := range data {
-		if userData, ok := item.(string); ok {
-			var user models.User
-			if err := json.Unmarshal([]byte(userData), &user); err != nil {
-				continue
-			}
-			if userType == "" || user.Type == userType {
-				users = append(users, &user)
+	// 过滤用户类型
+	if userType != "" {
+		var filteredUsers []*models.User
+		for _, user := range users {
+			if user.Type == userType {
+				filteredUsers = append(filteredUsers, user)
 			}
 		}
+		return filteredUsers, nil
 	}
 
 	return users, nil
@@ -148,89 +252,49 @@ func (r *UserRepository) ListUsers(userType models.UserType) ([]*models.User, er
 
 // AddUserToList 添加用户到列表
 func (r *UserRepository) AddUserToList(user *models.User) error {
-	data, err := json.Marshal(user)
-	if err != nil {
-		return err
-	}
-
-	key := constants.KeyPrefixUserList
-	return r.storage.AppendToList(key, string(data))
+	return r.AddToList(user, constants.KeyPrefixUserList)
 }
 
 // ClientRepository 客户端数据访问
 type ClientRepository struct {
-	*Repository
+	*GenericRepositoryImpl[*models.Client]
 }
 
 // NewClientRepository 创建客户端数据访问层
 func NewClientRepository(repo *Repository) *ClientRepository {
-	return &ClientRepository{Repository: repo}
+	genericRepo := NewGenericRepository[*models.Client](repo, func(client *models.Client) (string, error) {
+		return fmt.Sprintf("%d", client.ID), nil
+	})
+	return &ClientRepository{GenericRepositoryImpl: genericRepo}
 }
 
 // SaveClient 保存客户端（创建或更新）
 func (r *ClientRepository) SaveClient(client *models.Client) error {
-	data, err := json.Marshal(client)
-	if err != nil {
-		return fmt.Errorf("marshal client failed: %w", err)
-	}
-
-	key := fmt.Sprintf("%s:%d", constants.KeyPrefixClient, client.ID)
-	err = r.storage.Set(key, string(data), constants2.DefaultClientDataTTL)
-	if err != nil {
+	if err := r.Save(client, constants.KeyPrefixClient, constants2.DefaultClientDataTTL); err != nil {
 		return err
 	}
-
 	// 将客户端添加到全局客户端列表中
 	return r.AddClientToList(client)
 }
 
 // CreateClient 创建新客户端（仅创建，不允许覆盖）
 func (r *ClientRepository) CreateClient(client *models.Client) error {
-	// 检查客户端是否已存在
-	existingClient, err := r.GetClient(fmt.Sprintf("%d", client.ID))
-	if err == nil && existingClient != nil {
-		return fmt.Errorf("client with ID %d already exists", client.ID)
-	}
-
-	return r.SaveClient(client)
+	return r.Create(client, constants.KeyPrefixClient, constants2.DefaultClientDataTTL)
 }
 
 // UpdateClient 更新客户端（仅更新，不允许创建）
 func (r *ClientRepository) UpdateClient(client *models.Client) error {
-	// 检查客户端是否存在
-	existingClient, _ := r.GetClient(fmt.Sprintf("%d", client.ID))
-	if existingClient == nil {
-		return fmt.Errorf("client with ID %d does not exist", client.ID)
-	}
-
-	return r.SaveClient(client)
+	return r.Update(client, constants.KeyPrefixClient, constants2.DefaultClientDataTTL)
 }
 
 // GetClient 获取客户端
 func (r *ClientRepository) GetClient(clientID string) (*models.Client, error) {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClient, clientID)
-	data, err := r.storage.Get(key)
-	if err != nil {
-		return nil, err
-	}
-
-	clientData, ok := data.(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid client data type")
-	}
-
-	var client models.Client
-	if err := json.Unmarshal([]byte(clientData), &client); err != nil {
-		return nil, fmt.Errorf("unmarshal client failed: %w", err)
-	}
-
-	return &client, nil
+	return r.Get(clientID, constants.KeyPrefixClient)
 }
 
 // DeleteClient 删除客户端
 func (r *ClientRepository) DeleteClient(clientID string) error {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClient, clientID)
-	return r.storage.Delete(key)
+	return r.Delete(clientID, constants.KeyPrefixClient)
 }
 
 // UpdateClientStatus 更新客户端状态
@@ -250,78 +314,29 @@ func (r *ClientRepository) UpdateClientStatus(clientID string, status models.Cli
 // ListUserClients 列出用户的所有客户端
 func (r *ClientRepository) ListUserClients(userID string) ([]*models.Client, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserClients, userID)
-	data, err := r.storage.GetList(key)
-	if err != nil {
-		return []*models.Client{}, nil
-	}
-
-	var clients []*models.Client
-	for _, item := range data {
-		if clientData, ok := item.(string); ok {
-			var client models.Client
-			if err := json.Unmarshal([]byte(clientData), &client); err != nil {
-				continue
-			}
-			clients = append(clients, &client)
-		}
-	}
-
-	return clients, nil
+	return r.List(key)
 }
 
 // AddClientToUser 添加客户端到用户
 func (r *ClientRepository) AddClientToUser(userID string, client *models.Client) error {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserClients, userID)
-	data, err := json.Marshal(client)
-	if err != nil {
-		return err
-	}
-
-	return r.storage.AppendToList(key, string(data))
+	return r.AddToList(client, key)
 }
 
 // RemoveClientFromUser 从用户移除客户端
 func (r *ClientRepository) RemoveClientFromUser(userID string, client *models.Client) error {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserClients, userID)
-	data, err := json.Marshal(client)
-	if err != nil {
-		return err
-	}
-
-	return r.storage.RemoveFromList(key, string(data))
+	return r.RemoveFromList(client, key)
 }
 
 // ListClients 列出所有客户端
 func (r *ClientRepository) ListClients() ([]*models.Client, error) {
-	key := constants.KeyPrefixClientList
-	data, err := r.storage.GetList(key)
-	if err != nil {
-		return []*models.Client{}, nil
-	}
-
-	var clients []*models.Client
-	for _, item := range data {
-		if clientData, ok := item.(string); ok {
-			var client models.Client
-			if err := json.Unmarshal([]byte(clientData), &client); err != nil {
-				continue
-			}
-			clients = append(clients, &client)
-		}
-	}
-
-	return clients, nil
+	return r.List(constants.KeyPrefixClientList)
 }
 
 // AddClientToList 添加客户端到全局客户端列表
 func (r *ClientRepository) AddClientToList(client *models.Client) error {
-	key := constants.KeyPrefixClientList
-	data, err := json.Marshal(client)
-	if err != nil {
-		return err
-	}
-
-	return r.storage.AppendToList(key, string(data))
+	return r.AddToList(client, constants.KeyPrefixClientList)
 }
 
 // saveUserClients 保存用户客户端列表
@@ -342,72 +357,40 @@ func (r *ClientRepository) saveUserClients(userID string, clients []*models.Clie
 
 // PortMappingRepo 端口映射数据访问
 type PortMappingRepo struct {
-	*Repository
+	*GenericRepositoryImpl[*models.PortMapping]
 }
 
 // NewPortMappingRepo 创建端口映射数据访问层
 func NewPortMappingRepo(repo *Repository) *PortMappingRepo {
-	return &PortMappingRepo{Repository: repo}
+	genericRepo := NewGenericRepository[*models.PortMapping](repo, func(mapping *models.PortMapping) (string, error) {
+		return mapping.ID, nil
+	})
+	return &PortMappingRepo{GenericRepositoryImpl: genericRepo}
 }
 
 // SavePortMapping 保存端口映射（创建或更新）
 func (r *PortMappingRepo) SavePortMapping(mapping *models.PortMapping) error {
-	data, err := json.Marshal(mapping)
-	if err != nil {
-		return fmt.Errorf("marshal port mapping failed: %w", err)
-	}
-
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixPortMapping, mapping.ID)
-	return r.storage.Set(key, string(data), constants2.DefaultMappingDataTTL)
+	return r.Save(mapping, constants.KeyPrefixPortMapping, constants2.DefaultMappingDataTTL)
 }
 
 // CreatePortMapping 创建新端口映射（仅创建，不允许覆盖）
 func (r *PortMappingRepo) CreatePortMapping(mapping *models.PortMapping) error {
-	// 检查端口映射是否已存在
-	existingMapping, err := r.GetPortMapping(mapping.ID)
-	if err == nil && existingMapping != nil {
-		return fmt.Errorf("port mapping with ID %s already exists", mapping.ID)
-	}
-
-	return r.SavePortMapping(mapping)
+	return r.Create(mapping, constants.KeyPrefixPortMapping, constants2.DefaultMappingDataTTL)
 }
 
 // UpdatePortMapping 更新端口映射（仅更新，不允许创建）
 func (r *PortMappingRepo) UpdatePortMapping(mapping *models.PortMapping) error {
-	// 检查端口映射是否存在
-	existingMapping, _ := r.GetPortMapping(mapping.ID)
-	if existingMapping == nil {
-		return fmt.Errorf("port mapping with ID %s does not exist", mapping.ID)
-	}
-
-	return r.SavePortMapping(mapping)
+	return r.Update(mapping, constants.KeyPrefixPortMapping, constants2.DefaultMappingDataTTL)
 }
 
 // GetPortMapping 获取端口映射
 func (r *PortMappingRepo) GetPortMapping(mappingID string) (*models.PortMapping, error) {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixPortMapping, mappingID)
-	data, err := r.storage.Get(key)
-	if err != nil {
-		return nil, err
-	}
-
-	mappingData, ok := data.(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid mapping data type")
-	}
-
-	var mapping models.PortMapping
-	if err := json.Unmarshal([]byte(mappingData), &mapping); err != nil {
-		return nil, fmt.Errorf("unmarshal port mapping failed: %w", err)
-	}
-
-	return &mapping, nil
+	return r.Get(mappingID, constants.KeyPrefixPortMapping)
 }
 
 // DeletePortMapping 删除端口映射
 func (r *PortMappingRepo) DeletePortMapping(mappingID string) error {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixPortMapping, mappingID)
-	return r.storage.Delete(key)
+	return r.Delete(mappingID, constants.KeyPrefixPortMapping)
 }
 
 // UpdatePortMappingStatus 更新端口映射状态
@@ -441,201 +424,106 @@ func (r *PortMappingRepo) UpdatePortMappingStats(mappingID string, stats *stats.
 // GetUserPortMappings 列出用户的端口映射
 func (r *PortMappingRepo) GetUserPortMappings(userID string) ([]*models.PortMapping, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserMappings, userID)
-	data, err := r.storage.GetList(key)
-	if err != nil {
-		return []*models.PortMapping{}, nil
-	}
-
-	var mappings []*models.PortMapping
-	for _, item := range data {
-		if mappingData, ok := item.(string); ok {
-			var mapping models.PortMapping
-			if err := json.Unmarshal([]byte(mappingData), &mapping); err != nil {
-				continue
-			}
-			mappings = append(mappings, &mapping)
-		}
-	}
-
-	return mappings, nil
+	return r.List(key)
 }
 
 // GetClientPortMappings 列出客户端的端口映射
 func (r *PortMappingRepo) GetClientPortMappings(clientID string) ([]*models.PortMapping, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, clientID)
-	data, err := r.storage.GetList(key)
-	if err != nil {
-		return []*models.PortMapping{}, nil
-	}
-
-	var mappings []*models.PortMapping
-	for _, item := range data {
-		if mappingData, ok := item.(string); ok {
-			var mapping models.PortMapping
-			if err := json.Unmarshal([]byte(mappingData), &mapping); err != nil {
-				continue
-			}
-			mappings = append(mappings, &mapping)
-		}
-	}
-
-	return mappings, nil
+	return r.List(key)
 }
 
 // AddMappingToUser 添加映射到用户
 func (r *PortMappingRepo) AddMappingToUser(userID string, mapping *models.PortMapping) error {
-	data, err := json.Marshal(mapping)
-	if err != nil {
-		return err
-	}
-
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserMappings, userID)
-	return r.storage.AppendToList(key, string(data))
+	return r.AddToList(mapping, key)
 }
 
 // AddMappingToClient 添加映射到客户端
 func (r *PortMappingRepo) AddMappingToClient(clientID string, mapping *models.PortMapping) error {
-	data, err := json.Marshal(mapping)
-	if err != nil {
-		return err
-	}
-
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, clientID)
-	return r.storage.AppendToList(key, string(data))
+	return r.AddToList(mapping, key)
 }
 
 // NodeRepository 节点数据访问
 type NodeRepository struct {
-	*Repository
+	*GenericRepositoryImpl[*models.Node]
 }
 
 // NewNodeRepository 创建节点数据访问层
 func NewNodeRepository(repo *Repository) *NodeRepository {
-	return &NodeRepository{Repository: repo}
+	genericRepo := NewGenericRepository[*models.Node](repo, func(node *models.Node) (string, error) {
+		return node.ID, nil
+	})
+	return &NodeRepository{GenericRepositoryImpl: genericRepo}
 }
 
 // SaveNode 保存节点（创建或更新）
 func (r *NodeRepository) SaveNode(node *models.Node) error {
-	data, err := json.Marshal(node)
-	if err != nil {
-		return fmt.Errorf("marshal node failed: %w", err)
-	}
-
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixNode, node.ID)
-	return r.storage.Set(key, string(data), constants2.DefaultNodeDataTTL)
+	return r.Save(node, constants.KeyPrefixNode, constants2.DefaultNodeDataTTL)
 }
 
 // CreateNode 创建新节点（仅创建，不允许覆盖）
 func (r *NodeRepository) CreateNode(node *models.Node) error {
-	// 检查节点是否已存在
-	existingNode, err := r.GetNode(node.ID)
-	if err == nil && existingNode != nil {
-		return fmt.Errorf("node with ID %s already exists", node.ID)
-	}
-
-	return r.SaveNode(node)
+	return r.Create(node, constants.KeyPrefixNode, constants2.DefaultNodeDataTTL)
 }
 
 // UpdateNode 更新节点（仅更新，不允许创建）
 func (r *NodeRepository) UpdateNode(node *models.Node) error {
-	// 检查节点是否存在
-	existingNode, _ := r.GetNode(node.ID)
-	if existingNode == nil {
-		return fmt.Errorf("node with ID %s does not exist", node.ID)
-	}
-
-	return r.SaveNode(node)
+	return r.Update(node, constants.KeyPrefixNode, constants2.DefaultNodeDataTTL)
 }
 
 // GetNode 获取节点
 func (r *NodeRepository) GetNode(nodeID string) (*models.Node, error) {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixNode, nodeID)
-	data, err := r.storage.Get(key)
-	if err != nil {
-		return nil, err
-	}
-
-	nodeData, ok := data.(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid node data type")
-	}
-
-	var node models.Node
-	if err := json.Unmarshal([]byte(nodeData), &node); err != nil {
-		return nil, fmt.Errorf("unmarshal node failed: %w", err)
-	}
-
-	return &node, nil
+	return r.Get(nodeID, constants.KeyPrefixNode)
 }
 
 // DeleteNode 删除节点
 func (r *NodeRepository) DeleteNode(nodeID string) error {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixNode, nodeID)
-	return r.storage.Delete(key)
+	return r.Delete(nodeID, constants.KeyPrefixNode)
 }
 
 // ListNodes 列出所有节点
 func (r *NodeRepository) ListNodes() ([]*models.Node, error) {
-	key := constants.KeyPrefixNodeList
-	data, err := r.storage.GetList(key)
-	if err != nil {
-		return []*models.Node{}, nil
-	}
-
-	var nodes []*models.Node
-	for _, item := range data {
-		if nodeData, ok := item.(string); ok {
-			var node models.Node
-			if err := json.Unmarshal([]byte(nodeData), &node); err != nil {
-				continue
-			}
-			nodes = append(nodes, &node)
-		}
-	}
-
-	return nodes, nil
+	return r.List(constants.KeyPrefixNodeList)
 }
 
 // AddNodeToList 添加节点到列表
 func (r *NodeRepository) AddNodeToList(node *models.Node) error {
-	data, err := json.Marshal(node)
-	if err != nil {
-		return err
-	}
-
-	key := constants.KeyPrefixNodeList
-	return r.storage.AppendToList(key, string(data))
+	return r.AddToList(node, constants.KeyPrefixNodeList)
 }
 
 // ConnectionRepo 连接数据访问
 type ConnectionRepo struct {
-	*Repository
+	*GenericRepositoryImpl[*models.ConnectionInfo]
 	dispose.Dispose
 }
 
 // NewConnectionRepo 创建连接数据访问层
 func NewConnectionRepo(repo *Repository) *ConnectionRepo {
-	cr := &ConnectionRepo{Repository: repo}
+	genericRepo := NewGenericRepository[*models.ConnectionInfo](repo, func(connInfo *models.ConnectionInfo) (string, error) {
+		return connInfo.ConnID, nil
+	})
+	cr := &ConnectionRepo{GenericRepositoryImpl: genericRepo}
 	cr.Dispose.SetCtx(context.Background(), cr.onClose)
 	return cr
 }
 
+// getEntityID 获取连接ID
+func (r *ConnectionRepo) getEntityID(connInfo *models.ConnectionInfo) (string, error) {
+	return connInfo.ConnID, nil
+}
+
 func (cr *ConnectionRepo) onClose() error {
-	if cr.Repository != nil {
-		return cr.Repository.Dispose.Close()
+	if cr.GenericRepositoryImpl != nil {
+		return cr.GenericRepositoryImpl.Repository.Dispose.Close()
 	}
 	return nil
 }
 
 // SaveConnection 保存连接信息（创建或更新）
 func (r *ConnectionRepo) SaveConnection(connInfo *models.ConnectionInfo) error {
-	data, err := json.Marshal(connInfo)
-	if err != nil {
-		return fmt.Errorf("marshal connection failed: %w", err)
-	}
-
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixConnection, connInfo.ConnID)
-	if err := r.storage.Set(key, string(data), constants2.DefaultConnectionTTL); err != nil {
+	if err := r.Save(connInfo, constants.KeyPrefixConnection, constants2.DefaultConnectionTTL); err != nil {
 		return fmt.Errorf("save connection failed: %w", err)
 	}
 	// 添加到映射和客户端的连接列表
@@ -650,20 +538,14 @@ func (r *ConnectionRepo) SaveConnection(connInfo *models.ConnectionInfo) error {
 
 // CreateConnection 创建新连接（仅创建，不允许覆盖）
 func (r *ConnectionRepo) CreateConnection(connInfo *models.ConnectionInfo) error {
-	// 检查连接是否已存在
-	existingConn, err := r.GetConnection(connInfo.ConnID)
-	if err == nil && existingConn != nil {
-		return fmt.Errorf("connection with ID %s already exists", connInfo.ConnID)
-	}
-
-	return r.SaveConnection(connInfo)
+	return r.Create(connInfo, constants.KeyPrefixConnection, constants2.DefaultConnectionTTL)
 }
 
 // UpdateConnection 更新连接（仅更新，不允许创建）
 func (r *ConnectionRepo) UpdateConnection(connInfo *models.ConnectionInfo) error {
 	// 检查连接是否存在
-	existingConn, _ := r.GetConnection(connInfo.ConnID)
-	if existingConn == nil {
+	_, err := r.GetConnection(connInfo.ConnID)
+	if err != nil {
 		return fmt.Errorf("connection with ID %s does not exist", connInfo.ConnID)
 	}
 
@@ -683,180 +565,63 @@ func (r *ConnectionRepo) UpdateConnection(connInfo *models.ConnectionInfo) error
 
 // GetConnection 获取连接信息
 func (r *ConnectionRepo) GetConnection(connID string) (*models.ConnectionInfo, error) {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixConnection, connID)
-	data, err := r.storage.Get(key)
-	if err != nil {
-		return nil, err
-	}
-
-	connData, ok := data.(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid connection data type")
-	}
-
-	var connInfo models.ConnectionInfo
-	if err := json.Unmarshal([]byte(connData), &connInfo); err != nil {
-		return nil, fmt.Errorf("unmarshal connection failed: %w", err)
-	}
-
-	return &connInfo, nil
+	return r.Get(connID, constants.KeyPrefixConnection)
 }
 
 // DeleteConnection 删除连接
 func (r *ConnectionRepo) DeleteConnection(connID string) error {
-	// 先获取连接信息，以便从相关列表中移除
+	// 获取连接信息以便从列表中移除
 	connInfo, err := r.GetConnection(connID)
 	if err != nil {
-		// 如果连接不存在，直接返回
 		return err
 	}
 
-	// 从映射连接列表中移除
-	if connInfo.MappingID != "" {
-		if err := r.RemoveConnectionFromMapping(connInfo.MappingID, connID); err != nil {
-			// 记录错误但不中断删除过程
-			utils.Warnf("Failed to remove connection %s from mapping %s: %v", connID, connInfo.MappingID, err)
-		}
+	// 从映射和客户端列表中移除
+	if err := r.RemoveConnectionFromMapping(connInfo.MappingID, connInfo); err != nil {
+		utils.Warnf("Failed to remove connection from mapping list: %v", err)
 	}
-
-	// 从客户端连接列表中移除
-	if err := r.RemoveConnectionFromClient(connInfo.ClientID, connID); err != nil {
-		// 记录错误但不中断删除过程
-		utils.Warnf("Failed to remove connection %s from client %d: %v", connID, connInfo.ClientID, err)
+	if err := r.RemoveConnectionFromClient(connInfo.ClientID, connInfo); err != nil {
+		utils.Warnf("Failed to remove connection from client list: %v", err)
 	}
 
 	// 删除主连接记录
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixConnection, connID)
-	return r.storage.Delete(key)
+	return r.Delete(connID, constants.KeyPrefixConnection)
 }
 
-// ListConnections 列出映射的连接
-func (r *ConnectionRepo) ListConnections(mappingID string) ([]*models.ConnectionInfo, error) {
+// ListMappingConns 列出映射的连接
+func (r *ConnectionRepo) ListMappingConns(mappingID string) ([]*models.ConnectionInfo, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixMappingConnections, mappingID)
-	data, err := r.storage.GetList(key)
-	if err != nil {
-		return []*models.ConnectionInfo{}, nil
-	}
-
-	var connections []*models.ConnectionInfo
-	for _, item := range data {
-		if connData, ok := item.(string); ok {
-			var connInfo models.ConnectionInfo
-			if err := json.Unmarshal([]byte(connData), &connInfo); err != nil {
-				continue
-			}
-			connections = append(connections, &connInfo)
-		}
-	}
-
-	return connections, nil
+	return r.List(key)
 }
 
-// ListClientConns 列出客户端的所有连接
+// ListClientConns 列出客户端的连接
 func (r *ConnectionRepo) ListClientConns(clientID int64) ([]*models.ConnectionInfo, error) {
 	key := fmt.Sprintf("%s:%d", constants.KeyPrefixClientConnections, clientID)
-	data, err := r.storage.GetList(key)
-	if err != nil {
-		return []*models.ConnectionInfo{}, nil
-	}
-
-	var conns []*models.ConnectionInfo
-	for _, item := range data {
-		if connData, ok := item.(string); ok {
-			var conn models.ConnectionInfo
-			if err := json.Unmarshal([]byte(connData), &conn); err != nil {
-				continue
-			}
-			conns = append(conns, &conn)
-		}
-	}
-
-	return conns, nil
+	return r.List(key)
 }
 
 // AddConnectionToMapping 添加连接到映射列表
 func (r *ConnectionRepo) AddConnectionToMapping(mappingID string, connInfo *models.ConnectionInfo) error {
-	data, err := json.Marshal(connInfo)
-	if err != nil {
-		return err
-	}
-
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixMappingConnections, mappingID)
-
-	// 使用存储层的原子列表操作
-	return r.storage.AppendToList(key, string(data))
+	return r.AddToList(connInfo, key)
 }
 
 // AddConnectionToClient 添加连接到客户端
 func (r *ConnectionRepo) AddConnectionToClient(clientID int64, connInfo *models.ConnectionInfo) error {
 	key := fmt.Sprintf("%s:%d", constants.KeyPrefixClientConnections, clientID)
-	data, err := json.Marshal(connInfo)
-	if err != nil {
-		return err
-	}
-	return r.storage.AppendToList(key, string(data))
+	return r.AddToList(connInfo, key)
 }
 
 // RemoveConnectionFromMapping 从映射连接列表中移除连接
-func (r *ConnectionRepo) RemoveConnectionFromMapping(mappingID string, connID string) error {
-	// 获取映射的所有连接
-	connections, err := r.ListConnections(mappingID)
-	if err != nil {
-		return err
-	}
-
-	// 找到要删除的连接并序列化
-	var targetConnData string
-	for _, conn := range connections {
-		if conn.ConnID == connID {
-			data, err := json.Marshal(conn)
-			if err != nil {
-				return err
-			}
-			targetConnData = string(data)
-			break
-		}
-	}
-
-	if targetConnData == "" {
-		// 连接不在列表中，不需要删除
-		return nil
-	}
-
-	// 从列表中移除
+func (r *ConnectionRepo) RemoveConnectionFromMapping(mappingID string, connInfo *models.ConnectionInfo) error {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixMappingConnections, mappingID)
-	return r.storage.RemoveFromList(key, targetConnData)
+	return r.RemoveFromList(connInfo, key)
 }
 
 // RemoveConnectionFromClient 从客户端连接列表中移除连接
-func (r *ConnectionRepo) RemoveConnectionFromClient(clientID int64, connID string) error {
-	// 获取客户端的所有连接
-	connections, err := r.ListClientConns(clientID)
-	if err != nil {
-		return err
-	}
-
-	// 找到要删除的连接并序列化
-	var targetConnData string
-	for _, conn := range connections {
-		if conn.ConnID == connID {
-			data, err := json.Marshal(conn)
-			if err != nil {
-				return err
-			}
-			targetConnData = string(data)
-			break
-		}
-	}
-
-	if targetConnData == "" {
-		// 连接不在列表中，不需要删除
-		return nil
-	}
-
-	// 从列表中移除
+func (r *ConnectionRepo) RemoveConnectionFromClient(clientID int64, connInfo *models.ConnectionInfo) error {
 	key := fmt.Sprintf("%s:%d", constants.KeyPrefixClientConnections, clientID)
-	return r.storage.RemoveFromList(key, targetConnData)
+	return r.RemoveFromList(connInfo, key)
 }
 
 // UpdateStats 更新连接统计

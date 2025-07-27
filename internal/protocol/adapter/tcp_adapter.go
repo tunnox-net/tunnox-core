@@ -6,8 +6,6 @@ import (
 	"io"
 	"net"
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // TcpConn TCP连接包装器
@@ -33,6 +31,7 @@ func NewTcpAdapter(parentCtx context.Context, session session.Session) *TcpAdapt
 	t.SetName("tcp")
 	t.SetSession(session)
 	t.SetCtx(parentCtx, t.onClose)
+	t.SetProtocolAdapter(t) // 设置协议适配器引用
 	return t
 }
 
@@ -66,50 +65,6 @@ func (t *TcpAdapter) Accept() (io.ReadWriteCloser, error) {
 
 func (t *TcpAdapter) getConnectionType() string {
 	return "TCP"
-}
-
-// ListenFrom 重写BaseAdapter的ListenFrom方法
-func (t *TcpAdapter) ListenFrom(listenAddr string) error {
-	t.SetAddr(listenAddr)
-	if t.Addr() == "" {
-		return fmt.Errorf("address not set")
-	}
-
-	// 精简日志：只在调试模式下输出适配器监听信息
-	utils.Debugf("TcpAdapter.ListenFrom called for adapter: %s", t.Name())
-
-	// 直接使用自身作为ProtocolAdapter
-	if err := t.Listen(t.Addr()); err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", t.getConnectionType(), err)
-	}
-
-	t.active = true
-	go t.acceptLoop(t)
-	return nil
-}
-
-// ConnectTo 重写BaseAdapter的ConnectTo方法
-func (t *TcpAdapter) ConnectTo(serverAddr string) error {
-	t.connMutex.Lock()
-	defer t.connMutex.Unlock()
-
-	if t.stream != nil {
-		return fmt.Errorf("already connected")
-	}
-
-	// 直接使用自身作为ProtocolAdapter
-	conn, err := t.Dial(serverAddr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to %s server: %w", t.getConnectionType(), err)
-	}
-
-	t.SetAddr(serverAddr)
-
-	t.streamMutex.Lock()
-	t.stream = stream.NewStreamProcessor(conn, conn, t.Ctx())
-	t.streamMutex.Unlock()
-
-	return nil
 }
 
 // onClose TCP 特定的资源清理

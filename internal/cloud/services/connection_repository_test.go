@@ -126,7 +126,7 @@ func TestConnectionRepository(t *testing.T) {
 		require.NoError(t, err)
 
 		// 列出映射的连接
-		connections, err := connRepo.ListConnections(mappingID)
+		connections, err := connRepo.ListMappingConns(mappingID)
 		require.NoError(t, err)
 		assert.Len(t, connections, 2)
 

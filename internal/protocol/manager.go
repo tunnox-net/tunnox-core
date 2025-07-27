@@ -40,14 +40,14 @@ func (pm *ProtocolManager) StartAll() error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 	for name, a := range pm.adapters {
-		// 精简日志：只在调试模式下输出适配器启动信息
-		utils.Debugf("Starting adapter: %s", name)
+		// 保留关键的适配器启动信息
+		utils.Infof("Starting %s adapter on %s", name, a.GetAddr())
 		if err := a.ListenFrom(a.GetAddr()); err != nil {
 			utils.Errorf("Failed to start adapter %s: %v", name, err)
 			return err
 		}
-		// 精简日志：只在调试模式下输出适配器启动完成信息
-		utils.Debugf("Successfully started adapter: %s", name)
+		// 保留关键的适配器启动完成信息
+		utils.Infof("Successfully started %s adapter on %s", name, a.GetAddr())
 	}
 	return nil
 }

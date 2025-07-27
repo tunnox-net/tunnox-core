@@ -13,7 +13,6 @@ import (
 	"net"
 	"time"
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
 	"github.com/quic-go/quic-go"
@@ -51,6 +50,7 @@ func NewQuicAdapter(parentCtx context.Context, session session.Session) *QuicAda
 	q.SetName("quic")
 	q.SetSession(session)
 	q.SetCtx(parentCtx, q.onClose)
+	q.SetProtocolAdapter(q) // 设置协议适配器引用
 	return q
 }
 
@@ -96,50 +96,6 @@ func (q *QuicAdapter) Accept() (io.ReadWriteCloser, error) {
 
 func (q *QuicAdapter) getConnectionType() string {
 	return "QUIC"
-}
-
-// ListenFrom 重写BaseAdapter的ListenFrom方法
-func (q *QuicAdapter) ListenFrom(listenAddr string) error {
-	q.SetAddr(listenAddr)
-	if q.Addr() == "" {
-		return fmt.Errorf("address not set")
-	}
-
-	// 精简日志：只在调试模式下输出适配器监听信息
-	utils.Debugf("QuicAdapter.ListenFrom called for adapter: %s", q.Name())
-
-	// 直接使用自身作为ProtocolAdapter
-	if err := q.Listen(q.Addr()); err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", q.getConnectionType(), err)
-	}
-
-	q.active = true
-	go q.acceptLoop(q)
-	return nil
-}
-
-// ConnectTo 重写BaseAdapter的ConnectTo方法
-func (q *QuicAdapter) ConnectTo(serverAddr string) error {
-	q.connMutex.Lock()
-	defer q.connMutex.Unlock()
-
-	if q.stream != nil {
-		return fmt.Errorf("already connected")
-	}
-
-	// 直接使用自身作为ProtocolAdapter
-	conn, err := q.Dial(serverAddr)
-	if err != nil {
-		return fmt.Errorf("failed to connect to %s server: %w", q.getConnectionType(), err)
-	}
-
-	q.SetAddr(serverAddr)
-
-	q.streamMutex.Lock()
-	q.stream = stream.NewStreamProcessor(conn, conn, q.Ctx())
-	q.streamMutex.Unlock()
-
-	return nil
 }
 
 // onClose QUIC 特定的资源清理

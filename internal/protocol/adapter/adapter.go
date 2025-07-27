@@ -33,6 +33,7 @@ type BaseAdapter struct {
 	connMutex   sync.RWMutex
 	stream      stream.PackageStreamer
 	streamMutex sync.RWMutex
+	protocol    ProtocolAdapter // 存储具体的协议适配器引用
 }
 
 // 协议适配器接口，子类需要实现
@@ -61,6 +62,11 @@ func (b *BaseAdapter) GetSession() session.Session {
 	return b.session
 }
 
+// SetProtocolAdapter 设置具体的协议适配器引用
+func (b *BaseAdapter) SetProtocolAdapter(pa ProtocolAdapter) {
+	b.protocol = pa
+}
+
 // ConnectTo 通用连接逻辑
 func (b *BaseAdapter) ConnectTo(serverAddr string) error {
 	b.connMutex.Lock()
@@ -70,15 +76,13 @@ func (b *BaseAdapter) ConnectTo(serverAddr string) error {
 		return fmt.Errorf("already connected")
 	}
 
-	// 通过类型断言获取协议适配器
-	protocolAdapter, ok := any(b).(ProtocolAdapter)
-	if !ok {
-		return fmt.Errorf("not a ProtocolAdapter: %T", b)
+	if b.protocol == nil {
+		return fmt.Errorf("protocol adapter not set")
 	}
 
-	conn, err := protocolAdapter.Dial(serverAddr)
+	conn, err := b.protocol.Dial(serverAddr)
 	if err != nil {
-		return fmt.Errorf("failed to connect to %s server: %w", protocolAdapter.getConnectionType(), err)
+		return fmt.Errorf("failed to connect to %s server: %w", b.protocol.getConnectionType(), err)
 	}
 
 	b.SetAddr(serverAddr)
@@ -97,22 +101,17 @@ func (b *BaseAdapter) ListenFrom(listenAddr string) error {
 		return fmt.Errorf("address not set")
 	}
 
-	// 精简日志：只在调试模式下输出适配器监听信息
-	utils.Debugf("BaseAdapter.ListenFrom called for adapter: %s", b.Name())
-
-	// 通过类型断言获取协议适配器
-	protocolAdapter, ok := any(b).(ProtocolAdapter)
-	if !ok {
-		return fmt.Errorf("not a ProtocolAdapter: %T", b)
+	if b.protocol == nil {
+		return fmt.Errorf("protocol adapter not set")
 	}
 
 	// 适配器直接启动监听
-	if err := protocolAdapter.Listen(b.Addr()); err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", protocolAdapter.getConnectionType(), err)
+	if err := b.protocol.Listen(b.Addr()); err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", b.protocol.getConnectionType(), err)
 	}
 
 	b.active = true
-	go b.acceptLoop(protocolAdapter)
+	go b.acceptLoop(b.protocol)
 	return nil
 }
 
