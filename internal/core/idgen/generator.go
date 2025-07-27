@@ -456,3 +456,103 @@ func (m *IDManager) Close() error {
 	m.Dispose.Close()
 	return nil
 }
+
+// GenerateUniqueID 通用ID生成重试函数
+// 用于生成唯一ID，自动处理重试和冲突检查
+func (m *IDManager) GenerateUniqueID(
+	generateFunc func() (int64, error),
+	checkFunc func(int64) (bool, error),
+	releaseFunc func(int64) error,
+	idType string,
+) (int64, error) {
+	for attempts := 0; attempts < MaxAttempts; attempts++ {
+		generatedID, err := generateFunc()
+		if err != nil {
+			return 0, fmt.Errorf("generate %s ID failed: %w", idType, err)
+		}
+
+		// 检查是否已存在
+		exists, err := checkFunc(generatedID)
+		if err != nil {
+			// 如果检查失败，假设不存在，使用这个ID
+			return generatedID, nil
+		}
+
+		if !exists {
+			// ID不存在，可以使用
+			return generatedID, nil
+		}
+
+		// ID已存在，释放并重试
+		_ = releaseFunc(generatedID)
+		continue
+	}
+
+	return 0, fmt.Errorf("failed to generate unique %s ID after %d attempts", idType, MaxAttempts)
+}
+
+// GenerateUniqueClientID 生成唯一客户端ID
+func (m *IDManager) GenerateUniqueClientID(checkFunc func(int64) (bool, error)) (int64, error) {
+	return m.GenerateUniqueID(
+		m.GenerateClientID,
+		checkFunc,
+		m.ReleaseClientID,
+		"client",
+	)
+}
+
+// GenerateUniquePortMappingID 生成唯一端口映射ID
+func (m *IDManager) GenerateUniquePortMappingID(checkFunc func(string) (bool, error)) (string, error) {
+	for attempts := 0; attempts < MaxAttempts; attempts++ {
+		generatedID, err := m.GeneratePortMappingID()
+		if err != nil {
+			return "", fmt.Errorf("generate port mapping ID failed: %w", err)
+		}
+
+		// 检查是否已存在
+		exists, err := checkFunc(generatedID)
+		if err != nil {
+			// 如果检查失败，假设不存在，使用这个ID
+			return generatedID, nil
+		}
+
+		if !exists {
+			// ID不存在，可以使用
+			return generatedID, nil
+		}
+
+		// ID已存在，释放并重试
+		_ = m.ReleasePortMappingID(generatedID)
+		continue
+	}
+
+	return "", fmt.Errorf("failed to generate unique port mapping ID after %d attempts", MaxAttempts)
+}
+
+// GenerateUniqueNodeID 生成唯一节点ID
+func (m *IDManager) GenerateUniqueNodeID(checkFunc func(string) (bool, error)) (string, error) {
+	for attempts := 0; attempts < MaxAttempts; attempts++ {
+		generatedID, err := m.GenerateNodeID()
+		if err != nil {
+			return "", fmt.Errorf("generate node ID failed: %w", err)
+		}
+
+		// 检查是否已存在
+		exists, err := checkFunc(generatedID)
+		if err != nil {
+			// 如果检查失败，假设不存在，使用这个ID
+			return generatedID, nil
+		}
+
+		if !exists {
+			// ID不存在，可以使用
+			return generatedID, nil
+		}
+
+		// ID已存在，释放并重试
+		_ = m.ReleaseNodeID(generatedID)
+		continue
+	}
+
+	return "", fmt.Errorf("failed to generate unique node ID after %d attempts", MaxAttempts)
+}

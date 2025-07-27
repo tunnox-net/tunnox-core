@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"time"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
 )
 
@@ -86,7 +87,7 @@ func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
 	n, addr, err := u.conn.ReadFrom(buffer)
 	if err != nil {
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return nil, &TimeoutError{Protocol: "UDP packet"}
+			return nil, errors.NewProtocolTimeoutError("UDP packet")
 		}
 		return nil, err
 	}

@@ -217,3 +217,84 @@ func WrapErrorWithCode(err error, code ErrorCode, message string) error {
 
 	return NewStandardErrorWithCause(code, message, err)
 }
+
+// ProtocolTimeoutError 协议超时错误类型
+// 用于协议适配器的超时错误，包含具体的协议信息
+type ProtocolTimeoutError struct {
+	Protocol string
+}
+
+func (e *ProtocolTimeoutError) Error() string {
+	return fmt.Sprintf("timeout waiting for %s", e.Protocol)
+}
+
+// IsProtocolTimeoutError 检查是否为协议超时错误
+func IsProtocolTimeoutError(err error) bool {
+	_, ok := err.(*ProtocolTimeoutError)
+	return ok
+}
+
+// NewProtocolTimeoutError 创建协议超时错误
+func NewProtocolTimeoutError(protocol string) *ProtocolTimeoutError {
+	return &ProtocolTimeoutError{Protocol: protocol}
+}
+
+// ErrorWithCleanup 带清理操作的错误处理
+// 用于在操作失败时自动执行清理操作
+type ErrorWithCleanup struct {
+	Err     error
+	Cleanup func() error
+}
+
+// NewErrorWithCleanup 创建带清理操作的错误
+func NewErrorWithCleanup(err error, cleanup func() error) *ErrorWithCleanup {
+	return &ErrorWithCleanup{
+		Err:     err,
+		Cleanup: cleanup,
+	}
+}
+
+// Error 实现error接口
+func (e *ErrorWithCleanup) Error() string {
+	return e.Err.Error()
+}
+
+// Unwrap 返回原始错误
+func (e *ErrorWithCleanup) Unwrap() error {
+	return e.Err
+}
+
+// ExecuteCleanup 执行清理操作
+func (e *ErrorWithCleanup) ExecuteCleanup() error {
+	if e.Cleanup != nil {
+		return e.Cleanup()
+	}
+	return nil
+}
+
+// HandleErrorWithCleanup 处理带清理操作的错误
+// 这是一个通用的错误处理模式，用于在操作失败时自动释放已分配的资源
+func HandleErrorWithCleanup(err error, cleanup func() error, message string) error {
+	if err == nil {
+		return nil
+	}
+
+	// 执行清理操作
+	if cleanup != nil {
+		if cleanupErr := cleanup(); cleanupErr != nil {
+			// 如果清理也失败了，记录但不影响主错误
+			// 这里可以添加日志记录
+		}
+	}
+
+	// 返回包装后的错误
+	return fmt.Errorf("%s: %w", message, err)
+}
+
+// HandleErrorWithCleanupFunc 返回一个带清理操作的错误处理函数
+// 用于简化重复的错误处理代码
+func HandleErrorWithCleanupFunc(cleanup func() error, message string) func(error) error {
+	return func(err error) error {
+		return HandleErrorWithCleanup(err, cleanup, message)
+	}
+}

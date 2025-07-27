@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"fmt"
-	"time"
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
@@ -17,6 +16,7 @@ import (
 // ClientServiceImpl 客户端服务实现
 type ClientServiceImpl struct {
 	*dispose.ServiceBase
+	baseService *BaseService
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
 	idManager   *idgen.IDManager
@@ -27,6 +27,7 @@ type ClientServiceImpl struct {
 func NewClientService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) ClientService {
 	service := &ClientServiceImpl{
 		ServiceBase: dispose.NewService("ClientService", parentCtx),
+		baseService: NewBaseService(),
 		clientRepo:  clientRepo,
 		mappingRepo: mappingRepo,
 		idManager:   idManager,
@@ -40,20 +41,18 @@ func (s *ClientServiceImpl) CreateClient(userID, clientName string) (*models.Cli
 	// 生成客户端ID
 	clientID, err := s.idManager.GenerateClientID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate client ID: %w", err)
+		return nil, s.baseService.WrapError(err, "generate client ID")
 	}
 
 	// 生成认证码和密钥
 	authCode, err := s.idManager.GenerateAuthCode()
 	if err != nil {
-		_ = s.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("failed to generate auth code: %w", err)
+		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "generate auth code")
 	}
 
 	secretKey, err := s.idManager.GenerateSecretKey()
 	if err != nil {
-		_ = s.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("failed to generate secret key: %w", err)
+		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "generate secret key")
 	}
 
 	// 创建客户端
@@ -65,24 +64,23 @@ func (s *ClientServiceImpl) CreateClient(userID, clientName string) (*models.Cli
 		SecretKey: secretKey,
 		Status:    models.ClientStatusOffline,
 		Type:      models.ClientTypeRegistered,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
 		Config:    configs.ClientConfig{}, // 使用默认配置
 	}
 
+	// 设置时间戳
+	s.baseService.SetTimestamps(&client.CreatedAt, &client.UpdatedAt)
+
 	// 保存到存储
 	if err := s.clientRepo.CreateClient(client); err != nil {
-		// 释放已生成的ID
-		_ = s.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("failed to create client: %w", err)
+		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "create client")
 	}
 
 	// 添加到用户客户端列表
 	if err := s.clientRepo.AddClientToUser(userID, client); err != nil {
-		utils.Warnf("Failed to add client to user list: %v", err)
+		s.baseService.LogWarning("add client to user list", err)
 	}
 
-	utils.Infof("Created client: %s (ID: %d) for user: %s", clientName, clientID, userID)
+	s.baseService.LogCreated("client", fmt.Sprintf("%s (ID: %d) for user: %s", clientName, clientID, userID))
 	return client, nil
 }
 
@@ -104,11 +102,11 @@ func (s *ClientServiceImpl) TouchClient(clientID int64) {
 
 // UpdateClient 更新客户端
 func (s *ClientServiceImpl) UpdateClient(client *models.Client) error {
-	client.UpdatedAt = time.Now()
+	s.baseService.SetUpdatedTimestamp(&client.UpdatedAt)
 	if err := s.clientRepo.UpdateClient(client); err != nil {
-		return fmt.Errorf("failed to update client %d: %w", client.ID, err)
+		return s.baseService.WrapErrorWithInt64ID(err, "update client", client.ID)
 	}
-	utils.Infof("Updated client: %d", client.ID)
+	s.baseService.LogUpdated("client", fmt.Sprintf("%d", client.ID))
 	return nil
 }
 
@@ -117,27 +115,27 @@ func (s *ClientServiceImpl) DeleteClient(clientID int64) error {
 	// 获取客户端信息
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
-		return fmt.Errorf("failed to get client %d: %w", clientID, err)
+		return s.baseService.WrapErrorWithInt64ID(err, "get client", clientID)
 	}
 
 	// 删除客户端
 	if err := s.clientRepo.DeleteClient(utils.Int64ToString(clientID)); err != nil {
-		return fmt.Errorf("failed to delete client %d: %w", clientID, err)
+		return s.baseService.WrapErrorWithInt64ID(err, "delete client", clientID)
 	}
 
 	// 从用户客户端列表中移除
 	if client.UserID != "" {
 		if err := s.clientRepo.RemoveClientFromUser(client.UserID, client); err != nil {
-			utils.Warnf("Failed to remove client from user list: %v", err)
+			s.baseService.LogWarning("remove client from user list", err)
 		}
 	}
 
 	// 释放客户端ID
 	if err := s.idManager.ReleaseClientID(clientID); err != nil {
-		utils.Warnf("Failed to release client ID %d: %v", clientID, err)
+		s.baseService.LogWarning("release client ID", err, clientID)
 	}
 
-	utils.Infof("Deleted client: %d", clientID)
+	s.baseService.LogDeleted("client", fmt.Sprintf("%d", clientID))
 	return nil
 }
 

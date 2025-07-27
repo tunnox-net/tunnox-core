@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -142,7 +143,7 @@ func (b *BaseAdapter) acceptLoop(adapter ProtocolAdapter) {
 // isIgnorableError 检查是否为可忽略的错误
 func isIgnorableError(err error) bool {
 	// 检查是否为自定义超时错误
-	if IsTimeoutError(err) {
+	if errors.IsProtocolTimeoutError(err) {
 		return true
 	}
 
@@ -231,22 +232,4 @@ func (b *BaseAdapter) onClose() error {
 
 	utils.Infof("%s adapter closed", b.name)
 	return nil
-}
-
-// TimeoutError 超时错误类型
-// 兼容 base.go 的超时错误定义
-// 只保留一份
-
-type TimeoutError struct {
-	Protocol string
-}
-
-func (e *TimeoutError) Error() string {
-	return fmt.Sprintf("timeout waiting for %s", e.Protocol)
-}
-
-// IsTimeoutError 检查是否为超时错误
-func IsTimeoutError(err error) bool {
-	_, ok := err.(*TimeoutError)
-	return ok
 }

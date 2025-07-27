@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -126,10 +127,9 @@ func (w *WebSocketAdapter) Listen(addr string) error {
 }
 
 func (w *WebSocketAdapter) Accept() (io.ReadWriteCloser, error) {
-	select {
-	case <-time.After(100 * time.Millisecond):
-		return nil, &TimeoutError{Protocol: "WebSocket connection"}
-	}
+	// WebSocket适配器通过HTTP升级处理连接，不需要传统的Accept方法
+	// 返回超时错误以符合接口要求
+	return nil, errors.NewProtocolTimeoutError("WebSocket connection")
 }
 
 func (w *WebSocketAdapter) getConnectionType() string {

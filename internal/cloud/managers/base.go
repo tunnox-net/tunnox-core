@@ -15,6 +15,21 @@ import (
 	"tunnox-core/internal/core/storage"
 )
 
+// handleErrorWithIDRelease 处理需要释放ID的错误
+// 这是一个通用的错误处理模式，用于在操作失败时自动释放已分配的ID
+func (b *CloudControl) handleErrorWithIDRelease(err error, id int64, releaseFunc func(int64) error, message string) error {
+	if err == nil {
+		return nil
+	}
+
+	// 释放ID
+	if releaseFunc != nil {
+		_ = releaseFunc(id)
+	}
+
+	return fmt.Errorf("%s: %w", message, err)
+}
+
 // CloudControl 基础云控实现，所有存储操作通过 Storage 接口
 // 业务逻辑、资源管理、定时清理等通用逻辑全部在这里实现
 // 子类只需注入不同的 Storage 实现
@@ -158,16 +173,12 @@ func (b *CloudControl) CreateClient(userID, clientName string) (*models.Client, 
 
 	authCode, err := b.idManager.GenerateAuthCode()
 	if err != nil {
-		// 如果生成认证码失败，释放客户端ID
-		_ = b.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("generate auth code failed: %w", err)
+		return nil, b.handleErrorWithIDRelease(err, clientID, b.idManager.ReleaseClientID, "generate auth code failed")
 	}
 
 	secretKey, err := b.idManager.GenerateSecretKey()
 	if err != nil {
-		// 如果生成密钥失败，释放客户端ID
-		_ = b.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("generate secret key failed: %w", err)
+		return nil, b.handleErrorWithIDRelease(err, clientID, b.idManager.ReleaseClientID, "generate secret key failed")
 	}
 
 	now := time.Now()
@@ -193,16 +204,13 @@ func (b *CloudControl) CreateClient(userID, clientName string) (*models.Client, 
 	}
 
 	if err := b.clientRepo.CreateClient(client); err != nil {
-		// 如果保存失败，释放客户端ID
-		_ = b.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("save client failed: %w", err)
+		return nil, b.handleErrorWithIDRelease(err, clientID, b.idManager.ReleaseClientID, "save client failed")
 	}
 
 	if err := b.clientRepo.AddClientToUser(userID, client); err != nil {
 		// 如果添加到用户失败，删除客户端并释放ID
 		_ = b.clientRepo.DeleteClient(fmt.Sprintf("%d", clientID))
-		_ = b.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("add client to user failed: %w", err)
+		return nil, b.handleErrorWithIDRelease(err, clientID, b.idManager.ReleaseClientID, "add client to user failed")
 	}
 
 	return client, nil
