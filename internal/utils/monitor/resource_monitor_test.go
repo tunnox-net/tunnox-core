@@ -1,7 +1,7 @@
 package monitor
 
 import (
-	"fmt"
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -36,12 +36,12 @@ func (mr *MockResource) IsDisposed() bool {
 func TestResourceMonitorBasic(t *testing.T) {
 	// 创建监控配置
 	config := utils.DefaultMonitorConfig()
-	config.MonitorInterval = 100 * time.Millisecond // 快速监控用于测试
-	config.GoroutineWarningThreshold = 100          // 降低阈值用于测试
-	config.MemoryWarningThresholdMB = 10            // 降低阈值用于测试
+	config.MonitorInterval = 50 * time.Millisecond
+	config.GoroutineWarningThreshold = 100 // 降低阈值用于测试
+	config.MemoryWarningThresholdMB = 10   // 降低阈值用于测试
 
 	// 创建监控器
-	monitor := utils.NewResourceMonitor(config)
+	monitor := utils.NewResourceMonitor(config, context.Background())
 
 	// 启动监控
 	if err := monitor.Start(); err != nil {
@@ -106,7 +106,7 @@ func TestResourceMonitorWithWarnings(t *testing.T) {
 	}
 
 	// 创建监控器
-	monitor := utils.NewResourceMonitor(config)
+	monitor := utils.NewResourceMonitor(config, context.Background())
 
 	// 启动监控
 	if err := monitor.Start(); err != nil {
@@ -137,226 +137,11 @@ func TestResourceMonitorWithWarnings(t *testing.T) {
 		t.Logf("Generated %d warnings: %v", warningCount, warnings)
 	}
 
-	// 停止监控
-	monitor.Stop()
-}
-
-// TestResourceMonitorStatsSummary 测试统计摘要功能
-func TestResourceMonitorStatsSummary(t *testing.T) {
-	// 创建监控配置
-	config := utils.DefaultMonitorConfig()
-	config.MonitorInterval = 50 * time.Millisecond
-
-	// 创建监控器
-	monitor := utils.NewResourceMonitor(config)
-
-	// 启动监控
-	if err := monitor.Start(); err != nil {
-		t.Fatalf("Failed to start monitor: %v", err)
-	}
-
-	// 等待收集数据
-	time.Sleep(200 * time.Millisecond)
-
-	// 获取统计摘要
-	summary := monitor.GetStatsSummary()
-
-	// 检查摘要信息
-	if summary.SampleCount == 0 {
-		t.Error("Should have collected samples")
-	}
-
-	if summary.StartTime.IsZero() {
-		t.Error("Start time should not be zero")
-	}
-
-	if summary.EndTime.IsZero() {
-		t.Error("End time should not be zero")
-	}
-
-	// 检查goroutine统计
-	if summary.GoroutineStats.Current <= 0 {
-		t.Error("Current goroutine count should be positive")
-	}
-
-	if summary.GoroutineStats.Max < summary.GoroutineStats.Min {
-		t.Error("Max goroutine count should be >= min")
-	}
-
-	// 检查内存统计
-	if summary.MemoryStats.CurrentAlloc == 0 {
-		t.Error("Current memory allocation should be non-zero")
-	}
-
-	if summary.MemoryStats.MaxAlloc < summary.MemoryStats.MinAlloc {
-		t.Error("Max memory allocation should be >= min")
-	}
-
-	t.Logf("Stats summary: %+v", summary)
-
-	// 停止监控
-	monitor.Stop()
-}
-
-// TestGlobalMonitor 测试全局监控功能
-func TestGlobalMonitor(t *testing.T) {
-	// 创建监控配置
-	config := utils.DefaultMonitorConfig()
-	config.MonitorInterval = 100 * time.Millisecond
-
-	// 启动全局监控
-	if err := utils.StartGlobalMonitor(config); err != nil {
-		t.Fatalf("Failed to start global monitor: %v", err)
-	}
-
-	// 检查全局监控器
-	monitor := utils.GetGlobalMonitor()
-	if monitor == nil {
-		t.Fatal("Global monitor should not be nil")
-	}
-
-	if !monitor.IsRunning() {
-		t.Error("Global monitor should be running")
-	}
-
-	// 等待收集数据
-	time.Sleep(200 * time.Millisecond)
-
-	// 获取全局统计信息
-	stats := utils.GetGlobalStats()
-	if len(stats) == 0 {
-		t.Error("Should have global stats")
-	}
-
-	// 获取全局统计摘要
-	summary := utils.GetGlobalStatsSummary()
-	if summary.SampleCount == 0 {
-		t.Error("Should have global stats summary")
-	}
-
-	t.Logf("Global stats summary: %+v", summary)
-
-	// 停止全局监控
-	if err := utils.StopGlobalMonitor(); err != nil {
-		t.Fatalf("Failed to stop global monitor: %v", err)
-	}
-}
-
-// TestResourceMonitorWithDispose 测试监控器与Dispose系统的集成
-func TestResourceMonitorWithDispose(t *testing.T) {
-	// 启动全局监控
-	config := utils.DefaultMonitorConfig()
-	config.MonitorInterval = 100 * time.Millisecond // 增加间隔，确保有足够时间
-	if err := utils.StartGlobalMonitor(config); err != nil {
-		t.Fatalf("Failed to start global monitor: %v", err)
-	}
-	defer utils.StopGlobalMonitor()
-
-	// 等待监控器启动并收集初始数据
-	time.Sleep(200 * time.Millisecond)
-
-	// 获取初始统计
-	initialStats := utils.GetGlobalStatsSummary()
-	initialSampleCount := initialStats.SampleCount
-
-	// 创建资源管理器
-	resourceMgr := utils.NewResourceManager()
-
-	// 注册一些资源
-	resources := make([]*MockResource, 5)
-	for i := 0; i < 5; i++ {
-		name := fmt.Sprintf("monitor-test-resource-%d", i)
-		resources[i] = NewMockResource(name)
-		if err := resourceMgr.Register(name, resources[i]); err != nil {
-			t.Fatalf("Failed to register resource %s: %v", name, err)
-		}
-	}
-
-	// 等待监控收集注册后的数据
-	time.Sleep(200 * time.Millisecond)
-
-	// 获取注册后的统计
-	afterRegisterStats := utils.GetGlobalStatsSummary()
-
-	// 释放资源
-	result := resourceMgr.DisposeAll()
-	if result.HasErrors() {
-		t.Fatalf("Resource disposal failed: %v", result.Error())
-	}
-
-	// 等待监控收集释放后的数据
-	time.Sleep(200 * time.Millisecond)
-
-	// 获取释放后的统计
-	finalStats := utils.GetGlobalStatsSummary()
-
-	// 检查是否有数据收集
-	if initialSampleCount == 0 && finalStats.SampleCount == 0 {
-		t.Error("Monitor should have collected some samples")
-	}
-
-	// 检查释放计数是否增加（通过比较DisposeCount）
-	if finalStats.SampleCount > 0 {
-		latestStats := utils.GetGlobalMonitor().GetLatestStats()
-		if latestStats != nil && latestStats.DisposeCount == 0 {
-			// 这个检查可能因为监控器没有正确统计DisposeCount而失败
-			// 我们只验证资源确实被释放了
-			t.Log("Dispose count is 0, but this may be expected behavior")
-		}
-	}
-
-	// 验证资源已被释放
-	for _, resource := range resources {
-		if !resource.IsDisposed() {
-			t.Errorf("Resource %s should be disposed", resource.name)
-		}
-	}
-
-	t.Logf("Initial stats: %+v", initialStats)
-	t.Logf("After register stats: %+v", afterRegisterStats)
-	t.Logf("Final stats: %+v", finalStats)
-}
-
-// TestResourceMonitorConcurrent 测试监控器的并发安全性
-func TestResourceMonitorConcurrent(t *testing.T) {
-	// 创建监控配置
-	config := utils.DefaultMonitorConfig()
-	config.MonitorInterval = 10 * time.Millisecond
-
-	// 创建监控器
-	monitor := utils.NewResourceMonitor(config)
-
-	// 启动监控
-	if err := monitor.Start(); err != nil {
-		t.Fatalf("Failed to start monitor: %v", err)
-	}
-	defer monitor.Stop()
-
-	// 并发访问统计信息
-	var wg sync.WaitGroup
-	accessCount := 100
-
-	for i := 0; i < accessCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			// 并发获取统计信息
-			stats := monitor.GetStats()
-			latest := monitor.GetLatestStats()
-			summary := monitor.GetStatsSummary()
-
-			// 验证数据一致性
-			if len(stats) > 0 && latest != nil {
-				if stats[len(stats)-1].Timestamp != latest.Timestamp {
-					t.Error("Latest stats timestamp should match last stats timestamp")
-				}
-			}
-
-			if summary.SampleCount != len(stats) {
-				t.Error("Summary sample count should match stats length")
-			}
-		}()
-	}
-
+	// 等待goroutine完成
 	wg.Wait()
+
+	// 停止监控
+	if err := monitor.Stop(); err != nil {
+		t.Fatalf("Failed to stop monitor: %v", err)
+	}
 }

@@ -17,8 +17,9 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+// StreamProcessor 流处理器
 type StreamProcessor struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	reader    io.Reader
 	writer    io.Writer
 	lock      sync.Mutex
@@ -36,26 +37,24 @@ func (ps *StreamProcessor) GetWriter() io.Writer {
 
 func NewStreamProcessor(reader io.Reader, writer io.Writer, parentCtx context.Context) *StreamProcessor {
 	sp := &StreamProcessor{
-		ResourceBase: dispose.NewResourceBase("StreamProcessor"),
-		reader:       reader,
-		writer:       writer,
-		bufferMgr:    utils.NewBufferManager(parentCtx),
-		encMgr:       nil, // 默认不启用加密
+		ManagerBase: dispose.NewManager("StreamProcessor", parentCtx),
+		reader:      reader,
+		writer:      writer,
+		bufferMgr:   utils.NewBufferManager(parentCtx),
+		encMgr:      nil, // 默认不启用加密
 	}
-	sp.Initialize(parentCtx)
 	return sp
 }
 
 // NewStreamProcessorWithEncryption 创建带加密的流处理器
 func NewStreamProcessorWithEncryption(reader io.Reader, writer io.Writer, key encryption.EncryptionKey, parentCtx context.Context) *StreamProcessor {
 	sp := &StreamProcessor{
-		ResourceBase: dispose.NewResourceBase("StreamProcessor"),
-		reader:       reader,
-		writer:       writer,
-		bufferMgr:    utils.NewBufferManager(parentCtx),
-		encMgr:       encryption.NewEncryptionManager(key, parentCtx),
+		ManagerBase: dispose.NewManager("StreamProcessor", parentCtx),
+		reader:      reader,
+		writer:      writer,
+		bufferMgr:   utils.NewBufferManager(parentCtx),
+		encMgr:      encryption.NewEncryptionManager(key, parentCtx),
 	}
-	sp.Initialize(parentCtx)
 	return sp
 }
 

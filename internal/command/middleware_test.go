@@ -3,9 +3,12 @@ package command
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 	"tunnox-core/internal/packet"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMiddlewareFunc_Process(t *testing.T) {
@@ -73,8 +76,8 @@ func TestMiddlewareFunc_Process(t *testing.T) {
 }
 
 func TestMiddlewareChain_Execution(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 创建处理器
 	handler := &MockCommandHandler{
@@ -147,8 +150,8 @@ func TestMiddlewareChain_Execution(t *testing.T) {
 }
 
 func TestMiddlewareChain_ErrorHandling(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 创建会返回错误的处理器
 	handler := &MockCommandHandler{
@@ -194,8 +197,8 @@ func TestMiddlewareChain_ErrorHandling(t *testing.T) {
 }
 
 func TestMiddlewareChain_ShortCircuit(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 创建处理器
 	handler := &MockCommandHandler{
@@ -213,55 +216,44 @@ func TestMiddlewareChain_ShortCircuit(t *testing.T) {
 	middleware := &MockMiddleware{
 		name: "short-circuit-middleware",
 		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
-			// 检查请求体，如果是特定值则短路
-			if ctx.RequestBody == `{"short_circuit": true}` {
-				return &CommandResponse{
-					Success:     true,
-					Data:        "short circuit response",
-					HandlerName: "short-circuit-middleware",
-				}, nil
-			}
-
-			// 否则继续执行
-			return next(ctx)
+			// 直接返回，不调用next
+			return &CommandResponse{
+				Success: false,
+				Error:   "short circuit",
+			}, nil
 		},
 	}
 
 	// 添加中间件
 	executor.AddMiddleware(middleware)
 
-	// 测试短路情况
-	streamPacket1 := createMockStreamPacket(packet.TcpMapCreate, `{"short_circuit": true}`)
-	err := executor.Execute(streamPacket1)
-	if err != nil {
-		t.Errorf("Execute failed: %v", err)
-	}
+	// 创建流数据包
+	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
-	// 测试正常执行情况
-	streamPacket2 := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
-	err = executor.Execute(streamPacket2)
-	if err != nil {
-		t.Errorf("Execute failed: %v", err)
-	}
+	// 执行命令 - 短路中间件应该返回错误响应
+	err := executor.Execute(streamPacket)
+	// 期望返回错误，因为中间件返回了Success=false
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "command execution failed: short circuit")
 }
 
 func TestMiddlewareChain_ContextModification(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType: packet.TcpMapCreate,
 		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
-			// 验证中间件修改的上下文
-			if !ctx.IsAuthenticated {
-				t.Error("Context should be authenticated by middleware")
+			// 检查中间件是否修改了上下文
+			if ctx.UserID != "modified-user" {
+				return &CommandResponse{
+					Success: false,
+					Error:   "context not modified",
+				}, nil
 			}
-			if ctx.UserID == "" {
-				t.Error("Context should have user ID set by middleware")
-			}
-			return &CommandResponse{Success: true, Data: ctx.UserID}, nil
+			return &CommandResponse{Success: true, Data: "context modified"}, nil
 		},
 	}
 
@@ -273,9 +265,8 @@ func TestMiddlewareChain_ContextModification(t *testing.T) {
 		name: "context-modification-middleware",
 		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
 			// 修改上下文
+			ctx.UserID = "modified-user"
 			ctx.IsAuthenticated = true
-			ctx.UserID = "modified_user_id"
-
 			return next(ctx)
 		},
 	}
@@ -294,15 +285,15 @@ func TestMiddlewareChain_ContextModification(t *testing.T) {
 }
 
 func TestMiddlewareChain_ResponseModification(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 创建处理器
 	handler := &MockCommandHandler{
 		commandType: packet.TcpMapCreate,
 		direction:   DirectionDuplex,
 		handleFunc: func(ctx *CommandContext) (*CommandResponse, error) {
-			return &CommandResponse{Success: true, Data: "original data"}, nil
+			return &CommandResponse{Success: true, Data: "original response"}, nil
 		},
 	}
 
@@ -319,9 +310,9 @@ func TestMiddlewareChain_ResponseModification(t *testing.T) {
 			}
 
 			// 修改响应
-			response.Data = "modified data"
-			response.HandlerName = "response-modification-middleware"
-			response.ProcessingTime = 100 * time.Millisecond
+			response.Data = "modified response"
+			response.HandlerName = "modified-handler"
+			response.ProcessingTime = time.Millisecond * 100
 
 			return response, nil
 		},
@@ -341,8 +332,8 @@ func TestMiddlewareChain_ResponseModification(t *testing.T) {
 }
 
 func TestMiddlewareChain_ConcurrentAccess(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 创建处理器
 	handler := &MockCommandHandler{
@@ -356,41 +347,49 @@ func TestMiddlewareChain_ConcurrentAccess(t *testing.T) {
 	// 注册处理器
 	registry.Register(handler)
 
-	// 创建中间件
-	middleware := &MockMiddleware{
-		name: "concurrent-middleware",
+	// 创建多个中间件
+	middleware1 := &MockMiddleware{
+		name: "concurrent-middleware1",
 		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
-			ctx.StartTime = time.Now()
+			time.Sleep(10 * time.Millisecond)
+			return next(ctx)
+		},
+	}
+
+	middleware2 := &MockMiddleware{
+		name: "concurrent-middleware2",
+		processFunc: func(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
+			time.Sleep(10 * time.Millisecond)
 			return next(ctx)
 		},
 	}
 
 	// 添加中间件
-	executor.AddMiddleware(middleware)
+	executor.AddMiddleware(middleware1)
+	executor.AddMiddleware(middleware2)
 
-	// 并发执行
-	done := make(chan bool, 3)
+	// 并发执行多个请求
+	var wg sync.WaitGroup
+	requestCount := 5
 
-	for i := 0; i < 3; i++ {
-		go func(id int) {
+	for i := 0; i < requestCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 			err := executor.Execute(streamPacket)
 			if err != nil {
-				t.Errorf("Execute failed: %v", err)
+				t.Errorf("Concurrent execute failed: %v", err)
 			}
-			done <- true
-		}(i)
+		}()
 	}
 
-	// 等待所有执行完成
-	for i := 0; i < 3; i++ {
-		<-done
-	}
+	wg.Wait()
 }
 
 func TestMiddlewareChain_EmptyChain(t *testing.T) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 创建处理器
 	handler := &MockCommandHandler{
@@ -405,6 +404,8 @@ func TestMiddlewareChain_EmptyChain(t *testing.T) {
 	registry.Register(handler)
 
 	// 不添加任何中间件
+
+	// 创建流数据包
 	streamPacket := createMockStreamPacket(packet.TcpMapCreate, `{"port": 8080}`)
 
 	// 执行命令

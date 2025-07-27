@@ -16,7 +16,7 @@ import (
 
 // JWTManager JWT令牌管理器
 type JWTManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	config *ControlConfig
 	repo   *repos.Repository
 	cache  *TokenCacheManager
@@ -65,14 +65,13 @@ type JWTTokenInfo struct {
 }
 
 // NewJWTManager 创建新的JWT管理器
-func NewJWTManager(config *ControlConfig, repo *repos.Repository) *JWTManager {
+func NewJWTManager(config *ControlConfig, repo *repos.Repository, parentCtx context.Context) *JWTManager {
 	manager := &JWTManager{
-		ResourceBase: dispose.NewResourceBase("JWTManager"),
-		config:       config,
-		repo:         repo,
-		cache:        NewTokenCacheManager(repo.GetStorage()),
+		ManagerBase: dispose.NewManager("JWTManager", parentCtx),
+		config:      config,
+		repo:        repo,
+		cache:       NewTokenCacheManager(repo.GetStorage(), parentCtx),
 	}
-	manager.Initialize(context.Background())
 	return manager
 }
 

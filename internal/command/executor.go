@@ -12,7 +12,7 @@ import (
 
 // CommandExecutor 命令执行器
 type CommandExecutor struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	registry   *CommandRegistry
 	middleware []Middleware
 	rpcManager *RPCManager
@@ -23,13 +23,12 @@ type CommandExecutor struct {
 // NewCommandExecutor 创建新的命令执行器
 func NewCommandExecutor(registry *CommandRegistry, parentCtx context.Context) *CommandExecutor {
 	executor := &CommandExecutor{
-		ResourceBase: dispose.NewResourceBase("CommandExecutor"),
-		registry:     registry,
-		middleware:   make([]Middleware, 0),
-		rpcManager:   NewRPCManager(parentCtx),
-		session:      nil,
+		ManagerBase: dispose.NewManager("CommandExecutor", parentCtx),
+		registry:    registry,
+		middleware:  make([]Middleware, 0),
+		rpcManager:  NewRPCManager(parentCtx),
+		session:     nil,
 	}
-	executor.Initialize(parentCtx)
 	return executor
 }
 
@@ -190,7 +189,9 @@ func (ce *CommandExecutor) sendResponse(connectionID string, response *types.Com
 
 // generateRequestID 生成请求ID
 func (ce *CommandExecutor) generateRequestID() string {
-	return fmt.Sprintf("req_%d", time.Now().UnixNano())
+	// 使用纳秒时间戳 + 随机数确保唯一性
+	randomSuffix, _ := utils.GenerateRandomDigits(4)
+	return fmt.Sprintf("req_%d%s", time.Now().UnixNano(), randomSuffix)
 }
 
 // SetSession 设置会话

@@ -7,7 +7,7 @@ import (
 	"time"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
-	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/storage"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -20,8 +20,8 @@ func TestJWTManager_GenerateTokenPair(t *testing.T) {
 		RefreshExpiration: 24 * time.Hour,
 	}
 
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := NewJWTManager(config, repo)
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
+	manager := NewJWTManager(config, repo, context.Background())
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
@@ -67,8 +67,8 @@ func TestJWTManager_RefreshToken(t *testing.T) {
 		RefreshExpiration: 24 * time.Hour,
 	}
 
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := NewJWTManager(config, repo)
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
+	manager := NewJWTManager(config, repo, context.Background())
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
@@ -113,8 +113,8 @@ func TestJWTManager_RevokeToken(t *testing.T) {
 		RefreshExpiration: 24 * time.Hour,
 	}
 
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := NewJWTManager(config, repo)
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
+	manager := NewJWTManager(config, repo, context.Background())
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
@@ -151,8 +151,8 @@ func TestJWTManager_Concurrency(t *testing.T) {
 		RefreshExpiration: 24 * time.Hour,
 	}
 
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := NewJWTManager(config, repo)
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
+	manager := NewJWTManager(config, repo, context.Background())
 	require.NotNil(t, manager)
 
 	ctx := context.Background()
@@ -196,8 +196,8 @@ func TestJWTManager_Dispose(t *testing.T) {
 		RefreshExpiration: 24 * time.Hour,
 		UseBuiltIn:        true,
 	}
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := NewJWTManager(config, repo)
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
+	manager := NewJWTManager(config, repo, context.Background())
 	require.NotNil(t, manager)
 
 	// 验证未关闭
@@ -217,8 +217,8 @@ func TestJWTManager_Dispose_Concurrent(t *testing.T) {
 		RefreshExpiration: 24 * time.Hour,
 		UseBuiltIn:        true,
 	}
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
-	manager := NewJWTManager(config, repo)
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
+	manager := NewJWTManager(config, repo, context.Background())
 	require.NotNil(t, manager)
 
 	// 并发关闭

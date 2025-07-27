@@ -16,7 +16,7 @@ import (
 
 // ClientServiceImpl 客户端服务实现
 type ClientServiceImpl struct {
-	*dispose.ResourceBase
+	*dispose.ServiceBase
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
 	idManager   *idgen.IDManager
@@ -26,13 +26,12 @@ type ClientServiceImpl struct {
 // NewClientService 创建客户端服务
 func NewClientService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) ClientService {
 	service := &ClientServiceImpl{
-		ResourceBase: dispose.NewResourceBase("ClientService"),
-		clientRepo:   clientRepo,
-		mappingRepo:  mappingRepo,
-		idManager:    idManager,
-		statsMgr:     statsMgr,
+		ServiceBase: dispose.NewService("ClientService", parentCtx),
+		clientRepo:  clientRepo,
+		mappingRepo: mappingRepo,
+		idManager:   idManager,
+		statsMgr:    statsMgr,
 	}
-	service.Initialize(parentCtx)
 	return service
 }
 

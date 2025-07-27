@@ -1,6 +1,7 @@
 package managers
 
 import (
+	"context"
 	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/configs"
@@ -15,21 +16,20 @@ import (
 
 // AnonymousManager 匿名用户管理器
 type AnonymousManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
 	idManager   *idgen.IDManager
 }
 
 // NewAnonymousManager 创建匿名用户管理器
-func NewAnonymousManager(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager) *AnonymousManager {
+func NewAnonymousManager(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) *AnonymousManager {
 	manager := &AnonymousManager{
-		ResourceBase: dispose.NewResourceBase("AnonymousManager"),
-		clientRepo:   clientRepo,
-		mappingRepo:  mappingRepo,
-		idManager:    idManager,
+		ManagerBase: dispose.NewManager("AnonymousManager", parentCtx),
+		clientRepo:  clientRepo,
+		mappingRepo: mappingRepo,
+		idManager:   idManager,
 	}
-	manager.Initialize(nil)
 	return manager
 }
 

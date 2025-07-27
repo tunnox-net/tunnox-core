@@ -7,11 +7,12 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/idgen"
+	storageCore "tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
 
 // registerInfrastructureServices 注册基础设施服务
-func registerInfrastructureServices(container *container.Container, config *managers.ControlConfig, storage interface{}, parentCtx context.Context) error {
+func registerInfrastructureServices(container *container.Container, config *managers.ControlConfig, storage storageCore.Storage, parentCtx context.Context) error {
 	// 注册存储服务
 	container.RegisterSingleton("storage", func() (interface{}, error) {
 		if storage == nil {
@@ -35,9 +36,9 @@ func registerInfrastructureServices(container *container.Container, config *mana
 			return nil, fmt.Errorf("failed to resolve storage: %w", err)
 		}
 
-		storageImpl, ok := storageInstance.(storage.Storage)
+		storageImpl, ok := storageInstance.(storageCore.Storage)
 		if !ok {
-			return nil, fmt.Errorf("storage is not of type storage.Storage")
+			return nil, fmt.Errorf("storage does not implement storage.Storage interface")
 		}
 
 		idManager := idgen.NewIDManager(storageImpl, parentCtx)
@@ -51,9 +52,9 @@ func registerInfrastructureServices(container *container.Container, config *mana
 			return nil, fmt.Errorf("failed to resolve storage: %w", err)
 		}
 
-		storageImpl, ok := storageInstance.(storage.Storage)
+		storageImpl, ok := storageInstance.(storageCore.Storage)
 		if !ok {
-			return nil, fmt.Errorf("storage is not of type storage.Storage")
+			return nil, fmt.Errorf("storage does not implement storage.Storage interface")
 		}
 
 		repo := repos.NewRepository(storageImpl)
@@ -158,7 +159,7 @@ func registerInfrastructureServices(container *container.Container, config *mana
 			return nil, fmt.Errorf("repository is not of type *repos.Repository")
 		}
 
-		jwtManager := managers.NewJWTManager(configImpl, repo)
+		jwtManager := managers.NewJWTManager(configImpl, repo, parentCtx)
 		return jwtManager, nil
 	})
 
@@ -204,7 +205,7 @@ func registerInfrastructureServices(container *container.Container, config *mana
 			return nil, fmt.Errorf("node repository is not of type *repos.NodeRepository")
 		}
 
-		statsManager := managers.NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo)
+		statsManager := managers.NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo, parentCtx)
 		return statsManager, nil
 	})
 
@@ -380,7 +381,7 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("jwt manager is not of type *managers.JWTManager")
 		}
 
-		authService := NewAuthServiceImpl(clientRepo, nodeRepo, jwtManager)
+		authService := NewAuthServiceImpl(clientRepo, nodeRepo, jwtManager, parentCtx)
 		return authService, nil
 	})
 
@@ -488,7 +489,7 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("node repository is not of type *repos.NodeRepository")
 		}
 
-		statsService := NewStatsServiceImpl(userRepo, clientRepo, mappingRepo, nodeRepo)
+		statsService := NewStatsServiceImpl(userRepo, clientRepo, mappingRepo, nodeRepo, parentCtx)
 		return statsService, nil
 	})
 

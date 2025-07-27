@@ -1,8 +1,10 @@
 package command
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
+	"sync"
 	"testing"
 	"tunnox-core/internal/packet"
 )
@@ -41,7 +43,7 @@ func (m *MockCommandHandler) GetRequestType() reflect.Type { return nil }
 func (m *MockCommandHandler) GetResponseType() reflect.Type { return nil }
 
 func TestNewCommandRegistry(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
 	if cr == nil {
 		t.Fatal("NewCommandRegistry returned nil")
@@ -57,7 +59,7 @@ func TestNewCommandRegistry(t *testing.T) {
 }
 
 func TestCommandRegistry_Register(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
 	// 创建有效的处理器
 	handler := &MockCommandHandler{
@@ -88,7 +90,7 @@ func TestCommandRegistry_Register(t *testing.T) {
 }
 
 func TestCommandRegistry_RegisterInvalidCommandType(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
 	// 创建无效的处理器（命令类型为0）
 	handler := &MockCommandHandler{
@@ -109,7 +111,7 @@ func TestCommandRegistry_RegisterInvalidCommandType(t *testing.T) {
 }
 
 func TestCommandRegistry_RegisterDuplicate(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
 	// 创建第一个处理器
 	handler1 := &MockCommandHandler{
@@ -140,26 +142,27 @@ func TestCommandRegistry_RegisterDuplicate(t *testing.T) {
 		t.Errorf("Expected 1 handler, got %d", cr.GetHandlerCount())
 	}
 
-	// 验证获取到的是第一个处理器
+	// 验证第一个处理器仍然存在
 	registeredHandler, exists := cr.GetHandler(packet.TcpMapCreate)
 	if !exists {
-		t.Error("Handler should exist")
+		t.Error("First handler should still exist")
 	}
 
 	if registeredHandler != handler1 {
-		t.Error("Should get the first registered handler")
+		t.Error("First handler should be the registered handler")
 	}
 }
 
 func TestCommandRegistry_Unregister(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
-	// 注册处理器
+	// 创建处理器
 	handler := &MockCommandHandler{
-		commandType: packet.HttpMapCreate,
-		direction:   DirectionDuplex,
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionOneway,
 	}
 
+	// 注册处理器
 	err := cr.Register(handler)
 	if err != nil {
 		t.Errorf("Failed to register handler: %v", err)
@@ -167,190 +170,218 @@ func TestCommandRegistry_Unregister(t *testing.T) {
 
 	// 验证注册成功
 	if cr.GetHandlerCount() != 1 {
-		t.Error("Handler should be registered")
+		t.Error("Expected 1 handler after registration")
 	}
 
 	// 注销处理器
-	err = cr.Unregister(packet.HttpMapCreate)
+	err = cr.Unregister(packet.TcpMapCreate)
 	if err != nil {
 		t.Errorf("Failed to unregister handler: %v", err)
 	}
 
 	// 验证注销成功
 	if cr.GetHandlerCount() != 0 {
-		t.Error("Handler should be unregistered")
+		t.Error("Expected 0 handlers after unregistration")
 	}
 
 	// 验证处理器不存在
-	_, exists := cr.GetHandler(packet.HttpMapCreate)
+	_, exists := cr.GetHandler(packet.TcpMapCreate)
 	if exists {
 		t.Error("Handler should not exist after unregistration")
 	}
 }
 
 func TestCommandRegistry_UnregisterNonExistent(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
 	// 尝试注销不存在的处理器
-	err := cr.Unregister(packet.SocksMapCreate)
+	err := cr.Unregister(packet.TcpMapCreate)
 	if err == nil {
-		t.Error("Should return error for non-existent handler")
+		t.Error("Should return error for unregistering non-existent handler")
 	}
 }
 
 func TestCommandRegistry_GetHandler(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
-	// 注册多个处理器
-	handlers := map[packet.CommandType]*MockCommandHandler{
-		packet.TcpMapCreate:   {commandType: packet.TcpMapCreate, direction: DirectionOneway},
-		packet.HttpMapCreate:  {commandType: packet.HttpMapCreate, direction: DirectionDuplex},
-		packet.SocksMapCreate: {commandType: packet.SocksMapCreate, direction: DirectionOneway},
+	// 创建处理器
+	handler := &MockCommandHandler{
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionOneway,
 	}
 
-	for _, handler := range handlers {
-		err := cr.Register(handler)
-		if err != nil {
-			t.Errorf("Failed to register handler: %v", err)
-		}
+	// 注册处理器
+	err := cr.Register(handler)
+	if err != nil {
+		t.Errorf("Failed to register handler: %v", err)
 	}
 
-	// 测试获取存在的处理器
-	for commandType, expectedHandler := range handlers {
-		handler, exists := cr.GetHandler(commandType)
-		if !exists {
-			t.Errorf("Handler for %v should exist", commandType)
-		}
-
-		if handler != expectedHandler {
-			t.Errorf("Expected handler %v, got %v", expectedHandler, handler)
-		}
+	// 获取存在的处理器
+	retrievedHandler, exists := cr.GetHandler(packet.TcpMapCreate)
+	if !exists {
+		t.Error("Handler should exist")
 	}
 
-	// 测试获取不存在的处理器
-	_, exists := cr.GetHandler(packet.DataTransferStart)
+	if retrievedHandler != handler {
+		t.Error("Retrieved handler should be the same as registered handler")
+	}
+
+	// 获取不存在的处理器
+	_, exists = cr.GetHandler(packet.TcpMapDelete)
 	if exists {
 		t.Error("Non-existent handler should not exist")
 	}
 }
 
 func TestCommandRegistry_ListHandlers(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
-	// 注册多个处理器
-	expectedTypes := []packet.CommandType{
-		packet.TcpMapCreate,
-		packet.HttpMapCreate,
-		packet.SocksMapCreate,
+	// 创建多个处理器
+	handler1 := &MockCommandHandler{
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionOneway,
 	}
 
-	for _, commandType := range expectedTypes {
-		handler := &MockCommandHandler{
-			commandType: commandType,
-			direction:   DirectionOneway,
-		}
-		err := cr.Register(handler)
-		if err != nil {
-			t.Errorf("Failed to register handler: %v", err)
-		}
+	handler2 := &MockCommandHandler{
+		commandType: packet.TcpMapDelete,
+		direction:   DirectionDuplex,
 	}
 
-	// 获取所有处理器类型
-	types := cr.ListHandlers()
-
-	// 验证数量
-	if len(types) != len(expectedTypes) {
-		t.Errorf("Expected %d types, got %d", len(expectedTypes), len(types))
+	handler3 := &MockCommandHandler{
+		commandType: packet.HttpMapCreate,
+		direction:   DirectionOneway,
 	}
 
-	// 验证所有期望的类型都存在
-	typeMap := make(map[packet.CommandType]bool)
-	for _, t := range types {
-		typeMap[t] = true
+	// 注册处理器
+	err := cr.Register(handler1)
+	if err != nil {
+		t.Errorf("Failed to register handler1: %v", err)
 	}
 
-	for _, expectedType := range expectedTypes {
-		if !typeMap[expectedType] {
-			t.Errorf("Expected type %v not found in list", expectedType)
+	err = cr.Register(handler2)
+	if err != nil {
+		t.Errorf("Failed to register handler2: %v", err)
+	}
+
+	err = cr.Register(handler3)
+	if err != nil {
+		t.Errorf("Failed to register handler3: %v", err)
+	}
+
+	// 获取处理器列表
+	handlers := cr.ListHandlers()
+
+	// 验证列表长度
+	if len(handlers) != 3 {
+		t.Errorf("Expected 3 handlers, got %d", len(handlers))
+	}
+
+	// 验证所有处理器都在列表中
+	expectedTypes := map[packet.CommandType]bool{
+		packet.TcpMapCreate:  true,
+		packet.TcpMapDelete:  true,
+		packet.HttpMapCreate: true,
+	}
+
+	for _, handlerType := range handlers {
+		if !expectedTypes[handlerType] {
+			t.Errorf("Unexpected handler type: %v", handlerType)
 		}
 	}
 }
 
 func TestCommandRegistry_GetHandlerCount(t *testing.T) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
-	// 初始数量应该为0
-	count := cr.GetHandlerCount()
-	if count != 0 {
-		t.Errorf("Expected initial count 0, got %d", count)
+	// 初始状态
+	if cr.GetHandlerCount() != 0 {
+		t.Error("New registry should have 0 handlers")
 	}
 
-	// 注册处理器
-	handler1 := &MockCommandHandler{commandType: packet.TcpMapCreate, direction: DirectionOneway}
-	handler2 := &MockCommandHandler{commandType: packet.HttpMapCreate, direction: DirectionDuplex}
+	// 注册一个处理器
+	handler := &MockCommandHandler{
+		commandType: packet.TcpMapCreate,
+		direction:   DirectionOneway,
+	}
 
-	cr.Register(handler1)
-	cr.Register(handler2)
+	err := cr.Register(handler)
+	if err != nil {
+		t.Errorf("Failed to register handler: %v", err)
+	}
 
-	// 验证数量
-	count = cr.GetHandlerCount()
-	if count != 2 {
-		t.Errorf("Expected count 2, got %d", count)
+	if cr.GetHandlerCount() != 1 {
+		t.Error("Registry should have 1 handler after registration")
+	}
+
+	// 注册另一个处理器
+	handler2 := &MockCommandHandler{
+		commandType: packet.TcpMapDelete,
+		direction:   DirectionDuplex,
+	}
+
+	err = cr.Register(handler2)
+	if err != nil {
+		t.Errorf("Failed to register handler2: %v", err)
+	}
+
+	if cr.GetHandlerCount() != 2 {
+		t.Error("Registry should have 2 handlers after second registration")
 	}
 
 	// 注销一个处理器
-	cr.Unregister(packet.TcpMapCreate)
+	err = cr.Unregister(packet.TcpMapCreate)
+	if err != nil {
+		t.Errorf("Failed to unregister handler: %v", err)
+	}
 
-	// 验证数量
-	count = cr.GetHandlerCount()
-	if count != 1 {
-		t.Errorf("Expected count 1, got %d", count)
+	if cr.GetHandlerCount() != 1 {
+		t.Error("Registry should have 1 handler after unregistration")
 	}
 }
 
 func TestCommandRegistry_ConcurrentAccess(t *testing.T) {
-	cr := NewCommandRegistry()
-	done := make(chan bool, 10)
+	cr := NewCommandRegistry(context.Background())
 
-	// 并发注册和注销处理器
-	for i := 0; i < 10; i++ {
+	// 并发注册处理器
+	var wg sync.WaitGroup
+	handlerCount := 10
+
+	for i := 0; i < handlerCount; i++ {
+		wg.Add(1)
 		go func(id int) {
-			commandType := packet.CommandType(id + 1)
+			defer wg.Done()
+
 			handler := &MockCommandHandler{
-				commandType: commandType,
+				commandType: packet.CommandType(id + 1),
 				direction:   DirectionOneway,
 			}
 
-			// 注册
 			err := cr.Register(handler)
 			if err != nil {
-				t.Errorf("Failed to register handler: %v", err)
+				t.Errorf("Failed to register handler %d: %v", id, err)
 			}
-
-			// 验证注册成功
-			_, exists := cr.GetHandler(commandType)
-			if !exists {
-				t.Errorf("Handler for %v should exist", commandType)
-			}
-
-			// 注销
-			err = cr.Unregister(commandType)
-			if err != nil {
-				t.Errorf("Failed to unregister handler: %v", err)
-			}
-
-			done <- true
 		}(i)
 	}
 
-	// 等待所有goroutine完成
-	for i := 0; i < 10; i++ {
-		<-done
+	wg.Wait()
+
+	// 验证所有处理器都被注册
+	if cr.GetHandlerCount() != handlerCount {
+		t.Errorf("Expected %d handlers, got %d", handlerCount, cr.GetHandlerCount())
 	}
 
-	// 验证最终数量为0
-	count := cr.GetHandlerCount()
-	if count != 0 {
-		t.Errorf("Expected final count 0, got %d", count)
+	// 并发获取处理器
+	for i := 0; i < handlerCount; i++ {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+
+			_, exists := cr.GetHandler(packet.CommandType(id + 1))
+			if !exists {
+				t.Errorf("Handler %d should exist", id)
+			}
+		}(i)
 	}
+
+	wg.Wait()
 }

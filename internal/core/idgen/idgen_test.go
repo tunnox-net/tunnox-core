@@ -1,11 +1,10 @@
-package generators
+package idgen
 
 import (
 	"context"
 	"strings"
 	"testing"
-	"time"
-	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/storage"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,7 +12,7 @@ import (
 
 func TestIDManager_Basic(t *testing.T) {
 	ctx := context.Background()
-	storage := storages.NewMemoryStorage(ctx)
+	storage := storage.NewMemoryStorage(ctx)
 	defer storage.Close()
 
 	manager := NewIDManager(storage, ctx)
@@ -44,20 +43,14 @@ func TestIDManager_Basic(t *testing.T) {
 		nodeID, err := manager.GenerateNodeID()
 		require.NoError(t, err)
 
-		// 验证格式：node_timestamp_randomString
+		// 验证格式：node_randomString
 		assert.True(t, strings.HasPrefix(nodeID, "node_"))
 		parts := strings.Split(nodeID, "_")
-		assert.Len(t, parts, 3)
+		assert.Len(t, parts, 2)
 		assert.Equal(t, "node", parts[0])
 
-		// 验证时间戳部分（13位数字）
-		assert.Len(t, parts[1], 13)
-		timestamp, err := time.Parse("2006-01-02T15:04:05.000Z", time.UnixMilli(0).Format("2006-01-02T15:04:05.000Z"))
-		require.NoError(t, err)
-		assert.True(t, timestamp.Before(time.Now().Add(time.Second)))
-
 		// 验证随机部分（8位）
-		assert.Len(t, parts[2], 8)
+		assert.Len(t, parts[1], 8)
 
 		// 检查唯一性
 		used, err := manager.IsNodeIDUsed(nodeID)
@@ -86,12 +79,11 @@ func TestIDManager_Basic(t *testing.T) {
 		// 连接ID应该不同
 		assert.NotEqual(t, connID1, connID2)
 
-		// 验证格式：conn_timestamp_counter
+		// 验证格式：conn_randomString
 		parts1 := strings.Split(connID1, "_")
-		assert.Len(t, parts1, 3)
+		assert.Len(t, parts1, 2)
 		assert.Equal(t, "conn", parts1[0])
-		assert.Len(t, parts1[1], 13)       // 时间戳
-		assert.True(t, len(parts1[2]) > 0) // 计数器
+		assert.Len(t, parts1[1], 8) // 随机字符串
 
 		// 连接ID不需要释放
 		err = manager.ReleaseConnectionID(connID1)
@@ -102,17 +94,14 @@ func TestIDManager_Basic(t *testing.T) {
 		portMappingID, err := manager.GeneratePortMappingID()
 		require.NoError(t, err)
 
-		// 验证格式：pmap_timestamp_randomString
+		// 验证格式：pmap_randomString
 		assert.True(t, strings.HasPrefix(portMappingID, "pmap_"))
 		parts := strings.Split(portMappingID, "_")
-		assert.Len(t, parts, 3)
+		assert.Len(t, parts, 2)
 		assert.Equal(t, "pmap", parts[0])
 
-		// 验证时间戳部分（13位数字）
-		assert.Len(t, parts[1], 13)
-
 		// 验证随机部分（8位）
-		assert.Len(t, parts[2], 8)
+		assert.Len(t, parts[1], 8)
 
 		// 检查唯一性
 		used, err := manager.IsPortMappingIDUsed(portMappingID)
@@ -133,17 +122,14 @@ func TestIDManager_Basic(t *testing.T) {
 		tunnelID, err := manager.GenerateTunnelID()
 		require.NoError(t, err)
 
-		// 验证格式：tun_timestamp_randomString
+		// 验证格式：tun_randomString
 		assert.True(t, strings.HasPrefix(tunnelID, "tun_"))
 		parts := strings.Split(tunnelID, "_")
-		assert.Len(t, parts, 3)
+		assert.Len(t, parts, 2)
 		assert.Equal(t, "tun", parts[0])
 
-		// 验证时间戳部分（13位数字）
-		assert.Len(t, parts[1], 13)
-
 		// 验证随机部分（8位）
-		assert.Len(t, parts[2], 8)
+		assert.Len(t, parts[1], 8)
 
 		// 检查唯一性
 		used, err := manager.IsTunnelIDUsed(tunnelID)
@@ -163,7 +149,7 @@ func TestIDManager_Basic(t *testing.T) {
 
 func TestIDManager_Uniqueness(t *testing.T) {
 	ctx := context.Background()
-	storage := storages.NewMemoryStorage(ctx)
+	storage := storage.NewMemoryStorage(ctx)
 	defer storage.Close()
 
 	manager := NewIDManager(storage, ctx)
@@ -242,7 +228,7 @@ func TestIDManager_Uniqueness(t *testing.T) {
 
 func TestIDManager_Dispose(t *testing.T) {
 	ctx := context.Background()
-	storage := storages.NewMemoryStorage(ctx)
+	storage := storage.NewMemoryStorage(ctx)
 	defer storage.Close()
 
 	manager := NewIDManager(storage, ctx)
@@ -264,7 +250,7 @@ func TestIDManager_Dispose(t *testing.T) {
 
 func TestIDManager_Concurrent(t *testing.T) {
 	ctx := context.Background()
-	storage := storages.NewMemoryStorage(ctx)
+	storage := storage.NewMemoryStorage(ctx)
 	defer storage.Close()
 
 	manager := NewIDManager(storage, ctx)
@@ -325,7 +311,7 @@ func TestIDManager_Concurrent(t *testing.T) {
 
 func TestIDManager_StoragePersistence(t *testing.T) {
 	ctx := context.Background()
-	storage := storages.NewMemoryStorage(ctx)
+	storage := storage.NewMemoryStorage(ctx)
 	defer storage.Close()
 
 	// 第一个管理器生成ID
@@ -351,7 +337,7 @@ func TestIDManager_StoragePersistence(t *testing.T) {
 
 func TestIDManager_FormatConsistency(t *testing.T) {
 	ctx := context.Background()
-	storage := storages.NewMemoryStorage(ctx)
+	storage := storage.NewMemoryStorage(ctx)
 	defer storage.Close()
 
 	manager := NewIDManager(storage, ctx)
@@ -361,39 +347,32 @@ func TestIDManager_FormatConsistency(t *testing.T) {
 		nodeID, err := manager.GenerateNodeID()
 		require.NoError(t, err)
 
-		// 验证格式：node_timestamp_randomString
+		// 验证格式：node_randomString
 		parts := strings.Split(nodeID, "_")
-		assert.Len(t, parts, 3)
+		assert.Len(t, parts, 2)
 		assert.Equal(t, "node", parts[0])
-		assert.Len(t, parts[1], 13) // 时间戳
-		assert.Len(t, parts[2], 8)  // 随机字符串
-
-		// 验证时间戳是数字
-		_, err = time.Parse("2006-01-02T15:04:05.000Z", time.UnixMilli(0).Format("2006-01-02T15:04:05.000Z"))
-		assert.NoError(t, err)
+		assert.Len(t, parts[1], 8) // 随机字符串
 	})
 
 	t.Run("Port Mapping ID Format", func(t *testing.T) {
 		portMappingID, err := manager.GeneratePortMappingID()
 		require.NoError(t, err)
 
-		// 验证格式：pmap_timestamp_randomString
+		// 验证格式：pmap_randomString
 		parts := strings.Split(portMappingID, "_")
-		assert.Len(t, parts, 3)
+		assert.Len(t, parts, 2)
 		assert.Equal(t, "pmap", parts[0])
-		assert.Len(t, parts[1], 13) // 时间戳
-		assert.Len(t, parts[2], 8)  // 随机字符串
+		assert.Len(t, parts[1], 8) // 随机字符串
 	})
 
 	t.Run("Tunnel ID Format", func(t *testing.T) {
 		tunnelID, err := manager.GenerateTunnelID()
 		require.NoError(t, err)
 
-		// 验证格式：tun_timestamp_randomString
+		// 验证格式：tun_randomString
 		parts := strings.Split(tunnelID, "_")
-		assert.Len(t, parts, 3)
+		assert.Len(t, parts, 2)
 		assert.Equal(t, "tun", parts[0])
-		assert.Len(t, parts[1], 13) // 时间戳
-		assert.Len(t, parts[2], 8)  // 随机字符串
+		assert.Len(t, parts[1], 8) // 随机字符串
 	})
 }

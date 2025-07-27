@@ -13,7 +13,7 @@ import (
 
 // ConfigManager 配置管理器
 type ConfigManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	storage  storage.Storage
 	config   *ControlConfig
 	watchers []ConfigWatcher
@@ -26,14 +26,13 @@ type ConfigWatcher interface {
 }
 
 // NewConfigManager 创建新的配置管理器
-func NewConfigManager(storage storage.Storage, config *ControlConfig, ctx context.Context) *ConfigManager {
+func NewConfigManager(storage storage.Storage, config *ControlConfig, parentCtx context.Context) *ConfigManager {
 	manager := &ConfigManager{
-		ResourceBase: dispose.NewResourceBase("ConfigManager"),
-		storage:      storage,
-		config:       config,
-		watchers:     make([]ConfigWatcher, 0),
+		ManagerBase: dispose.NewManager("ConfigManager", parentCtx),
+		storage:     storage,
+		config:      config,
+		watchers:    make([]ConfigWatcher, 0),
 	}
-	manager.Initialize(ctx)
 	return manager
 }
 

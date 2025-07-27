@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 	"tunnox-core/internal/packet"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestStreamFactory_BasicCreation(t *testing.T) {
@@ -52,11 +53,11 @@ func TestConfigurableStreamFactory(t *testing.T) {
 	defer cancel()
 
 	// 创建配置
-	config := StreamFactoryConfig{
-		DefaultCompression: true,
-		DefaultRateLimit:   1024,
-		BufferSize:         4096,
-		EnableMemoryPool:   true,
+	config := &StreamFactoryConfig{
+		EnableCompression: true,
+		RateLimitBytes:    1024,
+		BufferSize:        4096,
+		EnableRateLimit:   true,
 	}
 
 	// 创建可配置流工厂
@@ -65,10 +66,10 @@ func TestConfigurableStreamFactory(t *testing.T) {
 
 	// 验证配置
 	retrievedConfig := factory.GetConfig()
-	assert.Equal(t, config.DefaultCompression, retrievedConfig.DefaultCompression)
-	assert.Equal(t, config.DefaultRateLimit, retrievedConfig.DefaultRateLimit)
+	assert.Equal(t, config.EnableCompression, retrievedConfig.EnableCompression)
+	assert.Equal(t, config.RateLimitBytes, retrievedConfig.RateLimitBytes)
 	assert.Equal(t, config.BufferSize, retrievedConfig.BufferSize)
-	assert.Equal(t, config.EnableMemoryPool, retrievedConfig.EnableMemoryPool)
+	assert.Equal(t, config.EnableRateLimit, retrievedConfig.EnableRateLimit)
 }
 
 func TestStreamManager_BasicOperations(t *testing.T) {

@@ -99,6 +99,9 @@ func (rm *ResourceManager) DisposeAll() *DisposeResult {
 
 	// 保存当前资源列表的副本
 	resources := make(map[string]Disposable)
+	for name, resource := range rm.resources {
+		resources[name] = resource
+	}
 	order := make([]string, len(rm.order))
 	copy(order, rm.order)
 

@@ -1,6 +1,7 @@
 package command
 
 import (
+	"context"
 	"testing"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
@@ -8,7 +9,7 @@ import (
 
 // BenchmarkRPCManager_RegisterRequest 基准测试RPC管理器注册请求
 func BenchmarkRPCManager_RegisterRequest(b *testing.B) {
-	rm := NewRPCManager()
+	rm := NewRPCManager(context.Background())
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -20,7 +21,7 @@ func BenchmarkRPCManager_RegisterRequest(b *testing.B) {
 
 // BenchmarkRPCManager_GetRequest 基准测试RPC管理器获取请求
 func BenchmarkRPCManager_GetRequest(b *testing.B) {
-	rm := NewRPCManager()
+	rm := NewRPCManager(context.Background())
 
 	// 预先注册一些请求
 	for i := 0; i < 1000; i++ {
@@ -38,7 +39,7 @@ func BenchmarkRPCManager_GetRequest(b *testing.B) {
 
 // BenchmarkCommandRegistry_Register 基准测试命令注册器注册
 func BenchmarkCommandRegistry_Register(b *testing.B) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -52,7 +53,7 @@ func BenchmarkCommandRegistry_Register(b *testing.B) {
 
 // BenchmarkCommandRegistry_GetHandler 基准测试命令注册器获取处理器
 func BenchmarkCommandRegistry_GetHandler(b *testing.B) {
-	cr := NewCommandRegistry()
+	cr := NewCommandRegistry(context.Background())
 
 	// 预先注册一些处理器
 	for i := 0; i < 100; i++ {
@@ -72,8 +73,8 @@ func BenchmarkCommandRegistry_GetHandler(b *testing.B) {
 
 // BenchmarkCommandExecutor_ExecuteOneway 基准测试单向命令执行
 func BenchmarkCommandExecutor_ExecuteOneway(b *testing.B) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 注册单向处理器
 	handler := &simpleMockHandler{
@@ -108,8 +109,8 @@ func BenchmarkCommandExecutor_ExecuteOneway(b *testing.B) {
 
 // BenchmarkCommandExecutor_ExecuteDuplex 基准测试双工命令执行
 func BenchmarkCommandExecutor_ExecuteDuplex(b *testing.B) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 注册双工处理器
 	handler := &simpleMockHandler{
@@ -144,8 +145,8 @@ func BenchmarkCommandExecutor_ExecuteDuplex(b *testing.B) {
 
 // BenchmarkCommandExecutor_ExecuteWithMiddleware 基准测试带中间件的命令执行
 func BenchmarkCommandExecutor_ExecuteWithMiddleware(b *testing.B) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 注册处理器
 	handler := &simpleMockHandler{
@@ -189,8 +190,8 @@ func BenchmarkCommandExecutor_ExecuteWithMiddleware(b *testing.B) {
 
 // BenchmarkCommandExecutor_ExecuteMultipleMiddleware 基准测试多中间件命令执行
 func BenchmarkCommandExecutor_ExecuteMultipleMiddleware(b *testing.B) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 注册处理器
 	handler := &simpleMockHandler{
@@ -236,8 +237,8 @@ func BenchmarkCommandExecutor_ExecuteMultipleMiddleware(b *testing.B) {
 
 // BenchmarkConcurrentExecution 基准测试并发执行
 func BenchmarkConcurrentExecution(b *testing.B) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 注册处理器
 	handler := &simpleMockHandler{
@@ -274,8 +275,8 @@ func BenchmarkConcurrentExecution(b *testing.B) {
 
 // BenchmarkRequestIDGeneration 基准测试请求ID生成
 func BenchmarkRequestIDGeneration(b *testing.B) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -285,8 +286,8 @@ func BenchmarkRequestIDGeneration(b *testing.B) {
 
 // BenchmarkContextCreation 基准测试上下文创建
 func BenchmarkContextCreation(b *testing.B) {
-	registry := NewCommandRegistry()
-	executor := NewCommandExecutor(registry)
+	registry := NewCommandRegistry(context.Background())
+	executor := NewCommandExecutor(registry, context.Background())
 
 	// 创建流数据包
 	streamPacket := &types.StreamPacket{

@@ -8,6 +8,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	storageCore "tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
 
@@ -28,7 +29,7 @@ type CloudControlAPI struct {
 }
 
 // NewCloudControlAPI 创建新的云控API
-func NewCloudControlAPI(config *managers.ControlConfig, storage interface{}, parentCtx context.Context) (*CloudControlAPI, error) {
+func NewCloudControlAPI(config *managers.ControlConfig, storage storageCore.Storage, parentCtx context.Context) (*CloudControlAPI, error) {
 	// 创建依赖注入容器
 	container := container.NewContainer(parentCtx)
 

@@ -13,7 +13,7 @@ import (
 
 // CleanupManager 清理管理器
 type CleanupManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	storage storage.Storage
 	lock    distributed.DistributedLock
 	ticker  *time.Ticker
@@ -32,15 +32,14 @@ type CleanupTask struct {
 }
 
 // NewCleanupManager 创建新的清理管理器
-func NewCleanupManager(storage storage.Storage, lock distributed.DistributedLock, ctx context.Context) *CleanupManager {
+func NewCleanupManager(storage storage.Storage, lock distributed.DistributedLock, parentCtx context.Context) *CleanupManager {
 	manager := &CleanupManager{
-		ResourceBase: dispose.NewResourceBase("CleanupManager"),
-		storage:      storage,
-		lock:         lock,
-		ticker:       time.NewTicker(5 * time.Minute), // 每5分钟清理一次
-		done:         make(chan bool),
+		ManagerBase: dispose.NewManager("CleanupManager", parentCtx),
+		storage:     storage,
+		lock:        lock,
+		ticker:      time.NewTicker(5 * time.Minute), // 每5分钟清理一次
+		done:        make(chan bool),
 	}
-	manager.Initialize(ctx)
 	return manager
 }
 

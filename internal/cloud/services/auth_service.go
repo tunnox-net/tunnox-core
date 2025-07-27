@@ -13,7 +13,7 @@ import (
 
 // AuthServiceImpl 认证服务实现
 type AuthServiceImpl struct {
-	*dispose.ResourceBase
+	*dispose.ServiceBase
 	clientRepo *repos.ClientRepository
 	nodeRepo   *repos.NodeRepository
 	jwtManager *managers.JWTManager
@@ -21,14 +21,13 @@ type AuthServiceImpl struct {
 
 // NewAuthServiceImpl 创建新的认证服务实现
 func NewAuthServiceImpl(clientRepo *repos.ClientRepository, nodeRepo *repos.NodeRepository,
-	jwtManager *managers.JWTManager) *AuthServiceImpl {
+	jwtManager *managers.JWTManager, parentCtx context.Context) *AuthServiceImpl {
 	service := &AuthServiceImpl{
-		ResourceBase: dispose.NewResourceBase("AuthServiceImpl"),
-		clientRepo:   clientRepo,
-		nodeRepo:     nodeRepo,
-		jwtManager:   jwtManager,
+		ServiceBase: dispose.NewService("AuthServiceImpl", parentCtx),
+		clientRepo:  clientRepo,
+		nodeRepo:    nodeRepo,
+		jwtManager:  jwtManager,
 	}
-	service.Initialize(context.Background())
 	return service
 }
 

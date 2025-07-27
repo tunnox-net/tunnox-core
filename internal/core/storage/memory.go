@@ -16,7 +16,7 @@ type storageItem struct {
 
 // MemoryStorage 内存存储实现
 type MemoryStorage struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	data           map[string]*storageItem
 	mu             sync.RWMutex
 	cleanupTicker  *time.Ticker
@@ -27,11 +27,10 @@ type MemoryStorage struct {
 // NewMemoryStorage 创建内存存储
 func NewMemoryStorage(parentCtx context.Context) Storage {
 	storage := &MemoryStorage{
-		ResourceBase: dispose.NewResourceBase("MemoryStorage"),
-		data:         make(map[string]*storageItem),
-		cleanupStop:  make(chan struct{}),
+		ManagerBase: dispose.NewManager("MemoryStorage", parentCtx),
+		data:        make(map[string]*storageItem),
+		cleanupStop: make(chan struct{}),
 	}
-	storage.Initialize(parentCtx)
 	return storage
 }
 

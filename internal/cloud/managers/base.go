@@ -71,14 +71,14 @@ func NewCloudControl(config *ControlConfig, storage storage.Storage) *CloudContr
 		mappingRepo:       mappingRepo,
 		nodeRepo:          nodeRepo,
 		connRepo:          connRepo,
-		jwtManager:        NewJWTManager(config, repo),
+		jwtManager:        NewJWTManager(config, repo, ctx),
 		configManager:     NewConfigManager(storage, config, ctx),
 		cleanupManager:    NewCleanupManager(storage, lock, ctx),
-		statsManager:      NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo),
-		anonymousManager:  NewAnonymousManager(clientRepo, mappingRepo, idManager),
-		nodeManager:       NewNodeManager(nodeRepo),
-		searchManager:     NewSearchManager(userRepo, clientRepo, mappingRepo),
-		connectionManager: NewConnectionManager(connRepo, idManager),
+		statsManager:      NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo, ctx),
+		anonymousManager:  NewAnonymousManager(clientRepo, mappingRepo, idManager, ctx),
+		nodeManager:       NewNodeManager(nodeRepo, ctx),
+		searchManager:     NewSearchManager(userRepo, clientRepo, mappingRepo, ctx),
+		connectionManager: NewConnectionManager(connRepo, idManager, ctx),
 		lock:              lock,
 		cleanupTicker:     time.NewTicker(constants.DefaultCleanupInterval),
 		done:              make(chan bool),
@@ -721,8 +721,13 @@ func (b *CloudControl) Close() error {
 		b.cleanupTicker.Stop()
 	}
 
-	// 关闭 done 通道
-	close(b.done)
+	// 安全关闭 done 通道
+	select {
+	case <-b.done:
+		// 通道已经关闭，不需要再次关闭
+	default:
+		close(b.done)
+	}
 
 	// 调用 ResourceBase 的清理逻辑
 	result := b.ResourceBase.Dispose.Close()

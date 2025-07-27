@@ -12,17 +12,16 @@ import (
 
 // TokenCacheManager Token缓存管理器
 type TokenCacheManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	storage storage.Storage
 }
 
 // NewTokenCacheManager 创建新的Token缓存管理器
-func NewTokenCacheManager(storage storage.Storage) *TokenCacheManager {
+func NewTokenCacheManager(storage storage.Storage, parentCtx context.Context) *TokenCacheManager {
 	manager := &TokenCacheManager{
-		ResourceBase: dispose.NewResourceBase("TokenCacheManager"),
-		storage:      storage,
+		ManagerBase: dispose.NewManager("TokenCacheManager", parentCtx),
+		storage:     storage,
 	}
-	manager.Initialize(context.Background())
 	return manager
 }
 

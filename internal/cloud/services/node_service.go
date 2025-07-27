@@ -13,7 +13,7 @@ import (
 
 // NodeServiceImpl 节点服务实现
 type NodeServiceImpl struct {
-	*dispose.ResourceBase
+	*dispose.ServiceBase
 	nodeRepo  *repos.NodeRepository
 	idManager *idgen.IDManager
 }
@@ -21,11 +21,10 @@ type NodeServiceImpl struct {
 // NewNodeService 创建节点服务
 func NewNodeService(nodeRepo *repos.NodeRepository, idManager *idgen.IDManager, parentCtx context.Context) NodeService {
 	service := &NodeServiceImpl{
-		ResourceBase: dispose.NewResourceBase("NodeService"),
-		nodeRepo:     nodeRepo,
-		idManager:    idManager,
+		ServiceBase: dispose.NewService("NodeService", parentCtx),
+		nodeRepo:    nodeRepo,
+		idManager:   idManager,
 	}
-	service.Initialize(parentCtx)
 	return service
 }
 

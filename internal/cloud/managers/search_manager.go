@@ -11,21 +11,20 @@ import (
 
 // SearchManager 搜索管理器
 type SearchManager struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	userRepo    *repos.UserRepository
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
 }
 
 // NewSearchManager 创建新的搜索管理器
-func NewSearchManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo) *SearchManager {
+func NewSearchManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, parentCtx context.Context) *SearchManager {
 	manager := &SearchManager{
-		ResourceBase: dispose.NewResourceBase("SearchManager"),
-		userRepo:     userRepo,
-		clientRepo:   clientRepo,
-		mappingRepo:  mappingRepo,
+		ManagerBase: dispose.NewManager("SearchManager", parentCtx),
+		userRepo:    userRepo,
+		clientRepo:  clientRepo,
+		mappingRepo: mappingRepo,
 	}
-	manager.Initialize(context.Background())
 	return manager
 }
 

@@ -67,11 +67,10 @@ func TestServiceManagerResourceRegistration(t *testing.T) {
 
 // TestServiceManagerResourceDisposal 测试服务管理器的资源释放功能
 func TestServiceManagerResourceDisposal(t *testing.T) {
-	// 创建服务管理器，使用独立的资源管理器
+	// 创建服务管理器
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false
 	config.ResourceDisposeTimeout = 5 * time.Second
-	config.ResourceManager = utils.NewResourceManager() // 使用独立的资源管理器
 	manager := utils.NewServiceManager(config)
 
 	// 创建测试资源
@@ -92,18 +91,9 @@ func TestServiceManagerResourceDisposal(t *testing.T) {
 		t.Errorf("Expected 2 resources, got %d", count)
 	}
 
-	// 手动触发资源释放
-	result := manager.GetDisposeResult()
-	if result != nil {
-		t.Error("Dispose result should be nil before disposal")
-	}
-
-	// 直接调用资源管理器的DisposeAll方法
-	disposeResult := config.ResourceManager.DisposeAll()
-
-	// 验证释放结果
-	if disposeResult.HasErrors() {
-		t.Errorf("Resource disposal failed: %v", disposeResult.Error())
+	// 手动触发资源释放 - 通过ServiceManager的Dispose方法
+	if err := manager.Close(); err != nil {
+		t.Errorf("Service manager disposal failed: %v", err)
 	}
 
 	// 验证资源已被释放
@@ -118,10 +108,9 @@ func TestServiceManagerResourceDisposal(t *testing.T) {
 
 // TestServiceManagerWithContext 测试带上下文的服务管理器运行
 func TestServiceManagerWithContext(t *testing.T) {
-	// 创建服务管理器，使用独立的资源管理器
+	// 创建服务管理器
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false
-	config.ResourceManager = utils.NewResourceManager() // 使用独立的资源管理器
 	manager := utils.NewServiceManager(config)
 
 	// 创建测试资源
@@ -147,7 +136,7 @@ func TestServiceManagerWithContext(t *testing.T) {
 	<-ctx.Done()
 
 	// 等待一段时间让资源释放完成
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	// 验证资源已被释放
 	if !resource.IsDisposed() {

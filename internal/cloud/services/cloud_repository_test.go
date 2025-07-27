@@ -7,7 +7,7 @@ import (
 	"time"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
-	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/storage"
 
 	"tunnox-core/internal/utils"
 
@@ -16,7 +16,7 @@ import (
 )
 
 func TestUserRepository_CreateUser(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	userRepo := repos.NewUserRepository(repo)
 
 	user := &models.User{
@@ -64,7 +64,7 @@ func TestUserRepository_CreateUser(t *testing.T) {
 }
 
 func TestUserRepository_GetUser(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	userRepo := repos.NewUserRepository(repo)
 
 	user := &models.User{
@@ -91,7 +91,7 @@ func TestUserRepository_GetUser(t *testing.T) {
 }
 
 func TestUserRepository_UpdateUser(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	userRepo := repos.NewUserRepository(repo)
 
 	user := &models.User{
@@ -117,7 +117,7 @@ func TestUserRepository_UpdateUser(t *testing.T) {
 }
 
 func TestUserRepository_DeleteUser(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	userRepo := repos.NewUserRepository(repo)
 
 	user := &models.User{
@@ -139,7 +139,7 @@ func TestUserRepository_DeleteUser(t *testing.T) {
 }
 
 func TestUserRepository_ListUsers(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	userRepo := repos.NewUserRepository(repo)
 
 	user1 := &models.User{
@@ -182,7 +182,7 @@ func TestUserRepository_ListUsers(t *testing.T) {
 }
 
 func TestClientRepository_CreateClient(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	clientRepo := repos.NewClientRepository(repo)
 
 	clientID := int64(12345678) // 使用 int64 类型的 ClientID
@@ -233,7 +233,7 @@ func TestClientRepository_CreateClient(t *testing.T) {
 }
 
 func TestClientRepository_GetClient(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	clientRepo := repos.NewClientRepository(repo)
 
 	clientID := int64(12345678)
@@ -262,7 +262,7 @@ func TestClientRepository_GetClient(t *testing.T) {
 }
 
 func TestClientRepository_UpdateClient(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	clientRepo := repos.NewClientRepository(repo)
 
 	clientID := int64(12345678)
@@ -292,7 +292,7 @@ func TestClientRepository_UpdateClient(t *testing.T) {
 }
 
 func TestClientRepository_DeleteClient(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	clientRepo := repos.NewClientRepository(repo)
 
 	clientID := int64(12345678)
@@ -316,7 +316,7 @@ func TestClientRepository_DeleteClient(t *testing.T) {
 }
 
 func TestClientRepository_ListClients(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	clientRepo := repos.NewClientRepository(repo)
 
 	clientID1 := int64(12345678)
@@ -388,7 +388,7 @@ func TestClientRepository_ListClients(t *testing.T) {
 }
 
 func TestPortMappingRepo_CreateMapping(t *testing.T) {
-	storage := storages.NewMemoryStorage(context.Background())
+	storage := storage.NewMemoryStorage(context.Background())
 	repo := repos.NewRepository(storage)
 	mappingRepo := repos.NewPortMappingRepo(repo)
 
@@ -422,7 +422,7 @@ func TestPortMappingRepo_CreateMapping(t *testing.T) {
 }
 
 func TestPortMappingRepo_GetMapping(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	mappingRepo := repos.NewPortMappingRepo(repo)
 
 	mappingID, err := utils.GenerateRandomString(12)
@@ -456,7 +456,7 @@ func TestPortMappingRepo_GetMapping(t *testing.T) {
 }
 
 func TestPortMappingRepo_UpdateMapping(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	mappingRepo := repos.NewPortMappingRepo(repo)
 
 	mappingID, err := utils.GenerateRandomString(12)
@@ -492,7 +492,7 @@ func TestPortMappingRepo_UpdateMapping(t *testing.T) {
 }
 
 func TestPortMappingRepo_DeleteMapping(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	mappingRepo := repos.NewPortMappingRepo(repo)
 
 	mappingID, err := utils.GenerateRandomString(12)
@@ -523,7 +523,7 @@ func TestPortMappingRepo_DeleteMapping(t *testing.T) {
 }
 
 func TestPortMappingRepo_ListMappings(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	mappingRepo := repos.NewPortMappingRepo(repo)
 
 	mappingID1, err := utils.GenerateRandomString(12)
@@ -628,7 +628,7 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 }
 
 func TestNodeRepository_CreateNode(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	nodeRepo := repos.NewNodeRepository(repo)
 
 	node := &models.Node{
@@ -663,7 +663,7 @@ func TestNodeRepository_CreateNode(t *testing.T) {
 }
 
 func TestNodeRepository_GetNode(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	nodeRepo := repos.NewNodeRepository(repo)
 
 	node := &models.Node{
@@ -689,7 +689,7 @@ func TestNodeRepository_GetNode(t *testing.T) {
 }
 
 func TestNodeRepository_UpdateNode(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	nodeRepo := repos.NewNodeRepository(repo)
 
 	node := &models.Node{
@@ -718,7 +718,7 @@ func TestNodeRepository_UpdateNode(t *testing.T) {
 }
 
 func TestNodeRepository_DeleteNode(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	nodeRepo := repos.NewNodeRepository(repo)
 
 	node := &models.Node{
@@ -741,7 +741,7 @@ func TestNodeRepository_DeleteNode(t *testing.T) {
 }
 
 func TestNodeRepository_ListNodes(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	nodeRepo := repos.NewNodeRepository(repo)
 
 	node1 := &models.Node{
@@ -784,7 +784,7 @@ func TestNodeRepository_ListNodes(t *testing.T) {
 }
 
 func TestRepository_KeyPrefixes(t *testing.T) {
-	storage := storages.NewMemoryStorage(context.Background())
+	storage := storage.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	repo := repos.NewRepository(storage)

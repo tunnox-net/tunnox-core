@@ -391,6 +391,11 @@ func (sm *ServiceManager) GetContext() context.Context {
 	return sm.ctx
 }
 
+// Close 关闭服务管理器，返回 error 类型以兼容测试
+func (sm *ServiceManager) Close() error {
+	return sm.CloseWithError()
+}
+
 // onClose 资源清理回调
 func (sm *ServiceManager) onClose() error {
 	Infof("Cleaning up service manager resources...")
@@ -398,6 +403,12 @@ func (sm *ServiceManager) onClose() error {
 	// 停止所有服务
 	if err := sm.StopAllServices(); err != nil {
 		Errorf("Failed to stop all services: %v", err)
+	}
+
+	// 释放所有资源
+	sm.disposeResult = sm.resourceMgr.DisposeAll()
+	if sm.disposeResult.HasErrors() {
+		Errorf("Resource disposal errors: %v", sm.disposeResult.Error())
 	}
 
 	// 关闭上下文

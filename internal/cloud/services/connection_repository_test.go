@@ -7,7 +7,7 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
-	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/storage"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,7 +15,7 @@ import (
 
 func TestConnectionRepository(t *testing.T) {
 	t.Run("CreateConnection_and_GetConnection", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(context.Background())
+		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
 		connRepo := repos.NewConnectionRepo(repo)
 
@@ -43,7 +43,7 @@ func TestConnectionRepository(t *testing.T) {
 	})
 
 	t.Run("UpdateConnection", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(context.Background())
+		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
 		connRepo := repos.NewConnectionRepo(repo)
 
@@ -75,7 +75,7 @@ func TestConnectionRepository(t *testing.T) {
 	})
 
 	t.Run("DeleteConnection", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(context.Background())
+		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
 		connRepo := repos.NewConnectionRepo(repo)
 
@@ -100,7 +100,7 @@ func TestConnectionRepository(t *testing.T) {
 	})
 
 	t.Run("ListConnections", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(context.Background())
+		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
 		connRepo := repos.NewConnectionRepo(repo)
 
@@ -141,7 +141,7 @@ func TestConnectionRepository(t *testing.T) {
 	})
 
 	t.Run("ListClientConns", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(context.Background())
+		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
 		connRepo := repos.NewConnectionRepo(repo)
 
@@ -181,7 +181,7 @@ func TestConnectionRepository(t *testing.T) {
 	})
 
 	t.Run("UpdateStats", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(context.Background())
+		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
 		connRepo := repos.NewConnectionRepo(repo)
 
@@ -210,7 +210,7 @@ func TestConnectionRepository(t *testing.T) {
 
 func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 	t.Run("RegisterConnection_WithRepository", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(context.Background())
+		storage := storage.NewMemoryStorage(context.Background())
 		config := &managers.ControlConfig{
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
@@ -250,7 +250,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 	})
 
 	t.Run("GetConnections_WithRepository", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(context.Background())
+		storage := storage.NewMemoryStorage(context.Background())
 		config := &managers.ControlConfig{
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
@@ -303,7 +303,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 	})
 
 	t.Run("UpdateConnectionStats_WithRepository", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(context.Background())
+		storage := storage.NewMemoryStorage(context.Background())
 		config := &managers.ControlConfig{
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
@@ -345,7 +345,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 	})
 
 	t.Run("UnregisterConnection_WithRepository", func(t *testing.T) {
-		storage := storages.NewMemoryStorage(context.Background())
+		storage := storage.NewMemoryStorage(context.Background())
 		config := &managers.ControlConfig{
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
@@ -388,7 +388,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 }
 
 func TestConnectionRepository_Dispose(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	connRepo := repos.NewConnectionRepo(repo)
 	require.NotNil(t, connRepo)
 
@@ -408,7 +408,7 @@ func TestConnectionRepository_Dispose(t *testing.T) {
 }
 
 func TestConnectionRepository_Dispose_Concurrent(t *testing.T) {
-	repo := repos.NewRepository(storages.NewMemoryStorage(context.Background()))
+	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	connRepo := repos.NewConnectionRepo(repo)
 	require.NotNil(t, connRepo)
 

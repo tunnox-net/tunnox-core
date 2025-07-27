@@ -15,7 +15,7 @@ import (
 
 // AnonymousServiceImpl 匿名用户服务实现
 type AnonymousServiceImpl struct {
-	*dispose.ResourceBase
+	*dispose.ServiceBase
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
 	idManager   *idgen.IDManager
@@ -24,12 +24,11 @@ type AnonymousServiceImpl struct {
 // NewAnonymousService 创建匿名用户服务
 func NewAnonymousService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) AnonymousService {
 	service := &AnonymousServiceImpl{
-		ResourceBase: dispose.NewResourceBase("AnonymousService"),
-		clientRepo:   clientRepo,
-		mappingRepo:  mappingRepo,
-		idManager:    idManager,
+		ServiceBase: dispose.NewService("AnonymousService", parentCtx),
+		clientRepo:  clientRepo,
+		mappingRepo: mappingRepo,
+		idManager:   idManager,
 	}
-	service.Initialize(parentCtx)
 	return service
 }
 

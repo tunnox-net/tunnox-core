@@ -5,8 +5,8 @@ import (
 	"context"
 	"testing"
 	"time"
-	"tunnox-core/internal/cloud/storages"
 	"tunnox-core/internal/core/idgen"
+	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 
@@ -16,7 +16,7 @@ import (
 
 // createTestIDManager 创建测试用的ID管理器
 func createTestIDManager() *idgen.IDManager {
-	storage := storages.NewMemoryStorage(context.Background())
+	storage := storage.NewMemoryStorage(context.Background())
 	return idgen.NewIDManager(storage, context.Background())
 }
 

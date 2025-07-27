@@ -15,7 +15,7 @@ import (
 
 // PortMappingServiceImpl 端口映射服务实现
 type PortMappingServiceImpl struct {
-	*dispose.ResourceBase
+	*dispose.ServiceBase
 	mappingRepo *repos.PortMappingRepo
 	idManager   *idgen.IDManager
 }
@@ -23,11 +23,10 @@ type PortMappingServiceImpl struct {
 // NewPortMappingService 创建端口映射服务
 func NewPortMappingService(mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) PortMappingService {
 	service := &PortMappingServiceImpl{
-		ResourceBase: dispose.NewResourceBase("PortMappingService"),
-		mappingRepo:  mappingRepo,
-		idManager:    idManager,
+		ServiceBase: dispose.NewService("PortMappingService", parentCtx),
+		mappingRepo: mappingRepo,
+		idManager:   idManager,
 	}
-	service.Initialize(parentCtx)
 	return service
 }
 

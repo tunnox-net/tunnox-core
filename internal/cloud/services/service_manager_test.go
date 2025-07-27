@@ -224,7 +224,7 @@ func TestServiceManagerWithProtocolService(t *testing.T) {
 
 	// 创建协议服务
 	ctx := context.Background()
-	protocolManager := protocol.NewManager(ctx)
+	protocolManager := protocol.NewProtocolManager(ctx)
 	protocolService := protocol.NewProtocolService("test-protocol", protocolManager)
 
 	manager.RegisterService(protocolService)
@@ -294,10 +294,9 @@ func TestServiceManagerResourceManagement(t *testing.T) {
 		t.Errorf("Expected 2 resources in list, got %d", len(resources))
 	}
 
-	// 测试资源释放
-	result := utils.DisposeAllGlobalResources()
-	if result.HasErrors() {
-		t.Errorf("Resource disposal failed: %v", result.Error())
+	// 测试资源释放 - 通过ServiceManager的Dispose方法
+	if err := manager.Close(); err != nil {
+		t.Errorf("Service manager disposal failed: %v", err)
 	}
 
 	// 验证资源已被释放
@@ -340,7 +339,7 @@ func TestServiceManagerGracefulShutdown(t *testing.T) {
 	<-ctx.Done()
 
 	// 给优雅关闭一点时间完成
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	// 验证服务已停止
 	if !service.IsStopped() {

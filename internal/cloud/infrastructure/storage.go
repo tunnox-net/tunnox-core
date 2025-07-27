@@ -23,17 +23,16 @@ type StorageManager interface {
 
 // StorageManagerImpl 存储管理器实现
 type StorageManagerImpl struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	storage storage.Storage
 }
 
 // NewStorageManager 创建新的存储管理器
 func NewStorageManager(storage storage.Storage, parentCtx context.Context) *StorageManagerImpl {
 	manager := &StorageManagerImpl{
-		ResourceBase: dispose.NewResourceBase("StorageManager"),
-		storage:      storage,
+		ManagerBase: dispose.NewManager("StorageManager", parentCtx),
+		storage:     storage,
 	}
-	manager.Initialize(parentCtx)
 	return manager
 }
 

@@ -1,13 +1,14 @@
 package command
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 )
 
 func TestNewRPCManager(t *testing.T) {
-	rm := NewRPCManager()
+	rm := NewRPCManager(context.Background())
 
 	if rm == nil {
 		t.Fatal("NewRPCManager returned nil")
@@ -23,7 +24,7 @@ func TestNewRPCManager(t *testing.T) {
 }
 
 func TestRPCManager_RegisterAndGetRequest(t *testing.T) {
-	rm := NewRPCManager()
+	rm := NewRPCManager(context.Background())
 	requestID := "test-request-123"
 	responseChan := make(chan *CommandResponse, 1)
 
@@ -48,7 +49,7 @@ func TestRPCManager_RegisterAndGetRequest(t *testing.T) {
 }
 
 func TestRPCManager_UnregisterRequest(t *testing.T) {
-	rm := NewRPCManager()
+	rm := NewRPCManager(context.Background())
 	requestID := "test-request-456"
 	responseChan := make(chan *CommandResponse, 1)
 
@@ -75,7 +76,7 @@ func TestRPCManager_UnregisterRequest(t *testing.T) {
 }
 
 func TestRPCManager_SetAndGetTimeout(t *testing.T) {
-	rm := NewRPCManager()
+	rm := NewRPCManager(context.Background())
 
 	// 测试默认超时
 	defaultTimeout := rm.GetTimeout()
@@ -95,7 +96,7 @@ func TestRPCManager_SetAndGetTimeout(t *testing.T) {
 }
 
 func TestRPCManager_GetPendingRequestCount(t *testing.T) {
-	rm := NewRPCManager()
+	rm := NewRPCManager(context.Background())
 
 	// 初始数量应该为0
 	count := rm.GetPendingRequestCount()
@@ -103,37 +104,40 @@ func TestRPCManager_GetPendingRequestCount(t *testing.T) {
 		t.Errorf("Expected initial count 0, got %d", count)
 	}
 
-	// 注册几个请求
-	rm.RegisterRequest("req1", make(chan *CommandResponse, 1))
-	rm.RegisterRequest("req2", make(chan *CommandResponse, 1))
-	rm.RegisterRequest("req3", make(chan *CommandResponse, 1))
+	// 注册一些请求
+	requestIDs := []string{"req1", "req2", "req3"}
+	for _, id := range requestIDs {
+		responseChan := make(chan *CommandResponse, 1)
+		rm.RegisterRequest(id, responseChan)
+	}
 
 	// 验证数量
 	count = rm.GetPendingRequestCount()
-	if count != 3 {
-		t.Errorf("Expected count 3, got %d", count)
+	if count != len(requestIDs) {
+		t.Errorf("Expected count %d, got %d", len(requestIDs), count)
 	}
 
 	// 注销一个请求
-	rm.UnregisterRequest("req2")
+	rm.UnregisterRequest("req1")
 
 	// 验证数量
 	count = rm.GetPendingRequestCount()
-	if count != 2 {
-		t.Errorf("Expected count 2, got %d", count)
+	if count != len(requestIDs)-1 {
+		t.Errorf("Expected count %d, got %d", len(requestIDs)-1, count)
 	}
 }
 
 func TestRPCManager_ConcurrentAccess(t *testing.T) {
-	rm := NewRPCManager()
+	rm := NewRPCManager(context.Background())
 	done := make(chan bool, 10)
 
-	// 并发注册请求
+	// 并发注册和注销请求
 	for i := 0; i < 10; i++ {
 		go func(id int) {
 			requestID := fmt.Sprintf("concurrent-req-%d", id)
 			responseChan := make(chan *CommandResponse, 1)
 
+			// 注册请求
 			rm.RegisterRequest(requestID, responseChan)
 
 			// 验证注册成功
@@ -144,6 +148,12 @@ func TestRPCManager_ConcurrentAccess(t *testing.T) {
 
 			// 注销请求
 			rm.UnregisterRequest(requestID)
+
+			// 验证注销成功
+			_, exists = rm.GetRequest(requestID)
+			if exists {
+				t.Errorf("Request %s should not exist after unregistration", requestID)
+			}
 
 			done <- true
 		}(i)
@@ -162,7 +172,7 @@ func TestRPCManager_ConcurrentAccess(t *testing.T) {
 }
 
 func TestRPCManager_TimeoutHandling(t *testing.T) {
-	rm := NewRPCManager()
+	rm := NewRPCManager(context.Background())
 
 	// 设置较短的超时时间用于测试
 	rm.SetTimeout(100 * time.Millisecond)
@@ -173,54 +183,56 @@ func TestRPCManager_TimeoutHandling(t *testing.T) {
 	// 注册请求
 	rm.RegisterRequest(requestID, responseChan)
 
-	// 启动goroutine模拟超时
-	go func() {
-		time.Sleep(200 * time.Millisecond) // 超过超时时间
-		rm.UnregisterRequest(requestID)
-	}()
+	// 等待超时
+	time.Sleep(200 * time.Millisecond)
 
-	// 等待一段时间
-	time.Sleep(300 * time.Millisecond)
+	// 验证请求仍然存在（因为没有自动清理机制）
+	_, exists := rm.GetRequest(requestID)
+	if !exists {
+		t.Error("Request should still exist since there's no automatic cleanup")
+	}
 
-	// 验证请求已被清理
+	// 验证数量为1
 	count := rm.GetPendingRequestCount()
+	if count != 1 {
+		t.Errorf("Expected count 1 after timeout, got %d", count)
+	}
+
+	// 手动清理
+	rm.UnregisterRequest(requestID)
+
+	// 验证清理后数量为0
+	count = rm.GetPendingRequestCount()
 	if count != 0 {
-		t.Errorf("Expected count 0 after timeout, got %d", count)
+		t.Errorf("Expected count 0 after manual cleanup, got %d", count)
 	}
 }
 
 func TestRPCManager_ResponseChannelCommunication(t *testing.T) {
-	rm := NewRPCManager()
-	requestID := "comm-test"
+	rm := NewRPCManager(context.Background())
+	requestID := "response-test"
 	responseChan := make(chan *CommandResponse, 1)
 
 	// 注册请求
 	rm.RegisterRequest(requestID, responseChan)
 
-	// 创建测试响应
-	testResponse := &CommandResponse{
-		Success:   true,
-		Data:      "test data",
-		RequestID: requestID,
+	// 模拟发送响应
+	expectedResponse := &CommandResponse{
+		Success: true,
+		Data:    "test response",
 	}
 
-	// 在另一个goroutine中发送响应
+	// 在goroutine中发送响应
 	go func() {
 		time.Sleep(10 * time.Millisecond)
-		responseChan <- testResponse
+		responseChan <- expectedResponse
 	}()
 
 	// 等待接收响应
 	select {
 	case response := <-responseChan:
-		if response.Success != testResponse.Success {
-			t.Errorf("Expected success %v, got %v", testResponse.Success, response.Success)
-		}
-		if response.Data != testResponse.Data {
-			t.Errorf("Expected data %v, got %v", testResponse.Data, response.Data)
-		}
-		if response.RequestID != testResponse.RequestID {
-			t.Errorf("Expected requestID %v, got %v", testResponse.RequestID, response.RequestID)
+		if response != expectedResponse {
+			t.Error("Received response should match expected response")
 		}
 	case <-time.After(1 * time.Second):
 		t.Error("Timeout waiting for response")

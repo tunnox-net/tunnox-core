@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 	"time"
-	"tunnox-core/internal/cloud/storages"
+	"tunnox-core/internal/core/storage"
 )
 
 func TestStorageBasedLock(t *testing.T) {
-	storage := storages.NewMemoryStorage(context.Background())
+	storage := storage.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	// 创建基于存储的分布式锁
@@ -94,7 +94,7 @@ func TestStorageBasedLock(t *testing.T) {
 }
 
 func TestStorageAtomicOperations(t *testing.T) {
-	storage := storages.NewMemoryStorage(context.Background())
+	storage := storage.NewMemoryStorage(context.Background())
 	defer storage.Close()
 
 	t.Run("SetNX Operations", func(t *testing.T) {

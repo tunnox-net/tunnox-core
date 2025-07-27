@@ -11,7 +11,7 @@ import (
 
 // CommandRegistry 命令注册表，实现 common.CommandRegistry 接口
 type CommandRegistry struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	handlers map[packet.CommandType]CommandHandler
 	mu       sync.RWMutex
 }
@@ -19,10 +19,9 @@ type CommandRegistry struct {
 // NewCommandRegistry 创建命令注册表
 func NewCommandRegistry(parentCtx context.Context) *CommandRegistry {
 	registry := &CommandRegistry{
-		ResourceBase: dispose.NewResourceBase("CommandRegistry"),
-		handlers:     make(map[packet.CommandType]CommandHandler),
+		ManagerBase: dispose.NewManager("CommandRegistry", parentCtx),
+		handlers:    make(map[packet.CommandType]CommandHandler),
 	}
-	registry.Initialize(parentCtx)
 	return registry
 }
 
