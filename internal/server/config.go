@@ -1,6 +1,7 @@
 package server
 
 import (
+	"tunnox-core/internal/api"
 	"tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
@@ -19,6 +20,9 @@ type ServerConfig struct {
 	Storage        storage.Storage
 	MessageBroker  broker.MessageBroker
 	BridgeManager  *bridge.BridgeManager
+	
+	// Management API 配置
+	ManagementAPI  *api.APIConfig `yaml:"management_api"`
 	
 	// 可选配置
 	EnableBridge bool `yaml:"enable_bridge"`

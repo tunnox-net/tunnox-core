@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"tunnox-core/internal/api"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/protocol/session"
@@ -20,6 +21,9 @@ type TunnoxServer struct {
 	sessionManager *session.SessionManager
 	tunnelManager  *TunnelManager
 	authManager    *AuthManager
+	
+	// Management API 服务器
+	apiServer      *api.ManagementAPIServer
 }
 
 // NewTunnoxServer 创建 Tunnox 服务器
@@ -38,6 +42,18 @@ func NewTunnoxServer(ctx context.Context, config *ServerConfig) (*TunnoxServer, 
 		ManagerBase: dispose.NewManager("TunnoxServer", ctx),
 		config:      config,
 	}
+	
+	// 添加清理处理器
+	server.AddCleanHandler(func() error {
+		utils.Infof("TunnoxServer: cleaning up resources...")
+		
+		// 停止 Management API 服务器
+		if server.apiServer != nil {
+			server.apiServer.Close()
+		}
+		
+		return nil
+	})
 	
 	utils.Infof("TunnoxServer: initialization completed successfully")
 	return server, nil
@@ -61,6 +77,30 @@ func (s *TunnoxServer) SetTunnelManager(tunnelMgr *TunnelManager) {
 // SetAuthManager 设置 AuthManager
 func (s *TunnoxServer) SetAuthManager(authMgr *AuthManager) {
 	s.authManager = authMgr
+}
+
+// StartManagementAPI 启动 Management API 服务器
+func (s *TunnoxServer) StartManagementAPI(cloudControl managers.CloudControlAPI) error {
+	if s.config.ManagementAPI == nil {
+		utils.Infof("TunnoxServer: Management API disabled")
+		return nil
+	}
+	
+	if !s.config.ManagementAPI.Enabled {
+		utils.Infof("TunnoxServer: Management API explicitly disabled")
+		return nil
+	}
+	
+	utils.Infof("TunnoxServer: starting Management API server...")
+	
+	s.apiServer = api.NewManagementAPIServer(s.Ctx(), s.config.ManagementAPI, cloudControl)
+	
+	if err := s.apiServer.Start(); err != nil {
+		return fmt.Errorf("failed to start Management API server: %w", err)
+	}
+	
+	utils.Infof("TunnoxServer: Management API server started on %s", s.config.ManagementAPI.ListenAddr)
+	return nil
 }
 
 // InitializeHandlers 初始化处理器（连接各个组件）

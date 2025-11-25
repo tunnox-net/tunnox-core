@@ -1,0 +1,54 @@
+# Tunnox Server Management API 配置示例
+
+management_api:
+  # 是否启用 Management API
+  enabled: true
+  
+  # API 服务监听地址
+  listen_addr: ":9000"
+  
+  # 认证配置
+  auth:
+    # 认证类型: api_key / jwt / none
+    type: "api_key"
+    
+    # API 密钥或 JWT 密钥（至少32字符）
+    secret: "your-secret-key-min-32-chars-long-replace-me-in-production"
+  
+  # CORS 配置
+  cors:
+    # 是否启用 CORS
+    enabled: true
+    
+    # 允许的源
+    allowed_origins:
+      - "http://localhost:3000"
+      - "http://localhost:8080"
+      - "https://admin.example.com"
+      # - "*"  # 生产环境不推荐使用通配符
+    
+    # 允许的 HTTP 方法
+    allowed_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    
+    # 允许的 HTTP 头
+    allowed_headers:
+      - "Authorization"
+      - "Content-Type"
+      - "X-Requested-With"
+  
+  # 限流配置
+  rate_limit:
+    # 是否启用限流
+    enabled: true
+    
+    # 每秒请求数限制
+    requests_per_second: 100
+    
+    # 突发请求数限制
+    burst: 200
+
