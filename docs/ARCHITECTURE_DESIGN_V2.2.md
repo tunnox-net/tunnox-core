@@ -484,11 +484,11 @@ server:
 
 ```mermaid
 erDiagram
-    User ||--o{ Client : "owns"
-    User ||--o{ PortMapping : "creates"
-    User ||--|| UserQuota : "has"
-    Client ||--o{ PortMapping : "source"
-    Client ||--o{ PortMapping : "target"
+    User ||--o{ Client : owns
+    User ||--o{ PortMapping : creates
+    User ||--|| UserQuota : has
+    Client ||--o{ PortMapping : source
+    Client ||--o{ PortMapping : target
     
     User {
         int64 user_id PK
@@ -500,7 +500,7 @@ erDiagram
     }
     
     UserQuota {
-        int64 user_id PK_FK
+        int64 user_id
         int max_clients
         int current_clients
         int max_mappings
