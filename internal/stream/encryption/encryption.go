@@ -23,8 +23,17 @@ const (
 
 // 分块加密配置
 const (
-	// ChunkSize 每块大小 (64KB)
+	// ChunkSize 每块明文大小 (64KB)
 	ChunkSize = 64 * 1024
+
+	// MaxChunkSize 最大块大小限制（明文 + overhead + nonce）
+	// 用于防止 DoS 攻击（恶意构造巨大 length）
+	// 64KB + 16 bytes (AEAD overhead) + 24 bytes (max nonce) = 64KB + 40 bytes
+	MaxChunkSize = ChunkSize + 40
+
+	// MaxCiphertextSize 最大密文大小（仅密文+tag，不含nonce）
+	// 64KB + 16 bytes (AEAD overhead)
+	MaxCiphertextSize = ChunkSize + 16
 
 	// NonceSize nonce 大小
 	NonceSizeAESGCM   = 12
@@ -232,16 +241,27 @@ func (e *encryptWriter) Close() error {
 		return nil
 	}
 
-	e.closed = true
-
-	// Flush 剩余数据
-	if err := e.flush(); err != nil {
-		return err
+	// 1. Flush 剩余数据（最后一次 Seal）
+	var flushErr error
+	if len(e.buffer) > 0 {
+		flushErr = e.flush()
 	}
 
-	// 关闭底层 writer (如果支持)
+	// 2. 标记为已关闭（即使 flush 失败也要标记，避免重复 Close）
+	e.closed = true
+
+	// 3. 关闭底层 writer (如果支持)
+	var closeErr error
 	if closer, ok := e.writer.(io.Closer); ok {
-		return closer.Close()
+		closeErr = closer.Close()
+	}
+
+	// 4. 返回第一个错误
+	if flushErr != nil {
+		return fmt.Errorf("flush error during close: %w", flushErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close underlying writer error: %w", closeErr)
 	}
 
 	return nil
@@ -316,8 +336,14 @@ func (d *decryptReader) readNextChunk() error {
 	}
 	chunkLen := binary.BigEndian.Uint32(lengthBuf)
 
-	if chunkLen == 0 || chunkLen > uint32(ChunkSize+d.aead.Overhead()) {
-		return fmt.Errorf("invalid chunk length: %d", chunkLen)
+	// 严格的长度校验，防止 DoS 攻击
+	// chunkLen 是密文长度（不含nonce），最大应为 ChunkSize + AEAD overhead (16 bytes)
+	if chunkLen == 0 {
+		return fmt.Errorf("invalid chunk length: 0 (empty chunk)")
+	}
+	if chunkLen > MaxCiphertextSize {
+		return fmt.Errorf("chunk length %d exceeds maximum allowed %d (potential DoS attack)", 
+			chunkLen, MaxCiphertextSize)
 	}
 
 	// 读取 [nonce]

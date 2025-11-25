@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 	"tunnox-core/internal/core/types"
+	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
 
@@ -317,8 +318,43 @@ func (s *SessionManager) RemoveTunnelConnection(connID string) {
 }
 
 // ============================================================================
-// 临时兼容方法
+// 临时兼容方法（ClientConnection 相关）
 // ============================================================================
+
+// getOrCreateClientConnection 获取或创建客户端连接（内部使用）
+func (s *SessionManager) getOrCreateClientConnection(connID string, pkt *packet.TransferPacket) *ClientConnection {
+	s.connLock.Lock()
+	defer s.connLock.Unlock()
+
+	// 尝试从现有连接中查找
+	if baseConn, exists := s.connMap[connID]; exists {
+		// 如果已有，尝试从扩展映射中获取
+		if clientConn, ok := s.clientConnMap[connID]; ok {
+			return clientConn
+		}
+
+		// 创建新的 ClientConnection 包装
+		clientConn := &ClientConnection{
+			ConnID:    connID,
+			Stream:    baseConn.Stream,
+			CreatedAt: baseConn.CreatedAt,
+			baseConn:  baseConn,
+		}
+		s.clientConnMap[connID] = clientConn
+		return clientConn
+	}
+
+	// 全新连接（通常不应该走到这里）
+	return nil
+}
+
+// getClientConnection 获取客户端连接（内部使用）
+func (s *SessionManager) getClientConnection(connID string) *ClientConnection {
+	s.connLock.RLock()
+	defer s.connLock.RUnlock()
+
+	return s.clientConnMap[connID]
+}
 
 // GetConnectionByClientID 临时兼容方法（将被废弃）
 func (s *SessionManager) GetConnectionByClientID(clientID int64) *ClientConnection {

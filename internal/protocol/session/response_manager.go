@@ -2,11 +2,13 @@ package session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"tunnox-core/internal/command"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/types"
+	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
 
@@ -78,14 +80,61 @@ func (rm *ResponseManager) SendResponse(connID string, response *command.Command
 		return fmt.Errorf("connection %s is closed or closing", connID)
 	}
 
-	// 这里应该实现具体的响应发送逻辑
-	// 目前只是记录日志
-	utils.Infof("Sending response to connection %s: success=%v, data=%s",
-		connID, response.Success, response.Data)
+	utils.Debugf("Sending response to connection %s: success=%v",
+		connID, response.Success)
 
-	// TODO: 实现实际的响应发送逻辑
-	// 1. 将响应序列化为数据包
-	// 2. 通过连接的Stream发送数据包
+	// 1. 构造响应数据
+	responseData := map[string]interface{}{
+		"success":    response.Success,
+		"command_id": response.CommandId,
+		"request_id": response.RequestID,
+	}
+
+	// 添加数据或错误信息
+	if response.Data != "" {
+		responseData["data"] = response.Data
+	}
+	if response.Error != "" {
+		responseData["error"] = response.Error
+	}
+	if response.ProcessingTime > 0 {
+		responseData["processing_time"] = response.ProcessingTime
+	}
+
+	// 2. 序列化响应
+	dataBytes, err := json.Marshal(responseData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal response: %w", err)
+	}
+
+	// 3. 构造 CommandPacket
+	cmdPacket := &packet.CommandPacket{
+		CommandType: packet.Disconnect, // 临时使用一个 CommandType，后续可以定义专门的响应类型
+		CommandId:   response.CommandId,
+		Token:       "",
+		SenderId:    "server",
+		ReceiverId:  connID,
+		CommandBody: string(dataBytes),
+	}
+
+	// 4. 构造 TransferPacket
+	transferPacket := &packet.TransferPacket{
+		PacketType:    packet.CommandResp,
+		CommandPacket: cmdPacket,
+	}
+
+	// 5. 通过连接的 Stream 发送数据包
+	if conn.Stream == nil {
+		return fmt.Errorf("connection %s has no stream", connID)
+	}
+
+	if _, err := conn.Stream.WritePacket(transferPacket, false, 0); err != nil {
+		utils.Errorf("Failed to send response to connection %s: %v", connID, err)
+		return fmt.Errorf("failed to write response packet: %w", err)
+	}
+
+	utils.Infof("Response sent successfully to connection %s, CommandId=%s, Success=%v",
+		connID, response.CommandId, response.Success)
 
 	return nil
 }
