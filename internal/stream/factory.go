@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"tunnox-core/internal/stream/compression"
-	encryption2 "tunnox-core/internal/stream/encryption"
 )
 
 // StreamFactoryConfig 流工厂配置
@@ -36,7 +35,7 @@ func DefaultStreamFactoryConfig() *StreamFactoryConfig {
 // 合并自 factory/factory.go
 type DefaultStreamFactory struct {
 	config     *StreamFactoryConfig
-	encryption encryption2.EncryptionKey
+	// 注意：加密功能已移至 internal/stream/transform 模块
 	ctx        context.Context
 }
 
@@ -45,7 +44,7 @@ func NewDefaultStreamFactory(ctx context.Context) *DefaultStreamFactory {
 	config := DefaultStreamFactoryConfig()
 	return &DefaultStreamFactory{
 		config:     config,
-		encryption: nil, // 默认无加密
+		// 注意：加密功能已移至 internal/stream/transform 模块
 		ctx:        ctx,
 	}
 }
@@ -59,10 +58,8 @@ func NewConfigurableStreamFactory(ctx context.Context, config *StreamFactoryConf
 		config: config,
 		ctx:    ctx,
 	}
-	// 根据配置设置加密
-	if config.EnableEncryption && config.EncryptionKey != nil {
-		factory.encryption = encryption2.NewStaticKey(config.EncryptionKey, "default")
-	}
+	// 注意：加密功能已移至 internal/stream/transform 模块
+	// 加密配置应通过 transform.TransformConfig 设置
 	return factory
 }
 
@@ -89,10 +86,8 @@ func (sf *DefaultStreamFactory) CreateStreamProcessorWithConfig(reader io.Reader
 		writer = compression.NewGzipWriter(writer, sf.ctx)
 	}
 
-	// 加密
-	if config.EnableEncryption && config.EncryptionKey != nil {
-		return NewStreamProcessorWithEncryption(reader, writer, encryption2.NewStaticKey(config.EncryptionKey, "default"), sf.ctx)
-	}
+	// 注意：加密功能已移至 internal/stream/transform 模块
+	// 加密应通过 transform.NewTransformer() 配置
 	return NewStreamProcessor(reader, writer, sf.ctx)
 }
 

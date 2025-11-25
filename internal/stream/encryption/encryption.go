@@ -1,352 +1,373 @@
 package encryption
 
 import (
-	"bytes"
-	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
+	"fmt"
 	"io"
-	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/errors"
+	"sync"
+
+	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// EncryptionKey 加密密钥接口
-type EncryptionKey interface {
-	// GetKey 获取加密密钥
-	GetKey() []byte
-	// GetKeyID 获取密钥ID，用于密钥管理
-	GetKeyID() string
+// EncryptionMethod 加密方法
+type EncryptionMethod string
+
+const (
+	MethodAESGCM           EncryptionMethod = "aes-256-gcm"
+	MethodChaCha20Poly1305 EncryptionMethod = "chacha20-poly1305"
+)
+
+// 分块加密配置
+const (
+	// ChunkSize 每块大小 (64KB)
+	ChunkSize = 64 * 1024
+
+	// NonceSize nonce 大小
+	NonceSizeAESGCM   = 12
+	NonceSizeChaCha20 = 24
+)
+
+// EncryptConfig 加密配置
+type EncryptConfig struct {
+	Method EncryptionMethod
+	Key    []byte // 原始密钥（32字节）
 }
 
-// StaticKey 静态密钥实现
-type StaticKey struct {
-	key   []byte
-	keyID string
+// Encryptor 加密器接口
+type Encryptor interface {
+	NewEncryptWriter(w io.Writer) (io.WriteCloser, error)
+	NewDecryptReader(r io.Reader) (io.Reader, error)
+	NonceSize() int
 }
 
-// NewStaticKey 创建静态密钥
-func NewStaticKey(key []byte, keyID string) *StaticKey {
-	return &StaticKey{
-		key:   key,
-		keyID: keyID,
-	}
-}
-
-func (sk *StaticKey) GetKey() []byte {
-	return sk.key
-}
-
-func (sk *StaticKey) GetKeyID() string {
-	return sk.keyID
-}
-
-// EncryptionReader 加密读取器
-type EncryptionReader struct {
-	reader io.Reader
-	key    EncryptionKey
-	ctx    context.Context
-	dispose.Dispose
-}
-
-// NewEncryptionReader 创建加密读取器
-func NewEncryptionReader(reader io.Reader, key EncryptionKey, parentCtx context.Context) *EncryptionReader {
-	er := &EncryptionReader{
-		reader: reader,
-		key:    key,
-	}
-	er.SetCtxWithNoOpOnClose(parentCtx)
-	return er
-}
-
-// Read 读取并解密数据
-func (er *EncryptionReader) Read(p []byte) (n int, err error) {
-	select {
-	case <-er.Ctx().Done():
-		return 0, er.Ctx().Err()
+// NewEncryptor 创建加密器
+func NewEncryptor(config *EncryptConfig) (Encryptor, error) {
+	switch config.Method {
+	case MethodAESGCM, "aes-gcm", "":
+		return newAESGCMEncryptor(config.Key)
+	case MethodChaCha20Poly1305, "chacha20":
+		return newChaCha20Encryptor(config.Key)
 	default:
+		return nil, fmt.Errorf("unsupported encryption method: %s", config.Method)
+	}
+}
+
+// ============================================================================
+// AES-GCM 加密器
+// ============================================================================
+
+type aesGCMEncryptor struct {
+	aead cipher.AEAD
+}
+
+func newAESGCMEncryptor(key []byte) (*aesGCMEncryptor, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("AES-256-GCM requires 32-byte key, got %d", len(key))
 	}
 
-	// 读取加密数据长度（4字节）
-	lengthBytes := make([]byte, 4)
-	_, err = io.ReadFull(er.reader, lengthBytes)
+	block, err := aes.NewCipher(key)
 	if err != nil {
-		return 0, err
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
-	encryptedLength := binary.BigEndian.Uint32(lengthBytes)
-	if encryptedLength == 0 {
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create GCM: %w", err)
+	}
+
+	return &aesGCMEncryptor{aead: aead}, nil
+}
+
+func (e *aesGCMEncryptor) NewEncryptWriter(w io.Writer) (io.WriteCloser, error) {
+	return newEncryptWriter(w, e.aead, NonceSizeAESGCM), nil
+}
+
+func (e *aesGCMEncryptor) NewDecryptReader(r io.Reader) (io.Reader, error) {
+	return newDecryptReader(r, e.aead, NonceSizeAESGCM), nil
+}
+
+func (e *aesGCMEncryptor) NonceSize() int {
+	return NonceSizeAESGCM
+}
+
+// ============================================================================
+// ChaCha20-Poly1305 加密器
+// ============================================================================
+
+type chaCha20Encryptor struct {
+	aead cipher.AEAD
+}
+
+func newChaCha20Encryptor(key []byte) (*chaCha20Encryptor, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("ChaCha20-Poly1305 requires 32-byte key, got %d", len(key))
+	}
+
+	aead, err := chacha20poly1305.NewX(key) // XChaCha20-Poly1305 (24-byte nonce)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create ChaCha20-Poly1305: %w", err)
+	}
+
+	return &chaCha20Encryptor{aead: aead}, nil
+}
+
+func (e *chaCha20Encryptor) NewEncryptWriter(w io.Writer) (io.WriteCloser, error) {
+	return newEncryptWriter(w, e.aead, NonceSizeChaCha20), nil
+}
+
+func (e *chaCha20Encryptor) NewDecryptReader(r io.Reader) (io.Reader, error) {
+	return newDecryptReader(r, e.aead, NonceSizeChaCha20), nil
+}
+
+func (e *chaCha20Encryptor) NonceSize() int {
+	return NonceSizeChaCha20
+}
+
+// ============================================================================
+// 加密 Writer (分块加密)
+// ============================================================================
+
+// encryptWriter 加密写入器
+// 格式: [块长度(4字节)][nonce(12/24字节)][密文+tag]
+type encryptWriter struct {
+	writer    io.Writer
+	aead      cipher.AEAD
+	nonceSize int
+	buffer    []byte
+	mu        sync.Mutex
+	closed    bool
+}
+
+func newEncryptWriter(w io.Writer, aead cipher.AEAD, nonceSize int) *encryptWriter {
+	return &encryptWriter{
+		writer:    w,
+		aead:      aead,
+		nonceSize: nonceSize,
+		buffer:    make([]byte, 0, ChunkSize),
+	}
+}
+
+func (e *encryptWriter) Write(p []byte) (int, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.closed {
+		return 0, io.ErrClosedPipe
+	}
+
+	totalWritten := 0
+
+	for len(p) > 0 {
+		// 计算本次可写入缓冲区的数据量
+		available := ChunkSize - len(e.buffer)
+		toWrite := len(p)
+		if toWrite > available {
+			toWrite = available
+		}
+
+		// 追加到缓冲区
+		e.buffer = append(e.buffer, p[:toWrite]...)
+		p = p[toWrite:]
+		totalWritten += toWrite
+
+		// 如果缓冲区满了，加密并写入
+		if len(e.buffer) >= ChunkSize {
+			if err := e.flush(); err != nil {
+				return totalWritten, err
+			}
+		}
+	}
+
+	return totalWritten, nil
+}
+
+func (e *encryptWriter) flush() error {
+	if len(e.buffer) == 0 {
+		return nil
+	}
+
+	// 生成随机 nonce
+	nonce := make([]byte, e.nonceSize)
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("failed to generate nonce: %w", err)
+	}
+
+	// 加密数据 (AEAD.Seal 会自动追加 tag)
+	ciphertext := e.aead.Seal(nil, nonce, e.buffer, nil)
+
+	// 写入格式: [块长度(4字节)][nonce][密文+tag]
+	header := make([]byte, 4)
+	binary.BigEndian.PutUint32(header, uint32(len(ciphertext)))
+
+	// 写入 [块长度]
+	if _, err := e.writer.Write(header); err != nil {
+		return fmt.Errorf("failed to write chunk length: %w", err)
+	}
+
+	// 写入 [nonce]
+	if _, err := e.writer.Write(nonce); err != nil {
+		return fmt.Errorf("failed to write nonce: %w", err)
+	}
+
+	// 写入 [密文+tag]
+	if _, err := e.writer.Write(ciphertext); err != nil {
+		return fmt.Errorf("failed to write ciphertext: %w", err)
+	}
+
+	// 清空缓冲区
+	e.buffer = e.buffer[:0]
+
+	return nil
+}
+
+func (e *encryptWriter) Close() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.closed {
+		return nil
+	}
+
+	e.closed = true
+
+	// Flush 剩余数据
+	if err := e.flush(); err != nil {
+		return err
+	}
+
+	// 关闭底层 writer (如果支持)
+	if closer, ok := e.writer.(io.Closer); ok {
+		return closer.Close()
+	}
+
+	return nil
+}
+
+// ============================================================================
+// 解密 Reader (分块解密)
+// ============================================================================
+
+// decryptReader 解密读取器
+type decryptReader struct {
+	reader    io.Reader
+	aead      cipher.AEAD
+	nonceSize int
+	buffer    []byte // 当前块的明文缓冲区
+	offset    int    // 当前块的读取偏移
+	eof       bool
+	mu        sync.Mutex
+}
+
+func newDecryptReader(r io.Reader, aead cipher.AEAD, nonceSize int) *decryptReader {
+	return &decryptReader{
+		reader:    r,
+		aead:      aead,
+		nonceSize: nonceSize,
+		buffer:    nil,
+		offset:    0,
+		eof:       false,
+	}
+}
+
+func (d *decryptReader) Read(p []byte) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.eof {
 		return 0, io.EOF
 	}
 
-	// 读取加密数据
-	encryptedData := make([]byte, encryptedLength)
-	_, err = io.ReadFull(er.reader, encryptedData)
-	if err != nil {
-		return 0, err
+	totalRead := 0
+
+	for len(p) > 0 {
+		// 如果当前块已读完，读取下一块
+		if d.buffer == nil || d.offset >= len(d.buffer) {
+			if err := d.readNextChunk(); err != nil {
+				if err == io.EOF {
+					d.eof = true
+					if totalRead > 0 {
+						return totalRead, nil
+					}
+					return 0, io.EOF
+				}
+				return totalRead, err
+			}
+		}
+
+		// 从当前块读取数据
+		n := copy(p, d.buffer[d.offset:])
+		d.offset += n
+		p = p[n:]
+		totalRead += n
 	}
 
-	// 解密数据
-	decryptedData, err := er.decrypt(encryptedData)
-	if err != nil {
-		return 0, err
-	}
-
-	// 复制到输出缓冲区
-	n = copy(p, decryptedData)
-	return n, nil
+	return totalRead, nil
 }
 
-// ReadAll 读取所有数据并解密
-func (er *EncryptionReader) ReadAll() ([]byte, error) {
-	var result bytes.Buffer
-	buffer := make([]byte, 4096)
+func (d *decryptReader) readNextChunk() error {
+	// 读取 [块长度(4字节)]
+	lengthBuf := make([]byte, 4)
+	if _, err := io.ReadFull(d.reader, lengthBuf); err != nil {
+		return err
+	}
+	chunkLen := binary.BigEndian.Uint32(lengthBuf)
 
-	for {
-		n, err := er.Read(buffer)
-		if n > 0 {
-			result.Write(buffer[:n])
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
+	if chunkLen == 0 || chunkLen > uint32(ChunkSize+d.aead.Overhead()) {
+		return fmt.Errorf("invalid chunk length: %d", chunkLen)
 	}
 
-	return result.Bytes(), nil
-}
-
-// decrypt 解密数据
-func (er *EncryptionReader) decrypt(encryptedData []byte) ([]byte, error) {
-	if len(encryptedData) < aes.BlockSize+12 { // 至少需要IV(12字节)和GCM标签(16字节)
-		return nil, errors.NewEncryptionError("decrypt", "encrypted data too short", nil)
+	// 读取 [nonce]
+	nonce := make([]byte, d.nonceSize)
+	if _, err := io.ReadFull(d.reader, nonce); err != nil {
+		return fmt.Errorf("failed to read nonce: %w", err)
 	}
 
-	// 提取IV（前12字节）
-	iv := encryptedData[:12]
-	ciphertext := encryptedData[12:]
-
-	// 创建AES cipher
-	block, err := aes.NewCipher(er.key.GetKey())
-	if err != nil {
-		return nil, errors.NewEncryptionError("decrypt", "failed to create cipher", err)
-	}
-
-	// 创建GCM模式
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, errors.NewEncryptionError("decrypt", "failed to create GCM", err)
+	// 读取 [密文+tag]
+	ciphertext := make([]byte, chunkLen)
+	if _, err := io.ReadFull(d.reader, ciphertext); err != nil {
+		return fmt.Errorf("failed to read ciphertext: %w", err)
 	}
 
 	// 解密
-	plaintext, err := gcm.Open(nil, iv, ciphertext, nil)
+	plaintext, err := d.aead.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return nil, errors.NewEncryptionError("decrypt", "failed to decrypt data", err)
+		return fmt.Errorf("decryption failed: %w", err)
 	}
 
-	return plaintext, nil
-}
+	// 更新缓冲区
+	d.buffer = plaintext
+	d.offset = 0
 
-// EncryptionWriter 加密写入器
-type EncryptionWriter struct {
-	writer io.Writer
-	key    EncryptionKey
-	ctx    context.Context
-	dispose.Dispose
-}
-
-// NewEncryptionWriter 创建加密写入器
-func NewEncryptionWriter(writer io.Writer, key EncryptionKey, parentCtx context.Context) *EncryptionWriter {
-	ew := &EncryptionWriter{
-		writer: writer,
-		key:    key,
-	}
-	ew.SetCtxWithNoOpOnClose(parentCtx)
-	return ew
-}
-
-// onClose 资源清理回调 - 已废弃，使用 SetCtxWithNoOpOnClose
-func (ew *EncryptionWriter) onClose() error {
-	// 加密写入器不需要特殊清理
 	return nil
 }
 
-// Write 加密并写入数据
-func (ew *EncryptionWriter) Write(p []byte) (n int, err error) {
-	select {
-	case <-ew.Ctx().Done():
-		return 0, ew.Ctx().Err()
-	default:
-	}
+// ============================================================================
+// 工具函数
+// ============================================================================
 
-	if len(p) == 0 {
-		return 0, nil
+// GenerateKey 生成随机密钥
+func GenerateKey() ([]byte, error) {
+	key := make([]byte, 32) // 256-bit key
+	if _, err := rand.Read(key); err != nil {
+		return nil, fmt.Errorf("failed to generate random key: %w", err)
 	}
-
-	// 加密数据
-	encryptedData, err := ew.encrypt(p)
-	if err != nil {
-		return 0, err
-	}
-
-	// 写入加密数据长度
-	lengthBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(lengthBytes, uint32(len(encryptedData)))
-	_, err = ew.writer.Write(lengthBytes)
-	if err != nil {
-		return 0, err
-	}
-
-	// 写入加密数据
-	_, err = ew.writer.Write(encryptedData)
-	if err != nil {
-		return 0, err
-	}
-
-	return len(p), nil
+	return key, nil
 }
 
-// WriteAll 加密并写入所有数据
-func (ew *EncryptionWriter) WriteAll(data []byte) error {
-	_, err := ew.Write(data)
-	return err
-}
-
-// encrypt 加密数据
-func (ew *EncryptionWriter) encrypt(plaintext []byte) ([]byte, error) {
-	// 创建AES cipher
-	block, err := aes.NewCipher(ew.key.GetKey())
+// GenerateKeyBase64 生成 Base64 编码的密钥
+func GenerateKeyBase64() (string, error) {
+	key, err := GenerateKey()
 	if err != nil {
-		return nil, errors.NewEncryptionError("encrypt", "failed to create cipher", err)
+		return "", err
 	}
-
-	// 创建GCM模式
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, errors.NewEncryptionError("encrypt", "failed to create GCM", err)
-	}
-
-	// 生成随机IV（12字节）
-	iv := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, errors.NewEncryptionError("encrypt", "failed to generate IV", err)
-	}
-
-	// 加密
-	ciphertext := gcm.Seal(nil, iv, plaintext, nil)
-
-	// 返回IV + 密文
-	result := make([]byte, len(iv)+len(ciphertext))
-	copy(result, iv)
-	copy(result[len(iv):], ciphertext)
-
-	return result, nil
+	return base64.StdEncoding.EncodeToString(key), nil
 }
 
-// EncryptionManager 加密管理器
-type EncryptionManager struct {
-	key EncryptionKey
-	dispose.Dispose
-}
-
-// NewEncryptionManager 创建加密管理器
-func NewEncryptionManager(key EncryptionKey, parentCtx context.Context) *EncryptionManager {
-	em := &EncryptionManager{
-		key: key,
-	}
-	em.SetCtxWithNoOpOnClose(parentCtx)
-	return em
-}
-
-// onClose 资源清理回调 - 已废弃，使用 SetCtxWithNoOpOnClose
-func (em *EncryptionManager) onClose() error {
-	// 加密管理器不需要特殊清理
-	return nil
-}
-
-// EncryptData 加密数据
-func (em *EncryptionManager) EncryptData(data []byte) ([]byte, error) {
-	select {
-	case <-em.Ctx().Done():
-		return nil, em.Ctx().Err()
-	default:
-	}
-
-	// 创建AES cipher
-	block, err := aes.NewCipher(em.key.GetKey())
-	if err != nil {
-		return nil, errors.NewEncryptionError("encrypt_data", "failed to create cipher", err)
-	}
-
-	// 创建GCM模式
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, errors.NewEncryptionError("encrypt_data", "failed to create GCM", err)
-	}
-
-	// 生成随机IV（12字节）
-	iv := make([]byte, gcm.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return nil, errors.NewEncryptionError("encrypt_data", "failed to generate IV", err)
-	}
-
-	// 加密
-	ciphertext := gcm.Seal(nil, iv, data, nil)
-
-	// 返回IV + 密文
-	result := make([]byte, len(iv)+len(ciphertext))
-	copy(result, iv)
-	copy(result[len(iv):], ciphertext)
-
-	return result, nil
-}
-
-// DecryptData 解密数据
-func (em *EncryptionManager) DecryptData(encryptedData []byte) ([]byte, error) {
-	select {
-	case <-em.Ctx().Done():
-		return nil, em.Ctx().Err()
-	default:
-	}
-
-	if len(encryptedData) < aes.BlockSize+12 { // 至少需要IV(12字节)和GCM标签(16字节)
-		return nil, errors.NewEncryptionError("decrypt_data", "encrypted data too short", nil)
-	}
-
-	// 提取IV（前12字节）
-	iv := encryptedData[:12]
-	ciphertext := encryptedData[12:]
-
-	// 创建AES cipher
-	block, err := aes.NewCipher(em.key.GetKey())
-	if err != nil {
-		return nil, errors.NewEncryptionError("decrypt_data", "failed to create cipher", err)
-	}
-
-	// 创建GCM模式
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, errors.NewEncryptionError("decrypt_data", "failed to create GCM", err)
-	}
-
-	// 解密
-	plaintext, err := gcm.Open(nil, iv, ciphertext, nil)
-	if err != nil {
-		return nil, errors.NewEncryptionError("decrypt_data", "failed to decrypt data", err)
-	}
-
-	return plaintext, nil
-}
-
-// GetKey 获取加密密钥
-func (em *EncryptionManager) GetKey() EncryptionKey {
-	return em.key
-}
-
-// SetKey 设置加密密钥
-func (em *EncryptionManager) SetKey(key EncryptionKey) {
-	em.key = key
+// DecodeKeyBase64 解码 Base64 密钥
+func DecodeKeyBase64(keyStr string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(keyStr)
 }

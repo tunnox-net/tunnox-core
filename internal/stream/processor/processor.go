@@ -5,7 +5,6 @@ import (
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/stream/compression"
-	"tunnox-core/internal/stream/encryption"
 )
 
 // StreamProcessor 流处理器接口
@@ -39,7 +38,7 @@ type DefaultStreamProcessor struct {
 	compressionReader *compression.GzipReader
 	compressionWriter *compression.GzipWriter
 	rateLimiter       *stream.RateLimiter
-	encryption        encryption.EncryptionKey
+	// 注意：加密功能已移至 internal/stream/transform 模块
 }
 
 // NewDefaultStreamProcessor 创建新的默认流处理器
@@ -49,7 +48,7 @@ func NewDefaultStreamProcessor(
 	compressionReader *compression.GzipReader,
 	compressionWriter *compression.GzipWriter,
 	rateLimiter interface{}, // 改为interface{}以兼容旧代码
-	encryption encryption.EncryptionKey,
+	encryption interface{}, // 已废弃：加密功能已移至 internal/stream/transform 模块
 ) *DefaultStreamProcessor {
 	var streamRateLimiter *stream.RateLimiter
 	if rateLimiter != nil {
@@ -63,7 +62,7 @@ func NewDefaultStreamProcessor(
 		compressionReader: compressionReader,
 		compressionWriter: compressionWriter,
 		rateLimiter:       streamRateLimiter,
-		encryption:        encryption,
+		// 注意：加密功能已移至 internal/stream/transform 模块
 	}
 }
 

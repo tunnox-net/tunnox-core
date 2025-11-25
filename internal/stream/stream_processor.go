@@ -13,7 +13,6 @@ import (
 	"tunnox-core/internal/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream/compression"
-	"tunnox-core/internal/stream/encryption"
 	"tunnox-core/internal/utils"
 )
 
@@ -24,7 +23,7 @@ type StreamProcessor struct {
 	writer    io.Writer
 	lock      sync.Mutex
 	bufferMgr *utils.BufferManager
-	encMgr    *encryption.EncryptionManager // 加密管理器
+	// 注意：加密功能已移至 internal/stream/transform 模块
 }
 
 func (ps *StreamProcessor) GetReader() io.Reader {
@@ -41,21 +40,18 @@ func NewStreamProcessor(reader io.Reader, writer io.Writer, parentCtx context.Co
 		reader:      reader,
 		writer:      writer,
 		bufferMgr:   utils.NewBufferManager(parentCtx),
-		encMgr:      nil, // 默认不启用加密
+		// 注意：加密功能已移至 internal/stream/transform 模块
 	}
 	return sp
 }
 
-// NewStreamProcessorWithEncryption 创建带加密的流处理器
-func NewStreamProcessorWithEncryption(reader io.Reader, writer io.Writer, key encryption.EncryptionKey, parentCtx context.Context) *StreamProcessor {
-	sp := &StreamProcessor{
-		ManagerBase: dispose.NewManager("StreamProcessor", parentCtx),
-		reader:      reader,
-		writer:      writer,
-		bufferMgr:   utils.NewBufferManager(parentCtx),
-		encMgr:      encryption.NewEncryptionManager(key, parentCtx),
-	}
-	return sp
+// NewStreamProcessorWithEncryption 已废弃：加密功能已移至 internal/stream/transform 模块
+// 使用 transform.NewTransformer() 配置加密
+//
+// Deprecated: 使用 transform 包代替
+func NewStreamProcessorWithEncryption(reader io.Reader, writer io.Writer, key []byte, parentCtx context.Context) *StreamProcessor {
+	// 直接创建基本流处理器，加密功能应通过 transform 模块配置
+	return NewStreamProcessor(reader, writer, parentCtx)
 }
 
 func (ps *StreamProcessor) onClose() error {
@@ -352,10 +348,12 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 		}
 		totalBytes += len(bodyData)
 
-		// 先解密，再解压
-		if packetType.IsEncrypted() && ps.encMgr != nil {
-			bodyData, err = ps.encMgr.DecryptData(bodyData)
-			if err != nil {
+	// 注意：加密功能已移至 internal/stream/transform 模块
+	// 解密功能应通过 transform.StreamTransformer 处理
+	if packetType.IsEncrypted() {
+		// 加密功能已移至 transform 模块
+		err = fmt.Errorf("encryption not supported in StreamProcessor, use transform package")
+		if err != nil {
 				return nil, totalBytes, err
 			}
 		}
@@ -443,8 +441,10 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	if useCompression {
 		packetType |= packet.Compressed
 	}
-	// 如果启用了加密，设置加密标志位
-	if ps.encMgr != nil {
+	// 注意：加密功能已移至 internal/stream/transform 模块
+	// 加密标志位的设置应通过 transform 模块处理
+	// 此处保留代码兼容性，但不再使用
+	if false { // encMgr 已移除
 		packetType |= packet.Encrypted
 	}
 
@@ -475,8 +475,10 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 				return totalBytes, err
 			}
 		}
-		if ps.encMgr != nil {
-			bodyData, err = ps.encMgr.EncryptData(bodyData)
+		// 注意：加密功能已移至 internal/stream/transform 模块
+		if false { // encMgr 已移除
+			// 加密功能应通过 transform 模块处理
+			err = fmt.Errorf("encryption not supported")
 			if err != nil {
 				return totalBytes, err
 			}
@@ -520,25 +522,34 @@ func (ps *StreamProcessor) CloseWithResult() *dispose.DisposeResult {
 	return ps.ResourceBase.Dispose.Close()
 }
 
-// EnableEncryption 启用加密
-func (ps *StreamProcessor) EnableEncryption(key encryption.EncryptionKey) {
-	ps.encMgr = encryption.NewEncryptionManager(key, ps.ResourceBase.Dispose.Ctx())
+// EnableEncryption 已废弃：加密功能已移至 internal/stream/transform 模块
+//
+// Deprecated: 使用 transform 包代替
+func (ps *StreamProcessor) EnableEncryption(key []byte) {
+	// 加密功能已移至 transform 模块，此方法为兼容性保留
 }
 
 // DisableEncryption 禁用加密
+// DisableEncryption 已废弃：加密功能已移至 internal/stream/transform 模块
+//
+// Deprecated: 使用 transform 包代替
 func (ps *StreamProcessor) DisableEncryption() {
-	ps.encMgr = nil
+	// 加密功能已移至 transform 模块，此方法为兼容性保留
 }
 
 // IsEncryptionEnabled 检查是否启用了加密
+// IsEncryptionEnabled 已废弃：加密功能已移至 internal/stream/transform 模块
+//
+// Deprecated: 使用 transform 包代替
 func (ps *StreamProcessor) IsEncryptionEnabled() bool {
-	return ps.encMgr != nil
+	// 加密功能已移至 transform 模块，此方法为兼容性保留
+	return false
 }
 
-// GetEncryptionKey 获取加密密钥
-func (ps *StreamProcessor) GetEncryptionKey() encryption.EncryptionKey {
-	if ps.encMgr != nil {
-		return ps.encMgr.GetKey()
-	}
+// GetEncryptionKey 已废弃：加密功能已移至 internal/stream/transform 模块
+//
+// Deprecated: 使用 transform 包代替
+func (ps *StreamProcessor) GetEncryptionKey() []byte {
+	// 加密功能已移至 transform 模块，此方法为兼容性保留
 	return nil
 }

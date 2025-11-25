@@ -3,7 +3,6 @@ package stream
 import (
 	"context"
 	"fmt"
-	"tunnox-core/internal/stream/encryption"
 )
 
 // StreamType 流类型枚举
@@ -25,7 +24,8 @@ type StreamProfile struct {
 	BufferSize           int
 	EnableMemoryPool     bool
 	MaxConcurrentStreams int
-	EncryptionKey        encryption.EncryptionKey // 加密密钥
+	// 注意：加密功能已移至 internal/stream/transform 模块
+	// 使用 transform.TransformConfig 配置加密
 }
 
 // PredefinedProfiles 预定义的流配置模板
@@ -74,7 +74,7 @@ var PredefinedProfiles = map[string]StreamProfile{
 		BufferSize:           4096,
 		EnableMemoryPool:     true,
 		MaxConcurrentStreams: 1000,
-		EncryptionKey:        nil, // 需要外部设置
+		// 注意：加密功能已移至 internal/stream/transform 模块
 	},
 }
 
@@ -98,13 +98,7 @@ func CreateFactoryFromProfile(ctx context.Context, profileName string) (StreamFa
 		EnableCompression: profile.DefaultCompression,
 		RateLimitBytes:    profile.DefaultRateLimit,
 		BufferSize:        profile.BufferSize,
-		// EnableMemoryPool: profile.EnableMemoryPool, // 如需保留请加到StreamFactoryConfig
-		EncryptionKey: nil,
-	}
-	if profile.EncryptionKey != nil {
-		if keyer, ok := profile.EncryptionKey.(interface{ GetKey() []byte }); ok {
-			config.EncryptionKey = keyer.GetKey()
-		}
+		// 注意：加密功能已移至 internal/stream/transform 模块
 	}
 
 	return NewConfigurableStreamFactory(ctx, config), nil
