@@ -10,8 +10,8 @@ import (
 	"tunnox-core/internal/core/idgen"
 )
 
-// ConnectionServiceImpl 连接服务实现
-type ConnectionServiceImpl struct {
+// connectionService 连接服务实现
+type connectionService struct {
 	*dispose.ServiceBase
 	baseService *BaseService
 	connRepo    *repos.ConnectionRepo
@@ -20,7 +20,7 @@ type ConnectionServiceImpl struct {
 
 // NewConnectionService 创建连接服务
 func NewConnectionService(connRepo *repos.ConnectionRepo, idManager *idgen.IDManager, parentCtx context.Context) ConnectionService {
-	service := &ConnectionServiceImpl{
+	service := &connectionService{
 		ServiceBase: dispose.NewService("ConnectionService", parentCtx),
 		baseService: NewBaseService(),
 		connRepo:    connRepo,
@@ -30,7 +30,7 @@ func NewConnectionService(connRepo *repos.ConnectionRepo, idManager *idgen.IDMan
 }
 
 // RegisterConnection 注册连接
-func (s *ConnectionServiceImpl) RegisterConnection(mappingID string, connInfo *models.ConnectionInfo) error {
+func (s *connectionService) RegisterConnection(mappingID string, connInfo *models.ConnectionInfo) error {
 	// 生成连接ID
 	connID, err := s.idManager.GenerateConnectionID()
 	if err != nil {
@@ -65,7 +65,7 @@ func (s *ConnectionServiceImpl) RegisterConnection(mappingID string, connInfo *m
 }
 
 // UnregisterConnection 注销连接
-func (s *ConnectionServiceImpl) UnregisterConnection(connID string) error {
+func (s *connectionService) UnregisterConnection(connID string) error {
 	// 获取连接信息
 	connInfo, err := s.connRepo.GetConnection(connID)
 	if err != nil {
@@ -97,7 +97,7 @@ func (s *ConnectionServiceImpl) UnregisterConnection(connID string) error {
 }
 
 // GetConnections 获取映射的连接列表
-func (s *ConnectionServiceImpl) GetConnections(mappingID string) ([]*models.ConnectionInfo, error) {
+func (s *connectionService) GetConnections(mappingID string) ([]*models.ConnectionInfo, error) {
 	connections, err := s.connRepo.ListMappingConns(mappingID)
 	if err != nil {
 		return nil, s.baseService.WrapErrorWithID(err, "get connections for mapping", mappingID)
@@ -106,7 +106,7 @@ func (s *ConnectionServiceImpl) GetConnections(mappingID string) ([]*models.Conn
 }
 
 // GetClientConnections 获取客户端的连接列表
-func (s *ConnectionServiceImpl) GetClientConnections(clientID int64) ([]*models.ConnectionInfo, error) {
+func (s *connectionService) GetClientConnections(clientID int64) ([]*models.ConnectionInfo, error) {
 	connections, err := s.connRepo.ListClientConns(clientID)
 	if err != nil {
 		return nil, s.baseService.WrapErrorWithInt64ID(err, "get connections for client", clientID)
@@ -115,7 +115,7 @@ func (s *ConnectionServiceImpl) GetClientConnections(clientID int64) ([]*models.
 }
 
 // UpdateConnectionStats 更新连接统计信息
-func (s *ConnectionServiceImpl) UpdateConnectionStats(connID string, bytesSent, bytesReceived int64) error {
+func (s *connectionService) UpdateConnectionStats(connID string, bytesSent, bytesReceived int64) error {
 	connInfo, err := s.connRepo.GetConnection(connID)
 	if err != nil {
 		return s.baseService.WrapErrorWithID(err, "get connection", connID)

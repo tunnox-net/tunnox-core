@@ -9,8 +9,8 @@ import (
 	"tunnox-core/internal/core/dispose"
 )
 
-// StatsServiceImpl 统计服务实现
-type StatsServiceImpl struct {
+// statsService 统计服务实现
+type statsService struct {
 	*dispose.ServiceBase
 	userRepo    *repos.UserRepository
 	clientRepo  *repos.ClientRepository
@@ -18,10 +18,10 @@ type StatsServiceImpl struct {
 	nodeRepo    *repos.NodeRepository
 }
 
-// NewStatsServiceImpl 创建新的统计服务实现
-func NewStatsServiceImpl(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository, parentCtx context.Context) *StatsServiceImpl {
-	service := &StatsServiceImpl{
-		ServiceBase: dispose.NewService("StatsServiceImpl", parentCtx),
+// NewstatsService 创建新的统计服务实现
+func NewstatsService(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository, parentCtx context.Context) *statsService {
+	service := &statsService{
+		ServiceBase: dispose.NewService("statsService", parentCtx),
 		userRepo:    userRepo,
 		clientRepo:  clientRepo,
 		mappingRepo: mappingRepo,
@@ -31,7 +31,7 @@ func NewStatsServiceImpl(userRepo *repos.UserRepository, clientRepo *repos.Clien
 }
 
 // GetSystemStats 获取系统统计信息
-func (s *StatsServiceImpl) GetSystemStats() (*stats.SystemStats, error) {
+func (s *statsService) GetSystemStats() (*stats.SystemStats, error) {
 	// 获取用户总数 - 暂时设为0，因为需要指定具体的UserType
 	users := []*models.User{}
 
@@ -56,13 +56,13 @@ func (s *StatsServiceImpl) GetSystemStats() (*stats.SystemStats, error) {
 }
 
 // GetTrafficStats 获取流量统计
-func (s *StatsServiceImpl) GetTrafficStats(timeRange string) ([]*stats.TrafficDataPoint, error) {
+func (s *statsService) GetTrafficStats(timeRange string) ([]*stats.TrafficDataPoint, error) {
 	// 简化实现：返回空数组，实际应该从数据库查询历史数据
 	return []*stats.TrafficDataPoint{}, nil
 }
 
 // GetConnectionStats 获取连接统计
-func (s *StatsServiceImpl) GetConnectionStats(timeRange string) ([]*stats.ConnectionDataPoint, error) {
+func (s *statsService) GetConnectionStats(timeRange string) ([]*stats.ConnectionDataPoint, error) {
 	// 简化实现：返回空数组，实际应该从数据库查询历史数据
 	return []*stats.ConnectionDataPoint{}, nil
 }

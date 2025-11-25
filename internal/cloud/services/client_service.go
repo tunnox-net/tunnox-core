@@ -13,8 +13,8 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// ClientServiceImpl 客户端服务实现
-type ClientServiceImpl struct {
+// clientService 客户端服务实现
+type clientService struct {
 	*dispose.ServiceBase
 	baseService *BaseService
 	clientRepo  *repos.ClientRepository
@@ -25,7 +25,7 @@ type ClientServiceImpl struct {
 
 // NewClientService 创建客户端服务
 func NewClientService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) ClientService {
-	service := &ClientServiceImpl{
+	service := &clientService{
 		ServiceBase: dispose.NewService("ClientService", parentCtx),
 		baseService: NewBaseService(),
 		clientRepo:  clientRepo,
@@ -37,7 +37,7 @@ func NewClientService(clientRepo *repos.ClientRepository, mappingRepo *repos.Por
 }
 
 // CreateClient 创建客户端
-func (s *ClientServiceImpl) CreateClient(userID, clientName string) (*models.Client, error) {
+func (s *clientService) CreateClient(userID, clientName string) (*models.Client, error) {
 	// 生成客户端ID
 	clientID, err := s.idManager.GenerateClientID()
 	if err != nil {
@@ -85,7 +85,7 @@ func (s *ClientServiceImpl) CreateClient(userID, clientName string) (*models.Cli
 }
 
 // GetClient 获取客户端
-func (s *ClientServiceImpl) GetClient(clientID int64) (*models.Client, error) {
+func (s *clientService) GetClient(clientID int64) (*models.Client, error) {
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client %d: %w", clientID, err)
@@ -94,14 +94,14 @@ func (s *ClientServiceImpl) GetClient(clientID int64) (*models.Client, error) {
 }
 
 // TouchClient 更新客户端最后活动时间
-func (s *ClientServiceImpl) TouchClient(clientID int64) {
+func (s *clientService) TouchClient(clientID int64) {
 	if err := s.clientRepo.TouchClient(utils.Int64ToString(clientID)); err != nil {
 		utils.Warnf("Failed to touch client %d: %v", clientID, err)
 	}
 }
 
 // UpdateClient 更新客户端
-func (s *ClientServiceImpl) UpdateClient(client *models.Client) error {
+func (s *clientService) UpdateClient(client *models.Client) error {
 	s.baseService.SetUpdatedTimestamp(&client.UpdatedAt)
 	if err := s.clientRepo.UpdateClient(client); err != nil {
 		return s.baseService.WrapErrorWithInt64ID(err, "update client", client.ID)
@@ -111,7 +111,7 @@ func (s *ClientServiceImpl) UpdateClient(client *models.Client) error {
 }
 
 // DeleteClient 删除客户端
-func (s *ClientServiceImpl) DeleteClient(clientID int64) error {
+func (s *clientService) DeleteClient(clientID int64) error {
 	// 获取客户端信息
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
@@ -140,7 +140,7 @@ func (s *ClientServiceImpl) DeleteClient(clientID int64) error {
 }
 
 // UpdateClientStatus 更新客户端状态
-func (s *ClientServiceImpl) UpdateClientStatus(clientID int64, status models.ClientStatus, nodeID string) error {
+func (s *clientService) UpdateClientStatus(clientID int64, status models.ClientStatus, nodeID string) error {
 	if err := s.clientRepo.UpdateClientStatus(utils.Int64ToString(clientID), status, nodeID); err != nil {
 		return fmt.Errorf("failed to update client status %d: %w", clientID, err)
 	}
@@ -149,7 +149,7 @@ func (s *ClientServiceImpl) UpdateClientStatus(clientID int64, status models.Cli
 }
 
 // ListClients 列出客户端
-func (s *ClientServiceImpl) ListClients(userID string, clientType models.ClientType) ([]*models.Client, error) {
+func (s *clientService) ListClients(userID string, clientType models.ClientType) ([]*models.Client, error) {
 	if userID != "" {
 		// 获取用户的所有客户端
 		clients, err := s.clientRepo.ListUserClients(userID)
@@ -192,7 +192,7 @@ func (s *ClientServiceImpl) ListClients(userID string, clientType models.ClientT
 }
 
 // ListUserClients 列出用户的所有客户端
-func (s *ClientServiceImpl) ListUserClients(userID string) ([]*models.Client, error) {
+func (s *clientService) ListUserClients(userID string) ([]*models.Client, error) {
 	clients, err := s.clientRepo.ListUserClients(userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list user clients for %s: %w", userID, err)
@@ -201,7 +201,7 @@ func (s *ClientServiceImpl) ListUserClients(userID string) ([]*models.Client, er
 }
 
 // GetClientPortMappings 获取客户端的端口映射
-func (s *ClientServiceImpl) GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) {
+func (s *clientService) GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) {
 	mappings, err := s.mappingRepo.GetClientPortMappings(utils.Int64ToString(clientID))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client port mappings for %d: %w", clientID, err)
@@ -210,7 +210,7 @@ func (s *ClientServiceImpl) GetClientPortMappings(clientID int64) ([]*models.Por
 }
 
 // SearchClients 搜索客户端
-func (s *ClientServiceImpl) SearchClients(keyword string) ([]*models.Client, error) {
+func (s *clientService) SearchClients(keyword string) ([]*models.Client, error) {
 	// 暂时返回空列表，因为ClientRepository没有Search方法
 	// TODO: 实现搜索功能
 	utils.Warnf("SearchClients not implemented yet")
@@ -218,7 +218,7 @@ func (s *ClientServiceImpl) SearchClients(keyword string) ([]*models.Client, err
 }
 
 // GetClientStats 获取客户端统计信息
-func (s *ClientServiceImpl) GetClientStats(clientID int64) (*stats.ClientStats, error) {
+func (s *clientService) GetClientStats(clientID int64) (*stats.ClientStats, error) {
 	if s.statsMgr == nil {
 		return nil, fmt.Errorf("stats manager not available")
 	}

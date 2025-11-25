@@ -136,6 +136,10 @@ type PortMapping struct {
 	SourcePort     int                   `json:"source_port"`      // 源端口
 	TargetHost     string                `json:"target_host"`      // 目标主机
 	TargetPort     int                   `json:"target_port"`      // 目标端口
+	
+	// ✅ 映射连接认证
+	SecretKey      string                `json:"secret_key"`       // 映射连接固定秘钥（随机生成，用于 TunnelOpen 认证）
+	
 	Config         configs.MappingConfig `json:"config"`           // 映射配置
 	Status         MappingStatus         `json:"status"`           // 映射状态
 	CreatedAt      time.Time             `json:"created_at"`       // 创建时间

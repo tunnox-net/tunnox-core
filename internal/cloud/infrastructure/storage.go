@@ -21,15 +21,15 @@ type StorageManager interface {
 	HealthCheck() error
 }
 
-// StorageManagerImpl 存储管理器实现
-type StorageManagerImpl struct {
+// storageManager 存储管理器实现
+type storageManager struct {
 	*dispose.ManagerBase
 	storage storage.Storage
 }
 
 // NewStorageManager 创建新的存储管理器
-func NewStorageManager(storage storage.Storage, parentCtx context.Context) *StorageManagerImpl {
-	manager := &StorageManagerImpl{
+func NewStorageManager(storage storage.Storage, parentCtx context.Context) *storageManager {
+	manager := &storageManager{
 		ManagerBase: dispose.NewManager("StorageManager", parentCtx),
 		storage:     storage,
 	}
@@ -37,24 +37,24 @@ func NewStorageManager(storage storage.Storage, parentCtx context.Context) *Stor
 }
 
 // GetStorage 获取存储实例
-func (sm *StorageManagerImpl) GetStorage() storage.Storage {
+func (sm *storageManager) GetStorage() storage.Storage {
 	return sm.storage
 }
 
 // Initialize 初始化存储
-func (sm *StorageManagerImpl) Initialize(ctx context.Context) error {
+func (sm *storageManager) Initialize(ctx context.Context) error {
 	// 这里可以添加存储初始化逻辑
 	return nil
 }
 
 // Close 关闭存储
-func (sm *StorageManagerImpl) Close() error {
+func (sm *storageManager) Close() error {
 	// 这里可以添加存储关闭逻辑
 	return nil
 }
 
 // HealthCheck 健康检查
-func (sm *StorageManagerImpl) HealthCheck() error {
+func (sm *storageManager) HealthCheck() error {
 	// 这里可以添加存储健康检查逻辑
 	return nil
 }

@@ -137,6 +137,51 @@ security:
       enabled: false
       keys: []                # API 密钥列表
 
+# 消息代理配置
+message_broker:
+  # 类型: memory, redis, nats
+  type: "memory"
+  
+  # 节点ID（集群模式下必须）
+  node_id: "node-1"
+  
+  # Redis 配置（当 type 为 redis 时使用）
+  redis:
+    addrs: ["localhost:6379"]
+    password: ""
+    db: 0
+    cluster_mode: false
+    pool_size: 100
+
+# 桥接连接池配置
+bridge_pool:
+  # 启用跨节点桥接
+  enabled: false
+  
+  # 每个节点的最小连接数
+  min_conns_per_node: 2
+  
+  # 每个节点的最大连接数
+  max_conns_per_node: 10
+  
+  # 连接最大空闲时间（秒）
+  max_idle_time: 300
+  
+  # 每个连接的最大流数量
+  max_streams_per_conn: 100
+  
+  # 拨号超时时间（秒）
+  dial_timeout: 10
+  
+  # 健康检查间隔（秒）
+  health_check_interval: 30
+  
+  # gRPC 服务器配置
+  grpc_server:
+    enabled: false
+    port: 50051
+    host: "0.0.0.0"
+
 # 开发配置
 development:
   debug: false               # 调试模式

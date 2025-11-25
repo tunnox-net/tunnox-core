@@ -13,8 +13,8 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// AnonymousServiceImpl 匿名服务实现
-type AnonymousServiceImpl struct {
+// anonymousService 匿名服务实现
+type anonymousService struct {
 	*dispose.ServiceBase
 	baseService *BaseService
 	clientRepo  *repos.ClientRepository
@@ -24,7 +24,7 @@ type AnonymousServiceImpl struct {
 
 // NewAnonymousService 创建匿名服务
 func NewAnonymousService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) AnonymousService {
-	service := &AnonymousServiceImpl{
+	service := &anonymousService{
 		ServiceBase: dispose.NewService("AnonymousService", parentCtx),
 		baseService: NewBaseService(),
 		clientRepo:  clientRepo,
@@ -35,7 +35,7 @@ func NewAnonymousService(clientRepo *repos.ClientRepository, mappingRepo *repos.
 }
 
 // GenerateAnonymousCredentials 生成匿名客户端凭据
-func (s *AnonymousServiceImpl) GenerateAnonymousCredentials() (*models.Client, error) {
+func (s *anonymousService) GenerateAnonymousCredentials() (*models.Client, error) {
 	// 生成客户端ID
 	clientID, err := s.idManager.GenerateClientID()
 	if err != nil {
@@ -78,7 +78,7 @@ func (s *AnonymousServiceImpl) GenerateAnonymousCredentials() (*models.Client, e
 }
 
 // GetAnonymousClient 获取匿名客户端
-func (s *AnonymousServiceImpl) GetAnonymousClient(clientID int64) (*models.Client, error) {
+func (s *anonymousService) GetAnonymousClient(clientID int64) (*models.Client, error) {
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
 		return nil, fmt.Errorf("anonymous client %d not found: %w", clientID, err)
@@ -93,7 +93,7 @@ func (s *AnonymousServiceImpl) GetAnonymousClient(clientID int64) (*models.Clien
 }
 
 // DeleteAnonymousClient 删除匿名客户端
-func (s *AnonymousServiceImpl) DeleteAnonymousClient(clientID int64) error {
+func (s *anonymousService) DeleteAnonymousClient(clientID int64) error {
 	// 获取客户端信息
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
@@ -120,7 +120,7 @@ func (s *AnonymousServiceImpl) DeleteAnonymousClient(clientID int64) error {
 }
 
 // ListAnonymousClients 列出匿名客户端
-func (s *AnonymousServiceImpl) ListAnonymousClients() ([]*models.Client, error) {
+func (s *anonymousService) ListAnonymousClients() ([]*models.Client, error) {
 	clients, err := s.clientRepo.ListClients()
 	if err != nil {
 		return nil, s.baseService.WrapError(err, "list clients")
@@ -138,7 +138,7 @@ func (s *AnonymousServiceImpl) ListAnonymousClients() ([]*models.Client, error) 
 }
 
 // CreateAnonymousMapping 创建匿名映射
-func (s *AnonymousServiceImpl) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
+func (s *anonymousService) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
 	// 验证源客户端
 	_, err := s.clientRepo.GetClient(utils.Int64ToString(sourceClientID))
 	if err != nil {
@@ -186,7 +186,7 @@ func (s *AnonymousServiceImpl) CreateAnonymousMapping(sourceClientID, targetClie
 }
 
 // GetAnonymousMappings 获取匿名映射
-func (s *AnonymousServiceImpl) GetAnonymousMappings() ([]*models.PortMapping, error) {
+func (s *anonymousService) GetAnonymousMappings() ([]*models.PortMapping, error) {
 	// 暂时返回空列表，因为PortMappingRepo没有按类型列表的方法
 	// TODO: 实现按类型列表功能
 	utils.Warnf("GetAnonymousMappings not implemented yet")
@@ -194,7 +194,7 @@ func (s *AnonymousServiceImpl) GetAnonymousMappings() ([]*models.PortMapping, er
 }
 
 // CleanupExpiredAnonymous 清理过期的匿名资源
-func (s *AnonymousServiceImpl) CleanupExpiredAnonymous() error {
+func (s *anonymousService) CleanupExpiredAnonymous() error {
 	// 获取所有匿名客户端
 	anonymousClients, err := s.ListAnonymousClients()
 	if err != nil {

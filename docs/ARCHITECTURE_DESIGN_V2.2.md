@@ -658,6 +658,9 @@ type PortMapping struct {
     TargetHost       string    `json:"target_host"`        // 目标主机
     TargetPort       int       `json:"target_port"`        // 目标端口
     
+    // ✅ 映射连接认证
+    SecretKey        string    `json:"secret_key"`         // 映射连接固定秘钥（随机生成）
+    
     // 状态
     Status           string    `json:"status"`             // active/disabled
     Enabled          bool      `json:"enabled"`
@@ -1350,6 +1353,763 @@ graph TB
 4. Tunnox Core 更新配额，实时推送给客户端
 5. 商业平台记录订单到自己的数据库
 ```
+
+---
+
+## 🔐 双连接模型与安全认证
+
+### 核心架构：指令连接 + 映射连接
+
+**Tunnox Core** 采用**双连接模型**，严格区分控制平面和数据平面：
+
+```mermaid
+graph TB
+    subgraph 指令连接ControlConnection[指令连接 (Control Connection)]
+        CC1[每个客户端 1 条长连接]
+        CC2[用途：命令/配置/回调]
+        CC3[认证：Handshake + JWT/密钥]
+        CC4[生命周期：客户端在线期间]
+    end
+    
+    subgraph 映射连接TunnelConnection[映射连接 (Tunnel Connection)]
+        TC1[每个用户请求 1 条连接]
+        TC2[用途：纯数据透传]
+        TC3[认证：TunnelOpen + SecretKey]
+        TC4[生命周期：按需建立/关闭]
+    end
+    
+    subgraph 客户端行为
+        Start[ClientA 启动] --> Control[建立指令连接]
+        User[User 连接 :3306] --> Tunnel[建立映射连接]
+    end
+    
+    Control --> 指令连接ControlConnection
+    Tunnel --> 映射连接TunnelConnection
+    
+    style 指令连接ControlConnection fill:#4A90E2,color:#fff
+    style 映射连接TunnelConnection fill:#52C41A,color:#fff
+```
+
+**关键区别**：
+
+| 维度 | 指令连接 | 映射连接 |
+|------|---------|---------|
+| **数量** | 1客户端 = 1连接 | 1用户请求 = 1连接 |
+| **生命周期** | 长连接（分钟/小时级） | 短连接（秒/分钟级） |
+| **认证方式** | Handshake + JWT/密钥/匿名 | TunnelOpen + Mapping.SecretKey |
+| **用途** | 命令、配置推送、回调 | 纯数据透传 |
+| **并发数** | 1 | 可能上千（如 Web 服务） |
+| **数据包类型** | Handshake, Command, Heartbeat | TunnelOpen, TunnelData, TunnelClose |
+
+**核心思想**：
+- ✅ **职责分离**：控制平面（指令）与数据平面（映射）完全隔离
+- ✅ **按需认证**：指令连接一次认证，映射连接每条独立认证
+- ✅ **性能优化**：映射连接无命令处理开销，纯透传
+- ✅ **安全增强**：映射连接基于固定 SecretKey，防止滥用
+
+---
+
+### 1. 指令连接详解
+
+#### 1.1 指令连接的生命周期
+
+```mermaid
+sequenceDiagram
+    participant CA as ClientA
+    participant SA as ServerA
+    participant Cloud as CloudControl
+    participant Store as Storage
+    
+    Note over CA: ClientA 启动
+    
+    CA->>SA: 1. TCP 连接（指令端口 :7000）
+    CA->>SA: 2. Handshake Packet<br/>{client_id, auth_token/key/anonymous}
+    
+    SA->>Cloud: 3. ValidateAuth(token)
+    Cloud->>Store: 4. GetClient(client_id)
+    Store-->>Cloud: 5. Client 信息
+    Cloud-->>SA: 6. 验证成功
+    
+    SA->>SA: 7. 创建 ControlConnection<br/>绑定 ClientID
+    SA->>CA: 8. HandshakeResp {success: true}
+    
+    rect rgb(240, 255, 240)
+        Note over CA,SA: ✅ 指令连接建立<br/>保持长连接
+    end
+    
+    loop 客户端在线期间
+        SA->>CA: ConfigUpdate (推送映射配置)
+        CA->>SA: ACK
+        
+        SA->>CA: Command (各种控制指令)
+        CA->>SA: CommandResp
+        
+        CA->>SA: Heartbeat (30s)
+        SA->>CA: HeartbeatAck
+    end
+    
+    Note over CA: ClientA 关闭/崩溃
+    CA->>SA: 连接断开
+    SA->>SA: 清理 ControlConnection
+    SA->>Cloud: 发布 ClientOfflineEvent
+```
+
+**关键点**：
+- ✅ **唯一性**：每个 ClientID 同时只能有 1 条指令连接（新连接会踢掉旧连接）
+- ✅ **长连接**：使用 Heartbeat 保活，断线自动重连
+- ✅ **双向通信**：Server 可以主动推送配置/命令给 Client
+- ✅ **认证灵活**：支持 JWT、API Key、用户名密码、匿名模式
+
+#### 1.2 指令连接的数据包类型
+
+```go
+// 指令连接使用的数据包类型
+const (
+    Handshake     Type = 0x01  // 握手认证
+    HandshakeResp Type = 0x02  // 握手响应
+    Heartbeat     Type = 0x03  // 心跳
+    JsonCommand   Type = 0x10  // JSON 命令
+    CommandResp   Type = 0x11  // 命令响应
+)
+```
+
+**示例命令**：
+- `ConfigUpdate` - 推送映射配置到客户端
+- `MappingCreate` - 通知客户端创建本地监听
+- `MappingDelete` - 通知客户端删除映射
+- `StatsQuery` - 查询客户端统计信息
+
+---
+
+### 2. 映射连接详解
+
+#### 2.1 映射连接的生命周期
+
+```mermaid
+sequenceDiagram
+    participant User as 用户应用
+    participant CA as ClientA
+    participant SA as ServerA
+    participant Store as Storage
+    participant SB as ServerB
+    participant CB as ClientB
+    participant Target as MySQL:3306
+    
+    Note over User: 用户连接 localhost:3306
+    
+    User->>CA: TCP 连接到 3306
+    
+    Note over CA: ClientA 检查本地映射配置<br/>找到 mapping_id: "pm-001"
+    
+    CA->>SA: 1. TCP 连接（数据端口 :7001）
+    CA->>SA: 2. TunnelOpen Packet<br/>{mapping_id, secret_key, tunnel_id}
+    
+    SA->>Store: 3. GetPortMapping("pm-001")
+    Store-->>SA: 4. Mapping {secret_key: "xxx"}
+    
+    SA->>SA: 5. 验证 secret_key 匹配？
+    
+    alt 验证通过
+        SA->>SA: 6. 创建 TunnelConnection
+        SA->>Store: 7. GetClient(target_client_id)
+        Store-->>SA: 8. ClientB 在 ServerB
+        
+        SA->>SB: 9. gRPC 建立桥接
+        SB->>CB: 10. 通知建立到 MySQL 连接
+        CB->>Target: 11. TCP 连接
+        Target-->>CB: 12. 连接成功
+        
+        SA->>CA: 13. TunnelOpenAck {success: true}
+        
+        rect rgb(240, 255, 240)
+            Note over User,Target: ✅ 映射连接建立<br/>开始透传数据
+        end
+        
+        loop 数据传输
+            User->>CA: MySQL 查询
+            CA->>SA: TunnelData {tunnel_id, payload}
+            SA->>SB: gRPC 转发
+            SB->>CB: TunnelData
+            CB->>Target: 原始数据
+            
+            Target-->>CB: MySQL 响应
+            CB-->>SB: TunnelData
+            SB-->>SA: gRPC 转发
+            SA-->>CA: TunnelData
+            CA-->>User: 原始响应
+        end
+        
+        User->>CA: 断开连接
+        CA->>SA: TunnelClose {tunnel_id}
+        SA->>SA: 清理 TunnelConnection
+        SA->>SB: 关闭 gRPC 流
+        SB->>CB: 关闭 Target 连接
+        
+    else 验证失败
+        SA->>CA: TunnelOpenAck {success: false}
+        CA->>User: 关闭连接
+    end
+```
+
+**关键点**：
+- ✅ **多连接**：同一个映射可以有数百/数千条并发连接
+- ✅ **按需建立**：用户连接时才建立，用户断开时关闭
+- ✅ **独立认证**：每条连接独立验证 secret_key
+- ✅ **纯透传**：TunnelData 不解析内容，直接转发字节流
+
+#### 2.2 映射连接的数据包类型
+
+```go
+// 映射连接使用的数据包类型
+const (
+    TunnelOpen    Type = 0x20  // 隧道打开（携带 mapping_id + secret_key）
+    TunnelOpenAck Type = 0x21  // 隧道打开确认
+    TunnelData    Type = 0x22  // 隧道数据（纯透传）
+    TunnelClose   Type = 0x23  // 隧道关闭
+)
+```
+
+**TunnelOpen 认证**：
+```go
+type TunnelOpenRequest struct {
+    MappingID string `json:"mapping_id"` // 映射ID
+    TunnelID  string `json:"tunnel_id"`  // 隧道ID（UUID）
+    SecretKey string `json:"secret_key"` // 映射的固定秘钥
+}
+
+// ServerA 验证流程
+mapping := storage.GetPortMapping(req.MappingID)
+if mapping.SecretKey != req.SecretKey {
+    return errors.New("invalid secret key")
+}
+```
+
+---
+
+### 3. 双连接模型对比
+
+#### 3.1 连接建立时机
+
+```mermaid
+graph TB
+    subgraph ClientA生命周期
+        Start[ClientA 启动]
+        
+        Start --> Control[建立指令连接]
+        
+        Control --> Ready[就绪状态]
+        
+        Ready --> Wait[等待用户请求]
+        
+        Wait --> |User连接:3306| Tunnel1[建立映射连接1]
+        Wait --> |User连接:3306| Tunnel2[建立映射连接2]
+        Wait --> |User连接:3306| Tunnel3[建立映射连接N]
+        
+        Tunnel1 --> |User断开| Close1[关闭连接1]
+        Tunnel2 --> |User断开| Close2[关闭连接2]
+        Tunnel3 --> |User断开| Close3[关闭连接N]
+        
+        Close1 --> Wait
+        Close2 --> Wait
+        Close3 --> Wait
+        
+        Ready --> |ClientA退出| Shutdown[关闭指令连接]
+    end
+    
+    style Control fill:#4A90E2,color:#fff
+    style Tunnel1 fill:#52C41A,color:#fff
+    style Tunnel2 fill:#52C41A,color:#fff
+    style Tunnel3 fill:#52C41A,color:#fff
+```
+
+#### 3.2 认证流程对比
+
+| 步骤 | 指令连接 | 映射连接 |
+|------|---------|---------|
+| **1. 建立连接** | TCP → ServerA:7000 | TCP → ServerA:7001 |
+| **2. 发送认证** | Handshake {client_id, auth_token} | TunnelOpen {mapping_id, secret_key} |
+| **3. 验证方式** | CloudControl.ValidateToken(token) | mapping.SecretKey == req.SecretKey |
+| **4. 验证通过** | 创建 ControlConnection | 创建 TunnelConnection |
+| **5. 响应** | HandshakeResp | TunnelOpenAck |
+| **6. 后续操作** | 保持长连接，双向通信 | 透传数据，用户断开时关闭 |
+
+---
+
+### 4. 认证安全机制
+
+#### 4.1 指令连接认证（灵活）
+
+```mermaid
+sequenceDiagram
+    participant C as ClientA
+    participant S as ServerA
+    participant JWT as JWT Manager
+    participant Store as Storage
+    
+    Note over C: ClientA 启动
+    
+    C->>S: 1. TCP/WebSocket 建立连接
+    C->>S: 2. Handshake Packet<br/>{client_id: 100001, token: "eyJ..."}
+    
+    S->>JWT: 3. ValidateToken(token)
+    JWT->>JWT: 验证签名、过期时间、nonce
+    JWT-->>S: 4. 返回 Claims {client_id, user_id}
+    
+    S->>Store: 5. GetClient(100001)
+    Store-->>S: 6. 返回 Client 信息
+    
+    alt Client 存在且状态正常
+        S->>S: 7. 绑定 Connection.ClientID = 100001
+        S->>S: 8. Connection.Authenticated = true
+        S->>C: 9. HandshakeResp {success: true}
+        
+        rect rgb(240, 255, 240)
+            Note over C,S: ✅ 连接已认证<br/>后续可创建隧道
+        end
+    else Client 不存在或状态异常
+        S->>C: 10. HandshakeResp {success: false, error}
+        S->>C: 11. 断开连接
+        
+        rect rgb(255, 240, 240)
+            Note over C,S: ❌ 认证失败
+        end
+    end
+```
+
+**支持多种认证方式**：
+
+1. **JWT Token 认证**（推荐）
+```json
+{
+  "packet_type": "Handshake",
+  "payload": {
+    "client_id": 100000001,
+    "auth_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "protocol_version": "2.0"
+  }
+}
+```
+
+2. **API Key 认证**
+```json
+{
+  "packet_type": "Handshake",
+  "payload": {
+    "client_id": 100000001,
+    "api_key": "sk_live_51H8x2y...",
+    "protocol_version": "2.0"
+  }
+}
+```
+
+3. **匿名认证**（限制功能）
+```json
+{
+  "packet_type": "Handshake",
+  "payload": {
+    "anonymous": true,
+    "device_id": "uuid-xxx",
+    "protocol_version": "2.0"
+  }
+}
+```
+
+**关键代码结构**：
+
+```go
+// 指令连接对象
+type ControlConnection struct {
+    ConnID        string
+    ClientID      int64          // ← 认证后绑定
+    UserID        string         // ← 认证后绑定
+    Stream        stream.PackageStreamer
+    Authenticated bool           // ← 认证状态标记
+    Protocol      string         // tcp/ws/quic
+    CreatedAt     time.Time
+    LastActiveAt  time.Time
+}
+
+// 认证处理
+func (am *AuthManager) HandleHandshake(conn *ControlConnection, req *HandshakeRequest) error {
+    // 1. 验证认证信息
+    authResp, err := am.cloudControl.ValidateToken(req.AuthToken)
+    if err != nil {
+        return fmt.Errorf("authentication failed: %w", err)
+    }
+    
+    // 2. 检查客户端状态
+    client, err := am.cloudControl.GetClient(authResp.Client.ID)
+    if err != nil || client.Status != "active" {
+        return errors.New("client not active")
+    }
+    
+    // 3. 绑定连接 ↔ ClientID
+    conn.ClientID = client.ID
+    conn.UserID = client.UserID
+    conn.Authenticated = true
+    
+    // 4. 踢掉旧连接（同一ClientID只能有1条指令连接）
+    am.sessionManager.KickOldControlConnection(client.ID, conn.ConnID)
+    
+    return nil
+}
+```
+
+---
+
+#### 4.2 映射连接认证（固定秘钥）
+
+**每条映射连接独立认证**，基于 Mapping 配置的固定秘钥。
+
+**PortMapping 配置示例**：
+```go
+type PortMapping struct {
+    ID             string `json:"id"`              // "pm-001"
+    SourceClientID int64  `json:"source_client_id"` // 100000001
+    TargetClientID int64  `json:"target_client_id"` // 100000002
+    TargetHost     string `json:"target_host"`     // "localhost"
+    TargetPort     int    `json:"target_port"`     // 3306
+    Protocol       string `json:"protocol"`        // "tcp"
+    
+    // ✅ 映射连接认证秘钥（随机生成，用户不可见）
+    SecretKey      string `json:"secret_key"`      // "sk_mapping_abc123..."
+    
+    Status         string `json:"status"`          // "active"
+}
+```
+
+**TunnelOpen 认证流程**：
+
+```mermaid
+sequenceDiagram
+    participant User as 用户应用
+    participant CA as ClientA
+    participant SA as ServerA
+    participant Store as Storage
+    
+    Note over User: MySQL Client 连接 localhost:3306
+    
+    User->>CA: 1. TCP 连接到 3306
+    
+    CA->>CA: 2. 查找本地映射配置<br/>port:3306 → mapping_id + secret_key
+    
+    CA->>SA: 3. 新建 TCP 连接（数据端口 :7001）
+    
+    CA->>SA: 4. TunnelOpen Packet<br/>{mapping_id: "pm-001",<br/>secret_key: "sk_mapping_abc",<br/>tunnel_id: "uuid-xxx"}
+    
+    SA->>Store: 5. GetPortMapping("pm-001")
+    Store-->>SA: 6. 返回 Mapping {secret_key: "sk_mapping_abc"}
+    
+    SA->>SA: 7. 验证秘钥<br/>req.SecretKey == mapping.SecretKey?
+    
+    alt 秘钥验证通过
+        SA->>SA: 8. 创建 TunnelConnection<br/>标记 Authenticated = true
+        
+        SA->>Store: 9. GetClient(target_client_id)
+        Store-->>SA: 10. 返回 TargetClient 信息
+        
+        SA->>SA: 11. 判断本地/跨节点
+        
+        Note over SA: 建立到 ClientB 的通道
+        
+        SA->>CA: 12. TunnelOpenAck {success: true}
+        
+        rect rgb(240, 255, 240)
+            Note over User,SA: ✅ 映射连接建立<br/>开始透传数据
+        end
+        
+    else 秘钥验证失败
+        SA->>CA: TunnelOpenAck {success: false}
+        SA->>CA: 关闭连接
+        
+        rect rgb(255, 240, 240)
+            Note over CA: ❌ 认证失败
+        end
+    end
+```
+
+**关键代码结构**：
+
+```go
+// 映射连接对象
+type TunnelConnection struct {
+    ConnID        string
+    TunnelID      string
+    MappingID     string
+    Stream        stream.PackageStreamer
+    Authenticated bool  // ← 基于 secret_key 认证
+    CreatedAt     time.Time
+    LastActiveAt  time.Time
+}
+
+// TunnelOpen 请求
+type TunnelOpenRequest struct {
+    MappingID string `json:"mapping_id"` // 映射ID
+    TunnelID  string `json:"tunnel_id"`  // 隧道ID（UUID）
+    SecretKey string `json:"secret_key"` // ✅ 映射的固定秘钥
+}
+
+// 认证处理
+func (tm *TunnelManager) HandleTunnelOpen(tunnelConn *TunnelConnection, req *TunnelOpenRequest) error {
+    // 1. 查询映射配置
+    mapping, err := tm.cloudControl.GetPortMapping(req.MappingID)
+    if err != nil {
+        return fmt.Errorf("mapping not found: %w", err)
+    }
+    
+    // 2. ✅ 验证映射的秘钥（关键！）
+    if mapping.SecretKey != req.SecretKey {
+        utils.Warnf("TunnelManager: invalid secret key for mapping %s", req.MappingID)
+        return errors.New("invalid secret key")
+    }
+    
+    // 3. 映射状态检查
+    if mapping.Status != "active" {
+        return errors.New("mapping inactive")
+    }
+    
+    // 4. 标记连接已认证
+    tunnelConn.Authenticated = true
+    tunnelConn.MappingID = req.MappingID
+    tunnelConn.TunnelID = req.TunnelID
+    
+    // 5. 继续建立隧道...
+    }
+    
+    // 6. 并发连接数检查
+    activeTunnels := s.tunnelRegistry.CountByMapping(mapping.ID)
+    if activeTunnels >= mapping.MaxConnections {
+        return fmt.Errorf("connection limit reached: %d/%d", activeTunnels, mapping.MaxConnections)
+    }
+    
+    return nil
+}
+```
+
+---
+
+### 数据透传机制
+
+**核心设计原则**：**一次包头，后续纯透传**
+
+```mermaid
+graph LR
+    subgraph 用户数据流
+        U1[User 发送<br/>MySQL 查询] --> U2[原始字节流<br/>0x03 0x53 0x45...]
+    end
+    
+    subgraph ClientA 处理
+        C1[接收原始数据] --> C2[封装一次<br/>TunnelData + payload]
+        C2 --> C3[不解析内容！]
+    end
+    
+    subgraph ServerA 处理
+        S1[接收 TunnelData] --> S2[提取 payload]
+        S2 --> S3[不解析内容！]
+        S3 --> S4[直接转发]
+    end
+    
+    subgraph gRPC Bridge
+        G1[BridgePacket<br/>stream_id + payload] --> G2[多路复用传输]
+    end
+    
+    subgraph ServerB 处理
+        B1[接收 BridgePacket] --> B2[提取 payload]
+        B2 --> B3[不解析内容！]
+        B3 --> B4[直接转发]
+    end
+    
+    subgraph ClientB 处理
+        CB1[接收 TunnelData] --> CB2[提取 payload]
+        CB2 --> CB3[写入目标连接]
+    end
+    
+    subgraph 目标服务
+        T1[MySQL 接收<br/>原始字节流]
+    end
+    
+    U2 --> C1
+    C3 --> S1
+    S4 --> G1
+    G2 --> B1
+    B4 --> CB1
+    CB3 --> T1
+    
+    style C2 fill:#FFA940,color:#000
+    style S4 fill:#FFA940,color:#000
+    style G2 fill:#597EF7,color:#fff
+    style B4 fill:#FFA940,color:#000
+    style CB2 fill:#FFA940,color:#000
+```
+
+**关键点**：
+1. ✅ **只封装，不解析**：仅添加 Tunnox 协议头（PacketType, TunnelID），内容原封不动
+2. ✅ **协议无关**：支持任意应用层协议（MySQL, Redis, SSH, HTTP, WebSocket...）
+3. ✅ **零性能开销**：无需协议解析和重组，直接透传字节流
+4. ✅ **连接池复用**：gRPC 连接通过 stream_id 区分不同隧道，物理连接复用
+
+---
+
+### 数据包类型定义
+
+```go
+// 控制类数据包（需要解析）
+const (
+    PacketTypeHandshake      = 0x01  // 握手认证
+    PacketTypeHandshakeResp  = 0x02  // 握手响应
+    PacketTypeHeartbeat      = 0x03  // 心跳
+    PacketTypeCommand        = 0x10  // 命令（创建映射等）
+    PacketTypeCommandResp    = 0x11  // 命令响应
+)
+
+// 转发类数据包（透传）
+const (
+    PacketTypeTunnelOpen     = 0x20  // 隧道打开（一次性，携带 MappingID）
+    PacketTypeTunnelOpenAck  = 0x21  // 隧道打开确认
+    PacketTypeTunnelData     = 0x22  // 隧道数据（纯透传）
+    PacketTypeTunnelClose    = 0x23  // 隧道关闭
+)
+```
+
+---
+
+### 完整透传流程示例
+
+假设用户通过 ClientA 访问 ClientB 的 MySQL：
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant CA as ClientA
+    participant SA as ServerA
+    participant Bridge as gRPC Bridge Pool
+    participant SB as ServerB
+    participant CB as ClientB
+    participant MySQL as MySQL:3306
+    
+    rect rgb(240, 248, 255)
+        Note over User,MySQL: 阶段1: 建立隧道（一次性）
+        
+        User->>CA: 连接 localhost:3306
+        CA->>SA: TunnelOpen {mapping_id, tunnel_id}
+        SA->>SA: 验证权限 + 查询路由
+        SA->>Bridge: 创建 ForwardSession
+        Bridge->>SB: gRPC 连接建立
+        SB->>CB: 通知建立 MySQL 连接
+        CB->>MySQL: TCP 连接
+        MySQL-->>CB: 连接成功
+        CB-->>SB: 就绪
+        SB-->>SA: 就绪
+        SA-->>CA: TunnelOpenAck
+    end
+    
+    rect rgb(240, 255, 240)
+        Note over User,MySQL: 阶段2: 数据透传（持续）
+        
+        User->>CA: SELECT * FROM users;<br/>[0x03 0x53 0x45...]
+        CA->>SA: TunnelData {tunnel_id, payload: [原始字节]}
+        SA->>Bridge: BridgePacket {stream_id, payload: [原始字节]}
+        Bridge->>SB: gRPC 传输（不解析）
+        SB->>CB: TunnelData {tunnel_id, payload: [原始字节]}
+        CB->>MySQL: 写入原始字节
+        
+        MySQL-->>CB: 查询结果 [0x... 响应数据]
+        CB-->>SB: TunnelData {tunnel_id, payload: [原始字节]}
+        SB-->>Bridge: BridgePacket {stream_id, payload: [原始字节]}
+        Bridge-->>SA: gRPC 传输（不解析）
+        SA-->>CA: TunnelData {tunnel_id, payload: [原始字节]}
+        CA-->>User: 写入原始字节
+    end
+    
+    rect rgb(255, 245, 240)
+        Note over User,MySQL: 阶段3: 关闭隧道
+        
+        User->>CA: 关闭连接
+        CA->>SA: TunnelClose {tunnel_id}
+        SA->>Bridge: Close {stream_id}
+        Bridge->>SB: gRPC 关闭通知
+        SB->>CB: 关闭 MySQL 连接
+        CB->>MySQL: 关闭
+    end
+```
+
+**性能指标**：
+- **首次建立延迟**：< 100ms（包含权限验证 + gRPC 连接）
+- **数据转发延迟**：< 10ms（纯转发，无解析）
+- **吞吐量**：> 1GB/s（单条隧道，取决于网络带宽）
+
+---
+
+### 跨节点安全传输
+
+```mermaid
+graph TB
+    subgraph ServerA
+        A1[验证 JWT + ClientID] --> A2[发布 BridgeRequest]
+        A2 --> A3[签名消息<br/>HMAC-SHA256]
+    end
+    
+    subgraph MessageBroker
+        M1[Redis Pub/Sub] --> M2[广播到 ServerB]
+    end
+    
+    subgraph ServerB
+        B1[接收 BridgeRequest] --> B2[验证签名]
+        B2 -->|签名有效| B3[建立 gRPC Session]
+        B2 -->|签名无效| B4[拒绝请求]
+    end
+    
+    A3 --> M1
+    M2 --> B1
+    
+    style A1 fill:#52C41A,color:#fff
+    style B2 fill:#FFA940,color:#000
+    style B3 fill:#52C41A,color:#fff
+    style B4 fill:#FF4D4F,color:#fff
+```
+
+**签名机制**：
+
+```go
+// ServerA 发布桥接请求时签名
+func (s *ServerA) publishBridgeRequest(req *BridgeRequestMessage) {
+    // 计算签名
+    data := fmt.Sprintf("%s:%s:%d:%d:%s", 
+        req.SourceNodeID, req.TargetNodeID,
+        req.SourceClientID, req.TargetClientID,
+        req.RequestID)
+    
+    req.Signature = hmac.SHA256(s.config.ClusterSharedSecret, data)
+    
+    // 发布到 MessageBroker
+    s.messageBroker.Publish(TopicBridgeRequest, req)
+}
+
+// ServerB 验证签名
+func (s *ServerB) verifyBridgeRequest(req *BridgeRequestMessage) bool {
+    data := fmt.Sprintf("%s:%s:%d:%d:%s", 
+        req.SourceNodeID, req.TargetNodeID,
+        req.SourceClientID, req.TargetClientID,
+        req.RequestID)
+    
+    expectedSig := hmac.SHA256(s.config.ClusterSharedSecret, data)
+    
+    return hmac.Equal(expectedSig, req.Signature)
+}
+```
+
+---
+
+### 安全防护总结
+
+| 层次 | 机制 | 防护点 |
+|------|------|--------|
+| **连接层** | JWT 握手认证 | 防止未授权连接 |
+| **隧道层** | ClientID 权限验证 | 防止滥用他人映射 |
+| **消息层** | HMAC 签名 | 防止跨节点消息伪造 |
+| **会话层** | Nonce 防重放 | 防止 Token 重放攻击 |
+| **应用层** | 配额/白名单/限流 | 防止滥用和 DDoS |
+| **传输层** | TLS 加密（可选） | 防止中间人攻击 |
 
 ---
 
@@ -2467,71 +3227,159 @@ cluster:
     health_check_interval: 30s      # 健康检查间隔
 ```
 
-### 9. 跨节点转发完整流程（优化版）
+### 9. 跨节点转发完整流程（基于一次包头+透传）
+
+**场景**：User 通过 ClientA 访问 ClientB 的 MySQL
 
 ```mermaid
 sequenceDiagram
-    participant C1 as Client A<br/>(上海)
-    participant S1 as Server-1<br/>(上海节点)
-    participant Pool as Connection Pool
-    participant Stream as gRPC Stream<br/>(复用)
+    participant User as 用户浏览器
+    participant CA as ClientA<br/>(上海)
+    participant SA as ServerA<br/>(node-001)
+    participant Store as Storage
     participant Broker as MessageBroker
-    participant S2 as Server-2<br/>(北京节点)
-    participant C2 as Client B<br/>(北京)
-    participant MySQL as MySQL
+    participant Pool as gRPC 连接池
+    participant SB as ServerB<br/>(node-002)
+    participant CB as ClientB<br/>(北京)
+    participant MySQL as MySQL:3306
     
-    Note over C1,MySQL: 假设 Client A 要访问 Client B 的 MySQL (3306)
-    
-    C1->>S1: TCP 连接到映射端口 (13306)
-    S1->>S1: 查询 MappingID → Client B
-    S1->>Broker: 查询 Client B 路由
-    Broker-->>S1: Client B 在 Server-2
-    
-    S1->>Pool: AcquireConnection("server-2")
-    
-    alt 首次连接 Server-2
-        Pool->>Stream: 创建 gRPC 双向流
-        Stream->>S2: 建立连接
-        Pool-->>S1: 返回新连接 (in_use=1)
-    else 已有连接到 Server-2
-        Pool-->>S1: 返回复用连接 (in_use=45)
+    rect rgb(240, 248, 255)
+        Note over User,MySQL: 阶段1: 建立映射连接（独立TCP，含认证）
+        
+        User->>CA: TCP 连接 localhost:3306
+        CA->>CA: 查找映射配置<br/>3306 → {mapping_id: "pm-001",<br/>secret_key: "sk_xxx"}
+        
+        Note over CA,SA: 建立新的映射连接
+        
+        CA->>SA: TCP 连接到数据端口 :7001
+        
+        CA->>SA: TunnelOpen Packet<br/>{mapping_id: "pm-001",<br/>secret_key: "sk_xxx",<br/>tunnel_id: "uuid-123"}
+        
+        SA->>Store: GetPortMapping("pm-001")
+        Store-->>SA: {secret_key: "sk_xxx",<br/>source_client: 100001,<br/>target_client: 200001,<br/>target: localhost:3306}
+        
+        SA->>SA: ✅ 验证秘钥<br/>req.SecretKey == mapping.SecretKey?
+        
+        Note over SA: 秘钥验证通过，创建 TunnelConnection
+        
+        SA->>Store: GetClient(200001)
+        Store-->>SA: {node_id: "node-002"}
+        
+        Note over SA: ClientB 在 ServerB<br/>需要跨节点桥接
+        
+        SA->>Broker: PUBLISH bridge_request<br/>{source: node-001, target: node-002,<br/>mapping_id, tunnel_id}
+        
+        Broker-->>SB: 广播到 ServerB
+        
+        SB->>SB: 验证消息签名（HMAC）
+        
+        SB->>Pool: CreateSession(node-001)
+        
+        alt 首次连接到 node-001
+            Pool->>SA: gRPC 建立双向流
+            Pool-->>SB: MultiplexedConn (in_use=1)
+        else 已有连接（复用）
+            Pool-->>SB: MultiplexedConn (in_use=45)
+        end
+        
+        SB->>SB: 创建 ForwardSession<br/>stream_id: "uuid-abc-123"
+        
+        SB->>SA: STREAM_OPEN<br/>{stream_id, mapping_info}
+        
+        SA->>SA: 注册隧道<br/>tunnel_id → ForwardSession
+        
+        SA->>CA: TunnelOpenAck {tunnel_id}
+        
+        SB->>CB: Command: 建立到 MySQL 的连接<br/>{tunnel_id, target: localhost:3306}
+        
+        CB->>MySQL: TCP 连接
+        MySQL-->>CB: 连接成功
+        
+        CB-->>SB: ACK
+        
+        Note over User,MySQL: ✅ 隧道建立完成（< 100ms）
     end
     
-    S1->>S1: 生成 stream_id = "uuid-abc-123"
-    S1->>Stream: CONNECT_REQUEST<br/>(stream_id, client_id=B, target=3306)
-    Stream->>S2: 转发请求
-    S2->>C2: 通知建立到 MySQL 的连接
-    C2->>MySQL: 建立 TCP 连接
-    MySQL-->>C2: 连接成功
-    C2-->>S2: 连接建立成功
-    S2->>Stream: CONNECT_RESPONSE (stream_id, success)
-    Stream->>S1: 转发响应
-    S1->>C1: 连接建立成功
-    
-    loop 数据传输（同一个 gRPC Stream 复用）
-        C1->>S1: MySQL 查询数据
-        S1->>Stream: DATA (stream_id=uuid-abc-123, payload)
-        Stream->>S2: 转发
-        S2->>C2: 转发
-        C2->>MySQL: 执行查询
-        MySQL-->>C2: 返回结果
-        C2-->>S2: 返回结果
-        S2->>Stream: DATA (stream_id=uuid-abc-123, result)
-        Stream->>S1: 转发
-        S1->>C1: 返回结果
+    rect rgb(240, 255, 240)
+        Note over User,MySQL: 阶段2: 数据透传（持续，零解析开销）
+        
+        User->>CA: SELECT * FROM users;<br/>[0x03 0x53 0x45... MySQL Wire Protocol]
+        
+        CA->>SA: TunnelData<br/>{tunnel_id, payload: [原始字节]}
+        
+        Note over SA: 不解析 payload！<br/>直接查找隧道并转发
+        
+        SA->>SA: 查找 tunnel_id → ForwardSession
+        
+        SA->>Pool: ForwardSession.Send([原始字节])
+        
+        Pool->>SB: gRPC: BridgePacket<br/>{stream_id: "uuid-abc-123",<br/>type: STREAM_DATA,<br/>payload: [原始字节]}
+        
+        Note over Pool,SB: 连接池多路复用<br/>同一物理连接承载多个流
+        
+        SB->>SB: 根据 stream_id 分发
+        
+        SB->>CB: TunnelData<br/>{tunnel_id, payload: [原始字节]}
+        
+        CB->>MySQL: 写入原始字节<br/>[0x03 0x53 0x45...]
+        
+        MySQL->>MySQL: 执行查询
+        
+        MySQL-->>CB: 查询结果<br/>[0x... MySQL Response]
+        
+        CB-->>SB: TunnelData<br/>{tunnel_id, payload: [原始字节]}
+        
+        SB-->>SA: gRPC: BridgePacket<br/>{stream_id, payload: [原始字节]}
+        
+        SA-->>CA: TunnelData<br/>{tunnel_id, payload: [原始字节]}
+        
+        CA-->>User: 写入原始字节
+        
+        Note over User,MySQL: ⚡ 全链路延迟 < 10ms<br/>零协议解析开销
     end
     
-    C1->>S1: 关闭连接
-    S1->>Stream: CLOSE (stream_id=uuid-abc-123)
-    Stream->>S2: 转发关闭信号
-    S2->>C2: 关闭到 MySQL 的连接
-    C2->>MySQL: 关闭连接
-    
-    S1->>Pool: ReleaseConnection(conn)
-    Pool->>Pool: in_use-- (复用数: 45 → 44)
-    
-    Note over Pool,Stream: gRPC Stream 保持连接<br/>等待下次复用
+    rect rgb(255, 245, 240)
+        Note over User,MySQL: 阶段3: 关闭隧道
+        
+        User->>CA: 关闭连接
+        CA->>SA: TunnelClose {tunnel_id}
+        SA->>SA: 移除隧道注册
+        SA->>Pool: ForwardSession.Close()
+        Pool->>Pool: 释放 stream_id<br/>in_use: 45 → 44
+        Pool->>SB: STREAM_CLOSE {stream_id}
+        SB->>CB: 关闭 MySQL 连接
+        CB->>MySQL: 关闭
+        
+        Note over Pool: gRPC 连接保持活跃<br/>等待下次复用
+    end
 ```
+
+**关键技术点**：
+
+1. **双连接模型**：
+   - **指令连接**：ClientA 启动时建立，用于命令/配置推送，长连接
+   - **映射连接**：用户连接时按需建立，用于数据透传，短连接
+   - 两种连接独立认证，互不干扰
+
+2. **一次包头**（TunnelOpen）：
+   - 在新建的映射连接上发送 `TunnelOpen`，携带 `mapping_id` + `secret_key`
+   - ServerA 验证 `secret_key`，从 Storage 查询路由信息
+   - 包含认证验证、路由查询、隧道建立
+
+3. **纯透传**（TunnelData）：
+   - 后续数据包只有类型标识（`TunnelData`）+ tunnel_id + 原始 payload
+   - 不解析应用层协议（MySQL/Redis/HTTP/...）
+   - 支持任意二进制协议
+
+4. **连接池复用**：
+   - ServerB → ServerA 的 gRPC 连接复用（如 in_use=45）
+   - 通过 `stream_id` 区分不同隧道
+   - 显著降低连接开销
+
+5. **安全机制**：
+   - **指令连接级**：JWT/API Key 握手认证，绑定 ClientID
+   - **映射连接级**：每条连接独立验证 mapping.secret_key
+   - **消息级**：HMAC 签名验证（跨节点）
 
 ### 10. 连接池监控指标
 

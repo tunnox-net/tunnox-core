@@ -15,10 +15,22 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// SessionManager 实现 Session 接口
+// SessionManager 实现 Session 接口（双连接模型）
 type SessionManager struct {
-	connMap       map[string]*types.Connection
-	connLock      sync.RWMutex
+	// 基础连接映射（所有连接）
+	connMap  map[string]*types.Connection
+	connLock sync.RWMutex
+
+	// 指令连接（Control Connection）
+	controlConnMap    map[string]*ControlConnection // connID -> 指令连接
+	clientIDIndexMap  map[int64]*ControlConnection  // clientID -> 指令连接（快速查找）
+	controlConnLock   sync.RWMutex
+
+	// 映射连接（Tunnel Connection）
+	tunnelConnMap   map[string]*TunnelConnection // connID -> 映射连接
+	tunnelIDMap     map[string]*TunnelConnection // tunnelID -> 映射连接
+	tunnelConnLock  sync.RWMutex
+
 	idManager     *idgen.IDManager
 	streamMgr     *stream.StreamManager
 	streamFactory stream.StreamFactory
@@ -30,11 +42,18 @@ type SessionManager struct {
 	// Command集成
 	commandRegistry types.CommandRegistry
 	commandExecutor types.CommandExecutor
+	
+	// 隧道和认证处理器
+	tunnelHandler TunnelHandler
+	authHandler   AuthHandler
+
+	// 临时兼容字段（迁移完成后删除）
+	clientConnMap map[string]*ClientConnection
 
 	dispose.Dispose
 }
 
-// NewSessionManager 创建新的会话管理器
+// NewSessionManager 创建新的会话管理器（双连接模型）
 func NewSessionManager(idManager *idgen.IDManager, parentCtx context.Context) *SessionManager {
 	// 创建默认流工厂
 	streamFactory := stream.NewDefaultStreamFactory(parentCtx)
@@ -43,13 +62,28 @@ func NewSessionManager(idManager *idgen.IDManager, parentCtx context.Context) *S
 	streamMgr := stream.NewStreamManager(streamFactory, parentCtx)
 
 	session := &SessionManager{
-		connMap:       make(map[string]*types.Connection),
+		// 基础连接
+		connMap: make(map[string]*types.Connection),
+
+		// 指令连接
+		controlConnMap:   make(map[string]*ControlConnection),
+		clientIDIndexMap: make(map[int64]*ControlConnection),
+
+		// 映射连接
+		tunnelConnMap: make(map[string]*TunnelConnection),
+		tunnelIDMap:   make(map[string]*TunnelConnection),
+
+		// 临时兼容
+		clientConnMap: make(map[string]*ClientConnection),
+
 		idManager:     idManager,
 		streamMgr:     streamMgr,
 		streamFactory: streamFactory,
 		// 事件驱动架构将在后续设置
 		eventBus:        nil,
 		responseManager: nil,
+		tunnelHandler:   nil,
+		authHandler:     nil,
 	}
 
 	// 设置资源清理回调
@@ -282,6 +316,16 @@ func (s *SessionManager) HandlePacket(connPacket *types.StreamPacket) error {
 	if connPacket.Packet.PacketType.IsHeartbeat() {
 		return s.handleHeartbeat(connPacket)
 	}
+	
+	// 检查是否为握手包
+	if connPacket.Packet.PacketType.IsHandshake() {
+		return s.handleTunnelPacket(connPacket)
+	}
+	
+	// 检查是否为隧道数据包
+	if connPacket.Packet.PacketType.IsTunnelPacket() {
+		return s.handleTunnelPacket(connPacket)
+	}
 
 	// 检查是否为命令包
 	if connPacket.Packet.PacketType.IsJsonCommand() && connPacket.Packet.CommandPacket != nil {
@@ -363,9 +407,23 @@ func (s *SessionManager) handleHeartbeat(connPacket *types.StreamPacket) error {
 	utils.Debugf("Received heartbeat for connection: %s", connPacket.ConnectionID)
 
 	// 更新连接的最后活动时间
-	if conn, exists := s.GetConnection(connPacket.ConnectionID); exists {
-		conn.UpdatedAt = time.Now()
-		conn.LastHeartbeat = time.Now()
+	conn, exists := s.GetConnection(connPacket.ConnectionID)
+	if !exists {
+		return fmt.Errorf("connection %s not found", connPacket.ConnectionID)
+	}
+	
+	conn.UpdatedAt = time.Now()
+	conn.LastHeartbeat = time.Now()
+
+	// 发送心跳响应
+	heartbeatResp := &packet.TransferPacket{
+		PacketType: packet.Heartbeat,
+		Payload:    []byte{},
+	}
+	
+	if _, err := conn.Stream.WritePacket(heartbeatResp, false, 0); err != nil {
+		utils.Warnf("Failed to send heartbeat response for connection %s: %v", connPacket.ConnectionID, err)
+		// 继续处理，不中断
 	}
 
 	// 发布心跳事件
@@ -540,4 +598,181 @@ func (s *SessionManager) onClose() error {
 
 	utils.Infof("Session manager resources cleanup completed")
 	return nil
+}
+
+// ============================================================================
+// 双连接模型：指令连接管理
+// ============================================================================
+
+// RegisterControlConnection 注册指令连接
+func (s *SessionManager) RegisterControlConnection(conn *ControlConnection) {
+	s.controlConnLock.Lock()
+	defer s.controlConnLock.Unlock()
+
+	s.controlConnMap[conn.ConnID] = conn
+	
+	// 如果已认证，建立 ClientID 索引
+	if conn.Authenticated && conn.ClientID > 0 {
+		s.clientIDIndexMap[conn.ClientID] = conn
+		utils.Infof("SessionManager: control connection registered and indexed, client_id=%d, conn_id=%s", conn.ClientID, conn.ConnID)
+	} else {
+		utils.Infof("SessionManager: control connection registered (not authenticated), conn_id=%s", conn.ConnID)
+	}
+}
+
+// UpdateControlConnectionAuth 更新指令连接认证状态（认证成功后调用）
+func (s *SessionManager) UpdateControlConnectionAuth(connID string, clientID int64, userID string) error {
+	s.controlConnLock.Lock()
+	defer s.controlConnLock.Unlock()
+
+	conn, exists := s.controlConnMap[connID]
+	if !exists {
+		return fmt.Errorf("control connection not found: %s", connID)
+	}
+
+	conn.ClientID = clientID
+	conn.UserID = userID
+	conn.Authenticated = true
+	conn.UpdateActivity()
+
+	// 建立 ClientID 索引
+	s.clientIDIndexMap[clientID] = conn
+	
+	utils.Infof("SessionManager: control connection authenticated, client_id=%d, conn_id=%s", clientID, connID)
+	return nil
+}
+
+// GetControlConnectionByClientID 根据 ClientID 获取指令连接（O(1) 查找）
+func (s *SessionManager) GetControlConnectionByClientID(clientID int64) *ControlConnection {
+	s.controlConnLock.RLock()
+	defer s.controlConnLock.RUnlock()
+
+	return s.clientIDIndexMap[clientID]
+}
+
+// KickOldControlConnection 踢掉旧的指令连接（同一 ClientID 只能有1条）
+func (s *SessionManager) KickOldControlConnection(clientID int64, newConnID string) {
+	s.controlConnLock.Lock()
+	defer s.controlConnLock.Unlock()
+
+	oldConn, exists := s.clientIDIndexMap[clientID]
+	if !exists || oldConn.ConnID == newConnID {
+		return // 没有旧连接，或者就是当前连接
+	}
+
+	utils.Warnf("SessionManager: kicking old control connection for client_id=%d, old_conn_id=%s, new_conn_id=%s",
+		clientID, oldConn.ConnID, newConnID)
+
+	// 关闭旧连接
+	if oldConn.Stream != nil {
+		oldConn.Stream.Close()
+	}
+
+	// 从映射中删除
+	delete(s.controlConnMap, oldConn.ConnID)
+	
+	utils.Infof("SessionManager: old control connection kicked for client_id=%d", clientID)
+}
+
+// RemoveControlConnection 移除指令连接
+func (s *SessionManager) RemoveControlConnection(connID string) {
+	s.controlConnLock.Lock()
+	defer s.controlConnLock.Unlock()
+
+	conn, exists := s.controlConnMap[connID]
+	if !exists {
+		return
+	}
+
+	// 从 ClientID 索引中删除
+	if conn.Authenticated && conn.ClientID > 0 {
+		delete(s.clientIDIndexMap, conn.ClientID)
+	}
+
+	delete(s.controlConnMap, connID)
+	utils.Infof("SessionManager: control connection removed, conn_id=%s", connID)
+}
+
+// ============================================================================
+// 双连接模型：映射连接管理
+// ============================================================================
+
+// RegisterTunnelConnection 注册映射连接
+func (s *SessionManager) RegisterTunnelConnection(conn *TunnelConnection) {
+	s.tunnelConnLock.Lock()
+	defer s.tunnelConnLock.Unlock()
+
+	s.tunnelConnMap[conn.ConnID] = conn
+	
+	if conn.TunnelID != "" {
+		s.tunnelIDMap[conn.TunnelID] = conn
+	}
+
+	utils.Infof("SessionManager: tunnel connection registered, conn_id=%s, tunnel_id=%s", conn.ConnID, conn.TunnelID)
+}
+
+// UpdateTunnelConnectionAuth 更新映射连接认证状态（TunnelOpen 成功后调用）
+func (s *SessionManager) UpdateTunnelConnectionAuth(connID string, tunnelID string, mappingID string) error {
+	s.tunnelConnLock.Lock()
+	defer s.tunnelConnLock.Unlock()
+
+	conn, exists := s.tunnelConnMap[connID]
+	if !exists {
+		return fmt.Errorf("tunnel connection not found: %s", connID)
+	}
+
+	conn.TunnelID = tunnelID
+	conn.MappingID = mappingID
+	conn.Authenticated = true
+	conn.UpdateActivity()
+
+	// 建立 TunnelID 索引
+	s.tunnelIDMap[tunnelID] = conn
+	
+	utils.Infof("SessionManager: tunnel connection authenticated, tunnel_id=%s, conn_id=%s", tunnelID, connID)
+	return nil
+}
+
+// GetTunnelConnectionByTunnelID 根据 TunnelID 获取映射连接
+func (s *SessionManager) GetTunnelConnectionByTunnelID(tunnelID string) *TunnelConnection {
+	s.tunnelConnLock.RLock()
+	defer s.tunnelConnLock.RUnlock()
+
+	return s.tunnelIDMap[tunnelID]
+}
+
+// GetTunnelConnectionByConnID 根据 ConnID 获取映射连接
+func (s *SessionManager) GetTunnelConnectionByConnID(connID string) *TunnelConnection {
+	s.tunnelConnLock.RLock()
+	defer s.tunnelConnLock.RUnlock()
+
+	return s.tunnelConnMap[connID]
+}
+
+// RemoveTunnelConnection 移除映射连接
+func (s *SessionManager) RemoveTunnelConnection(connID string) {
+	s.tunnelConnLock.Lock()
+	defer s.tunnelConnLock.Unlock()
+
+	conn, exists := s.tunnelConnMap[connID]
+	if !exists {
+		return
+	}
+
+	// 从 TunnelID 索引中删除
+	if conn.TunnelID != "" {
+		delete(s.tunnelIDMap, conn.TunnelID)
+	}
+
+	delete(s.tunnelConnMap, connID)
+	utils.Infof("SessionManager: tunnel connection removed, conn_id=%s, tunnel_id=%s", connID, conn.TunnelID)
+}
+
+// ============================================================================
+// 临时兼容方法（迁移完成后删除）
+// ============================================================================
+
+// GetConnectionByClientID 临时兼容方法，优先返回指令连接
+func (s *SessionManager) GetConnectionByClientID(clientID int64) *ClientConnection {
+	return s.GetControlConnectionByClientID(clientID)
 }

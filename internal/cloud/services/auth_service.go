@@ -11,19 +11,19 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// AuthServiceImpl 认证服务实现
-type AuthServiceImpl struct {
+// authService 认证服务实现
+type authService struct {
 	*dispose.ServiceBase
 	clientRepo *repos.ClientRepository
 	nodeRepo   *repos.NodeRepository
 	jwtManager *managers.JWTManager
 }
 
-// NewAuthServiceImpl 创建新的认证服务实现
-func NewAuthServiceImpl(clientRepo *repos.ClientRepository, nodeRepo *repos.NodeRepository,
-	jwtManager *managers.JWTManager, parentCtx context.Context) *AuthServiceImpl {
-	service := &AuthServiceImpl{
-		ServiceBase: dispose.NewService("AuthServiceImpl", parentCtx),
+// NewauthService 创建新的认证服务实现
+func NewauthService(clientRepo *repos.ClientRepository, nodeRepo *repos.NodeRepository,
+	jwtManager *managers.JWTManager, parentCtx context.Context) *authService {
+	service := &authService{
+		ServiceBase: dispose.NewService("authService", parentCtx),
 		clientRepo:  clientRepo,
 		nodeRepo:    nodeRepo,
 		jwtManager:  jwtManager,
@@ -32,7 +32,7 @@ func NewAuthServiceImpl(clientRepo *repos.ClientRepository, nodeRepo *repos.Node
 }
 
 // Authenticate 认证客户端
-func (s *AuthServiceImpl) Authenticate(req *models.AuthRequest) (*models.AuthResponse, error) {
+func (s *authService) Authenticate(req *models.AuthRequest) (*models.AuthResponse, error) {
 	// 获取客户端信息
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(req.ClientID))
 	if err != nil {
@@ -112,7 +112,7 @@ func (s *AuthServiceImpl) Authenticate(req *models.AuthRequest) (*models.AuthRes
 }
 
 // ValidateToken 验证令牌
-func (s *AuthServiceImpl) ValidateToken(token string) (*models.AuthResponse, error) {
+func (s *authService) ValidateToken(token string) (*models.AuthResponse, error) {
 	// 使用JWT管理器验证令牌
 	jwtClaims, err := s.jwtManager.ValidateAccessToken(s.Ctx(), token)
 	if err != nil {
@@ -159,7 +159,7 @@ func (s *AuthServiceImpl) ValidateToken(token string) (*models.AuthResponse, err
 }
 
 // GenerateJWTToken 生成JWT令牌
-func (s *AuthServiceImpl) GenerateJWTToken(clientID int64) (*JWTTokenInfo, error) {
+func (s *authService) GenerateJWTToken(clientID int64) (*JWTTokenInfo, error) {
 	// 获取客户端信息
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
@@ -181,7 +181,7 @@ func (s *AuthServiceImpl) GenerateJWTToken(clientID int64) (*JWTTokenInfo, error
 }
 
 // RefreshJWTToken 刷新JWT令牌
-func (s *AuthServiceImpl) RefreshJWTToken(refreshToken string) (*JWTTokenInfo, error) {
+func (s *authService) RefreshJWTToken(refreshToken string) (*JWTTokenInfo, error) {
 	// 验证刷新令牌
 	refreshClaims, err := s.jwtManager.ValidateRefreshToken(s.Ctx(), refreshToken)
 	if err != nil {
@@ -209,7 +209,7 @@ func (s *AuthServiceImpl) RefreshJWTToken(refreshToken string) (*JWTTokenInfo, e
 }
 
 // ValidateJWTToken 验证JWT令牌
-func (s *AuthServiceImpl) ValidateJWTToken(token string) (*JWTTokenInfo, error) {
+func (s *authService) ValidateJWTToken(token string) (*JWTTokenInfo, error) {
 	// 验证访问令牌
 	claims, err := s.jwtManager.ValidateAccessToken(s.Ctx(), token)
 	if err != nil {
@@ -232,7 +232,7 @@ func (s *AuthServiceImpl) ValidateJWTToken(token string) (*JWTTokenInfo, error) 
 }
 
 // RevokeJWTToken 撤销JWT令牌
-func (s *AuthServiceImpl) RevokeJWTToken(token string) error {
+func (s *authService) RevokeJWTToken(token string) error {
 	// 验证令牌以获取TokenID
 	claims, err := s.jwtManager.ValidateAccessToken(s.Ctx(), token)
 	if err != nil {

@@ -126,8 +126,8 @@ type ResponseSender interface {
 	SendResponse(connID string, response *CommandResponse) error
 }
 
-// CommandServiceImpl 命令服务实现
-type CommandServiceImpl struct {
+// commandService 命令服务实现
+type commandService struct {
 	registry       *CommandRegistry
 	executor       *CommandExecutor
 	middleware     []Middleware
@@ -144,7 +144,7 @@ func NewCommandService(parentCtx context.Context) CommandService {
 	registry := NewCommandRegistry(parentCtx)
 	executor := NewCommandExecutor(registry, parentCtx)
 
-	service := &CommandServiceImpl{
+	service := &commandService{
 		registry:   registry,
 		executor:   executor,
 		middleware: make([]Middleware, 0),
@@ -158,7 +158,7 @@ func NewCommandService(parentCtx context.Context) CommandService {
 }
 
 // SetEventBus 设置事件总线
-func (cs *CommandServiceImpl) SetEventBus(eventBus events.EventBus) error {
+func (cs *commandService) SetEventBus(eventBus events.EventBus) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
@@ -168,7 +168,7 @@ func (cs *CommandServiceImpl) SetEventBus(eventBus events.EventBus) error {
 }
 
 // Start 启动命令服务
-func (cs *CommandServiceImpl) Start() error {
+func (cs *commandService) Start() error {
 	cs.mu.RLock()
 	eventBus := cs.eventBus
 	cs.mu.RUnlock()
@@ -187,7 +187,7 @@ func (cs *CommandServiceImpl) Start() error {
 }
 
 // handleCommandEvent 处理命令事件
-func (cs *CommandServiceImpl) handleCommandEvent(event events.Event) error {
+func (cs *commandService) handleCommandEvent(event events.Event) error {
 	cmdEvent, ok := event.(*events.CommandReceivedEvent)
 	if !ok {
 		return fmt.Errorf("invalid event type: expected CommandReceivedEvent")
@@ -263,7 +263,7 @@ func (cs *CommandServiceImpl) handleCommandEvent(event events.Event) error {
 }
 
 // Execute 执行命令
-func (cs *CommandServiceImpl) Execute(ctx *CommandContext) (*CommandResponse, error) {
+func (cs *commandService) Execute(ctx *CommandContext) (*CommandResponse, error) {
 	cs.mu.RLock()
 	if cs.IsClosed() {
 		cs.mu.RUnlock()
@@ -308,7 +308,7 @@ func (cs *CommandServiceImpl) Execute(ctx *CommandContext) (*CommandResponse, er
 }
 
 // ExecuteAsync 异步执行命令
-func (cs *CommandServiceImpl) ExecuteAsync(ctx *CommandContext) (<-chan *CommandResponse, <-chan error) {
+func (cs *commandService) ExecuteAsync(ctx *CommandContext) (<-chan *CommandResponse, <-chan error) {
 	responseChan := make(chan *CommandResponse, 1)
 	errorChan := make(chan error, 1)
 
@@ -327,7 +327,7 @@ func (cs *CommandServiceImpl) ExecuteAsync(ctx *CommandContext) (<-chan *Command
 }
 
 // Use 注册中间件
-func (cs *CommandServiceImpl) Use(middleware Middleware) {
+func (cs *commandService) Use(middleware Middleware) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 
@@ -338,22 +338,22 @@ func (cs *CommandServiceImpl) Use(middleware Middleware) {
 }
 
 // RegisterHandler 注册命令处理器
-func (cs *CommandServiceImpl) RegisterHandler(handler CommandHandler) error {
+func (cs *commandService) RegisterHandler(handler CommandHandler) error {
 	return cs.registry.Register(handler)
 }
 
 // UnregisterHandler 注销命令处理器
-func (cs *CommandServiceImpl) UnregisterHandler(commandType packet.CommandType) error {
+func (cs *commandService) UnregisterHandler(commandType packet.CommandType) error {
 	return cs.registry.Unregister(commandType)
 }
 
 // GetStats 获取统计信息
-func (cs *CommandServiceImpl) GetStats() *CommandStats {
+func (cs *commandService) GetStats() *CommandStats {
 	return cs.stats
 }
 
 // SetResponseSender 设置响应发送器
-func (cs *CommandServiceImpl) SetResponseSender(sender ResponseSender) {
+func (cs *commandService) SetResponseSender(sender ResponseSender) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.responseSender = sender
@@ -361,7 +361,7 @@ func (cs *CommandServiceImpl) SetResponseSender(sender ResponseSender) {
 }
 
 // onClose 资源清理回调
-func (cs *CommandServiceImpl) onClose() error {
+func (cs *commandService) onClose() error {
 	utils.Infof("Cleaning up command service resources...")
 
 	// 取消事件订阅
@@ -388,12 +388,12 @@ func (cs *CommandServiceImpl) onClose() error {
 }
 
 // Close 关闭服务
-func (cs *CommandServiceImpl) Close() error {
+func (cs *commandService) Close() error {
 	return cs.Dispose.CloseWithError()
 }
 
 // buildPipeline 构建命令处理管道
-func (cs *CommandServiceImpl) buildPipeline(ctx *CommandContext) *CommandPipeline {
+func (cs *commandService) buildPipeline(ctx *CommandContext) *CommandPipeline {
 	cs.mu.RLock()
 	middleware := make([]Middleware, len(cs.middleware))
 	copy(middleware, cs.middleware)

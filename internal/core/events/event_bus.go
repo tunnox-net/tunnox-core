@@ -9,8 +9,8 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// EventBusImpl 事件总线实现
-type EventBusImpl struct {
+// eventBus 事件总线实现
+type eventBus struct {
 	subscribers map[string][]EventHandler
 	mu          sync.RWMutex
 	ctx         context.Context
@@ -22,7 +22,7 @@ type EventBusImpl struct {
 func NewEventBus(parentCtx context.Context) EventBus {
 	ctx, cancel := context.WithCancel(parentCtx)
 
-	bus := &EventBusImpl{
+	bus := &eventBus{
 		subscribers: make(map[string][]EventHandler),
 		ctx:         ctx,
 		cancel:      cancel,
@@ -33,7 +33,7 @@ func NewEventBus(parentCtx context.Context) EventBus {
 }
 
 // onClose 资源清理回调
-func (bus *EventBusImpl) onClose() error {
+func (bus *eventBus) onClose() error {
 	utils.Infof("Cleaning up event bus resources...")
 
 	// 取消上下文
@@ -51,7 +51,7 @@ func (bus *EventBusImpl) onClose() error {
 }
 
 // Publish 发布事件
-func (bus *EventBusImpl) Publish(event Event) error {
+func (bus *eventBus) Publish(event Event) error {
 	if bus.IsClosed() {
 		return fmt.Errorf("event bus is closed")
 	}
@@ -92,7 +92,7 @@ func (bus *EventBusImpl) Publish(event Event) error {
 }
 
 // Subscribe 订阅事件
-func (bus *EventBusImpl) Subscribe(eventType string, handler EventHandler) error {
+func (bus *eventBus) Subscribe(eventType string, handler EventHandler) error {
 	if bus.IsClosed() {
 		return fmt.Errorf("event bus is closed")
 	}
@@ -127,7 +127,7 @@ func (bus *EventBusImpl) Subscribe(eventType string, handler EventHandler) error
 }
 
 // Unsubscribe 取消订阅
-func (bus *EventBusImpl) Unsubscribe(eventType string, handler EventHandler) error {
+func (bus *eventBus) Unsubscribe(eventType string, handler EventHandler) error {
 	if bus.IsClosed() {
 		return fmt.Errorf("event bus is closed")
 	}
@@ -154,12 +154,12 @@ func (bus *EventBusImpl) Unsubscribe(eventType string, handler EventHandler) err
 }
 
 // Close 关闭事件总线
-func (bus *EventBusImpl) Close() error {
+func (bus *eventBus) Close() error {
 	return bus.Dispose.CloseWithError()
 }
 
 // GetHandlerCount 获取指定事件类型的处理器数量
-func (bus *EventBusImpl) GetHandlerCount(eventType string) int {
+func (bus *eventBus) GetHandlerCount(eventType string) int {
 	bus.mu.RLock()
 	defer bus.mu.RUnlock()
 
@@ -171,7 +171,7 @@ func (bus *EventBusImpl) GetHandlerCount(eventType string) int {
 }
 
 // GetEventTypes 获取所有已注册的事件类型
-func (bus *EventBusImpl) GetEventTypes() []string {
+func (bus *eventBus) GetEventTypes() []string {
 	bus.mu.RLock()
 	defer bus.mu.RUnlock()
 
@@ -183,7 +183,7 @@ func (bus *EventBusImpl) GetEventTypes() []string {
 }
 
 // WaitForEvent 等待指定类型的事件（用于测试）
-func (bus *EventBusImpl) WaitForEvent(eventType string, timeout time.Duration) (Event, error) {
+func (bus *eventBus) WaitForEvent(eventType string, timeout time.Duration) (Event, error) {
 	eventChan := make(chan Event, 1)
 
 	// 创建临时处理器

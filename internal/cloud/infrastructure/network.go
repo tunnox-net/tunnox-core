@@ -24,16 +24,16 @@ type NetworkManager interface {
 	GetNetworkInterfaces() ([]net.Interface, error)
 }
 
-// NetworkManagerImpl 网络管理器实现
-type NetworkManagerImpl struct{}
+// networkManager 网络管理器实现
+type networkManager struct{}
 
 // NewNetworkManager 创建新的网络管理器
-func NewNetworkManager() *NetworkManagerImpl {
-	return &NetworkManagerImpl{}
+func NewNetworkManager() *networkManager {
+	return &networkManager{}
 }
 
 // GetAvailablePort 获取可用端口
-func (nm *NetworkManagerImpl) GetAvailablePort(startPort, endPort int) (int, error) {
+func (nm *networkManager) GetAvailablePort(startPort, endPort int) (int, error) {
 	for port := startPort; port <= endPort; port++ {
 		if nm.IsPortAvailable(port) {
 			return port, nil
@@ -43,7 +43,7 @@ func (nm *NetworkManagerImpl) GetAvailablePort(startPort, endPort int) (int, err
 }
 
 // IsPortAvailable 检查端口是否可用
-func (nm *NetworkManagerImpl) IsPortAvailable(port int) bool {
+func (nm *networkManager) IsPortAvailable(port int) bool {
 	ln, err := net.Listen("tcp", ":"+strconv.Itoa(port))
 	if err != nil {
 		return false
@@ -53,7 +53,7 @@ func (nm *NetworkManagerImpl) IsPortAvailable(port int) bool {
 }
 
 // GetLocalIP 获取本机IP地址
-func (nm *NetworkManagerImpl) GetLocalIP() (string, error) {
+func (nm *networkManager) GetLocalIP() (string, error) {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return "", err
@@ -70,7 +70,7 @@ func (nm *NetworkManagerImpl) GetLocalIP() (string, error) {
 }
 
 // CheckConnectivity 检查网络连接
-func (nm *NetworkManagerImpl) CheckConnectivity(host string, port int, timeout time.Duration) error {
+func (nm *networkManager) CheckConnectivity(host string, port int, timeout time.Duration) error {
 	conn, err := net.DialTimeout("tcp", host+":"+strconv.Itoa(port), timeout)
 	if err != nil {
 		return err
@@ -80,7 +80,7 @@ func (nm *NetworkManagerImpl) CheckConnectivity(host string, port int, timeout t
 }
 
 // GetNetworkInterfaces 获取网络接口信息
-func (nm *NetworkManagerImpl) GetNetworkInterfaces() ([]net.Interface, error) {
+func (nm *networkManager) GetNetworkInterfaces() ([]net.Interface, error) {
 	return net.Interfaces()
 }
 

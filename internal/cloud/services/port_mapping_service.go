@@ -13,8 +13,8 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// PortMappingServiceImpl 端口映射服务实现
-type PortMappingServiceImpl struct {
+// portMappingService 端口映射服务实现
+type portMappingService struct {
 	*dispose.ServiceBase
 	baseService *BaseService
 	mappingRepo *repos.PortMappingRepo
@@ -23,7 +23,7 @@ type PortMappingServiceImpl struct {
 
 // NewPortMappingService 创建端口映射服务
 func NewPortMappingService(mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) PortMappingService {
-	service := &PortMappingServiceImpl{
+	service := &portMappingService{
 		ServiceBase: dispose.NewService("PortMappingService", parentCtx),
 		baseService: NewBaseService(),
 		mappingRepo: mappingRepo,
@@ -33,7 +33,7 @@ func NewPortMappingService(mappingRepo *repos.PortMappingRepo, idManager *idgen.
 }
 
 // CreatePortMapping 创建端口映射
-func (s *PortMappingServiceImpl) CreatePortMapping(mapping *models.PortMapping) (*models.PortMapping, error) {
+func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*models.PortMapping, error) {
 	// 生成映射ID
 	mappingID, err := s.idManager.GeneratePortMappingID()
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *PortMappingServiceImpl) CreatePortMapping(mapping *models.PortMapping) 
 }
 
 // GetPortMapping 获取端口映射
-func (s *PortMappingServiceImpl) GetPortMapping(mappingID string) (*models.PortMapping, error) {
+func (s *portMappingService) GetPortMapping(mappingID string) (*models.PortMapping, error) {
 	mapping, err := s.mappingRepo.GetPortMapping(mappingID)
 	if err != nil {
 		return nil, s.baseService.WrapErrorWithID(err, "get port mapping", mappingID)
@@ -91,7 +91,7 @@ func (s *PortMappingServiceImpl) GetPortMapping(mappingID string) (*models.PortM
 }
 
 // UpdatePortMapping 更新端口映射
-func (s *PortMappingServiceImpl) UpdatePortMapping(mapping *models.PortMapping) error {
+func (s *portMappingService) UpdatePortMapping(mapping *models.PortMapping) error {
 	s.baseService.SetUpdatedTimestamp(&mapping.UpdatedAt)
 	if err := s.mappingRepo.UpdatePortMapping(mapping); err != nil {
 		return s.baseService.WrapErrorWithID(err, "update port mapping", mapping.ID)
@@ -101,7 +101,7 @@ func (s *PortMappingServiceImpl) UpdatePortMapping(mapping *models.PortMapping) 
 }
 
 // DeletePortMapping 删除端口映射
-func (s *PortMappingServiceImpl) DeletePortMapping(mappingID string) error {
+func (s *portMappingService) DeletePortMapping(mappingID string) error {
 	// 获取映射信息
 	_, err := s.mappingRepo.GetPortMapping(mappingID)
 	if err != nil {
@@ -123,7 +123,7 @@ func (s *PortMappingServiceImpl) DeletePortMapping(mappingID string) error {
 }
 
 // UpdatePortMappingStatus 更新端口映射状态
-func (s *PortMappingServiceImpl) UpdatePortMappingStatus(mappingID string, status models.MappingStatus) error {
+func (s *portMappingService) UpdatePortMappingStatus(mappingID string, status models.MappingStatus) error {
 	if err := s.mappingRepo.UpdatePortMappingStatus(mappingID, status); err != nil {
 		return s.baseService.WrapErrorWithID(err, "update port mapping status", mappingID)
 	}
@@ -132,7 +132,7 @@ func (s *PortMappingServiceImpl) UpdatePortMappingStatus(mappingID string, statu
 }
 
 // UpdatePortMappingStats 更新端口映射统计信息
-func (s *PortMappingServiceImpl) UpdatePortMappingStats(mappingID string, stats *stats.TrafficStats) error {
+func (s *portMappingService) UpdatePortMappingStats(mappingID string, stats *stats.TrafficStats) error {
 	if err := s.mappingRepo.UpdatePortMappingStats(mappingID, stats); err != nil {
 		return s.baseService.WrapErrorWithID(err, "update port mapping stats", mappingID)
 	}
@@ -140,7 +140,7 @@ func (s *PortMappingServiceImpl) UpdatePortMappingStats(mappingID string, stats 
 }
 
 // GetUserPortMappings 获取用户的端口映射
-func (s *PortMappingServiceImpl) GetUserPortMappings(userID string) ([]*models.PortMapping, error) {
+func (s *portMappingService) GetUserPortMappings(userID string) ([]*models.PortMapping, error) {
 	mappings, err := s.mappingRepo.GetUserPortMappings(userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user port mappings for %s: %w", userID, err)
@@ -149,7 +149,7 @@ func (s *PortMappingServiceImpl) GetUserPortMappings(userID string) ([]*models.P
 }
 
 // ListPortMappings 列出端口映射
-func (s *PortMappingServiceImpl) ListPortMappings(mappingType models.MappingType) ([]*models.PortMapping, error) {
+func (s *portMappingService) ListPortMappings(mappingType models.MappingType) ([]*models.PortMapping, error) {
 	// 暂时返回空列表，因为PortMappingRepo没有按类型列表的方法
 	// TODO: 实现按类型列表功能
 	utils.Warnf("ListPortMappings by type not implemented yet")
@@ -157,7 +157,7 @@ func (s *PortMappingServiceImpl) ListPortMappings(mappingType models.MappingType
 }
 
 // SearchPortMappings 搜索端口映射
-func (s *PortMappingServiceImpl) SearchPortMappings(keyword string) ([]*models.PortMapping, error) {
+func (s *portMappingService) SearchPortMappings(keyword string) ([]*models.PortMapping, error) {
 	// 暂时返回空列表，因为PortMappingRepo没有Search方法
 	// TODO: 实现搜索功能
 	utils.Warnf("SearchPortMappings not implemented yet")

@@ -155,3 +155,5 @@ go.work.sum
 # .idea/
 # .vscode/
 server
+test
+client

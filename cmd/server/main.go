@@ -4,9 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
+	"tunnox-core/api/proto/bridge"
+	internalbridge "tunnox-core/internal/bridge"
+	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/idgen"
@@ -17,6 +22,7 @@ import (
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
+	"google.golang.org/grpc"
 	"gopkg.in/yaml.v3"
 )
 
@@ -44,11 +50,32 @@ type CloudConfig struct {
 	External map[string]interface{} `yaml:"external"`
 }
 
+// MessageBrokerConfig 消息代理配置
+type MessageBrokerConfig struct {
+	Type   string                 `yaml:"type"`
+	NodeID string                 `yaml:"node_id"`
+	Redis  map[string]interface{} `yaml:"redis"`
+}
+
+// BridgePoolConfig 桥接连接池配置
+type BridgePoolConfig struct {
+	Enabled             bool                   `yaml:"enabled"`
+	MinConnsPerNode     int32                  `yaml:"min_conns_per_node"`
+	MaxConnsPerNode     int32                  `yaml:"max_conns_per_node"`
+	MaxIdleTime         int                    `yaml:"max_idle_time"` // 秒
+	MaxStreamsPerConn   int32                  `yaml:"max_streams_per_conn"`
+	DialTimeout         int                    `yaml:"dial_timeout"`          // 秒
+	HealthCheckInterval int                    `yaml:"health_check_interval"` // 秒
+	GRPCServer          map[string]interface{} `yaml:"grpc_server"`
+}
+
 // AppConfig 应用配置
 type AppConfig struct {
-	Server ServerConfig    `yaml:"server"`
-	Log    utils.LogConfig `yaml:"log"`
-	Cloud  CloudConfig     `yaml:"cloud"`
+	Server        ServerConfig        `yaml:"server"`
+	Log           utils.LogConfig     `yaml:"log"`
+	Cloud         CloudConfig         `yaml:"cloud"`
+	MessageBroker MessageBrokerConfig `yaml:"message_broker"`
+	BridgePool    BridgePoolConfig    `yaml:"bridge_pool"`
 }
 
 // ProtocolFactory 协议工厂
@@ -153,6 +180,9 @@ type Server struct {
 	session         *session.SessionManager
 	protocolFactory *ProtocolFactory
 	cloudControl    managers.CloudControlAPI
+	messageBroker   broker.MessageBroker
+	bridgeManager   *internalbridge.BridgeManager
+	grpcServer      *grpc.Server
 }
 
 // NewServer 创建新服务器
@@ -195,6 +225,15 @@ func NewServer(config *AppConfig, parentCtx context.Context) *Server {
 
 	server.serverId, _ = server.idManager.GenerateConnectionID()
 
+	// 初始化 MessageBroker
+	server.messageBroker = server.createMessageBroker(parentCtx)
+
+	// 初始化 BridgeConnectionPool 和 BridgeManager
+	if config.BridgePool.Enabled {
+		server.bridgeManager = server.createBridgeManager(parentCtx)
+		server.grpcServer = server.startGRPCServer()
+	}
+
 	// 注册服务到服务管理器
 	server.registerServices()
 
@@ -220,6 +259,147 @@ func (s *Server) registerServices() {
 	streamManager := stream.NewStreamManager(streamFactory, s.serviceManager.GetContext())
 	streamService := stream.NewStreamService("Stream-Manager", streamManager)
 	s.serviceManager.RegisterService(streamService)
+
+	// 注册 MessageBroker 服务（如果已初始化）
+	if s.messageBroker != nil {
+		brokerService := NewBrokerService("Message-Broker", s.messageBroker)
+		s.serviceManager.RegisterService(brokerService)
+	}
+
+	// 注册 BridgeManager 服务（如果已初始化）
+	if s.bridgeManager != nil {
+		bridgeService := NewBridgeService("Bridge-Manager", s.bridgeManager)
+		s.serviceManager.RegisterService(bridgeService)
+	}
+}
+
+// createMessageBroker 创建消息代理
+func (s *Server) createMessageBroker(ctx context.Context) broker.MessageBroker {
+	brokerConfig := &broker.BrokerConfig{
+		Type:   broker.BrokerType(s.config.MessageBroker.Type),
+		NodeID: s.config.MessageBroker.NodeID,
+	}
+
+	// 如果 NodeID 未配置，使用服务器ID
+	if brokerConfig.NodeID == "" {
+		brokerConfig.NodeID = s.serverId
+	}
+
+	// 配置 Redis（如果使用 Redis）
+	if brokerConfig.Type == broker.BrokerTypeRedis {
+		redisConfig := &broker.RedisBrokerConfig{}
+
+		// 解析 Redis 配置
+		if addrs, ok := s.config.MessageBroker.Redis["addrs"].([]interface{}); ok {
+			for _, addr := range addrs {
+				if addrStr, ok := addr.(string); ok {
+					redisConfig.Addrs = append(redisConfig.Addrs, addrStr)
+				}
+			}
+		}
+
+		if password, ok := s.config.MessageBroker.Redis["password"].(string); ok {
+			redisConfig.Password = password
+		}
+
+		if db, ok := s.config.MessageBroker.Redis["db"].(int); ok {
+			redisConfig.DB = db
+		}
+
+		if clusterMode, ok := s.config.MessageBroker.Redis["cluster_mode"].(bool); ok {
+			redisConfig.ClusterMode = clusterMode
+		}
+
+		if poolSize, ok := s.config.MessageBroker.Redis["pool_size"].(int); ok {
+			redisConfig.PoolSize = poolSize
+		}
+
+		brokerConfig.Redis = redisConfig
+	}
+
+	mb, err := broker.NewMessageBroker(ctx, brokerConfig)
+	if err != nil {
+		utils.Fatalf("Failed to create message broker: %v", err)
+	}
+
+	utils.Infof("MessageBroker initialized: type=%s, node_id=%s", brokerConfig.Type, brokerConfig.NodeID)
+	return mb
+}
+
+// createBridgeManager 创建桥接管理器
+func (s *Server) createBridgeManager(ctx context.Context) *internalbridge.BridgeManager {
+	if s.messageBroker == nil {
+		utils.Warn("MessageBroker not initialized, BridgeManager will not be created")
+		return nil
+	}
+
+	poolConfig := &internalbridge.PoolConfig{
+		MinConnsPerNode:     s.config.BridgePool.MinConnsPerNode,
+		MaxConnsPerNode:     s.config.BridgePool.MaxConnsPerNode,
+		MaxIdleTime:         time.Duration(s.config.BridgePool.MaxIdleTime) * time.Second,
+		MaxStreamsPerConn:   s.config.BridgePool.MaxStreamsPerConn,
+		DialTimeout:         time.Duration(s.config.BridgePool.DialTimeout) * time.Second,
+		HealthCheckInterval: time.Duration(s.config.BridgePool.HealthCheckInterval) * time.Second,
+	}
+
+	// 创建简单的节点注册表（实际应该从 Storage 或 Cloud 获取）
+	nodeRegistry := NewSimpleNodeRegistry()
+
+	managerConfig := &internalbridge.BridgeManagerConfig{
+		NodeID:         s.config.MessageBroker.NodeID,
+		PoolConfig:     poolConfig,
+		MessageBroker:  s.messageBroker,
+		NodeRegistry:   nodeRegistry,
+		RequestTimeout: 30 * time.Second,
+	}
+
+	manager, err := internalbridge.NewBridgeManager(ctx, managerConfig)
+	if err != nil {
+		utils.Fatalf("Failed to create bridge manager: %v", err)
+	}
+
+	utils.Infof("BridgeManager initialized: node_id=%s", managerConfig.NodeID)
+	return manager
+}
+
+// startGRPCServer 启动 gRPC 服务器
+func (s *Server) startGRPCServer() *grpc.Server {
+	// 从配置中获取 gRPC 服务器地址
+	grpcServerConfig := s.config.BridgePool.GRPCServer
+	enabled, _ := grpcServerConfig["enabled"].(bool)
+	if !enabled {
+		return nil
+	}
+
+	port, _ := grpcServerConfig["port"].(int)
+	host, _ := grpcServerConfig["host"].(string)
+	if port == 0 {
+		port = 50051
+	}
+	if host == "" {
+		host = "0.0.0.0"
+	}
+
+	addr := fmt.Sprintf("%s:%d", host, port)
+
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		utils.Fatalf("Failed to listen on %s: %v", addr, err)
+	}
+
+	grpcServer := grpc.NewServer()
+	bridgeServer := internalbridge.NewGRPCBridgeServer(s.config.MessageBroker.NodeID, s.bridgeManager)
+	bridge.RegisterBridgeServiceServer(grpcServer, bridgeServer)
+
+	// 在后台启动 gRPC 服务器
+	go func() {
+		utils.Infof("gRPC Bridge Server listening on %s", addr)
+		if err := grpcServer.Serve(listener); err != nil {
+			utils.Errorf("gRPC server error: %v", err)
+		}
+	}()
+
+	return grpcServer
 }
 
 // setupProtocolAdapters 设置协议适配器
@@ -288,6 +468,12 @@ func (s *Server) Start() error {
 // Stop 停止服务器
 func (s *Server) Stop() error {
 	utils.Info(constants.MsgShuttingDownServer)
+
+	// 停止 gRPC 服务器
+	if s.grpcServer != nil {
+		utils.Info("Stopping gRPC server...")
+		s.grpcServer.GracefulStop()
+	}
 
 	// 使用服务管理器停止所有服务
 	if err := s.serviceManager.StopAllServices(); err != nil {
@@ -462,6 +648,121 @@ func capitalize(s string) string {
 		return s
 	}
 	return string(s[0]&^32) + s[1:]
+}
+
+// SimpleNodeRegistry 简单的节点注册表实现
+type SimpleNodeRegistry struct {
+	nodes map[string]string
+	mu    sync.RWMutex
+}
+
+// NewSimpleNodeRegistry 创建简单节点注册表
+func NewSimpleNodeRegistry() *SimpleNodeRegistry {
+	return &SimpleNodeRegistry{
+		nodes: make(map[string]string),
+	}
+}
+
+// GetNodeAddress 获取节点地址
+func (r *SimpleNodeRegistry) GetNodeAddress(nodeID string) (string, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	addr, exists := r.nodes[nodeID]
+	if !exists {
+		return "", fmt.Errorf("node not found: %s", nodeID)
+	}
+	return addr, nil
+}
+
+// ListAllNodes 列出所有节点
+func (r *SimpleNodeRegistry) ListAllNodes() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	nodes := make([]string, 0, len(r.nodes))
+	for nodeID := range r.nodes {
+		nodes = append(nodes, nodeID)
+	}
+	return nodes
+}
+
+// RegisterNode 注册节点
+func (r *SimpleNodeRegistry) RegisterNode(nodeID, addr string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.nodes[nodeID] = addr
+	utils.Infof("SimpleNodeRegistry: registered node %s at %s", nodeID, addr)
+}
+
+// UnregisterNode 注销节点
+func (r *SimpleNodeRegistry) UnregisterNode(nodeID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.nodes, nodeID)
+	utils.Infof("SimpleNodeRegistry: unregistered node %s", nodeID)
+}
+
+// BrokerService MessageBroker 服务包装
+type BrokerService struct {
+	name   string
+	broker broker.MessageBroker
+}
+
+// NewBrokerService 创建 BrokerService
+func NewBrokerService(name string, broker broker.MessageBroker) *BrokerService {
+	return &BrokerService{
+		name:   name,
+		broker: broker,
+	}
+}
+
+func (bs *BrokerService) Name() string {
+	return bs.name
+}
+
+func (bs *BrokerService) Start(ctx context.Context) error {
+	utils.Infof("BrokerService: %s started", bs.name)
+	return nil
+}
+
+func (bs *BrokerService) Stop(ctx context.Context) error {
+	utils.Infof("BrokerService: stopping %s", bs.name)
+	if bs.broker != nil {
+		return bs.broker.Close()
+	}
+	return nil
+}
+
+// BridgeService BridgeManager 服务包装
+type BridgeService struct {
+	name    string
+	manager *internalbridge.BridgeManager
+}
+
+// NewBridgeService 创建 BridgeService
+func NewBridgeService(name string, manager *internalbridge.BridgeManager) *BridgeService {
+	return &BridgeService{
+		name:    name,
+		manager: manager,
+	}
+}
+
+func (bs *BridgeService) Name() string {
+	return bs.name
+}
+
+func (bs *BridgeService) Start(ctx context.Context) error {
+	utils.Infof("BridgeService: %s started", bs.name)
+	return nil
+}
+
+func (bs *BridgeService) Stop(ctx context.Context) error {
+	utils.Infof("BridgeService: stopping %s", bs.name)
+	if bs.manager != nil {
+		return bs.manager.Close()
+	}
+	return nil
 }
 
 func main() {

@@ -246,11 +246,6 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("failed to resolve id manager: %w", err)
 		}
 
-		statsManagerInstance, err := container.Resolve("stats_manager")
-		if err != nil {
-			return nil, fmt.Errorf("failed to resolve stats manager: %w", err)
-		}
-
 		userRepo, ok := userRepoInstance.(*repos.UserRepository)
 		if !ok {
 			return nil, fmt.Errorf("user repository is not of type *repos.UserRepository")
@@ -261,12 +256,7 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
 		}
 
-		statsManager, ok := statsManagerInstance.(*managers.StatsManager)
-		if !ok {
-			return nil, fmt.Errorf("stats manager is not of type *managers.StatsManager")
-		}
-
-		userService := NewUserService(userRepo, idManager, statsManager, parentCtx)
+		userService := NewUserService(userRepo, idManager, parentCtx)
 		return userService, nil
 	})
 
@@ -400,7 +390,7 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("jwt manager is not of type *managers.JWTManager")
 		}
 
-		authService := NewAuthServiceImpl(clientRepo, nodeRepo, jwtManager, parentCtx)
+		authService := NewauthService(clientRepo, nodeRepo, jwtManager, parentCtx)
 		return authService, nil
 	})
 
@@ -508,7 +498,7 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("node repository is not of type *repos.NodeRepository")
 		}
 
-		statsService := NewStatsServiceImpl(userRepo, clientRepo, mappingRepo, nodeRepo, parentCtx)
+		statsService := NewstatsService(userRepo, clientRepo, mappingRepo, nodeRepo, parentCtx)
 		return statsService, nil
 	})
 

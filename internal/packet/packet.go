@@ -3,20 +3,32 @@ package packet
 type Type byte
 
 const (
-	JsonCommand Type = 1
-	Compressed  Type = 2
-	Encrypted   Type = 4
-	Heartbeat   Type = 8
+	// 控制类数据包（需要解析）
+	Handshake     Type = 0x01 // 握手认证
+	HandshakeResp Type = 0x02 // 握手响应
+	Heartbeat     Type = 0x03 // 心跳
+	JsonCommand   Type = 0x10 // JSON 命令
+	CommandResp   Type = 0x11 // 命令响应
+
+	// 转发类数据包（透传）
+	TunnelOpen    Type = 0x20 // 隧道打开（一次性，携带 MappingID）
+	TunnelOpenAck Type = 0x21 // 隧道打开确认
+	TunnelData    Type = 0x22 // 隧道数据（纯透传）
+	TunnelClose   Type = 0x23 // 隧道关闭
+
+	// 数据包特性标志（可组合）
+	Compressed Type = 0x40 // 压缩标志
+	Encrypted  Type = 0x80 // 加密标志
 )
 
 // IsHeartbeat 判断是否为心跳包
 func (t Type) IsHeartbeat() bool {
-	return t&Heartbeat != 0
+	return t&0x3F == Heartbeat // 忽略压缩/加密标志
 }
 
 // IsJsonCommand 判断是否为JsonCommand包
 func (t Type) IsJsonCommand() bool {
-	return t&JsonCommand != 0
+	return t&0x3F == JsonCommand
 }
 
 // IsCompressed 判断是否压缩
@@ -27,6 +39,17 @@ func (t Type) IsCompressed() bool {
 // IsEncrypted 判断是否加密
 func (t Type) IsEncrypted() bool {
 	return t&Encrypted != 0
+}
+
+// IsTunnelPacket 判断是否为隧道数据包
+func (t Type) IsTunnelPacket() bool {
+	baseType := t & 0x3F
+	return baseType >= TunnelOpen && baseType <= TunnelClose
+}
+
+// IsHandshake 判断是否为握手包
+func (t Type) IsHandshake() bool {
+	return t&0x3F == Handshake
 }
 
 type CommandType byte
@@ -56,6 +79,9 @@ const (
 	SocksMapUpdate CommandType = 32 // 更新SOCKS代理映射
 	SocksMapList   CommandType = 33 // 列出SOCKS代理映射
 	SocksMapStatus CommandType = 34 // 获取SOCKS代理映射状态
+
+	// ==================== 隧道管理类命令 (35-39) ====================
+	TunnelOpenRequestCmd CommandType = 35 // 服务器请求目标客户端打开隧道
 
 	// ==================== 数据传输类命令 (40-49) ====================
 	DataTransferStart  CommandType = 40 // 开始数据传输
@@ -101,6 +127,8 @@ type AcceptPacket struct {
 type TransferPacket struct {
 	PacketType    Type
 	CommandPacket *CommandPacket
+	TunnelID      string // 隧道ID（用于 TunnelData/TunnelClose）
+	Payload       []byte // 原始数据（用于 Tunnel 类型）
 }
 
 type CommandPacket struct {
@@ -110,4 +138,33 @@ type CommandPacket struct {
 	SenderId    string
 	ReceiverId  string
 	CommandBody string
+}
+
+// HandshakeRequest 握手请求（连接级认证）
+type HandshakeRequest struct {
+	ClientID int64  `json:"client_id"` // 客户端ID
+	Token    string `json:"token"`     // JWT Token
+	Version  string `json:"version"`   // 协议版本
+	Protocol string `json:"protocol"`  // 连接协议（tcp/websocket/quic）
+}
+
+// HandshakeResponse 握手响应
+type HandshakeResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+// TunnelOpenRequest 隧道打开请求（映射连接认证）
+type TunnelOpenRequest struct {
+	MappingID string `json:"mapping_id"` // 映射ID（从 Storage 查询路由）
+	TunnelID  string `json:"tunnel_id"`  // 隧道ID（唯一标识）
+	SecretKey string `json:"secret_key"` // ✅ 映射的固定秘钥（用于认证）
+}
+
+// TunnelOpenAckResponse 隧道打开确认响应
+type TunnelOpenAckResponse struct {
+	TunnelID string `json:"tunnel_id"`
+	Success  bool   `json:"success"`
+	Error    string `json:"error,omitempty"`
 }

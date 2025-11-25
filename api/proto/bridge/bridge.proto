@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+package bridge;
+
+option go_package = "tunnox-core/api/proto/bridge;bridge";
+
+// BridgeService 跨节点桥接服务
+service BridgeService {
+  // ForwardStream 建立双向流式转发通道（多路复用）
+  rpc ForwardStream(stream BridgePacket) returns (stream BridgePacket);
+  
+  // Ping 健康检查
+  rpc Ping(PingRequest) returns (PingResponse);
+  
+  // GetNodeInfo 获取节点信息
+  rpc GetNodeInfo(NodeInfoRequest) returns (NodeInfoResponse);
+}
+
+// PacketMetadata 数据包元数据（强类型定义）
+message PacketMetadata {
+  string source_node_id = 1;   // 源节点ID
+  string target_node_id = 2;   // 目标节点ID
+  int64 source_client_id = 3;  // 源客户端ID
+  int64 target_client_id = 4;  // 目标客户端ID
+  string request_id = 5;       // 请求ID
+}
+
+// BridgePacket 桥接数据包（支持多路复用）
+message BridgePacket {
+  string stream_id = 1;        // 逻辑流ID（用于多路复用）
+  PacketType type = 2;          // 数据包类型
+  bytes payload = 3;            // 实际数据
+  int64 timestamp = 4;          // 时间戳（毫秒）
+  PacketMetadata metadata = 5; // 元数据（强类型）
+}
+
+// PacketType 数据包类型
+enum PacketType {
+  UNKNOWN = 0;
+  STREAM_OPEN = 1;    // 打开逻辑流
+  STREAM_DATA = 2;    // 数据传输
+  STREAM_CLOSE = 3;   // 关闭逻辑流
+  STREAM_ACK = 4;     // 确认消息
+  STREAM_ERROR = 5;   // 错误消息
+}
+
+// StreamOpenRequest 打开流请求（放在 BridgePacket.payload 中）
+message StreamOpenRequest {
+  string source_client_id = 1;  // 源客户端ID
+  string target_client_id = 2;  // 目标客户端ID
+  string target_host = 3;       // 目标主机
+  int32 target_port = 4;        // 目标端口
+  string protocol = 5;          // 协议类型 (tcp/http)
+}
+
+// StreamOpenResponse 打开流响应
+message StreamOpenResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// StreamCloseRequest 关闭流请求
+message StreamCloseRequest {
+  string reason = 1;
+}
+
+// StreamErrorMessage 错误消息
+message StreamErrorMessage {
+  string error_code = 1;
+  string error_message = 2;
+}
+
+// PingRequest 心跳请求
+message PingRequest {
+  string node_id = 1;
+  int64 timestamp = 2;
+}
+
+// PingResponse 心跳响应
+message PingResponse {
+  bool ok = 1;
+  int64 server_timestamp = 2;
+}
+
+// NodeInfoRequest 节点信息请求
+message NodeInfoRequest {
+  string node_id = 1;
+}
+
+// NodeMetadata 节点元数据（强类型定义）
+message NodeMetadata {
+  string version = 1;    // 版本号
+  string node_type = 2;  // 节点类型
+  string region = 3;     // 区域
+  string cluster = 4;    // 集群名称
+}
+
+// NodeInfoResponse 节点信息响应
+message NodeInfoResponse {
+  string node_id = 1;
+  string node_address = 2;
+  int32 active_connections = 3;
+  int32 active_streams = 4;
+  int64 uptime_seconds = 5;
+  NodeMetadata metadata = 6;
+}
+
