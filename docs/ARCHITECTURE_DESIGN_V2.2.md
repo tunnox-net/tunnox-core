@@ -17,6 +17,8 @@
 | [业务流程](#-核心业务流程) | 用户接入、映射创建流程 | 产品经理、开发人员 |
 | [Management API](#-management-api) | HTTP REST接口文档 | 集成开发人员 |
 | [存储架构](#-数据持久化架构) | Storage分层设计 | 架构师、开发人员 |
+| [消息通知层](#-消息通知层messagebroker) | MessageBroker抽象设计 | 架构师、开发人员 |
+| [集群通信层](#-集群通信层bridge) | gRPC连接池 + 多路复用 | 架构师、开发人员 |
 | [集群部署](#️-集群部署架构) | K8s部署、跨节点通信 | 运维人员、架构师 |
 | [实现状态](#-实现状态与路线图) | 已实现/待实现功能 | 项目管理者 |
 
@@ -336,12 +338,32 @@ graph TB
         
         subgraph 存储层
             MemStorage[MemoryStorage<br/>单节点]
-            RedisStorage[RedisStorage<br/>集群+Pub/Sub]
+            RedisStorage[RedisStorage<br/>集群缓存]
             HybridStorage[HybridStorage<br/>Redis+gRPC]
             RemoteClient[RemoteStorageClient<br/>gRPC客户端]
             
             HybridStorage --> RedisStorage
             HybridStorage --> RemoteClient
+        end
+        
+        subgraph 消息通知层
+            MsgBroker[MessageBroker Interface]
+            RedisBroker[RedisBroker]
+            NATSBroker[NATSBroker]
+            MemBroker[MemoryBroker]
+            
+            MsgBroker --> RedisBroker
+            MsgBroker --> NATSBroker
+            MsgBroker --> MemBroker
+        end
+        
+        subgraph 集群通信层
+            NodeRegistry[NodeRegistry<br/>节点注册]
+            BridgePool[BridgeConnectionPool<br/>gRPC连接池]
+            BridgeMgr[BridgeManager<br/>桥接管理]
+            
+            BridgeMgr --> BridgePool
+            BridgeMgr --> NodeRegistry
         end
         
         ManagementAPI --> CloudControl
@@ -387,7 +409,9 @@ graph TB
 | **协议层** | TCP, WebSocket, UDP, QUIC | 多协议支持，适配不同场景 |
 | **传输层** | gRPC (集群通信), Protocol Buffers | 高性能跨节点通信 |
 | **认证层** | JWT (HS256/RS256) | 无状态认证，易于扩展 |
+| **消息通知层** | Redis Pub/Sub, NATS (可选) | 类MQ能力，集群消息广播 |
 | **存储层** | Redis (Cluster), gRPC Remote Storage | 分布式缓存 + 远程持久化 |
+| **集群通信层** | gRPC连接池 + 多路复用 | 节省连接，提升性能 |
 | **部署层** | Kubernetes, Docker | 云原生，自动伸缩 |
 | **语言** | Go 1.21+ | 高性能，易维护 |
 
@@ -1903,6 +1927,670 @@ graph TB
 
 ---
 
+## 📡 消息通知层（MessageBroker）
+
+Tunnox Core 需要集群内各节点之间进行实时消息通知（如客户端上下线、配置更新、桥接请求等），为此抽象了 **MessageBroker** 层，提供类似 MQ 的发布/订阅能力。
+
+### 1. MessageBroker 接口设计
+
+```go
+// MessageBroker 消息代理接口（抽象 MQ 能力）
+type MessageBroker interface {
+    // Publish 发布消息到指定主题
+    Publish(ctx context.Context, topic string, message []byte) error
+    
+    // Subscribe 订阅主题，返回消息通道
+    Subscribe(ctx context.Context, topic string) (<-chan Message, error)
+    
+    // Unsubscribe 取消订阅
+    Unsubscribe(ctx context.Context, topic string) error
+    
+    // Close 关闭连接
+    Close() error
+}
+
+// Message 消息结构
+type Message struct {
+    Topic     string
+    Payload   []byte
+    Timestamp time.Time
+    NodeID    string  // 发布者节点ID
+}
+```
+
+### 2. MessageBroker 实现对比
+
+```mermaid
+graph TB
+    subgraph MessageBroker接口[MessageBroker Interface]
+        API[Publish/Subscribe/Unsubscribe]
+    end
+    
+    subgraph 实现方式
+        direction LR
+        Memory[MemoryBroker<br/>单节点/无持久化]
+        Redis[RedisBroker<br/>Redis Pub/Sub]
+        NATS[NATSBroker<br/>NATS JetStream]
+        Kafka[KafkaBroker<br/>未来可选]
+    end
+    
+    API --> Memory
+    API --> Redis
+    API --> NATS
+    API -.future.-> Kafka
+    
+    style API fill:#1890FF,color:#fff
+    style Memory fill:#FAAD14,color:#fff
+    style Redis fill:#DC382D,color:#fff
+    style NATS fill:#27AAE1,color:#fff
+```
+
+| 实现类型 | 优点 | 缺点 | 适用场景 |
+|---------|------|------|---------|
+| **MemoryBroker** | 简单、无依赖 | 不支持集群 | 单节点部署、开发测试 |
+| **RedisBroker** | 广泛使用、低延迟 | 消息不持久化、无ACK | 集群部署（默认） |
+| **NATSBroker** | 轻量、高性能、支持ACK | 需额外部署 | 大规模集群、高可靠性需求 |
+| **KafkaBroker** | 消息持久化、高吞吐 | 重量级、复杂 | 审计日志、大数据场景 |
+
+### 3. 消息主题（Topic）设计
+
+```mermaid
+graph LR
+    subgraph 系统消息主题
+        T1[client.online<br/>客户端上线]
+        T2[client.offline<br/>客户端下线]
+        T3[config.update<br/>配置更新]
+        T4[mapping.created<br/>映射创建]
+        T5[mapping.deleted<br/>映射删除]
+    end
+    
+    subgraph 集群协调主题
+        T6[bridge.request<br/>桥接请求]
+        T7[bridge.response<br/>桥接响应]
+        T8[node.heartbeat<br/>节点心跳]
+        T9[node.shutdown<br/>节点下线]
+    end
+    
+    style T1 fill:#52C41A,color:#fff
+    style T2 fill:#FF4D4F,color:#fff
+    style T6 fill:#1890FF,color:#fff
+```
+
+**主题消息格式**：
+
+```go
+// 客户端上线消息
+type ClientOnlineMessage struct {
+    ClientID  int64  `json:"client_id"`
+    NodeID    string `json:"node_id"`
+    IPAddress string `json:"ip_address"`
+    Timestamp int64  `json:"timestamp"`
+}
+
+// 配置更新消息
+type ConfigUpdateMessage struct {
+    TargetType   string      `json:"target_type"`   // user/client/mapping
+    TargetID     int64       `json:"target_id"`
+    ConfigType   string      `json:"config_type"`   // quota/mapping/settings
+    ConfigData   interface{} `json:"config_data"`
+    Timestamp    int64       `json:"timestamp"`
+}
+
+// 桥接请求消息
+type BridgeRequestMessage struct {
+    RequestID        string `json:"request_id"`
+    SourceNodeID     string `json:"source_node_id"`
+    TargetNodeID     string `json:"target_node_id"`
+    SourceClientID   int64  `json:"source_client_id"`
+    TargetClientID   int64  `json:"target_client_id"`
+    TargetHost       string `json:"target_host"`
+    TargetPort       int    `json:"target_port"`
+}
+```
+
+### 4. MessageBroker 使用示例
+
+```go
+// 服务端初始化
+func NewServer(config *Config) *Server {
+    // 根据配置选择 MessageBroker 实现
+    var broker MessageBroker
+    if config.Cluster.Enabled {
+        if config.Cluster.Broker == "nats" {
+            broker = NewNATSBroker(config.NATS.URLs)
+        } else {
+            broker = NewRedisBroker(config.Redis) // 默认
+        }
+    } else {
+        broker = NewMemoryBroker() // 单节点
+    }
+    
+    return &Server{
+        broker:      broker,
+        sessionMgr:  NewSessionManager(broker),
+        bridgeMgr:   NewBridgeManager(broker),
+        // ...
+    }
+}
+
+// 发布客户端上线消息
+func (s *Server) notifyClientOnline(clientID int64, nodeID string) error {
+    msg := ClientOnlineMessage{
+        ClientID:  clientID,
+        NodeID:    nodeID,
+        Timestamp: time.Now().Unix(),
+    }
+    data, _ := json.Marshal(msg)
+    return s.broker.Publish(ctx, "client.online", data)
+}
+
+// 订阅客户端上线消息
+func (s *Server) startClientOnlineListener() {
+    msgChan, err := s.broker.Subscribe(ctx, "client.online")
+    if err != nil {
+        log.Fatal(err)
+    }
+    
+    for msg := range msgChan {
+        var onlineMsg ClientOnlineMessage
+        json.Unmarshal(msg.Payload, &onlineMsg)
+        
+        // 更新本地路由缓存
+        s.clientRoutes.Set(onlineMsg.ClientID, onlineMsg.NodeID)
+    }
+}
+```
+
+### 5. MessageBroker 与 Storage 的关系
+
+**职责分离**：
+
+```mermaid
+graph LR
+    subgraph Storage存储层[Storage - 数据持久层]
+        S1[用户数据]
+        S2[客户端信息]
+        S3[映射配置]
+        S4[配额]
+    end
+    
+    subgraph MessageBroker消息层[MessageBroker - 消息通知层]
+        M1[客户端上下线通知]
+        M2[配置变更通知]
+        M3[桥接请求/响应]
+        M4[节点心跳]
+    end
+    
+    App[应用层] --> Storage存储层
+    App --> MessageBroker消息层
+    
+    MessageBroker消息层 -.触发.-> App
+    App -.更新.-> Storage存储层
+    
+    style Storage存储层 fill:#E6F7FF
+    style MessageBroker消息层 fill:#FFF7E6
+```
+
+**区别**：
+- **Storage**：存储持久化数据（用户、客户端、映射、配额）
+- **MessageBroker**：传递临时消息、事件通知（上下线、配置变更）
+
+**Redis 的双重角色**：
+- 作为 **RedisStorage**：存储数据（KV操作）
+- 作为 **RedisBroker**：传递消息（Pub/Sub操作）
+- 这是两个独立的接口实现，恰好都用 Redis
+
+---
+
+## 🌉 集群通信层（Bridge）
+
+### 1. 跨节点转发的连接数问题
+
+**问题场景**：
+
+```
+假设有 1000 个客户端分布在 10 个 Tunnox Server 节点上：
+- 如果每个跨节点转发都建立独立的 gRPC 连接
+- 最坏情况：10 * 9 * 100 = 9000 个 gRPC 连接
+- 每个连接占用 ~500KB 内存 → 总共 4.5GB 内存浪费
+```
+
+**解决方案**：**BridgeConnectionPool + 多路复用**
+
+### 2. BridgeConnectionPool 设计
+
+```mermaid
+graph TB
+    subgraph ServerA[Tunnox Server A]
+        direction TB
+        BridgeMgrA[BridgeManager]
+        PoolA[BridgeConnectionPool]
+        
+        BridgeMgrA --> PoolA
+    end
+    
+    subgraph Pool详情[Connection Pool]
+        direction LR
+        
+        subgraph NodeB连接池[到 Node-B 的连接池]
+            Conn1[gRPC Stream 1<br/>复用数: 45]
+            Conn2[gRPC Stream 2<br/>复用数: 38]
+            Conn3[gRPC Stream 3<br/>复用数: 17]
+        end
+        
+        subgraph NodeC连接池[到 Node-C 的连接池]
+            Conn4[gRPC Stream 1<br/>复用数: 62]
+            Conn5[gRPC Stream 2<br/>复用数: 28]
+        end
+    end
+    
+    PoolA --> NodeB连接池
+    PoolA --> NodeC连接池
+    
+    subgraph ServerB[Tunnox Server B]
+        SessionB[100+ 客户端会话]
+    end
+    
+    subgraph ServerC[Tunnox Server C]
+        SessionC[80+ 客户端会话]
+    end
+    
+    Conn1 -.逻辑流1.-> SessionB
+    Conn1 -.逻辑流2.-> SessionB
+    Conn1 -.逻辑流N.-> SessionB
+    
+    Conn4 -.逻辑流1.-> SessionC
+    
+    style Conn1 fill:#52C41A,color:#fff
+    style Conn4 fill:#1890FF,color:#fff
+```
+
+### 3. 连接池核心实现
+
+```go
+// BridgeConnectionPool gRPC 桥接连接池
+type BridgeConnectionPool struct {
+    config *PoolConfig
+    pools  map[string]*NodeConnectionPool // nodeID -> pool
+    mu     sync.RWMutex
+}
+
+type PoolConfig struct {
+    MinConnections       int           // 每个节点最小连接数（默认：2）
+    MaxConnections       int           // 每个节点最大连接数（默认：20）
+    MaxStreamsPerConn    int           // 每个连接最多复用流数（默认：100）
+    MaxIdleTime          time.Duration // 空闲连接超时（默认：5分钟）
+    DialTimeout          time.Duration // 连接建立超时（默认：5秒）
+    HealthCheckInterval  time.Duration // 健康检查间隔（默认：30秒）
+}
+
+// NodeConnectionPool 到单个节点的连接池
+type NodeConnectionPool struct {
+    nodeID      string
+    nodeAddr    string                // 节点 gRPC 地址
+    connections []*MultiplexedConn    // 连接列表
+    available   chan *MultiplexedConn // 可用连接队列
+    size        atomic.Int32          // 当前连接数
+    config      *PoolConfig
+    mu          sync.RWMutex
+}
+
+// MultiplexedConn 支持多路复用的 gRPC 连接
+type MultiplexedConn struct {
+    nodeID     string
+    stream     pb.NodeBridge_StreamClient // gRPC 双向流
+    sessions   sync.Map                   // streamID -> *ForwardSession
+    inUse      atomic.Int32               // 当前复用的流数量
+    lastUsed   atomic.Int64               // 最后使用时间（Unix timestamp）
+    healthy    atomic.Bool                // 连接健康状态
+    closeChan  chan struct{}
+}
+
+// ForwardSession 单个逻辑转发会话
+type ForwardSession struct {
+    StreamID       string    // UUID，唯一标识一个逻辑流
+    SourceClientID int64
+    TargetClientID int64
+    DataChan       chan []byte
+    ErrChan        chan error
+    CloseChan      chan struct{}
+    CreatedAt      time.Time
+}
+```
+
+### 4. gRPC Protocol 定义（支持多路复用）
+
+```protobuf
+syntax = "proto3";
+
+package bridge;
+
+// 跨节点桥接服务
+service NodeBridge {
+    // 双向流，支持多路复用
+    rpc Stream(stream BridgePacket) returns (stream BridgePacket);
+}
+
+// 桥接数据包（支持多个逻辑流在同一个 gRPC 连接上传输）
+message BridgePacket {
+    string stream_id = 1;           // 逻辑流ID（UUID），用于区分不同的转发会话
+    PacketType type = 2;            // 包类型
+    
+    // 连接建立信息
+    int64 source_client_id = 3;     // 源客户端ID
+    int64 target_client_id = 4;     // 目标客户端ID
+    string target_host = 5;         // 目标地址
+    int32 target_port = 6;          // 目标端口
+    
+    // 数据传输
+    bytes data = 10;                // 实际数据
+    
+    // 控制信号
+    string error_message = 20;      // 错误信息
+    int64 timestamp = 21;           // 时间戳
+}
+
+enum PacketType {
+    PACKET_TYPE_UNSPECIFIED = 0;
+    CONNECT_REQUEST = 1;            // 建立逻辑流请求
+    CONNECT_RESPONSE = 2;           // 建立逻辑流响应
+    DATA = 3;                       // 数据传输
+    CLOSE = 4;                      // 关闭逻辑流
+    ERROR = 5;                      // 错误
+    HEARTBEAT = 6;                  // 心跳（保持 gRPC 连接活跃）
+}
+```
+
+### 5. 连接池工作流程
+
+```mermaid
+sequenceDiagram
+    participant ClientA as Client A
+    participant ServerA as Server A (Node-001)
+    participant Pool as BridgeConnectionPool
+    participant Conn as MultiplexedConn
+    participant ServerB as Server B (Node-002)
+    participant ClientB as Client B
+    
+    ClientA->>ServerA: 数据包（目标：Client B）
+    ServerA->>ServerA: 查询 Client B 在 Node-002
+    ServerA->>Pool: AcquireConnection("node-002")
+    
+    alt 有可用连接且未满
+        Pool->>ServerA: 返回复用连接 (in_use=45)
+    else 无可用连接且未达上限
+        Pool->>Conn: 创建新 gRPC Stream
+        Conn->>ServerB: 建立双向流
+        Pool->>ServerA: 返回新连接 (in_use=1)
+    else 已达上限
+        Pool->>Pool: 等待可用连接
+        Pool->>ServerA: 返回空闲连接
+    end
+    
+    ServerA->>ServerA: 生成 stream_id = uuid1
+    ServerA->>Conn: 发送 CONNECT_REQUEST<br/>(stream_id=uuid1, target_client=B)
+    Conn->>ServerB: 通过 gRPC Stream 转发
+    ServerB->>ClientB: 通知建立连接到目标服务
+    ClientB->>ClientB: 建立连接成功
+    ServerB->>Conn: 返回 CONNECT_RESPONSE (stream_id=uuid1, success)
+    Conn->>ServerA: 转发响应
+    
+    loop 数据传输
+        ServerA->>Conn: BridgePacket (stream_id=uuid1, DATA, payload)
+        Conn->>ServerB: 转发
+        ServerB->>ClientB: 转发
+        ClientB->>ServerB: 返回数据
+        ServerB->>Conn: BridgePacket (stream_id=uuid1, DATA, response)
+        Conn->>ServerA: 转发
+    end
+    
+    ServerA->>Conn: BridgePacket (stream_id=uuid1, CLOSE)
+    Conn->>ServerB: 转发关闭信号
+    ServerB->>ClientB: 关闭连接
+    
+    ServerA->>Pool: ReleaseConnection(conn)
+    Pool->>Pool: in_use--, 归还到 available 队列
+    
+    Note over Pool,Conn: 同一个 gRPC 连接可同时处理<br/>100+ 个逻辑流（不同 stream_id）
+```
+
+### 6. 连接池优化策略
+
+```go
+// 获取连接（带负载均衡）
+func (pool *BridgeConnectionPool) AcquireConnection(ctx context.Context, nodeID string) (*MultiplexedConn, error) {
+    nodePool := pool.getOrCreateNodePool(nodeID)
+    
+    select {
+    case conn := <-nodePool.available:
+        // 检查连接健康状态和复用数
+        if conn.healthy.Load() && conn.inUse.Load() < int32(pool.config.MaxStreamsPerConn) {
+            conn.inUse.Add(1)
+            conn.lastUsed.Store(time.Now().Unix())
+            return conn, nil
+        }
+        // 不健康或已满，放回并重试
+        nodePool.available <- conn
+        return pool.AcquireConnection(ctx, nodeID) // 重试
+        
+    case <-time.After(pool.config.DialTimeout):
+        // 超时，尝试创建新连接
+        if nodePool.size.Load() < int32(pool.config.MaxConnections) {
+            return nodePool.createNewConnection(ctx)
+        }
+        return nil, errors.New("connection pool exhausted")
+    }
+}
+
+// 归还连接
+func (pool *BridgeConnectionPool) ReleaseConnection(conn *MultiplexedConn) {
+    conn.inUse.Add(-1)
+    conn.lastUsed.Store(time.Now().Unix())
+    
+    nodePool := pool.getNodePool(conn.nodeID)
+    if nodePool != nil {
+        select {
+        case nodePool.available <- conn:
+            // 成功归还
+        default:
+            // 队列满，连接会在后台健康检查中回收
+        }
+    }
+}
+
+// 后台健康检查和连接清理
+func (pool *NodeConnectionPool) startHealthCheck() {
+    ticker := time.NewTicker(pool.config.HealthCheckInterval)
+    defer ticker.Stop()
+    
+    for range ticker.C {
+        pool.mu.Lock()
+        for i := len(pool.connections) - 1; i >= 0; i-- {
+            conn := pool.connections[i]
+            
+            // 清理不健康的连接
+            if !conn.healthy.Load() {
+                pool.removeConnection(i)
+                continue
+            }
+            
+            // 清理长时间空闲的连接（超过 min 数量时）
+            if pool.size.Load() > int32(pool.config.MinConnections) {
+                idleTime := time.Now().Unix() - conn.lastUsed.Load()
+                if idleTime > int64(pool.config.MaxIdleTime.Seconds()) && conn.inUse.Load() == 0 {
+                    pool.removeConnection(i)
+                }
+            }
+        }
+        pool.mu.Unlock()
+    }
+}
+```
+
+### 7. 性能对比
+
+| 指标 | 无连接池 | 有连接池 + 多路复用 | 优化效果 |
+|------|---------|------------------|---------|
+| **1000 个跨节点转发** | 1000 个 gRPC 连接 | 10-20 个 gRPC 连接 | 节省 98% |
+| **内存占用** | ~500MB | ~10MB | 节省 98% |
+| **连接建立延迟** | 每次 50-100ms | 首次 50ms，后续 <1ms | 延迟降低 99% |
+| **CPU 开销** | 高（频繁建立/销毁） | 低（连接复用） | 节省 90% |
+| **并发能力** | 受文件描述符限制 | 几乎无限制 | 10x+ |
+
+### 8. 配置参数
+
+```yaml
+cluster:
+  enabled: true
+  
+  # MessageBroker 配置
+  message_broker:
+    type: "redis"  # redis / nats / memory
+    
+    # RedisBroker 配置
+    redis:
+      addrs: ["redis-1:6379", "redis-2:6379", "redis-3:6379"]
+      cluster_mode: true
+    
+    # NATSBroker 配置（可选）
+    nats:
+      urls: ["nats://nats-1:4222", "nats://nats-2:4222"]
+      cluster_id: "tunnox-cluster"
+  
+  # gRPC 连接池配置
+  grpc_pool:
+    min_connections: 2              # 每个节点最少保持 2 个连接
+    max_connections: 20             # 每个节点最多 20 个连接
+    max_streams_per_conn: 100       # 每个连接最多复用 100 个逻辑流
+    max_idle_time: 300s             # 空闲连接 5 分钟后关闭
+    dial_timeout: 5s                # 连接建立超时
+    health_check_interval: 30s      # 健康检查间隔
+```
+
+### 9. 跨节点转发完整流程（优化版）
+
+```mermaid
+sequenceDiagram
+    participant C1 as Client A<br/>(上海)
+    participant S1 as Server-1<br/>(上海节点)
+    participant Pool as Connection Pool
+    participant Stream as gRPC Stream<br/>(复用)
+    participant Broker as MessageBroker
+    participant S2 as Server-2<br/>(北京节点)
+    participant C2 as Client B<br/>(北京)
+    participant MySQL as MySQL
+    
+    Note over C1,MySQL: 假设 Client A 要访问 Client B 的 MySQL (3306)
+    
+    C1->>S1: TCP 连接到映射端口 (13306)
+    S1->>S1: 查询 MappingID → Client B
+    S1->>Broker: 查询 Client B 路由
+    Broker-->>S1: Client B 在 Server-2
+    
+    S1->>Pool: AcquireConnection("server-2")
+    
+    alt 首次连接 Server-2
+        Pool->>Stream: 创建 gRPC 双向流
+        Stream->>S2: 建立连接
+        Pool-->>S1: 返回新连接 (in_use=1)
+    else 已有连接到 Server-2
+        Pool-->>S1: 返回复用连接 (in_use=45)
+    end
+    
+    S1->>S1: 生成 stream_id = "uuid-abc-123"
+    S1->>Stream: CONNECT_REQUEST<br/>(stream_id, client_id=B, target=3306)
+    Stream->>S2: 转发请求
+    S2->>C2: 通知建立到 MySQL 的连接
+    C2->>MySQL: 建立 TCP 连接
+    MySQL-->>C2: 连接成功
+    C2-->>S2: 连接建立成功
+    S2->>Stream: CONNECT_RESPONSE (stream_id, success)
+    Stream->>S1: 转发响应
+    S1->>C1: 连接建立成功
+    
+    loop 数据传输（同一个 gRPC Stream 复用）
+        C1->>S1: MySQL 查询数据
+        S1->>Stream: DATA (stream_id=uuid-abc-123, payload)
+        Stream->>S2: 转发
+        S2->>C2: 转发
+        C2->>MySQL: 执行查询
+        MySQL-->>C2: 返回结果
+        C2-->>S2: 返回结果
+        S2->>Stream: DATA (stream_id=uuid-abc-123, result)
+        Stream->>S1: 转发
+        S1->>C1: 返回结果
+    end
+    
+    C1->>S1: 关闭连接
+    S1->>Stream: CLOSE (stream_id=uuid-abc-123)
+    Stream->>S2: 转发关闭信号
+    S2->>C2: 关闭到 MySQL 的连接
+    C2->>MySQL: 关闭连接
+    
+    S1->>Pool: ReleaseConnection(conn)
+    Pool->>Pool: in_use-- (复用数: 45 → 44)
+    
+    Note over Pool,Stream: gRPC Stream 保持连接<br/>等待下次复用
+```
+
+### 10. 连接池监控指标
+
+```go
+// PoolMetrics 连接池监控指标
+type PoolMetrics struct {
+    TotalPools           int     // 总连接池数（节点数）
+    TotalConnections     int     // 总 gRPC 连接数
+    ActiveStreams        int     // 活跃逻辑流数
+    AvgStreamsPerConn    float64 // 平均每连接复用数
+    ConnectionUtilization float64 // 连接利用率 %
+    
+    // 每个节点的详情
+    NodeMetrics map[string]NodePoolMetrics
+}
+
+type NodePoolMetrics struct {
+    NodeID            string
+    Connections       int     // 当前连接数
+    ActiveStreams     int     // 活跃流数
+    IdleConnections   int     // 空闲连接数
+    FailedDials       int64   // 连接失败次数
+    TotalBytesForwarded int64 // 总转发字节数
+}
+```
+
+**Prometheus 监控示例**：
+
+```go
+// 注册 Prometheus 指标
+var (
+    bridgePoolConnections = prometheus.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "tunnox_bridge_pool_connections",
+            Help: "Number of gRPC connections in the bridge pool",
+        },
+        []string{"target_node"},
+    )
+    
+    bridgePoolActiveStreams = prometheus.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "tunnox_bridge_pool_active_streams",
+            Help: "Number of active multiplexed streams",
+        },
+        []string{"target_node"},
+    )
+    
+    bridgePoolUtilization = prometheus.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "tunnox_bridge_pool_utilization",
+            Help: "Connection pool utilization (active_streams / max_streams)",
+        },
+        []string{"target_node"},
+    )
+)
+```
+
+---
+
 ## ☁️ 集群部署架构
 
 ### K8s 部署架构
@@ -2386,8 +3074,9 @@ pie title 功能实现度
 |------|--------|---------|--------|--------|
 | **核心引擎** | 协议层、会话管理、命令系统 | - | - | 100% |
 | **存储层** | Memory、Redis | Hybrid (仅Redis部分) | RemoteStorageClient | 75% |
+| **消息通知层** | - | - | MessageBroker接口、RedisBroker | 0% |
+| **集群通信层** | 节点发现、路由表 | gRPC桥接（基础） | BridgeConnectionPool连接池 | 60% |
 | **云控平台** | API接口、Services | - | HTTP路由层 | 85% |
-| **集群** | 节点发现、路由表、Pub/Sub | gRPC桥接 | - | 85% |
 | **协议支持** | TCP | - | HTTP、SOCKS、UDP、QUIC | 40% |
 | **监控** | 基础日志 | 流量统计 | Prometheus | 40% |
 
@@ -2412,16 +3101,21 @@ pie title 功能实现度
 | | RedisStorage | ✅ 已实现 | P0 | 集群存储 |
 | | HybridStorage | 🟡 部分实现 | P1 | Redis部分完成 |
 | | RemoteStorageClient | ❌ 未实现 | P1 | gRPC客户端 |
+| **消息通知层** | MessageBroker接口 | ❌ 未实现 | P0 | 抽象MQ能力 |
+| | RedisBroker | ❌ 未实现 | P0 | 基于Redis Pub/Sub |
+| | MemoryBroker | ❌ 未实现 | P1 | 单节点实现 |
+| | NATSBroker | ❌ 未实现 | P2 | 可选高性能方案 |
 | **云控平台** | CloudControlAPI | ✅ 已实现 | P0 | 接口定义 |
 | | UserService | ✅ 已实现 | P0 | 用户管理 |
 | | ClientService | ✅ 已实现 | P0 | 客户端管理 |
 | | PortMappingService | ✅ 已实现 | P0 | 映射管理 |
 | | JWTManager | ✅ 已实现 | P0 | JWT认证 |
 | | Management API HTTP | ❌ 未实现 | P1 | HTTP路由层 |
-| **集群** | 节点注册与发现 | ✅ 已实现 | P0 | Redis竞争式 |
+| **集群通信** | 节点注册与发现 | ✅ 已实现 | P0 | Redis竞争式 |
 | | 客户端路由表 | ✅ 已实现 | P0 | Redis存储 |
-| | Pub/Sub广播 | ✅ 已实现 | P0 | Redis Pub/Sub |
-| | gRPC桥接 | 🟡 待测试 | P1 | 代码已有 |
+| | gRPC桥接（基础） | 🟡 待测试 | P0 | 代码已有 |
+| | BridgeConnectionPool | ❌ 未实现 | P1 | 连接池 + 多路复用 |
+| | 多路复用协议 | ❌ 未实现 | P1 | stream_id 路由 |
 | **转发** | 本地转发 | ✅ 已实现 | P0 | 同节点转发 |
 | | 跨节点转发 | 🟡 待测试 | P1 | 需完整测试 |
 | **协议支持** | TCP转发 | ✅ 已实现 | P0 | SSH/数据库等 |
@@ -2446,11 +3140,15 @@ gantt
     title Tunnox Core 开发路线图
     dateFormat YYYY-MM-DD
     section Phase 1 核心完善
-    Management API HTTP层     :a1, 2025-11-26, 5d
-    RemoteStorageClient gRPC  :a2, 2025-11-28, 7d
-    storage.proto定义         :a3, 2025-11-26, 3d
-    跨节点转发完整测试        :a4, 2025-12-01, 5d
-    配置推送完整实现          :a5, 2025-12-03, 5d
+    MessageBroker接口设计     :a0, 2025-11-26, 3d
+    RedisBroker实现           :a1, 2025-11-27, 4d
+    BridgeConnectionPool设计  :a2, 2025-11-28, 5d
+    gRPC多路复用协议          :a3, 2025-11-29, 5d
+    Management API HTTP层     :a4, 2025-12-01, 5d
+    RemoteStorageClient gRPC  :a5, 2025-12-03, 7d
+    storage.proto定义         :a6, 2025-12-01, 3d
+    跨节点转发完整测试        :a7, 2025-12-08, 5d
+    配置推送完整实现          :a8, 2025-12-10, 5d
     
     section Phase 2 功能增强
     HTTP代理协议支持          :b1, 2025-12-08, 7d
@@ -2464,10 +3162,14 @@ gantt
     性能优化                  :c3, 2026-01-15, 7d
 ```
 
-**Phase 1: 核心功能完善**（1个月）
+**Phase 1: 核心功能完善**（1.5个月）
+- ✅ MessageBroker 抽象层设计与实现
+- ✅ RedisBroker / MemoryBroker 实现
+- ✅ BridgeConnectionPool 连接池设计
+- ✅ gRPC 多路复用协议实现
 - ✅ Management API HTTP 路由层
 - ✅ RemoteStorageClient gRPC 实现
-- ✅ 跨节点转发完整测试
+- ✅ 跨节点转发完整测试（含连接池）
 - ✅ 配置推送机制完整实现
 
 **Phase 2: 功能增强**（1个月）
@@ -2889,15 +3591,28 @@ graph TB
 
 3. **存储架构优化**
    - MemoryStorage：开发测试
-   - RedisStorage：集群 + Pub/Sub广播
+   - RedisStorage：集群缓存
    - HybridStorage：Redis + gRPC 远程存储
+   - Storage 与 MessageBroker 职责分离
 
-4. **可视化增强**
+4. **消息通知层抽象**
+   - MessageBroker 接口：抽象类MQ能力
+   - 支持 Redis/NATS/Memory 多种实现
+   - 解耦消息通知与存储逻辑
+   - 单节点无需 Redis 依赖
+
+5. **集群通信优化**
+   - BridgeConnectionPool：gRPC 连接池
+   - 多路复用：节省 98% 连接数
+   - stream_id 逻辑流隔离
+   - 性能提升 10x+
+
+6. **可视化增强**
    - 全面使用 Mermaid 图表
    - 架构图、流程图、时序图、ER图
    - 提升可读性和专业性
 
-5. **文档结构优化**
+7. **文档结构优化**
    - 商业价值前置，吸引决策者
    - 功能展示完整，便于理解
    - 技术细节分层，便于开发
@@ -2913,7 +3628,9 @@ graph TB
 | **架构图** | 文本ASCII | Mermaid图表 | 专业美观 |
 | **流程图** | 文本描述 | 时序图 | 清晰直观 |
 | **阅读体验** | 技术文档 | 商业+技术 | 多角色友好 |
-| **文档行数** | 4121行 → 3506行 | 约2300行 | 聚焦核心 |
+| **消息通知** | Redis Pub/Sub耦合 | MessageBroker抽象 | 解耦可替换 |
+| **跨节点通信** | 直接gRPC连接 | 连接池+多路复用 | 节省98%连接 |
+| **文档行数** | 4121行 → 3506行 | ~3600行 | 内容更丰富 |
 | **商业化设计** | 包含详细实现 | 明确为外部项目 | 职责清晰 |
 | **存储设计** | PostgreSQL表详情 | Storage接口+gRPC | 灵活扩展 |
 
@@ -2925,29 +3642,37 @@ graph TB
 
 ```mermaid
 graph LR
-    A[实现 Management API HTTP层] -->|3-5天| B[实现 storage.proto]
-    B -->|2-3天| C[实现 RemoteStorageClient]
-    C -->|3-5天| D[完整测试跨节点转发]
+    A[MessageBroker抽象设计] -->|3天| B[RedisBroker实现]
+    B -->|5天| C[BridgeConnectionPool设计]
+    C -->|5天| D[gRPC多路复用协议]
+    D -->|5天| E[Management API HTTP层]
+    E -->|7天| F[RemoteStorageClient]
     
-    style A fill:#FF4D4F,color:#fff
+    style A fill:#722ED1,color:#fff
     style B fill:#FA8C16,color:#fff
-    style C fill:#FAAD14,color:#fff
+    style C fill:#1890FF,color:#fff
     style D fill:#52C41A,color:#fff
+    style E fill:#FAAD14,color:#fff
+    style F fill:#FF4D4F,color:#fff
 ```
 
 #### 短期目标（本月）
 
-1. ✅ 完成 Management API HTTP 路由层
-2. ✅ 完成 RemoteStorageClient gRPC 实现
-3. ✅ 完成跨节点转发端到端测试
-4. ✅ 编写集成测试用例
+1. ✅ 完成 MessageBroker 接口抽象和 RedisBroker 实现
+2. ✅ 完成 BridgeConnectionPool 连接池设计
+3. ✅ 实现 gRPC 多路复用协议
+4. ✅ 完成 Management API HTTP 路由层
+5. ✅ 完成 RemoteStorageClient gRPC 实现
+6. ✅ 完成跨节点转发端到端测试（验证连接池）
+7. ✅ 编写集成测试用例
 
 #### 中期目标（3个月）
 
-1. HTTP/SOCKS 代理协议支持
-2. 完善监控和日志系统
-3. 性能优化到设计目标
-4. 编写完整的用户文档
+1. NATSBroker 实现（可选高性能方案）
+2. HTTP/SOCKS 代理协议支持
+3. 完善监控和日志系统（含连接池监控）
+4. 性能优化到设计目标（百万级并发）
+5. 编写完整的用户文档
 
 ---
 
@@ -2958,7 +3683,7 @@ graph LR
 | V1.0 | 2025-10-15 | 初始设计 | ~2000 |
 | V2.0 | 2025-11-10 | 大幅重构，引入云控平台 | ~3500 |
 | V2.1 | 2025-11-22 | ID改数字，Secret澄清，商业化配额 | 4121 → 3506 |
-| **V2.2** | **2025-11-25** | **职责分离，Mermaid图表，商业价值** | **~2300** |
+| **V2.2** | **2025-11-25** | **职责分离，Mermaid图表，MessageBroker抽象，连接池设计** | **3721** |
 
 ---
 
