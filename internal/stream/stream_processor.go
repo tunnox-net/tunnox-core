@@ -353,7 +353,7 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 	if packetType.IsEncrypted() {
 		// 加密功能已移至 transform 模块
 		err = fmt.Errorf("encryption not supported in StreamProcessor, use transform package")
-		if err != nil {
+			if err != nil {
 				return nil, totalBytes, err
 			}
 		}

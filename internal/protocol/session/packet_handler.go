@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
@@ -74,18 +75,38 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		return fmt.Errorf("connection not found: %s", connPacket.ConnectionID)
 	}
 
-	// 构造握手请求（从 packet 解析）
+	// 解析握手请求（从 Payload）
 	req := &packet.HandshakeRequest{}
-	// TODO: 解析请求数据
+	if len(connPacket.Packet.Payload) > 0 {
+		if err := json.Unmarshal(connPacket.Packet.Payload, req); err != nil {
+			utils.Errorf("Failed to parse handshake request: %v", err)
+			return fmt.Errorf("invalid handshake request format: %w", err)
+		}
+	}
+
+	utils.Debugf("Handshake request: ClientID=%d, Version=%s, Protocol=%s",
+		req.ClientID, req.Version, req.Protocol)
 
 	// 调用 authHandler 处理
 	resp, err := s.authHandler.HandleHandshake(clientConn, req)
 	if err != nil {
+		utils.Errorf("Handshake failed for connection %s: %v", connPacket.ConnectionID, err)
+		// 发送失败响应
+		s.sendHandshakeResponse(clientConn, &packet.HandshakeResponse{
+			Success: false,
+			Error:   err.Error(),
+		})
 		return err
 	}
 
-	// 发送响应
-	utils.Debugf("Handshake response: %+v", resp)
+	// 发送成功响应
+	if err := s.sendHandshakeResponse(clientConn, resp); err != nil {
+		utils.Errorf("Failed to send handshake response: %v", err)
+		return err
+	}
+
+	utils.Infof("Handshake succeeded for connection %s, ClientID=%d",
+		connPacket.ConnectionID, req.ClientID)
 	return nil
 }
 
@@ -104,11 +125,85 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		return fmt.Errorf("client connection not found: %s", connPacket.ConnectionID)
 	}
 
-	// 构造隧道打开请求
+	// 解析隧道打开请求（从 Payload）
 	req := &packet.TunnelOpenRequest{}
-	// TODO: 解析请求数据
+	if len(connPacket.Packet.Payload) > 0 {
+		if err := json.Unmarshal(connPacket.Packet.Payload, req); err != nil {
+			utils.Errorf("Failed to parse tunnel open request: %v", err)
+			// 发送失败响应
+			s.sendTunnelOpenResponse(clientConn, &packet.TunnelOpenAckResponse{
+				TunnelID: "",
+				Success:  false,
+				Error:    fmt.Sprintf("invalid tunnel open request format: %v", err),
+			})
+			return fmt.Errorf("invalid tunnel open request format: %w", err)
+		}
+	}
+
+	utils.Debugf("Tunnel open request: TunnelID=%s, MappingID=%s",
+		req.TunnelID, req.MappingID)
 
 	// 调用 tunnelHandler 处理
-	return s.tunnelHandler.HandleTunnelOpen(clientConn, req)
+	if err := s.tunnelHandler.HandleTunnelOpen(clientConn, req); err != nil {
+		utils.Errorf("Tunnel open failed for connection %s: %v", connPacket.ConnectionID, err)
+		// 发送失败响应
+		s.sendTunnelOpenResponse(clientConn, &packet.TunnelOpenAckResponse{
+			TunnelID: req.TunnelID,
+			Success:  false,
+			Error:    err.Error(),
+		})
+		return err
+	}
+
+	utils.Infof("Tunnel open succeeded for connection %s, TunnelID=%s",
+		connPacket.ConnectionID, req.TunnelID)
+	return nil
 }
 
+// ============================================================================
+// 辅助方法：响应发送
+// ============================================================================
+
+// sendHandshakeResponse 发送握手响应
+func (s *SessionManager) sendHandshakeResponse(conn *ClientConnection, resp *packet.HandshakeResponse) error {
+	// 序列化响应
+	respData, err := json.Marshal(resp)
+	if err != nil {
+		return fmt.Errorf("failed to marshal handshake response: %w", err)
+	}
+
+	// 构造响应包
+	respPacket := &packet.TransferPacket{
+		PacketType: packet.HandshakeResp,
+		Payload:    respData,
+	}
+
+	// 发送响应
+	if _, err := conn.Stream.WritePacket(respPacket, false, 0); err != nil {
+		return fmt.Errorf("failed to write handshake response: %w", err)
+	}
+
+	return nil
+}
+
+// sendTunnelOpenResponse 发送隧道打开响应
+func (s *SessionManager) sendTunnelOpenResponse(conn *ClientConnection, resp *packet.TunnelOpenAckResponse) error {
+	// 序列化响应
+	respData, err := json.Marshal(resp)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tunnel open response: %w", err)
+	}
+
+	// 构造响应包
+	respPacket := &packet.TransferPacket{
+		PacketType: packet.TunnelOpenAck,
+		Payload:    respData,
+	}
+
+	// 发送响应
+	if _, err := conn.Stream.WritePacket(respPacket, false, 0); err != nil {
+		return fmt.Errorf("failed to write tunnel open response: %w", err)
+	}
+
+	return nil
+}
