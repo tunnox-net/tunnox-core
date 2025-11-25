@@ -33,6 +33,11 @@ type udpSession struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	mu         sync.RWMutex
+
+	// 缓存的转换器和读写器
+	transformer transform.StreamTransformer
+	reader      io.Reader
+	writer      io.Writer
 }
 
 const (
@@ -184,14 +189,42 @@ func (h *UdpMappingHandler) createSession(userAddr *net.UDPAddr) *udpSession {
 	// 关闭 StreamProcessor，切换到裸连接模式
 	tunnelStream.Close()
 
+	// 创建转换器和读写器
+	transformer, err := h.createTransformer()
+	if err != nil {
+		utils.Errorf("UdpMappingHandler: failed to create transformer: %v", err)
+		tunnelConn.Close()
+		return nil
+	}
+
+	var reader io.Reader = tunnelConn
+	var writer io.Writer = tunnelConn
+	if transformer != nil {
+		reader, err = transformer.WrapReader(tunnelConn)
+		if err != nil {
+			utils.Errorf("UdpMappingHandler: failed to wrap reader: %v", err)
+			tunnelConn.Close()
+			return nil
+		}
+		writer, err = transformer.WrapWriter(tunnelConn)
+		if err != nil {
+			utils.Errorf("UdpMappingHandler: failed to wrap writer: %v", err)
+			tunnelConn.Close()
+			return nil
+		}
+	}
+
 	// 创建会话
 	sessionCtx, sessionCancel := context.WithCancel(h.Ctx())
 	session := &udpSession{
-		userAddr:   userAddr,
-		tunnelConn: tunnelConn,
-		lastActive: time.Now(),
-		ctx:        sessionCtx,
-		cancel:     sessionCancel,
+		userAddr:    userAddr,
+		tunnelConn:  tunnelConn,
+		lastActive:  time.Now(),
+		ctx:         sessionCtx,
+		cancel:      sessionCancel,
+		transformer: transformer,
+		reader:      reader,
+		writer:      writer,
 	}
 
 	// 注册会话
@@ -215,11 +248,10 @@ func (h *UdpMappingHandler) sendToTunnel(session *udpSession, data []byte) error
 		return fmt.Errorf("tunnel connection closed")
 	}
 
-	// 创建转换器
-	transformer, _ := h.createTransformer()
-	writer := io.Writer(session.tunnelConn)
-	if transformer != nil {
-		writer, _ = transformer.WrapWriter(writer)
+	// 使用会话缓存的 writer
+	writer := session.writer
+	if writer == nil {
+		writer = session.tunnelConn
 	}
 
 	// UDP 数据包格式：[2字节长度][数据]
@@ -242,11 +274,10 @@ func (h *UdpMappingHandler) sendToTunnel(session *udpSession, data []byte) error
 func (h *UdpMappingHandler) receiveTunnelData(session *udpSession, addrKey string) {
 	defer h.removeSession(addrKey)
 
-	// 创建转换器
-	transformer, _ := h.createTransformer()
-	reader := io.Reader(session.tunnelConn)
-	if transformer != nil {
-		reader, _ = transformer.WrapReader(reader)
+	// 使用会话缓存的 reader
+	reader := session.reader
+	if reader == nil {
+		reader = session.tunnelConn
 	}
 
 	for {

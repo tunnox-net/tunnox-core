@@ -296,9 +296,23 @@ func (h *Socks5MappingHandler) connectThroughTunnel(targetAddr string) (net.Conn
 	}
 
 	if transformer != nil {
+		// 创建并缓存 reader/writer
+		reader, err := transformer.WrapReader(tunnelConn)
+		if err != nil {
+			tunnelConn.Close()
+			return nil, fmt.Errorf("failed to wrap reader: %w", err)
+		}
+		writer, err := transformer.WrapWriter(tunnelConn)
+		if err != nil {
+			tunnelConn.Close()
+			return nil, fmt.Errorf("failed to wrap writer: %w", err)
+		}
+
 		return &transformedConn{
 			Conn:        tunnelConn,
 			transformer: transformer,
+			reader:      reader,
+			writer:      writer,
 		}, nil
 	}
 
@@ -309,20 +323,20 @@ func (h *Socks5MappingHandler) connectThroughTunnel(targetAddr string) (net.Conn
 type transformedConn struct {
 	net.Conn
 	transformer transform.StreamTransformer
+	reader      io.Reader
+	writer      io.Writer
 }
 
 func (tc *transformedConn) Read(p []byte) (n int, err error) {
-	if tc.transformer != nil {
-		reader, _ := tc.transformer.WrapReader(tc.Conn)
-		return reader.Read(p)
+	if tc.reader != nil {
+		return tc.reader.Read(p)
 	}
 	return tc.Conn.Read(p)
 }
 
 func (tc *transformedConn) Write(p []byte) (n int, err error) {
-	if tc.transformer != nil {
-		writer, _ := tc.transformer.WrapWriter(tc.Conn)
-		return writer.Write(p)
+	if tc.writer != nil {
+		return tc.writer.Write(p)
 	}
 	return tc.Conn.Write(p)
 }
