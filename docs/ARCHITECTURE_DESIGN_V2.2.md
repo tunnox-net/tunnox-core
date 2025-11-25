@@ -484,18 +484,18 @@ server:
 
 ```mermaid
 erDiagram
-    User ||--o{ Client : "拥有"
-    User ||--o{ PortMapping : "创建"
-    User ||--|| UserQuota : "关联"
-    Client ||--o{ PortMapping : "源客户端"
-    Client ||--o{ PortMapping : "目标客户端"
+    User ||--o{ Client : "owns"
+    User ||--o{ PortMapping : "creates"
+    User ||--|| UserQuota : "has"
+    Client ||--o{ PortMapping : "source"
+    Client ||--o{ PortMapping : "target"
     
     User {
-        int64 user_id PK "100000001起"
+        int64 user_id PK
         string username UK
         string email UK
         string password_hash
-        string status "active/disabled"
+        string status
         timestamp created_at
     }
     
@@ -510,10 +510,10 @@ erDiagram
     }
     
     Client {
-        int64 client_id PK "200-299M/600-999M"
-        int64 user_id FK "NULL=匿名"
+        int64 client_id PK
+        int64 user_id FK
         string auth_code UK
-        string client_type "anonymous/managed"
+        string client_type
         string status
         bool is_online
         string node_id
@@ -524,7 +524,7 @@ erDiagram
         int64 user_id FK
         int64 source_client_id FK
         int64 target_client_id FK
-        string protocol "tcp/http/socks"
+        string protocol
         int target_port
         string status
         bool is_active
