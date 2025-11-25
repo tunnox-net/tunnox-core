@@ -154,6 +154,5 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
-server
-test
-client
+/client
+/server
