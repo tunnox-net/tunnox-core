@@ -3,7 +3,6 @@ package client
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +12,7 @@ import (
 
 	"tunnox-core/internal/client/mapping"
 	"tunnox-core/internal/cloud/models"
+	clientconfig "tunnox-core/internal/config"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -129,8 +129,7 @@ func (c *TunnoxClient) Connect() error {
 
 	utils.Infof("Client: control connection established successfully")
 
-	// 6. 请求当前客户端的映射配置（暂时禁用，等待API推送）
-	// TODO: 在服务端重启后，客户端应该能够请求当前配置
+	// 6. 请求当前客户端的映射配置（默认依赖服务端推送，可按需启用）
 	// go func() {
 	// 	time.Sleep(200 * time.Millisecond) // 等待readLoop启动
 	// 	c.requestMappingConfig()
@@ -338,7 +337,7 @@ func (c *TunnoxClient) handleConfigUpdate(configBody string) {
 	utils.Infof("Client: ✅ received ConfigSet from server, body length=%d", len(configBody))
 
 	var configUpdate struct {
-		Mappings []MappingConfig `json:"mappings"`
+		Mappings []clientconfig.MappingConfig `json:"mappings"`
 	}
 
 	if err := json.Unmarshal([]byte(configBody), &configUpdate); err != nil {
@@ -372,46 +371,46 @@ func (c *TunnoxClient) handleConfigUpdate(configBody string) {
 }
 
 // addOrUpdateMapping 添加或更新映射
-func (c *TunnoxClient) addOrUpdateMapping(config MappingConfig) {
+func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	// 检查是否已存在，存在则先停止
-	if handler, exists := c.mappingHandlers[config.MappingID]; exists {
-		utils.Infof("Client: updating mapping %s", config.MappingID)
+	if handler, exists := c.mappingHandlers[mappingCfg.MappingID]; exists {
+		utils.Infof("Client: updating mapping %s", mappingCfg.MappingID)
 		handler.Stop()
-		delete(c.mappingHandlers, config.MappingID)
+		delete(c.mappingHandlers, mappingCfg.MappingID)
 	}
 
 	// ✅ 目标端配置（LocalPort==0）不需要启动监听
-	if config.LocalPort == 0 {
-		utils.Debugf("Client: skipping mapping %s (target-side, no local listener needed)", config.MappingID)
+	if mappingCfg.LocalPort == 0 {
+		utils.Debugf("Client: skipping mapping %s (target-side, no local listener needed)", mappingCfg.MappingID)
 		return
 	}
 
 	// 根据协议类型创建适配器和处理器
-	protocol := config.Protocol
+	protocol := mappingCfg.Protocol
 	if protocol == "" {
 		protocol = "tcp" // 默认 TCP
 	}
 
 	// 创建协议适配器
-	adapter, err := mapping.CreateAdapter(protocol, config)
+	adapter, err := mapping.CreateAdapter(protocol, mappingCfg)
 	if err != nil {
 		utils.Errorf("Client: failed to create adapter: %v", err)
 		return
 	}
 
 	// 创建映射处理器（使用BaseMappingHandler）
-	handler := mapping.NewBaseMappingHandler(c, config, adapter)
+	handler := mapping.NewBaseMappingHandler(c, mappingCfg, adapter)
 
 	if err := handler.Start(); err != nil {
-		utils.Errorf("Client: ❌ failed to start %s mapping %s: %v", protocol, config.MappingID, err)
+		utils.Errorf("Client: ❌ failed to start %s mapping %s: %v", protocol, mappingCfg.MappingID, err)
 		return
 	}
 
-	c.mappingHandlers[config.MappingID] = handler
-	utils.Infof("Client: ✅ %s mapping %s started successfully on port %d", protocol, config.MappingID, config.LocalPort)
+	c.mappingHandlers[mappingCfg.MappingID] = handler
+	utils.Infof("Client: ✅ %s mapping %s started successfully on port %d", protocol, mappingCfg.MappingID, mappingCfg.LocalPort)
 }
 
 // RemoveMapping 移除映射
@@ -532,20 +531,6 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 		return
 	}
 
-	// 解码加密密钥（hex格式）
-	var encryptionKey []byte
-	if req.EnableEncryption && req.EncryptionKey != "" {
-		encryptionKey, _ = hex.DecodeString(req.EncryptionKey)
-	}
-
-	// 创建StreamFactory配置（用于压缩/加密）
-	factoryConfig := &stream.StreamFactoryConfig{
-		EnableCompression: req.EnableCompression,
-		CompressionLevel:  req.CompressionLevel,
-		EnableEncryption:  req.EnableEncryption,
-		EncryptionKey:     encryptionKey,
-	}
-
 	// 创建Transform配置（只用于限速）
 	transformConfig := &transform.TransformConfig{
 		BandwidthLimit: req.BandwidthLimit,
@@ -559,19 +544,18 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 
 	switch protocol {
 	case "tcp":
-		go c.handleTCPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, factoryConfig, transformConfig)
+		go c.handleTCPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
 	case "udp":
-		go c.handleUDPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, factoryConfig, transformConfig)
+		go c.handleUDPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
 	default:
 		utils.Errorf("Client: unsupported protocol: %s", protocol)
 	}
 }
 
 // handleTCPTargetTunnel 处理TCP目标端隧道
-// factoryConfig: StreamProcessor的压缩/加密配置
 // transformConfig: Transform的限速配置
 func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int,
-	factoryConfig *stream.StreamFactoryConfig, transformConfig *transform.TransformConfig) {
+	transformConfig *transform.TransformConfig) {
 	// 1. 连接到目标服务
 	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
 	targetConn, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
@@ -603,10 +587,9 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 }
 
 // handleUDPTargetTunnel 处理UDP目标端隧道
-// factoryConfig: StreamProcessor的压缩/加密配置
 // transformConfig: Transform的限速配置
 func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int,
-	factoryConfig *stream.StreamFactoryConfig, transformConfig *transform.TransformConfig) {
+	transformConfig *transform.TransformConfig) {
 	utils.Infof("Client: handling UDP target tunnel, tunnel_id=%s, target=%s:%d", tunnelID, targetHost, targetPort)
 
 	// 1. 解析目标 UDP 地址
@@ -668,27 +651,11 @@ func (c *TunnoxClient) bidirectionalCopyUDPTarget(tunnelConn net.Conn, targetCon
 	go func() {
 		defer wg.Done()
 		for {
-			// 读取长度前缀
-			lenBuf := make([]byte, 4)
-			_, err := io.ReadFull(reader, lenBuf)
+			data, err := readLengthPrefixedPacket(reader)
 			if err != nil {
 				if err != io.EOF {
 					utils.Errorf("UDPTarget[%s]: failed to read length from tunnel: %v", tunnelID, err)
 				}
-				return
-			}
-
-			dataLen := binary.BigEndian.Uint32(lenBuf)
-			if dataLen == 0 || dataLen > 65535 {
-				utils.Errorf("UDPTarget[%s]: invalid data length: %d", tunnelID, dataLen)
-				return
-			}
-
-			// 读取数据
-			data := make([]byte, dataLen)
-			_, err = io.ReadFull(reader, data)
-			if err != nil {
-				utils.Errorf("UDPTarget[%s]: failed to read data from tunnel: %v", tunnelID, err)
 				return
 			}
 
@@ -722,18 +689,7 @@ func (c *TunnoxClient) bidirectionalCopyUDPTarget(tunnelConn net.Conn, targetCon
 				// 重置超时
 				targetConn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-				// 写入长度前缀
-				lenBuf := make([]byte, 4)
-				binary.BigEndian.PutUint32(lenBuf, uint32(n))
-				_, err = writer.Write(lenBuf)
-				if err != nil {
-					utils.Errorf("UDPTarget[%s]: failed to write length to tunnel: %v", tunnelID, err)
-					return
-				}
-
-				// 写入数据
-				_, err = writer.Write(buf[:n])
-				if err != nil {
+				if err := writeLengthPrefixedPacket(writer, buf[:n]); err != nil {
 					utils.Errorf("UDPTarget[%s]: failed to write data to tunnel: %v", tunnelID, err)
 					return
 				}
@@ -743,6 +699,43 @@ func (c *TunnoxClient) bidirectionalCopyUDPTarget(tunnelConn net.Conn, targetCon
 
 	wg.Wait()
 	utils.Infof("UDPTarget[%s]: tunnel closed", tunnelID)
+}
+
+const maxUDPPacketSize = 65535
+
+func readLengthPrefixedPacket(reader io.Reader) ([]byte, error) {
+	lenBuf := make([]byte, 4)
+	if _, err := io.ReadFull(reader, lenBuf); err != nil {
+		return nil, err
+	}
+
+	dataLen := binary.BigEndian.Uint32(lenBuf)
+	if dataLen == 0 || dataLen > maxUDPPacketSize {
+		return nil, fmt.Errorf("invalid data length: %d", dataLen)
+	}
+
+	data := make([]byte, dataLen)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		return nil, err
+	}
+
+	return data, nil
+}
+
+func writeLengthPrefixedPacket(writer io.Writer, data []byte) error {
+	if len(data) == 0 || len(data) > maxUDPPacketSize {
+		return fmt.Errorf("invalid data length: %d", len(data))
+	}
+
+	lenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
+
+	if _, err := writer.Write(lenBuf); err != nil {
+		return err
+	}
+
+	_, err := writer.Write(data)
+	return err
 }
 
 // ============ ClientInterface 实现（商业化控制） ============
@@ -798,7 +791,7 @@ func (c *TunnoxClient) TrackTraffic(mappingID string, bytesSent, bytesReceived i
 	utils.Debugf("Client: traffic stats for %s - period(sent=%d, recv=%d), total(sent=%d, recv=%d)",
 		mappingID, bytesSent, bytesReceived, totalSent, totalReceived)
 
-	// 3. TODO: 发送到服务器进行统计（未来实现）
+	// 3. 预留：可在此处将统计数据上报服务器
 	// 可以通过控制连接发送JsonCommand类型的统计报告
 	// 或者通过专门的统计上报接口
 
@@ -821,8 +814,7 @@ func (c *TunnoxClient) GetUserQuota() (*models.UserQuota, error) {
 	c.quotaCacheMu.RUnlock()
 
 	// 缓存失效，需要刷新
-	// TODO: 从服务器获取配额信息
-	// 可以通过JsonCommand发送QuotaQuery请求
+	// 预留：未来可通过 JsonCommand 发送 QuotaQuery 请求，从服务器获取配额信息
 
 	// 暂时使用默认配额
 	defaultQuota := &models.UserQuota{

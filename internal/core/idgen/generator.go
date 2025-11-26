@@ -12,7 +12,7 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-//TODO: mapping连接实例的ID实现有问题
+// NOTE: mapping 连接实例的 ID 实现仍需完善
 
 // 错误定义
 var (

@@ -12,32 +12,32 @@ import (
 // GRPCBridgeServer 实现 BridgeService gRPC 服务
 type GRPCBridgeServer struct {
 	pb.UnimplementedBridgeServiceServer
-	nodeID       string
-	manager      *BridgeManager
+	nodeID        string
+	manager       *BridgeManager
 	activeBridges map[string]*BridgeContext
-	bridgesMu    sync.RWMutex
-	startTime    time.Time
+	bridgesMu     sync.RWMutex
+	startTime     time.Time
 }
 
 // BridgeContext 桥接上下文（服务端侧）
 type BridgeContext struct {
-	streamID      string
-	stream        pb.BridgeService_ForwardStreamServer
-	recvChan      chan *pb.BridgePacket
-	ctx           context.Context
-	cancel        context.CancelFunc
-	createdAt     time.Time
-	lastActiveAt  time.Time
-	mu            sync.RWMutex
+	streamID     string
+	stream       pb.BridgeService_ForwardStreamServer
+	recvChan     chan *pb.BridgePacket
+	ctx          context.Context
+	cancel       context.CancelFunc
+	createdAt    time.Time
+	lastActiveAt time.Time
+	mu           sync.RWMutex
 }
 
 // NewGRPCBridgeServer 创建 gRPC 桥接服务器
 func NewGRPCBridgeServer(nodeID string, manager *BridgeManager) *GRPCBridgeServer {
 	return &GRPCBridgeServer{
-		nodeID:       nodeID,
-		manager:      manager,
+		nodeID:        nodeID,
+		manager:       manager,
 		activeBridges: make(map[string]*BridgeContext),
-		startTime:    time.Now(),
+		startTime:     time.Now(),
 	}
 }
 
@@ -146,7 +146,7 @@ func (s *GRPCBridgeServer) handleStreamOpen(bridge *BridgeContext, packet *pb.Br
 	// 1. 根据 StreamOpenRequest 中的 target_client_id 查找目标客户端
 	// 2. 建立到目标客户端的连接
 	// 3. 开始双向转发
-	
+
 	// 目前先返回成功响应（实际实现需要与 SessionManager 集成）
 	ackPacket := &pb.BridgePacket{
 		StreamId:  packet.StreamId,
@@ -168,8 +168,8 @@ func (s *GRPCBridgeServer) handleStreamData(bridge *BridgeContext, packet *pb.Br
 
 	// 这里应该将数据转发到目标客户端
 	// 目前只是记录日志（实际实现需要与 SessionManager 集成）
-	
-	// TODO: 实现实际的数据转发逻辑
+
+	// 此处应实现实际的数据转发逻辑（待与 BridgeManager 集成）
 }
 
 // handleStreamClose 处理关闭流请求
@@ -181,13 +181,13 @@ func (s *GRPCBridgeServer) handleStreamClose(bridge *BridgeContext, packet *pb.B
 	s.bridgesMu.Unlock()
 
 	// 这里应该清理相关的转发会话
-	// TODO: 实现清理逻辑
+	// 在此添加资源清理逻辑
 }
 
 // Ping 实现健康检查
 func (s *GRPCBridgeServer) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
 	utils.Debugf("GRPCBridgeServer: received ping from node %s", req.NodeId)
-	
+
 	return &pb.PingResponse{
 		Ok:              true,
 		ServerTimestamp: time.Now().UnixMilli(),
@@ -211,7 +211,7 @@ func (s *GRPCBridgeServer) GetNodeInfo(ctx context.Context, req *pb.NodeInfoRequ
 
 	return &pb.NodeInfoResponse{
 		NodeId:            s.nodeID,
-		NodeAddress:       "", // TODO: 从配置中获取
+		NodeAddress:       "", // 从配置中获取地址（尚未实现）
 		ActiveConnections: activeBridges,
 		ActiveStreams:     totalStreams,
 		UptimeSeconds:     int64(time.Since(s.startTime).Seconds()),
@@ -230,4 +230,3 @@ func (s *GRPCBridgeServer) GetActiveStreamsCount() int {
 	defer s.bridgesMu.RUnlock()
 	return len(s.activeBridges)
 }
-

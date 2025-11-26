@@ -212,7 +212,7 @@ func (s *clientService) GetClientPortMappings(clientID int64) ([]*models.PortMap
 // SearchClients 搜索客户端
 func (s *clientService) SearchClients(keyword string) ([]*models.Client, error) {
 	// 暂时返回空列表，因为ClientRepository没有Search方法
-	// TODO: 实现搜索功能
+	// 这里预留：可实现搜索功能
 	utils.Warnf("SearchClients not implemented yet")
 	return []*models.Client{}, nil
 }

@@ -151,7 +151,7 @@ func (s *portMappingService) GetUserPortMappings(userID string) ([]*models.PortM
 // ListPortMappings 列出端口映射
 func (s *portMappingService) ListPortMappings(mappingType models.MappingType) ([]*models.PortMapping, error) {
 	// 暂时返回空列表，因为PortMappingRepo没有按类型列表的方法
-	// TODO: 实现按类型列表功能
+	// 这里预留：可根据类型过滤端口映射
 	utils.Warnf("ListPortMappings by type not implemented yet")
 	return []*models.PortMapping{}, nil
 }
@@ -159,7 +159,7 @@ func (s *portMappingService) ListPortMappings(mappingType models.MappingType) ([
 // SearchPortMappings 搜索端口映射
 func (s *portMappingService) SearchPortMappings(keyword string) ([]*models.PortMapping, error) {
 	// 暂时返回空列表，因为PortMappingRepo没有Search方法
-	// TODO: 实现搜索功能
+	// 这里预留：可扩展搜索功能
 	utils.Warnf("SearchPortMappings not implemented yet")
 	return []*models.PortMapping{}, nil
 }

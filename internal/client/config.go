@@ -1,12 +1,5 @@
 package client
 
-import (
-	"tunnox-core/internal/config"
-)
-
-// MappingConfig is an alias for config.MappingConfig for backward compatibility
-type MappingConfig = config.MappingConfig
-
 // ClientConfig 客户端配置
 type ClientConfig struct {
 	// 注册客户端认证

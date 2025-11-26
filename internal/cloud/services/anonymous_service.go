@@ -188,7 +188,7 @@ func (s *anonymousService) CreateAnonymousMapping(sourceClientID, targetClientID
 // GetAnonymousMappings 获取匿名映射
 func (s *anonymousService) GetAnonymousMappings() ([]*models.PortMapping, error) {
 	// 暂时返回空列表，因为PortMappingRepo没有按类型列表的方法
-	// TODO: 实现按类型列表功能
+	// 这里预留：支持按类型筛选匿名服务
 	utils.Warnf("GetAnonymousMappings not implemented yet")
 	return []*models.PortMapping{}, nil
 }

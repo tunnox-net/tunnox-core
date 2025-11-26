@@ -58,7 +58,7 @@ func NewTcpMapHandler() *TcpMapHandler {
 func (h *TcpMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 	utils.Infof("Handling TCP mapping command for connection: %s", ctx.ConnectionID)
 
-	// TODO: 实现TCP端口映射逻辑
+	// TCP端口映射逻辑尚未实现
 	// 1. 解析请求体中的端口映射配置
 	// 2. 验证权限和配额
 	// 3. 创建端口映射
@@ -93,7 +93,7 @@ func NewHttpMapHandler() *HttpMapHandler {
 func (h *HttpMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 	utils.Infof("Handling HTTP mapping command for connection: %s", ctx.ConnectionID)
 
-	// TODO: 实现HTTP端口映射逻辑
+	// HTTP端口映射逻辑尚未实现
 
 	data, _ := json.Marshal(map[string]interface{}{"message": "HTTP mapping created"})
 	return &CommandResponse{
@@ -124,7 +124,7 @@ func NewSocksMapHandler() *SocksMapHandler {
 func (h *SocksMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 	utils.Infof("Handling SOCKS mapping command for connection: %s", ctx.ConnectionID)
 
-	// TODO: 实现SOCKS代理映射逻辑
+	// SOCKS代理映射逻辑尚未实现
 
 	data, _ := json.Marshal(map[string]interface{}{"message": "SOCKS mapping created"})
 	return &CommandResponse{
@@ -155,7 +155,7 @@ func NewDataInHandler() *DataInHandler {
 func (h *DataInHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 	utils.Infof("Handling DataIn command for connection: %s", ctx.ConnectionID)
 
-	// TODO: 实现数据输入处理逻辑
+	// 数据输入处理逻辑尚未实现
 	// 1. 解析数据输入请求
 	// 2. 准备数据传输通道
 	// 3. 通知相关组件
@@ -189,7 +189,7 @@ func NewDataOutHandler() *DataOutHandler {
 func (h *DataOutHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 	utils.Infof("Handling DataOut command for connection: %s", ctx.ConnectionID)
 
-	// TODO: 实现数据输出处理逻辑
+	// 数据输出处理逻辑尚未实现
 
 	data, _ := json.Marshal(map[string]interface{}{"message": "Data output ready"})
 	return &CommandResponse{
@@ -220,7 +220,7 @@ func NewForwardHandler() *ForwardHandler {
 func (h *ForwardHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 	utils.Infof("Handling Forward command for connection: %s", ctx.ConnectionID)
 
-	// TODO: 实现服务端间转发逻辑
+	// 服务端间转发逻辑尚未实现
 
 	data, _ := json.Marshal(map[string]interface{}{"message": "Forward setup complete"})
 	return &CommandResponse{
@@ -284,7 +284,7 @@ func NewRpcInvokeHandler() *RpcInvokeHandler {
 func (h *RpcInvokeHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 	utils.Infof("Handling RPC invoke command for connection: %s", ctx.ConnectionID)
 
-	// TODO: 实现RPC调用逻辑
+	// RPC调用逻辑尚未实现
 	// 1. 解析RPC请求
 	// 2. 查找对应的RPC服务
 	// 3. 执行RPC调用

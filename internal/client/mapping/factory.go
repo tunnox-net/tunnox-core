@@ -18,11 +18,10 @@ func CreateAdapter(protocol string, config config.MappingConfig) (MappingAdapter
 	case "socks5":
 		// SOCKS5凭据从配置读取（如果需要）
 		credentials := make(map[string]string)
-		// TODO: 从config中读取SOCKS5认证信息（如果有）
+		// 后续可在此从 config 中读取 SOCKS5 认证信息
 		return NewSOCKS5MappingAdapter(credentials), nil
 
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %s", protocol)
 	}
 }
-

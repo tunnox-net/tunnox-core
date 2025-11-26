@@ -292,7 +292,7 @@ func (s *SocksAdapter) handlePasswordAuth(conn net.Conn) error {
 	}
 
 	usernameLen := int(buf[1])
-	
+
 	// 读取用户名
 	usernameBuf := make([]byte, usernameLen)
 	if _, err := io.ReadFull(conn, usernameBuf); err != nil {
@@ -465,7 +465,7 @@ func (s *SocksAdapter) dialThroughTunnel(targetAddr string) (net.Conn, error) {
 	}
 
 	// 方案2: 通过隧道连接（生产模式）
-	// TODO: 这里需要通过 Session 建立隧道连接
+	// 在此处需要通过 Session 建立隧道连接（实现中）
 	// 当前先使用直接连接作为备用方案
 	conn, err := net.DialTimeout("tcp", targetAddr, socksDialTimeout)
 	if err != nil {
@@ -530,4 +530,3 @@ func (s *SocksAdapter) onClose() error {
 	}
 	return baseErr
 }
-

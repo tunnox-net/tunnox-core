@@ -105,7 +105,7 @@ func (s *userService) ListUsers(userType models.UserType) ([]*models.User, error
 // SearchUsers 搜索用户
 func (s *userService) SearchUsers(keyword string) ([]*models.User, error) {
 	// 暂时返回空列表，因为UserRepository没有Search方法
-	// TODO: 实现搜索功能
+	// 搜索功能尚未实现，可在此扩展
 	return []*models.User{}, nil
 }
 

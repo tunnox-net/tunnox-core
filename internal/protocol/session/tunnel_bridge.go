@@ -182,7 +182,7 @@ func (b *TunnelBridge) reportTrafficStats() {
 		return // 无流量，不上报
 	}
 
-	// TODO: 实现 CloudControlAPI.ReportTraffic 方法
+	// CloudControlAPI.ReportTraffic 尚未实现，目前仅记录日志
 	utils.Infof("TunnelBridge[%s]: traffic stats - mapping=%s, sent=%d, received=%d",
 		b.tunnelID, b.mappingID, sent, received)
 }

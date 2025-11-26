@@ -8,9 +8,9 @@ import (
 
 // CreateClientRequest 创建客户端请求
 type CreateClientRequest struct {
-	UserID      string `json:"user_id"`
-	ClientName  string `json:"client_name"`
-	ClientDesc  string `json:"client_desc,omitempty"`
+	UserID     string `json:"user_id"`
+	ClientName string `json:"client_name"`
+	ClientDesc string `json:"client_desc,omitempty"`
 }
 
 // UpdateClientRequest 更新客户端请求
@@ -180,7 +180,7 @@ func (s *ManagementAPIServer) handleClaimClient(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// TODO: 迁移端口映射配置从匿名客户端到新客户端
+	// 后续可在此添加逻辑：将匿名客户端的端口映射迁移到新客户端
 
 	s.respondJSON(w, http.StatusOK, map[string]interface{}{
 		"new_client_id": newClient.ID,
@@ -208,4 +208,3 @@ func (s *ManagementAPIServer) handleListClientMappings(w http.ResponseWriter, r 
 		"total":    len(mappings),
 	})
 }
-

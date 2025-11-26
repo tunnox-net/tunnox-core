@@ -18,10 +18,10 @@ const (
 type BrokerConfig struct {
 	Type   BrokerType // 类型：memory / redis / nats
 	NodeID string     // 节点ID
-	
+
 	// Redis 配置
 	Redis *RedisBrokerConfig
-	
+
 	// NATS 配置（未来扩展）
 	NATS interface{}
 }
@@ -31,21 +31,21 @@ func NewMessageBroker(ctx context.Context, config *BrokerConfig) (MessageBroker,
 	if config == nil {
 		return nil, fmt.Errorf("broker config is required")
 	}
-	
+
 	switch config.Type {
 	case BrokerTypeMemory:
 		return NewMemoryBroker(ctx, config.NodeID), nil
-		
+
 	case BrokerTypeRedis:
 		if config.Redis == nil {
 			return nil, fmt.Errorf("redis config is required for redis broker")
 		}
 		return NewRedisBroker(ctx, config.Redis, config.NodeID)
-		
+
 	case BrokerTypeNATS:
-		// TODO: 实现 NATSBroker
+		// 预留：可在此实现 NATS Broker
 		return nil, fmt.Errorf("NATS broker not implemented yet")
-		
+
 	default:
 		return nil, fmt.Errorf("unsupported broker type: %s", config.Type)
 	}
@@ -58,4 +58,3 @@ func DefaultBrokerConfig(nodeID string) *BrokerConfig {
 		NodeID: nodeID,
 	}
 }
-
