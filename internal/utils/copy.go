@@ -79,27 +79,21 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		defer wg.Done()
 		defer connB.Close() // 关闭写端
 
-		Infof("%s: A→B starting, creating wrapped writer...", options.LogPrefix)
-		
 		// 包装 Writer：压缩 → 加密
 		writerB, err := options.Transformer.WrapWriter(connB)
 		if err != nil {
-			Errorf("%s: failed to wrap writer B: %v", options.LogPrefix, err)
+			Errorf("%s: failed to wrap writer: %v", options.LogPrefix, err)
 			result.SendError = err
 			return
 		}
 		defer writerB.Close() // 确保 flush 缓冲
-
-		Infof("%s: A→B wrapped writer created, starting io.Copy...", options.LogPrefix)
 		
 		written, err := io.Copy(writerB, connA)
 		result.BytesSent = written
 		result.SendError = err
 
 		if err != nil && err != io.EOF {
-			Debugf("%s: A→B copy error: %v", options.LogPrefix, err)
-		} else {
-			Infof("%s: A→B copied %d bytes (before compression/encryption)", options.LogPrefix, written)
+			Debugf("%s: A→B error: %v", options.LogPrefix, err)
 		}
 	}()
 
@@ -107,32 +101,26 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 	go func() {
 		defer wg.Done()
 		defer connA.Close() // 关闭写端
-
-		Infof("%s: B→A starting, creating wrapped reader...", options.LogPrefix)
 		
 		// 包装 Reader：解密 → 解压
 		readerB, err := options.Transformer.WrapReader(connB)
 		if err != nil {
-			Errorf("%s: failed to wrap reader B: %v", options.LogPrefix, err)
+			Errorf("%s: failed to wrap reader: %v", options.LogPrefix, err)
 			result.ReceiveError = err
 			return
 		}
-
-		Infof("%s: B→A wrapped reader created, starting io.Copy...", options.LogPrefix)
 		
 		written, err := io.Copy(connA, readerB)
 		result.BytesReceived = written
 		result.ReceiveError = err
 
 		if err != nil && err != io.EOF {
-			Debugf("%s: B→A copy error: %v", options.LogPrefix, err)
-		} else {
-			Infof("%s: B→A copied %d bytes (after decompression/decryption)", options.LogPrefix, written)
+			Debugf("%s: B→A error: %v", options.LogPrefix, err)
 		}
 	}()
 
 	wg.Wait()
-	Infof("%s: bidirectional copy completed (sent: %d, received: %d)", 
+	Debugf("%s: completed (sent: %d, received: %d)", 
 		options.LogPrefix, result.BytesSent, result.BytesReceived)
 
 	// 执行回调

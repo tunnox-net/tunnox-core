@@ -311,27 +311,18 @@ func (ps *StreamProcessor) decompressData(compressedData []byte) ([]byte, error)
 
 // ReadPacket 读取整个数据包，返回读取的字节数
 func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
-	utils.Debugf("ReadPacket: START")
 	if err := ps.acquireReadLock(); err != nil {
-		utils.Debugf("ReadPacket: acquireReadLock failed: %v", err)
 		return nil, 0, err
 	}
-	defer func() {
-		ps.readLock.Unlock()
-		utils.Debugf("ReadPacket: readLock released")
-	}()
+	defer ps.readLock.Unlock()
 
-	utils.Debugf("ReadPacket: lock acquired")
 	totalBytes := 0
 
 	// 读取包类型字节
-	utils.Debugf("ReadPacket: reading packet type...")
 	packetType, err := ps.readPacketType()
 	if err != nil {
-		utils.Errorf("ReadPacket: failed to read packet type: %v", err)
 		return nil, totalBytes, err
 	}
-	utils.Debugf("ReadPacket: packet type=%d", packetType)
 	totalBytes += constants.PacketTypeSize
 
 	// 如果是心跳包，直接返回
@@ -434,17 +425,10 @@ func (ps *StreamProcessor) writeRateLimitedData(data []byte, rateLimitBytesPerSe
 
 // WritePacket 写入整个数据包，返回写入的字节数
 func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompression bool, rateLimitBytesPerSecond int64) (int, error) {
-	utils.Debugf("WritePacket: START, packetType=%d", pkt.PacketType)
 	if err := ps.acquireWriteLock(); err != nil {
-		utils.Debugf("WritePacket: acquireWriteLock failed: %v", err)
 		return 0, err
 	}
-	defer func() {
-		ps.writeLock.Unlock()
-		utils.Debugf("WritePacket: writeLock released")
-	}()
-
-	utils.Debugf("WritePacket: lock acquired")
+	defer ps.writeLock.Unlock()
 
 	// 检查数据包是否为nil
 	if pkt == nil {
@@ -466,13 +450,10 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	}
 
 	typeByte := []byte{byte(packetType)}
-	utils.Debugf("WritePacket: writing packet type byte")
 	_, err := ps.writer.Write(typeByte)
 	if err != nil {
-		utils.Errorf("WritePacket: failed to write packet type: %v", err)
 		return totalBytes, errors.NewStreamError("write_packet_type", "failed to write packet type", err)
 	}
-	utils.Debugf("WritePacket: packet type written")
 	totalBytes += constants.PacketTypeSize
 
 	// 如果是心跳包，写入完成
@@ -513,48 +494,34 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	// 写入数据体大小
 	sizeBuffer := make([]byte, constants.PacketBodySizeBytes)
 	binary.BigEndian.PutUint32(sizeBuffer, uint32(len(bodyData)))
-	utils.Debugf("WritePacket: writing body size=%d", len(bodyData))
 	_, err = ps.writer.Write(sizeBuffer)
 	if err != nil {
-		utils.Errorf("WritePacket: failed to write body size: %v", err)
 		return totalBytes, errors.NewStreamError("write_packet_body_size", "failed to write packet body size", err)
 	}
-	utils.Debugf("WritePacket: body size written")
 	totalBytes += constants.PacketBodySizeBytes
 
 	// 写入数据体，根据限速参数决定是否使用限速
-	utils.Debugf("WritePacket: writing body data, len=%d", len(bodyData))
 	if rateLimitBytesPerSecond > 0 {
 		err = ps.writeRateLimitedData(bodyData, rateLimitBytesPerSecond)
 		if err != nil {
-			utils.Errorf("WritePacket: failed to write rate-limited body: %v", err)
 			return totalBytes, err
 		}
 	} else {
 		// 直接写入，不限速
 		_, err = ps.writer.Write(bodyData)
 		if err != nil {
-			utils.Errorf("WritePacket: failed to write body: %v", err)
 			return totalBytes, errors.NewStreamError("write_packet_body", "failed to write packet body", err)
 		}
 	}
-	utils.Debugf("WritePacket: body data written")
 	totalBytes += len(bodyData)
 
 	// ✅ Flush writer if it implements Flusher interface (for buffered writers like GzipWriter)
-	utils.Debugf("WritePacket: checking for Flusher interface")
 	if flusher, ok := ps.writer.(interface{ Flush() error }); ok {
-		utils.Debugf("WritePacket: flushing writer")
 		if err := flusher.Flush(); err != nil {
-			utils.Errorf("WritePacket: flush failed: %v", err)
 			return totalBytes, errors.NewStreamError("flush_writer", "failed to flush writer", err)
 		}
-		utils.Debugf("WritePacket: writer flushed")
-	} else {
-		utils.Debugf("WritePacket: writer does not implement Flusher")
 	}
 
-	utils.Debugf("WritePacket: DONE, totalBytes=%d", totalBytes)
 	return totalBytes, nil
 }
 

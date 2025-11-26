@@ -160,10 +160,8 @@ func (c *TunnoxClient) requestMappingConfig() {
 	}
 
 	utils.Infof("Client: sending ConfigGet request via WritePacket")
-	fmt.Printf("[DEBUG] Before WritePacket: controlStream=%p, pkt=%p\n", c.controlStream, pkt)
 
 	n, err := c.controlStream.WritePacket(pkt, false, 0)
-	fmt.Printf("[DEBUG] After WritePacket: n=%d, err=%v\n", n, err)
 	utils.Infof("Client: WritePacket returned: n=%d, err=%v", n, err)
 	if err != nil {
 		utils.Errorf("Client: failed to request mapping config: %v", err)
@@ -258,10 +256,8 @@ func (c *TunnoxClient) readLoop() {
 		default:
 		}
 
-		utils.Infof("Client: readLoop waiting for packet on controlStream=%p", c.controlStream)
-		fmt.Printf("[DEBUG] Before ReadPacket call, controlStream=%p\n", c.controlStream)
+		utils.Debugf("Client: readLoop waiting for packet")
 		pkt, _, err := c.controlStream.ReadPacket()
-		fmt.Printf("[DEBUG] After ReadPacket call, controlStream=%p\n", c.controlStream)
 		if err != nil {
 			if err != io.EOF {
 				utils.Errorf("Client: failed to read packet: %v", err)

@@ -133,7 +133,7 @@ func (h *BaseMappingHandler) acceptLoop() {
 func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	defer localConn.Close()
 
-	utils.Infof("BaseMappingHandler[%s]: new connection received", h.config.MappingID)
+	utils.Debugf("BaseMappingHandler[%s]: new connection received", h.config.MappingID)
 
 	// 1. 配额检查：连接数限制
 	if err := h.checkConnectionQuota(); err != nil {
@@ -163,7 +163,7 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	}
 
 	// 5. 建立隧道连接
-	utils.Infof("BaseMappingHandler[%s]: dialing tunnel %s...", h.config.MappingID, tunnelID)
+	utils.Debugf("BaseMappingHandler[%s]: dialing tunnel %s", h.config.MappingID, tunnelID)
 	tunnelConn, tunnelStream, err := h.client.DialTunnel(
 		tunnelID,
 		h.config.MappingID,
@@ -175,7 +175,7 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	}
 	defer tunnelConn.Close()
 
-	utils.Infof("BaseMappingHandler[%s]: tunnel %s established successfully", h.config.MappingID, tunnelID)
+	utils.Debugf("BaseMappingHandler[%s]: tunnel %s established", h.config.MappingID, tunnelID)
 
 	// 6. ✅ 使用StreamProcessor的Reader/Writer进行透传
 	// StreamProcessor已经包含了压缩/加密层，不应该关闭它或绕过它
@@ -184,7 +184,7 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	
 	// 7. 包装隧道连接成ReadWriteCloser
 	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
-		tunnelStream.Close()
+	tunnelStream.Close()
 		tunnelConn.Close()
 		return nil
 	})
