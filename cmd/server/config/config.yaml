@@ -1,5 +1,9 @@
 # Tunnox Core Server Configuration
 # 服务器配置文件
+#
+# 注意：所有配置项都是可选的，未配置的项将使用默认值
+# 支持零配置启动，直接运行即可
+# 只需配置需要修改的部分，其他保持默认即可
 
 server:
   # 服务器监听配置
@@ -136,6 +140,67 @@ security:
     api_keys:
       enabled: false
       keys: []                # API 密钥列表
+
+# 消息代理配置
+message_broker:
+  type: "memory"  # memory | redis | kafka
+  
+  # 内存代理配置
+  memory:
+    buffer_size: 1000
+  
+  # Redis 代理配置
+  redis:
+    addr: "localhost:6379"
+    password: ""
+    db: 0
+    pool_size: 10
+
+# 存储配置
+storage:
+  # 存储类型: memory | redis | hybrid
+  type: hybrid
+  
+  # Redis 存储配置
+  redis:
+    addr: "localhost:6379"
+    password: ""
+    db: 0
+    pool_size: 10
+  
+  # 混合存储配置
+  hybrid:
+    cache_type: memory
+    enable_persistent: false
+    
+    persistent_prefixes:
+      - "tunnox:user:"
+      - "tunnox:client:"
+      - "tunnox:mapping:"
+      - "tunnox:port_mapping:"
+      - "tunnox:device:"
+      - "tunnox:node:"
+    
+    runtime_prefixes:
+      - "tunnox:runtime:"
+      - "tunnox:session:"
+      - "tunnox:connection:"
+      - "tunnox:tunnel:"
+      - "tunnox:temp:"
+    
+    default_persistent_ttl: 86400
+    default_runtime_ttl: 3600
+
+# Management API 配置
+management_api:
+  enabled: true
+  host: "0.0.0.0"
+  port: 9000
+  
+  # 认证配置
+  auth:
+    type: "bearer"
+    bearer_token: "test-api-key-for-management-api-1234567890"
 
 # 开发配置
 development:

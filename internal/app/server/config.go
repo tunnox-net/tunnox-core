@@ -79,9 +79,9 @@ type UDPIngressConfig struct {
 
 // StorageConfig 存储配置
 type StorageConfig struct {
-	Type   string                   `yaml:"type"`   // memory | redis | hybrid
-	Redis  RedisStorageConfig       `yaml:"redis"`  // Redis存储配置
-	Hybrid HybridStorageConfigYAML  `yaml:"hybrid"` // 混合存储配置
+	Type   string                  `yaml:"type"`   // memory | redis | hybrid
+	Redis  RedisStorageConfig      `yaml:"redis"`  // Redis存储配置
+	Hybrid HybridStorageConfigYAML `yaml:"hybrid"` // 混合存储配置
 }
 
 // RedisStorageConfig Redis存储配置
@@ -140,7 +140,7 @@ type TLSConfigYAML struct {
 
 // AuthConfigYAML 认证配置
 type AuthConfigYAML struct {
-	Type  string `yaml:"type"`  // bearer | basic | none
+	Type  string `yaml:"type"` // bearer | basic | none
 	Token string `yaml:"token"`
 }
 
@@ -191,7 +191,7 @@ func ValidateConfig(config *Config) error {
 	if err := validateStorageConfig(&config.Storage); err != nil {
 		return fmt.Errorf("invalid storage config: %w", err)
 	}
-	
+
 	// 验证服务器配置
 	if config.Server.Host == "" {
 		config.Server.Host = "0.0.0.0"
@@ -236,6 +236,31 @@ func ValidateConfig(config *Config) error {
 		}
 	}
 
+	// 验证 MessageBroker 配置
+	if config.MessageBroker.Type == "" {
+		config.MessageBroker.Type = "memory"
+		utils.Infof("MessageBroker type not configured, using default: memory")
+	}
+	if config.MessageBroker.NodeID == "" {
+		config.MessageBroker.NodeID = "node-001"
+	}
+
+	// 验证 Cloud 配置
+	if config.Cloud.Type == "" {
+		config.Cloud.Type = "built_in"
+		utils.Infof("Cloud type not configured, using default: built_in")
+	}
+
+	// 验证 ManagementAPI 配置
+	if config.ManagementAPI.ListenAddr == "" {
+		config.ManagementAPI.ListenAddr = "0.0.0.0:9000"
+	}
+	// 默认启用 ManagementAPI
+	if !config.ManagementAPI.Enabled {
+		utils.Infof("ManagementAPI not enabled in config, enabling by default on %s", config.ManagementAPI.ListenAddr)
+		config.ManagementAPI.Enabled = true
+	}
+
 	// 验证 UDP Ingress 配置
 	if config.UDPIngress.Listeners == nil {
 		config.UDPIngress.Listeners = []UDPIngressListenerConfig{}
@@ -269,13 +294,13 @@ func validateStorageConfig(config *StorageConfig) error {
 	if config.Type == "" {
 		config.Type = "hybrid"
 	}
-	
+
 	// 验证存储类型
 	validTypes := []string{"memory", "redis", "hybrid"}
 	if !containsString(validTypes, config.Type) {
 		return fmt.Errorf("invalid storage type: %s, must be one of: %v", config.Type, validTypes)
 	}
-	
+
 	// 如果是 Redis，验证 Redis 配置
 	if config.Type == "redis" {
 		if config.Redis.Addr == "" {
@@ -298,22 +323,22 @@ func validateStorageConfig(config *StorageConfig) error {
 			config.Redis.WriteTimeout = 3
 		}
 	}
-	
+
 	// 如果是 Hybrid，验证 Hybrid 配置
 	if config.Type == "hybrid" {
 		// 设置默认缓存类型
 		if config.Hybrid.CacheType == "" {
 			config.Hybrid.CacheType = "memory"
 		}
-		
+
 		if config.Hybrid.CacheType != "memory" && config.Hybrid.CacheType != "redis" {
 			return fmt.Errorf("invalid hybrid.cache_type: %s, must be 'memory' or 'redis'", config.Hybrid.CacheType)
 		}
-		
+
 		if config.Hybrid.CacheType == "redis" && config.Redis.Addr == "" {
 			return fmt.Errorf("redis.addr is required when hybrid.cache_type is redis")
 		}
-		
+
 		// 设置默认前缀
 		if len(config.Hybrid.PersistentPrefixes) == 0 {
 			config.Hybrid.PersistentPrefixes = DefaultPersistentPrefixes()
@@ -321,25 +346,25 @@ func validateStorageConfig(config *StorageConfig) error {
 		if len(config.Hybrid.RuntimePrefixes) == 0 {
 			config.Hybrid.RuntimePrefixes = DefaultRuntimePrefixes()
 		}
-		
+
 		// 设置默认 TTL
 		if config.Hybrid.DefaultRuntimeTTL <= 0 {
 			config.Hybrid.DefaultRuntimeTTL = 86400 // 24小时
 		}
-		
+
 		if config.Hybrid.EnablePersistent {
 			if config.Hybrid.Remote.Type == "" {
 				config.Hybrid.Remote.Type = "grpc"
 			}
-			
+
 			if config.Hybrid.Remote.Type != "grpc" && config.Hybrid.Remote.Type != "http" {
 				return fmt.Errorf("invalid hybrid.remote.type: %s, must be 'grpc' or 'http'", config.Hybrid.Remote.Type)
 			}
-			
+
 			if config.Hybrid.Remote.Type == "grpc" && config.Hybrid.Remote.GRPC.Address == "" {
 				return fmt.Errorf("hybrid.remote.grpc.address is required when enable_persistent is true")
 			}
-			
+
 			// 设置默认超时
 			if config.Hybrid.Remote.GRPC.Timeout <= 0 {
 				config.Hybrid.Remote.GRPC.Timeout = 5
@@ -349,7 +374,7 @@ func validateStorageConfig(config *StorageConfig) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -433,6 +458,17 @@ func GetDefaultConfig() *Config {
 		},
 		Cloud: CloudConfig{
 			Type: "built_in",
+		},
+		MessageBroker: MessageBrokerConfig{
+			Type:   "memory",
+			NodeID: "node-001",
+		},
+		BridgePool: BridgePoolConfig{
+			Enabled: false,
+		},
+		ManagementAPI: ManagementAPIConfig{
+			Enabled:    true,
+			ListenAddr: "0.0.0.0:9000",
 		},
 		UDPIngress: UDPIngressConfig{
 			Enabled:   false,
