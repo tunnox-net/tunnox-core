@@ -547,6 +547,8 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 		go c.handleTCPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
 	case "udp":
 		go c.handleUDPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
+	case "socks5":
+		go c.handleSOCKS5TargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
 	default:
 		utils.Errorf("Client: unsupported protocol: %s", protocol)
 	}
@@ -584,6 +586,13 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 		Transformer: transformer,
 		LogPrefix:   fmt.Sprintf("Client[TCP-target][%s]", tunnelID),
 	})
+}
+
+// handleSOCKS5TargetTunnel 处理SOCKS5目标端隧道（与TCP流程一致）
+func (c *TunnoxClient) handleSOCKS5TargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int,
+	transformConfig *transform.TransformConfig) {
+	utils.Infof("Client: handling SOCKS5 target tunnel, tunnel_id=%s, target=%s:%d", tunnelID, targetHost, targetPort)
+	c.handleTCPTargetTunnel(tunnelID, mappingID, secretKey, targetHost, targetPort, transformConfig)
 }
 
 // handleUDPTargetTunnel 处理UDP目标端隧道
