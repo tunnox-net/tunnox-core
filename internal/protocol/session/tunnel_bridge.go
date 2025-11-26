@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
@@ -23,6 +24,8 @@ import (
 // - 带宽限制：使用 Token Bucket 限制传输速率
 // - 连接监控：记录活跃隧道和传输状态
 type TunnelBridge struct {
+	*dispose.ManagerBase
+	
 	tunnelID     string
 	mappingID    string   // 映射ID（用于流量统计）
 	sourceConn   net.Conn // 源端客户端的隧道连接
@@ -30,8 +33,6 @@ type TunnelBridge struct {
 	targetConn   net.Conn // 目标端客户端的隧道连接（等待建立）
 	targetStream stream.PackageStreamer
 	ready        chan struct{} // 用于通知目标端连接已建立
-	closed       bool
-	closeMutex   sync.Mutex
 
 	// 商业特性
 	rateLimiter   *rate.Limiter   // 带宽限制器
@@ -51,8 +52,9 @@ type TunnelBridgeConfig struct {
 }
 
 // NewTunnelBridge 创建隧道桥接器
-func NewTunnelBridge(config *TunnelBridgeConfig) *TunnelBridge {
+func NewTunnelBridge(parentCtx context.Context, config *TunnelBridgeConfig) *TunnelBridge {
 	bridge := &TunnelBridge{
+		ManagerBase:  dispose.NewManager(fmt.Sprintf("TunnelBridge-%s", config.TunnelID), parentCtx),
 		tunnelID:     config.TunnelID,
 		mappingID:    config.MappingID,
 		sourceConn:   config.SourceConn,
@@ -67,6 +69,41 @@ func NewTunnelBridge(config *TunnelBridgeConfig) *TunnelBridge {
 		bridge.rateLimiter = rate.NewLimiter(rate.Limit(config.BandwidthLimit), int(config.BandwidthLimit*2))
 		utils.Infof("TunnelBridge[%s]: bandwidth limit set to %d bytes/sec", config.TunnelID, config.BandwidthLimit)
 	}
+
+	// 注册清理处理器
+	bridge.AddCleanHandler(func() error {
+		utils.Infof("TunnelBridge[%s]: cleaning up resources", config.TunnelID)
+		
+		// 上报最终流量统计
+		bridge.reportTrafficStats()
+		
+		var errs []error
+		
+		// 关闭 StreamProcessor
+		if bridge.sourceStream != nil {
+			bridge.sourceStream.Close()
+		}
+		if bridge.targetStream != nil {
+			bridge.targetStream.Close()
+		}
+		
+		// 关闭底层连接
+		if bridge.sourceConn != nil {
+			if err := bridge.sourceConn.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("source conn close error: %w", err))
+			}
+		}
+		if bridge.targetConn != nil {
+			if err := bridge.targetConn.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("target conn close error: %w", err))
+			}
+		}
+		
+		if len(errs) > 0 {
+			return fmt.Errorf("tunnel bridge cleanup errors: %v", errs)
+		}
+		return nil
+	})
 
 	return bridge
 }
@@ -86,6 +123,8 @@ func (b *TunnelBridge) Start() error {
 		utils.Infof("TunnelBridge[%s]: target connection established, starting bridge", b.tunnelID)
 	case <-time.After(30 * time.Second):
 		return fmt.Errorf("timeout waiting for target connection")
+	case <-b.Ctx().Done():
+		return fmt.Errorf("bridge cancelled before target connection")
 	}
 
 	// ✅ 服务端是透明桥接，直接使用原始net.Conn转发（不解压不解密）
@@ -112,13 +151,7 @@ func (b *TunnelBridge) Start() error {
 
 	wg.Wait()
 
-	// 上报最终流量统计
-	b.reportTrafficStats()
-
-	// ✅ 在两个方向都完成后再关闭连接
-	b.Close()
-
-	utils.Infof("TunnelBridge[%s]: bridge closed (sent: %d, received: %d)",
+	utils.Infof("TunnelBridge[%s]: bridge finished (sent: %d, received: %d)",
 		b.tunnelID, b.bytesSent.Load(), b.bytesReceived.Load())
 	return nil
 }
@@ -129,13 +162,21 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 	var total int64
 
 	for {
+		// 检查是否已取消
+		select {
+		case <-b.Ctx().Done():
+			utils.Debugf("TunnelBridge[%s]: %s cancelled", b.tunnelID, direction)
+			return total
+		default:
+		}
+		
 		// 从源端读取
 		nr, err := src.Read(buf)
 		if nr > 0 {
 			// 应用限速（如果启用）
 			if b.rateLimiter != nil {
-				// 等待令牌桶允许
-				if err := b.rateLimiter.WaitN(context.Background(), nr); err != nil {
+				// 使用 bridge 的 context 进行限速等待
+				if err := b.rateLimiter.WaitN(b.Ctx(), nr); err != nil {
 					utils.Errorf("TunnelBridge[%s]: %s rate limit error: %v", b.tunnelID, direction, err)
 					break
 				}
@@ -188,28 +229,7 @@ func (b *TunnelBridge) reportTrafficStats() {
 }
 
 // Close 关闭桥接
-func (b *TunnelBridge) Close() {
-	b.closeMutex.Lock()
-	defer b.closeMutex.Unlock()
-
-	if b.closed {
-		return
-	}
-	b.closed = true
-
-	// ✅ 关闭StreamProcessor会自动关闭底层连接
-	if b.sourceStream != nil {
-		b.sourceStream.Close()
-	}
-	if b.targetStream != nil {
-		b.targetStream.Close()
-	}
-
-	// 也关闭底层连接（双保险）
-	if b.sourceConn != nil {
-		b.sourceConn.Close()
-	}
-	if b.targetConn != nil {
-		b.targetConn.Close()
-	}
+func (b *TunnelBridge) Close() error {
+	b.ManagerBase.Close()
+	return nil
 }

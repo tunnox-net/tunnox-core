@@ -1,6 +1,7 @@
 package mapping
 
 import (
+	"context"
 	"fmt"
 
 	"tunnox-core/internal/config"
@@ -13,7 +14,7 @@ func CreateAdapter(protocol string, config config.MappingConfig) (MappingAdapter
 		return NewTCPMappingAdapter(), nil
 
 	case "udp":
-		return NewUDPMappingAdapter(), nil
+		return NewUDPMappingAdapter(context.Background()), nil
 
 	case "socks5":
 		// SOCKS5凭据从配置读取（如果需要）

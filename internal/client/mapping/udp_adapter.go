@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/config"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
 
@@ -22,12 +23,12 @@ const (
 // UDPMappingAdapter UDP映射适配器
 // UDP是无连接协议，需要会话管理
 type UDPMappingAdapter struct {
+	*dispose.ManagerBase
+	
 	conn     *net.UDPConn
 	sessions map[string]*udpVirtualConn
 	sessLock sync.RWMutex
 	connChan chan io.ReadWriteCloser
-	ctx      context.Context
-	cancel   context.CancelFunc
 }
 
 // udpVirtualConn UDP虚拟连接
@@ -105,14 +106,33 @@ func (c *udpVirtualConn) isExpired() bool {
 }
 
 // NewUDPMappingAdapter 创建UDP映射适配器
-func NewUDPMappingAdapter() *UDPMappingAdapter {
-	ctx, cancel := context.WithCancel(context.Background())
-	return &UDPMappingAdapter{
-		sessions: make(map[string]*udpVirtualConn),
-		connChan: make(chan io.ReadWriteCloser, 100),
-		ctx:      ctx,
-		cancel:   cancel,
+func NewUDPMappingAdapter(parentCtx context.Context) *UDPMappingAdapter {
+	adapter := &UDPMappingAdapter{
+		ManagerBase: dispose.NewManager("UDPMappingAdapter", parentCtx),
+		sessions:    make(map[string]*udpVirtualConn),
+		connChan:    make(chan io.ReadWriteCloser, 100),
 	}
+	
+	// 注册清理处理器
+	adapter.AddCleanHandler(func() error {
+		utils.Infof("UDPMappingAdapter: cleaning up resources")
+		
+		// 关闭所有会话
+		adapter.sessLock.Lock()
+		for _, session := range adapter.sessions {
+			session.Close()
+		}
+		adapter.sessions = make(map[string]*udpVirtualConn)
+		adapter.sessLock.Unlock()
+		
+		// 关闭 UDP 连接
+		if adapter.conn != nil {
+			return adapter.conn.Close()
+		}
+		return nil
+	})
+	
+	return adapter
 }
 
 // StartListener 启动UDP监听
@@ -146,7 +166,7 @@ func (a *UDPMappingAdapter) receiveLoop() {
 
 	for {
 		select {
-		case <-a.ctx.Done():
+		case <-a.Ctx().Done():
 			return
 		default:
 		}
@@ -158,7 +178,7 @@ func (a *UDPMappingAdapter) receiveLoop() {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				continue
 			}
-			if a.ctx.Err() != nil {
+			if a.Ctx().Err() != nil {
 				return
 			}
 			utils.Errorf("UDPMappingAdapter: failed to read packet: %v", err)
@@ -189,7 +209,7 @@ func (a *UDPMappingAdapter) handlePacket(userAddr *net.UDPAddr, data []byte) {
 
 	if session == nil {
 		// 创建新会话
-		session = newUDPVirtualConn(userAddr, a.conn, a.ctx)
+		session = newUDPVirtualConn(userAddr, a.conn, a.Ctx())
 
 		a.sessLock.Lock()
 		a.sessions[addrKey] = session
@@ -199,7 +219,7 @@ func (a *UDPMappingAdapter) handlePacket(userAddr *net.UDPAddr, data []byte) {
 		select {
 		case a.connChan <- session:
 			utils.Debugf("UDPMappingAdapter: new session for %s", userAddr)
-		case <-a.ctx.Done():
+		case <-a.Ctx().Done():
 			return
 		default:
 			utils.Warnf("UDPMappingAdapter: connection channel full, dropping new session")
@@ -239,7 +259,7 @@ func (a *UDPMappingAdapter) cleanupLoop() {
 
 	for {
 		select {
-		case <-a.ctx.Done():
+		case <-a.Ctx().Done():
 			return
 		case <-ticker.C:
 			a.cleanupExpiredSessions()
@@ -275,7 +295,7 @@ func (a *UDPMappingAdapter) cleanupExpiredSessions() {
 // Accept 接受UDP虚拟连接
 func (a *UDPMappingAdapter) Accept() (io.ReadWriteCloser, error) {
 	select {
-	case <-a.ctx.Done():
+	case <-a.Ctx().Done():
 		return nil, io.EOF
 	case conn := <-a.connChan:
 		return conn, nil
@@ -295,20 +315,6 @@ func (a *UDPMappingAdapter) GetProtocol() string {
 
 // Close 关闭资源
 func (a *UDPMappingAdapter) Close() error {
-	a.cancel()
-
-	// 关闭所有会话
-	a.sessLock.Lock()
-	for _, session := range a.sessions {
-		session.Close()
-	}
-	a.sessions = make(map[string]*udpVirtualConn)
-	a.sessLock.Unlock()
-
-	// 关闭UDP连接
-	if a.conn != nil {
-		return a.conn.Close()
-	}
-
+	a.ManagerBase.Close()
 	return nil
 }

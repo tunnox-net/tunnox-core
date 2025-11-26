@@ -198,7 +198,7 @@ func (s *Server) startGRPCServer() *grpc.Server {
 	}
 
 	grpcServer := grpc.NewServer()
-	bridgeServer := internalbridge.NewGRPCBridgeServer(s.config.MessageBroker.NodeID, s.bridgeManager)
+	bridgeServer := internalbridge.NewGRPCBridgeServer(context.Background(), s.config.MessageBroker.NodeID, s.bridgeManager)
 	bridge.RegisterBridgeServiceServer(grpcServer, bridgeServer)
 
 	// 在后台启动 gRPC 服务器

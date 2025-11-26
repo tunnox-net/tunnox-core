@@ -1,12 +1,18 @@
 package bridge
 
 import (
+	"context"
 	"sync"
 	"time"
+	
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/utils"
 )
 
 // MetricsCollector 连接池指标收集器
 type MetricsCollector struct {
+	*dispose.ManagerBase
+	
 	mu                sync.RWMutex
 	nodeStats         map[string]*NodeStats
 	globalStats       *GlobalStats
@@ -44,8 +50,9 @@ type PoolMetrics struct {
 }
 
 // NewMetricsCollector 创建指标收集器
-func NewMetricsCollector() *MetricsCollector {
-	return &MetricsCollector{
+func NewMetricsCollector(parentCtx context.Context) *MetricsCollector {
+	collector := &MetricsCollector{
+		ManagerBase: dispose.NewManager("MetricsCollector", parentCtx),
 		nodeStats: make(map[string]*NodeStats),
 		globalStats: &GlobalStats{
 			TotalNodes:        0,
@@ -57,6 +64,35 @@ func NewMetricsCollector() *MetricsCollector {
 		},
 		startTime: time.Now(),
 	}
+	
+	// 注册清理处理器
+	collector.AddCleanHandler(func() error {
+		utils.Infof("MetricsCollector: cleaning up resources")
+		
+		collector.mu.Lock()
+		defer collector.mu.Unlock()
+		
+		// 清理所有节点统计
+		collector.nodeStats = make(map[string]*NodeStats)
+		collector.globalStats = &GlobalStats{
+			TotalNodes:        0,
+			TotalConnections:  0,
+			TotalActiveStreams: 0,
+			TotalSessionsCreated: 0,
+			TotalSessionsClosed:  0,
+			TotalErrors:       0,
+		}
+		
+		return nil
+	})
+	
+	return collector
+}
+
+// Close 关闭收集器
+func (mc *MetricsCollector) Close() error {
+	mc.ManagerBase.Close()
+	return nil
 }
 
 // RecordSessionCreated 记录会话创建

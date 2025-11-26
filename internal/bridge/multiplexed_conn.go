@@ -133,7 +133,7 @@ func (m *grpcMultiplexedConn) sendLoopForSession(session *ForwardSession) {
 
 			utils.Debugf("MultiplexedConn: sent packet for stream %s (type: %v)", session.streamID, packet.Type)
 
-		case <-session.ctx.Done():
+		case <-session.Ctx().Done():
 			return
 		case <-m.Ctx().Done():
 			return

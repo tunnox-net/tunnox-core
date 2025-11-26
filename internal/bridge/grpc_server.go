@@ -6,12 +6,15 @@ import (
 	"sync"
 	"time"
 	pb "tunnox-core/api/proto/bridge"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
 
 // GRPCBridgeServer 实现 BridgeService gRPC 服务
 type GRPCBridgeServer struct {
+	*dispose.ManagerBase
 	pb.UnimplementedBridgeServiceServer
+	
 	nodeID        string
 	manager       *BridgeManager
 	activeBridges map[string]*BridgeContext
@@ -32,17 +35,51 @@ type BridgeContext struct {
 }
 
 // NewGRPCBridgeServer 创建 gRPC 桥接服务器
-func NewGRPCBridgeServer(nodeID string, manager *BridgeManager) *GRPCBridgeServer {
-	return &GRPCBridgeServer{
+func NewGRPCBridgeServer(parentCtx context.Context, nodeID string, manager *BridgeManager) *GRPCBridgeServer {
+	server := &GRPCBridgeServer{
+		ManagerBase:   dispose.NewManager("GRPCBridgeServer", parentCtx),
 		nodeID:        nodeID,
 		manager:       manager,
 		activeBridges: make(map[string]*BridgeContext),
 		startTime:     time.Now(),
 	}
+	
+	// 注册清理处理器
+	server.AddCleanHandler(func() error {
+		utils.Infof("GRPCBridgeServer: cleaning up resources")
+		
+		server.bridgesMu.Lock()
+		defer server.bridgesMu.Unlock()
+		
+		// 关闭所有活跃的桥接
+		for streamID, bridge := range server.activeBridges {
+			bridge.cancel()
+			close(bridge.recvChan)
+			utils.Debugf("GRPCBridgeServer: closed bridge %s", streamID)
+		}
+		server.activeBridges = make(map[string]*BridgeContext)
+		
+		return nil
+	})
+	
+	return server
+}
+
+// Close 关闭服务器
+func (s *GRPCBridgeServer) Close() error {
+	s.ManagerBase.Close()
+	return nil
 }
 
 // ForwardStream 实现双向流式转发
 func (s *GRPCBridgeServer) ForwardStream(stream pb.BridgeService_ForwardStreamServer) error {
+	// 检查服务器是否已关闭
+	select {
+	case <-s.Ctx().Done():
+		return io.EOF
+	default:
+	}
+	
 	ctx := stream.Context()
 	utils.Infof("GRPCBridgeServer: new forward stream connection established")
 

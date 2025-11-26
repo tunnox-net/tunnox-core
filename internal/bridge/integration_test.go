@@ -73,7 +73,7 @@ func setupTestGRPCServer(t *testing.T, nodeID string) (string, *GRPCBridgeServer
 	grpcServer := grpc.NewServer()
 
 	// 创建 BridgeManager（使用 nil 依赖，仅用于测试）
-	bridgeServer := NewGRPCBridgeServer(nodeID, nil)
+	bridgeServer := NewGRPCBridgeServer(context.Background(), nodeID, nil)
 	pb.RegisterBridgeServiceServer(grpcServer, bridgeServer)
 
 	go func() {

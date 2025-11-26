@@ -55,7 +55,7 @@ func TestBridgeConnectionPool_Close(t *testing.T) {
 }
 
 func TestMetricsCollector_RecordSessionCreated(t *testing.T) {
-	collector := NewMetricsCollector()
+	collector := NewMetricsCollector(context.Background())
 	require.NotNil(t, collector)
 
 	nodeID := "test-node-1"
@@ -72,7 +72,7 @@ func TestMetricsCollector_RecordSessionCreated(t *testing.T) {
 }
 
 func TestMetricsCollector_RecordSessionClosed(t *testing.T) {
-	collector := NewMetricsCollector()
+	collector := NewMetricsCollector(context.Background())
 	require.NotNil(t, collector)
 
 	nodeID := "test-node-2"
@@ -90,7 +90,7 @@ func TestMetricsCollector_RecordSessionClosed(t *testing.T) {
 }
 
 func TestMetricsCollector_RecordError(t *testing.T) {
-	collector := NewMetricsCollector()
+	collector := NewMetricsCollector(context.Background())
 	require.NotNil(t, collector)
 
 	nodeID := "test-node-3"
@@ -109,7 +109,7 @@ func TestMetricsCollector_RecordError(t *testing.T) {
 }
 
 func TestMetricsCollector_UpdatePoolStats(t *testing.T) {
-	collector := NewMetricsCollector()
+	collector := NewMetricsCollector(context.Background())
 	require.NotNil(t, collector)
 
 	nodeID := "test-node-4"
@@ -128,7 +128,7 @@ func TestMetricsCollector_UpdatePoolStats(t *testing.T) {
 }
 
 func TestMetricsCollector_MultipleNodes(t *testing.T) {
-	collector := NewMetricsCollector()
+	collector := NewMetricsCollector(context.Background())
 	require.NotNil(t, collector)
 
 	// 节点 1
@@ -164,7 +164,7 @@ func TestMetricsCollector_MultipleNodes(t *testing.T) {
 }
 
 func TestMetricsCollector_RemoveNodeStats(t *testing.T) {
-	collector := NewMetricsCollector()
+	collector := NewMetricsCollector(context.Background())
 	require.NotNil(t, collector)
 
 	collector.RecordSessionCreated("node-1")
@@ -186,7 +186,7 @@ func TestMetricsCollector_RemoveNodeStats(t *testing.T) {
 }
 
 func TestMetricsCollector_Reset(t *testing.T) {
-	collector := NewMetricsCollector()
+	collector := NewMetricsCollector(context.Background())
 	require.NotNil(t, collector)
 
 	collector.RecordSessionCreated("node-1")
@@ -207,7 +207,7 @@ func TestMetricsCollector_Reset(t *testing.T) {
 }
 
 func TestMetricsCollector_Uptime(t *testing.T) {
-	collector := NewMetricsCollector()
+	collector := NewMetricsCollector(context.Background())
 	require.NotNil(t, collector)
 
 	time.Sleep(100 * time.Millisecond)

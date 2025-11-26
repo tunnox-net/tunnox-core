@@ -50,7 +50,7 @@ func NewBridgeConnectionPool(parentCtx context.Context, config *PoolConfig) *Bri
 		ManagerBase:      dispose.NewManager("BridgeConnectionPool", parentCtx),
 		nodePools:        make(map[string]*NodeConnectionPool),
 		config:           config,
-		metricsCollector: NewMetricsCollector(),
+		metricsCollector: NewMetricsCollector(parentCtx),
 	}
 
 	// 启动健康检查和指标收集

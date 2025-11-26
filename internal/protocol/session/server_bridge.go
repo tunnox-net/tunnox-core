@@ -29,7 +29,7 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 
 	bandwidthLimit := mapping.Config.BandwidthLimit
 
-	bridge := NewTunnelBridge(&TunnelBridgeConfig{
+	bridge := NewTunnelBridge(s.Ctx(), &TunnelBridgeConfig{
 		TunnelID:       req.TunnelID,
 		MappingID:      req.MappingID,
 		SourceConn:     sourceConn,

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 	pb "tunnox-core/api/proto/bridge"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 
 	"github.com/google/uuid"
@@ -25,13 +26,12 @@ type SessionMetadata struct {
 
 // ForwardSession 表示一个逻辑转发会话（在一个物理 gRPC 连接上多路复用）
 type ForwardSession struct {
+	*dispose.ManagerBase
+	
 	streamID     string
 	conn         MultiplexedConn
 	sendChan     chan *pb.BridgePacket
 	recvChan     chan *pb.BridgePacket
-	ctx          context.Context
-	cancel       context.CancelFunc
-	closedOnce   sync.Once
 	metadata     *SessionMetadata
 	createdAt    time.Time
 	lastActiveAt time.Time
@@ -41,15 +41,13 @@ type ForwardSession struct {
 // NewForwardSession 创建新的转发会话
 func NewForwardSession(parentCtx context.Context, conn MultiplexedConn, metadata *SessionMetadata) *ForwardSession {
 	streamID := uuid.New().String()
-	ctx, cancel := context.WithCancel(parentCtx)
 
 	session := &ForwardSession{
+		ManagerBase:  dispose.NewManager(fmt.Sprintf("ForwardSession-%s", streamID), parentCtx),
 		streamID:     streamID,
 		conn:         conn,
 		sendChan:     make(chan *pb.BridgePacket, 100),
 		recvChan:     make(chan *pb.BridgePacket, 100),
-		ctx:          ctx,
-		cancel:       cancel,
 		metadata:     metadata,
 		createdAt:    time.Now(),
 		lastActiveAt: time.Now(),
@@ -58,9 +56,38 @@ func NewForwardSession(parentCtx context.Context, conn MultiplexedConn, metadata
 	// 注册到多路复用连接
 	if err := conn.RegisterSession(streamID, session); err != nil {
 		utils.Errorf("ForwardSession: failed to register session %s: %v", streamID, err)
-		cancel()
 		return nil
 	}
+
+	// 注册清理处理器
+	session.AddCleanHandler(func() error {
+		utils.Infof("ForwardSession: cleaning up session %s", streamID)
+		
+		// 发送关闭数据包
+		closePacket := &pb.BridgePacket{
+			StreamId:  streamID,
+			Type:      pb.PacketType_STREAM_CLOSE,
+			Timestamp: time.Now().UnixMilli(),
+		}
+
+		select {
+		case session.sendChan <- closePacket:
+			// Close packet sent
+		case <-time.After(1 * time.Second):
+			utils.Warnf("ForwardSession: timeout sending close packet for session %s", streamID)
+		}
+
+		// 从连接中注销
+		if session.conn != nil {
+			session.conn.UnregisterSession(streamID)
+		}
+
+		// 关闭通道
+		close(session.sendChan)
+		close(session.recvChan)
+
+		return nil
+	})
 
 	utils.Infof("ForwardSession: created session %s", streamID)
 	return session
@@ -106,7 +133,7 @@ func (s *ForwardSession) Send(data []byte) error {
 	select {
 	case s.sendChan <- packet:
 		return nil
-	case <-s.ctx.Done():
+	case <-s.Ctx().Done():
 		return fmt.Errorf("session closed")
 	case <-time.After(5 * time.Second):
 		return fmt.Errorf("send timeout")
@@ -124,7 +151,7 @@ func (s *ForwardSession) Receive() ([]byte, error) {
 		s.lastActiveAt = time.Now()
 		s.mu.Unlock()
 		return packet.Payload, nil
-	case <-s.ctx.Done():
+	case <-s.Ctx().Done():
 		return nil, fmt.Errorf("session closed")
 	}
 }
@@ -146,7 +173,7 @@ func (s *ForwardSession) SendPacket(packetType pb.PacketType, payload []byte) er
 	select {
 	case s.sendChan <- packet:
 		return nil
-	case <-s.ctx.Done():
+	case <-s.Ctx().Done():
 		return fmt.Errorf("session closed")
 	case <-time.After(5 * time.Second):
 		return fmt.Errorf("send packet timeout")
@@ -164,7 +191,7 @@ func (s *ForwardSession) ReceivePacket() (*pb.BridgePacket, error) {
 		s.lastActiveAt = time.Now()
 		s.mu.Unlock()
 		return packet, nil
-	case <-s.ctx.Done():
+	case <-s.Ctx().Done():
 		return nil, fmt.Errorf("session closed")
 	}
 }
@@ -174,7 +201,7 @@ func (s *ForwardSession) deliverPacket(packet *pb.BridgePacket) error {
 	select {
 	case s.recvChan <- packet:
 		return nil
-	case <-s.ctx.Done():
+	case <-s.Ctx().Done():
 		return fmt.Errorf("session closed")
 	default:
 		// 接收通道满，丢弃数据包
@@ -190,37 +217,8 @@ func (s *ForwardSession) getSendChannel() <-chan *pb.BridgePacket {
 
 // Close 关闭会话
 func (s *ForwardSession) Close() error {
-	var err error
-	s.closedOnce.Do(func() {
-		// 发送关闭数据包
-		closePacket := &pb.BridgePacket{
-			StreamId:  s.streamID,
-			Type:      pb.PacketType_STREAM_CLOSE,
-			Timestamp: time.Now().UnixMilli(),
-		}
-
-		select {
-		case s.sendChan <- closePacket:
-			// Close packet sent
-		case <-time.After(1 * time.Second):
-			utils.Warnf("ForwardSession: timeout sending close packet for session %s", s.streamID)
-		}
-
-		// 取消上下文
-		s.cancel()
-
-		// 从连接中注销
-		if s.conn != nil {
-			s.conn.UnregisterSession(s.streamID)
-		}
-
-		// 关闭通道
-		close(s.sendChan)
-		close(s.recvChan)
-
-		utils.Infof("ForwardSession: closed session %s", s.streamID)
-	})
-	return err
+	s.ManagerBase.Close()
+	return nil
 }
 
 // IsActive 检查会话是否活跃
