@@ -79,6 +79,8 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		defer wg.Done()
 		defer connB.Close() // 关闭写端
 
+		Infof("%s: A→B starting, creating wrapped writer...", options.LogPrefix)
+		
 		// 包装 Writer：压缩 → 加密
 		writerB, err := options.Transformer.WrapWriter(connB)
 		if err != nil {
@@ -88,6 +90,8 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		}
 		defer writerB.Close() // 确保 flush 缓冲
 
+		Infof("%s: A→B wrapped writer created, starting io.Copy...", options.LogPrefix)
+		
 		written, err := io.Copy(writerB, connA)
 		result.BytesSent = written
 		result.SendError = err
@@ -95,7 +99,7 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		if err != nil && err != io.EOF {
 			Debugf("%s: A→B copy error: %v", options.LogPrefix, err)
 		} else {
-			Debugf("%s: A→B copied %d bytes (before compression/encryption)", options.LogPrefix, written)
+			Infof("%s: A→B copied %d bytes (before compression/encryption)", options.LogPrefix, written)
 		}
 	}()
 
@@ -104,6 +108,8 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		defer wg.Done()
 		defer connA.Close() // 关闭写端
 
+		Infof("%s: B→A starting, creating wrapped reader...", options.LogPrefix)
+		
 		// 包装 Reader：解密 → 解压
 		readerB, err := options.Transformer.WrapReader(connB)
 		if err != nil {
@@ -112,6 +118,8 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 			return
 		}
 
+		Infof("%s: B→A wrapped reader created, starting io.Copy...", options.LogPrefix)
+		
 		written, err := io.Copy(connA, readerB)
 		result.BytesReceived = written
 		result.ReceiveError = err
@@ -119,7 +127,7 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		if err != nil && err != io.EOF {
 			Debugf("%s: B→A copy error: %v", options.LogPrefix, err)
 		} else {
-			Debugf("%s: B→A copied %d bytes (after decompression/decryption)", options.LogPrefix, written)
+			Infof("%s: B→A copied %d bytes (after decompression/decryption)", options.LogPrefix, written)
 		}
 	}()
 

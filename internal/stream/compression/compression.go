@@ -77,6 +77,19 @@ func (w *GzipWriter) Write(p []byte) (n int, err error) {
 	return w.gWriter.Write(p)
 }
 
+// Flush 刷新缓冲区（确保压缩数据被写出）
+func (w *GzipWriter) Flush() error {
+	if w.IsClosed() {
+		return errors.ErrStreamClosed
+	}
+
+	if w.gWriter == nil {
+		return errors.WrapError(errors.ErrStreamClosed, "gzip writer not initialized")
+	}
+
+	return w.gWriter.Flush()
+}
+
 func (w *GzipWriter) onClose() error {
 	w.closeMutex.Lock()
 	defer w.closeMutex.Unlock()

@@ -19,11 +19,11 @@ import (
 // StreamProcessor 流处理器
 type StreamProcessor struct {
 	*dispose.ManagerBase
-	reader     io.Reader
-	writer     io.Writer
-	readLock   sync.Mutex  // 独立的读锁
-	writeLock  sync.Mutex  // 独立的写锁
-	bufferMgr  *utils.BufferManager
+	reader    io.Reader
+	writer    io.Writer
+	readLock  sync.Mutex // 独立的读锁
+	writeLock sync.Mutex // 独立的写锁
+	bufferMgr *utils.BufferManager
 	// 注意：加密功能已移至 internal/stream/transform 模块
 }
 

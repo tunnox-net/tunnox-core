@@ -342,7 +342,7 @@ func (d *decryptReader) readNextChunk() error {
 		return fmt.Errorf("invalid chunk length: 0 (empty chunk)")
 	}
 	if chunkLen > MaxCiphertextSize {
-		return fmt.Errorf("chunk length %d exceeds maximum allowed %d (potential DoS attack)", 
+		return fmt.Errorf("chunk length %d exceeds maximum allowed %d (potential DoS attack)",
 			chunkLen, MaxCiphertextSize)
 	}
 

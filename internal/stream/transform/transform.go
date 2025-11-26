@@ -1,31 +1,31 @@
 package transform
 
 import (
-	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
-	"tunnox-core/internal/stream/encryption"
+	"time"
+
+	"golang.org/x/time/rate"
 )
 
 // StreamTransformer 流转换器接口
+// 注意：压缩和加密已移至StreamProcessor，Transform只处理限速等商业特性
 type StreamTransformer interface {
-	// WrapReader 包装 Reader（解密 + 解压）
+	// WrapReader 包装 Reader（限速）
 	WrapReader(r io.Reader) (io.Reader, error)
 
-	// WrapWriter 包装 Writer（压缩 + 加密）
+	// WrapWriter 包装 Writer（限速）
 	WrapWriter(w io.Writer) (io.WriteCloser, error)
 }
 
 // TransformConfig 转换配置
 type TransformConfig struct {
-	EnableCompression bool
-	CompressionLevel  int // 1-9, 默认 6
-	EnableEncryption  bool
-	EncryptionMethod  string // "aes-256-gcm", "chacha20-poly1305"
-	EncryptionKey     string // Base64 编码的密钥
+	// 限速配置（字节/秒，0表示不限制）
+	BandwidthLimit int64
 }
 
-// NoOpTransformer 无操作转换器（默认，不压缩不加密）
+// NoOpTransformer 无操作转换器（不限速）
 type NoOpTransformer struct{}
 
 func (t *NoOpTransformer) WrapReader(r io.Reader) (io.Reader, error) {
@@ -45,135 +45,85 @@ func (w *nopWriteCloser) Close() error {
 	return nil
 }
 
-// DefaultTransformer 默认转换器（支持压缩 + 加密）
-type DefaultTransformer struct {
-	config    TransformConfig
-	encryptor encryption.Encryptor
+// RateLimitedTransformer 限速转换器
+type RateLimitedTransformer struct {
+	config      TransformConfig
+	rateLimiter *rate.Limiter
 }
 
 // NewTransformer 创建转换器
 func NewTransformer(config *TransformConfig) (StreamTransformer, error) {
-	if config == nil || (!config.EnableCompression && !config.EnableEncryption) {
+	if config == nil || config.BandwidthLimit <= 0 {
 		return &NoOpTransformer{}, nil
 	}
 
-	transformer := &DefaultTransformer{
-		config: *config,
-	}
+	// 创建令牌桶限速器，允许2倍突发流量
+	limiter := rate.NewLimiter(rate.Limit(config.BandwidthLimit), int(config.BandwidthLimit*2))
 
-	// 初始化加密器
-	if config.EnableEncryption {
-		if err := transformer.initEncryptor(); err != nil {
-			return nil, fmt.Errorf("failed to init encryptor: %w", err)
-		}
-	}
-
-	return transformer, nil
-}
-
-// initEncryptor 初始化加密器
-func (t *DefaultTransformer) initEncryptor() error {
-	// 解码密钥
-	keyBytes, err := encryption.DecodeKeyBase64(t.config.EncryptionKey)
-	if err != nil {
-		return fmt.Errorf("invalid encryption key: %w", err)
-	}
-
-	// 创建加密器
-	encryptConfig := &encryption.EncryptConfig{
-		Method: encryption.EncryptionMethod(t.config.EncryptionMethod),
-		Key:    keyBytes,
-	}
-
-	encryptor, err := encryption.NewEncryptor(encryptConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create encryptor: %w", err)
-	}
-
-	t.encryptor = encryptor
-	return nil
-}
-
-// WrapReader 包装 Reader（顺序：解密 → 解压）
-func (t *DefaultTransformer) WrapReader(r io.Reader) (io.Reader, error) {
-	var reader io.Reader = r
-
-	// 1. 解密（如果启用）
-	if t.config.EnableEncryption {
-		decryptReader, err := t.encryptor.NewDecryptReader(reader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create decrypt reader: %w", err)
-		}
-		reader = decryptReader
-	}
-
-	// 2. 解压（如果启用）
-	if t.config.EnableCompression {
-		gzipReader, err := gzip.NewReader(reader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create gzip reader: %w", err)
-		}
-		reader = gzipReader
-	}
-
-	return reader, nil
-}
-
-// WrapWriter 包装 Writer（顺序：压缩 → 加密）
-func (t *DefaultTransformer) WrapWriter(w io.Writer) (io.WriteCloser, error) {
-	var writer io.Writer = w
-	var closers []io.Closer
-
-	// 1. 加密（如果启用）
-	if t.config.EnableEncryption {
-		encryptWriter, err := t.encryptor.NewEncryptWriter(writer)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create encrypt writer: %w", err)
-		}
-		writer = encryptWriter
-		closers = append(closers, encryptWriter)
-	}
-
-	// 2. 压缩（如果启用）
-	if t.config.EnableCompression {
-		level := t.config.CompressionLevel
-		if level == 0 {
-			level = gzip.DefaultCompression
-		}
-
-		gzipWriter, err := gzip.NewWriterLevel(writer, level)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create gzip writer: %w", err)
-		}
-
-		writer = gzipWriter
-		closers = append([]io.Closer{gzipWriter}, closers...) // gzip 先关闭
-	}
-
-	return &multiCloser{
-		Writer:  writer,
-		closers: closers,
+	return &RateLimitedTransformer{
+		config:      *config,
+		rateLimiter: limiter,
 	}, nil
 }
 
-// multiCloser 多层 Closer
-type multiCloser struct {
-	io.Writer
-	closers []io.Closer
+// WrapReader 包装 Reader（添加限速）
+func (t *RateLimitedTransformer) WrapReader(r io.Reader) (io.Reader, error) {
+	return &rateLimitedReader{
+		source:  r,
+		limiter: t.rateLimiter,
+	}, nil
 }
 
-func (m *multiCloser) Close() error {
-	var firstErr error
-	for _, closer := range m.closers {
-		if err := closer.Close(); err != nil && firstErr == nil {
-			firstErr = err
+// WrapWriter 包装 Writer（添加限速）
+func (t *RateLimitedTransformer) WrapWriter(w io.Writer) (io.WriteCloser, error) {
+	return &rateLimitedWriter{
+		target:  w,
+		limiter: t.rateLimiter,
+	}, nil
+}
+
+// rateLimitedReader 限速Reader
+type rateLimitedReader struct {
+	source  io.Reader
+	limiter *rate.Limiter
+}
+
+func (r *rateLimitedReader) Read(p []byte) (n int, err error) {
+	n, err = r.source.Read(p)
+	if n > 0 {
+		// 等待令牌（5秒超时）
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if waitErr := r.limiter.WaitN(ctx, n); waitErr != nil {
+			cancel()
+			return n, fmt.Errorf("rate limit wait failed: %w", waitErr)
 		}
+		cancel()
 	}
-	return firstErr
+	return n, err
 }
 
-// GenerateEncryptionKey 生成随机加密密钥
-func GenerateEncryptionKey(method string) (string, error) {
-	// 所有支持的方法都使用 32 字节密钥
-	return encryption.GenerateKeyBase64()
+// rateLimitedWriter 限速Writer
+type rateLimitedWriter struct {
+	target  io.Writer
+	limiter *rate.Limiter
+}
+
+func (w *rateLimitedWriter) Write(p []byte) (n int, err error) {
+	// 等待令牌（5秒超时）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if waitErr := w.limiter.WaitN(ctx, len(p)); waitErr != nil {
+		cancel()
+		return 0, fmt.Errorf("rate limit wait failed: %w", waitErr)
+	}
+	cancel()
+
+	return w.target.Write(p)
+}
+
+func (w *rateLimitedWriter) Close() error {
+	// 如果target支持Close，则关闭
+	if closer, ok := w.target.(io.Closer); ok {
+		return closer.Close()
+	}
+	return nil
 }

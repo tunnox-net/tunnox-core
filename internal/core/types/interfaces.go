@@ -46,6 +46,7 @@ type Connection struct {
 	ID        string
 	State     ConnectionState
 	Stream    stream.PackageStreamer
+	RawConn   net.Conn // ✅ 原始的底层连接（用于纯流转发）
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	// 具体的类型化字段

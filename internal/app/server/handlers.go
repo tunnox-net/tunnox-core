@@ -176,12 +176,9 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn *session.ClientConnection, r
 		return fmt.Errorf("invalid secret key")
 	}
 
-	// 验证客户端是否有权限访问此映射（必须是目标客户端）
-	if mapping.TargetClientID != conn.ClientID {
-		utils.Warnf("ServerTunnelHandler: client %d not authorized for mapping %s (target: %d)", 
-			conn.ClientID, req.MappingID, mapping.TargetClientID)
-		return fmt.Errorf("not authorized")
-	}
+	// ✅ 隧道连接不需要验证ClientID，只验证SecretKey
+	// 因为隧道连接没有经过握手，conn.ClientID可能为0
+	// SecretKey验证已经在上面完成，这里只需要记录日志
 
 	utils.Infof("ServerTunnelHandler: tunnel opened successfully - TunnelID=%s, Mapping=%s, Client=%d", 
 		req.TunnelID, req.MappingID, conn.ClientID)

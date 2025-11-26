@@ -21,6 +21,14 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 		return nil, fmt.Errorf("failed to generate connection ID: %w", err)
 	}
 
+	// ✅ 尝试提取原始的net.Conn（用于纯流转发）
+	var rawConn net.Conn
+	if nc, ok := reader.(net.Conn); ok {
+		rawConn = nc
+	} else if nc, ok := writer.(net.Conn); ok {
+		rawConn = nc
+	}
+
 	// 创建流处理器
 	streamProcessor, err := s.streamMgr.CreateStream(connID, reader, writer)
 	if err != nil {
@@ -32,6 +40,7 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 		ID:            connID,
 		State:         types.StateInitializing,
 		Stream:        streamProcessor,
+		RawConn:       rawConn, // ✅ 保存原始连接
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 		LastHeartbeat: time.Now(),
@@ -87,6 +96,12 @@ func (s *SessionManager) GetConnection(connID string) (*types.Connection, bool) 
 	defer s.connLock.RUnlock()
 	conn, exists := s.connMap[connID]
 	return conn, exists
+}
+
+// getConnectionByConnID 获取连接（内部使用，返回nil如果不存在）
+func (s *SessionManager) getConnectionByConnID(connID string) *types.Connection {
+	conn, _ := s.GetConnection(connID)
+	return conn
 }
 
 // ListConnections 列出所有连接

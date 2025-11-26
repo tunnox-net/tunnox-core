@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -526,7 +527,8 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 		CompressionLevel  int    `json:"compression_level"`
 		EnableEncryption  bool   `json:"enable_encryption"`
 		EncryptionMethod  string `json:"encryption_method"`
-		EncryptionKey     string `json:"encryption_key"`
+		EncryptionKey     string `json:"encryption_key"` // hex编码
+		BandwidthLimit    int64  `json:"bandwidth_limit"`
 	}
 
 	if err := json.Unmarshal([]byte(cmdBody), &req); err != nil {
@@ -534,12 +536,23 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 		return
 	}
 
-	transformConfig := &transform.TransformConfig{
+	// 解码加密密钥（hex格式）
+	var encryptionKey []byte
+	if req.EnableEncryption && req.EncryptionKey != "" {
+		encryptionKey, _ = hex.DecodeString(req.EncryptionKey)
+	}
+
+	// 创建StreamFactory配置（用于压缩/加密）
+	factoryConfig := &stream.StreamFactoryConfig{
 		EnableCompression: req.EnableCompression,
 		CompressionLevel:  req.CompressionLevel,
 		EnableEncryption:  req.EnableEncryption,
-		EncryptionMethod:  req.EncryptionMethod,
-		EncryptionKey:     req.EncryptionKey,
+		EncryptionKey:     encryptionKey,
+	}
+
+	// 创建Transform配置（只用于限速）
+	transformConfig := &transform.TransformConfig{
+		BandwidthLimit: req.BandwidthLimit,
 	}
 
 	// 根据协议类型分发
@@ -550,16 +563,19 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 
 	switch protocol {
 	case "tcp":
-		go c.handleTCPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
+		go c.handleTCPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, factoryConfig, transformConfig)
 	case "udp":
-		go c.handleUDPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
+		go c.handleUDPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, factoryConfig, transformConfig)
 	default:
 		utils.Errorf("Client: unsupported protocol: %s", protocol)
 	}
 }
 
 // handleTCPTargetTunnel 处理TCP目标端隧道
-func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int, transformConfig *transform.TransformConfig) {
+// factoryConfig: StreamProcessor的压缩/加密配置
+// transformConfig: Transform的限速配置
+func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int,
+	factoryConfig *stream.StreamFactoryConfig, transformConfig *transform.TransformConfig) {
 	// 1. 连接到目标服务
 	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
 	targetConn, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
@@ -591,7 +607,10 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 }
 
 // handleUDPTargetTunnel 处理UDP目标端隧道
-func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int, transformConfig *transform.TransformConfig) {
+// factoryConfig: StreamProcessor的压缩/加密配置
+// transformConfig: Transform的限速配置
+func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int,
+	factoryConfig *stream.StreamFactoryConfig, transformConfig *transform.TransformConfig) {
 	utils.Infof("Client: handling UDP target tunnel, tunnel_id=%s, target=%s:%d", tunnelID, targetHost, targetPort)
 
 	// 1. 解析目标 UDP 地址

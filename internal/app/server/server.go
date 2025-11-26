@@ -72,6 +72,10 @@ func New(config *Config, parentCtx context.Context) *Server {
 	tunnelHandler := NewServerTunnelHandler(cloudControl)
 	server.session.SetAuthHandler(authHandler)
 	server.session.SetTunnelHandler(tunnelHandler)
+	
+	// ✅ 注入CloudControl，用于查询映射配置（使用适配器）
+	cloudControlAdapter := session.NewCloudControlAdapter(cloudControl)
+	server.session.SetCloudControl(cloudControlAdapter)
 
 	// 创建协议工厂
 	server.protocolFactory = NewProtocolFactory(server.session)

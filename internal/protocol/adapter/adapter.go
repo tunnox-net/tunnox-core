@@ -159,9 +159,14 @@ func isIgnorableError(err error) bool {
 
 // handleConnection 通用连接处理逻辑
 func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWriteCloser) {
+	shouldCloseConn := true // 默认关闭连接
 	defer func() {
-		if closer, ok := conn.(interface{ Close() error }); ok {
-			_ = closer.Close()
+		// ✅ 只有非隧道连接才在此处关闭
+		// 隧道连接交给TunnelBridge管理生命周期
+		if shouldCloseConn {
+			if closer, ok := conn.(interface{ Close() error }); ok {
+				_ = closer.Close()
+			}
 		}
 	}()
 
@@ -212,6 +217,13 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 
 		// 处理数据包
 		if err := b.session.HandlePacket(streamPacket); err != nil {
+			// ✅ 检查是否为隧道切换标记
+			if err.Error() == "tunnel source connected, switching to stream mode" || 
+			   err.Error() == "tunnel target connected, switching to stream mode" {
+				utils.Infof("Connection %s switched to tunnel stream mode, not closing", streamConn.ID)
+				shouldCloseConn = false // ✅ 不关闭隧道连接
+				return
+			}
 			utils.Errorf("Failed to handle packet for connection %s: %v", streamConn.ID, err)
 			// 继续处理下一个包，不要直接返回
 		}

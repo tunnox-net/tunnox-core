@@ -2,6 +2,8 @@ package managers
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/configs"
@@ -13,6 +15,7 @@ import (
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/storage"
+	"tunnox-core/internal/utils"
 )
 
 // handleErrorWithIDRelease 处理需要释放ID的错误
@@ -316,6 +319,18 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 		return nil, fmt.Errorf("generate secret key failed: %w", err)
 	}
 
+	// ✅ 生成加密密钥（如果启用了加密）
+	if mapping.Config.EnableEncryption {
+		encryptionKey, err := b.generateEncryptionKey(mapping.Config.EncryptionMethod)
+		if err != nil {
+			_ = b.idManager.ReleasePortMappingID(mappingID)
+			return nil, fmt.Errorf("generate encryption key failed: %w", err)
+		}
+		mapping.Config.EncryptionKey = encryptionKey
+		utils.Infof("CloudControl: generated encryption key for mapping %s, method=%s, keyLen=%d", 
+			mappingID, mapping.Config.EncryptionMethod, len(encryptionKey))
+	}
+
 	mapping.ID = mappingID
 	mapping.SecretKey = secretKey
 	mapping.CreatedAt = time.Now()
@@ -340,6 +355,32 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 
 func (b *CloudControl) GetUserPortMappings(userID string) ([]*models.PortMapping, error) {
 	return b.mappingRepo.GetUserPortMappings(userID)
+}
+
+// generateEncryptionKey 生成加密密钥（根据加密方法）
+func (b *CloudControl) generateEncryptionKey(encryptionMethod string) (string, error) {
+	var keySize int
+	
+	switch encryptionMethod {
+	case "aes-256-gcm":
+		keySize = 32 // 256 bits = 32 bytes
+	case "aes-128-gcm":
+		keySize = 16 // 128 bits = 16 bytes
+	case "chacha20-poly1305":
+		keySize = 32 // 256 bits = 32 bytes
+	default:
+		// 默认使用 AES-256-GCM
+		keySize = 32
+	}
+	
+	// 生成随机密钥
+	key := make([]byte, keySize)
+	if _, err := rand.Read(key); err != nil {
+		return "", fmt.Errorf("failed to generate random key: %w", err)
+	}
+	
+	// 返回hex编码的密钥（方便存储和传输）
+	return hex.EncodeToString(key), nil
 }
 
 func (b *CloudControl) GetPortMapping(mappingID string) (*models.PortMapping, error) {

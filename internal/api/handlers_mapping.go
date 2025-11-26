@@ -20,12 +20,11 @@ type CreateMappingRequest struct {
 	BandwidthLimit   int64  `json:"bandwidth_limit,omitempty"`   // bytes/s
 	MaxConnections   int    `json:"max_connections,omitempty"`   // 最大并发连接
 	
-	// 压缩和加密
+	// 压缩和加密（密钥由服务器自动生成，不允许外部指定）
 	EnableCompression bool   `json:"enable_compression,omitempty"`
 	CompressionLevel  int    `json:"compression_level,omitempty"` // 0-9
 	EnableEncryption  bool   `json:"enable_encryption,omitempty"`
-	EncryptionMethod  string `json:"encryption_method,omitempty"` // aes-256-gcm
-	EncryptionKey     string `json:"encryption_key,omitempty"`    // base64
+	EncryptionMethod  string `json:"encryption_method,omitempty"` // aes-256-gcm, aes-128-gcm
 }
 
 // UpdateMappingRequest 更新端口映射请求
@@ -67,13 +66,13 @@ func (s *ManagementAPIServer) handleCreateMapping(w http.ResponseWriter, r *http
 			CompressionLevel:  req.CompressionLevel,
 			EnableEncryption:  req.EnableEncryption,
 			EncryptionMethod:  req.EncryptionMethod,
-			EncryptionKey:     req.EncryptionKey,
+			// EncryptionKey 由 CloudControl 自动生成（运行时创建）
 			BandwidthLimit:    req.BandwidthLimit,
 			MaxConnections:    req.MaxConnections,
 		},
 	}
 
-	// 创建端口映射
+	// 创建端口映射（CloudControl 会生成并存储加密密钥）
 	createdMapping, err := s.cloudControl.CreatePortMapping(mapping)
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, err.Error())

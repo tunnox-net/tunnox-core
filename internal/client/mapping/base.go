@@ -20,15 +20,15 @@ import (
 type BaseMappingHandler struct {
 	*dispose.ManagerBase
 
-	adapter  MappingAdapter           // 协议适配器（多态）
-	client   ClientInterface          // 客户端接口
-	config   config.MappingConfig     // 映射配置
+	adapter     MappingAdapter              // 协议适配器（多态）
+	client      ClientInterface             // 客户端接口
+	config      config.MappingConfig        // 映射配置
 	transformer transform.StreamTransformer // 加密压缩转换器
 
 	// 商业化控制
-	rateLimiter      *rate.Limiter // 速率限制器（Token Bucket）
-	activeConnCount  atomic.Int32  // 当前活跃连接数
-	trafficStats     *TrafficStats // 流量统计
+	rateLimiter       *rate.Limiter // 速率限制器（Token Bucket）
+	activeConnCount   atomic.Int32  // 当前活跃连接数
+	trafficStats      *TrafficStats // 流量统计
 	statsReportTicker *time.Ticker  // 统计上报定时器
 }
 
@@ -52,8 +52,8 @@ func NewBaseMappingHandler(
 	// 创建速率限制器（如果配置了带宽限制）
 	if config.BandwidthLimit > 0 {
 		handler.rateLimiter = rate.NewLimiter(
-			rate.Limit(config.BandwidthLimit),    // bytes/s
-			int(config.BandwidthLimit*2),         // burst size (2x)
+			rate.Limit(config.BandwidthLimit), // bytes/s
+			int(config.BandwidthLimit*2),      // burst size (2x)
 		)
 		utils.Debugf("BaseMappingHandler[%s]: rate limiter enabled, limit=%d bytes/s",
 			config.MappingID, config.BandwidthLimit)
@@ -133,6 +133,8 @@ func (h *BaseMappingHandler) acceptLoop() {
 func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	defer localConn.Close()
 
+	utils.Infof("BaseMappingHandler[%s]: new connection received", h.config.MappingID)
+
 	// 1. 配额检查：连接数限制
 	if err := h.checkConnectionQuota(); err != nil {
 		utils.Warnf("BaseMappingHandler[%s]: quota check failed: %v", h.config.MappingID, err)
@@ -161,6 +163,7 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	}
 
 	// 5. 建立隧道连接
+	utils.Infof("BaseMappingHandler[%s]: dialing tunnel %s...", h.config.MappingID, tunnelID)
 	tunnelConn, tunnelStream, err := h.client.DialTunnel(
 		tunnelID,
 		h.config.MappingID,
@@ -172,17 +175,22 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	}
 	defer tunnelConn.Close()
 
-	utils.Infof("BaseMappingHandler[%s]: tunnel %s established", h.config.MappingID, tunnelID)
+	utils.Infof("BaseMappingHandler[%s]: tunnel %s established successfully", h.config.MappingID, tunnelID)
 
-	// 6. 关闭StreamProcessor
-	tunnelStream.Close()
+	// 6. ✅ 使用StreamProcessor的Reader/Writer进行透传
+	// StreamProcessor已经包含了压缩/加密层，不应该关闭它或绕过它
+	tunnelReader := tunnelStream.GetReader()
+	tunnelWriter := tunnelStream.GetWriter()
+	
+	// 7. 包装隧道连接成ReadWriteCloser
+	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
+		tunnelStream.Close()
+		tunnelConn.Close()
+		return nil
+	})
 
-	// 7. 包装连接以进行速率限制和流量统计
-	wrappedLocalConn := h.wrapConnectionForControl(localConn, "local")
-	wrappedTunnelConn := h.wrapConnectionForControl(tunnelConn, "tunnel")
-
-	// 8. 双向转发
-	utils.BidirectionalCopy(wrappedLocalConn, wrappedTunnelConn, &utils.BidirectionalCopyOptions{
+	// 8. 双向转发（Transformer只处理限速，压缩/加密已在StreamProcessor中）
+	utils.BidirectionalCopy(localConn, tunnelRWC, &utils.BidirectionalCopyOptions{
 		Transformer: h.transformer,
 		LogPrefix:   fmt.Sprintf("BaseMappingHandler[%s][%s]", h.config.MappingID, tunnelID),
 	})
@@ -230,13 +238,10 @@ func (h *BaseMappingHandler) wrapConnectionForControl(
 }
 
 // createTransformer 创建流转换器
+// 注意：压缩和加密已移至StreamProcessor，Transform只处理限速
 func (h *BaseMappingHandler) createTransformer() error {
 	transformConfig := &transform.TransformConfig{
-		EnableCompression: h.config.EnableCompression,
-		CompressionLevel:  h.config.CompressionLevel,
-		EnableEncryption:  h.config.EnableEncryption,
-		EncryptionMethod:  h.config.EncryptionMethod,
-		EncryptionKey:     h.config.EncryptionKey,
+		BandwidthLimit: h.config.BandwidthLimit,
 	}
 
 	transformer, err := transform.NewTransformer(transformConfig)
@@ -245,8 +250,8 @@ func (h *BaseMappingHandler) createTransformer() error {
 	}
 
 	h.transformer = transformer
-	utils.Debugf("BaseMappingHandler[%s]: transformer created, compression=%v, encryption=%v",
-		h.config.MappingID, h.config.EnableCompression, h.config.EnableEncryption)
+	utils.Debugf("BaseMappingHandler[%s]: transformer created, bandwidth_limit=%d bytes/s",
+		h.config.MappingID, h.config.BandwidthLimit)
 	return nil
 }
 
@@ -368,4 +373,3 @@ func (c *controlledConn) Write(p []byte) (n int, err error) {
 
 	return n, err
 }
-

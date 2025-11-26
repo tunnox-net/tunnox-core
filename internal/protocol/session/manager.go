@@ -67,6 +67,13 @@ type SessionManager struct {
 	tunnelHandler TunnelHandler
 	authHandler   AuthHandler
 
+	// 隧道桥接管理
+	tunnelBridges map[string]*TunnelBridge // tunnelID -> bridge
+	bridgeLock    sync.RWMutex
+
+	// CloudControl API（用于查询映射配置）
+	cloudControl CloudControlAPI
+
 	dispose.Dispose
 }
 
@@ -89,6 +96,9 @@ func NewSessionManager(idManager *idgen.IDManager, parentCtx context.Context) *S
 		// 映射连接
 		tunnelConnMap: make(map[string]*TunnelConnection),
 		tunnelIDMap:   make(map[string]*TunnelConnection),
+
+		// 隧道桥接
+		tunnelBridges: make(map[string]*TunnelBridge),
 
 		idManager:     idManager,
 		streamMgr:     streamMgr,
@@ -120,6 +130,17 @@ func (s *SessionManager) SetTunnelHandler(handler TunnelHandler) {
 func (s *SessionManager) SetAuthHandler(handler AuthHandler) {
 	s.authHandler = handler
 	utils.Debug("Auth handler configured in SessionManager")
+}
+
+// CloudControlAPI 定义CloudControl接口
+type CloudControlAPI interface {
+	GetPortMapping(mappingID string) (interface{}, error)
+}
+
+// SetCloudControl 设置CloudControl API
+func (s *SessionManager) SetCloudControl(cc CloudControlAPI) {
+	s.cloudControl = cc
+	utils.Debugf("CloudControl API configured in SessionManager")
 }
 
 // ============================================================================

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"time"
 
 	"tunnox-core/internal/config"
 	"tunnox-core/internal/utils"
@@ -38,11 +37,6 @@ func (a *TCPMappingAdapter) StartListener(config config.MappingConfig) error {
 func (a *TCPMappingAdapter) Accept() (io.ReadWriteCloser, error) {
 	if a.listener == nil {
 		return nil, fmt.Errorf("TCP listener not initialized")
-	}
-
-	// 设置接受超时，允许优雅关闭
-	if tcpListener, ok := a.listener.(*net.TCPListener); ok {
-		tcpListener.SetDeadline(time.Now().Add(1 * time.Second))
 	}
 
 	conn, err := a.listener.Accept()

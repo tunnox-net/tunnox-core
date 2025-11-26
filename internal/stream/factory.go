@@ -2,8 +2,10 @@ package stream
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"tunnox-core/internal/stream/compression"
+	"tunnox-core/internal/stream/encryption"
 )
 
 // StreamFactoryConfig 流工厂配置
@@ -34,18 +36,18 @@ func DefaultStreamFactoryConfig() *StreamFactoryConfig {
 // DefaultStreamFactory 默认流工厂实现
 // 合并自 factory/factory.go
 type DefaultStreamFactory struct {
-	config     *StreamFactoryConfig
+	config *StreamFactoryConfig
 	// 注意：加密功能已移至 internal/stream/transform 模块
-	ctx        context.Context
+	ctx context.Context
 }
 
 // NewDefaultStreamFactory 创建新的默认流工厂
 func NewDefaultStreamFactory(ctx context.Context) *DefaultStreamFactory {
 	config := DefaultStreamFactoryConfig()
 	return &DefaultStreamFactory{
-		config:     config,
+		config: config,
 		// 注意：加密功能已移至 internal/stream/transform 模块
-		ctx:        ctx,
+		ctx: ctx,
 	}
 }
 
@@ -69,8 +71,39 @@ func (sf *DefaultStreamFactory) CreateStreamProcessor(reader io.Reader, writer i
 }
 
 // CreateStreamProcessorWithConfig 使用配置创建流处理器
+// StreamProcessor统一处理：压缩 + 加密 + 限流
+// Transform只处理：流量统计等商业特性
 func (sf *DefaultStreamFactory) CreateStreamProcessorWithConfig(reader io.Reader, writer io.Writer, config *StreamFactoryConfig) PackageStreamer {
-	// 限流
+	// 1. 加密（最内层，直接包装原始连接）
+	if config.EnableEncryption && len(config.EncryptionKey) > 0 {
+		// 创建加密器
+		encryptConfig := &encryption.EncryptConfig{
+			Method: encryption.MethodAESGCM, // 默认使用AES-256-GCM
+			Key:    config.EncryptionKey,
+		}
+
+		encryptor, err := encryption.NewEncryptor(encryptConfig)
+		if err != nil {
+			// 加密初始化失败，记录错误但继续
+			fmt.Printf("Failed to create encryptor: %v\n", err)
+		} else {
+			// 包装reader和writer
+			if decryptReader, err := encryptor.NewDecryptReader(reader); err == nil {
+				reader = decryptReader
+			}
+			if encryptWriter, err := encryptor.NewEncryptWriter(writer); err == nil {
+				writer = encryptWriter
+			}
+		}
+	}
+
+	// 2. 压缩（在加密之外）
+	if config.EnableCompression {
+		reader = compression.NewGzipReader(reader, sf.ctx)
+		writer = compression.NewGzipWriter(writer, sf.ctx)
+	}
+
+	// 3. 限流（最外层）
 	if config.EnableRateLimit {
 		if rateLimiterReader, err := NewRateLimiterReader(reader, config.RateLimitBytes, sf.ctx); err == nil {
 			reader = rateLimiterReader
@@ -80,14 +113,6 @@ func (sf *DefaultStreamFactory) CreateStreamProcessorWithConfig(reader io.Reader
 		}
 	}
 
-	// 压缩
-	if config.EnableCompression {
-		reader = compression.NewGzipReader(reader, sf.ctx)
-		writer = compression.NewGzipWriter(writer, sf.ctx)
-	}
-
-	// 注意：加密功能已移至 internal/stream/transform 模块
-	// 加密应通过 transform.NewTransformer() 配置
 	return NewStreamProcessor(reader, writer, sf.ctx)
 }
 
