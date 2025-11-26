@@ -16,6 +16,11 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// SessionManager 接口（避免循环依赖）
+type SessionManager interface {
+	GetControlConnectionInterface(clientID int64) interface{}
+}
+
 // ManagementAPIServer Management API 服务器
 type ManagementAPIServer struct {
 	*dispose.ManagerBase
@@ -24,6 +29,7 @@ type ManagementAPIServer struct {
 	cloudControl managers.CloudControlAPI
 	router       *mux.Router
 	server       *http.Server
+	sessionMgr   SessionManager // 用于推送配置给客户端
 }
 
 // APIConfig API 配置

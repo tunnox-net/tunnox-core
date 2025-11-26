@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"tunnox-core/internal/client/mapping"
+	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -27,25 +30,43 @@ type TunnoxClient struct {
 	controlStream stream.PackageStreamer
 
 	// 映射管理
-	mappingHandlers map[string]MappingHandlerInterface
+	mappingHandlers map[string]MappingHandler
 	mu              sync.RWMutex
+
+	// 商业化控制：配额缓存
+	cachedQuota      *models.UserQuota
+	quotaCacheMu     sync.RWMutex
+	quotaLastRefresh time.Time
+
+	// 商业化控制：流量累计
+	localTrafficStats map[string]*localMappingStats // mappingID -> stats
+	trafficStatsMu    sync.RWMutex
+}
+
+// localMappingStats 本地映射流量统计
+type localMappingStats struct {
+	bytesSent      int64
+	bytesReceived  int64
+	lastReportTime time.Time
+	mu             sync.RWMutex
 }
 
 // NewClient 创建客户端
 func NewClient(ctx context.Context, config *ClientConfig) *TunnoxClient {
 	client := &TunnoxClient{
-		ManagerBase:     dispose.NewManager("TunnoxClient", ctx),
-		config:          config,
-		mappingHandlers: make(map[string]MappingHandlerInterface),
+		ManagerBase:       dispose.NewManager("TunnoxClient", ctx),
+		config:            config,
+		mappingHandlers:   make(map[string]MappingHandler),
+		localTrafficStats: make(map[string]*localMappingStats),
 	}
 
 	// 添加清理处理器
 	client.AddCleanHandler(func() error {
 		utils.Infof("Client: cleaning up client resources")
-		
+
 		// 关闭所有映射处理器
 		client.mu.RLock()
-		handlers := make([]MappingHandlerInterface, 0, len(client.mappingHandlers))
+		handlers := make([]MappingHandler, 0, len(client.mappingHandlers))
 		for _, handler := range client.mappingHandlers {
 			handlers = append(handlers, handler)
 		}
@@ -82,6 +103,16 @@ func (c *TunnoxClient) Connect() error {
 	streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
 	c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
 
+	// 记录连接信息用于调试
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		localAddr := tcpConn.LocalAddr().String()
+		remoteAddr := tcpConn.RemoteAddr().String()
+		utils.Infof("Client: TCP connection established - Local=%s, Remote=%s, controlStream=%p",
+			localAddr, remoteAddr, c.controlStream)
+	} else {
+		utils.Infof("Client: connection established, controlStream=%p", c.controlStream)
+	}
+
 	// 3. 发送握手请求
 	if err := c.sendHandshake(); err != nil {
 		c.controlStream.Close()
@@ -96,7 +127,49 @@ func (c *TunnoxClient) Connect() error {
 	go c.heartbeatLoop()
 
 	utils.Infof("Client: control connection established successfully")
+
+	// 6. 请求当前客户端的映射配置（暂时禁用，等待API推送）
+	// TODO: 在服务端重启后，客户端应该能够请求当前配置
+	// go func() {
+	// 	time.Sleep(200 * time.Millisecond) // 等待readLoop启动
+	// 	c.requestMappingConfig()
+	// }()
+
 	return nil
+}
+
+// requestMappingConfig 请求当前客户端的映射配置
+func (c *TunnoxClient) requestMappingConfig() {
+	utils.Infof("Client: requestMappingConfig() started")
+
+	// 稍微延迟，确保连接已稳定
+	time.Sleep(100 * time.Millisecond)
+
+	utils.Infof("Client: preparing ConfigGet request")
+
+	// 构造请求
+	cmd := &packet.CommandPacket{
+		CommandType: packet.ConfigGet,
+		CommandBody: "{}",
+	}
+
+	pkt := &packet.TransferPacket{
+		PacketType:    packet.JsonCommand,
+		CommandPacket: cmd,
+	}
+
+	utils.Infof("Client: sending ConfigGet request via WritePacket")
+	fmt.Printf("[DEBUG] Before WritePacket: controlStream=%p, pkt=%p\n", c.controlStream, pkt)
+
+	n, err := c.controlStream.WritePacket(pkt, false, 0)
+	fmt.Printf("[DEBUG] After WritePacket: n=%d, err=%v\n", n, err)
+	utils.Infof("Client: WritePacket returned: n=%d, err=%v", n, err)
+	if err != nil {
+		utils.Errorf("Client: failed to request mapping config: %v", err)
+		return
+	}
+
+	utils.Infof("Client: ConfigGet request sent successfully, bytes=%d", n)
 }
 
 // sendHandshake 发送握手请求
@@ -135,13 +208,18 @@ func (c *TunnoxClient) sendHandshake() error {
 		return fmt.Errorf("failed to read handshake response: %w", err)
 	}
 
+	utils.Debugf("Client: received response PacketType=%d, Payload len=%d", respPkt.PacketType, len(respPkt.Payload))
+	if len(respPkt.Payload) > 0 {
+		utils.Debugf("Client: Payload=%s", string(respPkt.Payload))
+	}
+
 	if respPkt.PacketType != packet.HandshakeResp {
 		return fmt.Errorf("unexpected response type: %v", respPkt.PacketType)
 	}
 
 	var resp packet.HandshakeResponse
 	if err := json.Unmarshal(respPkt.Payload, &resp); err != nil {
-		return fmt.Errorf("failed to unmarshal handshake response: %w", err)
+		return fmt.Errorf("failed to unmarshal handshake response (payload='%s'): %w", string(respPkt.Payload), err)
 	}
 
 	if !resp.Success {
@@ -153,8 +231,16 @@ func (c *TunnoxClient) sendHandshake() error {
 		var assignedClientID int64
 		if _, err := fmt.Sscanf(resp.Message, "Anonymous client authenticated, client_id=%d", &assignedClientID); err == nil {
 			c.config.ClientID = assignedClientID
-			utils.Infof("Client: assigned client_id=%d", assignedClientID)
 		}
+	}
+
+	// 打印认证信息
+	if c.config.Anonymous {
+		utils.Infof("Client: authenticated as anonymous client, ClientID=%d, DeviceID=%s",
+			c.config.ClientID, c.config.DeviceID)
+	} else {
+		utils.Infof("Client: authenticated successfully, ClientID=%d, Token=%s",
+			c.config.ClientID, c.config.AuthToken)
 	}
 
 	return nil
@@ -162,20 +248,29 @@ func (c *TunnoxClient) sendHandshake() error {
 
 // readLoop 读取循环（接收服务器命令）
 func (c *TunnoxClient) readLoop() {
+	utils.Infof("Client: readLoop started, controlStream=%p", c.controlStream)
 	for {
 		select {
 		case <-c.Ctx().Done():
+			utils.Infof("Client: readLoop stopped (context done)")
 			return
 		default:
 		}
 
+		utils.Infof("Client: readLoop waiting for packet on controlStream=%p", c.controlStream)
+		fmt.Printf("[DEBUG] Before ReadPacket call, controlStream=%p\n", c.controlStream)
 		pkt, _, err := c.controlStream.ReadPacket()
+		fmt.Printf("[DEBUG] After ReadPacket call, controlStream=%p\n", c.controlStream)
 		if err != nil {
 			if err != io.EOF {
 				utils.Errorf("Client: failed to read packet: %v", err)
+			} else {
+				utils.Infof("Client: connection closed (EOF)")
 			}
 			return
 		}
+
+		utils.Infof("Client: received packet, type=%d", pkt.PacketType)
 
 		// 处理不同类型的数据包
 		switch pkt.PacketType & 0x3F {
@@ -184,7 +279,10 @@ func (c *TunnoxClient) readLoop() {
 			utils.Debugf("Client: heartbeat response received")
 		case packet.JsonCommand:
 			// 命令处理
+			utils.Infof("Client: processing JsonCommand")
 			c.handleCommand(pkt)
+		default:
+			utils.Warnf("Client: unknown packet type: %d", pkt.PacketType)
 		}
 	}
 }
@@ -192,6 +290,7 @@ func (c *TunnoxClient) readLoop() {
 // handleCommand 处理命令
 func (c *TunnoxClient) handleCommand(pkt *packet.TransferPacket) {
 	if pkt.CommandPacket == nil {
+		utils.Warnf("Client: received command packet with nil CommandPacket")
 		return
 	}
 
@@ -199,8 +298,8 @@ func (c *TunnoxClient) handleCommand(pkt *packet.TransferPacket) {
 	utils.Infof("Client: received command, type=%v", cmdType)
 
 	switch cmdType {
-	case packet.ConfigGet:
-		// 配置查询响应
+	case packet.ConfigSet:
+		// 接收服务器推送的配置
 		c.handleConfigUpdate(pkt.CommandPacket.CommandBody)
 
 	case packet.TunnelOpenRequestCmd:
@@ -239,6 +338,8 @@ func (c *TunnoxClient) sendHeartbeat() error {
 
 // handleConfigUpdate 处理配置更新
 func (c *TunnoxClient) handleConfigUpdate(configBody string) {
+	utils.Infof("Client: ✅ received ConfigSet from server, body length=%d", len(configBody))
+
 	var configUpdate struct {
 		Mappings []MappingConfig `json:"mappings"`
 	}
@@ -248,11 +349,29 @@ func (c *TunnoxClient) handleConfigUpdate(configBody string) {
 		return
 	}
 
-	for _, mappingConfig := range configUpdate.Mappings {
+	utils.Infof("Client: parsed %d mappings from ConfigSet", len(configUpdate.Mappings))
+
+	// 构建新配置的映射ID集合
+	newMappingIDs := make(map[string]bool)
+	for i, mappingConfig := range configUpdate.Mappings {
+		utils.Infof("Client: processing mapping[%d]: ID=%s, Protocol=%s, LocalPort=%d",
+			i, mappingConfig.MappingID, mappingConfig.Protocol, mappingConfig.LocalPort)
+		newMappingIDs[mappingConfig.MappingID] = true
 		c.addOrUpdateMapping(mappingConfig)
 	}
 
-	utils.Infof("Client: config updated, total mappings=%d", len(c.mappingHandlers))
+	// 删除不再存在的映射
+	c.mu.Lock()
+	for mappingID, handler := range c.mappingHandlers {
+		if !newMappingIDs[mappingID] {
+			utils.Infof("Client: removing mapping %s (no longer in config)", mappingID)
+			handler.Stop()
+			delete(c.mappingHandlers, mappingID)
+		}
+	}
+	c.mu.Unlock()
+
+	utils.Infof("Client: ✅ config updated successfully, total active mappings=%d", len(newMappingIDs))
 }
 
 // addOrUpdateMapping 添加或更新映射
@@ -267,34 +386,35 @@ func (c *TunnoxClient) addOrUpdateMapping(config MappingConfig) {
 		delete(c.mappingHandlers, config.MappingID)
 	}
 
-	// 根据协议类型创建不同的映射处理器
+	// ✅ 目标端配置（LocalPort==0）不需要启动监听
+	if config.LocalPort == 0 {
+		utils.Debugf("Client: skipping mapping %s (target-side, no local listener needed)", config.MappingID)
+		return
+	}
+
+	// 根据协议类型创建适配器和处理器
 	protocol := config.Protocol
 	if protocol == "" {
 		protocol = "tcp" // 默认 TCP
 	}
 
-	var handler MappingHandlerInterface
-	var err error
-
-	switch protocol {
-	case "tcp":
-		handler = NewTcpMappingHandler(c, config)
-	case "udp":
-		handler = NewUdpMappingHandler(c, config)
-	case "socks5":
-		handler = NewSocks5MappingHandler(c, config)
-	default:
-		utils.Errorf("Client: unsupported protocol: %s", protocol)
+	// 创建协议适配器
+	adapter, err := mapping.CreateAdapter(protocol, config)
+	if err != nil {
+		utils.Errorf("Client: failed to create adapter: %v", err)
 		return
 	}
 
-	if err = handler.Start(); err != nil {
-		utils.Errorf("Client: failed to start %s mapping %s: %v", protocol, config.MappingID, err)
+	// 创建映射处理器（使用BaseMappingHandler）
+	handler := mapping.NewBaseMappingHandler(c, config, adapter)
+
+	if err := handler.Start(); err != nil {
+		utils.Errorf("Client: ❌ failed to start %s mapping %s: %v", protocol, config.MappingID, err)
 		return
 	}
 
 	c.mappingHandlers[config.MappingID] = handler
-	utils.Infof("Client: %s mapping %s started on port %d", protocol, config.MappingID, config.LocalPort)
+	utils.Infof("Client: ✅ %s mapping %s started successfully on port %d", protocol, config.MappingID, config.LocalPort)
 }
 
 // RemoveMapping 移除映射
@@ -472,7 +592,254 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 
 // handleUDPTargetTunnel 处理UDP目标端隧道
 func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int, transformConfig *transform.TransformConfig) {
-	// UDP 目标处理由 udp_target.go 实现
-	HandleUDPTarget(c, tunnelID, mappingID, secretKey, targetHost, targetPort, transformConfig)
+	utils.Infof("Client: handling UDP target tunnel, tunnel_id=%s, target=%s:%d", tunnelID, targetHost, targetPort)
+
+	// 1. 解析目标 UDP 地址
+	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
+	udpAddr, err := net.ResolveUDPAddr("udp", targetAddr)
+	if err != nil {
+		utils.Errorf("Client: failed to resolve UDP address %s: %v", targetAddr, err)
+		return
+	}
+
+	// 2. 创建 UDP 连接到目标
+	targetConn, err := net.DialUDP("udp", nil, udpAddr)
+	if err != nil {
+		utils.Errorf("Client: failed to connect to UDP target %s: %v", targetAddr, err)
+		return
+	}
+	defer targetConn.Close()
+
+	utils.Infof("Client: connected to UDP target %s for tunnel %s", targetAddr, tunnelID)
+
+	// 3. 建立隧道连接
+	tunnelConn, tunnelStream, err := c.dialTunnel(tunnelID, mappingID, secretKey)
+	if err != nil {
+		utils.Errorf("Client: failed to dial tunnel: %v", err)
+		return
+	}
+	defer tunnelConn.Close()
+
+	utils.Infof("Client: UDP tunnel %s established successfully", tunnelID)
+
+	// 4. 关闭 StreamProcessor，切换到裸连接模式
+	tunnelStream.Close()
+
+	// 5. 启动 UDP 双向转发
+	c.bidirectionalCopyUDPTarget(tunnelConn, targetConn, tunnelID, transformConfig)
 }
 
+// bidirectionalCopyUDPTarget UDP 双向转发（作为目标端）
+func (c *TunnoxClient) bidirectionalCopyUDPTarget(tunnelConn net.Conn, targetConn *net.UDPConn, tunnelID string, transformConfig *transform.TransformConfig) {
+	// 创建转换器
+	transformer, err := transform.NewTransformer(transformConfig)
+	if err != nil {
+		utils.Errorf("Client: failed to create transformer: %v", err)
+		return
+	}
+
+	// 包装读写器
+	reader := io.Reader(tunnelConn)
+	writer := io.Writer(tunnelConn)
+	if transformer != nil {
+		reader, _ = transformer.WrapReader(reader)
+		writer, _ = transformer.WrapWriter(writer)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// 从隧道读取数据并发送到目标 UDP
+	go func() {
+		defer wg.Done()
+		for {
+			// 读取长度前缀
+			lenBuf := make([]byte, 4)
+			_, err := io.ReadFull(reader, lenBuf)
+			if err != nil {
+				if err != io.EOF {
+					utils.Errorf("UDPTarget[%s]: failed to read length from tunnel: %v", tunnelID, err)
+				}
+				return
+			}
+
+			dataLen := binary.BigEndian.Uint32(lenBuf)
+			if dataLen == 0 || dataLen > 65535 {
+				utils.Errorf("UDPTarget[%s]: invalid data length: %d", tunnelID, dataLen)
+				return
+			}
+
+			// 读取数据
+			data := make([]byte, dataLen)
+			_, err = io.ReadFull(reader, data)
+			if err != nil {
+				utils.Errorf("UDPTarget[%s]: failed to read data from tunnel: %v", tunnelID, err)
+				return
+			}
+
+			// 发送到目标 UDP
+			_, err = targetConn.Write(data)
+			if err != nil {
+				utils.Errorf("UDPTarget[%s]: failed to write to target: %v", tunnelID, err)
+				return
+			}
+		}
+	}()
+
+	// 从目标 UDP 读取数据并发送到隧道
+	go func() {
+		defer wg.Done()
+		buf := make([]byte, 65535)
+		targetConn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
+		for {
+			n, err := targetConn.Read(buf)
+			if err != nil {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					utils.Debugf("UDPTarget[%s]: read timeout, closing tunnel", tunnelID)
+				} else {
+					utils.Errorf("UDPTarget[%s]: failed to read from target: %v", tunnelID, err)
+				}
+				return
+			}
+
+			if n > 0 {
+				// 重置超时
+				targetConn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
+				// 写入长度前缀
+				lenBuf := make([]byte, 4)
+				binary.BigEndian.PutUint32(lenBuf, uint32(n))
+				_, err = writer.Write(lenBuf)
+				if err != nil {
+					utils.Errorf("UDPTarget[%s]: failed to write length to tunnel: %v", tunnelID, err)
+					return
+				}
+
+				// 写入数据
+				_, err = writer.Write(buf[:n])
+				if err != nil {
+					utils.Errorf("UDPTarget[%s]: failed to write data to tunnel: %v", tunnelID, err)
+					return
+				}
+			}
+		}
+	}()
+
+	wg.Wait()
+	utils.Infof("UDPTarget[%s]: tunnel closed", tunnelID)
+}
+
+// ============ ClientInterface 实现（商业化控制） ============
+
+// CheckMappingQuota 检查映射配额
+// 这个方法由BaseMappingHandler调用，用于在建立新连接前检查配额
+func (c *TunnoxClient) CheckMappingQuota(mappingID string) error {
+	// 获取用户配额
+	_, err := c.GetUserQuota()
+	if err != nil {
+		// 获取配额失败，记录日志但不阻塞连接
+		utils.Warnf("Client: failed to get quota for mapping %s: %v", mappingID, err)
+		return nil
+	}
+
+	// 检查带宽限制（已在MappingConfig中单独配置，这里不重复检查）
+	// 检查存储限制（如果需要）
+	// 注意：连接数限制已在BaseMappingHandler.checkConnectionQuota中检查
+
+	// 未来可以在这里添加更多业务限制检查
+	// 例如：月流量限制、特定时段限制等
+
+	utils.Debugf("Client: quota check passed for mapping %s", mappingID)
+	return nil
+}
+
+// TrackTraffic 上报流量统计
+// 这个方法由BaseMappingHandler定期调用（每30秒）
+func (c *TunnoxClient) TrackTraffic(mappingID string, bytesSent, bytesReceived int64) error {
+	if bytesSent == 0 && bytesReceived == 0 {
+		return nil // 无流量，不处理
+	}
+
+	// 1. 本地累计（用于月流量检查和统计）
+	c.trafficStatsMu.Lock()
+	stats, exists := c.localTrafficStats[mappingID]
+	if !exists {
+		stats = &localMappingStats{
+			lastReportTime: time.Now(),
+		}
+		c.localTrafficStats[mappingID] = stats
+	}
+	stats.mu.Lock()
+	stats.bytesSent += bytesSent
+	stats.bytesReceived += bytesReceived
+	stats.lastReportTime = time.Now()
+	totalSent := stats.bytesSent
+	totalReceived := stats.bytesReceived
+	stats.mu.Unlock()
+	c.trafficStatsMu.Unlock()
+
+	// 2. 记录日志
+	utils.Debugf("Client: traffic stats for %s - period(sent=%d, recv=%d), total(sent=%d, recv=%d)",
+		mappingID, bytesSent, bytesReceived, totalSent, totalReceived)
+
+	// 3. TODO: 发送到服务器进行统计（未来实现）
+	// 可以通过控制连接发送JsonCommand类型的统计报告
+	// 或者通过专门的统计上报接口
+
+	return nil
+}
+
+// GetUserQuota 获取用户配额信息
+// 这个方法由BaseMappingHandler调用，用于获取当前用户的配额限制
+// 使用缓存机制，每5分钟刷新一次
+func (c *TunnoxClient) GetUserQuota() (*models.UserQuota, error) {
+	const quotaCacheDuration = 5 * time.Minute
+
+	// 检查缓存是否有效
+	c.quotaCacheMu.RLock()
+	if c.cachedQuota != nil && time.Since(c.quotaLastRefresh) < quotaCacheDuration {
+		quota := c.cachedQuota
+		c.quotaCacheMu.RUnlock()
+		return quota, nil
+	}
+	c.quotaCacheMu.RUnlock()
+
+	// 缓存失效，需要刷新
+	// TODO: 从服务器获取配额信息
+	// 可以通过JsonCommand发送QuotaQuery请求
+
+	// 暂时使用默认配额
+	defaultQuota := &models.UserQuota{
+		MaxClientIDs:   10,
+		MaxConnections: 100,
+		BandwidthLimit: 0, // 0表示无限制
+		StorageLimit:   0,
+	}
+
+	// 更新缓存
+	c.quotaCacheMu.Lock()
+	c.cachedQuota = defaultQuota
+	c.quotaLastRefresh = time.Now()
+	c.quotaCacheMu.Unlock()
+
+	utils.Debugf("Client: quota refreshed - MaxConnections=%d, BandwidthLimit=%d",
+		defaultQuota.MaxConnections, defaultQuota.BandwidthLimit)
+
+	return defaultQuota, nil
+}
+
+// GetLocalTrafficStats 获取本地流量统计
+// 用于调试和监控
+func (c *TunnoxClient) GetLocalTrafficStats(mappingID string) (sent, received int64) {
+	c.trafficStatsMu.RLock()
+	defer c.trafficStatsMu.RUnlock()
+
+	if stats, exists := c.localTrafficStats[mappingID]; exists {
+		stats.mu.RLock()
+		defer stats.mu.RUnlock()
+		return stats.bytesSent, stats.bytesReceived
+	}
+
+	return 0, 0
+}

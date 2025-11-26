@@ -1,0 +1,82 @@
+# Tunnox Server 测试配置
+server:
+  host: "0.0.0.0"
+  port: 7000
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 60
+  
+  protocols:
+    tcp:
+      enabled: true
+      port: 7000
+      host: "0.0.0.0"
+    websocket:
+      enabled: false
+    udp:
+      enabled: false
+    quic:
+      enabled: false
+
+log:
+  level: "debug"
+  format: "text"
+  output: "stdout"
+
+cloud:
+  type: "built_in"
+  built_in:
+    jwt_secret_key: "test-secret-key-for-testing-only"
+    jwt_expiration: 3600
+    refresh_expiration: 604800
+    jwt_issuer: "tunnox-test"
+    cleanup_interval: 300
+    data_ttl: 86400
+    id_length: 16
+    max_attempts: 10
+
+# MessageBroker 配置（单节点使用 memory）
+message_broker:
+  type: "memory"
+  node_id: "test-node-001"
+
+# Bridge 连接池配置（单节点测试禁用）
+bridge_pool:
+  enabled: false
+
+performance:
+  buffer_pool:
+    initial_size: 100
+    max_size: 1000
+    buffer_size: 4096
+  connection_pool:
+    max_connections: 100
+    idle_timeout: 300
+    max_lifetime: 3600
+
+monitoring:
+  metrics:
+    enabled: false
+  health_check:
+    enabled: false
+
+security:
+  tls:
+    enabled: false
+
+development:
+  debug: true
+
+# Management API 配置
+management_api:
+  enabled: true
+  listen_addr: ":9000"
+  auth:
+    type: "api_key"
+    secret: "test-api-key-for-management-api-1234567890"
+  cors:
+    enabled: true
+    allowed_origins: ["*"]
+  rate_limit:
+    enabled: false
+

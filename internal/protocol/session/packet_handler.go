@@ -54,23 +54,8 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		return fmt.Errorf("auth handler not configured")
 	}
 
-	// 获取或创建 ClientConnection
-	s.connLock.Lock()
-	clientConn, ok := s.clientConnMap[connPacket.ConnectionID]
-	if !ok {
-		// 从基础连接创建 ClientConnection
-		if baseConn, exists := s.connMap[connPacket.ConnectionID]; exists {
-			clientConn = &ClientConnection{
-				ConnID:    baseConn.ID,
-				Stream:    baseConn.Stream,
-				CreatedAt: baseConn.CreatedAt,
-				baseConn:  baseConn,
-			}
-			s.clientConnMap[connPacket.ConnectionID] = clientConn
-		}
-	}
-	s.connLock.Unlock()
-
+	// 获取控制连接
+	clientConn := s.getControlConnectionByConnID(connPacket.ConnectionID)
 	if clientConn == nil {
 		return fmt.Errorf("connection not found: %s", connPacket.ConnectionID)
 	}
@@ -105,8 +90,19 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		return err
 	}
 
+	// ✅ 将认证成功的客户端添加到 controlConnMap 和 clientIDIndexMap
+	if clientConn.Authenticated && clientConn.ClientID > 0 {
+		s.controlConnLock.Lock()
+		// 添加到controlConnMap
+		s.controlConnMap[clientConn.ConnID] = clientConn
+		// 添加到clientIDIndexMap用于快速查找
+		s.clientIDIndexMap[clientConn.ClientID] = clientConn
+		s.controlConnLock.Unlock()
+		utils.Debugf("SessionManager: added client %d to clientIDIndexMap", clientConn.ClientID)
+	}
+
 	utils.Infof("Handshake succeeded for connection %s, ClientID=%d",
-		connPacket.ConnectionID, req.ClientID)
+		connPacket.ConnectionID, clientConn.ClientID)
 	return nil
 }
 
@@ -116,11 +112,8 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		return fmt.Errorf("tunnel handler not configured")
 	}
 
-	// 获取 ClientConnection
-	s.connLock.RLock()
-	clientConn := s.clientConnMap[connPacket.ConnectionID]
-	s.connLock.RUnlock()
-
+	// 获取 ControlConnection
+	clientConn := s.getControlConnectionByConnID(connPacket.ConnectionID)
 	if clientConn == nil {
 		return fmt.Errorf("client connection not found: %s", connPacket.ConnectionID)
 	}
@@ -172,17 +165,23 @@ func (s *SessionManager) sendHandshakeResponse(conn *ClientConnection, resp *pac
 		return fmt.Errorf("failed to marshal handshake response: %w", err)
 	}
 
+	utils.Debugf("sendHandshakeResponse: respData=%s, len=%d", string(respData), len(respData))
+
 	// 构造响应包
 	respPacket := &packet.TransferPacket{
 		PacketType: packet.HandshakeResp,
 		Payload:    respData,
 	}
 
+	utils.Debugf("sendHandshakeResponse: PacketType=%d, Payload len=%d", respPacket.PacketType, len(respPacket.Payload))
+
 	// 发送响应
-	if _, err := conn.Stream.WritePacket(respPacket, false, 0); err != nil {
+	written, err := conn.Stream.WritePacket(respPacket, false, 0)
+	if err != nil {
 		return fmt.Errorf("failed to write handshake response: %w", err)
 	}
 
+	utils.Debugf("sendHandshakeResponse: wrote %d bytes", written)
 	return nil
 }
 

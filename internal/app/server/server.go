@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"time"
+	"tunnox-core/internal/api"
 	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
@@ -31,6 +32,7 @@ type Server struct {
 	messageBroker   broker.MessageBroker
 	bridgeManager   *internalbridge.BridgeManager
 	grpcServer      *grpc.Server
+	apiServer       *api.ManagementAPIServer
 }
 
 // New 创建新服务器
@@ -65,6 +67,12 @@ func New(config *Config, parentCtx context.Context) *Server {
 	// 创建 SessionManager
 	server.session = session.NewSessionManager(server.idManager, parentCtx)
 
+	// 创建并设置 AuthHandler 和 TunnelHandler
+	authHandler := NewServerAuthHandler(cloudControl)
+	tunnelHandler := NewServerTunnelHandler(cloudControl)
+	server.session.SetAuthHandler(authHandler)
+	server.session.SetTunnelHandler(tunnelHandler)
+
 	// 创建协议工厂
 	server.protocolFactory = NewProtocolFactory(server.session)
 
@@ -80,6 +88,14 @@ func New(config *Config, parentCtx context.Context) *Server {
 	if config.BridgePool.Enabled {
 		server.bridgeManager = server.createBridgeManager(parentCtx)
 		server.grpcServer = server.startGRPCServer()
+	}
+
+	// 初始化 Management API
+	if config.ManagementAPI.Enabled {
+		server.apiServer = server.createManagementAPI(parentCtx)
+		// ✅ 注入SessionManager，用于推送配置给客户端
+		server.apiServer.SetSessionManager(server.session)
+		utils.Infof("Server: SessionManager injected into Management API")
 	}
 
 	// 注册服务到服务管理器

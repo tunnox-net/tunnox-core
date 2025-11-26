@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"tunnox-core/internal/api"
 	"tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
@@ -26,7 +27,7 @@ type Closeable interface {
 // 用于包装各种资源（CloudControl, Storage, Broker, Bridge 等）为统一的服务接口
 type BaseService struct {
 	name      string
-	closeable Closeable // 可选：需要关闭的资源
+	closeable Closeable                       // 可选：需要关闭的资源
 	onStart   func(ctx context.Context) error // 可选：自定义启动逻辑
 	onStop    func(ctx context.Context) error // 可选：自定义停止逻辑
 }
@@ -62,7 +63,7 @@ func (s *BaseService) Start(ctx context.Context) error {
 	if s.onStart != nil {
 		return s.onStart(ctx)
 	}
-	
+
 	// 默认：仅记录日志
 	utils.Infof("Starting service: %s", s.name)
 	return nil
@@ -118,6 +119,13 @@ func NewBrokerService(name string, broker broker.MessageBroker) *BaseService {
 // NewBridgeService 创建桥接服务
 func NewBridgeService(name string, manager *bridge.BridgeManager) *BaseService {
 	return NewBaseService(name, manager)
+}
+
+// NewManagementAPIService 创建 Management API 服务
+func NewManagementAPIService(name string, apiServer *api.ManagementAPIServer) *BaseService {
+	return NewBaseService(name, apiServer).WithOnStart(func(ctx context.Context) error {
+		return apiServer.Start()
+	})
 }
 
 // ProtocolFactory 协议工厂
@@ -200,4 +208,3 @@ func (r *SimpleNodeRegistry) UnregisterNode(nodeID string) {
 	delete(r.nodes, nodeID)
 	utils.Infof("SimpleNodeRegistry: unregistered node %s", nodeID)
 }
-

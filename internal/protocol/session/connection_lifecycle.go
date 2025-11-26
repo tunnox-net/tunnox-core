@@ -3,9 +3,9 @@ package session
 import (
 	"fmt"
 	"io"
+	"net"
 	"time"
 	"tunnox-core/internal/core/types"
-	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
 
@@ -64,6 +64,18 @@ func (s *SessionManager) AcceptConnection(reader io.Reader, writer io.Writer) (*
 		ID:     conn.ID,
 		Stream: conn.Stream,
 	}
+
+	// 预注册控制连接，优先使用写端元信息
+	enforcedProtocol := conn.Protocol
+	if enforcedProtocol == "" {
+		enforcedProtocol = resolveProtocol(writer, reader)
+		if enforcedProtocol == "" {
+			enforcedProtocol = "tcp"
+		}
+	}
+	remoteAddr := resolveRemoteAddr(writer, reader)
+	controlConn := NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
+	s.RegisterControlConnection(controlConn)
 
 	utils.Debugf("Connection accepted: %s", conn.ID)
 	return streamConn, nil
@@ -148,10 +160,16 @@ func (s *SessionManager) GetStreamConnectionInfo(connectionId string) (*types.St
 }
 
 // GetActiveConnections 获取活跃连接数
+// GetActiveConnections 返回当前占用的通道数（控制通道 + 数据隧道）
 func (s *SessionManager) GetActiveConnections() int {
-	s.connLock.RLock()
+	return s.GetActiveChannels()
+}
+
+// GetActiveChannels 返回当前占用的通道数（控制通道 + 数据隧道）
+func (s *SessionManager) GetActiveChannels() int {
+	s.controlConnLock.RLock()
 	controlCount := len(s.controlConnMap)
-	s.connLock.RUnlock()
+	s.controlConnLock.RUnlock()
 
 	s.tunnelConnLock.RLock()
 	tunnelCount := len(s.tunnelConnMap)
@@ -199,12 +217,17 @@ func (s *SessionManager) UpdateControlConnectionAuth(connID string, clientID int
 	return nil
 }
 
-// GetControlConnectionByClientID 根据 ClientID 获取指令连接
+// GetControlConnectionByClientID 根据 ClientID 获取指令连接（类型安全版本）
 func (s *SessionManager) GetControlConnectionByClientID(clientID int64) *ControlConnection {
 	s.controlConnLock.RLock()
 	defer s.controlConnLock.RUnlock()
 
 	return s.clientIDIndexMap[clientID]
+}
+
+// GetControlConnectionInterface 根据 ClientID 获取指令连接（返回interface{}用于API）
+func (s *SessionManager) GetControlConnectionInterface(clientID int64) interface{} {
+	return s.GetControlConnectionByClientID(clientID)
 }
 
 // KickOldControlConnection 踢掉旧的指令连接
@@ -244,6 +267,40 @@ func (s *SessionManager) RemoveControlConnection(connID string) {
 		delete(s.controlConnMap, connID)
 		utils.Debugf("Removed control connection: %s", connID)
 	}
+}
+
+// getControlConnectionByConnID 根据连接ID获取控制连接（内部使用）
+func (s *SessionManager) getControlConnectionByConnID(connID string) *ControlConnection {
+	s.controlConnLock.RLock()
+	defer s.controlConnLock.RUnlock()
+
+	return s.controlConnMap[connID]
+}
+
+func resolveRemoteAddr(primary interface{}, secondary interface{}) net.Addr {
+	type remote interface {
+		RemoteAddr() net.Addr
+	}
+	if conn, ok := primary.(remote); ok && conn.RemoteAddr() != nil {
+		return conn.RemoteAddr()
+	}
+	if conn, ok := secondary.(remote); ok {
+		return conn.RemoteAddr()
+	}
+	return nil
+}
+
+func resolveProtocol(primary interface{}, secondary interface{}) string {
+	type local interface {
+		LocalAddr() net.Addr
+	}
+	if conn, ok := primary.(local); ok && conn.LocalAddr() != nil {
+		return conn.LocalAddr().Network()
+	}
+	if conn, ok := secondary.(local); ok && conn.LocalAddr() != nil {
+		return conn.LocalAddr().Network()
+	}
+	return ""
 }
 
 // ============================================================================
@@ -315,72 +372,4 @@ func (s *SessionManager) RemoveTunnelConnection(connID string) {
 		delete(s.tunnelConnMap, connID)
 		utils.Debugf("Removed tunnel connection: connID=%s, tunnelID=%s", connID, conn.TunnelID)
 	}
-}
-
-// ============================================================================
-// 临时兼容方法（ClientConnection 相关）
-// ============================================================================
-
-// getOrCreateClientConnection 获取或创建客户端连接（内部使用）
-func (s *SessionManager) getOrCreateClientConnection(connID string, pkt *packet.TransferPacket) *ClientConnection {
-	s.connLock.Lock()
-	defer s.connLock.Unlock()
-
-	// 尝试从现有连接中查找
-	if baseConn, exists := s.connMap[connID]; exists {
-		// 如果已有，尝试从扩展映射中获取
-		if clientConn, ok := s.clientConnMap[connID]; ok {
-			return clientConn
-		}
-
-		// 创建新的 ClientConnection 包装
-		clientConn := &ClientConnection{
-			ConnID:    connID,
-			Stream:    baseConn.Stream,
-			CreatedAt: baseConn.CreatedAt,
-			baseConn:  baseConn,
-		}
-		s.clientConnMap[connID] = clientConn
-		return clientConn
-	}
-
-	// 全新连接（通常不应该走到这里）
-	return nil
-}
-
-// getClientConnection 获取客户端连接（内部使用）
-func (s *SessionManager) getClientConnection(connID string) *ClientConnection {
-	s.connLock.RLock()
-	defer s.connLock.RUnlock()
-
-	return s.clientConnMap[connID]
-}
-
-// GetConnectionByClientID 临时兼容方法（将被废弃）
-func (s *SessionManager) GetConnectionByClientID(clientID int64) *ClientConnection {
-	// 先尝试从 controlConnMap 查找
-	controlConn := s.GetControlConnectionByClientID(clientID)
-	if controlConn != nil {
-		// 从 connMap 查找对应的基础连接
-		s.connLock.RLock()
-		defer s.connLock.RUnlock()
-
-		if baseConn, exists := s.connMap[controlConn.ConnID]; exists {
-			// 返回或创建 ClientConnection 包装
-			if clientConn, ok := s.clientConnMap[controlConn.ConnID]; ok {
-				return clientConn
-			}
-			// 创建新的包装
-			clientConn := &ClientConnection{
-				ConnID:    baseConn.ID,
-				Stream:    baseConn.Stream,
-				CreatedAt: baseConn.CreatedAt,
-				baseConn:  baseConn,
-			}
-			s.clientConnMap[controlConn.ConnID] = clientConn
-			return clientConn
-		}
-	}
-
-	return nil
 }

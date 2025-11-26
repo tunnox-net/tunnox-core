@@ -309,7 +309,15 @@ func (b *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 		return nil, fmt.Errorf("failed to generate unique mapping ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
+	// 生成 SecretKey（用于隧道打开认证）
+	secretKey, err := b.idManager.GenerateSecretKey()
+	if err != nil {
+		_ = b.idManager.ReleasePortMappingID(mappingID)
+		return nil, fmt.Errorf("generate secret key failed: %w", err)
+	}
+
 	mapping.ID = mappingID
+	mapping.SecretKey = secretKey
 	mapping.CreatedAt = time.Now()
 	mapping.UpdatedAt = time.Now()
 

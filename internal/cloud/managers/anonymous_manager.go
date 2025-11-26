@@ -162,9 +162,17 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 		return nil, fmt.Errorf("failed to generate unique mapping ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
+	// 生成 SecretKey（用于隧道打开认证）
+	secretKey, err := am.idManager.GenerateSecretKey()
+	if err != nil {
+		_ = am.idManager.ReleasePortMappingID(mappingID)
+		return nil, fmt.Errorf("generate secret key failed: %w", err)
+	}
+
 	now := time.Now()
 	mapping := &models.PortMapping{
 		ID:             mappingID,
+		SecretKey:      secretKey,
 		UserID:         "",
 		SourceClientID: sourceClientID,
 		TargetClientID: targetClientID,

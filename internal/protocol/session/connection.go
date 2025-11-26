@@ -21,8 +21,6 @@ type ControlConnection struct {
 	CreatedAt     time.Time
 	LastActiveAt  time.Time
 
-	// 底层连接（用于兼容）
-	baseConn *types.Connection
 }
 
 // NewControlConnection 创建指令连接
@@ -41,6 +39,30 @@ func NewControlConnection(connID string, stream stream.PackageStreamer, remoteAd
 // UpdateActivity 更新活跃时间
 func (c *ControlConnection) UpdateActivity() {
 	c.LastActiveAt = time.Now()
+}
+
+// GetStream 获取Stream（用于API推送配置等操作）
+func (c *ControlConnection) GetStream() interface{} {
+	if c == nil {
+		return nil
+	}
+	return c.Stream
+}
+
+// GetConnID 获取连接ID
+func (c *ControlConnection) GetConnID() string {
+	if c == nil {
+		return ""
+	}
+	return c.ConnID
+}
+
+// GetRemoteAddr 获取远程地址
+func (c *ControlConnection) GetRemoteAddr() string {
+	if c == nil || c.RemoteAddr == nil {
+		return ""
+	}
+	return c.RemoteAddr.String()
 }
 
 // TunnelConnection 映射连接（短连接，按需建立）

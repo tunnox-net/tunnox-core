@@ -131,8 +131,82 @@ func (s *SessionManager) handleDefaultCommand(connPacket *types.StreamPacket) er
 	utils.Debugf("Processing command: type=%v, id=%s, conn=%s",
 		cmd.CommandType, cmd.CommandId, connPacket.ConnectionID)
 
+	// 处理 ConfigGet 命令
+	if cmd.CommandType == packet.ConfigGet {
+		return s.handleConfigGetCommand(connPacket)
+	}
+
 	// 默认简单处理：记录日志
 	return nil
+}
+
+// handleConfigGetCommand 处理配置获取命令
+func (s *SessionManager) handleConfigGetCommand(connPacket *types.StreamPacket) error {
+	// 获取控制连接
+	s.controlConnLock.RLock()
+	controlConn, exists := s.controlConnMap[connPacket.ConnectionID]
+	s.controlConnLock.RUnlock()
+	
+	if !exists {
+		return fmt.Errorf("control connection not found: %s", connPacket.ConnectionID)
+	}
+
+	// 获取客户端ID
+	clientID := controlConn.ClientID
+	if clientID == 0 {
+		utils.Warnf("Client has no ID, cannot get config: conn=%s", connPacket.ConnectionID)
+		return s.sendEmptyConfig(controlConn)
+	}
+
+	// 从认证处理器获取映射配置（通过CloudControl）
+	var configBody string
+	if s.authHandler != nil {
+		// 使用认证处理器获取配置
+		config, err := s.authHandler.GetClientConfig(controlConn)
+		if err != nil {
+			utils.Errorf("Failed to get client config for client %d: %v", clientID, err)
+			return s.sendEmptyConfig(controlConn)
+		}
+		configBody = config
+	} else {
+		// 回退到空配置
+		configBody = `{"mappings":[]}`
+	}
+	
+	utils.Infof("SessionManager: sending config to client %d (%d bytes)", clientID, len(configBody))
+
+	// 发送配置响应
+	responseCmd := &packet.CommandPacket{
+		CommandType: packet.ConfigSet, // 使用 ConfigSet 作为配置推送
+		CommandBody: configBody,
+	}
+
+	responsePacket := &packet.TransferPacket{
+		PacketType:    packet.JsonCommand,
+		CommandPacket: responseCmd,
+	}
+
+	if _, err := controlConn.Stream.WritePacket(responsePacket, false, 0); err != nil {
+		return fmt.Errorf("failed to send config response: %w", err)
+	}
+
+	return nil
+}
+
+// sendEmptyConfig 发送空配置
+func (s *SessionManager) sendEmptyConfig(conn *ControlConnection) error {
+	responseCmd := &packet.CommandPacket{
+		CommandType: packet.ConfigSet,
+		CommandBody: `{"mappings":[]}`,
+	}
+
+	responsePacket := &packet.TransferPacket{
+		PacketType:    packet.JsonCommand,
+		CommandPacket: responseCmd,
+	}
+
+	_, err := conn.Stream.WritePacket(responsePacket, false, 0)
+	return err
 }
 
 // handleHeartbeat 处理心跳

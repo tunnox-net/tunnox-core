@@ -19,10 +19,11 @@ import (
 // StreamProcessor 流处理器
 type StreamProcessor struct {
 	*dispose.ManagerBase
-	reader    io.Reader
-	writer    io.Writer
-	lock      sync.Mutex
-	bufferMgr *utils.BufferManager
+	reader     io.Reader
+	writer     io.Writer
+	readLock   sync.Mutex  // 独立的读锁
+	writeLock  sync.Mutex  // 独立的写锁
+	bufferMgr  *utils.BufferManager
 	// 注意：加密功能已移至 internal/stream/transform 模块
 }
 
@@ -64,27 +65,27 @@ func (ps *StreamProcessor) onClose() error {
 	return nil
 }
 
-// readLock 获取读取锁并检查状态
-func (ps *StreamProcessor) readLock() error {
+// acquireReadLock 获取读取锁并检查状态
+func (ps *StreamProcessor) acquireReadLock() error {
 	if ps.ResourceBase.Dispose.IsClosed() {
 		return io.EOF
 	}
-	ps.lock.Lock()
+	ps.readLock.Lock()
 	if ps.reader == nil {
-		ps.lock.Unlock()
+		ps.readLock.Unlock()
 		return errors.ErrReaderNil
 	}
 	return nil
 }
 
-// writeLock 获取写入锁并检查状态
-func (ps *StreamProcessor) writeLock() error {
+// acquireWriteLock 获取写入锁并检查状态
+func (ps *StreamProcessor) acquireWriteLock() error {
 	if ps.ResourceBase.Dispose.IsClosed() {
 		return errors.ErrStreamClosed
 	}
-	ps.lock.Lock()
+	ps.writeLock.Lock()
 	if ps.writer == nil {
-		ps.lock.Unlock()
+		ps.writeLock.Unlock()
 		return errors.ErrWriterNil
 	}
 	return nil
@@ -93,10 +94,10 @@ func (ps *StreamProcessor) writeLock() error {
 // ReadExact 读取指定长度的字节，使用内存池优化
 // 如果读取的字节数不足指定长度，会继续读取直到达到指定长度或遇到错误
 func (ps *StreamProcessor) ReadExact(length int) ([]byte, error) {
-	if err := ps.readLock(); err != nil {
+	if err := ps.acquireReadLock(); err != nil {
 		return nil, err
 	}
-	defer ps.lock.Unlock()
+	defer ps.readLock.Unlock()
 
 	// 从内存池获取缓冲区
 	buffer := ps.bufferMgr.Allocate(length)
@@ -155,10 +156,10 @@ func (ps *StreamProcessor) ReadExact(length int) ([]byte, error) {
 // ReadExactZeroCopy 零拷贝读取指定长度的字节
 // 返回零拷贝缓冲区和清理函数，调用方负责调用清理函数
 func (ps *StreamProcessor) ReadExactZeroCopy(length int) (*utils.ZeroCopyBuffer, error) {
-	if err := ps.readLock(); err != nil {
+	if err := ps.acquireReadLock(); err != nil {
 		return nil, err
 	}
-	defer ps.lock.Unlock()
+	defer ps.readLock.Unlock()
 
 	// 从内存池获取缓冲区
 	buffer := ps.bufferMgr.Allocate(length)
@@ -209,10 +210,10 @@ func (ps *StreamProcessor) ReadExactZeroCopy(length int) (*utils.ZeroCopyBuffer,
 // WriteExact 写入指定长度的字节，直到写完为止
 // 如果写入的字节数不足指定长度，会继续写入直到达到指定长度或遇到错误
 func (ps *StreamProcessor) WriteExact(data []byte) error {
-	if err := ps.writeLock(); err != nil {
+	if err := ps.acquireWriteLock(); err != nil {
 		return err
 	}
-	defer ps.lock.Unlock()
+	defer ps.writeLock.Unlock()
 
 	totalWritten := 0
 	dataLength := len(data)
@@ -310,18 +311,27 @@ func (ps *StreamProcessor) decompressData(compressedData []byte) ([]byte, error)
 
 // ReadPacket 读取整个数据包，返回读取的字节数
 func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
-	if err := ps.readLock(); err != nil {
+	utils.Debugf("ReadPacket: START")
+	if err := ps.acquireReadLock(); err != nil {
+		utils.Debugf("ReadPacket: acquireReadLock failed: %v", err)
 		return nil, 0, err
 	}
-	defer ps.lock.Unlock()
+	defer func() {
+		ps.readLock.Unlock()
+		utils.Debugf("ReadPacket: readLock released")
+	}()
 
+	utils.Debugf("ReadPacket: lock acquired")
 	totalBytes := 0
 
 	// 读取包类型字节
+	utils.Debugf("ReadPacket: reading packet type...")
 	packetType, err := ps.readPacketType()
 	if err != nil {
+		utils.Errorf("ReadPacket: failed to read packet type: %v", err)
 		return nil, totalBytes, err
 	}
+	utils.Debugf("ReadPacket: packet type=%d", packetType)
 	totalBytes += constants.PacketTypeSize
 
 	// 如果是心跳包，直接返回
@@ -332,39 +342,38 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 		}, totalBytes, nil
 	}
 
-	// 如果是JsonCommand包，读取数据体大小和数据体
-	if packetType.IsJsonCommand() {
-		// 读取数据体大小
-		bodySize, err := ps.readPacketBodySize()
-		if err != nil {
-			return nil, totalBytes, err
-		}
-		totalBytes += constants.PacketBodySizeBytes
+	// 读取数据体大小和数据体（JsonCommand 和其他有 Payload 的类型）
+	bodySize, err := ps.readPacketBodySize()
+	if err != nil {
+		return nil, totalBytes, err
+	}
+	totalBytes += constants.PacketBodySizeBytes
 
-		// 读取数据体
-		bodyData, err := ps.readPacketBody(bodySize)
-		if err != nil {
-			return nil, totalBytes, err
-		}
-		totalBytes += len(bodyData)
+	// 读取数据体
+	bodyData, err := ps.readPacketBody(bodySize)
+	if err != nil {
+		return nil, totalBytes, err
+	}
+	totalBytes += len(bodyData)
 
 	// 注意：加密功能已移至 internal/stream/transform 模块
 	// 解密功能应通过 transform.StreamTransformer 处理
 	if packetType.IsEncrypted() {
 		// 加密功能已移至 transform 模块
 		err = fmt.Errorf("encryption not supported in StreamProcessor, use transform package")
-			if err != nil {
-				return nil, totalBytes, err
-			}
+		if err != nil {
+			return nil, totalBytes, err
 		}
-		if packetType.IsCompressed() {
-			bodyData, err = ps.decompressData(bodyData)
-			if err != nil {
-				return nil, totalBytes, err
-			}
+	}
+	if packetType.IsCompressed() {
+		bodyData, err = ps.decompressData(bodyData)
+		if err != nil {
+			return nil, totalBytes, err
 		}
+	}
 
-		// 解析 CommandPacket
+	// 如果是JsonCommand包，解析为 CommandPacket
+	if packetType.IsJsonCommand() {
 		var commandPacket packet.CommandPacket
 		err = json.Unmarshal(bodyData, &commandPacket)
 		if err != nil {
@@ -377,9 +386,10 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 		}, totalBytes, nil
 	}
 
-	// 其他类型的包，暂时不支持
+	// 其他类型的包（Handshake, HandshakeResp, TunnelOpen等），返回 Payload
 	return &packet.TransferPacket{
 		PacketType:    packetType,
+		Payload:       bodyData,
 		CommandPacket: nil,
 	}, totalBytes, nil
 }
@@ -424,10 +434,17 @@ func (ps *StreamProcessor) writeRateLimitedData(data []byte, rateLimitBytesPerSe
 
 // WritePacket 写入整个数据包，返回写入的字节数
 func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompression bool, rateLimitBytesPerSecond int64) (int, error) {
-	if err := ps.writeLock(); err != nil {
+	utils.Debugf("WritePacket: START, packetType=%d", pkt.PacketType)
+	if err := ps.acquireWriteLock(); err != nil {
+		utils.Debugf("WritePacket: acquireWriteLock failed: %v", err)
 		return 0, err
 	}
-	defer ps.lock.Unlock()
+	defer func() {
+		ps.writeLock.Unlock()
+		utils.Debugf("WritePacket: writeLock released")
+	}()
+
+	utils.Debugf("WritePacket: lock acquired")
 
 	// 检查数据包是否为nil
 	if pkt == nil {
@@ -449,10 +466,13 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	}
 
 	typeByte := []byte{byte(packetType)}
+	utils.Debugf("WritePacket: writing packet type byte")
 	_, err := ps.writer.Write(typeByte)
 	if err != nil {
+		utils.Errorf("WritePacket: failed to write packet type: %v", err)
 		return totalBytes, errors.NewStreamError("write_packet_type", "failed to write packet type", err)
 	}
+	utils.Debugf("WritePacket: packet type written")
 	totalBytes += constants.PacketTypeSize
 
 	// 如果是心跳包，写入完成
@@ -460,55 +480,81 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 		return totalBytes, nil
 	}
 
-	// 如果是JsonCommand包，写入数据体
+	// 准备要写入的数据体
+	var bodyData []byte
+
+	// 如果是JsonCommand包，序列化 CommandPacket
 	if packetType.IsJsonCommand() && pkt.CommandPacket != nil {
 		// 将 CommandPacket 序列化为 JSON 字节数据
-		bodyData, err := json.Marshal(pkt.CommandPacket)
+		var err error
+		bodyData, err = json.Marshal(pkt.CommandPacket)
 		if err != nil {
 			return totalBytes, errors.NewPacketError("json_marshal", "failed to marshal command packet", err)
 		}
-
-		// 先压缩，再加密
-		if useCompression {
-			bodyData, err = ps.compressData(bodyData)
-			if err != nil {
-				return totalBytes, err
-			}
-		}
-		// 注意：加密功能已移至 internal/stream/transform 模块
-		if false { // encMgr 已移除
-			// 加密功能应通过 transform 模块处理
-			err = fmt.Errorf("encryption not supported")
-			if err != nil {
-				return totalBytes, err
-			}
-		}
-
-		// 写入数据体大小
-		sizeBuffer := make([]byte, constants.PacketBodySizeBytes)
-		binary.BigEndian.PutUint32(sizeBuffer, uint32(len(bodyData)))
-		_, err = ps.writer.Write(sizeBuffer)
-		if err != nil {
-			return totalBytes, errors.NewStreamError("write_packet_body_size", "failed to write packet body size", err)
-		}
-		totalBytes += constants.PacketBodySizeBytes
-
-		// 写入数据体，根据限速参数决定是否使用限速
-		if rateLimitBytesPerSecond > 0 {
-			err = ps.writeRateLimitedData(bodyData, rateLimitBytesPerSecond)
-			if err != nil {
-				return totalBytes, err
-			}
-		} else {
-			// 直接写入，不限速
-			_, err = ps.writer.Write(bodyData)
-			if err != nil {
-				return totalBytes, errors.NewStreamError("write_packet_body", "failed to write packet body", err)
-			}
-		}
-		totalBytes += len(bodyData)
+	} else if len(pkt.Payload) > 0 {
+		// 对于其他类型（Handshake, HandshakeResp, TunnelOpen等），使用 Payload
+		bodyData = pkt.Payload
 	}
 
+	// 如果没有数据体，直接返回
+	if len(bodyData) == 0 {
+		return totalBytes, nil
+	}
+
+	// 先压缩，再加密
+	if useCompression {
+		var err error
+		bodyData, err = ps.compressData(bodyData)
+		if err != nil {
+			return totalBytes, err
+		}
+	}
+
+	// 写入数据体大小
+	sizeBuffer := make([]byte, constants.PacketBodySizeBytes)
+	binary.BigEndian.PutUint32(sizeBuffer, uint32(len(bodyData)))
+	utils.Debugf("WritePacket: writing body size=%d", len(bodyData))
+	_, err = ps.writer.Write(sizeBuffer)
+	if err != nil {
+		utils.Errorf("WritePacket: failed to write body size: %v", err)
+		return totalBytes, errors.NewStreamError("write_packet_body_size", "failed to write packet body size", err)
+	}
+	utils.Debugf("WritePacket: body size written")
+	totalBytes += constants.PacketBodySizeBytes
+
+	// 写入数据体，根据限速参数决定是否使用限速
+	utils.Debugf("WritePacket: writing body data, len=%d", len(bodyData))
+	if rateLimitBytesPerSecond > 0 {
+		err = ps.writeRateLimitedData(bodyData, rateLimitBytesPerSecond)
+		if err != nil {
+			utils.Errorf("WritePacket: failed to write rate-limited body: %v", err)
+			return totalBytes, err
+		}
+	} else {
+		// 直接写入，不限速
+		_, err = ps.writer.Write(bodyData)
+		if err != nil {
+			utils.Errorf("WritePacket: failed to write body: %v", err)
+			return totalBytes, errors.NewStreamError("write_packet_body", "failed to write packet body", err)
+		}
+	}
+	utils.Debugf("WritePacket: body data written")
+	totalBytes += len(bodyData)
+
+	// ✅ Flush writer if it implements Flusher interface (for buffered writers like GzipWriter)
+	utils.Debugf("WritePacket: checking for Flusher interface")
+	if flusher, ok := ps.writer.(interface{ Flush() error }); ok {
+		utils.Debugf("WritePacket: flushing writer")
+		if err := flusher.Flush(); err != nil {
+			utils.Errorf("WritePacket: flush failed: %v", err)
+			return totalBytes, errors.NewStreamError("flush_writer", "failed to flush writer", err)
+		}
+		utils.Debugf("WritePacket: writer flushed")
+	} else {
+		utils.Debugf("WritePacket: writer does not implement Flusher")
+	}
+
+	utils.Debugf("WritePacket: DONE, totalBytes=%d", totalBytes)
 	return totalBytes, nil
 }
 

@@ -67,9 +67,6 @@ type SessionManager struct {
 	tunnelHandler TunnelHandler
 	authHandler   AuthHandler
 
-	// 临时兼容字段（迁移完成后删除）
-	clientConnMap map[string]*ClientConnection
-
 	dispose.Dispose
 }
 
@@ -92,9 +89,6 @@ func NewSessionManager(idManager *idgen.IDManager, parentCtx context.Context) *S
 		// 映射连接
 		tunnelConnMap: make(map[string]*TunnelConnection),
 		tunnelIDMap:   make(map[string]*TunnelConnection),
-
-		// 临时兼容
-		clientConnMap: make(map[string]*ClientConnection),
 
 		idManager:     idManager,
 		streamMgr:     streamMgr,

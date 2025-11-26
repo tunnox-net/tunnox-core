@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/models"
 )
 
@@ -11,11 +12,20 @@ type CreateMappingRequest struct {
 	SourceClientID   int64  `json:"source_client_id"`
 	TargetClientID   int64  `json:"target_client_id"`
 	Protocol         string `json:"protocol"`
+	SourcePort       int    `json:"source_port"` // 源端口
 	TargetHost       string `json:"target_host"`
 	TargetPort       int    `json:"target_port"`
-	LocalPort        int    `json:"local_port,omitempty"`
-	EnableCompression bool  `json:"enable_compression,omitempty"`
-	EnableEncryption  bool  `json:"enable_encryption,omitempty"`
+	
+	// 商业化控制
+	BandwidthLimit   int64  `json:"bandwidth_limit,omitempty"`   // bytes/s
+	MaxConnections   int    `json:"max_connections,omitempty"`   // 最大并发连接
+	
+	// 压缩和加密
+	EnableCompression bool   `json:"enable_compression,omitempty"`
+	CompressionLevel  int    `json:"compression_level,omitempty"` // 0-9
+	EnableEncryption  bool   `json:"enable_encryption,omitempty"`
+	EncryptionMethod  string `json:"encryption_method,omitempty"` // aes-256-gcm
+	EncryptionKey     string `json:"encryption_key,omitempty"`    // base64
 }
 
 // UpdateMappingRequest 更新端口映射请求
@@ -50,8 +60,17 @@ func (s *ManagementAPIServer) handleCreateMapping(w http.ResponseWriter, r *http
 		Protocol:       models.Protocol(req.Protocol),
 		TargetHost:     req.TargetHost,
 		TargetPort:     req.TargetPort,
-		SourcePort:     req.LocalPort,
+		SourcePort:     req.SourcePort,
 		Status:         models.MappingStatusActive,
+		Config: configs.MappingConfig{
+			EnableCompression: req.EnableCompression,
+			CompressionLevel:  req.CompressionLevel,
+			EnableEncryption:  req.EnableEncryption,
+			EncryptionMethod:  req.EncryptionMethod,
+			EncryptionKey:     req.EncryptionKey,
+			BandwidthLimit:    req.BandwidthLimit,
+			MaxConnections:    req.MaxConnections,
+		},
 	}
 
 	// 创建端口映射
@@ -60,6 +79,9 @@ func (s *ManagementAPIServer) handleCreateMapping(w http.ResponseWriter, r *http
 		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	// ✅ 推送配置给客户端
+	s.pushMappingToClients(createdMapping)
 
 	s.respondJSON(w, http.StatusCreated, createdMapping)
 }

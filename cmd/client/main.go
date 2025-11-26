@@ -38,7 +38,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	utils.Infof("Client: successfully connected to server")
+	// 连接成功后，客户端会自动从服务器获取映射配置
 
 	// 等待终止信号
 	sigChan := make(chan os.Signal, 1)

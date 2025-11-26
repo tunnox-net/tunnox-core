@@ -14,6 +14,7 @@ type TunnelHandler interface {
 // AuthHandler 认证处理器接口
 type AuthHandler interface {
 	HandleHandshake(conn *ClientConnection, req *packet.HandshakeRequest) (*packet.HandshakeResponse, error)
+	GetClientConfig(conn *ClientConnection) (string, error)
 }
 
 // ============================================================================

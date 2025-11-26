@@ -1,0 +1,13 @@
+# Client B 配置 - 目标客户端（服务提供方）
+client_id: 0  # 0 表示匿名模式
+auth_token: ""
+anonymous: true
+device_id: "test-client-b"
+
+server:
+  address: "localhost:7000"
+  protocol: "tcp"
+
+# 端口映射配置（空数组，将通过 Management API 动态配置）
+mappings: []
+

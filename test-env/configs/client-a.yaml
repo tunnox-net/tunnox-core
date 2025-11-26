@@ -1,0 +1,12 @@
+# Client A 配置 - 源客户端（访问方）
+client_id: 0  # 0 表示匿名模式
+auth_token: ""
+anonymous: true
+device_id: "test-client-a"
+
+server:
+  address: "localhost:7000"
+  protocol: "tcp"
+
+# 端口映射配置（通过 Management API 动态配置）
+

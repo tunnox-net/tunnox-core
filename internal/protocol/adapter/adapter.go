@@ -5,8 +5,10 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/errors"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -172,10 +174,47 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 	}
 
 	// 初始化连接
-	_, err := b.session.AcceptConnection(conn, conn)
+	streamConn, err := b.session.AcceptConnection(conn, conn)
 	if err != nil {
 		utils.Errorf("Failed to initialize connection: %v", err)
 		return
+	}
+
+	// 启动包处理循环
+	utils.Debugf("Starting packet processing loop for connection %s", streamConn.ID)
+	for {
+		select {
+		case <-b.Ctx().Done():
+			utils.Debugf("Context cancelled, closing connection %s", streamConn.ID)
+			return
+		default:
+		}
+
+		// 读取并处理数据包
+		utils.Debugf("Server: waiting for packet on connection %s", streamConn.ID)
+		pkt, _, err := streamConn.Stream.ReadPacket()
+		if err != nil {
+			if err != io.EOF {
+				utils.Errorf("Failed to read packet for connection %s: %v", streamConn.ID, err)
+			} else {
+				utils.Debugf("Connection %s closed by peer", streamConn.ID)
+			}
+			return
+		}
+		utils.Infof("Server: received packet, type=%d on connection %s", pkt.PacketType, streamConn.ID)
+
+		// 填充 ConnectionID 并处理
+		streamPacket := &types.StreamPacket{
+			ConnectionID: streamConn.ID,
+			Packet:       pkt,
+			Timestamp:    time.Now(),
+		}
+
+		// 处理数据包
+		if err := b.session.HandlePacket(streamPacket); err != nil {
+			utils.Errorf("Failed to handle packet for connection %s: %v", streamConn.ID, err)
+			// 继续处理下一个包，不要直接返回
+		}
 	}
 }
 

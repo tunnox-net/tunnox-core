@@ -52,6 +52,15 @@ type BridgePoolConfig struct {
 	GRPCServer          map[string]interface{} `yaml:"grpc_server"`
 }
 
+// ManagementAPIConfig 管理 API 配置
+type ManagementAPIConfig struct {
+	Enabled    bool                   `yaml:"enabled"`
+	ListenAddr string                 `yaml:"listen_addr"`
+	Auth       map[string]interface{} `yaml:"auth"`
+	CORS       map[string]interface{} `yaml:"cors"`
+	RateLimit  map[string]interface{} `yaml:"rate_limit"`
+}
+
 // Config 应用配置
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
@@ -59,6 +68,7 @@ type Config struct {
 	Cloud         CloudConfig         `yaml:"cloud"`
 	MessageBroker MessageBrokerConfig `yaml:"message_broker"`
 	BridgePool    BridgePoolConfig    `yaml:"bridge_pool"`
+	ManagementAPI ManagementAPIConfig `yaml:"management_api"`
 }
 
 // LoadConfig 加载配置文件

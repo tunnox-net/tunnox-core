@@ -3,6 +3,7 @@ package types
 import (
 	"context"
 	"io"
+	"net"
 	"reflect"
 	"time"
 	"tunnox-core/internal/packet"
@@ -53,6 +54,13 @@ type Connection struct {
 	Protocol      string    // 协议类型
 }
 
+// ConnectionMeta 用于在接入阶段传递额外的连接元信息
+type ConnectionMeta struct {
+	Protocol   string
+	RemoteAddr net.Addr
+	LocalAddr  net.Addr
+}
+
 // Session 会话接口
 type Session interface {
 	// 向后兼容的方法
@@ -62,6 +70,7 @@ type Session interface {
 	GetStreamManager() *stream.StreamManager
 	GetStreamConnectionInfo(connectionId string) (*StreamConnection, bool)
 	GetActiveConnections() int
+	GetActiveChannels() int
 
 	// 新增的清晰接口方法
 	// CreateConnection 创建新连接

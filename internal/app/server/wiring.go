@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 	"tunnox-core/api/proto/bridge"
+	"tunnox-core/internal/api"
 	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/protocol"
@@ -45,6 +46,12 @@ func (s *Server) registerServices() {
 	if s.bridgeManager != nil {
 		bridgeService := NewBridgeService("Bridge-Manager", s.bridgeManager)
 		s.serviceManager.RegisterService(bridgeService)
+	}
+
+	// 注册 Management API 服务（如果已初始化）
+	if s.apiServer != nil {
+		apiService := NewManagementAPIService("Management-API", s.apiServer)
+		s.serviceManager.RegisterService(apiService)
 	}
 }
 
@@ -220,5 +227,42 @@ func (s *Server) getEnabledProtocols() map[string]ProtocolConfig {
 	}
 
 	return enabled
+}
+
+// createManagementAPI 创建 Management API 服务器
+func (s *Server) createManagementAPI(ctx context.Context) *api.ManagementAPIServer {
+	// 将 map[string]interface{} 转换为具体类型
+	authConfig := api.AuthConfig{}
+	if authType, ok := s.config.ManagementAPI.Auth["type"].(string); ok {
+		authConfig.Type = authType
+	}
+	if secret, ok := s.config.ManagementAPI.Auth["secret"].(string); ok {
+		authConfig.Secret = secret
+	}
+
+	corsConfig := api.CORSConfig{}
+	if enabled, ok := s.config.ManagementAPI.CORS["enabled"].(bool); ok {
+		corsConfig.Enabled = enabled
+	}
+	if origins, ok := s.config.ManagementAPI.CORS["allowed_origins"].([]string); ok {
+		corsConfig.AllowedOrigins = origins
+	}
+
+	rateLimitConfig := api.RateLimitConfig{}
+	if enabled, ok := s.config.ManagementAPI.RateLimit["enabled"].(bool); ok {
+		rateLimitConfig.Enabled = enabled
+	}
+
+	apiConfig := &api.APIConfig{
+		Enabled:    s.config.ManagementAPI.Enabled,
+		ListenAddr: s.config.ManagementAPI.ListenAddr,
+		Auth:       authConfig,
+		CORS:       corsConfig,
+		RateLimit:  rateLimitConfig,
+	}
+
+	apiServer := api.NewManagementAPIServer(ctx, apiConfig, s.cloudControl)
+	utils.Infof("Management API initialized: listen_addr=%s", apiConfig.ListenAddr)
+	return apiServer
 }
 
