@@ -77,9 +77,77 @@ type UDPIngressConfig struct {
 	Listeners []UDPIngressListenerConfig `yaml:"listeners"`
 }
 
+// StorageConfig 存储配置
+type StorageConfig struct {
+	Type   string                   `yaml:"type"`   // memory | redis | hybrid
+	Redis  RedisStorageConfig       `yaml:"redis"`  // Redis存储配置
+	Hybrid HybridStorageConfigYAML  `yaml:"hybrid"` // 混合存储配置
+}
+
+// RedisStorageConfig Redis存储配置
+type RedisStorageConfig struct {
+	Addr         string `yaml:"addr"`
+	Password     string `yaml:"password"`
+	DB           int    `yaml:"db"`
+	PoolSize     int    `yaml:"pool_size"`
+	MaxRetries   int    `yaml:"max_retries"`
+	DialTimeout  int    `yaml:"dial_timeout"`  // 秒
+	ReadTimeout  int    `yaml:"read_timeout"`  // 秒
+	WriteTimeout int    `yaml:"write_timeout"` // 秒
+}
+
+// HybridStorageConfigYAML 混合存储YAML配置
+type HybridStorageConfigYAML struct {
+	CacheType            string                  `yaml:"cache_type"` // memory | redis
+	EnablePersistent     bool                    `yaml:"enable_persistent"`
+	PersistentPrefixes   []string                `yaml:"persistent_prefixes"`
+	RuntimePrefixes      []string                `yaml:"runtime_prefixes"`
+	DefaultPersistentTTL int64                   `yaml:"default_persistent_ttl"` // 秒
+	DefaultRuntimeTTL    int64                   `yaml:"default_runtime_ttl"`    // 秒
+	Remote               RemoteStorageConfigYAML `yaml:"remote"`
+}
+
+// RemoteStorageConfigYAML 远程存储YAML配置
+type RemoteStorageConfigYAML struct {
+	Type string                `yaml:"type"` // grpc | http
+	GRPC GRPCStorageConfigYAML `yaml:"grpc"`
+	HTTP HTTPStorageConfigYAML `yaml:"http"`
+}
+
+// GRPCStorageConfigYAML gRPC存储YAML配置
+type GRPCStorageConfigYAML struct {
+	Address    string        `yaml:"address"`
+	Timeout    int           `yaml:"timeout"` // 秒
+	MaxRetries int           `yaml:"max_retries"`
+	TLS        TLSConfigYAML `yaml:"tls"`
+}
+
+// HTTPStorageConfigYAML HTTP存储YAML配置
+type HTTPStorageConfigYAML struct {
+	BaseURL    string         `yaml:"base_url"`
+	Timeout    int            `yaml:"timeout"` // 秒
+	MaxRetries int            `yaml:"max_retries"`
+	Auth       AuthConfigYAML `yaml:"auth"`
+}
+
+// TLSConfigYAML TLS配置
+type TLSConfigYAML struct {
+	Enabled  bool   `yaml:"enabled"`
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+	CAFile   string `yaml:"ca_file"`
+}
+
+// AuthConfigYAML 认证配置
+type AuthConfigYAML struct {
+	Type  string `yaml:"type"`  // bearer | basic | none
+	Token string `yaml:"token"`
+}
+
 // Config 应用配置
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
+	Storage       StorageConfig       `yaml:"storage"` // 存储配置
 	Log           utils.LogConfig     `yaml:"log"`
 	Cloud         CloudConfig         `yaml:"cloud"`
 	MessageBroker MessageBrokerConfig `yaml:"message_broker"`
@@ -119,6 +187,11 @@ func LoadConfig(configPath string) (*Config, error) {
 
 // ValidateConfig 验证配置
 func ValidateConfig(config *Config) error {
+	// 验证存储配置
+	if err := validateStorageConfig(&config.Storage); err != nil {
+		return fmt.Errorf("invalid storage config: %w", err)
+	}
+	
 	// 验证服务器配置
 	if config.Server.Host == "" {
 		config.Server.Host = "0.0.0.0"
@@ -190,6 +263,126 @@ func ValidateConfig(config *Config) error {
 	return nil
 }
 
+// validateStorageConfig 验证存储配置
+func validateStorageConfig(config *StorageConfig) error {
+	// 如果未配置，使用默认值
+	if config.Type == "" {
+		config.Type = "hybrid"
+	}
+	
+	// 验证存储类型
+	validTypes := []string{"memory", "redis", "hybrid"}
+	if !containsString(validTypes, config.Type) {
+		return fmt.Errorf("invalid storage type: %s, must be one of: %v", config.Type, validTypes)
+	}
+	
+	// 如果是 Redis，验证 Redis 配置
+	if config.Type == "redis" {
+		if config.Redis.Addr == "" {
+			return fmt.Errorf("redis.addr is required when storage type is redis")
+		}
+		// 设置默认值
+		if config.Redis.PoolSize <= 0 {
+			config.Redis.PoolSize = 10
+		}
+		if config.Redis.MaxRetries <= 0 {
+			config.Redis.MaxRetries = 3
+		}
+		if config.Redis.DialTimeout <= 0 {
+			config.Redis.DialTimeout = 5
+		}
+		if config.Redis.ReadTimeout <= 0 {
+			config.Redis.ReadTimeout = 3
+		}
+		if config.Redis.WriteTimeout <= 0 {
+			config.Redis.WriteTimeout = 3
+		}
+	}
+	
+	// 如果是 Hybrid，验证 Hybrid 配置
+	if config.Type == "hybrid" {
+		// 设置默认缓存类型
+		if config.Hybrid.CacheType == "" {
+			config.Hybrid.CacheType = "memory"
+		}
+		
+		if config.Hybrid.CacheType != "memory" && config.Hybrid.CacheType != "redis" {
+			return fmt.Errorf("invalid hybrid.cache_type: %s, must be 'memory' or 'redis'", config.Hybrid.CacheType)
+		}
+		
+		if config.Hybrid.CacheType == "redis" && config.Redis.Addr == "" {
+			return fmt.Errorf("redis.addr is required when hybrid.cache_type is redis")
+		}
+		
+		// 设置默认前缀
+		if len(config.Hybrid.PersistentPrefixes) == 0 {
+			config.Hybrid.PersistentPrefixes = DefaultPersistentPrefixes()
+		}
+		if len(config.Hybrid.RuntimePrefixes) == 0 {
+			config.Hybrid.RuntimePrefixes = DefaultRuntimePrefixes()
+		}
+		
+		// 设置默认 TTL
+		if config.Hybrid.DefaultRuntimeTTL <= 0 {
+			config.Hybrid.DefaultRuntimeTTL = 86400 // 24小时
+		}
+		
+		if config.Hybrid.EnablePersistent {
+			if config.Hybrid.Remote.Type == "" {
+				config.Hybrid.Remote.Type = "grpc"
+			}
+			
+			if config.Hybrid.Remote.Type != "grpc" && config.Hybrid.Remote.Type != "http" {
+				return fmt.Errorf("invalid hybrid.remote.type: %s, must be 'grpc' or 'http'", config.Hybrid.Remote.Type)
+			}
+			
+			if config.Hybrid.Remote.Type == "grpc" && config.Hybrid.Remote.GRPC.Address == "" {
+				return fmt.Errorf("hybrid.remote.grpc.address is required when enable_persistent is true")
+			}
+			
+			// 设置默认超时
+			if config.Hybrid.Remote.GRPC.Timeout <= 0 {
+				config.Hybrid.Remote.GRPC.Timeout = 5
+			}
+			if config.Hybrid.Remote.GRPC.MaxRetries <= 0 {
+				config.Hybrid.Remote.GRPC.MaxRetries = 3
+			}
+		}
+	}
+	
+	return nil
+}
+
+// containsString 检查字符串切片是否包含指定字符串
+func containsString(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// DefaultPersistentPrefixes 默认持久化前缀
+func DefaultPersistentPrefixes() []string {
+	return []string{
+		"tunnox:user:",
+		"tunnox:client:",
+		"tunnox:mapping:",
+		"tunnox:quota:",
+	}
+}
+
+// DefaultRuntimePrefixes 默认运行时前缀
+func DefaultRuntimePrefixes() []string {
+	return []string{
+		"tunnox:runtime:",
+		"tunnox:session:",
+		"tunnox:connection:",
+		"tunnox:id:used:",
+	}
+}
+
 // GetDefaultConfig 获取默认配置
 func GetDefaultConfig() *Config {
 	return &Config{
@@ -220,6 +413,17 @@ func GetDefaultConfig() *Config {
 					Port:    8083,
 					Host:    "0.0.0.0",
 				},
+			},
+		},
+		Storage: StorageConfig{
+			Type: "hybrid",
+			Hybrid: HybridStorageConfigYAML{
+				CacheType:            "memory",
+				EnablePersistent:     false,
+				PersistentPrefixes:   DefaultPersistentPrefixes(),
+				RuntimePrefixes:      DefaultRuntimePrefixes(),
+				DefaultPersistentTTL: 0,     // 永久
+				DefaultRuntimeTTL:    86400, // 24小时
 			},
 		},
 		Log: utils.LogConfig{

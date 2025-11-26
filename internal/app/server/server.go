@@ -63,7 +63,12 @@ func New(config *Config, parentCtx context.Context) *Server {
 	}
 
 	// 创建存储和ID管理器
-	server.storage = storage.NewMemoryStorage(parentCtx)
+	storageFactory := storage.NewStorageFactory(parentCtx)
+	serverStorage, err := createStorage(storageFactory, &config.Storage)
+	if err != nil {
+		utils.Fatalf("Failed to create storage: %v", err)
+	}
+	server.storage = serverStorage
 	server.idManager = idgen.NewIDManager(server.storage, parentCtx)
 
 	// 创建 SessionManager
