@@ -205,43 +205,10 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 	utils.Infof("Tunnel[%s]: extracted sourceConn=%v (LocalAddr=%v, RemoteAddr=%v)",
 		req.TunnelID, netConn, netConn.LocalAddr(), netConn.RemoteAddr())
 
-	// 获取映射配置（用于带宽限制等商业特性）
-	var bandwidthLimit int64
-	if s.cloudControl != nil {
-		if mappingInterface, err := s.cloudControl.GetPortMapping(req.MappingID); err == nil {
-			if mapping, ok := mappingInterface.(*models.PortMapping); ok {
-				bandwidthLimit = mapping.Config.BandwidthLimit
-			}
-		}
+	if err := s.startSourceBridge(req, netConn, conn.Stream); err != nil {
+		utils.Errorf("Tunnel[%s]: failed to start bridge: %v", req.TunnelID, err)
+		return err
 	}
-
-	// 创建隧道桥接器（带商业特性）
-	bridge = NewTunnelBridge(&TunnelBridgeConfig{
-		TunnelID:       req.TunnelID,
-		MappingID:      req.MappingID,
-		SourceConn:     netConn,
-		SourceStream:   conn.Stream,
-		BandwidthLimit: bandwidthLimit,
-		CloudControl:   s.cloudControl,
-	})
-	s.bridgeLock.Lock()
-	s.tunnelBridges[req.TunnelID] = bridge
-	s.bridgeLock.Unlock()
-
-	// ✅ 通知目标客户端建立隧道连接
-	go s.notifyTargetClientToOpenTunnel(req)
-
-	// 启动桥接（在新goroutine中，阻塞直到连接关闭）
-	go func() {
-		if err := bridge.Start(); err != nil {
-			utils.Errorf("Tunnel[%s]: bridge failed: %v", req.TunnelID, err)
-		}
-
-		// 清理bridge
-		s.bridgeLock.Lock()
-		delete(s.tunnelBridges, req.TunnelID)
-		s.bridgeLock.Unlock()
-	}()
 
 	// ✅ 返回特殊错误，让ProcessPacketLoop停止处理
 	return fmt.Errorf("tunnel source connected, switching to stream mode")

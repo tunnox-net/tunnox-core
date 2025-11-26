@@ -160,9 +160,17 @@ func isIgnorableError(err error) bool {
 // handleConnection 通用连接处理逻辑
 func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWriteCloser) {
 	shouldCloseConn := true // 默认关闭连接
+	
+	// 检查是否为持久连接（如UDP会话连接）
+	if persistentConn, ok := conn.(interface{ IsPersistent() bool }); ok && persistentConn.IsPersistent() {
+		shouldCloseConn = false
+		utils.Debugf("%s adapter: persistent connection detected, will not close after handling", adapter.getConnectionType())
+	}
+	
 	defer func() {
-		// ✅ 只有非隧道连接才在此处关闭
+		// ✅ 只有非隧道连接且非持久连接才在此处关闭
 		// 隧道连接交给TunnelBridge管理生命周期
+		// 持久连接（如UDP会话）由会话管理器管理生命周期
 		if shouldCloseConn {
 			if closer, ok := conn.(interface{ Close() error }); ok {
 				_ = closer.Close()

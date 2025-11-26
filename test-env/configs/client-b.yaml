@@ -5,7 +5,7 @@ anonymous: true
 device_id: "test-client-b"
 
 server:
-  address: "localhost:7000"
+  address: "localhost:7001"
   protocol: "tcp"
 
 # 端口映射配置（空数组，将通过 Management API 动态配置）

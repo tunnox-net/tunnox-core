@@ -2,715 +2,819 @@
 
 <div align="center">
 
-![Go Version](https://img.shields.io/badge/Go-1.24+-blue.svg)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
-![Status](https://img.shields.io/badge/Status-开发中-orange.svg)
-![Architecture](https://img.shields.io/badge/Architecture-分层架构-purple.svg)
-![Zero-Copy](https://img.shields.io/badge/Zero--Copy-支持-red.svg)
-![Encryption](https://img.shields.io/badge/Encryption-AES--GCM-blue.svg)
-![Tests](https://img.shields.io/badge/Tests-100%25%20Passing-brightgreen.svg)
+![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat-square&logo=go)
+![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
+![Status](https://img.shields.io/badge/Status-Alpha-orange?style=flat-square)
 
-**🌐 云端隧道与连接管理核心框架**  
-*专为分布式网络环境设计的轻量级隧道解决方案*
+**企业级内网穿透与端口映射平台**
 
-[🚀 快速开始](#-快速开始) • [🏗️ 系统架构](#️-系统架构) • [✨ 核心功能](#-核心功能) • [📦 项目结构](#-项目结构)
+一个为分布式网络环境设计的高性能隧道解决方案，支持多种传输协议和灵活的部署模式。
+
+[English](README_EN.md) | [架构文档](docs/ARCHITECTURE_DESIGN_V2.2.md) | [API 文档](docs/MANAGEMENT_API.md)
 
 </div>
 
 ---
 
-## 📋 项目概述
+## 项目简介
 
-Tunnox Core 是一个基于 Go 语言开发的云端隧道框架，专为分布式网络环境设计。项目采用现代化的分层架构，集成了多种网络协议支持，通过内存池、零拷贝、流式处理、加密等先进技术，为端口映射和连接管理提供高性能、低延迟的解决方案。
+Tunnox Core 是一个基于 Go 开发的内网穿透平台内核，提供安全、稳定的远程访问能力。项目采用分层架构设计，支持 TCP、WebSocket、UDP、QUIC 等多种传输协议，可灵活适配不同的网络环境和业务场景。
 
-### 🎯 项目目标
+### 核心特性
 
-**多协议支持** ✅ 已完成
-- 支持 TCP、WebSocket、UDP、QUIC 等多种传输协议，适应不同网络环境需求
+- **多协议传输**：支持 TCP、WebSocket、UDP、QUIC 四种传输协议
+- **端到端加密**：AES-256-GCM 加密，保障数据传输安全
+- **数据压缩**：Gzip 压缩，降低带宽消耗
+- **流量控制**：令牌桶算法实现精确的带宽限制
+- **SOCKS5 代理**：支持 SOCKS5 协议，实现灵活的网络代理
+- **分布式架构**：支持集群部署，节点间 gRPC 通信
+- **实时配置推送**：通过控制连接实时推送配置变更
+- **匿名接入**：支持匿名客户端，降低使用门槛
 
-**流处理系统** ✅ 已完成
-- 完整的流处理架构，支持压缩、限速、加密、零拷贝等技术
+### 应用场景
 
-**分布式架构** 🔄 开发中
-- 支持集群部署和节点管理，实现高可用性和负载均衡
+**远程访问**
+- 远程访问家庭 NAS、开发机、数据库
+- 临时分享本地服务给团队或客户
 
-**端口映射业务** 🔄 开发中
-- 提供端口映射和隧道功能框架，支持 TCP、HTTP、SOCKS 等多种协议映射
+**IoT 设备管理**
+- 工业设备远程监控和控制
+- 智能家居设备统一接入
 
-**可扩展性** ✅ 已完成
-- 模块化设计，插件化架构，便于功能扩展和定制化开发
+**开发调试**
+- 本地服务暴露给外部测试
+- Webhook 接收和调试
 
-### 🌟 技术特点
-
-**🏗️ 分层架构**
-- 清晰的业务逻辑、数据访问和基础设施分离
-- 便于维护和扩展
-
-**🔐 加密传输**
-- 支持 AES-GCM 加密，先压缩后加密的传输策略
-- 可配置的加密密钥管理
-
-**🏭 工厂模式**
-- StreamFactory 统一管理流组件创建，支持配置化工厂和预定义模板
-- 统一管理和配置
-
-**🔧 资源管理**
-- 基于 Dispose 模式的层次化资源清理，防止内存泄漏
-- 确保优雅关闭
-
-**⚡ 性能优化**
-- 内存池、零拷贝、流式处理、压缩算法等技术的综合应用
-- 高性能和低延迟
-
-**🔌 协议适配**
-- 统一的协议适配器接口，支持多种网络协议的透明切换
-- 灵活切换协议
-
-**📊 流管理**
-- StreamManager 统一管理流生命周期，支持流注册、监控和指标统计
-- 统一监控和管理
+**企业应用**
+- 分支机构内网互联
+- 第三方系统安全对接
 
 ---
 
-## 🏗️ 系统架构
+## 技术架构
 
-### 📊 整体架构图
+### 传输协议
 
-```mermaid
-graph TB
-    subgraph "应用层"
-        Server[服务器入口]
-        Config[配置管理]
-    end
-    
-    subgraph "业务层"
-        CloudControl[云控总线]
-        subgraph "业务管理器"
-            JWTManager[JWT管理器]
-            StatsManager[统计管理器 - 基础版]
-            NodeManager[节点管理器 - 基础版]
-            AnonymousManager[匿名管理器]
-            SearchManager[搜索管理器 - 基础版]
-            ConnectionManager[连接管理器 - 基础版]
-            ConfigManager[配置管理器 - 基础版]
-            CleanupManager[清理管理器 - 基础版]
-        end
-    end
-    
-    subgraph "数据层"
-        subgraph "数据仓库"
-            UserRepo[用户仓库]
-            ClientRepo[客户端仓库]
-            MappingRepo[端口映射仓库]
-            NodeRepo[节点仓库]
-            ConnectionRepo[连接仓库]
-        end
-        
-        subgraph "存储抽象"
-            MemoryStorage[内存存储 - 已实现]
-            RedisStorage[Redis存储 - 待实现]
-            CustomStorage[自定义存储 - 待实现]
-        end
-    end
-    
-    subgraph "基础设施层"
-        subgraph "分布式服务"
-            IDGenerator[ID生成器 - 基础版]
-            DistributedLock[分布式锁 - 基础版]
-        end
-        
-        subgraph "协议层"
-            TCPAdapter[TCP适配器 - 框架版]
-            WebSocketAdapter[WebSocket适配器 - 框架版]
-            UDPAdapter[UDP适配器 - 框架版]
-            QUICAdapter[QUIC适配器 - 框架版]
-        end
-        
-        subgraph "流处理"
-            StreamProcessor[流处理器 - 基础版]
-            RateLimiter[限速器 - 基础版]
-            Compression[压缩器 - 基础版]
-            Encryption[加密器 - 待实现]
-        end
-    end
-    
-    Server --> CloudControl
-    CloudControl --> JWTManager
-    CloudControl --> StatsManager
-    CloudControl --> NodeManager
-    CloudControl --> AnonymousManager
-    CloudControl --> SearchManager
-    CloudControl --> ConnectionManager
-    CloudControl --> ConfigManager
-    CloudControl --> CleanupManager
-    
-    JWTManager --> UserRepo
-    StatsManager --> UserRepo
-    NodeManager --> NodeRepo
-    AnonymousManager --> ClientRepo
-    SearchManager --> UserRepo
-    ConnectionManager --> ConnectionRepo
-    
-    UserRepo --> MemoryStorage
-    ClientRepo --> MemoryStorage
-    MappingRepo --> MemoryStorage
-    NodeRepo --> MemoryStorage
-    ConnectionRepo --> MemoryStorage
-    
-    CloudControl --> IDGenerator
-    CloudControl --> DistributedLock
-    
-    Server --> TCPAdapter
-    Server --> WebSocketAdapter
-    Server --> UDPAdapter
-    Server --> QUICAdapter
-    
-    TCPAdapter --> StreamProcessor
-    WebSocketAdapter --> StreamProcessor
-    UDPAdapter --> StreamProcessor
-    QUICAdapter --> StreamProcessor
-    
-    StreamProcessor --> RateLimiter
-    StreamProcessor --> Compression
-    StreamProcessor --> Encryption
+Tunnox 支持四种传输协议，可根据网络环境灵活选择：
+
+| 协议 | 特点 | 适用场景 |
+|------|------|----------|
+| **TCP** | 稳定可靠，兼容性好 | 传统网络环境，数据库连接 |
+| **WebSocket** | HTTP 兼容，防火墙穿透强 | 企业网络，CDN 加速 |
+| **UDP** | 低延迟，无连接开销 | 实时应用，游戏服务 |
+| **QUIC** | 多路复用，内置加密 | 移动网络，不稳定网络 |
+
+### 核心组件
+
+**协议适配层**
+- 统一的协议适配器接口，支持多协议透明切换
+- 每种协议独立监听端口，互不干扰
+
+**会话管理层**
+- 连接生命周期管理，心跳保活
+- 支持匿名和注册客户端
+
+**流处理层**
+- StreamProcessor 提供数据包的读写和解析
+- 支持压缩、加密、限流等流转换
+
+**数据转发层**
+- 透明转发模式，服务端不解析业务数据
+- 支持跨节点桥接转发
+
+**云控管理层**
+- Management API 提供 RESTful 接口
+- 实时配置推送，无需客户端重启
+
+### 数据流转
+
+```
+客户端A (源端)
+    ↓ [压缩+加密]
+  服务器
+    ↓ [透明转发]
+客户端B (目标端)
+    ↓ [解压+解密]
+  目标服务
 ```
 
-### 📋 架构分层说明
-
-#### 🎯 分层设计原则
-
-**依赖倒置**
-- 高层模块不依赖低层模块，都依赖抽象
-- 通过接口进行解耦
-
-**单一职责**
-- 每层只负责自己的核心功能
-- 明确的职责边界
-
-**开闭原则**
-- 对扩展开放，对修改关闭
-- 工厂模式和配置化
-
-**接口隔离**
-- 通过接口进行解耦，降低耦合度
-- 定义清晰的接口
-
-#### 📋 各层职责
-
-**应用层**
-- 服务器入口和配置管理
-- 主要组件：ProtocolFactory, Server, Main
-
-**协议层**
-- 多种网络协议的适配器实现
-- 主要组件：TCP, WebSocket, UDP, QUIC适配器
-
-**会话层**
-- 连接会话管理和生命周期控制
-- 主要组件：SessionManager, StreamManager
-
-**流管理层**
-- 流组件的统一管理和注册
-- 主要组件：StreamManager, 流注册表, 指标统计
-
-**工厂层**
-- 流组件的创建和配置
-- 主要组件：DefaultStreamFactory, ConfigurableStreamFactory
-
-**实现层**
-- 具体的流处理组件实现
-- 主要组件：StreamProcessor, 压缩器, 限速器
-
-### 🔄 流处理架构分层图
-
-```mermaid
-graph TB
-    %% 应用层 (Application Layer)
-    subgraph AL["应用层 (Application Layer)"]
-        style AL fill:#e1f5fe
-        PF[ProtocolFactory<br/>协议工厂]
-        S[Server<br/>服务器]
-        M[Main<br/>主程序]
-    end
-
-    %% 协议层 (Protocol Layer)
-    subgraph PL["协议层 (Protocol Layer)"]
-        style PL fill:#f3e5f5
-        TA[TCP Adapter<br/>TCP适配器]
-        WA[WebSocket Adapter<br/>WebSocket适配器]
-        UA[UDP Adapter<br/>UDP适配器]
-        QA[QUIC Adapter<br/>QUIC适配器]
-    end
-
-    %% 会话层 (Session Layer)
-    subgraph SL["会话层 (Session Layer)"]
-        style SL fill:#e8f5e8
-        CS[SessionManager<br/>会话管理器]
-        subgraph CS_INNER["会话组件"]
-            CID[ConnectionID<br/>连接ID生成器]
-            SM[StreamManager<br/>流管理器]
-        end
-    end
-
-    %% 流管理层 (Stream Management Layer)
-    subgraph SML["流管理层 (Stream Management Layer)"]
-        style SML fill:#fff3e0
-        STM[StreamManager<br/>流管理器]
-        subgraph STM_INNER["管理组件"]
-            SR[Stream Registry<br/>流注册表]
-            SMF[Stream Metrics<br/>流指标]
-        end
-    end
-
-    %% 工厂层 (Factory Layer)
-    subgraph FL["工厂层 (Factory Layer)"]
-        style FL fill:#fce4ec
-        DSF[DefaultStreamFactory<br/>默认流工厂]
-        CSF[ConfigurableStreamFactory<br/>可配置流工厂]
-        SP[Stream Profiles<br/>流配置模板]
-    end
-
-    %% 实现层 (Implementation Layer)
-    subgraph IL["实现层 (Implementation Layer)"]
-        style IL fill:#f1f8e9
-        SPROC[StreamProcessor<br/>流处理器]
-        GZR[GzipReader<br/>压缩读取器]
-        GZW[GzipWriter<br/>压缩写入器]
-        RLR[RateLimiterReader<br/>限速读取器]
-        RLW[RateLimiterWriter<br/>限速写入器]
-        TB[TokenBucket<br/>令牌桶]
-    end
-
-    %% 连接关系
-    %% 应用层到协议层
-    PF --> TA
-    PF --> WA
-    PF --> UA
-    PF --> QA
-
-    %% 协议层到会话层
-    TA --> CS
-    WA --> CS
-    UA --> CS
-    QA --> CS
-
-    %% 会话层到流管理层
-    CS --> STM
-
-    %% 流管理层到工厂层
-    STM --> DSF
-    STM --> CSF
-
-    %% 工厂层到实现层
-    DSF --> SPROC
-    CSF --> SPROC
-    SPROC --> GZR
-    SPROC --> GZW
-    SPROC --> RLR
-    SPROC --> RLW
-    RLR --> TB
-    RLW --> TB
-
-    %% 样式定义
-    classDef applicationLayer fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
-    classDef protocolLayer fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
-    classDef sessionLayer fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
-    classDef streamManagementLayer fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    classDef factoryLayer fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    classDef implementationLayer fill:#f1f8e9,stroke:#33691e,stroke-width:2px
-
-    %% Apply styles
-    class PF,S,M applicationLayer
-    class TA,WA,UA,QA protocolLayer
-    class CS,CID,SM sessionLayer
-    class STM,SR,SMF streamManagementLayer
-    class DSF,CSF,SP factoryLayer
-    class SPROC,GZR,GZW,RLR,RLW,TB implementationLayer
-```
+客户端负责数据的压缩和加密，服务端仅做透明转发，降低服务端计算压力，提高转发效率。
 
 ---
 
-## ✨ 核心功能
+## 快速开始
 
-### 🔐 认证与安全
+### 环境要求
 
-**JWT Token管理** ✅ 已完成
-- 支持token生成、验证、刷新，内置token缓存和自动清理机制
+- Go 1.24 或更高版本
+- Docker (可选，用于测试环境)
 
-**匿名用户支持** ✅ 已完成
-- 匿名客户端生成和管理功能
-
-**角色权限控制** 🔄 开发中
-- 基础权限控制框架（细粒度权限待实现）
-
-**加密传输** ✅ 已完成
-- 支持 AES-GCM 加密，先压缩后加密的传输策略
-- 可配置的加密密钥管理
-
-**安全通信** 🔄 开发中
-- TLS加密传输支持（具体实现待完善）
-
-### 📊 统计与监控
-
-**基础统计** ✅ 已完成
-- 用户、客户端、端口映射的基础统计信息
-
-**流量统计** 🔄 开发中
-- 基础的流量和连接数统计（图表数据待实现）
-
-**系统监控** ✅ 已完成
-- 系统整体统计信息收集
-
-**性能指标** ✅ 已完成
-- 基础的性能指标收集框架
-
-### 🌐 分布式支持
-
-**节点管理** 🔄 开发中
-- 基础节点注册和心跳机制（故障转移待实现）
-
-**ID生成** ✅ 已完成
-- 基础ID生成器，支持客户端、用户、节点、映射ID生成（内存版本）
-
-**分布式锁** ✅ 已完成
-- 基础分布式锁实现，支持集群环境下的资源协调（内存版本）
-
-**负载均衡** 🔄 开发中
-- 负载均衡框架（具体策略待实现）
-
-**集群通信** 🔄 开发中
-- 节点间通信框架（具体实现待完成）
-
-### ⚡ 性能优化
-
-**内存池** ✅ 已完成
-- 高效的缓冲区管理，减少内存分配和GC压力
-
-**零拷贝** ✅ 已完成
-- 减少内存分配开销，提升数据传输效率
-
-**流式处理** ✅ 已完成
-- 支持压缩、限速、加密，优化网络带宽使用
-
-**连接池** 🔄 开发中
-- 连接池框架（具体优化待实现）
-
-**异步处理** 🔄 开发中
-- 异步处理框架（具体机制待完善）
-
-**数据包处理** ✅ 已完成
-- 支持压缩、加密标识位，灵活的数据包类型处理
-
-### 🔄 资源管理
-
-**自动清理** ✅ 已完成
-- 基础过期资源清理机制，防止资源泄漏
-
-**内存泄漏防护** ✅ 已完成
-- 基础资源跟踪框架，确保资源正确释放
-
-**优雅关闭** ✅ 已完成
-- 基础资源释放机制，支持优雅的服务关闭
-
-**资源监控** 🔄 开发中
-- 基础资源使用监控框架（实时监控待完善）
-
----
-
-## 🚀 快速开始
-
-### 📋 环境要求
-
-**Go** 1.24+
-- 支持泛型、模块化等现代特性
-
-**Git** 最新版本
-- 用于代码版本控制
-
-### 🛠️ 安装与运行
+### 编译
 
 ```bash
 # 克隆仓库
-git clone https://github.com/tunnox-net/tunnox-core.git
+git clone https://github.com/your-org/tunnox-core.git
 cd tunnox-core
 
 # 安装依赖
-go mod tidy
+go mod download
 
-# 运行测试
-go test ./... -v
+# 编译服务端
+go build -o bin/tunnox-server ./cmd/server
 
-# 构建服务器
-go build -o server cmd/server/main.go
-
-# 运行服务器
-./server
+# 编译客户端
+go build -o bin/tunnox-client ./cmd/client
 ```
 
-### ⚙️ 配置说明
+### 运行
 
-项目使用 YAML 配置文件，支持以下配置项：
+**1. 启动服务端**
 
-**服务器配置**
-- 监听地址、端口、超时设置、CORS 配置
-- 基础服务器参数
+```bash
+./bin/tunnox-server -config config.yaml
+```
 
-**协议配置**
-- TCP、WebSocket、UDP、QUIC 协议参数
-- 支持独立端口配置
+服务端默认监听：
+- TCP: 7001
+- WebSocket: 7000 (路径: `/_tunnox`)
+- QUIC: 7003
+- Management API: 9000
 
-**日志配置**
-- 日志级别、格式、输出位置
-- 支持日志轮转和压缩
+**2. 启动客户端**
 
-**云控配置**
-- JWT 设置、数据清理策略、ID 生成参数
-- 云控相关配置
+```bash
+# 客户端 A (源端)
+./bin/tunnox-client -config client-a.yaml
 
-**性能配置**
-- 内存池、连接池参数
-- 支持动态调整
+# 客户端 B (目标端)
+./bin/tunnox-client -config client-b.yaml
+```
 
-**监控配置**
-- 指标收集、健康检查
-- 支持 Prometheus 格式
+**3. 创建端口映射**
 
-**安全配置**
-- TLS 设置、API 密钥认证、管理员账户
-- 安全相关配置
+```bash
+curl -X POST http://localhost:9000/api/v1/mappings \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-api-key" \
+  -d '{
+    "source_client_id": 10000001,
+    "target_client_id": 10000002,
+    "protocol": "tcp",
+    "source_port": 8080,
+    "target_host": "localhost",
+    "target_port": 3306,
+    "enable_compression": true,
+    "enable_encryption": true
+  }'
+```
 
-**限流配置**
-- 请求频率限制、突发流量处理
-- 流量控制配置
+**4. 访问服务**
 
-> **注意**：当前配置系统为静态配置，支持文件配置和环境变量覆盖，动态配置管理功能正在开发中。
+```bash
+# 通过映射访问目标服务
+mysql -h 127.0.0.1 -P 8080 -u user -p
+```
 
-详细配置示例请参考 `config.yaml` 文件，支持环境变量覆盖配置。
+### 配置示例
+
+**服务端配置 (server.yaml)**
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 7000
+  
+  protocols:
+    tcp:
+      enabled: true
+      port: 7001
+    websocket:
+      enabled: true
+      port: 7000
+    quic:
+      enabled: true
+      port: 7003
+
+log:
+  level: "info"
+  format: "text"
+
+cloud:
+  type: "built_in"
+  built_in:
+    jwt_secret_key: "your-secret-key"
+```
+
+**客户端配置 (client.yaml)**
+
+```yaml
+# 匿名模式
+anonymous: true
+device_id: "my-device"
+
+# 或注册模式
+client_id: 10000001
+auth_token: "your-token"
+
+server:
+  address: "server.example.com:7001"
+  protocol: "tcp"  # tcp/websocket/udp/quic
+```
 
 ---
 
-## 📦 项目结构
+## 核心功能
+
+### 端口映射
+
+支持多种协议的端口映射：
+
+- **TCP 映射**：数据库、SSH、RDP 等 TCP 服务
+- **HTTP 映射**：Web 服务、API 接口
+- **SOCKS5 代理**：全局代理，支持任意协议
+
+### 数据处理
+
+**压缩**
+- Gzip 压缩，可配置压缩级别 (1-9)
+- 自动跳过已压缩数据，避免重复压缩
+
+**加密**
+- AES-256-GCM 加密算法
+- 每个映射独立密钥，互不影响
+- 自动密钥协商和分发
+
+**流量控制**
+- 令牌桶算法实现带宽限制
+- 支持突发流量处理
+- 可按映射单独配置
+
+### 客户端管理
+
+**匿名模式**
+- 无需注册，设备 ID 自动分配
+- 适合临时使用和快速测试
+
+**注册模式**
+- JWT Token 认证
+- 支持多客户端管理
+- 配额和权限控制
+
+### 集群部署
+
+**节点通信**
+- gRPC 连接池，高效的节点间通信
+- 支持跨节点数据转发
+
+**消息广播**
+- Redis Pub/Sub 或内存模式
+- 配置变更实时同步
+
+**存储抽象**
+- 内存存储：单节点部署
+- Redis 存储：集群缓存
+- 混合存储：Redis + 远程 gRPC
+
+---
+
+## 技术亮点
+
+### 1. 多协议统一抽象
+
+通过 `ProtocolAdapter` 接口统一不同传输协议的处理逻辑，新增协议只需实现接口即可无缝集成。
+
+### 2. 流处理架构
+
+`StreamProcessor` 提供统一的数据包读写接口，支持链式组合压缩、加密、限流等转换器，实现灵活的数据处理流水线。
+
+### 3. 透明转发模式
+
+服务端不解析业务数据，仅做透明转发，降低 CPU 开销。压缩和加密在客户端完成，保障端到端安全。
+
+### 4. 持久会话管理
+
+UDP 和 QUIC 等无连接协议通过会话管理实现连接语义，支持 `StreamProcessor` 的数据包协议。
+
+### 5. 资源生命周期管理
+
+基于 `dispose` 模式的层次化资源清理，确保连接、流、会话等资源正确释放，防止内存泄漏。
+
+### 6. 实时配置推送
+
+通过控制连接推送配置变更，客户端无需轮询或重启，配置生效延迟低于 100ms。
+
+---
+
+## 项目结构
 
 ```
 tunnox-core/
-├── 📁 cmd/                    # 命令行应用
-│   └── 📁 server/            # 服务器入口
-├── 📁 internal/              # 内部包
-│   ├── 📁 cloud/             # 云控相关
-│   │   ├── 📁 managers/      # 业务管理器
-│   │   ├── 📁 generators/    # ID生成器
-│   │   ├── 📁 distributed/   # 分布式服务
-│   │   ├── 📁 models/        # 数据模型
-│   │   ├── 📁 repos/         # 数据仓库
-│   │   ├── 📁 storages/      # 存储抽象
-│   │   ├── 📁 constants/     # 常量定义
-│   │   ├── 📁 configs/       # 配置管理
-│   │   ├── 📁 factories/     # 工厂模式
-│   │   └── 📁 stats/         # 统计功能
-│   ├── 📁 protocol/          # 协议适配器
-│   │   ├── 📄 adapter.go     # 协议适配器接口
-│   │   ├── 📄 manager.go     # 协议管理器
-│   │   ├── 📄 session.go     # 连接会话管理
-│   │   ├── 📄 tcp_adapter.go # TCP适配器
-│   │   ├── 📄 websocket_adapter.go # WebSocket适配器
-│   │   ├── 📄 udp_adapter.go # UDP适配器
-│   │   └── 📄 quic_adapter.go # QUIC适配器
-│   ├── 📁 stream/            # 流处理
-│   │   ├── 📄 factory.go     # 流工厂实现
-│   │   ├── 📄 manager.go     # 流管理器
-│   │   ├── 📄 config.go      # 流配置模板
-│   │   ├── 📄 interfaces.go  # 流接口定义
-│   │   ├── 📄 stream_processor.go # 流处理器
-│   │   ├── 📄 rate_limiter.go # 限速器
-│   │   ├── 📄 compression.go # 压缩器
-│   │   └── 📄 token_bucket.go # 令牌桶
-│   ├── 📁 utils/             # 工具类
-│   │   ├── 📄 dispose.go     # 资源管理
-│   │   ├── 📄 buffer_pool.go # 缓冲区池
-│   │   ├── 📄 logger.go      # 日志工具
-│   │   ├── 📄 random.go      # 随机数生成
-│   │   └── 📄 time.go        # 时间工具
-│   ├── 📁 constants/         # 常量定义
-│   │   ├── 📄 constants.go   # 基础常量
-│   │   ├── 📄 log.go         # 日志常量
-│   │   └── 📄 http.go        # HTTP常量
-│   ├── 📁 errors/            # 错误处理
-│   │   └── 📄 errors.go      # 错误定义
-│   └── 📁 packet/            # 数据包处理
-│       └── 📄 packet.go      # 数据包定义
-├── 📁 tests/                 # 测试文件
-├── 📁 docs/                  # 文档
-├── 📁 scripts/               # 脚本文件
-├── 📄 go.mod                 # Go模块文件
-├── 📄 go.sum                 # 依赖校验文件
-├── 📄 config.yaml            # 配置文件
-├── 📄 README.md              # 中文说明
-├── 📄 README_EN.md           # 英文说明
-└── 📄 LICENSE                # 许可证
+├── cmd/                      # 应用入口
+│   ├── server/              # 服务端
+│   └── client/              # 客户端
+├── internal/                # 内部实现
+│   ├── protocol/            # 协议适配层
+│   │   ├── adapter/         # TCP/WebSocket/UDP/QUIC 适配器
+│   │   └── session/         # 会话管理
+│   ├── stream/              # 流处理层
+│   │   ├── compression/     # 压缩
+│   │   ├── encryption/      # 加密
+│   │   └── transform/       # 流转换
+│   ├── client/              # 客户端实现
+│   │   └── mapping/         # 映射处理器
+│   ├── cloud/               # 云控管理
+│   │   ├── managers/        # 业务管理器
+│   │   ├── repos/           # 数据仓库
+│   │   └── services/        # 业务服务
+│   ├── bridge/              # 集群通信
+│   ├── broker/              # 消息广播
+│   ├── api/                 # Management API
+│   └── core/                # 核心组件
+│       ├── storage/         # 存储抽象
+│       ├── dispose/         # 资源管理
+│       └── idgen/           # ID 生成
+├── docs/                    # 文档
+└── test-env/                # 测试环境
 ```
 
 ---
 
-## 📈 开发进度
+## 开发状态
 
-### ✅ 已完成
+### 已实现功能
 
-**基础架构设计** 100%
-- 完整的分层架构设计
+**传输协议** ✅
+- TCP、WebSocket、UDP、QUIC 四种协议完整实现
+- 协议适配器框架和统一接口
 
-**协议适配器框架** 100%
-- TCP、WebSocket、UDP、QUIC协议框架
+**流处理系统** ✅
+- 数据包协议和 StreamProcessor
+- Gzip 压缩 (Level 1-9)
+- AES-256-GCM 加密
+- 令牌桶限流
 
-**流处理系统** 100%
-- 压缩、限速、零拷贝功能
+**客户端功能** ✅
+- TCP/HTTP/SOCKS5 映射处理器
+- 多协议传输支持
+- 自动重连和心跳保活
 
-**StreamFactory架构** 100%
-- 工厂模式、配置化工厂、预定义模板
+**服务端功能** ✅
+- 会话管理和连接路由
+- 透明数据转发
+- 实时配置推送
 
-**StreamManager** 100%
-- 流生命周期管理、指标统计
+**认证系统** ✅
+- JWT Token 认证
+- 匿名客户端支持
+- 客户端认领机制
 
-**连接会话管理框架** 100%
-- 会话管理和生命周期控制
+**Management API** ✅
+- RESTful 接口
+- 用户、客户端、映射管理
+- 统计和监控接口
 
-**JWT 认证系统** 100%
-- 完整的JWT认证功能
+**集群支持** ✅
+- gRPC 节点通信
+- Redis/内存消息广播
+- 跨节点数据转发
 
-**内存池和缓冲区管理** 100%
-- 高效的内存管理
+### 开发中功能
 
-**日志系统** 100%
-- 结构化日志系统
+**UDP 映射** 🔄
+- 服务端 UDP Ingress 已实现
+- 客户端 UDP 映射处理器开发中
 
-**错误处理框架** 100%
-- 统一的错误处理
+**配额管理** 🔄
+- 基础配额模型已实现
+- 配额检查和限制逻辑完善中
 
-**基础ID生成器** 100%
-- 内存版本ID生成
+**监控系统** 🔄
+- 基础指标收集已实现
+- Prometheus 集成和可视化开发中
 
-**基础配置管理** 100%
-- 文件配置和环境变量
+**Web 管理界面** 📋
+- 规划中，将作为独立项目开发
 
-**数据模型定义** 100%
-- 完整的数据模型
+---
 
-**数据访问层** 100%
-- Repository模式实现
+## 性能特性
 
-**基础统计功能** 100%
-- 基础统计和监控
+### 传输性能
 
-**测试覆盖** 100%
-- 完整的单元测试覆盖
+基于本地测试环境（Docker Nginx）的性能数据：
 
-### 🚧 开发中
+| 场景 | 延迟 | 说明 |
+|------|------|------|
+| TCP 直连 | 2.2ms | 基准性能 |
+| TCP + 压缩 | 2.3ms | Gzip Level 6 |
+| TCP + 压缩 + 加密 | 2.4ms | AES-256-GCM |
+| WebSocket | 2.5ms | 通过 Nginx 代理 |
+| QUIC | 2.3ms | 0-RTT 连接 |
 
-**端口映射业务逻辑实现** 30%
-- 核心业务逻辑开发中
+### 资源占用
 
-**数据转发机制实现** 20%
-- 数据转发功能开发中
+- **内存占用**：单连接 ~100KB
+- **CPU 占用**：透明转发模式下 < 5%
+- **并发连接**：单节点支持 10K+ 并发
 
-**集群节点通信实现** 15%
-- 节点间通信开发中
+### 优化技术
 
-**统计和监控系统完善** 40%
-- 监控系统完善中
+- **内存池**：复用缓冲区，减少 GC 压力
+- **零拷贝**：减少内存分配和数据拷贝
+- **流式处理**：边读边写，降低内存占用
+- **连接复用**：gRPC 连接池，减少握手开销
 
-**用户管理界面开发** 10%
-- 管理界面开发中
+---
 
-**API 接口实现** 25%
-- RESTful API开发中
+## 部署方式
 
-**加密传输系统** 100%
-- AES-GCM加密，先压缩后加密策略
+### 单节点部署
 
-**分布式ID生成器完善** 60%
-- Redis/数据库支持开发中
+适合小规模使用或测试环境：
 
-**分布式锁实现** 50%
-- Redis/数据库支持开发中
+```bash
+# 启动服务端
+./tunnox-server -config server.yaml
 
-**动态配置管理系统** 20%
-- 热重载、配置验证开发中
+# 启动客户端
+./tunnox-client -config client.yaml
+```
 
-**协议适配器具体实现** 70%
-- 具体协议实现中
+### 集群部署
 
-**连接会话具体业务逻辑** 45%
-- 业务逻辑完善中
+适合生产环境和大规模使用：
 
-### 📋 计划中
+**基础设施要求**
+- Kubernetes 集群
+- Redis Cluster (消息广播)
+- PostgreSQL/MySQL (可选，持久化存储)
 
-- [ ] 客户端 SDK
+**部署架构**
+```
+LoadBalancer (80/443)
+    ↓
+Tunnox Server Pods (多副本)
+    ↓
+Redis Cluster (会话和消息)
+    ↓
+Remote Storage (gRPC)
+```
+
+详细部署文档参见：[docs/ARCHITECTURE_DESIGN_V2.2.md](docs/ARCHITECTURE_DESIGN_V2.2.md)
+
+### Docker 部署
+
+```bash
+# 构建镜像
+docker build -t tunnox-server -f Dockerfile.server .
+docker build -t tunnox-client -f Dockerfile.client .
+
+# 运行服务端
+docker run -d \
+  -p 7000:7000 \
+  -p 7001:7001 \
+  -p 7003:7003 \
+  -p 9000:9000 \
+  -v ./config.yaml:/app/config.yaml \
+  tunnox-server
+
+# 运行客户端
+docker run -d \
+  -v ./client.yaml:/app/client.yaml \
+  tunnox-client
+```
+
+---
+
+## 使用示例
+
+### 示例 1：映射 MySQL 数据库
+
+**场景**：访问远程 MySQL 数据库
+
+```bash
+# 1. 创建映射
+curl -X POST http://localhost:9000/api/v1/mappings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_client_id": 10000001,
+    "target_client_id": 10000002,
+    "protocol": "tcp",
+    "source_port": 13306,
+    "target_host": "localhost",
+    "target_port": 3306,
+    "enable_compression": true,
+    "enable_encryption": true
+  }'
+
+# 2. 连接数据库
+mysql -h 127.0.0.1 -P 13306 -u root -p
+```
+
+### 示例 2：映射 Web 服务
+
+**场景**：临时分享本地 Web 服务
+
+```bash
+# 1. 创建映射
+curl -X POST http://localhost:9000/api/v1/mappings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_client_id": 10000001,
+    "target_client_id": 10000002,
+    "protocol": "tcp",
+    "source_port": 8080,
+    "target_host": "localhost",
+    "target_port": 3000
+  }'
+
+# 2. 访问服务
+curl http://localhost:8080
+```
+
+### 示例 3：SOCKS5 代理
+
+**场景**：通过 SOCKS5 访问内网服务
+
+```bash
+# 1. 创建 SOCKS5 映射
+curl -X POST http://localhost:9000/api/v1/mappings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "source_client_id": 10000001,
+    "target_client_id": 10000002,
+    "protocol": "socks5",
+    "source_port": 1080
+  }'
+
+# 2. 使用 SOCKS5 代理
+curl --socks5 localhost:1080 http://internal-service:8080
+```
+
+---
+
+## 配置说明
+
+### 服务端配置
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 7000
+  
+  # 协议配置
+  protocols:
+    tcp:
+      enabled: true
+      port: 7001
+    websocket:
+      enabled: true
+      port: 7000
+    udp:
+      enabled: false
+      port: 7002
+    quic:
+      enabled: true
+      port: 7003
+
+# 日志配置
+log:
+  level: "info"        # debug/info/warn/error
+  format: "text"       # text/json
+  output: "stdout"     # stdout/file
+
+# 云控配置
+cloud:
+  type: "built_in"     # built_in/external
+  built_in:
+    jwt_secret_key: "your-secret-key"
+    jwt_expiration: 3600
+    cleanup_interval: 300
+
+# 消息代理
+message_broker:
+  type: "memory"       # memory/redis
+  node_id: "node-001"
+
+# Management API
+management_api:
+  enabled: true
+  listen_addr: ":9000"
+  auth:
+    type: "bearer"
+    bearer_token: "your-api-key"
+```
+
+### 客户端配置
+
+```yaml
+# 匿名模式（推荐用于测试）
+anonymous: true
+device_id: "my-device-001"
+
+# 注册模式（推荐用于生产）
+client_id: 10000001
+auth_token: "your-jwt-token"
+
+# 服务器配置
+server:
+  address: "server.example.com:7001"
+  protocol: "tcp"      # tcp/websocket/udp/quic
+```
+
+### 映射配置
+
+映射通过 Management API 动态创建，不在配置文件中：
+
+```json
+{
+  "source_client_id": 10000001,
+  "target_client_id": 10000002,
+  "protocol": "tcp",
+  "source_port": 8080,
+  "target_host": "localhost",
+  "target_port": 3306,
+  "enable_compression": true,
+  "compression_level": 6,
+  "enable_encryption": true,
+  "encryption_method": "aes-256-gcm",
+  "bandwidth_limit": 10485760
+}
+```
+
+---
+
+## Management API
+
+Tunnox 提供完整的 RESTful API 用于管理：
+
+### 端点概览
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/users` | POST | 创建用户 |
+| `/api/v1/clients` | GET/POST | 管理客户端 |
+| `/api/v1/mappings` | GET/POST/DELETE | 管理端口映射 |
+| `/api/v1/stats` | GET | 获取统计信息 |
+| `/api/v1/nodes` | GET | 查询节点状态 |
+
+### 认证方式
+
+```bash
+# Bearer Token 认证
+curl -H "Authorization: Bearer your-api-key" \
+  http://localhost:9000/api/v1/stats
+```
+
+详细 API 文档：[docs/MANAGEMENT_API.md](docs/MANAGEMENT_API.md)
+
+---
+
+## 测试
+
+### 单元测试
+
+```bash
+# 运行所有测试
+go test ./... -v
+
+# 运行特定包测试
+go test ./internal/stream/... -v
+
+# 测试覆盖率
+go test ./... -cover
+```
+
+### 集成测试
+
+项目提供了完整的测试环境：
+
+```bash
+cd test-env
+
+# 启动测试服务（MySQL、Redis、Nginx 等）
+docker-compose up -d
+
+# 运行测试脚本
+./test-port-mapping.sh
+```
+
+### 性能测试
+
+```bash
+# 压力测试
+go test -bench=. -benchmem ./internal/stream/...
+
+# 并发测试
+go test -race ./...
+```
+
+---
+
+## 开发路线图
+
+### v0.1 (当前版本)
+
+- [x] 核心架构设计
+- [x] 四种传输协议支持
+- [x] 流处理系统
+- [x] 基础端口映射
+- [x] Management API
+- [x] 匿名客户端
+
+### v0.2 (计划中)
+
+- [ ] UDP 端口映射完善
+- [ ] 配额检查和限制
+- [ ] Prometheus 监控集成
+- [ ] 性能优化和压测
+
+### v0.3 (规划中)
+
 - [ ] Web 管理界面
-- [ ] 移动端支持
+- [ ] 客户端 SDK (Go/Python/Rust)
 - [ ] 插件系统
-- [ ] 性能基准测试
-- [ ] 部署文档
-- [ ] 用户手册
+- [ ] 更多协议支持
+
+### v1.0 (长期目标)
+
+- [ ] 生产级稳定性
+- [ ] 完整的文档和示例
+- [ ] 商业化支持
+- [ ] 社区生态建设
 
 ---
 
-## 🤝 贡献指南
+## 贡献指南
 
-我们欢迎社区贡献！请遵循以下步骤：
+我们欢迎各种形式的贡献：
 
-### 📝 贡献流程
+- **代码贡献**：修复 Bug、添加功能、性能优化
+- **文档改进**：完善文档、添加示例、翻译
+- **问题反馈**：报告 Bug、提出建议
+- **测试用例**：添加测试、提高覆盖率
 
-1. **Fork 本仓库**
-2. **创建功能分支** (`git checkout -b feature/AmazingFeature`)
-3. **提交更改** (`git commit -m 'Add some AmazingFeature'`)
-4. **推送到分支** (`git push origin feature/AmazingFeature`)
-5. **创建 Pull Request**
+### 贡献流程
 
-### 🛠️ 开发标准
+1. Fork 本仓库
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建 Pull Request
 
-**代码标准**
-- 遵循 Go 语言编码规范
-- 使用 gofmt 格式化代码
+### 代码规范
 
-**测试覆盖**
-- 添加适当的测试用例
-- 确保代码质量
-
-**文档更新**
-- 更新相关文档
-- 保持文档同步
-
-### 📋 开发环境
-
-**Go 版本要求**
-- Go 1.24+ (支持泛型等现代特性)
-
-**开发工具**
-- 推荐使用 GoLand 或 VS Code
-- 安装 Go 扩展和格式化工具
-
-**代码质量**
-- 使用 `go vet` 检查代码
-- 使用 `golint` 检查代码风格
-- 运行 `go test ./...` 确保测试通过
+- 遵循 Go 官方编码规范
+- 使用 `gofmt` 格式化代码
+- 添加必要的注释和文档
+- 确保测试通过
 
 ---
 
-## 📄 许可证
+## 常见问题
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情。
+**Q: Tunnox 与 frp、ngrok 有什么区别？**
+
+A: Tunnox 在架构上更注重可扩展性和商业化支持，内置完整的云控管理系统、配额管理、多协议支持和集群部署能力。frp 更适合个人使用，ngrok 是闭源商业产品。
+
+**Q: 支持哪些操作系统？**
+
+A: 支持 Linux、macOS、Windows，以及 Docker 容器部署。
+
+**Q: 性能如何？**
+
+A: 在透明转发模式下，单节点可支持 10K+ 并发连接，延迟增加 < 5ms。具体性能取决于硬件配置和网络环境。
+
+**Q: 是否支持 IPv6？**
+
+A: 支持，所有协议适配器均支持 IPv4 和 IPv6。
+
+**Q: 如何保证安全性？**
+
+A: 提供端到端 AES-256-GCM 加密、JWT 认证、细粒度权限控制。建议生产环境启用加密和认证。
+
+**Q: 可以商业使用吗？**
+
+A: 可以，项目采用 MIT 许可证，允许商业使用和二次开发。
 
 ---
 
-## 📞 联系我们
+## 许可证
 
-- **项目主页**: [GitHub](https://github.com/tunnox-net/tunnox-core)
-- **问题反馈**: [Issues](https://github.com/tunnox-net/tunnox-core/issues)
-- **讨论交流**: [Discussions](https://github.com/tunnox-net/tunnox-core/discussions)
+本项目采用 [MIT License](LICENSE) 开源协议。
+
+---
+
+## 联系方式
+
+- **项目主页**：[GitHub Repository](https://github.com/your-org/tunnox-core)
+- **问题反馈**：[GitHub Issues](https://github.com/your-org/tunnox-core/issues)
+- **技术文档**：[docs/](docs/)
 
 ---
 
 <div align="center">
 
-**⭐ 如果这个项目对你有帮助，请给我们一个 Star！**
+**如果这个项目对你有帮助，欢迎 Star ⭐**
 
 </div>

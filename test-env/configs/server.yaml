@@ -9,14 +9,20 @@ server:
   protocols:
     tcp:
       enabled: true
-      port: 7000
+      port: 7001
       host: "0.0.0.0"
     websocket:
-      enabled: false
+      enabled: true
+      port: 7000
+      host: "0.0.0.0"
     udp:
       enabled: false
+      port: 7002
+      host: "0.0.0.0"
     quic:
-      enabled: false
+      enabled: true
+      port: 7003
+      host: "0.0.0.0"
 
 log:
   level: "debug"
@@ -79,4 +85,8 @@ management_api:
     allowed_origins: ["*"]
   rate_limit:
     enabled: false
+
+udp_ingress:
+  enabled: false
+  listeners: []
 

@@ -1,12 +1,12 @@
-# Client A 配置 - 源客户端（访问方）
+# Client C 配置 - 使用 QUIC 协议
 client_id: 0  # 0 表示匿名模式
 auth_token: ""
 anonymous: true
-device_id: "test-client-a"
+device_id: "test-client-c"
 
 server:
-  address: "localhost:18080"
-  protocol: "websocket"
+  address: "localhost:7003"
+  protocol: "quic"
 
 # 端口映射配置（通过 Management API 动态配置）
 

@@ -156,3 +156,5 @@ go.work.sum
 # .vscode/
 /client
 /server
+tunnox-server
+tunnox-client

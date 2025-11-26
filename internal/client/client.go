@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,12 +93,34 @@ func NewClient(ctx context.Context, config *ClientConfig) *TunnoxClient {
 func (c *TunnoxClient) Connect() error {
 	utils.Infof("Client: connecting to server %s", c.config.Server.Address)
 
-	// 1. 建立 TCP 连接
-	conn, err := net.DialTimeout("tcp", c.config.Server.Address, 10*time.Second)
+	protocol := c.config.Server.Protocol
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	utils.Infof("Client: using %s transport for control connection", strings.ToUpper(protocol))
+
+	// 1. 根据协议建立控制连接
+	var (
+		conn net.Conn
+		err  error
+	)
+	switch strings.ToLower(protocol) {
+	case "tcp":
+		conn, err = net.DialTimeout("tcp", c.config.Server.Address, 10*time.Second)
+	case "udp":
+		conn, err = dialUDPControlConnection(c.config.Server.Address)
+	case "websocket":
+		conn, err = dialWebSocket(c.Ctx(), c.config.Server.Address, "/_tunnox")
+	case "quic":
+		conn, err = dialQUIC(c.Ctx(), c.config.Server.Address)
+	default:
+		return fmt.Errorf("unsupported server protocol: %s", protocol)
+	}
 	if err != nil {
-		return fmt.Errorf("failed to dial server: %w", err)
+		return fmt.Errorf("failed to dial server (%s): %w", protocol, err)
 	}
 
+	c.config.Server.Protocol = strings.ToLower(protocol)
 	c.controlConn = conn
 
 	// 2. 创建 Stream
@@ -105,14 +128,16 @@ func (c *TunnoxClient) Connect() error {
 	c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
 
 	// 记录连接信息用于调试
-	if tcpConn, ok := conn.(*net.TCPConn); ok {
-		localAddr := tcpConn.LocalAddr().String()
-		remoteAddr := tcpConn.RemoteAddr().String()
-		utils.Infof("Client: TCP connection established - Local=%s, Remote=%s, controlStream=%p",
-			localAddr, remoteAddr, c.controlStream)
-	} else {
-		utils.Infof("Client: connection established, controlStream=%p", c.controlStream)
+	localAddr := "unknown"
+	remoteAddr := "unknown"
+	if conn.LocalAddr() != nil {
+		localAddr = conn.LocalAddr().String()
 	}
+	if conn.RemoteAddr() != nil {
+		remoteAddr = conn.RemoteAddr().String()
+	}
+	utils.Infof("Client: %s connection established - Local=%s, Remote=%s, controlStream=%p",
+		strings.ToUpper(protocol), localAddr, remoteAddr, c.controlStream)
 
 	// 3. 发送握手请求
 	if err := c.sendHandshake(); err != nil {
@@ -443,10 +468,28 @@ func (c *TunnoxClient) GetConfig() *ClientConfig {
 
 // dialTunnel 建立隧道连接（通用方法）
 func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Conn, stream.PackageStreamer, error) {
-	// 建立到服务器的连接
-	conn, err := net.DialTimeout("tcp", c.config.Server.Address, 10*time.Second)
+	// 根据协议建立到服务器的连接
+	var (
+		conn net.Conn
+		err  error
+	)
+	
+	protocol := strings.ToLower(c.config.Server.Protocol)
+	switch protocol {
+	case "tcp", "":
+		conn, err = net.DialTimeout("tcp", c.config.Server.Address, 10*time.Second)
+	case "udp":
+		conn, err = dialUDPControlConnection(c.config.Server.Address)
+	case "websocket":
+		conn, err = dialWebSocket(c.Ctx(), c.config.Server.Address, "/_tunnox")
+	case "quic":
+		conn, err = dialQUIC(c.Ctx(), c.config.Server.Address)
+	default:
+		return nil, nil, fmt.Errorf("unsupported server protocol: %s", protocol)
+	}
+	
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to dial server: %w", err)
+		return nil, nil, fmt.Errorf("failed to dial server (%s): %w", protocol, err)
 	}
 
 	// 创建 StreamProcessor

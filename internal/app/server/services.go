@@ -11,6 +11,7 @@ import (
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/protocol/session"
+	"tunnox-core/internal/server/udp"
 	"tunnox-core/internal/utils"
 )
 
@@ -125,6 +126,13 @@ func NewBridgeService(name string, manager *bridge.BridgeManager) *BaseService {
 func NewManagementAPIService(name string, apiServer *api.ManagementAPIServer) *BaseService {
 	return NewBaseService(name, apiServer).WithOnStart(func(ctx context.Context) error {
 		return apiServer.Start()
+	})
+}
+
+// NewUDPIngressService 创建 UDP Ingress 服务
+func NewUDPIngressService(name string, mgr *udp.Manager) *BaseService {
+	return NewBaseService(name, mgr).WithOnStart(func(ctx context.Context) error {
+		return mgr.Start(ctx)
 	})
 }
 

@@ -29,6 +29,7 @@ type Server struct {
 	session         *session.SessionManager
 	protocolFactory *ProtocolFactory
 	cloudControl    managers.CloudControlAPI
+	cloudBuiltin    *managers.BuiltinCloudControl
 	messageBroker   broker.MessageBroker
 	bridgeManager   *internalbridge.BridgeManager
 	grpcServer      *grpc.Server
@@ -58,6 +59,7 @@ func New(config *Config, parentCtx context.Context) *Server {
 		config:         config,
 		serviceManager: serviceManager,
 		cloudControl:   cloudControl,
+		cloudBuiltin:   cloudControl,
 	}
 
 	// 创建存储和ID管理器

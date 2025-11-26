@@ -94,7 +94,7 @@ mysql -h 127.0.0.1 -P 3306 -u root -p
 | 字段 | 说明 | 示例 |
 |------|------|------|
 | `server.address` | 服务器地址和端口 | `"localhost:7000"` |
-| `server.protocol` | 连接协议 | `"tcp"` / `"websocket"` / `"quic"` |
+| `server.protocol` | 连接协议 | `"tcp"` / `"udp"` / `"websocket"` / `"quic"` |
 
 ### 映射配置（由服务器推送）
 

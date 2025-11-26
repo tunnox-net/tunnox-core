@@ -79,20 +79,33 @@ type UdpAdapter struct {
 
 // udpSession UDP会话，用于管理来自同一客户端的多个数据包
 type udpSession struct {
-	addr       net.Addr
-	lastActive time.Time
-	buffer     chan []byte
-	conn       net.PacketConn
-	mu         sync.RWMutex
+	addr         net.Addr
+	lastActive   time.Time
+	buffer       chan []byte
+	conn         net.PacketConn
+	sessionConn  *UdpSessionConn // 持久的会话连接对象
+	isAccepted   bool             // 标记是否已经被Accept返回
+	mu           sync.RWMutex
 }
 
 func newUdpSession(addr net.Addr, conn net.PacketConn) *udpSession {
-	return &udpSession{
+	sess := &udpSession{
 		addr:       addr,
 		lastActive: time.Now(),
 		buffer:     make(chan []byte, 100), // 缓冲100个数据包
 		conn:       conn,
+		isAccepted: false,
 	}
+	// 立即创建持久的会话连接对象
+	sess.sessionConn = &UdpSessionConn{
+		session:    sess,
+		addr:       addr.String(),
+		adapter:    nil, // 稍后设置
+		readBuffer: nil,
+		readPos:    0,
+		closed:     false,
+	}
+	return sess
 }
 
 func (s *udpSession) updateActivity() {
@@ -211,12 +224,18 @@ func (u *UdpAdapter) receivePackets() {
 			copy(data, buffer[:n])
 
 			// 获取或创建会话
-			session := u.getOrCreateSession(addr)
+			session, isNew := u.getOrCreateSession(addr)
 			session.updateActivity()
 
 			// 将数据放入会话缓冲区
 			select {
 			case session.buffer <- data:
+				// 如果是新会话且还未被Accept，通知Accept可以返回
+				if isNew {
+					session.mu.Lock()
+					session.isAccepted = false
+					session.mu.Unlock()
+				}
 			default:
 				utils.Warnf("UDP session buffer full for %s, dropping packet", addr)
 			}
@@ -225,7 +244,7 @@ func (u *UdpAdapter) receivePackets() {
 }
 
 // getOrCreateSession 获取或创建 UDP 会话
-func (u *UdpAdapter) getOrCreateSession(addr net.Addr) *udpSession {
+func (u *UdpAdapter) getOrCreateSession(addr net.Addr) (*udpSession, bool) {
 	addrStr := addr.String()
 
 	u.sessLock.RLock()
@@ -233,7 +252,7 @@ func (u *UdpAdapter) getOrCreateSession(addr net.Addr) *udpSession {
 	u.sessLock.RUnlock()
 
 	if exists {
-		return session
+		return session, false // 返回已存在的会话，isNew=false
 	}
 
 	u.sessLock.Lock()
@@ -241,14 +260,15 @@ func (u *UdpAdapter) getOrCreateSession(addr net.Addr) *udpSession {
 
 	// 双重检查
 	if session, exists := u.sessions[addrStr]; exists {
-		return session
+		return session, false
 	}
 
 	session = newUdpSession(addr, u.conn)
+	session.sessionConn.adapter = u // 设置adapter引用
 	u.sessions[addrStr] = session
 
 	utils.Infof("Created new UDP session for %s", addr)
-	return session
+	return session, true // 返回新会话，isNew=true
 }
 
 // cleanupSessions 定期清理过期的 UDP 会话
@@ -264,6 +284,10 @@ func (u *UdpAdapter) cleanupSessions() {
 			u.sessLock.Lock()
 			for addr, session := range u.sessions {
 				if session.isExpired() {
+					// 关闭会话连接
+					if session.sessionConn != nil {
+						session.sessionConn.Close()
+					}
 					close(session.buffer)
 					delete(u.sessions, addr)
 					utils.Infof("Cleaned up expired UDP session for %s", addr)
@@ -279,41 +303,47 @@ func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
 		return nil, fmt.Errorf("UDP listener not initialized")
 	}
 
-	// 等待有可用的会话
-	timeout := time.NewTimer(udpReadTimeout)
-	defer timeout.Stop()
+	// 轮询等待新的未Accept的会话
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	
+	timeout := time.After(udpReadTimeout)
 
-	select {
-	case <-u.ctx.Done():
-		return nil, fmt.Errorf("adapter closed")
-	case <-timeout.C:
-		return nil, errors.NewProtocolTimeoutError("UDP packet")
-	default:
-	}
+	for {
+		select {
+		case <-u.ctx.Done():
+			return nil, fmt.Errorf("adapter closed")
+		case <-timeout:
+			return nil, errors.NewProtocolTimeoutError("UDP packet")
+		case <-ticker.C:
+			// 查找有数据且未被Accept的会话
+			u.sessLock.RLock()
+			var readySession *udpSession
+			for _, session := range u.sessions {
+				session.mu.RLock()
+				hasData := len(session.buffer) > 0
+				notAccepted := !session.isAccepted
+				session.mu.RUnlock()
+				
+				if hasData && notAccepted {
+					readySession = session
+					break
+				}
+			}
+			u.sessLock.RUnlock()
 
-	// 查找有数据的会话
-	u.sessLock.RLock()
-	var readySession *udpSession
-	var readyAddr string
-	for addr, session := range u.sessions {
-		if len(session.buffer) > 0 {
-			readySession = session
-			readyAddr = addr
-			break
+			if readySession != nil {
+				// 标记为已Accept
+				readySession.mu.Lock()
+				readySession.isAccepted = true
+				readySession.mu.Unlock()
+				
+				utils.Debugf("UDP adapter accepting new session from %s", readySession.addr)
+				// 返回持久的会话连接对象
+				return readySession.sessionConn, nil
+			}
 		}
 	}
-	u.sessLock.RUnlock()
-
-	if readySession == nil {
-		return nil, errors.NewProtocolTimeoutError("UDP packet")
-	}
-
-	// 创建虚拟连接
-	return &UdpSessionConn{
-		session: readySession,
-		addr:    readyAddr,
-		adapter: u,
-	}, nil
 }
 
 func (u *UdpAdapter) getConnectionType() string {
@@ -336,6 +366,9 @@ func (u *UdpAdapter) onClose() error {
 	// 清理所有会话
 	u.sessLock.Lock()
 	for addr, session := range u.sessions {
+		if session.sessionConn != nil {
+			session.sessionConn.Close()
+		}
 		close(session.buffer)
 		delete(u.sessions, addr)
 	}
@@ -349,6 +382,7 @@ func (u *UdpAdapter) onClose() error {
 }
 
 // UdpSessionConn UDP会话连接，用于处理特定客户端的数据流
+// 注意：这是一个持久连接，不应该在单次packet处理后关闭
 type UdpSessionConn struct {
 	session    *udpSession
 	addr       string
@@ -357,6 +391,11 @@ type UdpSessionConn struct {
 	readPos    int
 	closed     bool
 	mu         sync.Mutex
+}
+
+// IsPersistent 标记这是一个持久连接，不应该在handleConnection后关闭
+func (u *UdpSessionConn) IsPersistent() bool {
+	return true
 }
 
 // Read 实现io.Reader接口

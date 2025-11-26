@@ -40,6 +40,7 @@ type udpVirtualConn struct {
 	cancel     context.CancelFunc
 	lastActive time.Time
 	mu         sync.RWMutex
+	closeOnce  sync.Once
 }
 
 func newUDPVirtualConn(userAddr *net.UDPAddr, udpConn *net.UDPConn, ctx context.Context) *udpVirtualConn {
@@ -84,8 +85,10 @@ func (c *udpVirtualConn) Write(p []byte) (n int, err error) {
 }
 
 func (c *udpVirtualConn) Close() error {
-	c.cancel()
-	close(c.recvChan)
+	c.closeOnce.Do(func() {
+		c.cancel()
+		close(c.recvChan)
+	})
 	return nil
 }
 
@@ -309,4 +312,3 @@ func (a *UDPMappingAdapter) Close() error {
 
 	return nil
 }
-

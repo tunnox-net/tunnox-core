@@ -61,6 +61,22 @@ type ManagementAPIConfig struct {
 	RateLimit  map[string]interface{} `yaml:"rate_limit"`
 }
 
+// UDPIngressListenerConfig UDP接入监听配置
+type UDPIngressListenerConfig struct {
+	Name         string `yaml:"name"`
+	Address      string `yaml:"address"`
+	MappingID    string `yaml:"mapping_id"`
+	IdleTimeout  int    `yaml:"idle_timeout"`
+	MaxSessions  int    `yaml:"max_sessions"`
+	FrameBacklog int    `yaml:"frame_backlog"`
+}
+
+// UDPIngressConfig UDP接入总体配置
+type UDPIngressConfig struct {
+	Enabled   bool                       `yaml:"enabled"`
+	Listeners []UDPIngressListenerConfig `yaml:"listeners"`
+}
+
 // Config 应用配置
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
@@ -69,6 +85,7 @@ type Config struct {
 	MessageBroker MessageBrokerConfig `yaml:"message_broker"`
 	BridgePool    BridgePoolConfig    `yaml:"bridge_pool"`
 	ManagementAPI ManagementAPIConfig `yaml:"management_api"`
+	UDPIngress    UDPIngressConfig    `yaml:"udp_ingress"`
 }
 
 // LoadConfig 加载配置文件
@@ -146,6 +163,19 @@ func ValidateConfig(config *Config) error {
 		}
 	}
 
+	// 验证 UDP Ingress 配置
+	if config.UDPIngress.Listeners == nil {
+		config.UDPIngress.Listeners = []UDPIngressListenerConfig{}
+	}
+	for i := range config.UDPIngress.Listeners {
+		if config.UDPIngress.Listeners[i].IdleTimeout <= 0 {
+			config.UDPIngress.Listeners[i].IdleTimeout = 60
+		}
+		if config.UDPIngress.Listeners[i].FrameBacklog <= 0 {
+			config.UDPIngress.Listeners[i].FrameBacklog = 64
+		}
+	}
+
 	// 验证日志配置
 	if config.Log.Level == "" {
 		config.Log.Level = constants.LogLevelInfo
@@ -200,6 +230,9 @@ func GetDefaultConfig() *Config {
 		Cloud: CloudConfig{
 			Type: "built_in",
 		},
+		UDPIngress: UDPIngressConfig{
+			Enabled:   false,
+			Listeners: []UDPIngressListenerConfig{},
+		},
 	}
 }
-
