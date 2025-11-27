@@ -1,0 +1,143 @@
+[
+  {
+    "id": "mapping-001",
+    "user_id": "test-user-1",
+    "source_client_id": 10000001,
+    "target_client_id": 10000002,
+    "protocol": "tcp",
+    "source_port": 8080,
+    "target_host": "localhost",
+    "target_port": 80,
+    "secret_key": "mapping-secret-001",
+    "status": "active",
+    "type": "registered",
+    "config": {
+      "enable_compression": false,
+      "enable_encryption": true,
+      "bandwidth_limit": 0,
+      "max_connections": 100
+    },
+    "traffic_stats": {
+      "bytes_sent": 1048576,
+      "bytes_received": 2097152,
+      "packets_sent": 1000,
+      "packets_received": 2000,
+      "connections_total": 50,
+      "connections_active": 5,
+      "errors_total": 0
+    }
+  },
+  {
+    "id": "mapping-002",
+    "user_id": "test-user-1",
+    "source_client_id": 10000001,
+    "target_client_id": 10000002,
+    "protocol": "http",
+    "source_port": 8443,
+    "target_host": "localhost",
+    "target_port": 443,
+    "secret_key": "mapping-secret-002",
+    "status": "active",
+    "type": "registered",
+    "config": {
+      "enable_compression": true,
+      "enable_encryption": true,
+      "bandwidth_limit": 0,
+      "max_connections": 50
+    },
+    "traffic_stats": {
+      "bytes_sent": 524288,
+      "bytes_received": 1048576,
+      "packets_sent": 500,
+      "packets_received": 1000,
+      "connections_total": 20,
+      "connections_active": 2,
+      "errors_total": 1
+    }
+  },
+  {
+    "id": "mapping-003",
+    "user_id": "test-user-2",
+    "source_client_id": 10000003,
+    "target_client_id": 10000001,
+    "protocol": "tcp",
+    "source_port": 3306,
+    "target_host": "192.168.1.10",
+    "target_port": 3306,
+    "secret_key": "mapping-secret-003",
+    "status": "active",
+    "type": "registered",
+    "config": {
+      "enable_compression": false,
+      "enable_encryption": true,
+      "bandwidth_limit": 10485760,
+      "max_connections": 200
+    },
+    "traffic_stats": {
+      "bytes_sent": 10485760,
+      "bytes_received": 20971520,
+      "packets_sent": 10000,
+      "packets_received": 20000,
+      "connections_total": 150,
+      "connections_active": 10,
+      "errors_total": 2
+    }
+  },
+  {
+    "id": "mapping-004",
+    "user_id": "",
+    "source_client_id": 20000001,
+    "target_client_id": 10000001,
+    "protocol": "tcp",
+    "source_port": 22,
+    "target_host": "localhost",
+    "target_port": 22,
+    "secret_key": "mapping-secret-004",
+    "status": "active",
+    "type": "anonymous",
+    "config": {
+      "enable_compression": false,
+      "enable_encryption": true,
+      "bandwidth_limit": 0,
+      "max_connections": 10
+    },
+    "traffic_stats": {
+      "bytes_sent": 262144,
+      "bytes_received": 524288,
+      "packets_sent": 250,
+      "packets_received": 500,
+      "connections_total": 5,
+      "connections_active": 1,
+      "errors_total": 0
+    }
+  },
+  {
+    "id": "mapping-005",
+    "user_id": "test-user-2",
+    "source_client_id": 10000003,
+    "target_client_id": 10000001,
+    "protocol": "udp",
+    "source_port": 5353,
+    "target_host": "localhost",
+    "target_port": 53,
+    "secret_key": "mapping-secret-005",
+    "status": "inactive",
+    "type": "registered",
+    "config": {
+      "enable_compression": false,
+      "enable_encryption": false,
+      "bandwidth_limit": 0,
+      "max_connections": 0
+    },
+    "traffic_stats": {
+      "bytes_sent": 0,
+      "bytes_received": 0,
+      "packets_sent": 0,
+      "packets_received": 0,
+      "connections_total": 0,
+      "connections_active": 0,
+      "errors_total": 0
+    }
+  }
+]
+

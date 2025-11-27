@@ -1,0 +1,88 @@
+[
+  {
+    "id": 10000001,
+    "user_id": "test-user-1",
+    "name": "Alice's Desktop",
+    "auth_code": "auth-code-001",
+    "secret_key": "secret-key-001",
+    "status": "online",
+    "type": "registered",
+    "node_id": "node-1",
+    "ip_address": "192.168.1.100",
+    "version": "1.0.0",
+    "config": {
+      "auto_reconnect": true,
+      "reconnect_interval": 5,
+      "max_reconnect_attempts": 10
+    }
+  },
+  {
+    "id": 10000002,
+    "user_id": "test-user-1",
+    "name": "Alice's Laptop",
+    "auth_code": "auth-code-002",
+    "secret_key": "secret-key-002",
+    "status": "offline",
+    "type": "registered",
+    "node_id": "",
+    "ip_address": "",
+    "version": "1.0.0",
+    "config": {
+      "auto_reconnect": true,
+      "reconnect_interval": 5,
+      "max_reconnect_attempts": 10
+    }
+  },
+  {
+    "id": 10000003,
+    "user_id": "test-user-2",
+    "name": "Bob's Server",
+    "auth_code": "auth-code-003",
+    "secret_key": "secret-key-003",
+    "status": "online",
+    "type": "registered",
+    "node_id": "node-1",
+    "ip_address": "192.168.1.200",
+    "version": "1.0.1",
+    "config": {
+      "auto_reconnect": true,
+      "reconnect_interval": 3,
+      "max_reconnect_attempts": 20
+    }
+  },
+  {
+    "id": 20000001,
+    "user_id": "",
+    "name": "Anonymous Client 1",
+    "auth_code": "anon-auth-001",
+    "secret_key": "anon-secret-001",
+    "status": "online",
+    "type": "anonymous",
+    "node_id": "node-2",
+    "ip_address": "203.0.113.10",
+    "version": "1.0.0",
+    "config": {
+      "auto_reconnect": false,
+      "reconnect_interval": 5,
+      "max_reconnect_attempts": 3
+    }
+  },
+  {
+    "id": 10000004,
+    "user_id": "test-user-4",
+    "name": "Dave's Production",
+    "auth_code": "auth-code-004",
+    "secret_key": "secret-key-004",
+    "status": "blocked",
+    "type": "registered",
+    "node_id": "",
+    "ip_address": "",
+    "version": "1.0.2",
+    "config": {
+      "auto_reconnect": true,
+      "reconnect_interval": 5,
+      "max_reconnect_attempts": 10
+    }
+  }
+]
+

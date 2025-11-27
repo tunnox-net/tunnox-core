@@ -130,17 +130,24 @@ func (c *CloudControl) UpdateClientStatus(clientID int64, status models.ClientSt
 
 // ListClients 列出客户端
 func (c *CloudControl) ListClients(userID string, clientType models.ClientType) ([]*models.Client, error) {
+	var clients []*models.Client
+	var err error
+	
 	if userID != "" {
-		return c.clientRepo.ListUserClients(userID)
+		clients, err = c.clientRepo.ListUserClients(userID)
+	} else {
+		// 列出所有客户端（使用全局列表）
+		clients, err = c.clientRepo.ListClients()
 	}
-	// 简单实现：返回所有客户端
-	clients, err := c.clientRepo.ListUserClients("")
+	
 	if err != nil {
 		return nil, err
 	}
+	
 	if clientType == "" {
 		return clients, nil
 	}
+	
 	var filtered []*models.Client
 	for _, client := range clients {
 		if client.Type == clientType {

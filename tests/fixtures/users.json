@@ -1,0 +1,59 @@
+[
+  {
+    "id": "test-user-1",
+    "username": "alice",
+    "email": "alice@example.com",
+    "status": "active",
+    "type": "registered",
+    "plan": "free",
+    "quota": {
+      "max_client_ids": 5,
+      "max_connections": 100,
+      "bandwidth_limit": 104857600,
+      "storage_limit": 1073741824
+    }
+  },
+  {
+    "id": "test-user-2",
+    "username": "bob",
+    "email": "bob@example.com",
+    "status": "active",
+    "type": "registered",
+    "plan": "premium",
+    "quota": {
+      "max_client_ids": 20,
+      "max_connections": 500,
+      "bandwidth_limit": 524288000,
+      "storage_limit": 10737418240
+    }
+  },
+  {
+    "id": "test-user-3",
+    "username": "charlie",
+    "email": "charlie@example.com",
+    "status": "suspended",
+    "type": "registered",
+    "plan": "free",
+    "quota": {
+      "max_client_ids": 5,
+      "max_connections": 100,
+      "bandwidth_limit": 104857600,
+      "storage_limit": 1073741824
+    }
+  },
+  {
+    "id": "test-user-4",
+    "username": "dave",
+    "email": "dave@example.com",
+    "status": "active",
+    "type": "registered",
+    "plan": "enterprise",
+    "quota": {
+      "max_client_ids": 100,
+      "max_connections": 2000,
+      "bandwidth_limit": 2147483648,
+      "storage_limit": 107374182400
+    }
+  }
+]
+

@@ -145,8 +145,24 @@ func (c *CloudControl) UpdatePortMappingStats(mappingID string, stats *stats.Tra
 
 // ListPortMappings 列出端口映射
 func (c *CloudControl) ListPortMappings(mappingType models.MappingType) ([]*models.PortMapping, error) {
-	// 简化实现：返回所有映射
-	return c.mappingRepo.GetUserPortMappings("")
+	// 获取所有映射
+	mappings, err := c.mappingRepo.ListAllMappings()
+	if err != nil {
+		return nil, err
+	}
+	
+	// 如果指定了映射类型，进行过滤
+	if mappingType == "" {
+		return mappings, nil
+	}
+	
+	var filtered []*models.PortMapping
+	for _, mapping := range mappings {
+		if mapping.Type == mappingType {
+			filtered = append(filtered, mapping)
+		}
+	}
+	return filtered, nil
 }
 
 // GetUserPortMappings 获取用户的端口映射
