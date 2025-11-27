@@ -32,8 +32,10 @@ func DefaultHybridConfig() *HybridConfig {
 	return &HybridConfig{
 		PersistentPrefixes: []string{
 			"tunnox:user:",               // 用户信息
-			"tunnox:client:",             // 客户端配置
-			"tunnox:mapping:",            // 端口映射配置
+			"tunnox:client:",             // 客户端配置（旧版，逐步废弃）
+			"tunnox:config:client:",      // 客户端配置（新版）
+			"tunnox:mapping:",            // 端口映射配置（旧key）
+			"tunnox:port_mapping:",       // 端口映射配置（实际使用的key）
 			"tunnox:node:",               // 节点信息
 			"tunnox:stats:persistent:",   // 持久化统计数据
 		},

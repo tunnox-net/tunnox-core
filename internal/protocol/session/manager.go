@@ -252,3 +252,8 @@ func (s *SessionManager) SetNodeID(nodeID string) {
 	s.nodeID = nodeID
 	utils.Infof("SessionManager: NodeID set to %s", nodeID)
 }
+
+// GetNodeID 获取节点ID
+func (s *SessionManager) GetNodeID() string {
+	return s.nodeID
+}

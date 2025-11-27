@@ -18,11 +18,11 @@ services:
 
   # ===== Tunnox Server 集群（3个实例）=====
   tunnox-server-1:
+    image: e2e-tunnox-server-debug:latest  # 使用debug镜像
     build:
       context: ../..
       dockerfile: tests/e2e/Dockerfile.server
     environment:
-      - NODE_ID=node-1
       - NODE_NAME=Server-1
       - LISTEN_ADDR=0.0.0.0:7000
       - WS_ADDR=0.0.0.0:7001
@@ -47,11 +47,11 @@ services:
       retries: 5
 
   tunnox-server-2:
+    image: e2e-tunnox-server-debug:latest  # 使用debug镜像
     build:
       context: ../..
       dockerfile: tests/e2e/Dockerfile.server
     environment:
-      - NODE_ID=node-2
       - NODE_NAME=Server-2
       - LISTEN_ADDR=0.0.0.0:7000
       - WS_ADDR=0.0.0.0:7001
@@ -76,11 +76,11 @@ services:
       retries: 5
 
   tunnox-server-3:
+    image: e2e-tunnox-server-debug:latest  # 使用debug镜像
     build:
       context: ../..
       dockerfile: tests/e2e/Dockerfile.server
     environment:
-      - NODE_ID=node-3
       - NODE_NAME=Server-3
       - LISTEN_ADDR=0.0.0.0:7000
       - WS_ADDR=0.0.0.0:7001

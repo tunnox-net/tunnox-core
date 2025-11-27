@@ -66,7 +66,7 @@ func (m *MemoryStorage) Set(key string, value interface{}, ttl time.Duration) er
 		value:      value,
 		expiration: expiration,
 	}
-	dispose.Infof("MemoryStorage.Set: stored key %s, value type: %T, expiration: %v", key, value, expiration)
+	// Stored successfully
 	return nil
 }
 
@@ -75,26 +75,20 @@ func (m *MemoryStorage) Get(key string) (interface{}, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	dispose.Infof("MemoryStorage.Get: retrieving key %s, data map size: %d", key, len(m.data))
 	if m.data == nil {
-		dispose.Debugf("MemoryStorage.Get: data map is nil for key %s", key)
 		return nil, ErrKeyNotFound
 	}
 
 	item, exists := m.data[key]
 	if !exists {
-		dispose.Debugf("MemoryStorage.Get: key %s not found in data map", key)
 		return nil, ErrKeyNotFound
 	}
 
 	// 只有 expiration 非零且已过期才删除
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		dispose.Infof("MemoryStorage.Get: key %s expired, deleting", key)
 		delete(m.data, key)
 		return nil, ErrKeyNotFound
 	}
-
-	dispose.Infof("MemoryStorage.Get: successfully retrieved key %s, value type: %T", key, item.value)
 	return item.value, nil
 }
 
@@ -112,26 +106,20 @@ func (m *MemoryStorage) Exists(key string) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	dispose.Infof("MemoryStorage.Exists: checking key %s, data map size: %d", key, len(m.data))
 	if m.data == nil {
-		dispose.Debugf("MemoryStorage.Exists: data map is nil for key %s", key)
 		return false, nil
 	}
 
 	item, exists := m.data[key]
 	if !exists {
-		dispose.Debugf("MemoryStorage.Exists: key %s not found in data map", key)
 		return false, nil
 	}
 
 	// 修复：零值时间表示永不过期
 	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		dispose.Infof("MemoryStorage.Exists: key %s expired, deleting", key)
 		delete(m.data, key)
 		return false, nil
 	}
-
-	dispose.Infof("MemoryStorage.Exists: key %s exists and not expired", key)
 	return true, nil
 }
 

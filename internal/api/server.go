@@ -20,6 +20,7 @@ import (
 type SessionManager interface {
 	GetControlConnectionInterface(clientID int64) interface{}
 	BroadcastConfigPush(clientID int64, configBody string) error
+	GetNodeID() string // 获取当前节点ID
 }
 
 // ManagementAPIServer Management API 服务器

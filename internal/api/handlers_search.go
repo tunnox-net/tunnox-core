@@ -18,11 +18,11 @@ func (s *ManagementAPIServer) handleSearchUsers(w http.ResponseWriter, r *http.R
 		return
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"users":   users,
-		"total":   len(users),
-		"keyword": keyword,
-	})
+	response := UserListResponse{
+		Users: users,
+		Total: len(users),
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleSearchClients 搜索客户端
@@ -39,11 +39,11 @@ func (s *ManagementAPIServer) handleSearchClients(w http.ResponseWriter, r *http
 		return
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"clients": clients,
-		"total":   len(clients),
-		"keyword": keyword,
-	})
+	response := ClientListResponse{
+		Clients: clients,
+		Total:   len(clients),
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleSearchMappings 搜索端口映射
@@ -60,10 +60,10 @@ func (s *ManagementAPIServer) handleSearchMappings(w http.ResponseWriter, r *htt
 		return
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"mappings": mappings,
-		"total":    len(mappings),
-		"keyword":  keyword,
-	})
+	response := MappingListResponse{
+		Mappings: mappings,
+		Total:    len(mappings),
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 

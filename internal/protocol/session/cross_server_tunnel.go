@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+	
+	"tunnox-core/internal/broker"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -29,15 +31,13 @@ func (s *SessionManager) startTunnelOpenBroadcastSubscription() {
 	utils.Infof("SessionManager: starting TunnelOpen broadcast subscription for cross-server forwarding")
 
 	// 订阅TunnelOpen广播
-	topic := "tunnox.tunnel_open"
-
-	msgChan, err := s.bridgeManager.Subscribe(s.Ctx(), topic)
+	msgChan, err := s.bridgeManager.Subscribe(s.Ctx(), broker.TopicTunnelOpen)
 	if err != nil {
-		utils.Errorf("SessionManager: failed to subscribe to %s: %v", topic, err)
+		utils.Errorf("SessionManager: failed to subscribe to %s: %v", broker.TopicTunnelOpen, err)
 		return
 	}
 
-	utils.Infof("SessionManager: ✅ subscribed to %s for cross-server tunnel forwarding", topic)
+	utils.Infof("SessionManager: ✅ subscribed to %s for cross-server tunnel forwarding", broker.TopicTunnelOpen)
 
 	// 启动消息处理循环
 	go s.processTunnelOpenBroadcasts(msgChan)

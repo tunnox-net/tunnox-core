@@ -264,9 +264,10 @@ func (s *SessionManager) KickOldControlConnection(clientID int64, newConnID stri
 			_ = s.CloseConnection(oldConn.ConnID)
 		}()
 
-		// 从映射中移除
+		// 从映射中移除（必须同时清理controlConnMap和clientIDIndexMap）
 		s.controlConnLock.Lock()
 		delete(s.controlConnMap, oldConn.ConnID)
+		delete(s.clientIDIndexMap, clientID)  // ✅ 修复：同时清理clientIDIndexMap
 		s.controlConnLock.Unlock()
 	}
 }

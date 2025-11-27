@@ -68,13 +68,17 @@ func (c *E2EAPIClient) HealthCheck() error {
 
 // CreateUser 创建用户（强类型）
 func (c *E2EAPIClient) CreateUser(req CreateUserRequest) (*UserResponse, error) {
+	url := c.baseURL + "/api/v1/users"
+	c.t.Logf("🌐 API Client: POST %s", url)
+	
 	body, _ := json.Marshal(req)
-	resp, err := c.client.Post(c.baseURL+"/api/v1/users", 
-		"application/json", bytes.NewReader(body))
+	resp, err := c.client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
+		c.t.Logf("❌ API Client: POST failed: %v", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	c.t.Logf("✅ API Client: POST response status=%d", resp.StatusCode)
 	
 	var apiResp struct {
 		Success bool          `json:"success"`
@@ -118,7 +122,7 @@ func (c *E2EAPIClient) Login(username, password string) (string, error) {
 		return "", fmt.Errorf("login failed")
 	}
 	
-	return apiResp.Data.AccessToken, nil
+	return apiResp.Data.Token, nil
 }
 
 // CreateClient 创建客户端（强类型）
@@ -148,13 +152,19 @@ func (c *E2EAPIClient) CreateClient(req CreateClientRequest) (*ClientResponse, e
 
 // CreateMapping 创建端口映射（强类型）
 func (c *E2EAPIClient) CreateMapping(req CreateMappingRequest) (*MappingResponse, error) {
+	url := c.baseURL + "/api/v1/mappings"
+	c.t.Logf("🌐 API Client: POST %s", url)
+	c.t.Logf("🌐 API Client: Request body: source=%d, target=%d, port=%d", 
+		req.SourceClientID, req.TargetClientID, req.SourcePort)
+	
 	body, _ := json.Marshal(req)
-	resp, err := c.client.Post(c.baseURL+"/api/v1/mappings", 
-		"application/json", bytes.NewReader(body))
+	resp, err := c.client.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
+		c.t.Logf("❌ API Client: POST failed: %v", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	c.t.Logf("✅ API Client: POST response status=%d", resp.StatusCode)
 	
 	var apiResp struct {
 		Success bool             `json:"success"`
@@ -173,11 +183,16 @@ func (c *E2EAPIClient) CreateMapping(req CreateMappingRequest) (*MappingResponse
 
 // ListClients 列出所有客户端（强类型）
 func (c *E2EAPIClient) ListClients() ([]ClientResponse, error) {
-	resp, err := c.client.Get(c.baseURL + "/api/v1/clients")
+	url := c.baseURL + "/api/v1/clients"
+	c.t.Logf("🌐 API Client: GET %s", url)
+	
+	resp, err := c.client.Get(url)
 	if err != nil {
+		c.t.Logf("❌ API Client: GET failed: %v", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	c.t.Logf("✅ API Client: GET response status=%d", resp.StatusCode)
 	
 	var apiResp struct {
 		Success bool             `json:"success"`
@@ -223,11 +238,11 @@ func (c *E2EAPIClient) DeleteMapping(mappingID string) error {
 	return nil
 }
 
-// ClaimClient 关联匿名客户端到用户
-func (c *E2EAPIClient) ClaimClient(clientID int64, userID string, newName string) (map[string]interface{}, error) {
+// ClaimClient 关联匿名客户端到用户（强类型）
+func (c *E2EAPIClient) ClaimClient(clientID int64, userID string, newName string) (*ClaimClientResponse, error) {
 	reqBody := map[string]interface{}{
-		"user_id":    userID,
-		"new_name":   newName,
+		"user_id":  userID,
+		"new_name": newName,
 	}
 	body, _ := json.Marshal(reqBody)
 	
@@ -239,14 +254,14 @@ func (c *E2EAPIClient) ClaimClient(clientID int64, userID string, newName string
 	defer resp.Body.Close()
 	
 	var apiResp struct {
-		Success bool                   `json:"success"`
-		Data    map[string]interface{} `json:"data"`
+		Success bool                  `json:"success"`
+		Data    *ClaimClientResponse `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
 		return nil, err
 	}
 	
-	if !apiResp.Success {
+	if !apiResp.Success || apiResp.Data == nil {
 		return nil, fmt.Errorf("claim client failed")
 	}
 	

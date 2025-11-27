@@ -14,12 +14,14 @@ import (
 // ServerAuthHandler 服务器认证处理器
 type ServerAuthHandler struct {
 	cloudControl managers.CloudControlAPI
+	sessionMgr   *session.SessionManager // 用于获取NodeID
 }
 
 // NewServerAuthHandler 创建认证处理器
-func NewServerAuthHandler(cloudControl managers.CloudControlAPI) *ServerAuthHandler {
+func NewServerAuthHandler(cloudControl managers.CloudControlAPI, sessionMgr *session.SessionManager) *ServerAuthHandler {
 	return &ServerAuthHandler{
 		cloudControl: cloudControl,
+		sessionMgr:   sessionMgr,
 	}
 }
 
@@ -72,12 +74,15 @@ func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req 
 	conn.Authenticated = true // 设置为已认证
 
 	// ✅ 更新客户端状态为在线
-	nodeID := "" // TODO: 从server config获取node ID
+	nodeID := h.sessionMgr.GetNodeID()
+	if nodeID == "" {
+		utils.Warnf("ServerAuthHandler: NodeID not set in SessionManager, using empty string")
+	}
 	if err := h.cloudControl.UpdateClientStatus(clientID, models.ClientStatusOnline, nodeID); err != nil {
 		utils.Warnf("ServerAuthHandler: failed to update client %d status to online: %v", clientID, err)
 		// 不返回错误，只记录警告，握手仍然成功
 	} else {
-		utils.Infof("ServerAuthHandler: client %d status updated to online", clientID)
+		utils.Infof("ServerAuthHandler: client %d status updated to online on node %s", clientID, nodeID)
 	}
 
 	// 构造握手响应

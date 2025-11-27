@@ -92,14 +92,11 @@ func (r *RedisStorage) Set(key string, value interface{}, ttl time.Duration) err
 		return fmt.Errorf("failed to set key %s: %w", key, result.Err())
 	}
 
-	dispose.Infof("RedisStorage.Set: stored key %s, value type: %T, ttl: %v", key, value, ttl)
 	return nil
 }
 
 // Get 获取值
 func (r *RedisStorage) Get(key string) (interface{}, error) {
-	dispose.Infof("RedisStorage.Get: retrieving key %s", key)
-
 	result := r.client.Get(r.ctx, key)
 	if result.Err() != nil {
 		if result.Err() == redis.Nil {
@@ -124,7 +121,6 @@ func (r *RedisStorage) Get(key string) (interface{}, error) {
 		return nil, fmt.Errorf("failed to unmarshal value for key %s: %w", key, err)
 	}
 
-	dispose.Infof("RedisStorage.Get: successfully retrieved key %s, value type: %T", key, value)
 	return value, nil
 }
 
@@ -136,13 +132,11 @@ func (r *RedisStorage) Delete(key string) error {
 		return fmt.Errorf("failed to delete key %s: %w", key, result.Err())
 	}
 
-	dispose.Infof("RedisStorage.Delete: deleted key %s", key)
 	return nil
 }
 
 // Exists 检查键是否存在
 func (r *RedisStorage) Exists(key string) (bool, error) {
-	dispose.Infof("RedisStorage.Exists: checking key %s", key)
 
 	result := r.client.Exists(r.ctx, key)
 	if result.Err() != nil {
@@ -151,7 +145,6 @@ func (r *RedisStorage) Exists(key string) (bool, error) {
 	}
 
 	exists := result.Val() > 0
-	dispose.Infof("RedisStorage.Exists: key %s exists: %v", key, exists)
 	return exists, nil
 }
 

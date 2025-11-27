@@ -35,33 +35,29 @@ func (a *BridgeAdapter) BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targe
 	}
 
 	// 构造广播消息
-	message := map[string]interface{}{
-		"type":             "tunnel_open",
-		"tunnel_id":        req.TunnelID,
-		"mapping_id":       req.MappingID,
-		"secret_key":       req.SecretKey,
-		"target_client_id": targetClientID,
-		"source_node_id":   a.nodeID,
-		"timestamp":        time.Now().Unix(),
+	message := broker.TunnelOpenMessage{
+		ClientID:   targetClientID,
+		TunnelID:   req.TunnelID,
+		TargetHost: "", // 这些字段在TunnelOpen请求中没有，可能需要从其他地方获取
+		TargetPort: 0,
+		Timestamp:  time.Now().Unix(),
 	}
 
-	messageJSON, err := json.Marshal(message)
+	messageJSON, err := json.Marshal(&message)
 	if err != nil {
 		return fmt.Errorf("failed to marshal tunnel open message: %w", err)
 	}
 
 	// ✅ 通过MessageBroker广播到所有节点
-	// 使用统一的topic，所有节点都订阅这个topic
-	topic := "tunnox.tunnel_open"
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err := a.messageBroker.Publish(ctx, topic, messageJSON); err != nil {
+	if err := a.messageBroker.Publish(ctx, broker.TopicTunnelOpen, messageJSON); err != nil {
 		return fmt.Errorf("failed to publish tunnel open message: %w", err)
 	}
 
 	utils.Infof("BridgeAdapter: ✅ broadcasted TunnelOpen for client %d, tunnel %s to topic %s", 
-		targetClientID, req.TunnelID, topic)
+		targetClientID, req.TunnelID, broker.TopicTunnelOpen)
 	return nil
 }
 
@@ -71,12 +67,7 @@ func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-c
 		return nil, fmt.Errorf("message broker not initialized")
 	}
 
-	// 订阅MessageBroker
-	// 注意：需要将topicPattern转换为broker的topic格式
-	// 例如: "tunnox.client.*.tunnel_open" 需要订阅所有 "tunnox.client.{id}.tunnel_open"
-	
-	// 由于当前broker可能不支持通配符订阅，我们订阅一个通用主题
-	// 更好的方案是扩展broker支持pattern matching
+	utils.Infof("🌐 BridgeAdapter: Subscribe called for topic: %s", topicPattern)
 	
 	msgChan := make(chan *session.BroadcastMessage, 100)
 	
@@ -84,14 +75,15 @@ func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-c
 	go func() {
 		defer close(msgChan)
 		
-		// 订阅通用的TunnelOpen主题
-		brokerChan, err := a.messageBroker.Subscribe(ctx, "tunnox.tunnel_open")
+		// 🔥 FIX: 使用传入的topicPattern，而不是硬编码TopicTunnelOpen
+		utils.Infof("🌐 BridgeAdapter: Subscribing to broker topic: %s", topicPattern)
+		brokerChan, err := a.messageBroker.Subscribe(ctx, topicPattern)
 		if err != nil {
 			utils.Errorf("BridgeAdapter: failed to subscribe to tunnel_open: %v", err)
 			return
 		}
 		
-		utils.Infof("BridgeAdapter: ✅ subscribed to tunnox.tunnel_open for cross-server forwarding")
+		utils.Infof("BridgeAdapter: ✅ subscribed to %s for cross-server forwarding", broker.TopicTunnelOpen)
 		
 		for {
 			select {

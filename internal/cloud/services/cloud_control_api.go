@@ -169,6 +169,54 @@ func (api *CloudControlAPI) GetClientPortMappings(clientID int64) ([]*models.Por
 	return api.clientService.GetClientPortMappings(clientID)
 }
 
+// ✅ 新增：快速状态查询（仅查Redis，用于API配置推送前判断节点）
+func (api *CloudControlAPI) GetClientNodeID(clientID int64) (string, error) {
+	// 尝试使用refactored service
+	if refactoredService, ok := api.clientService.(interface {
+		GetClientNodeID(int64) (string, error)
+	}); ok {
+		return refactoredService.GetClientNodeID(clientID)
+	}
+	
+	// Fallback：使用GetClient
+	client, err := api.clientService.GetClient(clientID)
+	if err != nil {
+		return "", err
+	}
+	if client == nil || client.Status != models.ClientStatusOnline {
+		return "", nil
+	}
+	return client.NodeID, nil
+}
+
+func (api *CloudControlAPI) IsClientOnNode(clientID int64, nodeID string) (bool, error) {
+	// 尝试使用refactored service
+	if refactoredService, ok := api.clientService.(interface {
+		IsClientOnNode(int64, string) (bool, error)
+	}); ok {
+		return refactoredService.IsClientOnNode(clientID, nodeID)
+	}
+	
+	// Fallback：使用GetClient
+	client, err := api.clientService.GetClient(clientID)
+	if err != nil {
+		return false, err
+	}
+	return client != nil && client.Status == models.ClientStatusOnline && client.NodeID == nodeID, nil
+}
+
+func (api *CloudControlAPI) GetNodeClients(nodeID string) ([]*models.Client, error) {
+	// 尝试使用refactored service
+	if refactoredService, ok := api.clientService.(interface {
+		GetNodeClients(string) ([]*models.Client, error)
+	}); ok {
+		return refactoredService.GetNodeClients(nodeID)
+	}
+	
+	// Fallback：返回空列表
+	return []*models.Client{}, nil
+}
+
 func (api *CloudControlAPI) SearchClients(keyword string) ([]*models.Client, error) {
 	return api.clientService.SearchClients(keyword)
 }

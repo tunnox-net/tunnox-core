@@ -10,6 +10,7 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/idgen"
+	"tunnox-core/internal/core/node"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/protocol/session"
@@ -24,8 +25,10 @@ type Server struct {
 	serviceManager  *utils.ServiceManager
 	protocolMgr     *protocol.ProtocolManager
 	serverID        string
+	nodeID          string // ✅ 动态分配的节点ID
 	storage         storage.Storage
 	idManager       *idgen.IDManager
+	nodeAllocator   *node.NodeIDAllocator // ✅ 节点ID分配器
 	session         *session.SessionManager
 	protocolFactory *ProtocolFactory
 	cloudControl    managers.CloudControlAPI
@@ -51,8 +54,18 @@ func New(config *Config, parentCtx context.Context) *Server {
 
 	serviceManager := utils.NewServiceManager(serviceConfig)
 
-	// 创建云控制器
-	cloudControl := managers.NewBuiltinCloudControl(nil)
+	// ✅ 先创建存储（因为CloudControlAPI需要storage）
+	storageFactory := storage.NewStorageFactory(parentCtx)
+	serverStorage, err := createStorage(storageFactory, &config.Storage)
+	if err != nil {
+		utils.Fatalf("Failed to create storage: %v", err)
+	}
+
+	// ✅ 使用BuiltinCloudControl并传入HybridStorage（替代旧的nil storage）
+	cloudControlConfig := managers.DefaultConfig()          // 使用默认配置
+	cloudControlConfig.NodeID = config.MessageBroker.NodeID // 设置节点ID
+
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(cloudControlConfig, serverStorage)
 
 	// 创建服务器
 	server := &Server{
@@ -62,27 +75,35 @@ func New(config *Config, parentCtx context.Context) *Server {
 		cloudBuiltin:   cloudControl,
 	}
 
-	// 创建存储和ID管理器
-	storageFactory := storage.NewStorageFactory(parentCtx)
-	serverStorage, err := createStorage(storageFactory, &config.Storage)
-	if err != nil {
-		utils.Fatalf("Failed to create storage: %v", err)
-	}
 	server.storage = serverStorage
 	server.idManager = idgen.NewIDManager(server.storage, parentCtx)
+
+	// ✅ 创建节点ID分配器并分配唯一节点ID
+	server.nodeAllocator = node.NewNodeIDAllocator(server.storage)
+	allocatedNodeID, err := server.nodeAllocator.AllocateNodeID(parentCtx)
+	if err != nil {
+		utils.Fatalf("Failed to allocate node ID: %v", err)
+	}
+	server.nodeID = allocatedNodeID
+	utils.Infof("✅ Server: allocated node ID: %s", server.nodeID)
 
 	// 创建 SessionManager
 	server.session = session.NewSessionManager(server.idManager, parentCtx)
 
 	// 创建并设置 AuthHandler 和 TunnelHandler
-	authHandler := NewServerAuthHandler(cloudControl)
+	// 注意：先创建handler，稍后设置NodeID
+	authHandler := NewServerAuthHandler(cloudControl, server.session)
 	tunnelHandler := NewServerTunnelHandler(cloudControl)
 	server.session.SetAuthHandler(authHandler)
 	server.session.SetTunnelHandler(tunnelHandler)
-	
+
 	// ✅ 注入CloudControl，用于查询映射配置（使用适配器）
 	cloudControlAdapter := session.NewCloudControlAdapter(cloudControl)
 	server.session.SetCloudControl(cloudControlAdapter)
+
+	// ✅ 设置SessionManager的NodeID（使用动态分配的节点ID）
+	server.session.SetNodeID(server.nodeID)
+	utils.Infof("Server: SessionManager NodeID set to %s (dynamically allocated)", server.nodeID)
 
 	// 创建协议工厂
 	server.protocolFactory = NewProtocolFactory(server.session)
@@ -100,21 +121,21 @@ func New(config *Config, parentCtx context.Context) *Server {
 		server.bridgeManager = server.createBridgeManager(parentCtx)
 		server.grpcServer = server.startGRPCServer()
 	}
-	
+
 	// ✅ 注入BridgeAdapter到SessionManager，用于跨服务器隧道转发
 	if server.messageBroker != nil {
 		bridgeAdapter := NewBridgeAdapter(server.messageBroker, config.MessageBroker.NodeID)
 		server.session.SetBridgeManager(bridgeAdapter)
 		utils.Infof("Server: BridgeAdapter injected into SessionManager for cross-server tunnel forwarding")
 	}
-	
+
 	// ✅ 创建并注入TunnelRoutingTable，用于跨服务器隧道路由
 	if server.storage != nil {
 		tunnelRouting := session.NewTunnelRoutingTable(server.storage, 30*time.Second)
 		server.session.SetTunnelRoutingTable(tunnelRouting)
 		utils.Infof("Server: TunnelRoutingTable created and injected")
 	}
-	
+
 	// ✅ 设置节点ID
 	server.session.SetNodeID(config.MessageBroker.NodeID)
 
@@ -194,4 +215,3 @@ func (s *Server) RunWithContext(ctx context.Context) error {
 	// 使用服务管理器运行（包含信号处理和优雅关闭）
 	return s.serviceManager.RunWithContext(ctx)
 }
-

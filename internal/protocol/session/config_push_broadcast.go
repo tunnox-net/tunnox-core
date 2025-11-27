@@ -4,16 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+	
+	"tunnox-core/internal/broker"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
-
-// ConfigPushMessage 配置推送广播消息
-type ConfigPushMessage struct {
-	ClientID   int64  `json:"client_id"`
-	ConfigBody string `json:"config_body"`
-	Timestamp  int64  `json:"timestamp"`
-}
 
 // startConfigPushBroadcastSubscription 启动配置推送广播订阅
 func (s *SessionManager) startConfigPushBroadcastSubscription() {
@@ -25,14 +20,13 @@ func (s *SessionManager) startConfigPushBroadcastSubscription() {
 	utils.Infof("SessionManager: starting ConfigPush broadcast subscription for cross-node config delivery")
 
 	// 订阅配置推送广播主题
-	topic := "config.push"
-	msgChan, err := s.bridgeManager.Subscribe(s.Ctx(), topic)
+	msgChan, err := s.bridgeManager.Subscribe(s.Ctx(), broker.TopicConfigPush)
 	if err != nil {
-		utils.Errorf("SessionManager: failed to subscribe to %s: %v", topic, err)
+		utils.Errorf("SessionManager: failed to subscribe to %s: %v", broker.TopicConfigPush, err)
 		return
 	}
 
-	utils.Infof("SessionManager: ✅ subscribed to %s for cross-node config push", topic)
+	utils.Infof("SessionManager: ✅ subscribed to %s for cross-node config push", broker.TopicConfigPush)
 
 	// 启动消息处理循环
 	go s.processConfigPushBroadcasts(msgChan)
@@ -55,7 +49,7 @@ func (s *SessionManager) processConfigPushBroadcasts(msgChan <-chan *BroadcastMe
 			}
 
 			// 解析消息
-			var pushMsg ConfigPushMessage
+			var pushMsg broker.ConfigPushMessage
 			if err := json.Unmarshal(msg.Payload, &pushMsg); err != nil {
 				utils.Errorf("SessionManager: failed to unmarshal config push message: %v", err)
 				continue
@@ -68,17 +62,20 @@ func (s *SessionManager) processConfigPushBroadcasts(msgChan <-chan *BroadcastMe
 }
 
 // handleConfigPushBroadcast 处理配置推送广播
-func (s *SessionManager) handleConfigPushBroadcast(msg *ConfigPushMessage) {
+func (s *SessionManager) handleConfigPushBroadcast(msg *broker.ConfigPushMessage) {
 	utils.Infof("SessionManager: received config push broadcast for client %d", msg.ClientID)
 
 	// 检查目标客户端是否在本节点
 	targetConn := s.GetControlConnectionByClientID(msg.ClientID)
+	utils.Infof("📨 SessionManager[%s]: Received ConfigPush broadcast for client %d", s.nodeID, msg.ClientID)
+	utils.Infof("🔍 SessionManager[%s]: Checking if client %d is on this node...", s.nodeID, msg.ClientID)
+	
 	if targetConn == nil {
-		utils.Debugf("SessionManager: client %d not on this node, ignoring broadcast", msg.ClientID)
+		utils.Infof("⏭️  SessionManager[%s]: client %d not on this node, ignoring broadcast", s.nodeID, msg.ClientID)
 		return
 	}
 
-	utils.Infof("SessionManager: ✅ client %d found locally, pushing config", msg.ClientID)
+	utils.Infof("✅ SessionManager[%s]: client %d FOUND locally! Pushing config...", s.nodeID, msg.ClientID)
 
 	// 构造ConfigSet命令
 	cmd := &packet.CommandPacket{
@@ -111,19 +108,23 @@ func (s *SessionManager) handleConfigPushBroadcast(msg *ConfigPushMessage) {
 
 // BroadcastConfigPush 广播配置推送到集群（供API层调用）
 func (s *SessionManager) BroadcastConfigPush(clientID int64, configBody string) error {
+	utils.Infof("🌐 SessionManager[%s]: BroadcastConfigPush CALLED for client %d", s.nodeID, clientID)
+	
 	if s.bridgeManager == nil {
+		utils.Warnf("⚠️  SessionManager[%s]: BridgeManager is nil, cannot broadcast (single node mode?)", s.nodeID)
 		return nil // 单节点模式，不需要广播
 	}
 
 	// 构造配置推送消息
-	message := ConfigPushMessage{
+	message := broker.ConfigPushMessage{
 		ClientID:   clientID,
 		ConfigBody: configBody,
 		Timestamp:  time.Now().Unix(),
 	}
 
-	messageBytes, err := json.Marshal(message)
+	messageBytes, err := json.Marshal(&message)
 	if err != nil {
+		utils.Errorf("❌ SessionManager[%s]: failed to marshal message: %v", s.nodeID, err)
 		return err
 	}
 
@@ -131,11 +132,13 @@ func (s *SessionManager) BroadcastConfigPush(clientID int64, configBody string) 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	if err := s.bridgeManager.PublishMessage(ctx, "config.push", messageBytes); err != nil {
+	utils.Infof("🌐 SessionManager[%s]: Publishing to topic %s...", s.nodeID, broker.TopicConfigPush)
+	if err := s.bridgeManager.PublishMessage(ctx, broker.TopicConfigPush, messageBytes); err != nil {
+		utils.Errorf("❌ SessionManager[%s]: Publish failed: %v", s.nodeID, err)
 		return err
 	}
 
-	utils.Infof("SessionManager: ✅ config push broadcast sent for client %d", clientID)
+	utils.Infof("✅ SessionManager[%s]: config push broadcast sent for client %d to topic %s", s.nodeID, clientID, broker.TopicConfigPush)
 	return nil
 }
 

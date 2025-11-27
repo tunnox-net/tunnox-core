@@ -187,8 +187,9 @@ func (s *ManagementAPIServer) handleListClientMappings(w http.ResponseWriter, r 
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"mappings": mappings,
-		"total":    len(mappings),
-	})
+	response := MappingListResponse{
+		Mappings: mappings,
+		Total:    len(mappings),
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }

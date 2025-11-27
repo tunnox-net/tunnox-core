@@ -89,28 +89,8 @@ type UserQuota struct {
 	StorageLimit   int64 `json:"storage_limit"`   // 存储限制(字节)
 }
 
-type Client struct {
-	ID        int64                `json:"id"`         // ClientID (8位数字，类似TeamViewer)
-	UserID    string               `json:"user_id"`    // 所属用户ID（匿名用户可能为空）
-	Name      string               `json:"name"`       // 客户端名称
-	AuthCode  string               `json:"auth_code"`  // 认证码
-	SecretKey string               `json:"secret_key"` // 密钥(开发用)
-	Status    ClientStatus         `json:"status"`     // 客户端状态
-	Config    configs.ClientConfig `json:"config"`     // 客户端配置
-	LastSeen  *time.Time           `json:"last_seen"`  // 最后在线时间
-	CreatedAt time.Time            `json:"created_at"` // 创建时间
-	UpdatedAt time.Time            `json:"updated_at"` // 更新时间
-	NodeID    string               `json:"node_id"`    // 连接的节点ID
-	IPAddress string               `json:"ip_address"` // 客户端IP地址
-	Version   string               `json:"version"`    // 客户端版本
-	Type      ClientType           `json:"type"`       // 客户端类型
-
-	// JWT Token管理
-	JWTToken       string     `json:"jwt_token"`        // 当前有效的JWT Token
-	TokenExpiresAt *time.Time `json:"token_expires_at"` // Token过期时间
-	RefreshToken   string     `json:"refresh_token"`    // 用于刷新Token的凭证
-	TokenID        string     `json:"token_id"`         // Token唯一标识，用于撤销
-}
+// Client类型定义已移至 client.go, client_config.go, client_state.go, client_token.go
+// 以实现持久化配置和运行时状态的分离
 
 type ClientType string
 

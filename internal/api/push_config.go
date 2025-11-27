@@ -8,18 +8,16 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/config"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
 
 // pushMappingToClients 推送映射配置给相关客户端
-func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) {
+func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) error {
 	if s.sessionMgr == nil {
-		utils.Warnf("API: SessionManager not configured, cannot push config")
-		return
+		return fmt.Errorf("SessionManager not configured")
 	}
 
-	utils.Infof("API: pushing mapping %s to clients (source=%d, target=%d)",
+	utils.Debugf("API: pushing mapping %s to clients (source=%d, target=%d)",
 		mapping.ID, mapping.SourceClientID, mapping.TargetClientID)
 
 	// 构造映射配置
@@ -42,18 +40,20 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 	}
 
 	// 序列化配置
-	configData := map[string]interface{}{
-		"mappings": mappingConfigs,
+	configData := ConfigPushData{
+		Mappings: mappingConfigs,
 	}
 
-	configJSON, err := json.Marshal(configData)
+	configJSON, err := json.Marshal(&configData)
 	if err != nil {
 		utils.Errorf("API: failed to marshal mapping config: %v", err)
-		return
+		return fmt.Errorf("failed to marshal mapping config: %w", err)
 	}
 
 	// 推送给源客户端
-	s.pushConfigToClient(mapping.SourceClientID, string(configJSON))
+	if err := s.pushConfigToClient(mapping.SourceClientID, string(configJSON)); err != nil {
+		return fmt.Errorf("failed to push config to source client %d: %w", mapping.SourceClientID, err)
+	}
 
 	// 推送给目标客户端（如果不是同一个客户端）
 	if mapping.TargetClientID != mapping.SourceClientID {
@@ -61,88 +61,83 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 		targetConfig := mappingConfigs[0]
 		targetConfig.LocalPort = 0 // 目标端不需要监听
 
-		targetData := map[string]interface{}{
-			"mappings": []config.MappingConfig{targetConfig},
+		targetData := ConfigPushData{
+			Mappings: []config.MappingConfig{targetConfig},
 		}
 
-		targetJSON, err := json.Marshal(targetData)
+		targetJSON, err := json.Marshal(&targetData)
 		if err != nil {
 			utils.Errorf("API: failed to marshal target config: %v", err)
-			return
+			return fmt.Errorf("failed to marshal target config: %w", err)
 		}
 
-		s.pushConfigToClient(mapping.TargetClientID, string(targetJSON))
+		if err := s.pushConfigToClient(mapping.TargetClientID, string(targetJSON)); err != nil {
+			return fmt.Errorf("failed to push config to target client %d: %w", mapping.TargetClientID, err)
+		}
 	}
+
+	return nil
 }
 
 // pushConfigToClient 推送配置给指定客户端
-func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody string) {
-	utils.Infof("API: pushing config to client %d", clientID)
+//
+// 优化：使用快速查询GetClientNodeID（仅查Redis状态），而非GetClient（查配置+状态）
+//
+// 流程：
+// 1. 从Redis查询client所在节点（快速）
+// 2. 如果在其他节点，直接广播到集群
+// 3. 如果在本节点，本地推送
+// 4. 如果查不到节点信息，广播到集群（让正确的节点处理）
+func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody string) error {
+	// 优化：使用快速查询GetClientNodeID（仅查Redis状态）
+	if s.cloudControl != nil {
+		clientNodeID, err := s.cloudControl.GetClientNodeID(clientID)
+		if err != nil {
+			utils.Debugf("API: failed to query client %d node from Redis: %v", clientID, err)
+			// 继续fallback到本地查询
+		} else if clientNodeID != "" {
+			// 客户端在线，且已知节点ID
+			currentNodeID := s.sessionMgr.GetNodeID()
+			if clientNodeID != currentNodeID {
+				// Client在其他节点，直接广播
+				utils.Debugf("API: client %d is on node %s (current: %s), broadcasting via Redis",
+					clientID, clientNodeID, currentNodeID)
+				if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
+					return fmt.Errorf("failed to broadcast config push to cluster: %w", err)
+				}
+				return nil
+			}
+			utils.Debugf("API: client %d confirmed on THIS node %s via Redis", clientID, currentNodeID)
+		} else {
+			// clientNodeID为空 = 客户端离线或不存在
+			utils.Debugf("API: client %d is offline (no nodeID in Redis), will broadcast anyway", clientID)
+			if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
+				return fmt.Errorf("failed to broadcast config push for offline client: %w", err)
+			}
+			return nil
+		}
+	}
 
 	// 获取客户端的控制连接（本地）
 	connInterface := s.sessionMgr.GetControlConnectionInterface(clientID)
 	if connInterface == nil {
 		// 本地未找到，尝试通过消息队列广播到其他节点
-		utils.Infof("API: client %d not found locally, broadcasting config push to cluster", clientID)
+		utils.Debugf("API: client %d NOT found locally, broadcasting to cluster", clientID)
 		if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
-			utils.Errorf("API: failed to broadcast config push: %v", err)
-		} else {
-			utils.Infof("API: ✅ config push broadcasted to cluster for client %d", clientID)
+			return fmt.Errorf("failed to broadcast config push to cluster: %w", err)
 		}
-		return
-	}
-	utils.Infof("API: ✅ found local control connection for client %d, connInterface=%p", clientID, connInterface)
-
-	// 获取ConnID和RemoteAddr用于追踪
-	var connID string
-	var remoteAddr string
-
-	// 尝试获取ConnID
-	type hasConnID interface {
-		GetConnID() string
-	}
-	if v, ok := connInterface.(hasConnID); ok {
-		connID = v.GetConnID()
-		utils.Infof("API: control connection ConnID=%s", connID)
+		return nil // 广播成功，其他节点会处理
 	}
 
-	// 尝试获取RemoteAddr
-	type hasRemoteAddr interface {
-		GetRemoteAddr() string
-	}
-	if v, ok := connInterface.(hasRemoteAddr); ok {
-		remoteAddr = v.GetRemoteAddr()
-		utils.Infof("API: control connection RemoteAddr=%s", remoteAddr)
-	}
-
-	// 定义接口来访问GetStream方法
-	type hasGetStream interface {
-		GetStream() interface{}
-	}
-
-	// 通过GetStream()方法获取Stream
-	var streamProcessor *stream.StreamProcessor
-	if hs, ok := connInterface.(hasGetStream); ok {
-		streamInterface := hs.GetStream()
-		if streamInterface == nil {
-			utils.Warnf("API: client %d stream is nil, client may not be fully connected", clientID)
-			return
+	// 获取StreamProcessor
+	streamProcessor, connID, remoteAddr, err := getStreamFromConnection(connInterface, clientID)
+	if err != nil {
+		// 发现脏数据（有连接对象但stream为nil），清理并广播
+		utils.Warnf("API: client %d has stale local connection (stream is nil), broadcasting to cluster", clientID)
+		if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
+			return fmt.Errorf("failed to broadcast after detecting stale connection: %w", err)
 		}
-		utils.Infof("API: got stream interface, stream=%p, type=%T", streamInterface, streamInterface)
-
-		// 类型断言为 *stream.StreamProcessor
-		var ok bool
-		streamProcessor, ok = streamInterface.(*stream.StreamProcessor)
-		if !ok {
-			utils.Warnf("API: client %d stream type assertion failed, stream type=%T", clientID, streamInterface)
-			return
-		}
-		utils.Infof("API: ✅ stream type assertion success, streamProcessor=%p", streamProcessor)
-	}
-
-	if streamProcessor == nil {
-		utils.Warnf("API: cannot access stream for client %d, will retry when client reconnects", clientID)
-		return
+		return nil
 	}
 
 	// 构造ConfigSet命令
@@ -156,34 +151,12 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 		CommandPacket: cmd,
 	}
 
-	// 发送配置（异步推送，避免阻塞API请求）
-	go func() {
-		utils.Infof("API: starting async config push to client %d (ConnID=%s, RemoteAddr=%s)",
-			clientID, connID, remoteAddr)
-		utils.Infof("API: streamProcessor=%p, about to call WritePacket", streamProcessor)
+	// 异步发送配置推送包
+	utils.Debugf("API: pushing config to client %d (ConnID=%s, RemoteAddr=%s)",
+		clientID, connID, remoteAddr)
+	sendPacketAsync(streamProcessor, pkt, clientID, 5*time.Second)
 
-		// 使用channel+超时来避免永久阻塞
-		done := make(chan error, 1)
-		go func() {
-			utils.Infof("API: calling WritePacket on streamProcessor=%p", streamProcessor)
-			n, err := streamProcessor.WritePacket(pkt, false, 0)
-			utils.Infof("API: WritePacket returned: bytes=%d, err=%v", n, err)
-			done <- err
-		}()
-
-		select {
-		case err := <-done:
-			if err != nil {
-				utils.Errorf("API: failed to push config to client %d: %v", clientID, err)
-			} else {
-				utils.Infof("API: ✅ config pushed successfully to client %d", clientID)
-			}
-		case <-time.After(5 * time.Second):
-			utils.Errorf("API: push config to client %d timed out after 5s", clientID)
-		}
-	}()
-
-	utils.Infof("API: config push initiated for client %d (async)", clientID)
+	return nil
 }
 
 // broadcastConfigPushToCluster 广播配置推送到集群其他节点
@@ -206,12 +179,12 @@ func (s *ManagementAPIServer) removeMappingFromClients(mapping *models.PortMappi
 		mapping.ID, mapping.SourceClientID, mapping.TargetClientID)
 
 	// 构造空的映射配置（表示移除）
-	configData := map[string]interface{}{
-		"mappings":        []config.MappingConfig{},
-		"remove_mappings": []string{mapping.ID},
+	configData := ConfigRemovalData{
+		Mappings:       []config.MappingConfig{},
+		RemoveMappings: []string{mapping.ID},
 	}
 
-	configJSON, err := json.Marshal(configData)
+	configJSON, err := json.Marshal(&configData)
 	if err != nil {
 		utils.Errorf("API: failed to marshal removal config: %v", err)
 		return
@@ -242,31 +215,19 @@ func (s *ManagementAPIServer) kickClient(clientID int64, reason, code string) {
 		return
 	}
 
-	// 定义接口来访问GetStream方法
-	type hasGetStream interface {
-		GetStream() interface{}
-	}
-
-	// 获取Stream
-	var streamProcessor *stream.StreamProcessor
-	if hs, ok := connInterface.(hasGetStream); ok {
-		streamInterface := hs.GetStream()
-		if streamInterface != nil {
-			streamProcessor, _ = streamInterface.(*stream.StreamProcessor)
-		}
-	}
-
-	if streamProcessor == nil {
-		utils.Warnf("API: cannot access stream for client %d", clientID)
+	// 获取StreamProcessor
+	streamProcessor, connID, remoteAddr, err := getStreamFromConnection(connInterface, clientID)
+	if err != nil {
+		utils.Warnf("API: failed to get stream for client %d: %v", clientID, err)
 		return
 	}
 
 	// 构造踢下线命令
-	kickInfo := map[string]string{
-		"reason": reason,
-		"code":   code,
+	kickInfo := KickClientInfo{
+		Reason: reason,
+		Code:   code,
 	}
-	kickJSON, _ := json.Marshal(kickInfo)
+	kickJSON, _ := json.Marshal(&kickInfo)
 
 	cmd := &packet.CommandPacket{
 		CommandType: packet.KickClient,
@@ -278,25 +239,9 @@ func (s *ManagementAPIServer) kickClient(clientID int64, reason, code string) {
 		CommandPacket: cmd,
 	}
 
-	// 发送踢下线命令（异步）
-	go func() {
-		done := make(chan error, 1)
-		go func() {
-			_, err := streamProcessor.WritePacket(pkt, false, 0)
-			done <- err
-		}()
-
-		select {
-		case err := <-done:
-			if err != nil {
-				utils.Errorf("API: failed to send kick command to client %d: %v", clientID, err)
-			} else {
-				utils.Infof("API: ✅ kick command sent to client %d", clientID)
-			}
-		case <-time.After(3 * time.Second):
-			utils.Errorf("API: kick command to client %d timed out", clientID)
-		}
-	}()
+	// 异步发送踢下线命令
+	utils.Infof("API: sending kick command to client %d (ConnID=%s, RemoteAddr=%s)", clientID, connID, remoteAddr)
+	sendPacketAsync(streamProcessor, pkt, clientID, 3*time.Second)
 }
 
 // SetSessionManager 设置SessionManager（由Server启动时调用）

@@ -167,6 +167,49 @@ func (c *CloudControl) GetClientPortMappings(clientID int64) ([]*models.PortMapp
 	return c.mappingRepo.GetClientPortMappings(fmt.Sprintf("%d", clientID))
 }
 
+// ========== 客户端状态快速查询（新增，兼容CloudControlAPI接口） ==========
+
+// GetClientNodeID 获取客户端所在节点ID（快速查询）
+//
+// 实现说明：旧版CloudControl没有分离的StateRepository，直接查Client
+func (c *CloudControl) GetClientNodeID(clientID int64) (string, error) {
+	client, err := c.clientRepo.GetClient(fmt.Sprintf("%d", clientID))
+	if err != nil {
+		return "", err
+	}
+	if client == nil || client.Status != models.ClientStatusOnline {
+		return "", nil // 离线或不存在
+	}
+	return client.NodeID, nil
+}
+
+// IsClientOnNode 检查客户端是否在指定节点
+func (c *CloudControl) IsClientOnNode(clientID int64, nodeID string) (bool, error) {
+	client, err := c.clientRepo.GetClient(fmt.Sprintf("%d", clientID))
+	if err != nil {
+		return false, err
+	}
+	return client != nil && client.Status == models.ClientStatusOnline && client.NodeID == nodeID, nil
+}
+
+// GetNodeClients 获取节点的所有在线客户端
+//
+// 实现说明：旧版没有节点索引，遍历所有客户端过滤（性能较差）
+func (c *CloudControl) GetNodeClients(nodeID string) ([]*models.Client, error) {
+	allClients, err := c.clientRepo.ListClients()
+	if err != nil {
+		return nil, err
+	}
+	
+	nodeClients := make([]*models.Client, 0)
+	for _, client := range allClients {
+		if client.Status == models.ClientStatusOnline && client.NodeID == nodeID {
+			nodeClients = append(nodeClients, client)
+		}
+	}
+	return nodeClients, nil
+}
+
 // MigrateClientMappings 迁移客户端的端口映射
 func (c *CloudControl) MigrateClientMappings(fromClientID, toClientID int64) error {
 	// 获取源客户端的所有映射

@@ -133,10 +133,11 @@ func (s *ManagementAPIServer) handleListUsers(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"users": users,
-		"total": len(users),
-	})
+	response := UserListResponse{
+		Users: users,
+		Total: len(users),
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleListUserClients 列出用户的客户端
@@ -153,10 +154,11 @@ func (s *ManagementAPIServer) handleListUserClients(w http.ResponseWriter, r *ht
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"clients": clients,
-		"total":   len(clients),
-	})
+	response := ClientListResponse{
+		Clients: clients,
+		Total:   len(clients),
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleListUserMappings 列出用户的端口映射
@@ -173,9 +175,10 @@ func (s *ManagementAPIServer) handleListUserMappings(w http.ResponseWriter, r *h
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"mappings": mappings,
-		"total":    len(mappings),
-	})
+	response := MappingListResponse{
+		Mappings: mappings,
+		Total:    len(mappings),
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 

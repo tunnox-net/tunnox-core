@@ -55,13 +55,14 @@ func (s *ManagementAPIServer) handleLogin(w http.ResponseWriter, r *http.Request
 		return
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":    true,
-		"token":      authResp.Token,
-		"expires_at": authResp.ExpiresAt,
-		"client":     authResp.Client,
-		"message":    authResp.Message,
-	})
+	response := LoginResponse{
+		Success:   true,
+		Token:     authResp.Token,
+		ExpiresAt: authResp.ExpiresAt,
+		Client:    authResp.Client,
+		Message:   authResp.Message,
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleRefreshToken 刷新Token
@@ -84,12 +85,13 @@ func (s *ManagementAPIServer) handleRefreshToken(w http.ResponseWriter, r *http.
 		return
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":    true,
-		"token":      tokenInfo.Token,
-		"expires_at": tokenInfo.ExpiresAt,
-		"message":    "Token refreshed successfully",
-	})
+	response := RefreshTokenResponse{
+		Success:   true,
+		Token:     tokenInfo.Token,
+		ExpiresAt: tokenInfo.ExpiresAt,
+		Message:   "Token refreshed successfully",
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleRevokeToken 撤销Token
@@ -145,11 +147,12 @@ func (s *ManagementAPIServer) handleValidateToken(w http.ResponseWriter, r *http
 		return
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success":    true,
-		"client":     authResp.Client,
-		"expires_at": authResp.ExpiresAt,
-		"message":    "Token is valid",
-	})
+	response := ValidateTokenResponse{
+		Success:   true,
+		Client:    authResp.Client,
+		ExpiresAt: authResp.ExpiresAt,
+		Message:   "Token is valid",
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 

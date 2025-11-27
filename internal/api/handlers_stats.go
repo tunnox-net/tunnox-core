@@ -63,11 +63,11 @@ func (s *ManagementAPIServer) handleGetTrafficStats(w http.ResponseWriter, r *ht
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"time_range": timeRange,
-		"data":       stats,
-		"total":      len(stats),
-	})
+	response := StatsResponse{
+		TimeRange: timeRange,
+		Data:      stats,
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleGetConnectionStats 获取连接数时序统计
@@ -84,9 +84,9 @@ func (s *ManagementAPIServer) handleGetConnectionStats(w http.ResponseWriter, r 
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"time_range": timeRange,
-		"data":       stats,
-		"total":      len(stats),
-	})
+	response := StatsResponse{
+		TimeRange: timeRange,
+		Data:      stats,
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }

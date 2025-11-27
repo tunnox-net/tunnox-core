@@ -17,11 +17,12 @@ func (s *ManagementAPIServer) handleListAllConnections(w http.ResponseWriter, r 
 			return
 		}
 		
-		s.respondJSON(w, http.StatusOK, map[string]interface{}{
-			"connections": connections,
-			"total":       len(connections),
-			"mapping_id":  mappingID,
-		})
+		response := ConnectionListResponse{
+			Connections: connections,
+			Total:       len(connections),
+			MappingID:   mappingID,
+		}
+		s.respondJSON(w, http.StatusOK, response)
 		return
 	}
 	
@@ -43,11 +44,12 @@ func (s *ManagementAPIServer) handleListMappingConnections(w http.ResponseWriter
 		return
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"connections": connections,
-		"total":       len(connections),
-		"mapping_id":  mappingID,
-	})
+	response := ConnectionListResponse{
+		Connections: connections,
+		Total:       len(connections),
+		MappingID:   mappingID,
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleListClientConnections 列出客户端的所有连接
@@ -64,11 +66,12 @@ func (s *ManagementAPIServer) handleListClientConnections(w http.ResponseWriter,
 		return
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"connections": connections,
-		"total":       len(connections),
-		"client_id":   clientID,
-	})
+	response := ConnectionListResponse{
+		Connections: connections,
+		Total:       len(connections),
+		ClientID:    clientID,
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleCloseConnection 强制关闭连接

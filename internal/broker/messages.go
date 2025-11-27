@@ -16,12 +16,28 @@ type ClientOfflineMessage struct {
 
 // ConfigUpdateMessage 配置更新消息
 type ConfigUpdateMessage struct {
-	TargetType string      `json:"target_type"` // user/client/mapping
-	TargetID   int64       `json:"target_id"`
-	ConfigType string      `json:"config_type"` // quota/mapping/settings
-	ConfigData interface{} `json:"config_data"`
-	Version    int64       `json:"version"`    // 配置版本号
-	Timestamp  int64       `json:"timestamp"`
+	TargetType string `json:"target_type"` // user/client/mapping
+	TargetID   int64  `json:"target_id"`
+	ConfigType string `json:"config_type"` // quota/mapping/settings
+	ConfigData string `json:"config_data"` // JSON格式配置数据
+	Version    int64  `json:"version"`     // 配置版本号
+	Timestamp  int64  `json:"timestamp"`
+}
+
+// ConfigPushMessage 配置推送消息（定向推送到特定客户端）
+type ConfigPushMessage struct {
+	ClientID   int64  `json:"client_id"`
+	ConfigBody string `json:"config_body"` // JSON格式配置
+	Timestamp  int64  `json:"timestamp"`
+}
+
+// TunnelOpenMessage 跨节点隧道打开请求消息
+type TunnelOpenMessage struct {
+	ClientID   int64  `json:"client_id"`
+	TunnelID   string `json:"tunnel_id"`
+	TargetHost string `json:"target_host"`
+	TargetPort int    `json:"target_port"`
+	Timestamp  int64  `json:"timestamp"`
 }
 
 // MappingCreatedMessage 映射创建消息

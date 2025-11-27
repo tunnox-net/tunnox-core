@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/utils"
 )
 
 // CreateMappingRequest 创建端口映射请求
@@ -41,9 +42,9 @@ func (s *ManagementAPIServer) handleCreateMapping(w http.ResponseWriter, r *http
 		return
 	}
 
-	// 验证必填字段
-	if req.UserID == "" || req.SourceClientID == 0 || req.TargetClientID == 0 {
-		s.respondError(w, http.StatusBadRequest, "user_id, source_client_id, and target_client_id are required")
+	// 验证必填字段（UserID允许为空，用于匿名客户端）
+	if req.SourceClientID == 0 || req.TargetClientID == 0 {
+		s.respondError(w, http.StatusBadRequest, "source_client_id and target_client_id are required")
 		return
 	}
 	if req.Protocol == "" || req.TargetHost == "" || req.TargetPort == 0 {
@@ -75,6 +76,7 @@ func (s *ManagementAPIServer) handleCreateMapping(w http.ResponseWriter, r *http
 	// 创建端口映射（带事务保护）
 	createdMapping, err := s.createMappingWithTransaction(mapping)
 	if err != nil {
+		utils.Errorf("API: failed to create mapping: %v", err)
 		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

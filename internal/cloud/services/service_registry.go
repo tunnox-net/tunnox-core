@@ -156,6 +156,52 @@ func registerInfrastructureServices(container *container.Container, config *mana
 		return connRepo, nil
 	})
 
+	// ✅ 新增：注册分离的客户端Repository（配置、状态、Token）
+	container.RegisterSingleton("client_config_repository", func() (interface{}, error) {
+		repoInstance, err := container.Resolve("repository")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve repository: %w", err)
+		}
+
+		repo, ok := repoInstance.(*repos.Repository)
+		if !ok {
+			return nil, fmt.Errorf("repository is not of type *repos.Repository")
+		}
+
+		configRepo := repos.NewClientConfigRepository(repo)
+		return configRepo, nil
+	})
+
+	container.RegisterSingleton("client_state_repository", func() (interface{}, error) {
+		storageInstance, err := container.Resolve("storage")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve storage: %w", err)
+		}
+
+		stor, ok := storageInstance.(storageCore.Storage)
+		if !ok {
+			return nil, fmt.Errorf("storage is not of type storage.Storage")
+		}
+
+		stateRepo := repos.NewClientStateRepository(parentCtx, stor)
+		return stateRepo, nil
+	})
+
+	container.RegisterSingleton("client_token_repository", func() (interface{}, error) {
+		storageInstance, err := container.Resolve("storage")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve storage: %w", err)
+		}
+
+		stor, ok := storageInstance.(storageCore.Storage)
+		if !ok {
+			return nil, fmt.Errorf("storage is not of type storage.Storage")
+		}
+
+		tokenRepo := repos.NewClientTokenRepository(parentCtx, stor)
+		return tokenRepo, nil
+	})
+
 	// 注册JWT管理器
 	container.RegisterSingleton("jwt_manager", func() (interface{}, error) {
 		configInstance, err := container.Resolve("config")
@@ -280,8 +326,25 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 		return userService, nil
 	})
 
-	// 注册客户端服务
+	// ✅ 重构：注册新的ClientService（使用分离的Repository）
 	container.RegisterSingleton("client_service", func() (interface{}, error) {
+		// 新Repository
+		configRepoInstance, err := container.Resolve("client_config_repository")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve client config repository: %w", err)
+		}
+
+		stateRepoInstance, err := container.Resolve("client_state_repository")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve client state repository: %w", err)
+		}
+
+		tokenRepoInstance, err := container.Resolve("client_token_repository")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve client token repository: %w", err)
+		}
+
+		// 旧Repository（兼容性）
 		clientRepoInstance, err := container.Resolve("client_repository")
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve client repository: %w", err)
@@ -300,6 +363,22 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 		statsManagerInstance, err := container.Resolve("stats_manager")
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve stats manager: %w", err)
+		}
+
+		// 类型断言
+		configRepo, ok := configRepoInstance.(*repos.ClientConfigRepository)
+		if !ok {
+			return nil, fmt.Errorf("client config repository is not of type *repos.ClientConfigRepository")
+		}
+
+		stateRepo, ok := stateRepoInstance.(*repos.ClientStateRepository)
+		if !ok {
+			return nil, fmt.Errorf("client state repository is not of type *repos.ClientStateRepository")
+		}
+
+		tokenRepo, ok := tokenRepoInstance.(*repos.ClientTokenRepository)
+		if !ok {
+			return nil, fmt.Errorf("client token repository is not of type *repos.ClientTokenRepository")
 		}
 
 		clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
@@ -322,7 +401,12 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("stats manager is not of type *managers.StatsManager")
 		}
 
-		clientService := NewClientService(clientRepo, mappingRepo, idManager, statsManager, parentCtx)
+		// ✅ 使用新的构造函数
+		clientService := NewClientService(
+			configRepo, stateRepo, tokenRepo,
+			clientRepo, mappingRepo,
+			idManager, statsManager, parentCtx,
+		)
 		return clientService, nil
 	})
 

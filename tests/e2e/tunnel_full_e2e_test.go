@@ -115,10 +115,19 @@ func TestFullTunnel_CompletePortForwarding(t *testing.T) {
 
 		require.GreaterOrEqual(t, len(onlineClients), 2, "Should have at least 2 online anonymous clients")
 
-		// 使用前两个在线的客户端
-		clientAID = onlineClients[0].ID
-		clientBID = onlineClients[1].ID
-		t.Logf("✅ Using online anonymous clients: A=%d, B=%d", clientAID, clientBID)
+		// ✅ 通过容器名称后缀获取实际的ClientID（最可靠的方法）
+		// 实际容器名可能是: tunnox-e2e-{timestamp}-client-a
+		// 使用后缀匹配: client-a, client-b
+		var containerErr error
+		clientAID, containerErr = GetClientIDFromContainer(t, "client-a")
+		require.NoError(t, containerErr, "Failed to get ClientA ID from container")
+
+		clientBID, containerErr = GetClientIDFromContainer(t, "client-b")
+		require.NoError(t, containerErr, "Failed to get ClientB ID from container")
+
+		t.Logf("✅ Identified clients from containers:")
+		t.Logf("   ClientA (suffix: client-a): ID=%d (source, will listen on 8080)", clientAID)
+		t.Logf("   ClientB (suffix: client-b): ID=%d (target, will connect to target-nginx)", clientBID)
 
 		// 创建用户（用于关联映射）
 		user, err := apiClient.CreateUser(CreateUserRequest{

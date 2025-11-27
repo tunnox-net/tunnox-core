@@ -32,6 +32,14 @@ func ApplyEnvOverrides(config *Config) {
 		config.MessageBroker.Type = v
 		utils.Infof("Config override from env: MESSAGE_BROKER_TYPE=%s", v)
 	}
+	
+	// ✅ NODE_ID优先（简化版）
+	if v := os.Getenv("NODE_ID"); v != "" {
+		config.MessageBroker.NodeID = v
+		utils.Infof("Config override from env: NODE_ID=%s", v)
+	}
+	
+	// MESSAGE_BROKER_NODE_ID优先级更高（可覆盖NODE_ID）
 	if v := os.Getenv("MESSAGE_BROKER_NODE_ID"); v != "" {
 		config.MessageBroker.NodeID = v
 		utils.Infof("Config override from env: MESSAGE_BROKER_NODE_ID=%s", v)
@@ -67,15 +75,6 @@ func ApplyEnvOverrides(config *Config) {
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		config.Log.Level = v
 		utils.Infof("Config override from env: LOG_LEVEL=%s", v)
-	}
-	
-	// Node配置
-	if v := os.Getenv("NODE_ID"); v != "" {
-		// 如果MessageBroker的NodeID未设置，使用NODE_ID
-		if config.MessageBroker.NodeID == "" {
-			config.MessageBroker.NodeID = v
-			utils.Infof("Config override from env: NODE_ID=%s (applied to MessageBroker.NodeID)", v)
-		}
 	}
 }
 

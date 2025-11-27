@@ -69,8 +69,15 @@ func (s *ManagementAPIServer) createMappingWithTransaction(mapping *models.PortM
 		return s.cloudControl.DeletePortMapping(createdMapping.ID)
 	})
 
-	// 2. 推送配置给客户端（这个操作是异步的，不需要回滚）
-	s.pushMappingToClients(createdMapping)
+	// 2. 推送配置给客户端
+	if err := s.pushMappingToClients(createdMapping); err != nil {
+		utils.Errorf("API: failed to push mapping config to clients for mapping %s: %v", createdMapping.ID, err)
+		// 回滚：删除已创建的mapping
+		if delErr := s.cloudControl.DeletePortMapping(createdMapping.ID); delErr != nil {
+			utils.Errorf("API: failed to rollback mapping %s: %v", createdMapping.ID, delErr)
+		}
+		return nil, fmt.Errorf("failed to push config to clients: %w", err)
+	}
 
 	// 如果后续有更多操作失败，可以调用 tx.Rollback()
 	// 这里示例简单，没有更多操作

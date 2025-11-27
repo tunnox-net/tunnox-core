@@ -37,10 +37,11 @@ func (s *ManagementAPIServer) handleListAllClients(w http.ResponseWriter, r *htt
 		clients = filteredClients
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"clients": clients,
-		"total":   len(clients),
-	})
+	response := ClientListResponse{
+		Clients: clients,
+		Total:   len(clients),
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleListAllMappings 列出所有端口映射
@@ -75,9 +76,10 @@ func (s *ManagementAPIServer) handleListAllMappings(w http.ResponseWriter, r *ht
 		mappings = filteredMappings
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"mappings": mappings,
-		"total":    len(mappings),
-	})
+	response := MappingListResponse{
+		Mappings: mappings,
+		Total:    len(mappings),
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 

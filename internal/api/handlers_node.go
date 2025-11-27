@@ -12,10 +12,11 @@ func (s *ManagementAPIServer) handleListNodes(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"nodes": nodes,
-		"total": len(nodes),
-	})
+	response := NodeListResponse{
+		Nodes: nodes,
+		Total: len(nodes),
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 
 // handleGetNode 获取节点详情
