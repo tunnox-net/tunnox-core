@@ -3,7 +3,7 @@ package e2e
 import (
 	"fmt"
 	"io"
-	"net/http"
+	"net"
 	"testing"
 	"time"
 
@@ -69,7 +69,7 @@ func TestFullTunnel_CompletePortForwarding(t *testing.T) {
 		allClients, err := apiClient.ListClients()
 		require.NoError(t, err, "Failed to list clients")
 		t.Logf("Found %d total clients (including offline)", len(allClients))
-		
+
 		// 过滤出online的匿名客户端，并去重（使用map）
 		onlineClientsMap := make(map[int64]ClientResponse)
 		for _, client := range allClients {
@@ -77,20 +77,20 @@ func TestFullTunnel_CompletePortForwarding(t *testing.T) {
 				onlineClientsMap[client.ID] = client
 			}
 		}
-		
+
 		// 转换为数组
 		onlineClients := make([]ClientResponse, 0, len(onlineClientsMap))
 		for _, client := range onlineClientsMap {
 			onlineClients = append(onlineClients, client)
 		}
-		
+
 		t.Logf("Found %d unique online anonymous clients", len(onlineClients))
 		for i, client := range onlineClients {
 			t.Logf("  OnlineClient[%d]: ID=%d, Name=%s", i, client.ID, client.Name)
 		}
 
 		require.GreaterOrEqual(t, len(onlineClients), 2, "Should have at least 2 online anonymous clients")
-		
+
 		// 使用前两个在线的客户端
 		clientAID = onlineClients[0].ID
 		clientBID = onlineClients[1].ID
@@ -107,25 +107,25 @@ func TestFullTunnel_CompletePortForwarding(t *testing.T) {
 			t.Skip("Cannot create user, skipping API-based test")
 			return
 		}
-		userID = user.ID  // 设置userID变量
+		userID = user.ID // 设置userID变量
 		t.Logf("✅ User created: %s", user.ID)
 
 		// 为匿名客户端创建端口映射：ClientA监听8080 → target-nginx:80
 		mapping, err := apiClient.CreateMapping(CreateMappingRequest{
 			UserID:         user.ID,
-			SourceClientID: clientAID,  // 使用实际连接的匿名ClientA的ID
-			TargetClientID: clientBID,  // 使用实际连接的匿名ClientB的ID
+			SourceClientID: clientAID, // 使用实际连接的匿名ClientA的ID
+			TargetClientID: clientBID, // 使用实际连接的匿名ClientB的ID
 			Protocol:       "tcp",
 			SourcePort:     8080,           // ClientA监听的本地端口
 			TargetHost:     "target-nginx", // 目标主机
-			TargetPort:     80,              // 目标端口
+			TargetPort:     80,             // 目标端口
 			MappingName:    "e2e-nginx-tunnel",
 		})
 		require.NoError(t, err, "Failed to create mapping")
 		mappingID = mapping.ID
 		t.Logf("✅ Mapping created: %s", mappingID)
 		t.Logf("   Source: ClientA(ID=%d, Anonymous):%d", clientAID, mapping.SourcePort)
-		t.Logf("   Target: %s:%d (via ClientB ID=%d, Anonymous)", 
+		t.Logf("   Target: %s:%d (via ClientB ID=%d, Anonymous)",
 			mapping.TargetHost, mapping.TargetPort, clientBID)
 
 		// 等待配置推送到clients
@@ -382,5 +382,3 @@ func TestFullTunnel_MultiProtocol(t *testing.T) {
 
 	t.Log("✅ Multi-protocol test finished")
 }
-
-
