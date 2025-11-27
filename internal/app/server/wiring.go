@@ -97,31 +97,17 @@ func (s *Server) createMessageBroker(ctx context.Context) broker.MessageBroker {
 
 	// 配置 Redis（如果使用 Redis）
 	if brokerConfig.Type == broker.BrokerTypeRedis {
-		redisConfig := &broker.RedisBrokerConfig{}
-
-		// 解析 Redis 配置
-		if addrs, ok := s.config.MessageBroker.Redis["addrs"].([]interface{}); ok {
-			for _, addr := range addrs {
-				if addrStr, ok := addr.(string); ok {
-					redisConfig.Addrs = append(redisConfig.Addrs, addrStr)
-				}
-			}
+		redisConfig := &broker.RedisBrokerConfig{
+			Addrs:       []string{s.config.MessageBroker.Redis.Addr},
+			Password:    s.config.MessageBroker.Redis.Password,
+			DB:          s.config.MessageBroker.Redis.DB,
+			ClusterMode: s.config.MessageBroker.Redis.ClusterMode,
+			PoolSize:    s.config.MessageBroker.Redis.PoolSize,
 		}
 
-		if password, ok := s.config.MessageBroker.Redis["password"].(string); ok {
-			redisConfig.Password = password
-		}
-
-		if db, ok := s.config.MessageBroker.Redis["db"].(int); ok {
-			redisConfig.DB = db
-		}
-
-		if clusterMode, ok := s.config.MessageBroker.Redis["cluster_mode"].(bool); ok {
-			redisConfig.ClusterMode = clusterMode
-		}
-
-		if poolSize, ok := s.config.MessageBroker.Redis["pool_size"].(int); ok {
-			redisConfig.PoolSize = poolSize
+		// 设置默认值
+		if redisConfig.PoolSize <= 0 {
+			redisConfig.PoolSize = 10
 		}
 
 		brokerConfig.Redis = redisConfig
@@ -176,16 +162,15 @@ func (s *Server) createBridgeManager(ctx context.Context) *internalbridge.Bridge
 func (s *Server) startGRPCServer() *grpc.Server {
 	// 从配置中获取 gRPC 服务器地址
 	grpcServerConfig := s.config.BridgePool.GRPCServer
-	enabled, _ := grpcServerConfig["enabled"].(bool)
-	if !enabled {
+	
+	// 检查端口是否配置（如果未配置则不启动）
+	if grpcServerConfig.Port == 0 {
+		utils.Warn("gRPC server port not configured, skipping gRPC server startup")
 		return nil
 	}
 
-	port, _ := grpcServerConfig["port"].(int)
-	host, _ := grpcServerConfig["host"].(string)
-	if port == 0 {
-		port = 50051
-	}
+	port := grpcServerConfig.Port
+	host := grpcServerConfig.Addr
 	if host == "" {
 		host = "0.0.0.0"
 	}
@@ -259,34 +244,21 @@ func (s *Server) getEnabledProtocols() map[string]ProtocolConfig {
 
 // createManagementAPI 创建 Management API 服务器
 func (s *Server) createManagementAPI(ctx context.Context) *api.ManagementAPIServer {
-	// 将 map[string]interface{} 转换为具体类型
-	authConfig := api.AuthConfig{}
-	if authType, ok := s.config.ManagementAPI.Auth["type"].(string); ok {
-		authConfig.Type = authType
-	}
-	if secret, ok := s.config.ManagementAPI.Auth["secret"].(string); ok {
-		authConfig.Secret = secret
-	}
-
-	corsConfig := api.CORSConfig{}
-	if enabled, ok := s.config.ManagementAPI.CORS["enabled"].(bool); ok {
-		corsConfig.Enabled = enabled
-	}
-	if origins, ok := s.config.ManagementAPI.CORS["allowed_origins"].([]string); ok {
-		corsConfig.AllowedOrigins = origins
-	}
-
-	rateLimitConfig := api.RateLimitConfig{}
-	if enabled, ok := s.config.ManagementAPI.RateLimit["enabled"].(bool); ok {
-		rateLimitConfig.Enabled = enabled
-	}
-
+	// 使用强类型配置
 	apiConfig := &api.APIConfig{
 		Enabled:    s.config.ManagementAPI.Enabled,
 		ListenAddr: s.config.ManagementAPI.ListenAddr,
-		Auth:       authConfig,
-		CORS:       corsConfig,
-		RateLimit:  rateLimitConfig,
+		Auth: api.AuthConfig{
+			Type:   s.config.ManagementAPI.Auth.Type,
+			Secret: s.config.ManagementAPI.Auth.Token, // Token 映射到 Secret
+		},
+		CORS: api.CORSConfig{
+			Enabled:        s.config.ManagementAPI.CORS.Enabled,
+			AllowedOrigins: s.config.ManagementAPI.CORS.AllowedOrigins,
+		},
+		RateLimit: api.RateLimitConfig{
+			Enabled: s.config.ManagementAPI.RateLimit.Enabled,
+		},
 	}
 
 	apiServer := api.NewManagementAPIServer(ctx, apiConfig, s.cloudControl)

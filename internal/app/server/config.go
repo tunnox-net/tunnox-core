@@ -28,37 +28,111 @@ type ServerConfig struct {
 
 // CloudConfig 云控配置
 type CloudConfig struct {
-	Type     string                 `yaml:"type"`
-	BuiltIn  map[string]interface{} `yaml:"built_in"`
-	External map[string]interface{} `yaml:"external"`
+	Type     string              `yaml:"type"`
+	BuiltIn  BuiltInCloudConfig  `yaml:"built_in"`
+	External ExternalCloudConfig `yaml:"external"`
+}
+
+// BuiltInCloudConfig 内置云控配置
+type BuiltInCloudConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// ExternalCloudConfig 外部云控配置
+type ExternalCloudConfig struct {
+	Endpoint string `yaml:"endpoint"`
+	APIKey   string `yaml:"api_key"`
+	Timeout  int    `yaml:"timeout"` // 秒
 }
 
 // MessageBrokerConfig 消息代理配置
 type MessageBrokerConfig struct {
-	Type   string                 `yaml:"type"`
-	NodeID string                 `yaml:"node_id"`
-	Redis  map[string]interface{} `yaml:"redis"`
+	Type   string               `yaml:"type"`
+	NodeID string               `yaml:"node_id"`
+	Redis  RedisBrokerConfig    `yaml:"redis"`
+	Rabbit RabbitMQBrokerConfig `yaml:"rabbitmq"`
+	Kafka  KafkaBrokerConfig    `yaml:"kafka"`
+}
+
+// RedisBrokerConfig Redis 消息队列配置
+type RedisBrokerConfig struct {
+	Addr        string `yaml:"addr"`
+	Password    string `yaml:"password"`
+	DB          int    `yaml:"db"`
+	Channel     string `yaml:"channel"`
+	PoolSize    int    `yaml:"pool_size"`
+	ClusterMode bool   `yaml:"cluster_mode"`
+}
+
+// RabbitMQBrokerConfig RabbitMQ 消息队列配置
+type RabbitMQBrokerConfig struct {
+	URL          string `yaml:"url"`
+	Exchange     string `yaml:"exchange"`
+	ExchangeType string `yaml:"exchange_type"`
+	RoutingKey   string `yaml:"routing_key"`
+}
+
+// KafkaBrokerConfig Kafka 消息队列配置
+type KafkaBrokerConfig struct {
+	Brokers []string `yaml:"brokers"`
+	Topic   string   `yaml:"topic"`
+	GroupID string   `yaml:"group_id"`
 }
 
 // BridgePoolConfig 桥接连接池配置
 type BridgePoolConfig struct {
-	Enabled             bool                   `yaml:"enabled"`
-	MinConnsPerNode     int32                  `yaml:"min_conns_per_node"`
-	MaxConnsPerNode     int32                  `yaml:"max_conns_per_node"`
-	MaxIdleTime         int                    `yaml:"max_idle_time"` // 秒
-	MaxStreamsPerConn   int32                  `yaml:"max_streams_per_conn"`
-	DialTimeout         int                    `yaml:"dial_timeout"`          // 秒
-	HealthCheckInterval int                    `yaml:"health_check_interval"` // 秒
-	GRPCServer          map[string]interface{} `yaml:"grpc_server"`
+	Enabled             bool             `yaml:"enabled"`
+	MinConnsPerNode     int32            `yaml:"min_conns_per_node"`
+	MaxConnsPerNode     int32            `yaml:"max_conns_per_node"`
+	MaxIdleTime         int              `yaml:"max_idle_time"` // 秒
+	MaxStreamsPerConn   int32            `yaml:"max_streams_per_conn"`
+	DialTimeout         int              `yaml:"dial_timeout"`          // 秒
+	HealthCheckInterval int              `yaml:"health_check_interval"` // 秒
+	GRPCServer          GRPCServerConfig `yaml:"grpc_server"`
+}
+
+// GRPCServerConfig gRPC 服务器配置
+type GRPCServerConfig struct {
+	Addr             string        `yaml:"addr"`
+	Port             int           `yaml:"port"`
+	EnableTLS        bool          `yaml:"enable_tls"`
+	TLS              TLSConfigYAML `yaml:"tls"`
+	MaxRecvMsgSize   int           `yaml:"max_recv_msg_size"` // MB
+	MaxSendMsgSize   int           `yaml:"max_send_msg_size"` // MB
+	KeepaliveTime    int           `yaml:"keepalive_time"`    // 秒
+	KeepaliveTimeout int           `yaml:"keepalive_timeout"` // 秒
 }
 
 // ManagementAPIConfig 管理 API 配置
 type ManagementAPIConfig struct {
-	Enabled    bool                   `yaml:"enabled"`
-	ListenAddr string                 `yaml:"listen_addr"`
-	Auth       map[string]interface{} `yaml:"auth"`
-	CORS       map[string]interface{} `yaml:"cors"`
-	RateLimit  map[string]interface{} `yaml:"rate_limit"`
+	Enabled    bool            `yaml:"enabled"`
+	ListenAddr string          `yaml:"listen_addr"`
+	Auth       AuthConfig      `yaml:"auth"`
+	CORS       CORSConfig      `yaml:"cors"`
+	RateLimit  RateLimitConfig `yaml:"rate_limit"`
+}
+
+// AuthConfig 认证配置
+type AuthConfig struct {
+	Type   string `yaml:"type"`    // bearer | basic | none
+	Token  string `yaml:"token"`   // Bearer token
+	APIKey string `yaml:"api_key"` // API key
+}
+
+// CORSConfig 跨域配置
+type CORSConfig struct {
+	Enabled          bool     `yaml:"enabled"`
+	AllowedOrigins   []string `yaml:"allowed_origins"`
+	AllowedMethods   []string `yaml:"allowed_methods"`
+	AllowedHeaders   []string `yaml:"allowed_headers"`
+	AllowCredentials bool     `yaml:"allow_credentials"`
+}
+
+// RateLimitConfig 速率限制配置
+type RateLimitConfig struct {
+	Enabled bool `yaml:"enabled"`
+	RPS     int  `yaml:"rps"`   // 每秒请求数
+	Burst   int  `yaml:"burst"` // 突发容量
 }
 
 // UDPIngressListenerConfig UDP接入监听配置
@@ -248,51 +322,36 @@ func ValidateConfig(config *Config) error {
 	// Redis 自动共享逻辑
 	// ============================================================================
 
-	// 初始化 MessageBroker.Redis map
-	if config.MessageBroker.Redis == nil {
-		config.MessageBroker.Redis = make(map[string]interface{})
-	}
-
 	// 规则 1: 如果 storage.redis 已配置，但 message_broker 未配置或为 memory
 	//        自动使用 Redis 作为消息队列
 	if config.Storage.Redis.Addr != "" {
 		if config.MessageBroker.Type == "" || config.MessageBroker.Type == "memory" {
 			utils.Infof("✅ Storage Redis detected, auto-configuring message_broker to use redis for multi-node support")
 			config.MessageBroker.Type = "redis"
-
-			// 使用 map 设置 Redis 配置
-			config.MessageBroker.Redis["addr"] = config.Storage.Redis.Addr
-			if config.Storage.Redis.Password != "" {
-				config.MessageBroker.Redis["password"] = config.Storage.Redis.Password
+			config.MessageBroker.Redis.Addr = config.Storage.Redis.Addr
+			config.MessageBroker.Redis.Password = config.Storage.Redis.Password
+			config.MessageBroker.Redis.DB = config.Storage.Redis.DB
+			if config.MessageBroker.Redis.Channel == "" {
+				config.MessageBroker.Redis.Channel = "tunnox:messages"
 			}
-			if config.Storage.Redis.DB > 0 {
-				config.MessageBroker.Redis["db"] = config.Storage.Redis.DB
-			}
-			if config.MessageBroker.Redis["channel"] == nil || config.MessageBroker.Redis["channel"] == "" {
-				config.MessageBroker.Redis["channel"] = "tunnox:messages"
+			if config.MessageBroker.Redis.PoolSize <= 0 {
+				config.MessageBroker.Redis.PoolSize = 10
 			}
 		}
 	}
 
 	// 规则 2: 如果 message_broker.redis 已配置，但 storage.redis 未配置
 	//        自动使用 message_broker 的 Redis 配置给 storage
-	if config.MessageBroker.Type == "redis" {
-		if addr, ok := config.MessageBroker.Redis["addr"].(string); ok && addr != "" {
-			if config.Storage.Redis.Addr == "" {
-				utils.Infof("✅ MessageBroker Redis detected, auto-configuring storage.redis for distributed cache")
-				config.Storage.Redis.Addr = addr
+	if config.MessageBroker.Type == "redis" && config.MessageBroker.Redis.Addr != "" {
+		if config.Storage.Redis.Addr == "" {
+			utils.Infof("✅ MessageBroker Redis detected, auto-configuring storage.redis for distributed cache")
+			config.Storage.Redis.Addr = config.MessageBroker.Redis.Addr
+			config.Storage.Redis.Password = config.MessageBroker.Redis.Password
+			config.Storage.Redis.DB = config.MessageBroker.Redis.DB
 
-				if password, ok := config.MessageBroker.Redis["password"].(string); ok {
-					config.Storage.Redis.Password = password
-				}
-				if db, ok := config.MessageBroker.Redis["db"].(int); ok {
-					config.Storage.Redis.DB = db
-				}
-
-				// 设置默认值
-				if config.Storage.Redis.PoolSize <= 0 {
-					config.Storage.Redis.PoolSize = 10
-				}
+			// 设置默认值
+			if config.Storage.Redis.PoolSize <= 0 {
+				config.Storage.Redis.PoolSize = 10
 			}
 		}
 	}
