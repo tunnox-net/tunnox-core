@@ -52,13 +52,24 @@ func createHybridStorage(factory *storage.StorageFactory, config *StorageConfig)
 		}
 	}
 	
-	// 如果启用持久化，提供远程存储配置
+	// 如果启用持久化
 	if config.Hybrid.EnablePersistent {
-		hybridConfig.RemoteConfig = &storage.RemoteStorageConfig{
-			GRPCAddress: config.Hybrid.Remote.GRPC.Address,
-			Timeout:     time.Duration(config.Hybrid.Remote.GRPC.Timeout) * time.Second,
-			MaxRetries:  config.Hybrid.Remote.GRPC.MaxRetries,
+		// 优先使用 JSON 文件存储
+		if config.Hybrid.JSON.FilePath != "" {
+			hybridConfig.JSONConfig = &storage.JSONStorageConfig{
+				FilePath:     config.Hybrid.JSON.FilePath,
+				AutoSave:     config.Hybrid.JSON.AutoSave,
+				SaveInterval: time.Duration(config.Hybrid.JSON.SaveInterval) * time.Second,
+			}
+		} else if config.Hybrid.Remote.GRPC.Address != "" {
+			// 使用远程存储
+			hybridConfig.RemoteConfig = &storage.RemoteStorageConfig{
+				GRPCAddress: config.Hybrid.Remote.GRPC.Address,
+				Timeout:     time.Duration(config.Hybrid.Remote.GRPC.Timeout) * time.Second,
+				MaxRetries:  config.Hybrid.Remote.GRPC.MaxRetries,
+			}
 		}
+		// 如果都没配置，factory 会使用默认的 JSON 存储
 	}
 	
 	return factory.CreateStorage(storage.StorageTypeHybrid, hybridConfig)

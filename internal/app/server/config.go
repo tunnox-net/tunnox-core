@@ -104,7 +104,15 @@ type HybridStorageConfigYAML struct {
 	RuntimePrefixes      []string                `yaml:"runtime_prefixes"`
 	DefaultPersistentTTL int64                   `yaml:"default_persistent_ttl"` // 秒
 	DefaultRuntimeTTL    int64                   `yaml:"default_runtime_ttl"`    // 秒
+	JSON                 JSONStorageConfigYAML   `yaml:"json"`                   // JSON 文件存储配置（优先）
 	Remote               RemoteStorageConfigYAML `yaml:"remote"`
+}
+
+// JSONStorageConfigYAML JSON 文件存储配置
+type JSONStorageConfigYAML struct {
+	FilePath     string `yaml:"file_path"`     // JSON 文件路径
+	AutoSave     bool   `yaml:"auto_save"`     // 是否自动保存
+	SaveInterval int    `yaml:"save_interval"` // 自动保存间隔（秒）
 }
 
 // RemoteStorageConfigYAML 远程存储YAML配置
@@ -353,24 +361,34 @@ func validateStorageConfig(config *StorageConfig) error {
 		}
 
 		if config.Hybrid.EnablePersistent {
-			if config.Hybrid.Remote.Type == "" {
-				config.Hybrid.Remote.Type = "grpc"
+			// 检查是否配置了 JSON 或 Remote 存储
+			hasJSONConfig := config.Hybrid.JSON.FilePath != ""
+			hasRemoteConfig := config.Hybrid.Remote.Type != "" && config.Hybrid.Remote.GRPC.Address != ""
+
+			if !hasJSONConfig && !hasRemoteConfig {
+				// 使用默认 JSON 存储配置
+				config.Hybrid.JSON.FilePath = "data/tunnox-data.json"
+				config.Hybrid.JSON.AutoSave = true
+				config.Hybrid.JSON.SaveInterval = 30
 			}
 
-			if config.Hybrid.Remote.Type != "grpc" && config.Hybrid.Remote.Type != "http" {
-				return fmt.Errorf("invalid hybrid.remote.type: %s, must be 'grpc' or 'http'", config.Hybrid.Remote.Type)
-			}
+			// 如果配置了 Remote 存储，验证配置
+			if config.Hybrid.Remote.Type != "" {
+				if config.Hybrid.Remote.Type != "grpc" && config.Hybrid.Remote.Type != "http" {
+					return fmt.Errorf("invalid hybrid.remote.type: %s, must be 'grpc' or 'http'", config.Hybrid.Remote.Type)
+				}
 
-			if config.Hybrid.Remote.Type == "grpc" && config.Hybrid.Remote.GRPC.Address == "" {
-				return fmt.Errorf("hybrid.remote.grpc.address is required when enable_persistent is true")
-			}
+				if config.Hybrid.Remote.Type == "grpc" && config.Hybrid.Remote.GRPC.Address == "" {
+					return fmt.Errorf("hybrid.remote.grpc.address is required when remote.type is grpc")
+				}
 
-			// 设置默认超时
-			if config.Hybrid.Remote.GRPC.Timeout <= 0 {
-				config.Hybrid.Remote.GRPC.Timeout = 5
-			}
-			if config.Hybrid.Remote.GRPC.MaxRetries <= 0 {
-				config.Hybrid.Remote.GRPC.MaxRetries = 3
+				// 设置默认超时
+				if config.Hybrid.Remote.GRPC.Timeout <= 0 {
+					config.Hybrid.Remote.GRPC.Timeout = 5
+				}
+				if config.Hybrid.Remote.GRPC.MaxRetries <= 0 {
+					config.Hybrid.Remote.GRPC.MaxRetries = 3
+				}
 			}
 		}
 	}

@@ -42,7 +42,13 @@ storage:
     cache_type: memory
     
     # 是否启用持久化
-    enable_persistent: false
+    enable_persistent: true
+    
+    # JSON 文件存储配置（持久化数据存储为 JSON 文件）
+    json:
+      file_path: "data/tunnox-data.json"  # JSON 文件路径
+      auto_save: true                      # 是否自动保存
+      save_interval: 30                    # 自动保存间隔（秒）
     
     # 持久化前缀（用于自动区分数据类别）
     persistent_prefixes:

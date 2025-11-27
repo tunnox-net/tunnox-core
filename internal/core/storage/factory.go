@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"time"
 	"tunnox-core/internal/core/dispose"
 )
 
@@ -92,12 +93,33 @@ func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error
 			}
 			
 			// 创建持久化存储
-			if hc.EnablePersistent && hc.RemoteConfig != nil {
-				remoteStorage, err := NewRemoteStorage(f.ctx, hc.RemoteConfig)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create remote storage: %w", err)
+			if hc.EnablePersistent {
+				// 优先使用 JSON 文件存储（如果配置了）
+				if hc.JSONConfig != nil {
+					jsonStorage, err := NewJSONStorage(hc.JSONConfig)
+					if err != nil {
+						return nil, fmt.Errorf("failed to create JSON persistent storage: %w", err)
+					}
+					persistent = jsonStorage
+				} else if hc.RemoteConfig != nil {
+					// 使用远程存储
+					remoteStorage, err := NewRemoteStorage(f.ctx, hc.RemoteConfig)
+					if err != nil {
+						return nil, fmt.Errorf("failed to create remote storage: %w", err)
+					}
+					persistent = remoteStorage
+				} else {
+					// 默认使用 JSON 文件存储
+					jsonStorage, err := NewJSONStorage(&JSONStorageConfig{
+						FilePath:     "data/tunnox-data.json",
+						AutoSave:     true,
+						SaveInterval: 30 * time.Second,
+					})
+					if err != nil {
+						return nil, fmt.Errorf("failed to create default JSON storage: %w", err)
+					}
+					persistent = jsonStorage
 				}
-				persistent = remoteStorage
 			}
 			
 			// 更新配置
@@ -129,7 +151,10 @@ type HybridStorageConfig struct {
 	// 是否启用持久化
 	EnablePersistent bool
 	
-	// 远程存储配置（如果 EnablePersistent 为 true）
+	// JSON 文件存储配置（如果 EnablePersistent 为 true，优先使用）
+	JSONConfig *JSONStorageConfig
+	
+	// 远程存储配置（如果 EnablePersistent 为 true 且未配置 JSON）
 	RemoteConfig *RemoteStorageConfig
 	
 	// 混合存储配置
