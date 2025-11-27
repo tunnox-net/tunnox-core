@@ -46,6 +46,25 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 	s.tunnelBridges[req.TunnelID] = bridge
 	s.bridgeLock.Unlock()
 
+	// ✅ 注册到路由表（用于跨服务器隧道）
+	if s.tunnelRouting != nil {
+		routingState := &TunnelWaitingState{
+			TunnelID:       req.TunnelID,
+			MappingID:      req.MappingID,
+			SecretKey:      req.SecretKey,
+			SourceNodeID:   s.getNodeID(),
+			SourceClientID: mapping.SourceClientID,
+			TargetClientID: mapping.TargetClientID,
+			TargetHost:     mapping.TargetHost,
+			TargetPort:     mapping.TargetPort,
+		}
+		
+		if err := s.tunnelRouting.RegisterWaitingTunnel(s.Ctx(), routingState); err != nil {
+			utils.Warnf("Tunnel[%s]: failed to register routing state: %v", req.TunnelID, err)
+			// 不是致命错误，继续处理
+		}
+	}
+
 	// 通知目标端客户端建立隧道
 	go s.notifyTargetClientToOpenTunnel(req)
 

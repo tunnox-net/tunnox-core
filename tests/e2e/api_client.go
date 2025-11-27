@@ -1,0 +1,212 @@
+package e2e
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"testing"
+	"time"
+)
+
+// E2EAPIClient E2E测试API客户端
+type E2EAPIClient struct {
+	t       *testing.T
+	baseURL string
+	client  *http.Client
+}
+
+// NewE2EAPIClient 创建E2E API客户端
+func NewE2EAPIClient(t *testing.T, baseURL string) *E2EAPIClient {
+	return &E2EAPIClient{
+		t:       t,
+		baseURL: baseURL,
+		client: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	}
+}
+
+// SetAuth 设置认证token
+func (c *E2EAPIClient) SetAuth(token string) {
+	c.client = &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &authTransport{
+			token: token,
+			base:  http.DefaultTransport,
+		},
+	}
+}
+
+// authTransport 带认证的Transport
+type authTransport struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set("Authorization", "Bearer "+t.token)
+	return t.base.RoundTrip(req)
+}
+
+// HealthCheck 健康检查
+func (c *E2EAPIClient) HealthCheck() error {
+	resp, err := c.client.Get(c.baseURL + "/health")
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("health check failed: %d - %s", resp.StatusCode, string(body))
+	}
+	
+	return nil
+}
+
+// CreateUser 创建用户（强类型）
+func (c *E2EAPIClient) CreateUser(req CreateUserRequest) (*UserResponse, error) {
+	body, _ := json.Marshal(req)
+	resp, err := c.client.Post(c.baseURL+"/api/v1/users", 
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	var apiResp struct {
+		Success bool          `json:"success"`
+		Data    *UserResponse `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+	
+	if !apiResp.Success || apiResp.Data == nil {
+		return nil, fmt.Errorf("create user failed")
+	}
+	
+	return apiResp.Data, nil
+}
+
+// Login 用户登录（强类型）
+func (c *E2EAPIClient) Login(username, password string) (string, error) {
+	req := LoginRequest{
+		Username: username,
+		Password: password,
+	}
+	
+	body, _ := json.Marshal(req)
+	resp, err := c.client.Post(c.baseURL+"/api/v1/auth/login", 
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	
+	var apiResp struct {
+		Success bool           `json:"success"`
+		Data    *LoginResponse `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return "", err
+	}
+	
+	if !apiResp.Success || apiResp.Data == nil {
+		return "", fmt.Errorf("login failed")
+	}
+	
+	return apiResp.Data.AccessToken, nil
+}
+
+// CreateClient 创建客户端（强类型）
+func (c *E2EAPIClient) CreateClient(req CreateClientRequest) (*ClientResponse, error) {
+	body, _ := json.Marshal(req)
+	resp, err := c.client.Post(c.baseURL+"/api/v1/clients", 
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	var apiResp struct {
+		Success bool            `json:"success"`
+		Data    *ClientResponse `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+	
+	if !apiResp.Success || apiResp.Data == nil {
+		return nil, fmt.Errorf("create client failed")
+	}
+	
+	return apiResp.Data, nil
+}
+
+// CreateMapping 创建端口映射（强类型）
+func (c *E2EAPIClient) CreateMapping(req CreateMappingRequest) (*MappingResponse, error) {
+	body, _ := json.Marshal(req)
+	resp, err := c.client.Post(c.baseURL+"/api/v1/mappings", 
+		"application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	var apiResp struct {
+		Success bool             `json:"success"`
+		Data    *MappingResponse `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+	
+	if !apiResp.Success || apiResp.Data == nil {
+		return nil, fmt.Errorf("create mapping failed")
+	}
+	
+	return apiResp.Data, nil
+}
+
+// ListClients 列出所有客户端（强类型）
+func (c *E2EAPIClient) ListClients() ([]ClientResponse, error) {
+	resp, err := c.client.Get(c.baseURL + "/api/v1/clients")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	var apiResp struct {
+		Success bool             `json:"success"`
+		Data    struct {
+			Clients []ClientResponse `json:"clients"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+	
+	if !apiResp.Success {
+		return nil, fmt.Errorf("list clients failed")
+	}
+	
+	return apiResp.Data.Clients, nil
+}
+
+// Request 发送HTTP请求（通用方法）
+func (c *E2EAPIClient) Request(method, path string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(method, c.baseURL+path, body)
+	if err != nil {
+		return nil, err
+	}
+	
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	
+	return c.client.Do(req)
+}
+

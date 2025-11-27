@@ -1,0 +1,9 @@
+# ClientA 配置（源端客户端）
+# 匿名模式，用于测试
+anonymous: true
+device_id: "e2e-client-a"
+
+server:
+  address: "nginx:7000"  # 连接到Nginx负载均衡器
+  protocol: "tcp"
+

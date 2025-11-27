@@ -243,7 +243,10 @@ func LoadConfig(configPath string) (*Config, error) {
 	// 如果配置文件不存在，使用默认配置
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		utils.Warnf(constants.MsgConfigFileNotFound, configPath)
-		return GetDefaultConfig(), nil
+		config := GetDefaultConfig()
+		// ✅ 应用环境变量覆盖（即使没有配置文件）
+		ApplyEnvOverrides(config)
+		return config, nil
 	}
 
 	// 读取配置文件
@@ -257,6 +260,9 @@ func LoadConfig(configPath string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf(constants.MsgFailedToParseConfigFile, configPath, err)
 	}
+
+	// ✅ 应用环境变量覆盖（环境变量优先级高于配置文件）
+	ApplyEnvOverrides(&config)
 
 	// 验证配置
 	if err := ValidateConfig(&config); err != nil {
@@ -613,6 +619,9 @@ func GetDefaultConfig() *Config {
 		ManagementAPI: ManagementAPIConfig{
 			Enabled:    true,
 			ListenAddr: "0.0.0.0:9000",
+			Auth: AuthConfig{
+				Type: "none", // 默认不需要认证
+			},
 		},
 		UDPIngress: UDPIngressConfig{
 			Enabled:   false,

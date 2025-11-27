@@ -74,6 +74,15 @@ type SessionManager struct {
 	// CloudControl API（用于查询映射配置）
 	cloudControl CloudControlAPI
 
+	// BridgeManager（用于跨服务器隧道转发）
+	bridgeManager BridgeManager
+	
+	// TunnelRoutingTable（用于跨服务器隧道路由）
+	tunnelRouting *TunnelRoutingTable
+	
+	// 节点ID（用于跨服务器识别）
+	nodeID string
+
 	dispose.Dispose
 }
 
@@ -113,6 +122,8 @@ func NewSessionManager(idManager *idgen.IDManager, parentCtx context.Context) *S
 	// 设置资源清理回调
 	session.SetCtx(parentCtx, session.onClose)
 
+	// 注意：跨服务器订阅将在SetBridgeManager()之后启动
+
 	return session
 }
 
@@ -141,6 +152,12 @@ type CloudControlAPI interface {
 func (s *SessionManager) SetCloudControl(cc CloudControlAPI) {
 	s.cloudControl = cc
 	utils.Debugf("CloudControl API configured in SessionManager")
+}
+
+// SetBridgeManager 设置BridgeManager（用于跨服务器隧道转发）
+func (s *SessionManager) SetBridgeManager(bridgeManager BridgeManager) {
+	s.bridgeManager = bridgeManager
+	utils.Infof("SessionManager: BridgeManager configured for cross-server forwarding")
 }
 
 // ============================================================================
@@ -218,4 +235,16 @@ func (s *SessionManager) onClose() error {
 
 	utils.Info("Session manager resources cleanup completed")
 	return nil
+}
+
+// SetTunnelRoutingTable 设置隧道路由表
+func (s *SessionManager) SetTunnelRoutingTable(routingTable *TunnelRoutingTable) {
+	s.tunnelRouting = routingTable
+	utils.Infof("SessionManager: TunnelRoutingTable configured")
+}
+
+// SetNodeID 设置节点ID
+func (s *SessionManager) SetNodeID(nodeID string) {
+	s.nodeID = nodeID
+	utils.Infof("SessionManager: NodeID set to %s", nodeID)
 }

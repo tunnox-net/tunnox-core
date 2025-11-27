@@ -1,0 +1,176 @@
+services:
+  # Redis (共享存储和消息队列)
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "26379:6379"
+    networks:
+      - tunnox-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # RabbitMQ (可选，高级消息队列)
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "25672:5672"
+      - "25673:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: tunnox
+      RABBITMQ_DEFAULT_PASS: tunnox123
+    networks:
+      - tunnox-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Tunnox Server 实例1
+  tunnox-server-1:
+    build:
+      context: ../..
+      dockerfile: tests/e2e/Dockerfile.server
+    environment:
+      - NODE_ID=node-1
+      - NODE_NAME=Server-1
+      - LISTEN_ADDR=0.0.0.0:7000
+      - WS_ADDR=0.0.0.0:7001
+      - UDP_ADDR=0.0.0.0:7002
+      - QUIC_ADDR=0.0.0.0:7003
+      - API_ADDR=0.0.0.0:9000
+      - STORAGE_TYPE=redis
+      - STORAGE_REDIS_ADDR=redis:6379
+      - MESSAGE_BROKER_TYPE=redis
+      - MESSAGE_BROKER_REDIS_ADDR=redis:6379
+      - LOG_LEVEL=info
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - tunnox-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Tunnox Server 实例2
+  tunnox-server-2:
+    build:
+      context: ../..
+      dockerfile: tests/e2e/Dockerfile.server
+    environment:
+      - NODE_ID=node-2
+      - NODE_NAME=Server-2
+      - LISTEN_ADDR=0.0.0.0:7000
+      - WS_ADDR=0.0.0.0:7001
+      - UDP_ADDR=0.0.0.0:7002
+      - QUIC_ADDR=0.0.0.0:7003
+      - API_ADDR=0.0.0.0:9000
+      - STORAGE_TYPE=redis
+      - STORAGE_REDIS_ADDR=redis:6379
+      - MESSAGE_BROKER_TYPE=redis
+      - MESSAGE_BROKER_REDIS_ADDR=redis:6379
+      - LOG_LEVEL=info
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - tunnox-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Tunnox Server 实例3
+  tunnox-server-3:
+    build:
+      context: ../..
+      dockerfile: tests/e2e/Dockerfile.server
+    environment:
+      - NODE_ID=node-3
+      - NODE_NAME=Server-3
+      - LISTEN_ADDR=0.0.0.0:7000
+      - WS_ADDR=0.0.0.0:7001
+      - UDP_ADDR=0.0.0.0:7002
+      - QUIC_ADDR=0.0.0.0:7003
+      - API_ADDR=0.0.0.0:9000
+      - STORAGE_TYPE=redis
+      - STORAGE_REDIS_ADDR=redis:6379
+      - MESSAGE_BROKER_TYPE=redis
+      - MESSAGE_BROKER_REDIS_ADDR=redis:6379
+      - LOG_LEVEL=info
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - tunnox-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Nginx 负载均衡器
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "17000:7000"   # TCP
+      - "17001:7001"   # WebSocket
+      - "17002:7002/udp"   # UDP
+      - "17003:7003/udp"   # QUIC
+      - "18081:8080"   # Management API
+    volumes:
+      - ./nginx/load-balancer.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      tunnox-server-1:
+        condition: service_healthy
+      tunnox-server-2:
+        condition: service_healthy
+      tunnox-server-3:
+        condition: service_healthy
+    networks:
+      - tunnox-net
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep nginx || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # 测试目标服务 - Nginx (用于验证隧道转发)
+  nginx-target:
+    image: nginx:alpine
+    volumes:
+      - ./nginx/html:/usr/share/nginx/html:ro
+    networks:
+      - tunnox-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:80"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # 测试目标服务 - PostgreSQL
+  postgres-target:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: dtcpay
+      POSTGRES_DB: testdb
+    networks:
+      - tunnox-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+networks:
+  tunnox-net:
+    driver: bridge
+

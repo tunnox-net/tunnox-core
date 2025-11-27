@@ -71,6 +71,15 @@ func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req 
 	conn.ClientID = clientID
 	conn.Authenticated = true // 设置为已认证
 
+	// ✅ 更新客户端状态为在线
+	nodeID := "" // TODO: 从server config获取node ID
+	if err := h.cloudControl.UpdateClientStatus(clientID, models.ClientStatusOnline, nodeID); err != nil {
+		utils.Warnf("ServerAuthHandler: failed to update client %d status to online: %v", clientID, err)
+		// 不返回错误，只记录警告，握手仍然成功
+	} else {
+		utils.Infof("ServerAuthHandler: client %d status updated to online", clientID)
+	}
+
 	// 构造握手响应
 	message := "Handshake successful"
 	if req.ClientID == 0 {

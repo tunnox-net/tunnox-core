@@ -1,0 +1,67 @@
+# ===== 构建阶段 =====
+FROM golang:1.24-alpine AS builder
+
+# 安装构建依赖（使用HTTP仓库避免证书问题）
+RUN echo "==> Installing build dependencies..." && \
+    apk add --no-cache --allow-untrusted \
+        --repository http://dl-cdn.alpinelinux.org/alpine/v3.20/main \
+        --repository http://dl-cdn.alpinelinux.org/alpine/v3.20/community \
+        ca-certificates git && \
+    update-ca-certificates && \
+    echo "==> Build dependencies installed"
+
+WORKDIR /build
+
+# 复制依赖文件
+COPY go.mod go.sum ./
+
+# 下载依赖（使用代理避免TLS问题）
+RUN echo "==> Downloading Go dependencies..." && \
+    GOPROXY=https://goproxy.cn,direct GOSUMDB=off go mod download && \
+    echo "==> Dependencies downloaded successfully"
+
+# 复制源代码
+COPY . .
+
+# 构建客户端
+RUN echo "==> Building tunnox-client binary..." && \
+    CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-w -s" \
+    -o /build/bin/tunnox-client \
+    ./cmd/client && \
+    echo "==> Build completed successfully" && \
+    ls -lh /build/bin/tunnox-client
+
+# ===== 运行阶段 =====
+FROM alpine:3.19
+
+# 安装运行时依赖（使用HTTP仓库）
+RUN echo "==> Installing runtime dependencies..." && \
+    apk add --no-cache --allow-untrusted \
+        --repository http://dl-cdn.alpinelinux.org/alpine/v3.19/main \
+        --repository http://dl-cdn.alpinelinux.org/alpine/v3.19/community \
+        ca-certificates curl && \
+    echo "==> Runtime dependencies installed"
+
+# 创建应用用户
+RUN echo "==> Creating app user and directories..." && \
+    addgroup -g 1000 tunnox && \
+    adduser -D -u 1000 -G tunnox tunnox && \
+    mkdir -p /app/config && \
+    echo "==> User and directories created"
+
+WORKDIR /app
+
+# 复制二进制文件
+COPY --from=builder /build/bin/tunnox-client /app/tunnox-client
+RUN chown -R tunnox:tunnox /app && \
+    chmod +x /app/tunnox-client
+
+USER tunnox
+
+# 健康检查（检查进程是否存在）
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+    CMD pgrep tunnox-client || exit 1
+
+ENTRYPOINT ["/app/tunnox-client"]
+

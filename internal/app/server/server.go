@@ -100,6 +100,23 @@ func New(config *Config, parentCtx context.Context) *Server {
 		server.bridgeManager = server.createBridgeManager(parentCtx)
 		server.grpcServer = server.startGRPCServer()
 	}
+	
+	// ✅ 注入BridgeAdapter到SessionManager，用于跨服务器隧道转发
+	if server.messageBroker != nil {
+		bridgeAdapter := NewBridgeAdapter(server.messageBroker, config.MessageBroker.NodeID)
+		server.session.SetBridgeManager(bridgeAdapter)
+		utils.Infof("Server: BridgeAdapter injected into SessionManager for cross-server tunnel forwarding")
+	}
+	
+	// ✅ 创建并注入TunnelRoutingTable，用于跨服务器隧道路由
+	if server.storage != nil {
+		tunnelRouting := session.NewTunnelRoutingTable(server.storage, 30*time.Second)
+		server.session.SetTunnelRoutingTable(tunnelRouting)
+		utils.Infof("Server: TunnelRoutingTable created and injected")
+	}
+	
+	// ✅ 设置节点ID
+	server.session.SetNodeID(config.MessageBroker.NodeID)
 
 	// 初始化 Management API
 	if config.ManagementAPI.Enabled {

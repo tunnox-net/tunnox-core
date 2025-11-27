@@ -147,8 +147,8 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 	s.bridgeLock.Unlock()
 
 	if exists {
-		// 这是目标端的连接，连接到已有的bridge
-		utils.Infof("Tunnel[%s]: target connection arrived, attaching to bridge", req.TunnelID)
+		// 这是目标端的连接，连接到本地已有的bridge
+		utils.Infof("Tunnel[%s]: target connection arrived, attaching to local bridge", req.TunnelID)
 
 		// 发送成功响应
 		s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{
@@ -170,6 +170,18 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 
 		// ✅ 返回特殊错误，让ProcessPacketLoop停止处理
 		return fmt.Errorf("tunnel target connected, switching to stream mode")
+	}
+
+	// 本地未找到bridge，检查是否是跨服务器的目标端连接
+	if s.tunnelRouting != nil {
+		routingState, err := s.tunnelRouting.LookupWaitingTunnel(s.Ctx(), req.TunnelID)
+		if err == nil {
+			// ✅ 找到跨服务器路由信息，这是目标端连接
+			return s.handleCrossServerTargetConnection(conn, req, routingState)
+		} else if err != ErrTunnelNotFound && err != ErrTunnelExpired {
+			// 其他错误（非未找到或过期）需要记录
+			utils.Errorf("Tunnel[%s]: failed to lookup routing state: %v", req.TunnelID, err)
+		}
 	}
 
 	// 这是源端的连接，需要验证权限并创建bridge
@@ -328,10 +340,23 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 		return
 	}
 
-	// 2. 找到目标客户端的控制连接
+	// 2. 找到目标客户端的控制连接（本地或跨服务器）
 	targetControlConn := s.GetControlConnectionByClientID(mapping.TargetClientID)
 	if targetControlConn == nil {
-		utils.Errorf("Tunnel[%s]: target client %d not connected", req.TunnelID, mapping.TargetClientID)
+		// ✅ 本地未找到，尝试跨服务器转发
+		if s.bridgeManager != nil {
+			utils.Infof("Tunnel[%s]: target client %d not on this server, broadcasting to other nodes", 
+				req.TunnelID, mapping.TargetClientID)
+			if err := s.bridgeManager.BroadcastTunnelOpen(req, mapping.TargetClientID); err != nil {
+				utils.Errorf("Tunnel[%s]: failed to broadcast to other nodes: %v", req.TunnelID, err)
+			} else {
+				utils.Infof("Tunnel[%s]: ✅ broadcasted to other nodes for client %d", 
+					req.TunnelID, mapping.TargetClientID)
+			}
+		} else {
+			utils.Errorf("Tunnel[%s]: target client %d not connected and BridgeManager not configured", 
+				req.TunnelID, mapping.TargetClientID)
+		}
 		return
 	}
 
