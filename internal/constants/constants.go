@@ -35,6 +35,7 @@ const (
 
 	// 端口映射相关键值前缀
 	KeyPrefixPortMapping    = "tunnox:port_mapping"
+	KeyPrefixMappingList    = "tunnox:mappings:list"
 	KeyPrefixUserMappings   = "tunnox:user_mappings"
 	KeyPrefixClientMappings = "tunnox:client_mappings"
 

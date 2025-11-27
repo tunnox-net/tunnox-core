@@ -83,6 +83,11 @@ func (c *CloudControl) CreateClient(userID, clientName string) (*models.Client, 
 		return nil, c.handleErrorWithIDRelease(err, clientID, c.idManager.ReleaseClientID, "add client to user failed")
 	}
 
+	// 更新统计计数器
+	if c.statsManager != nil && c.statsManager.GetCounter() != nil {
+		_ = c.statsManager.GetCounter().IncrClient(1)
+	}
+
 	return client, nil
 }
 

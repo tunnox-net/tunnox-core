@@ -16,18 +16,20 @@ import (
 // portMappingService 端口映射服务实现
 type portMappingService struct {
 	*dispose.ServiceBase
-	baseService *BaseService
-	mappingRepo *repos.PortMappingRepo
-	idManager   *idgen.IDManager
+	baseService  *BaseService
+	mappingRepo  *repos.PortMappingRepo
+	idManager    *idgen.IDManager
+	statsCounter *stats.StatsCounter
 }
 
 // NewPortMappingService 创建端口映射服务
-func NewPortMappingService(mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) PortMappingService {
+func NewPortMappingService(mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, statsCounter *stats.StatsCounter, parentCtx context.Context) PortMappingService {
 	service := &portMappingService{
-		ServiceBase: dispose.NewService("PortMappingService", parentCtx),
-		baseService: NewBaseService(),
-		mappingRepo: mappingRepo,
-		idManager:   idManager,
+		ServiceBase:  dispose.NewService("PortMappingService", parentCtx),
+		baseService:  NewBaseService(),
+		mappingRepo:  mappingRepo,
+		idManager:    idManager,
+		statsCounter: statsCounter,
 	}
 	return service
 }
@@ -77,6 +79,13 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 		s.baseService.LogWarning("add mapping to source client list", err)
 	}
 
+	// 更新统计计数器
+	if s.statsCounter != nil {
+		if err := s.statsCounter.IncrMapping(1); err != nil {
+			s.baseService.LogWarning("update mapping stats counter", err, mappingID)
+		}
+	}
+
 	s.baseService.LogCreated("port mapping", fmt.Sprintf("%s for client: %d", mappingID, mapping.SourceClientID))
 	return mapping, nil
 }
@@ -116,6 +125,13 @@ func (s *portMappingService) DeletePortMapping(mappingID string) error {
 	// 释放映射ID
 	if err := s.idManager.ReleasePortMappingID(mappingID); err != nil {
 		s.baseService.LogWarning("release port mapping ID", err, mappingID)
+	}
+
+	// 更新统计计数器
+	if s.statsCounter != nil {
+		if err := s.statsCounter.IncrMapping(-1); err != nil {
+			s.baseService.LogWarning("update mapping stats counter", err, mappingID)
+		}
 	}
 
 	s.baseService.LogDeleted("port mapping", mappingID)

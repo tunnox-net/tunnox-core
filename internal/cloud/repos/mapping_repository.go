@@ -25,12 +25,20 @@ func NewPortMappingRepo(repo *Repository) *PortMappingRepo {
 
 // SavePortMapping 保存端口映射（创建或更新）
 func (r *PortMappingRepo) SavePortMapping(mapping *models.PortMapping) error {
-	return r.Save(mapping, constants.KeyPrefixPortMapping, constants2.DefaultMappingDataTTL)
+	if err := r.Save(mapping, constants.KeyPrefixPortMapping, constants2.DefaultMappingDataTTL); err != nil {
+		return err
+	}
+	// 将映射添加到全局映射列表中
+	return r.AddMappingToList(mapping)
 }
 
 // CreatePortMapping 创建新端口映射（仅创建，不允许覆盖）
 func (r *PortMappingRepo) CreatePortMapping(mapping *models.PortMapping) error {
-	return r.Create(mapping, constants.KeyPrefixPortMapping, constants2.DefaultMappingDataTTL)
+	if err := r.Create(mapping, constants.KeyPrefixPortMapping, constants2.DefaultMappingDataTTL); err != nil {
+		return err
+	}
+	// 将映射添加到全局映射列表中
+	return r.AddMappingToList(mapping)
 }
 
 // UpdatePortMapping 更新端口映射（仅更新，不允许创建）
@@ -98,5 +106,15 @@ func (r *PortMappingRepo) AddMappingToUser(userID string, mapping *models.PortMa
 func (r *PortMappingRepo) AddMappingToClient(clientID string, mapping *models.PortMapping) error {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, clientID)
 	return r.AddToList(mapping, key)
+}
+
+// ListAllMappings 列出所有端口映射
+func (r *PortMappingRepo) ListAllMappings() ([]*models.PortMapping, error) {
+	return r.List(constants.KeyPrefixMappingList)
+}
+
+// AddMappingToList 添加映射到全局映射列表
+func (r *PortMappingRepo) AddMappingToList(mapping *models.PortMapping) error {
+	return r.AddToList(mapping, constants.KeyPrefixMappingList)
 }
 

@@ -30,15 +30,16 @@ func NewSearchManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRe
 
 // SearchUsers 搜索用户
 func (sm *SearchManager) SearchUsers(keyword string) ([]*models.User, error) {
-	users, err := sm.userRepo.ListUsers("")
+	users, err := sm.userRepo.ListAllUsers()
 	if err != nil {
 		return nil, err
 	}
 
-	var results []*models.User
+	results := make([]*models.User, 0)
 	for _, user := range users {
 		if strings.Contains(strings.ToLower(user.Username), strings.ToLower(keyword)) ||
-			strings.Contains(strings.ToLower(user.Email), strings.ToLower(keyword)) {
+			strings.Contains(strings.ToLower(user.Email), strings.ToLower(keyword)) ||
+			strings.Contains(strings.ToLower(user.ID), strings.ToLower(keyword)) {
 			results = append(results, user)
 		}
 	}
@@ -48,16 +49,17 @@ func (sm *SearchManager) SearchUsers(keyword string) ([]*models.User, error) {
 
 // SearchClients 搜索客户端
 func (sm *SearchManager) SearchClients(keyword string) ([]*models.Client, error) {
-	clients, err := sm.clientRepo.ListUserClients("")
+	clients, err := sm.clientRepo.ListAllClients()
 	if err != nil {
 		return nil, err
 	}
 
-	var results []*models.Client
+	results := make([]*models.Client, 0)
 	for _, client := range clients {
 		if strings.Contains(strings.ToLower(client.Name), strings.ToLower(keyword)) ||
 			strings.Contains(client.AuthCode, keyword) ||
-			strings.Contains(fmt.Sprintf("%d", client.ID), keyword) {
+			strings.Contains(fmt.Sprintf("%d", client.ID), keyword) ||
+			strings.Contains(client.UserID, keyword) {
 			results = append(results, client)
 		}
 	}
@@ -67,17 +69,18 @@ func (sm *SearchManager) SearchClients(keyword string) ([]*models.Client, error)
 
 // SearchPortMappings 搜索端口映射
 func (sm *SearchManager) SearchPortMappings(keyword string) ([]*models.PortMapping, error) {
-	mappings, err := sm.mappingRepo.GetUserPortMappings("")
+	mappings, err := sm.mappingRepo.ListAllMappings()
 	if err != nil {
 		return nil, err
 	}
 
-	var results []*models.PortMapping
+	results := make([]*models.PortMapping, 0)
 	for _, mapping := range mappings {
 		if strings.Contains(mapping.ID, keyword) ||
 			strings.Contains(fmt.Sprintf("%d", mapping.SourceClientID), keyword) ||
 			strings.Contains(fmt.Sprintf("%d", mapping.TargetClientID), keyword) ||
-			strings.Contains(string(mapping.Protocol), strings.ToLower(keyword)) {
+			strings.Contains(string(mapping.Protocol), strings.ToLower(keyword)) ||
+			strings.Contains(mapping.TargetHost, strings.ToLower(keyword)) {
 			results = append(results, mapping)
 		}
 	}

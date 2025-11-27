@@ -31,11 +31,11 @@ type HybridConfig struct {
 func DefaultHybridConfig() *HybridConfig {
 	return &HybridConfig{
 		PersistentPrefixes: []string{
-			"tunnox:user:",      // 用户信息
-			"tunnox:client:",    // 客户端配置
-			"tunnox:mapping:",   // 端口映射配置
-			"tunnox:node:",      // 节点信息
-			"tunnox:stats:",     // 统计数据
+			"tunnox:user:",               // 用户信息
+			"tunnox:client:",             // 客户端配置
+			"tunnox:mapping:",            // 端口映射配置
+			"tunnox:node:",               // 节点信息
+			"tunnox:stats:persistent:",   // 持久化统计数据
 		},
 		DefaultCacheTTL:    1 * time.Hour,
 		PersistentCacheTTL: 24 * time.Hour,
@@ -45,10 +45,12 @@ func DefaultHybridConfig() *HybridConfig {
 
 // RuntimePrefixes 运行时数据的 key 前缀（仅用于文档说明）
 var RuntimePrefixes = []string{
-	"tunnox:runtime:",  // 运行时数据（加密密钥等）
-	"tunnox:session:",  // 会话信息
-	"tunnox:jwt:",      // JWT Token 缓存
-	"tunnox:route:",    // 客户端路由信息
-	"tunnox:temp:",     // 临时状态
+	"tunnox:runtime:",         // 运行时数据（加密密钥等）
+	"tunnox:session:",         // 会话信息
+	"tunnox:jwt:",             // JWT Token 缓存
+	"tunnox:route:",           // 客户端路由信息
+	"tunnox:temp:",            // 临时状态
+	"tunnox:stats:runtime:",   // 运行时统计数据
+	"tunnox:stats:cache:",     // 统计缓存
 }
 

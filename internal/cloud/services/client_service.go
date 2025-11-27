@@ -16,22 +16,24 @@ import (
 // clientService 客户端服务实现
 type clientService struct {
 	*dispose.ServiceBase
-	baseService *BaseService
-	clientRepo  *repos.ClientRepository
-	mappingRepo *repos.PortMappingRepo
-	idManager   *idgen.IDManager
-	statsMgr    *managers.StatsManager
+	baseService  *BaseService
+	clientRepo   *repos.ClientRepository
+	mappingRepo  *repos.PortMappingRepo
+	idManager    *idgen.IDManager
+	statsMgr     *managers.StatsManager
+	statsCounter *stats.StatsCounter
 }
 
 // NewClientService 创建客户端服务
 func NewClientService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, statsMgr *managers.StatsManager, parentCtx context.Context) ClientService {
 	service := &clientService{
-		ServiceBase: dispose.NewService("ClientService", parentCtx),
-		baseService: NewBaseService(),
-		clientRepo:  clientRepo,
-		mappingRepo: mappingRepo,
-		idManager:   idManager,
-		statsMgr:    statsMgr,
+		ServiceBase:  dispose.NewService("ClientService", parentCtx),
+		baseService:  NewBaseService(),
+		clientRepo:   clientRepo,
+		mappingRepo:  mappingRepo,
+		idManager:    idManager,
+		statsMgr:     statsMgr,
+		statsCounter: statsMgr.GetCounter(),
 	}
 	return service
 }
@@ -78,6 +80,13 @@ func (s *clientService) CreateClient(userID, clientName string) (*models.Client,
 	// 添加到用户客户端列表
 	if err := s.clientRepo.AddClientToUser(userID, client); err != nil {
 		s.baseService.LogWarning("add client to user list", err)
+	}
+
+	// 更新统计计数器
+	if s.statsCounter != nil {
+		if err := s.statsCounter.IncrClient(1); err != nil {
+			s.baseService.LogWarning("update client stats counter", err, utils.Int64ToString(clientID))
+		}
 	}
 
 	s.baseService.LogCreated("client", fmt.Sprintf("%s (ID: %d) for user: %s", clientName, clientID, userID))
@@ -135,15 +144,52 @@ func (s *clientService) DeleteClient(clientID int64) error {
 		s.baseService.LogWarning("release client ID", err, clientID)
 	}
 
+	// 更新统计计数器
+	if s.statsCounter != nil {
+		if err := s.statsCounter.IncrClient(-1); err != nil {
+			s.baseService.LogWarning("update client stats counter", err, utils.Int64ToString(clientID))
+		}
+		// 如果客户端之前在线，减少在线数
+		if client.Status == models.ClientStatusOnline {
+			if err := s.statsCounter.IncrOnlineClients(-1); err != nil {
+				s.baseService.LogWarning("update online clients counter", err, utils.Int64ToString(clientID))
+			}
+		}
+	}
+
 	s.baseService.LogDeleted("client", fmt.Sprintf("%d", clientID))
 	return nil
 }
 
 // UpdateClientStatus 更新客户端状态
 func (s *clientService) UpdateClientStatus(clientID int64, status models.ClientStatus, nodeID string) error {
+	// 获取客户端当前状态
+	oldClient, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
+	if err != nil {
+		return fmt.Errorf("failed to get client %d: %w", clientID, err)
+	}
+	oldStatus := oldClient.Status
+
+	// 更新状态
 	if err := s.clientRepo.UpdateClientStatus(utils.Int64ToString(clientID), status, nodeID); err != nil {
 		return fmt.Errorf("failed to update client status %d: %w", clientID, err)
 	}
+
+	// 更新在线客户端统计
+	if s.statsCounter != nil {
+		if oldStatus != models.ClientStatusOnline && status == models.ClientStatusOnline {
+			// 从离线变为在线
+			if err := s.statsCounter.IncrOnlineClients(1); err != nil {
+				s.baseService.LogWarning("update online clients counter", err, utils.Int64ToString(clientID))
+			}
+		} else if oldStatus == models.ClientStatusOnline && status != models.ClientStatusOnline {
+			// 从在线变为离线
+			if err := s.statsCounter.IncrOnlineClients(-1); err != nil {
+				s.baseService.LogWarning("update online clients counter", err, utils.Int64ToString(clientID))
+			}
+		}
+	}
+
 	utils.Infof("Updated client %d status to %s", clientID, status)
 	return nil
 }

@@ -58,7 +58,17 @@ func (r *ConnectionRepo) SaveConnection(connInfo *models.ConnectionInfo) error {
 
 // CreateConnection 创建新连接（仅创建，不允许覆盖）
 func (r *ConnectionRepo) CreateConnection(connInfo *models.ConnectionInfo) error {
-	return r.Create(connInfo, constants.KeyPrefixConnection, constants2.DefaultConnectionTTL)
+	if err := r.Create(connInfo, constants.KeyPrefixConnection, constants2.DefaultConnectionTTL); err != nil {
+		return err
+	}
+	// 添加到映射和客户端的连接列表
+	if err := r.AddConnectionToMapping(connInfo.MappingID, connInfo); err != nil {
+		return fmt.Errorf("add connection to mapping failed: %w", err)
+	}
+	if err := r.AddConnectionToClient(connInfo.ClientID, connInfo); err != nil {
+		return fmt.Errorf("add connection to client failed: %w", err)
+	}
+	return nil
 }
 
 // UpdateConnection 更新连接（仅更新，不允许创建）
@@ -158,4 +168,3 @@ func (r *ConnectionRepo) UpdateStats(connID string, bytesSent, bytesReceived int
 
 	return r.UpdateConnection(connInfo)
 }
-

@@ -224,7 +224,17 @@ func registerInfrastructureServices(container *container.Container, config *mana
 			return nil, fmt.Errorf("node repository is not of type *repos.NodeRepository")
 		}
 
-		statsManager := managers.NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo, parentCtx)
+		storageInstance, err := container.Resolve("storage")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve storage: %w", err)
+		}
+
+		stor, ok := storageInstance.(storageCore.Storage)
+		if !ok {
+			return nil, fmt.Errorf("storage is not of type storage.Storage")
+		}
+
+		statsManager := managers.NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo, stor, parentCtx)
 		return statsManager, nil
 	})
 
@@ -256,7 +266,17 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
 		}
 
-		userService := NewUserService(userRepo, idManager, parentCtx)
+		statsManagerInstance, err := container.Resolve("stats_manager")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve stats manager: %w", err)
+		}
+
+		statsManager, ok := statsManagerInstance.(*managers.StatsManager)
+		if !ok {
+			return nil, fmt.Errorf("stats manager is not of type *managers.StatsManager")
+		}
+
+		userService := NewUserService(userRepo, idManager, statsManager.GetCounter(), parentCtx)
 		return userService, nil
 	})
 
@@ -328,7 +348,17 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
 		}
 
-		mappingService := NewPortMappingService(mappingRepo, idManager, parentCtx)
+		statsManagerInstance, err := container.Resolve("stats_manager")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve stats manager: %w", err)
+		}
+
+		statsManager, ok := statsManagerInstance.(*managers.StatsManager)
+		if !ok {
+			return nil, fmt.Errorf("stats manager is not of type *managers.StatsManager")
+		}
+
+		mappingService := NewPortMappingService(mappingRepo, idManager, statsManager.GetCounter(), parentCtx)
 		return mappingService, nil
 	})
 

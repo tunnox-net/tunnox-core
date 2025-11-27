@@ -13,18 +13,20 @@ import (
 // userService 用户服务实现
 type userService struct {
 	*dispose.ServiceBase
-	baseService *BaseService
-	userRepo    *repos.UserRepository
-	idManager   *idgen.IDManager
+	baseService  *BaseService
+	userRepo     *repos.UserRepository
+	idManager    *idgen.IDManager
+	statsCounter *stats.StatsCounter
 }
 
 // NewUserService 创建用户服务
-func NewUserService(userRepo *repos.UserRepository, idManager *idgen.IDManager, parentCtx context.Context) UserService {
+func NewUserService(userRepo *repos.UserRepository, idManager *idgen.IDManager, statsCounter *stats.StatsCounter, parentCtx context.Context) UserService {
 	service := &userService{
-		ServiceBase: dispose.NewService("UserService", parentCtx),
-		baseService: NewBaseService(),
-		userRepo:    userRepo,
-		idManager:   idManager,
+		ServiceBase:  dispose.NewService("UserService", parentCtx),
+		baseService:  NewBaseService(),
+		userRepo:     userRepo,
+		idManager:    idManager,
+		statsCounter: statsCounter,
 	}
 	return service
 }
@@ -52,6 +54,13 @@ func (s *userService) CreateUser(username, email string) (*models.User, error) {
 	// 保存到存储
 	if err := s.userRepo.CreateUser(user); err != nil {
 		return nil, s.baseService.HandleErrorWithIDReleaseString(err, userID, s.idManager.ReleaseUserID, "create user")
+	}
+
+	// 更新统计计数器
+	if s.statsCounter != nil {
+		if err := s.statsCounter.IncrUser(1); err != nil {
+			s.baseService.LogWarning("update user stats counter", err, userID)
+		}
 	}
 
 	s.baseService.LogCreated("user", fmt.Sprintf("%s (ID: %s)", username, userID))
@@ -87,6 +96,13 @@ func (s *userService) DeleteUser(userID string) error {
 	// 释放用户ID
 	if err := s.idManager.ReleaseUserID(userID); err != nil {
 		s.baseService.LogWarning("release user ID", err, userID)
+	}
+
+	// 更新统计计数器
+	if s.statsCounter != nil {
+		if err := s.statsCounter.IncrUser(-1); err != nil {
+			s.baseService.LogWarning("update user stats counter", err, userID)
+		}
 	}
 
 	s.baseService.LogDeleted("user", userID)

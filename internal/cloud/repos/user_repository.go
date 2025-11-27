@@ -21,12 +21,20 @@ func NewUserRepository(repo *Repository) *UserRepository {
 
 // SaveUser 保存用户（创建或更新）
 func (r *UserRepository) SaveUser(user *models.User) error {
-	return r.Save(user, constants.KeyPrefixUser, constants2.DefaultUserDataTTL)
+	if err := r.Save(user, constants.KeyPrefixUser, constants2.DefaultUserDataTTL); err != nil {
+		return err
+	}
+	// 将用户添加到全局用户列表中
+	return r.AddUserToList(user)
 }
 
 // CreateUser 创建新用户（仅创建，不允许覆盖）
 func (r *UserRepository) CreateUser(user *models.User) error {
-	return r.Create(user, constants.KeyPrefixUser, constants2.DefaultUserDataTTL)
+	if err := r.Create(user, constants.KeyPrefixUser, constants2.DefaultUserDataTTL); err != nil {
+		return err
+	}
+	// 将用户添加到全局用户列表中
+	return r.AddUserToList(user)
 }
 
 // UpdateUser 更新用户（仅更新，不允许创建）
@@ -68,5 +76,10 @@ func (r *UserRepository) ListUsers(userType models.UserType) ([]*models.User, er
 // AddUserToList 添加用户到列表
 func (r *UserRepository) AddUserToList(user *models.User) error {
 	return r.AddToList(user, constants.KeyPrefixUserList)
+}
+
+// ListAllUsers 列出所有用户（不过滤类型）
+func (r *UserRepository) ListAllUsers() ([]*models.User, error) {
+	return r.List(constants.KeyPrefixUserList)
 }
 

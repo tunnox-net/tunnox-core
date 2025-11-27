@@ -34,7 +34,11 @@ func (r *ClientRepository) SaveClient(client *models.Client) error {
 
 // CreateClient 创建新客户端（仅创建，不允许覆盖）
 func (r *ClientRepository) CreateClient(client *models.Client) error {
-	return r.Create(client, constants.KeyPrefixClient, constants2.DefaultClientDataTTL)
+	if err := r.Create(client, constants.KeyPrefixClient, constants2.DefaultClientDataTTL); err != nil {
+		return err
+	}
+	// 将客户端添加到全局客户端列表中
+	return r.AddClientToList(client)
 }
 
 // UpdateClient 更新客户端（仅更新，不允许创建）
@@ -89,6 +93,11 @@ func (r *ClientRepository) ListClients() ([]*models.Client, error) {
 	return r.List(constants.KeyPrefixClientList)
 }
 
+// ListAllClients 列出所有客户端（ListClients的别名）
+func (r *ClientRepository) ListAllClients() ([]*models.Client, error) {
+	return r.ListClients()
+}
+
 // AddClientToList 添加客户端到全局客户端列表
 func (r *ClientRepository) AddClientToList(client *models.Client) error {
 	return r.AddToList(client, constants.KeyPrefixClientList)
@@ -125,4 +134,3 @@ func (r *ClientRepository) TouchClient(clientID string) error {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClient, clientID)
 	return r.storage.SetExpiration(key, constants2.DefaultClientDataTTL)
 }
-

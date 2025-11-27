@@ -2,11 +2,13 @@ package managers
 
 import (
 	"context"
+	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
 
@@ -17,17 +19,43 @@ type StatsManager struct {
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
 	nodeRepo    *repos.NodeRepository
+
+	// 新增：统计计数器
+	counter    *stats.StatsCounter
+	storage    storage.Storage
+	useCounter bool // 是否使用计数器模式
 }
 
 // NewStatsManager 创建新的统计管理器
-func NewStatsManager(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository, parentCtx context.Context) *StatsManager {
+func NewStatsManager(
+	userRepo *repos.UserRepository,
+	clientRepo *repos.ClientRepository,
+	mappingRepo *repos.PortMappingRepo,
+	nodeRepo *repos.NodeRepository,
+	storage storage.Storage,
+	parentCtx context.Context,
+) *StatsManager {
 	manager := &StatsManager{
 		ManagerBase: dispose.NewManager("StatsManager", parentCtx),
 		userRepo:    userRepo,
 		clientRepo:  clientRepo,
 		mappingRepo: mappingRepo,
 		nodeRepo:    nodeRepo,
+		storage:     storage,
+		useCounter:  true, // 默认使用计数器模式
 	}
+
+	// 创建统计计数器
+	if manager.useCounter {
+		manager.counter = stats.NewStatsCounter(storage, parentCtx)
+
+		// 初始化计数器
+		if err := manager.counter.Initialize(); err != nil {
+			dispose.Warnf("StatsManager: failed to initialize counter: %v", err)
+			manager.useCounter = false // 降级到全量计算模式
+		}
+	}
+
 	return manager
 }
 
@@ -128,22 +156,39 @@ func (sm *StatsManager) GetClientStats(clientID int64) (*stats.ClientStats, erro
 	}, nil
 }
 
-// GetSystemStats 获取系统整体统计
+// GetSystemStats 获取系统整体统计 (优化版)
 func (sm *StatsManager) GetSystemStats() (*stats.SystemStats, error) {
+	// 1. 优先使用计数器模式 (<5ms)
+	if sm.useCounter && sm.counter != nil {
+		systemStats, err := sm.counter.GetGlobalStats()
+		if err == nil {
+			return systemStats, nil
+		}
+
+		// 计数器失败，记录日志并降级
+		dispose.Warnf("StatsManager: counter mode failed: %v, falling back to full calculation", err)
+	}
+
+	// 2. 降级到全量计算模式 (慢，但保证可用)
+	return sm.getSystemStatsFull()
+}
+
+// getSystemStatsFull 全量计算系统统计 (旧实现，作为降级方案)
+func (sm *StatsManager) getSystemStatsFull() (*stats.SystemStats, error) {
 	// 获取所有用户
-	users, err := sm.userRepo.ListUsers("")
+	users, err := sm.userRepo.ListAllUsers()
 	if err != nil {
 		return nil, err
 	}
 
 	// 获取所有客户端
-	clients, err := sm.clientRepo.ListUserClients("")
+	clients, err := sm.clientRepo.ListAllClients()
 	if err != nil {
 		return nil, err
 	}
 
 	// 获取所有端口映射
-	mappings, err := sm.mappingRepo.GetUserPortMappings("")
+	mappings, err := sm.mappingRepo.ListAllMappings()
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +243,27 @@ func (sm *StatsManager) GetSystemStats() (*stats.SystemStats, error) {
 		TotalConnections: totalConnections,
 		AnonymousUsers:   anonymousUsers,
 	}, nil
+}
+
+// RebuildStats 重建统计计数器（管理员手动触发）
+func (sm *StatsManager) RebuildStats() error {
+	if !sm.useCounter || sm.counter == nil {
+		return fmt.Errorf("counter mode not enabled")
+	}
+
+	// 全量计算当前统计
+	systemStats, err := sm.getSystemStatsFull()
+	if err != nil {
+		return fmt.Errorf("failed to calculate full stats: %w", err)
+	}
+
+	// 重建计数器
+	return sm.counter.Rebuild(systemStats)
+}
+
+// GetCounter 获取统计计数器（供Service层使用）
+func (sm *StatsManager) GetCounter() *stats.StatsCounter {
+	return sm.counter
 }
 
 // GetTrafficStats 获取流量统计图表数据

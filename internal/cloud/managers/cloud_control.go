@@ -71,7 +71,7 @@ func NewCloudControl(config *ControlConfig, storage storage.Storage) *CloudContr
 		jwtManager:        NewJWTManager(config, repo, ctx),
 		configManager:     NewConfigManager(storage, config, ctx),
 		cleanupManager:    NewCleanupManager(storage, lock, ctx),
-		statsManager:      NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo, ctx),
+		statsManager:      NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo, storage, ctx),
 		anonymousManager:  NewAnonymousManager(clientRepo, mappingRepo, idManager, ctx),
 		nodeManager:       NewNodeManager(nodeRepo, ctx),
 		searchManager:     NewSearchManager(userRepo, clientRepo, mappingRepo, ctx),
