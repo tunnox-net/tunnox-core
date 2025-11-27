@@ -1,0 +1,188 @@
+package repos
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"time"
+
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/storage"
+)
+
+// GenericRepository 泛型Repository接口
+type GenericRepository[T any] interface {
+	// 基础CRUD操作
+	Save(entity T, keyPrefix string, ttl time.Duration) error
+	Create(entity T, keyPrefix string, ttl time.Duration) error
+	Update(entity T, keyPrefix string, ttl time.Duration) error
+	Get(id string, keyPrefix string) (T, error)
+	Delete(id string, keyPrefix string) error
+
+	// 列表操作
+	List(listKey string) ([]T, error)
+	AddToList(entity T, listKey string) error
+	RemoveFromList(entity T, listKey string) error
+}
+
+// GenericRepositoryImpl 泛型Repository实现
+type GenericRepositoryImpl[T any] struct {
+	*Repository
+	getIDFunc func(T) (string, error)
+}
+
+// NewGenericRepository 创建泛型Repository
+func NewGenericRepository[T any](repo *Repository, getIDFunc func(T) (string, error)) *GenericRepositoryImpl[T] {
+	return &GenericRepositoryImpl[T]{
+		Repository: repo,
+		getIDFunc:  getIDFunc,
+	}
+}
+
+// Save 保存实体（创建或更新）
+func (r *GenericRepositoryImpl[T]) Save(entity T, keyPrefix string, ttl time.Duration) error {
+	data, err := json.Marshal(entity)
+	if err != nil {
+		return fmt.Errorf("marshal entity failed: %w", err)
+	}
+
+	// 使用反射获取ID字段
+	id, err := r.getEntityID(entity)
+	if err != nil {
+		return fmt.Errorf("get entity ID failed: %w", err)
+	}
+
+	key := fmt.Sprintf("%s:%s", keyPrefix, id)
+	return r.storage.Set(key, string(data), ttl)
+}
+
+// Create 创建实体（仅创建，不允许覆盖）
+func (r *GenericRepositoryImpl[T]) Create(entity T, keyPrefix string, ttl time.Duration) error {
+	id, err := r.getEntityID(entity)
+	if err != nil {
+		return fmt.Errorf("get entity ID failed: %w", err)
+	}
+
+	// 检查实体是否已存在
+	_, err = r.Get(id, keyPrefix)
+	if err == nil {
+		// 如果获取成功，说明实体已存在
+		return fmt.Errorf("entity with ID %s already exists", id)
+	}
+
+	return r.Save(entity, keyPrefix, ttl)
+}
+
+// Update 更新实体（仅更新，不允许创建）
+func (r *GenericRepositoryImpl[T]) Update(entity T, keyPrefix string, ttl time.Duration) error {
+	id, err := r.getEntityID(entity)
+	if err != nil {
+		return fmt.Errorf("get entity ID failed: %w", err)
+	}
+
+	// 检查实体是否存在
+	_, err = r.Get(id, keyPrefix)
+	if err != nil {
+		return fmt.Errorf("entity with ID %s does not exist", id)
+	}
+
+	return r.Save(entity, keyPrefix, ttl)
+}
+
+// Get 获取实体
+func (r *GenericRepositoryImpl[T]) Get(id string, keyPrefix string) (T, error) {
+	var entity T
+
+	key := fmt.Sprintf("%s:%s", keyPrefix, id)
+	data, err := r.storage.Get(key)
+	if err != nil {
+		return entity, err
+	}
+
+	entityData, ok := data.(string)
+	if !ok {
+		return entity, fmt.Errorf("invalid entity data type")
+	}
+
+	if err := json.Unmarshal([]byte(entityData), &entity); err != nil {
+		return entity, fmt.Errorf("unmarshal entity failed: %w", err)
+	}
+
+	return entity, nil
+}
+
+// Delete 删除实体
+func (r *GenericRepositoryImpl[T]) Delete(id string, keyPrefix string) error {
+	key := fmt.Sprintf("%s:%s", keyPrefix, id)
+	return r.storage.Delete(key)
+}
+
+// List 列出实体
+func (r *GenericRepositoryImpl[T]) List(listKey string) ([]T, error) {
+	data, err := r.storage.GetList(listKey)
+	if err != nil {
+		return []T{}, nil
+	}
+
+	var entities []T
+	for _, item := range data {
+		if entityData, ok := item.(string); ok {
+			var entity T
+			if err := json.Unmarshal([]byte(entityData), &entity); err != nil {
+				continue
+			}
+			entities = append(entities, entity)
+		}
+	}
+
+	return entities, nil
+}
+
+// AddToList 添加实体到列表
+func (r *GenericRepositoryImpl[T]) AddToList(entity T, listKey string) error {
+	data, err := json.Marshal(entity)
+	if err != nil {
+		return err
+	}
+
+	return r.storage.AppendToList(listKey, string(data))
+}
+
+// RemoveFromList 从列表移除实体
+func (r *GenericRepositoryImpl[T]) RemoveFromList(entity T, listKey string) error {
+	data, err := json.Marshal(entity)
+	if err != nil {
+		return err
+	}
+
+	return r.storage.RemoveFromList(listKey, string(data))
+}
+
+// getEntityID 获取实体ID
+func (r *GenericRepositoryImpl[T]) getEntityID(entity T) (string, error) {
+	if r.getIDFunc == nil {
+		return "", fmt.Errorf("getIDFunc not set")
+	}
+	return r.getIDFunc(entity)
+}
+
+// Repository 数据访问层基类
+type Repository struct {
+	storage storage.Storage
+	dispose.Dispose
+}
+
+// NewRepository 创建新的数据访问层
+func NewRepository(storage storage.Storage) *Repository {
+	repo := &Repository{
+		storage: storage,
+	}
+	repo.Dispose.SetCtx(context.Background(), nil)
+	return repo
+}
+
+// GetStorage 获取底层存储实例
+func (r *Repository) GetStorage() storage.Storage {
+	return r.storage
+}
+

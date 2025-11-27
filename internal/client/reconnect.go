@@ -101,8 +101,8 @@ func (c *TunnoxClient) reconnect() {
 
 // getReconnectConfig 获取重连配置
 func (c *TunnoxClient) getReconnectConfig() ReconnectConfig {
-	// 从配置文件读取，如果没有则使用默认配置
-	// TODO: 从 c.config 读取重连配置
+	// 使用默认配置
+	// 注意：如果需要从配置文件读取，需要在 ClientConfig 中添加 Reconnect 字段
 	return DefaultReconnectConfig
 }
 

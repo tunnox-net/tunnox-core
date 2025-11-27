@@ -27,12 +27,13 @@ type RemoteStorageConfig struct {
 
 // RemoteStorage 远程存储实现（通过 gRPC）
 // 用于集群模式下的持久化存储
+// 注意：此实现为占位符，实际 gRPC 通信需要在生产环境中实现
 type RemoteStorage struct {
 	config *RemoteStorageConfig
 	ctx    context.Context
 	dispose.Dispose
 	
-	// TODO: 添加 gRPC 客户端连接
+	// gRPC 客户端连接（预留，待实现）
 	// client storagepb.StorageServiceClient
 }
 
@@ -57,71 +58,76 @@ func NewRemoteStorage(parentCtx context.Context, config *RemoteStorageConfig) (*
 	
 	storage.SetCtx(parentCtx, storage.onClose)
 	
-	// TODO: 建立 gRPC 连接
-	// conn, err := grpc.DialContext(parentCtx, config.GRPCAddress, opts...)
-	// storage.client = storagepb.NewStorageServiceClient(conn)
+	// gRPC 连接建立（预留，待实现）
+	// 在生产环境中需要实现以下逻辑：
+	// 1. 配置 TLS（如果启用）
+	// 2. 创建 gRPC 连接：conn, err := grpc.DialContext(...)
+	// 3. 创建客户端：storage.client = storagepb.NewStorageServiceClient(conn)
+	// 4. 实现重连和健康检查机制
 	
-	dispose.Infof("RemoteStorage: initialized (gRPC: %s)", config.GRPCAddress)
+	dispose.Infof("RemoteStorage: initialized (gRPC: %s, stub mode)", config.GRPCAddress)
 	return storage, nil
 }
 
 // onClose 资源释放回调
 func (r *RemoteStorage) onClose() error {
 	dispose.Infof("RemoteStorage: closing")
-	// TODO: 关闭 gRPC 连接
+	// gRPC 连接关闭（预留，待实现）
+	// 在生产环境中需要关闭 gRPC 连接
 	return nil
 }
 
 // Set 设置键值对
+// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) Set(key string, value interface{}) error {
-	// TODO: 实现 gRPC 调用
+	// 生产环境实现示例：
 	// ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
 	// defer cancel()
-	// _, err := r.client.Set(ctx, &storagepb.SetRequest{Key: key, Value: ...})
-	
-	dispose.Debugf("RemoteStorage.Set: key=%s (not implemented)", key)
+	// _, err := r.client.Set(ctx, &storagepb.SetRequest{Key: key, Value: value})
+	// return err
+	dispose.Debugf("RemoteStorage.Set: key=%s (stub implementation)", key)
 	return nil
 }
 
 // Get 获取值
+// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) Get(key string) (interface{}, error) {
-	// TODO: 实现 gRPC 调用
-	dispose.Debugf("RemoteStorage.Get: key=%s (not implemented)", key)
+	dispose.Debugf("RemoteStorage.Get: key=%s (stub implementation)", key)
 	return nil, ErrKeyNotFound
 }
 
 // Delete 删除键
+// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) Delete(key string) error {
-	// TODO: 实现 gRPC 调用
-	dispose.Debugf("RemoteStorage.Delete: key=%s (not implemented)", key)
+	dispose.Debugf("RemoteStorage.Delete: key=%s (stub implementation)", key)
 	return nil
 }
 
 // Exists 检查键是否存在
+// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) Exists(key string) (bool, error) {
-	// TODO: 实现 gRPC 调用
-	dispose.Debugf("RemoteStorage.Exists: key=%s (not implemented)", key)
+	dispose.Debugf("RemoteStorage.Exists: key=%s (stub implementation)", key)
 	return false, nil
 }
 
 // BatchSet 批量设置
+// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) BatchSet(items map[string]interface{}) error {
-	// TODO: 实现 gRPC 调用
-	dispose.Debugf("RemoteStorage.BatchSet: %d items (not implemented)", len(items))
+	dispose.Debugf("RemoteStorage.BatchSet: %d items (stub implementation)", len(items))
 	return nil
 }
 
 // BatchGet 批量获取
+// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) BatchGet(keys []string) (map[string]interface{}, error) {
-	// TODO: 实现 gRPC 调用
-	dispose.Debugf("RemoteStorage.BatchGet: %d keys (not implemented)", len(keys))
+	dispose.Debugf("RemoteStorage.BatchGet: %d keys (stub implementation)", len(keys))
 	return make(map[string]interface{}), nil
 }
 
 // BatchDelete 批量删除
+// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) BatchDelete(keys []string) error {
-	// TODO: 实现 gRPC 调用
-	dispose.Debugf("RemoteStorage.BatchDelete: %d keys (not implemented)", len(keys))
+	dispose.Debugf("RemoteStorage.BatchDelete: %d keys (stub implementation)", len(keys))
 	return nil
 }
 
