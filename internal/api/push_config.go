@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"tunnox-core/internal/cloud/models"
@@ -78,13 +79,19 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody string) {
 	utils.Infof("API: pushing config to client %d", clientID)
 
-	// 获取客户端的控制连接
+	// 获取客户端的控制连接（本地）
 	connInterface := s.sessionMgr.GetControlConnectionInterface(clientID)
 	if connInterface == nil {
-		utils.Warnf("API: client %d not connected, config will be sent when client connects", clientID)
+		// 本地未找到，尝试通过消息队列广播到其他节点
+		utils.Infof("API: client %d not found locally, broadcasting config push to cluster", clientID)
+		if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
+			utils.Errorf("API: failed to broadcast config push: %v", err)
+		} else {
+			utils.Infof("API: ✅ config push broadcasted to cluster for client %d", clientID)
+		}
 		return
 	}
-	utils.Infof("API: ✅ found control connection for client %d, connInterface=%p", clientID, connInterface)
+	utils.Infof("API: ✅ found local control connection for client %d, connInterface=%p", clientID, connInterface)
 
 	// 获取ConnID和RemoteAddr用于追踪
 	var connID string
@@ -177,6 +184,15 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 	}()
 
 	utils.Infof("API: config push initiated for client %d (async)", clientID)
+}
+
+// broadcastConfigPushToCluster 广播配置推送到集群其他节点
+func (s *ManagementAPIServer) broadcastConfigPushToCluster(clientID int64, configBody string) error {
+	// 通过SessionManager广播
+	if err := s.sessionMgr.BroadcastConfigPush(clientID, configBody); err != nil {
+		return fmt.Errorf("failed to broadcast config push: %w", err)
+	}
+	return nil
 }
 
 // removeMappingFromClients 通知客户端移除映射

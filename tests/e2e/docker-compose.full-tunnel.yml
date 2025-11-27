@@ -43,7 +43,8 @@ services:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/health"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      start_period: 30s
+      retries: 5
 
   tunnox-server-2:
     build:
@@ -71,7 +72,8 @@ services:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/health"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      start_period: 30s
+      retries: 5
 
   tunnox-server-3:
     build:
@@ -99,7 +101,8 @@ services:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9000/health"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      start_period: 30s
+      retries: 5
 
   # ===== Nginx 负载均衡器 =====
   nginx:
@@ -168,6 +171,8 @@ services:
       - tunnox-net
     ports:
       - "18080:8080"  # 暴露ClientA监听的端口到宿主机
+      - "18081:8081"  # 第二个映射端口
+      - "18082:8082"  # 预留更多端口用于测试
       - "15432:15432" # 暴露ClientA的PostgreSQL转发表
     command: ["-config", "/app/config/client-config.yaml"]
 

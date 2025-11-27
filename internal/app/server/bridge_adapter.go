@@ -123,3 +123,17 @@ func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-c
 	return msgChan, nil
 }
 
+// PublishMessage 发布消息到指定主题
+func (a *BridgeAdapter) PublishMessage(ctx context.Context, topic string, payload []byte) error {
+	if a.messageBroker == nil {
+		return fmt.Errorf("message broker not initialized")
+	}
+
+	if err := a.messageBroker.Publish(ctx, topic, payload); err != nil {
+		return fmt.Errorf("failed to publish to topic %s: %w", topic, err)
+	}
+
+	utils.Debugf("BridgeAdapter: published message to topic %s (%d bytes)", topic, len(payload))
+	return nil
+}
+

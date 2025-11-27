@@ -359,6 +359,20 @@ func (m *BridgeManager) RequestBridge(ctx context.Context, targetNodeID string, 
 	}
 }
 
+// PublishMessage 发布消息到指定主题（实现BridgeManager接口）
+func (m *BridgeManager) PublishMessage(ctx context.Context, topic string, payload []byte) error {
+	if m.messageBroker == nil {
+		return fmt.Errorf("message broker not configured")
+	}
+
+	if err := m.messageBroker.Publish(ctx, topic, payload); err != nil {
+		return fmt.Errorf("failed to publish to topic %s: %w", topic, err)
+	}
+
+	utils.Debugf("BridgeManager: published message to topic %s (%d bytes)", topic, len(payload))
+	return nil
+}
+
 // GetConnectionPool 获取连接池
 func (m *BridgeManager) GetConnectionPool() *BridgeConnectionPool {
 	return m.connectionPool

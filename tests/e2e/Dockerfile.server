@@ -31,11 +31,11 @@ RUN echo "==> Building tunnox-server binary..." && \
     ls -lh /build/bin/tunnox-server
 
 # 最终阶段 - 使用更轻量的基础镜像
-FROM alpine:3.19
+FROM alpine:3.20
 
 # 安装必要的运行时依赖（使用HTTP源）
 RUN echo "==> Installing runtime dependencies..." && \
-    apk add --no-cache --allow-untrusted --repository http://dl-cdn.alpinelinux.org/alpine/v3.19/main --repository http://dl-cdn.alpinelinux.org/alpine/v3.19/community ca-certificates wget && \
+    apk add --no-cache --allow-untrusted --repository http://dl-cdn.alpinelinux.org/alpine/v3.20/main --repository http://dl-cdn.alpinelinux.org/alpine/v3.20/community ca-certificates wget && \
     echo "==> Runtime dependencies installed"
 
 # 创建应用目录和用户

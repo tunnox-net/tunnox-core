@@ -3,7 +3,7 @@ package e2e
 import (
 	"fmt"
 	"io"
-	"net"
+	"net/http"
 	"testing"
 	"time"
 
@@ -61,12 +61,36 @@ func TestFullTunnel_CompletePortForwarding(t *testing.T) {
 	t.Run("通过API创建映射（使用匿名客户端）", func(t *testing.T) {
 		t.Log("📋 Step 2: Creating mapping for anonymous clients...")
 
-		// 等待匿名clients连接
+		// 等待匿名clients连接（使用重试机制，最多等待30秒）
 		t.Log("Waiting for anonymous clients to connect...")
-		time.Sleep(15 * time.Second)
+		var allClients []ClientResponse
+		var err error
+		maxRetries := 15 // 15次，每次2秒 = 最多30秒
+		for i := 0; i < maxRetries; i++ {
+			allClients, err = apiClient.ListClients()
+			if err != nil {
+				t.Logf("  Attempt %d/%d: Failed to list clients: %v", i+1, maxRetries, err)
+				time.Sleep(2 * time.Second)
+				continue
+			}
 
-		// 列出所有已连接的客户端（包括匿名客户端）
-		allClients, err := apiClient.ListClients()
+			// 计算在线匿名客户端数量
+			onlineCount := 0
+			for _, client := range allClients {
+				if client.Status == "online" && client.Type == "anonymous" {
+					onlineCount++
+				}
+			}
+
+			if onlineCount >= 2 {
+				t.Logf("✅ Found %d online anonymous clients after %d attempts", onlineCount, i+1)
+				break
+			}
+
+			t.Logf("  Attempt %d/%d: Only %d online anonymous clients, waiting...", i+1, maxRetries, onlineCount)
+			time.Sleep(2 * time.Second)
+		}
+
 		require.NoError(t, err, "Failed to list clients")
 		t.Logf("Found %d total clients (including offline)", len(allClients))
 
@@ -128,71 +152,56 @@ func TestFullTunnel_CompletePortForwarding(t *testing.T) {
 		t.Logf("   Target: %s:%d (via ClientB ID=%d, Anonymous)",
 			mapping.TargetHost, mapping.TargetPort, clientBID)
 
-		// 等待配置推送到clients
-		t.Log("Waiting for ConfigSet to be pushed to clients (20 seconds)...")
-		time.Sleep(20 * time.Second)
+		// 配置推送是异步的，给足够时间让客户端处理
+		// - 配置推送通常在1秒内完成
+		// - 但客户端启动TCP监听器可能需要额外时间
+		t.Log("Waiting for ConfigSet to be pushed and mapping to be active (15 seconds)...")
+		time.Sleep(15 * time.Second)
 	})
 
-	// 测试完整的端口映射链路（即使API创建失败也尝试测试）
+	// 测试完整的端口映射链路
 	t.Run("测试完整端口映射链路", func(t *testing.T) {
 		t.Log("📋 Step 3: Testing complete tunnel chain...")
-
-		// 注意：由于Docker网络限制，我们可能无法从宿主机访问容器内的ClientA
-		// 这里我们测试从容器内部访问
-
-		// 方案1: 在docker-compose中暴露ClientA的端口
-		// 方案2: 执行docker exec进入容器测试
-		// 方案3: 使用port mapping将ClientA的端口映射到宿主机
-
 		t.Log("Testing HTTP request through tunnel...")
 
-		// 尝试通过隧道访问nginx
-		// 注意：这需要ClientA暴露端口到宿主机（在docker-compose中配置）
+		// 使用HTTP客户端测试（更可靠）
+		client := &http.Client{
+			Timeout: 10 * time.Second,
+		}
+
 		maxRetries := 10
 		var lastErr error
 
 		for i := 0; i < maxRetries; i++ {
 			t.Logf("Attempt %d/%d to connect through tunnel...", i+1, maxRetries)
 
-			// 尝试TCP连接
-			conn, err := net.DialTimeout("tcp", "localhost:18080", 3*time.Second)
+			resp, err := client.Get("http://localhost:18080/")
 			if err != nil {
 				lastErr = err
-				t.Logf("  Connection failed: %v", err)
+				t.Logf("  ❌ HTTP GET failed: %v", err)
 				time.Sleep(2 * time.Second)
 				continue
 			}
 
-			// 发送HTTP请求
-			request := "GET / HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
-			_, err = conn.Write([]byte(request))
+			// 读取响应体
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
 			if err != nil {
-				conn.Close()
 				lastErr = err
-				t.Logf("  Write failed: %v", err)
+				t.Logf("  ❌ Failed to read response body: %v", err)
 				time.Sleep(2 * time.Second)
 				continue
 			}
 
-			// 读取响应
-			response := make([]byte, 4096)
-			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-			n, err := conn.Read(response)
-			conn.Close()
-
-			if err != nil && err != io.EOF {
-				lastErr = err
-				t.Logf("  Read failed: %v", err)
-				time.Sleep(2 * time.Second)
-				continue
-			}
-
-			responseStr := string(response[:n])
-			t.Logf("✅ Received response through tunnel (%d bytes)", n)
+			bodyStr := string(body)
+			t.Logf("  ✅ Received HTTP %d (%d bytes)", resp.StatusCode, len(body))
+			t.Logf("  Response preview: %s", bodyStr[:min(100, len(bodyStr))])
 
 			// 验证响应
-			assert.Contains(t, responseStr, "HTTP/1.1 200", "Should receive 200 OK")
-			assert.Contains(t, responseStr, "nginx", "Response should be from nginx")
+			require.Equal(t, 200, resp.StatusCode, "Should receive HTTP 200")
+			assert.Contains(t, resp.Header.Get("Server"), "nginx", "Response should be from nginx")
+			assert.Contains(t, bodyStr, "Tunnox", "Response should contain 'Tunnox'")
 
 			t.Log("✅ Port forwarding works! Complete chain verified:")
 			t.Log("   localhost:18080 → ClientA → Nginx LB → 3 Servers → ClientB → target-nginx:80")

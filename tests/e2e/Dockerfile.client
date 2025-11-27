@@ -33,13 +33,13 @@ RUN echo "==> Building tunnox-client binary..." && \
     ls -lh /build/bin/tunnox-client
 
 # ===== 运行阶段 =====
-FROM alpine:3.19
+FROM alpine:3.20
 
 # 安装运行时依赖（使用HTTP仓库）
 RUN echo "==> Installing runtime dependencies..." && \
     apk add --no-cache --allow-untrusted \
-        --repository http://dl-cdn.alpinelinux.org/alpine/v3.19/main \
-        --repository http://dl-cdn.alpinelinux.org/alpine/v3.19/community \
+        --repository http://dl-cdn.alpinelinux.org/alpine/v3.20/main \
+        --repository http://dl-cdn.alpinelinux.org/alpine/v3.20/community \
         ca-certificates curl && \
     echo "==> Runtime dependencies installed"
 

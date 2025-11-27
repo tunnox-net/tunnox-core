@@ -158,6 +158,10 @@ func (s *SessionManager) SetCloudControl(cc CloudControlAPI) {
 func (s *SessionManager) SetBridgeManager(bridgeManager BridgeManager) {
 	s.bridgeManager = bridgeManager
 	utils.Infof("SessionManager: BridgeManager configured for cross-server forwarding")
+	
+	// 启动跨节点广播订阅
+	s.startTunnelOpenBroadcastSubscription()
+	s.startConfigPushBroadcastSubscription()
 }
 
 // ============================================================================

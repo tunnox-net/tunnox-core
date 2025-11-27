@@ -196,6 +196,63 @@ func (c *E2EAPIClient) ListClients() ([]ClientResponse, error) {
 	return apiResp.Data.Clients, nil
 }
 
+// DeleteMapping 删除端口映射
+func (c *E2EAPIClient) DeleteMapping(mappingID string) error {
+	req, err := http.NewRequest("DELETE", c.baseURL+"/api/v1/mappings/"+mappingID, nil)
+	if err != nil {
+		return err
+	}
+	
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	
+	var apiResp struct {
+		Success bool `json:"success"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return err
+	}
+	
+	if !apiResp.Success {
+		return fmt.Errorf("delete mapping failed")
+	}
+	
+	return nil
+}
+
+// ClaimClient 关联匿名客户端到用户
+func (c *E2EAPIClient) ClaimClient(clientID int64, userID string, newName string) (map[string]interface{}, error) {
+	reqBody := map[string]interface{}{
+		"user_id":    userID,
+		"new_name":   newName,
+	}
+	body, _ := json.Marshal(reqBody)
+	
+	url := fmt.Sprintf("%s/api/v1/clients/%d/claim", c.baseURL, clientID)
+	resp, err := c.client.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	
+	var apiResp struct {
+		Success bool                   `json:"success"`
+		Data    map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+	
+	if !apiResp.Success {
+		return nil, fmt.Errorf("claim client failed")
+	}
+	
+	return apiResp.Data, nil
+}
+
 // Request 发送HTTP请求（通用方法）
 func (c *E2EAPIClient) Request(method, path string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequest(method, c.baseURL+path, body)

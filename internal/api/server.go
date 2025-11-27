@@ -19,6 +19,7 @@ import (
 // SessionManager 接口（避免循环依赖）
 type SessionManager interface {
 	GetControlConnectionInterface(clientID int64) interface{}
+	BroadcastConfigPush(clientID int64, configBody string) error
 }
 
 // ManagementAPIServer Management API 服务器
