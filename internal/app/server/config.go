@@ -244,6 +244,59 @@ func ValidateConfig(config *Config) error {
 		}
 	}
 
+	// ============================================================================
+	// Redis 自动共享逻辑
+	// ============================================================================
+
+	// 初始化 MessageBroker.Redis map
+	if config.MessageBroker.Redis == nil {
+		config.MessageBroker.Redis = make(map[string]interface{})
+	}
+
+	// 规则 1: 如果 storage.redis 已配置，但 message_broker 未配置或为 memory
+	//        自动使用 Redis 作为消息队列
+	if config.Storage.Redis.Addr != "" {
+		if config.MessageBroker.Type == "" || config.MessageBroker.Type == "memory" {
+			utils.Infof("✅ Storage Redis detected, auto-configuring message_broker to use redis for multi-node support")
+			config.MessageBroker.Type = "redis"
+
+			// 使用 map 设置 Redis 配置
+			config.MessageBroker.Redis["addr"] = config.Storage.Redis.Addr
+			if config.Storage.Redis.Password != "" {
+				config.MessageBroker.Redis["password"] = config.Storage.Redis.Password
+			}
+			if config.Storage.Redis.DB > 0 {
+				config.MessageBroker.Redis["db"] = config.Storage.Redis.DB
+			}
+			if config.MessageBroker.Redis["channel"] == nil || config.MessageBroker.Redis["channel"] == "" {
+				config.MessageBroker.Redis["channel"] = "tunnox:messages"
+			}
+		}
+	}
+
+	// 规则 2: 如果 message_broker.redis 已配置，但 storage.redis 未配置
+	//        自动使用 message_broker 的 Redis 配置给 storage
+	if config.MessageBroker.Type == "redis" {
+		if addr, ok := config.MessageBroker.Redis["addr"].(string); ok && addr != "" {
+			if config.Storage.Redis.Addr == "" {
+				utils.Infof("✅ MessageBroker Redis detected, auto-configuring storage.redis for distributed cache")
+				config.Storage.Redis.Addr = addr
+
+				if password, ok := config.MessageBroker.Redis["password"].(string); ok {
+					config.Storage.Redis.Password = password
+				}
+				if db, ok := config.MessageBroker.Redis["db"].(int); ok {
+					config.Storage.Redis.DB = db
+				}
+
+				// 设置默认值
+				if config.Storage.Redis.PoolSize <= 0 {
+					config.Storage.Redis.PoolSize = 10
+				}
+			}
+		}
+	}
+
 	// 验证 MessageBroker 配置
 	if config.MessageBroker.Type == "" {
 		config.MessageBroker.Type = "memory"
@@ -334,9 +387,18 @@ func validateStorageConfig(config *StorageConfig) error {
 
 	// 如果是 Hybrid，验证 Hybrid 配置
 	if config.Type == "hybrid" {
-		// 设置默认缓存类型
-		if config.Hybrid.CacheType == "" {
-			config.Hybrid.CacheType = "memory"
+		// 自动检测缓存类型：如果配置了 Redis，且缓存类型未显式设置或为 memory，自动升级为 redis
+		// 这样可以支持多节点部署，共享运行时数据（会话、连接状态等）
+		if config.Hybrid.CacheType == "" || config.Hybrid.CacheType == "memory" {
+			if config.Redis.Addr != "" {
+				utils.Infof("✅ Redis detected, auto-upgrading cache from 'memory' to 'redis' for multi-node support")
+				config.Hybrid.CacheType = "redis"
+			} else {
+				// 没有配置 Redis，使用内存缓存
+				if config.Hybrid.CacheType == "" {
+					config.Hybrid.CacheType = "memory"
+				}
+			}
 		}
 
 		if config.Hybrid.CacheType != "memory" && config.Hybrid.CacheType != "redis" {
@@ -462,11 +524,16 @@ func GetDefaultConfig() *Config {
 			Type: "hybrid",
 			Hybrid: HybridStorageConfigYAML{
 				CacheType:            "memory",
-				EnablePersistent:     false,
+				EnablePersistent:     true, // 默认启用持久化
 				PersistentPrefixes:   DefaultPersistentPrefixes(),
 				RuntimePrefixes:      DefaultRuntimePrefixes(),
 				DefaultPersistentTTL: 0,     // 永久
 				DefaultRuntimeTTL:    86400, // 24小时
+				JSON: JSONStorageConfigYAML{
+					FilePath:     "data/tunnox-data.json",
+					AutoSave:     true,
+					SaveInterval: 30,
+				},
 			},
 		},
 		Log: utils.LogConfig{

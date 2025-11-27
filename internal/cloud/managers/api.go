@@ -45,6 +45,7 @@ type CloudControlAPI interface {
 	UpdatePortMappingStatus(mappingID string, status models.MappingStatus) error
 	UpdatePortMappingStats(mappingID string, stats *stats.TrafficStats) error
 	ListPortMappings(mappingType models.MappingType) ([]*models.PortMapping, error)
+	MigrateClientMappings(fromClientID, toClientID int64) error
 
 	// 匿名用户管理
 	GenerateAnonymousCredentials() (*models.Client, error) // 生成匿名客户端凭据

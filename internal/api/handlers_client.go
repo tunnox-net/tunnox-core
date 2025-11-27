@@ -164,12 +164,19 @@ func (s *ManagementAPIServer) handleClaimClient(w http.ResponseWriter, r *http.R
 	// 创建新的托管客户端
 	clientName := req.NewClientName
 	if clientName == "" {
-		clientName = fmt.Sprintf("Claimed Client %d", req.AnonymousClientID)
+		clientName = fmt.Sprintf("Claimed-%d", req.AnonymousClientID)
 	}
 
 	newClient, err := s.cloudControl.CreateClient(req.UserID, clientName)
 	if err != nil {
 		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create new client: %v", err))
+		return
+	}
+
+	// 生成 JWT token
+	tokenInfo, err := s.cloudControl.GenerateJWTToken(newClient.ID)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to generate JWT token: %v", err))
 		return
 	}
 
@@ -180,12 +187,17 @@ func (s *ManagementAPIServer) handleClaimClient(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// 后续可在此添加逻辑：将匿名客户端的端口映射迁移到新客户端
+	// 将匿名客户端的端口映射迁移到新客户端
+	if err := s.cloudControl.MigrateClientMappings(anonClient.ID, newClient.ID); err != nil {
+		// 迁移失败只记录警告，不阻塞响应
+		fmt.Printf("WARN: Failed to migrate mappings from client %d to %d: %v\n", anonClient.ID, newClient.ID, err)
+	}
 
 	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"new_client_id": newClient.ID,
-		"new_auth_code": newClient.AuthCode,
-		"message":       "Client claimed successfully",
+		"client_id":  newClient.ID,
+		"auth_token": tokenInfo.Token,
+		"expires_at": tokenInfo.ExpiresAt,
+		"message":    "Client claimed successfully. Please save your credentials.",
 	})
 }
 

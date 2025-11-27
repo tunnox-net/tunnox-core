@@ -43,6 +43,10 @@ type TunnoxClient struct {
 	// 商业化控制：流量累计
 	localTrafficStats map[string]*localMappingStats // mappingID -> stats
 	trafficStatsMu    sync.RWMutex
+
+	// 重连控制
+	kicked     bool // 是否被踢下线
+	authFailed bool // 是否认证失败
 }
 
 // localMappingStats 本地映射流量统计
@@ -246,6 +250,10 @@ func (c *TunnoxClient) sendHandshake() error {
 	}
 
 	if !resp.Success {
+		// 认证失败，标记不重连
+		if strings.Contains(resp.Error, "auth") || strings.Contains(resp.Error, "token") {
+			c.authFailed = true
+		}
 		return fmt.Errorf("handshake failed: %s", resp.Error)
 	}
 
@@ -272,6 +280,14 @@ func (c *TunnoxClient) sendHandshake() error {
 // readLoop 读取循环（接收服务器命令）
 func (c *TunnoxClient) readLoop() {
 	utils.Infof("Client: readLoop started, controlStream=%p", c.controlStream)
+	defer func() {
+		utils.Infof("Client: readLoop exited, checking if should reconnect")
+		// 读取循环退出，尝试重连
+		if c.shouldReconnect() {
+			go c.reconnect()
+		}
+	}()
+
 	for {
 		select {
 		case <-c.Ctx().Done():
@@ -308,6 +324,28 @@ func (c *TunnoxClient) readLoop() {
 	}
 }
 
+// handleKickCommand 处理踢下线命令
+func (c *TunnoxClient) handleKickCommand(cmdBody string) {
+	var kickInfo struct {
+		Reason string `json:"reason"`
+		Code   string `json:"code"`
+	}
+
+	if err := json.Unmarshal([]byte(cmdBody), &kickInfo); err != nil {
+		utils.Errorf("Client: failed to parse kick command: %v", err)
+		kickInfo.Reason = "Unknown reason"
+		kickInfo.Code = "UNKNOWN"
+	}
+
+	utils.Errorf("Client: KICKED BY SERVER - Reason: %s, Code: %s", kickInfo.Reason, kickInfo.Code)
+
+	// 标记为被踢下线，禁止重连
+	c.kicked = true
+
+	// 停止客户端
+	c.Stop()
+}
+
 // handleCommand 处理命令
 func (c *TunnoxClient) handleCommand(pkt *packet.TransferPacket) {
 	if pkt.CommandPacket == nil {
@@ -327,6 +365,10 @@ func (c *TunnoxClient) handleCommand(pkt *packet.TransferPacket) {
 		// 隧道打开请求（作为目标客户端）
 		// 根据协议类型分发处理
 		c.handleTunnelOpenRequest(pkt.CommandPacket.CommandBody)
+
+	case packet.KickClient:
+		// 踢下线命令
+		c.handleKickCommand(pkt.CommandPacket.CommandBody)
 	}
 }
 

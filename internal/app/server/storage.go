@@ -32,9 +32,22 @@ func createStorage(factory *storage.StorageFactory, config *StorageConfig) (stor
 
 // createHybridStorage 创建混合存储
 func createHybridStorage(factory *storage.StorageFactory, config *StorageConfig) (storage.Storage, error) {
+	// 自动检测是否应该使用 Redis 缓存
+	// 规则：如果配置了 Redis（无论是存储还是消息队列），且缓存类型未显式设置，则自动使用 Redis
+	cacheType := config.Hybrid.CacheType
+	autoUpgraded := false
+	
+	// 如果缓存类型为 memory，但 Redis 已配置，自动升级为 redis
+	if cacheType == "memory" || cacheType == "" {
+		if config.Redis.Addr != "" {
+			cacheType = "redis"
+			autoUpgraded = true
+		}
+	}
+	
 	// 准备混合存储配置
 	hybridConfig := &storage.HybridStorageConfig{
-		CacheType:        config.Hybrid.CacheType,
+		CacheType:        cacheType,
 		EnablePersistent: config.Hybrid.EnablePersistent,
 		HybridConfig: &storage.HybridConfig{
 			PersistentPrefixes: config.Hybrid.PersistentPrefixes,
@@ -43,12 +56,20 @@ func createHybridStorage(factory *storage.StorageFactory, config *StorageConfig)
 	}
 	
 	// 如果缓存类型是 Redis，提供 Redis 配置
-	if config.Hybrid.CacheType == "redis" {
+	if cacheType == "redis" {
+		if config.Redis.Addr == "" {
+			return nil, fmt.Errorf("redis cache enabled but redis.addr not configured")
+		}
+		
 		hybridConfig.RedisConfig = &storage.RedisConfig{
 			Addr:     config.Redis.Addr,
 			Password: config.Redis.Password,
 			DB:       config.Redis.DB,
 			PoolSize: config.Redis.PoolSize,
+		}
+		
+		if autoUpgraded {
+			fmt.Printf("✅ Auto-upgraded cache to Redis (multi-node support enabled)\n")
 		}
 	}
 	

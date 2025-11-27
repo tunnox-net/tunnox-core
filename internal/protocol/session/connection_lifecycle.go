@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 	"tunnox-core/internal/core/types"
+	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
 
@@ -255,6 +256,9 @@ func (s *SessionManager) KickOldControlConnection(clientID int64, newConnID stri
 		utils.Warnf("Kicking old control connection: clientID=%d, oldConnID=%s, newConnID=%s",
 			clientID, oldConn.ConnID, newConnID)
 
+		// 发送 Kick 命令
+		s.sendKickCommand(oldConn, "Another client logged in with the same ID", "DUPLICATE_LOGIN")
+
 		// 关闭旧连接
 		go func() {
 			_ = s.CloseConnection(oldConn.ConnID)
@@ -264,6 +268,29 @@ func (s *SessionManager) KickOldControlConnection(clientID int64, newConnID stri
 		s.controlConnLock.Lock()
 		delete(s.controlConnMap, oldConn.ConnID)
 		s.controlConnLock.Unlock()
+	}
+}
+
+// sendKickCommand 发送踢下线命令
+func (s *SessionManager) sendKickCommand(conn *ControlConnection, reason, code string) {
+	if conn == nil || conn.Stream == nil {
+		return
+	}
+
+	kickBody := fmt.Sprintf(`{"reason":"%s","code":"%s"}`, reason, code)
+
+	kickPkt := &packet.TransferPacket{
+		PacketType: packet.JsonCommand,
+		CommandPacket: &packet.CommandPacket{
+			CommandType: packet.KickClient,
+			CommandBody: kickBody,
+		},
+	}
+
+	if _, err := conn.Stream.WritePacket(kickPkt, false, 0); err != nil {
+		utils.Warnf("Failed to send kick command to %s: %v", conn.ConnID, err)
+	} else {
+		utils.Infof("Sent kick command to client %d (connID=%s): %s", conn.ClientID, conn.ConnID, reason)
 	}
 }
 

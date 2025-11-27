@@ -60,6 +60,7 @@ const (
 	Disconnect   CommandType = 11 // 连接断开，可以任何方向
 	Reconnect    CommandType = 12 // 重新连接
 	HeartbeatCmd CommandType = 13 // 心跳保活
+	KickClient   CommandType = 14 // 踢下线（服务器通知客户端断开连接）
 
 	// ==================== 端口映射类命令 (20-39) ====================
 	TcpMapCreate CommandType = 20 // 创建TCP端口映射

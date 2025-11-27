@@ -771,6 +771,40 @@ func (b *CloudControl) ValidateToken(token string) (*models.AuthResponse, error)
 	}, nil
 }
 
+// MigrateClientMappings 迁移客户端的端口映射
+func (b *CloudControl) MigrateClientMappings(fromClientID, toClientID int64) error {
+	// 获取源客户端的所有映射
+	mappings, err := b.mappingRepo.GetClientPortMappings(fmt.Sprintf("%d", fromClientID))
+	if err != nil {
+		return fmt.Errorf("failed to get mappings for client %d: %w", fromClientID, err)
+	}
+
+	if len(mappings) == 0 {
+		return nil // 没有映射需要迁移
+	}
+
+	// 迁移每个映射
+	for _, mapping := range mappings {
+		// 更新映射的源客户端ID
+		mapping.SourceClientID = toClientID
+		mapping.UpdatedAt = time.Now()
+
+		// 保存更新后的映射
+		if err := b.mappingRepo.UpdatePortMapping(mapping); err != nil {
+			utils.Warnf("Failed to migrate mapping %s: %v", mapping.ID, err)
+			continue
+		}
+
+		// 添加到新客户端的映射列表
+		if err := b.mappingRepo.AddMappingToClient(fmt.Sprintf("%d", toClientID), mapping); err != nil {
+			utils.Warnf("Failed to add mapping %s to new client list: %v", mapping.ID, err)
+		}
+	}
+
+	utils.Infof("Migrated %d mappings from client %d to client %d", len(mappings), fromClientID, toClientID)
+	return nil
+}
+
 // Close 实现 CloudControlAPI 接口的 Close 方法
 func (b *CloudControl) Close() error {
 	// 停止清理定时器

@@ -11,8 +11,6 @@ import (
 
 	"tunnox-core/internal/client"
 	"tunnox-core/internal/utils"
-
-	"gopkg.in/yaml.v3"
 )
 
 func main() {
@@ -87,22 +85,11 @@ func main() {
 
 // loadOrCreateConfig 加载或创建配置
 func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64, deviceID, authToken string, anonymous bool) (*client.ClientConfig, error) {
-	var config *client.ClientConfig
-	var err error
-
-	// 如果指定了配置文件，尝试加载
-	if configFile != "" {
-		config, err = loadConfig(configFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load config file: %w", err)
-		}
-	} else {
-		// 尝试加载默认配置文件
-		config, err = loadConfig("client-config.yaml")
-		if err != nil {
-			// 如果没有配置文件，创建默认配置
-			config = getDefaultConfig()
-		}
+	// 使用配置管理器加载配置
+	configManager := client.NewConfigManager()
+	config, err := configManager.LoadConfig(configFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// 命令行参数覆盖配置文件
@@ -133,32 +120,6 @@ func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64,
 	}
 
 	return config, nil
-}
-
-// loadConfig 加载配置文件
-func loadConfig(path string) (*client.ClientConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var config client.ClientConfig
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-
-	return &config, nil
-}
-
-// getDefaultConfig 获取默认配置
-func getDefaultConfig() *client.ClientConfig {
-	config := &client.ClientConfig{
-		Anonymous: true,
-		DeviceID:  "default-device",
-	}
-	config.Server.Address = "localhost:7001"
-	config.Server.Protocol = "tcp"
-	return config
 }
 
 // validateConfig 验证配置
