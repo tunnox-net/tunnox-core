@@ -467,7 +467,13 @@ func (m *MemoryStorage) SetNX(key string, value interface{}, ttl time.Duration) 
 	}
 
 	// 键不存在，设置成功
-	expiration := time.Now().Add(ttl)
+	var expiration time.Time
+	if ttl <= 0 {
+		expiration = time.Time{} // 零值，表示永不过期
+	} else {
+		expiration = time.Now().Add(ttl)
+	}
+
 	m.data[key] = &storageItem{
 		value:      value,
 		expiration: expiration,

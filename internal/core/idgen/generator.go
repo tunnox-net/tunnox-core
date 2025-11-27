@@ -82,11 +82,10 @@ func (g *StorageIDGenerator[T]) Generate() (T, error) {
 	for attempts := 0; attempts < MaxAttempts; attempts++ {
 		// 生成候选ID
 		var candidate T
-		var err error
 
 		switch any(zero).(type) {
 		case string:
-			// 使用统一格式生成有序随机串
+			// 生成随机字符串
 			orderedStr, err := utils.GenerateRandomString(RandomPartLength)
 			if err != nil {
 				continue
@@ -96,8 +95,18 @@ func (g *StorageIDGenerator[T]) Generate() (T, error) {
 				orderedStr = g.prefix + orderedStr
 			}
 			candidate = any(orderedStr).(T)
+
+		case int64:
+			// 生成随机 int64（用于 ClientID）
+			// 在指定范围内生成完全随机的 ID
+			randomID, err := utils.GenerateRandomInt64(ClientIDMin, ClientIDMax)
+			if err != nil {
+				continue
+			}
+			candidate = any(randomID).(T)
+
 		default:
-			return zero, fmt.Errorf("unsupported ID type")
+			return zero, fmt.Errorf("unsupported ID type: %T", zero)
 		}
 
 		// 检查ID是否已被使用
@@ -160,92 +169,19 @@ func (g *StorageIDGenerator[T]) Close() error {
 	return nil
 }
 
-// ClientIDGenerator 客户端ID生成器（int64类型，使用分段位图算法）
-type ClientIDGenerator struct {
-	storage storage.Storage
-	dispose.Dispose
-}
+// ClientIDGenerator 已废弃，现在使用 StorageIDGenerator[int64]
+// 为保持兼容性，这里保留类型别名
+type ClientIDGenerator = StorageIDGenerator[int64]
 
 // NewClientIDGenerator 创建客户端ID生成器
+// 现在统一使用 StorageIDGenerator[int64]，生成完全随机的 ClientID
 func NewClientIDGenerator(storage storage.Storage, parentCtx context.Context) *ClientIDGenerator {
-	generator := &ClientIDGenerator{
-		storage: storage,
-	}
-	generator.SetCtxWithNoOpOnClose(parentCtx)
-	return generator
-}
-
-// onClose 资源清理回调 - 已废弃，使用 SetCtxWithNoOpOnClose
-func (g *ClientIDGenerator) onClose() error {
-	utils.Infof("Client ID generator resources cleaned up")
-	return nil
-}
-
-// Generate 生成客户端ID
-func (g *ClientIDGenerator) Generate() (int64, error) {
-	// 使用存储层的原子操作生成ID
-	counterKey := "tunnox:id:client_counter"
-
-	// 使用原子递增操作
-	counter, err := g.storage.Incr(counterKey)
-	if err != nil {
-		return 0, fmt.Errorf("increment counter failed: %w", err)
-	}
-
-	// 转换为客户端ID格式
-	clientID := ClientIDMin + counter
-	if clientID > ClientIDMax {
-		return 0, ErrIDExhausted
-	}
-
-	// 标记ID为已使用
-	if err := g.markAsUsed(clientID); err != nil {
-		// 如果标记失败，返回错误而不是继续
-		return 0, fmt.Errorf("failed to mark client ID %d as used: %w", clientID, err)
-	}
-
-	return clientID, nil
-}
-
-// Release 释放客户端ID
-func (g *ClientIDGenerator) Release(clientID int64) error {
-	key := fmt.Sprintf("tunnox:id:used:client:%d", clientID)
-	return g.storage.Delete(key)
-}
-
-// IsUsed 检查客户端ID是否已使用
-func (g *ClientIDGenerator) IsUsed(clientID int64) (bool, error) {
-	key := fmt.Sprintf("tunnox:id:used:client:%d", clientID)
-	return g.storage.Exists(key)
-}
-
-// markAsUsed 标记客户端ID为已使用
-func (g *ClientIDGenerator) markAsUsed(clientID int64) error {
-	key := fmt.Sprintf("tunnox:id:used:client:%d", clientID)
-	info := &IDUsageInfo{
-		ID:        fmt.Sprintf("%d", clientID),
-		Type:      "client",
-		CreatedAt: time.Now(),
-	}
-
-	data, err := json.Marshal(info)
-	if err != nil {
-		return err
-	}
-
-	return g.storage.Set(key, string(data), 0)
-}
-
-// GetUsedCount 获取已使用的客户端ID数量
-func (g *ClientIDGenerator) GetUsedCount() int {
-	// 这里可以实现更复杂的统计逻辑
-	return -1
-}
-
-// Close 关闭生成器
-func (g *ClientIDGenerator) Close() error {
-	g.Dispose.Close()
-	return nil
+	return NewStorageIDGenerator[int64](
+		storage,
+		"",                         // 无前缀，直接生成数字
+		"tunnox:id:used:client",    // 存储键前缀
+		parentCtx,
+	)
 }
 
 // IDManager 统一ID管理器
@@ -271,7 +207,10 @@ func NewIDManager(storage storage.Storage, parentCtx context.Context) *IDManager
 	}
 
 	// 初始化各种ID生成器
-	manager.clientIDGen = NewClientIDGenerator(storage, parentCtx)
+	// ClientID 使用 int64 类型，生成完全随机的 8 位数字
+	manager.clientIDGen = NewStorageIDGenerator[int64](storage, "", "tunnox:id:used:client", parentCtx)
+	
+	// 其他 ID 使用 string 类型，生成带前缀的随机字符串
 	manager.nodeIDGen = NewStorageIDGenerator[string](storage, PrefixNodeID, "tunnox:id:used:node", parentCtx)
 	manager.connectionIDGen = NewStorageIDGenerator[string](storage, PrefixConnectionID, "tunnox:id:used:conn", parentCtx)
 	manager.portMappingIDGen = NewStorageIDGenerator[string](storage, PrefixPortMappingID, "tunnox:id:used:pmap", parentCtx)
