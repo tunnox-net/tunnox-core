@@ -19,6 +19,10 @@ func (m *MockSession) GetConnectionID() string {
 	return m.connectionID
 }
 
+func (m *MockSession) GetActiveChannels() int {
+	return 0
+}
+
 // MockStreamPacket 模拟流数据包
 func createMockStreamPacket(commandType packet.CommandType, body string) *types.StreamPacket {
 	return &types.StreamPacket{

@@ -82,30 +82,18 @@ func (s *BaseService) WrapErrorWithInt64ID(err error, operation string, id int64
 }
 
 // LogCreated 记录创建成功日志
-func (s *BaseService) LogCreated(resourceType, id string, args ...interface{}) {
-	if len(args) > 0 {
-		utils.Infof("Created %s: %s", resourceType, fmt.Sprintf(id, args...))
-	} else {
-		utils.Infof("Created %s: %s", resourceType, id)
-	}
+func (s *BaseService) LogCreated(resourceType, identifier string) {
+	utils.Infof("Created %s: %s", resourceType, identifier)
 }
 
 // LogUpdated 记录更新成功日志
-func (s *BaseService) LogUpdated(resourceType, id string, args ...interface{}) {
-	if len(args) > 0 {
-		utils.Infof("Updated %s: %s", resourceType, fmt.Sprintf(id, args...))
-	} else {
-		utils.Infof("Updated %s: %s", resourceType, id)
-	}
+func (s *BaseService) LogUpdated(resourceType, identifier string) {
+	utils.Infof("Updated %s: %s", resourceType, identifier)
 }
 
 // LogDeleted 记录删除成功日志
-func (s *BaseService) LogDeleted(resourceType, id string, args ...interface{}) {
-	if len(args) > 0 {
-		utils.Infof("Deleted %s: %s", resourceType, fmt.Sprintf(id, args...))
-	} else {
-		utils.Infof("Deleted %s: %s", resourceType, id)
-	}
+func (s *BaseService) LogDeleted(resourceType, identifier string) {
+	utils.Infof("Deleted %s: %s", resourceType, identifier)
 }
 
 // LogWarning 记录警告日志

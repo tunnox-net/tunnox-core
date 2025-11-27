@@ -15,6 +15,10 @@ func (m *UtilsMockSession) AcceptConnection(reader io.Reader, writer io.Writer) 
 	return nil, nil
 }
 
+func (m *UtilsMockSession) GetActiveChannels() int {
+	return 0
+}
+
 func (m *UtilsMockSession) HandlePacket(connPacket *types.StreamPacket) error {
 	return nil
 }
