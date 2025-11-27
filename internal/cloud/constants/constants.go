@@ -23,8 +23,8 @@ const (
 )
 
 var (
-	// 允许的端口
-	DefaultAllowedPorts = []int{80, 443, 8080, 3000, 5000}
+	// 允许的端口（增加15432以支持数据库类隧道）
+	DefaultAllowedPorts = []int{80, 443, 8080, 3000, 5000, 15432}
 
 	// 禁止的端口
 	DefaultBlockedPorts = []int{22, 23, 25}

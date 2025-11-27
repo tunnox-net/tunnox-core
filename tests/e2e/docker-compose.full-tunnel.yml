@@ -168,6 +168,7 @@ services:
       - tunnox-net
     ports:
       - "18080:8080"  # 暴露ClientA监听的端口到宿主机
+      - "15432:15432" # 暴露ClientA的PostgreSQL转发表
     command: ["-config", "/app/config/client-config.yaml"]
 
   # ===== Client B (目标端客户端) =====
