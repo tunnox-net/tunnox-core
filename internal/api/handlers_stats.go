@@ -49,3 +49,44 @@ func (s *ManagementAPIServer) handleGetSystemStats(w http.ResponseWriter, r *htt
 	s.respondJSON(w, http.StatusOK, stats)
 }
 
+// handleGetTrafficStats 获取流量时序统计
+func (s *ManagementAPIServer) handleGetTrafficStats(w http.ResponseWriter, r *http.Request) {
+	// 获取时间范围参数
+	timeRange := r.URL.Query().Get("time_range")
+	if timeRange == "" {
+		timeRange = "24h" // 默认24小时
+	}
+
+	stats, err := s.cloudControl.GetTrafficStats(timeRange)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"time_range": timeRange,
+		"data":       stats,
+		"total":      len(stats),
+	})
+}
+
+// handleGetConnectionStats 获取连接数时序统计
+func (s *ManagementAPIServer) handleGetConnectionStats(w http.ResponseWriter, r *http.Request) {
+	// 获取时间范围参数
+	timeRange := r.URL.Query().Get("time_range")
+	if timeRange == "" {
+		timeRange = "24h" // 默认24小时
+	}
+
+	stats, err := s.cloudControl.GetConnectionStats(timeRange)
+	if err != nil {
+		s.respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, map[string]interface{}{
+		"time_range": timeRange,
+		"data":       stats,
+		"total":      len(stats),
+	})
+}

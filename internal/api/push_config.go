@@ -179,6 +179,110 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 	utils.Infof("API: config push initiated for client %d (async)", clientID)
 }
 
+// removeMappingFromClients 通知客户端移除映射
+func (s *ManagementAPIServer) removeMappingFromClients(mapping *models.PortMapping) {
+	if s.sessionMgr == nil {
+		utils.Warnf("API: SessionManager not configured, cannot push removal notification")
+		return
+	}
+
+	utils.Infof("API: notifying clients to remove mapping %s (source=%d, target=%d)",
+		mapping.ID, mapping.SourceClientID, mapping.TargetClientID)
+
+	// 构造空的映射配置（表示移除）
+	configData := map[string]interface{}{
+		"mappings":        []config.MappingConfig{},
+		"remove_mappings": []string{mapping.ID},
+	}
+
+	configJSON, err := json.Marshal(configData)
+	if err != nil {
+		utils.Errorf("API: failed to marshal removal config: %v", err)
+		return
+	}
+
+	// 通知源客户端
+	s.pushConfigToClient(mapping.SourceClientID, string(configJSON))
+
+	// 通知目标客户端（如果不是同一个客户端）
+	if mapping.TargetClientID != mapping.SourceClientID {
+		s.pushConfigToClient(mapping.TargetClientID, string(configJSON))
+	}
+}
+
+// kickClient 踢下线指定客户端
+func (s *ManagementAPIServer) kickClient(clientID int64, reason, code string) {
+	if s.sessionMgr == nil {
+		utils.Warnf("API: SessionManager not configured, cannot kick client")
+		return
+	}
+
+	utils.Infof("API: kicking client %d, reason=%s, code=%s", clientID, reason, code)
+
+	// 获取客户端的控制连接
+	connInterface := s.sessionMgr.GetControlConnectionInterface(clientID)
+	if connInterface == nil {
+		utils.Warnf("API: client %d not connected, cannot kick", clientID)
+		return
+	}
+
+	// 定义接口来访问GetStream方法
+	type hasGetStream interface {
+		GetStream() interface{}
+	}
+
+	// 获取Stream
+	var streamProcessor *stream.StreamProcessor
+	if hs, ok := connInterface.(hasGetStream); ok {
+		streamInterface := hs.GetStream()
+		if streamInterface != nil {
+			streamProcessor, _ = streamInterface.(*stream.StreamProcessor)
+		}
+	}
+
+	if streamProcessor == nil {
+		utils.Warnf("API: cannot access stream for client %d", clientID)
+		return
+	}
+
+	// 构造踢下线命令
+	kickInfo := map[string]string{
+		"reason": reason,
+		"code":   code,
+	}
+	kickJSON, _ := json.Marshal(kickInfo)
+
+	cmd := &packet.CommandPacket{
+		CommandType: packet.KickClient,
+		CommandBody: string(kickJSON),
+	}
+
+	pkt := &packet.TransferPacket{
+		PacketType:    packet.JsonCommand,
+		CommandPacket: cmd,
+	}
+
+	// 发送踢下线命令（异步）
+	go func() {
+		done := make(chan error, 1)
+		go func() {
+			_, err := streamProcessor.WritePacket(pkt, false, 0)
+			done <- err
+		}()
+
+		select {
+		case err := <-done:
+			if err != nil {
+				utils.Errorf("API: failed to send kick command to client %d: %v", clientID, err)
+			} else {
+				utils.Infof("API: ✅ kick command sent to client %d", clientID)
+			}
+		case <-time.After(3 * time.Second):
+			utils.Errorf("API: kick command to client %d timed out", clientID)
+		}
+	}()
+}
+
 // SetSessionManager 设置SessionManager（由Server启动时调用）
 func (s *ManagementAPIServer) SetSessionManager(sessionMgr SessionManager) {
 	s.sessionMgr = sessionMgr

@@ -129,6 +129,9 @@ func (s *ManagementAPIServer) handleDisconnectClient(w http.ResponseWriter, r *h
 		return
 	}
 
+	// 发送踢下线命令
+	s.kickClient(clientID, "Disconnected by administrator", "ADMIN_DISCONNECT")
+
 	// 更新客户端状态为离线
 	if err := s.cloudControl.UpdateClientStatus(clientID, models.ClientStatusOffline, ""); err != nil {
 		s.respondError(w, http.StatusInternalServerError, err.Error())
@@ -154,51 +157,20 @@ func (s *ManagementAPIServer) handleClaimClient(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	// 获取匿名客户端
-	anonClient, err := s.cloudControl.GetAnonymousClient(req.AnonymousClientID)
-	if err != nil {
-		s.respondError(w, http.StatusNotFound, fmt.Sprintf("Anonymous client not found: %v", err))
-		return
-	}
-
-	// 创建新的托管客户端
+	// 客户端名称
 	clientName := req.NewClientName
 	if clientName == "" {
 		clientName = fmt.Sprintf("Claimed-%d", req.AnonymousClientID)
 	}
 
-	newClient, err := s.cloudControl.CreateClient(req.UserID, clientName)
+	// 使用事务处理认领流程
+	result, err := s.claimClientWithTransaction(req.AnonymousClientID, req.UserID, clientName)
 	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create new client: %v", err))
+		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	// 生成 JWT token
-	tokenInfo, err := s.cloudControl.GenerateJWTToken(newClient.ID)
-	if err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to generate JWT token: %v", err))
-		return
-	}
-
-	// 标记匿名客户端为离线（禁用）
-	anonClient.Status = models.ClientStatusBlocked
-	if err := s.cloudControl.UpdateClient(anonClient); err != nil {
-		s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update anonymous client: %v", err))
-		return
-	}
-
-	// 将匿名客户端的端口映射迁移到新客户端
-	if err := s.cloudControl.MigrateClientMappings(anonClient.ID, newClient.ID); err != nil {
-		// 迁移失败只记录警告，不阻塞响应
-		fmt.Printf("WARN: Failed to migrate mappings from client %d to %d: %v\n", anonClient.ID, newClient.ID, err)
-	}
-
-	s.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"client_id":  newClient.ID,
-		"auth_token": tokenInfo.Token,
-		"expires_at": tokenInfo.ExpiresAt,
-		"message":    "Client claimed successfully. Please save your credentials.",
-	})
+	s.respondJSON(w, http.StatusOK, result)
 }
 
 // handleListClientMappings 列出客户端的端口映射

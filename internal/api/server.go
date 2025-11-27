@@ -135,28 +135,60 @@ func (s *ManagementAPIServer) registerRoutes() {
 	api.HandleFunc("/users/{user_id}/mappings", s.handleListUserMappings).Methods("GET")
 
 	// 客户端管理路由
+	api.HandleFunc("/clients", s.handleListAllClients).Methods("GET") // 新增：列出所有客户端
 	api.HandleFunc("/clients", s.handleCreateClient).Methods("POST")
 	api.HandleFunc("/clients/{client_id}", s.handleGetClient).Methods("GET")
 	api.HandleFunc("/clients/{client_id}", s.handleUpdateClient).Methods("PUT")
 	api.HandleFunc("/clients/{client_id}", s.handleDeleteClient).Methods("DELETE")
 	api.HandleFunc("/clients/{client_id}/disconnect", s.handleDisconnectClient).Methods("POST")
-	api.HandleFunc("/clients/claim", s.handleClaimClient).Methods("POST")
 	api.HandleFunc("/clients/{client_id}/mappings", s.handleListClientMappings).Methods("GET")
+	api.HandleFunc("/clients/{client_id}/connections", s.handleListClientConnections).Methods("GET") // 新增：客户端连接
+	api.HandleFunc("/clients/claim", s.handleClaimClient).Methods("POST")
+
+	// 批量客户端操作
+	api.HandleFunc("/clients/batch/disconnect", s.handleBatchDisconnectClients).Methods("POST") // 新增：批量下线
 
 	// 端口映射管理路由
+	api.HandleFunc("/mappings", s.handleListAllMappings).Methods("GET") // 新增：列出所有映射
 	api.HandleFunc("/mappings", s.handleCreateMapping).Methods("POST")
 	api.HandleFunc("/mappings/{mapping_id}", s.handleGetMapping).Methods("GET")
 	api.HandleFunc("/mappings/{mapping_id}", s.handleUpdateMapping).Methods("PUT")
 	api.HandleFunc("/mappings/{mapping_id}", s.handleDeleteMapping).Methods("DELETE")
+	api.HandleFunc("/mappings/{mapping_id}/connections", s.handleListMappingConnections).Methods("GET") // 新增：映射连接
+
+	// 批量映射操作
+	api.HandleFunc("/mappings/batch/delete", s.handleBatchDeleteMappings).Methods("POST") // 新增：批量删除
+	api.HandleFunc("/mappings/batch/update", s.handleBatchUpdateMappings).Methods("POST") // 新增：批量更新
 
 	// 统计查询路由
 	api.HandleFunc("/stats/users/{user_id}", s.handleGetUserStats).Methods("GET")
 	api.HandleFunc("/stats/clients/{client_id}", s.handleGetClientStats).Methods("GET")
 	api.HandleFunc("/stats/system", s.handleGetSystemStats).Methods("GET")
+	api.HandleFunc("/stats/traffic", s.handleGetTrafficStats).Methods("GET")        // 新增：流量时序统计
+	api.HandleFunc("/stats/connections", s.handleGetConnectionStats).Methods("GET") // 新增：连接时序统计
 
 	// 节点管理路由
 	api.HandleFunc("/nodes", s.handleListNodes).Methods("GET")
 	api.HandleFunc("/nodes/{node_id}", s.handleGetNode).Methods("GET")
+
+	// 搜索路由
+	api.HandleFunc("/search/users", s.handleSearchUsers).Methods("GET")       // 新增：搜索用户
+	api.HandleFunc("/search/clients", s.handleSearchClients).Methods("GET")   // 新增：搜索客户端
+	api.HandleFunc("/search/mappings", s.handleSearchMappings).Methods("GET") // 新增：搜索映射
+
+	// 连接管理路由
+	api.HandleFunc("/connections", s.handleListAllConnections).Methods("GET")           // 新增：列出所有连接
+	api.HandleFunc("/connections/{conn_id}", s.handleCloseConnection).Methods("DELETE") // 新增：关闭连接
+
+	// 认证路由
+	api.HandleFunc("/auth/login", s.handleLogin).Methods("POST")           // 新增：登录
+	api.HandleFunc("/auth/refresh", s.handleRefreshToken).Methods("POST")  // 新增：刷新token
+	api.HandleFunc("/auth/revoke", s.handleRevokeToken).Methods("POST")    // 新增：撤销token
+	api.HandleFunc("/auth/validate", s.handleValidateToken).Methods("GET") // 新增：验证token
+
+	// 配额管理路由
+	api.HandleFunc("/users/{user_id}/quota", s.handleGetUserQuota).Methods("GET")    // 新增：获取配额
+	api.HandleFunc("/users/{user_id}/quota", s.handleUpdateUserQuota).Methods("PUT") // 新增：更新配额
 
 	// 健康检查
 	s.router.HandleFunc("/health", s.handleHealth).Methods("GET")
