@@ -17,7 +17,7 @@ type ReconnectConfig struct {
 // DefaultReconnectConfig 默认重连配置
 var DefaultReconnectConfig = ReconnectConfig{
 	Enabled:      true,
-	InitialDelay: 1 * time.Second,
+	InitialDelay: 200 * time.Millisecond, // ✅ 优化：缩短初始延迟到 200ms，加快重连速度
 	MaxDelay:     60 * time.Second,
 	MaxAttempts:  0, // 无限重试
 	Backoff:      2.0,

@@ -363,7 +363,8 @@ func (c *TunnoxClient) readLoop() {
 
 // heartbeatLoop 心跳循环
 func (c *TunnoxClient) heartbeatLoop() {
-	ticker := time.NewTicker(30 * time.Second)
+	// ✅ 优化：缩短心跳间隔到 5 秒，加快连接断开检测
+	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -424,9 +425,7 @@ func (c *TunnoxClient) requestMappingConfig() {
 
 	utils.Infof("Client: requestMappingConfig() started")
 
-	// 稍微延迟，确保连接已稳定
-	time.Sleep(100 * time.Millisecond)
-
+	// ✅ 优化：移除延迟，立即请求配置以加快恢复速度
 	// 检查连接状态
 	c.mu.RLock()
 	controlStream := c.controlStream
