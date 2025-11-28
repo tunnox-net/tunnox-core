@@ -45,6 +45,9 @@ func (s *SessionManager) HandlePacket(connPacket *types.StreamPacket) error {
 	case packet.TunnelOpen:
 		return s.handleTunnelOpen(connPacket)
 
+	case packet.Heartbeat:
+		return s.handleHeartbeat(connPacket)
+
 	default:
 		utils.Warnf("Unhandled packet type: %v", packetType)
 		return fmt.Errorf("unhandled packet type: %v", packetType)

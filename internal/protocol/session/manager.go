@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"sync"
+	"time"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/idgen"
@@ -10,6 +11,23 @@ import (
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
+
+// SessionConfig SessionManager配置
+type SessionConfig struct {
+	// HeartbeatTimeout 心跳超时时间（超过此时间未收到心跳则认为连接失效）
+	HeartbeatTimeout time.Duration
+
+	// CleanupInterval 清理检查间隔（定期扫描并清理过期连接）
+	CleanupInterval time.Duration
+}
+
+// DefaultSessionConfig 返回默认配置
+func DefaultSessionConfig() *SessionConfig {
+	return &SessionConfig{
+		HeartbeatTimeout: 90 * time.Second, // 3倍心跳间隔（客户端30秒发一次）
+		CleanupInterval:  30 * time.Second, // 每30秒检查一次
+	}
+}
 
 // SessionManager 会话管理器（双连接模型）
 //
@@ -76,18 +94,30 @@ type SessionManager struct {
 
 	// BridgeManager（用于跨服务器隧道转发）
 	bridgeManager BridgeManager
-	
+
 	// TunnelRoutingTable（用于跨服务器隧道路由）
 	tunnelRouting *TunnelRoutingTable
-	
+
 	// 节点ID（用于跨服务器识别）
 	nodeID string
+
+	// 配置
+	config *SessionConfig
 
 	dispose.Dispose
 }
 
 // NewSessionManager 创建新的会话管理器（双连接模型）
 func NewSessionManager(idManager *idgen.IDManager, parentCtx context.Context) *SessionManager {
+	return NewSessionManagerWithConfig(idManager, parentCtx, DefaultSessionConfig())
+}
+
+// NewSessionManagerWithConfig 使用指定配置创建会话管理器
+func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.Context, config *SessionConfig) *SessionManager {
+	if config == nil {
+		config = DefaultSessionConfig()
+	}
+
 	// 创建默认流工厂
 	streamFactory := stream.NewDefaultStreamFactory(parentCtx)
 
@@ -112,6 +142,7 @@ func NewSessionManager(idManager *idgen.IDManager, parentCtx context.Context) *S
 		idManager:     idManager,
 		streamMgr:     streamMgr,
 		streamFactory: streamFactory,
+		config:        config,
 		// 事件驱动架构将在后续设置
 		eventBus:        nil,
 		responseManager: nil,
@@ -121,6 +152,9 @@ func NewSessionManager(idManager *idgen.IDManager, parentCtx context.Context) *S
 
 	// 设置资源清理回调
 	session.SetCtx(parentCtx, session.onClose)
+
+	// 启动连接清理协程
+	session.startConnectionCleanup()
 
 	// 注意：跨服务器订阅将在SetBridgeManager()之后启动
 
@@ -158,7 +192,7 @@ func (s *SessionManager) SetCloudControl(cc CloudControlAPI) {
 func (s *SessionManager) SetBridgeManager(bridgeManager BridgeManager) {
 	s.bridgeManager = bridgeManager
 	utils.Infof("SessionManager: BridgeManager configured for cross-server forwarding")
-	
+
 	// 启动跨节点广播订阅
 	s.startTunnelOpenBroadcastSubscription()
 	s.startConfigPushBroadcastSubscription()

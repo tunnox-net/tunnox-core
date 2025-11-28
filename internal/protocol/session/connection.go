@@ -20,7 +20,6 @@ type ControlConnection struct {
 	Protocol      string   // 协议类型（tcp/websocket/quic）
 	CreatedAt     time.Time
 	LastActiveAt  time.Time
-
 }
 
 // NewControlConnection 创建指令连接
@@ -39,6 +38,14 @@ func NewControlConnection(connID string, stream stream.PackageStreamer, remoteAd
 // UpdateActivity 更新活跃时间
 func (c *ControlConnection) UpdateActivity() {
 	c.LastActiveAt = time.Now()
+}
+
+// IsStale 判断连接是否因超时而失效
+func (c *ControlConnection) IsStale(timeout time.Duration) bool {
+	if c == nil {
+		return true
+	}
+	return time.Since(c.LastActiveAt) > timeout
 }
 
 // GetStream 获取Stream（用于API推送配置等操作）

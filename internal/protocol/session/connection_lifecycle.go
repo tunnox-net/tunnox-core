@@ -267,7 +267,7 @@ func (s *SessionManager) KickOldControlConnection(clientID int64, newConnID stri
 		// 从映射中移除（必须同时清理controlConnMap和clientIDIndexMap）
 		s.controlConnLock.Lock()
 		delete(s.controlConnMap, oldConn.ConnID)
-		delete(s.clientIDIndexMap, clientID)  // ✅ 修复：同时清理clientIDIndexMap
+		delete(s.clientIDIndexMap, clientID) // ✅ 修复：同时清理clientIDIndexMap
 		s.controlConnLock.Unlock()
 	}
 }
@@ -415,4 +415,81 @@ func (s *SessionManager) RemoveTunnelConnection(connID string) {
 		delete(s.tunnelConnMap, connID)
 		utils.Debugf("Removed tunnel connection: connID=%s, tunnelID=%s", connID, conn.TunnelID)
 	}
+}
+
+// ============================================================================
+// 连接清理（心跳超时检测）
+// ============================================================================
+
+// startConnectionCleanup 启动连接清理协程
+// 定期检查并清理超时未发送心跳的控制连接
+func (s *SessionManager) startConnectionCleanup() {
+	if s.config == nil {
+		utils.Warnf("SessionManager: config is nil, cleanup disabled")
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(s.config.CleanupInterval)
+		defer ticker.Stop()
+
+		utils.Infof("SessionManager: connection cleanup started (interval=%v, timeout=%v)",
+			s.config.CleanupInterval, s.config.HeartbeatTimeout)
+
+		for {
+			select {
+			case <-ticker.C:
+				if cleaned := s.cleanupStaleConnections(); cleaned > 0 {
+					utils.Infof("SessionManager: cleaned up %d stale connections", cleaned)
+				}
+
+			case <-s.Ctx().Done():
+				utils.Infof("SessionManager: connection cleanup stopped")
+				return
+			}
+		}
+	}()
+}
+
+// cleanupStaleConnections 清理过期的控制连接
+// 返回清理的连接数量
+func (s *SessionManager) cleanupStaleConnections() int {
+	if s.config == nil {
+		return 0
+	}
+
+	// 1. 收集超时连接（避免长时间持锁）
+	var staleConns []*ControlConnection
+
+	s.controlConnLock.RLock()
+	for _, conn := range s.controlConnMap {
+		if conn.IsStale(s.config.HeartbeatTimeout) {
+			staleConns = append(staleConns, conn)
+		}
+	}
+	s.controlConnLock.RUnlock()
+
+	// 2. 清理超时连接
+	if len(staleConns) == 0 {
+		return 0
+	}
+
+	for _, conn := range staleConns {
+		idleDuration := time.Since(conn.LastActiveAt)
+		utils.Warnf("SessionManager: removing stale connection - connID=%s, clientID=%d, idle=%v",
+			conn.ConnID, conn.ClientID, idleDuration)
+
+		// 更新CloudControl状态（标记客户端离线）
+		if s.cloudControl != nil && conn.ClientID > 0 {
+			// CloudControl会在DisconnectClient中清理状态
+			utils.Debugf("SessionManager: will update CloudControl for stale client %d", conn.ClientID)
+		}
+
+		// 关闭连接（会自动从映射中移除）
+		if err := s.CloseConnection(conn.ConnID); err != nil {
+			utils.Errorf("SessionManager: failed to close stale connection %s: %v", conn.ConnID, err)
+		}
+	}
+
+	return len(staleConns)
 }
