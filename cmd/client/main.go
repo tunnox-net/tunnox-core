@@ -53,22 +53,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 显示连接信息
-	fmt.Printf("🚀 Tunnox Client Starting...\n")
-	fmt.Printf("   Protocol: %s\n", config.Server.Protocol)
-	fmt.Printf("   Server:   %s\n", config.Server.Address)
-	if config.Anonymous {
-		fmt.Printf("   Mode:     Anonymous (device: %s)\n", config.DeviceID)
-	} else {
-		fmt.Printf("   Mode:     Authenticated (client_id: %d)\n", config.ClientID)
+	// 仅在守护进程模式下显示详细启动信息
+	if !runInteractive {
+		fmt.Printf("🚀 Tunnox Client Starting...\n")
+		fmt.Printf("   Protocol: %s\n", config.Server.Protocol)
+		fmt.Printf("   Server:   %s\n", config.Server.Address)
+		if config.Anonymous {
+			fmt.Printf("   Mode:     Anonymous (device: %s)\n", config.DeviceID)
+		} else {
+			fmt.Printf("   Mode:     Authenticated (client_id: %d)\n", config.ClientID)
+		}
+		if logFile != "" {
+			fmt.Printf("   Logs:     %s\n", logFile)
+		}
+		fmt.Printf("\n")
 	}
-
-	// 在交互模式下显示日志文件位置
-	if runInteractive && logFile != "" {
-		fmt.Printf("   Logs:     %s\n", logFile)
-	}
-
-	fmt.Printf("\n")
 
 	// 创建上下文
 	ctx, cancel := context.WithCancel(context.Background())
@@ -83,24 +82,11 @@ func main() {
 		// 交互模式：可选连接，失败不退出
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-		// 在交互模式下，提示日志文件位置
-		if logFile != "" {
-			fmt.Printf("📝 Logs are being written to: %s\n", logFile)
-			fmt.Printf("   Use 'tail -f %s' to view logs in real-time\n\n", logFile)
-		}
-
-		// 如果有完整配置，尝试连接（失败不退出）
+		// 如果有完整配置，尝试连接（失败不退出，仅简单提示）
 		if config.Server.Address != "" {
-			fmt.Println("⏳ Connecting to server...")
 			if err := tunnoxClient.Connect(); err != nil {
-				fmt.Printf("⚠️  Failed to connect: %v\n", err)
-				fmt.Println("💡 You can use 'connect' command in CLI to retry\n")
-			} else {
-				fmt.Printf("✅ Connected to server successfully!\n\n")
+				// 连接失败，静默处理，用户可通过CLI命令重连
 			}
-		} else {
-			fmt.Println("ℹ️  No server configured")
-			fmt.Println("💡 Use 'connect' command to connect to a server\n")
 		}
 
 		// 交互模式：尝试启动CLI
@@ -108,12 +94,12 @@ func main() {
 		if err != nil {
 			// CLI初始化失败（通常是因为没有TTY），自动降级到daemon模式
 			fmt.Fprintf(os.Stderr, "\n⚠️  CLI initialization failed: %v\n", err)
-			fmt.Fprintf(os.Stderr, "🔄 Auto-switching to daemon mode...\n\n")
+			fmt.Fprintf(os.Stderr, "🔄 Auto-switching to daemon mode...\n")
 
 			// 验证必须配置
 			if config.Server.Address == "" {
 				fmt.Fprintf(os.Stderr, "❌ Error: server address is required\n")
-				fmt.Fprintf(os.Stderr, "💡 Please configure server address in config file or use -s flag\n\n")
+				fmt.Fprintf(os.Stderr, "💡 Please configure server address in config file or use -s flag\n")
 				os.Exit(1)
 			}
 
@@ -127,7 +113,7 @@ func main() {
 			}
 
 			fmt.Println("   Press Ctrl+C to stop")
-			fmt.Println("")
+			fmt.Println()
 
 			// 启动自动重连监控
 			go monitorConnectionAndReconnect(ctx, tunnoxClient)
@@ -183,7 +169,7 @@ func main() {
 
 		fmt.Println("✅ Connected to server successfully!")
 		fmt.Println("   Press Ctrl+C to stop")
-		fmt.Println("")
+		fmt.Println()
 
 		// 启动自动重连监控
 		go monitorConnectionAndReconnect(ctx, tunnoxClient)
