@@ -3,11 +3,17 @@ package repos
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/storage"
+)
+
+// Common errors
+var (
+	ErrNotFound = errors.New("entity not found")
 )
 
 // GenericRepository 泛型Repository接口

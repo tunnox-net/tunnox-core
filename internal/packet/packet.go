@@ -157,10 +157,14 @@ type HandshakeResponse struct {
 }
 
 // TunnelOpenRequest 隧道打开请求（映射连接认证）
+//
+// 验证优先级：
+//  1. MappingID - 通过连接码创建的隧道映射ID（新设计，推荐）
+//  2. SecretKey - 传统的固定密钥（向后兼容，用于API调用）
 type TunnelOpenRequest struct {
-	MappingID string `json:"mapping_id"` // 映射ID（从 Storage 查询路由）
-	TunnelID  string `json:"tunnel_id"`  // 隧道ID（唯一标识）
-	SecretKey string `json:"secret_key"` // ✅ 映射的固定秘钥（用于认证）
+	MappingID string `json:"mapping_id"` // ⭐ 隧道映射ID（通过ActivateConnectionCode创建）
+	TunnelID  string `json:"tunnel_id"`  // 隧道ID（唯一标识本次隧道连接）
+	SecretKey string `json:"secret_key"` // ⚠️ 传统密钥（向后兼容，用于旧版API调用）
 }
 
 // TunnelOpenAckResponse 隧道打开确认响应

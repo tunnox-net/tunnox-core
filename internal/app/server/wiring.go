@@ -162,7 +162,7 @@ func (s *Server) createBridgeManager(ctx context.Context) *internalbridge.Bridge
 func (s *Server) startGRPCServer() *grpc.Server {
 	// 从配置中获取 gRPC 服务器地址
 	grpcServerConfig := s.config.BridgePool.GRPCServer
-	
+
 	// 检查端口是否配置（如果未配置则不启动）
 	if grpcServerConfig.Port == 0 {
 		utils.Warn("gRPC server port not configured, skipping gRPC server startup")
@@ -261,7 +261,7 @@ func (s *Server) createManagementAPI(ctx context.Context) *api.ManagementAPIServ
 		},
 	}
 
-	apiServer := api.NewManagementAPIServer(ctx, apiConfig, s.cloudControl)
+	apiServer := api.NewManagementAPIServer(ctx, apiConfig, s.cloudControl, s.connCodeService)
 	utils.Infof("Management API initialized: listen_addr=%s", apiConfig.ListenAddr)
 	return apiServer
 }

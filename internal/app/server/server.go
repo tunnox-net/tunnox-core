@@ -8,12 +8,15 @@ import (
 	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
+	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/node"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/protocol/session"
+	"tunnox-core/internal/security"
 	"tunnox-core/internal/utils"
 
 	"google.golang.org/grpc"
@@ -37,6 +40,12 @@ type Server struct {
 	bridgeManager   *internalbridge.BridgeManager
 	grpcServer      *grpc.Server
 	apiServer       *api.ManagementAPIServer
+	
+	// 服务
+	connCodeService     *services.ConnectionCodeService
+	bruteForceProtector *security.BruteForceProtector
+	ipManager           *security.IPManager
+	rateLimiter         *security.RateLimiter
 }
 
 // New 创建新服务器
@@ -90,10 +99,34 @@ func New(config *Config, parentCtx context.Context) *Server {
 	// 创建 SessionManager
 	server.session = session.NewSessionManager(server.idManager, parentCtx)
 
+	// ✅ 创建 ConnectionCodeService（连接码授权系统）
+	repo := repos.NewRepository(serverStorage)
+	connCodeRepo := repos.NewConnectionCodeRepository(repo)
+	mappingRepo := repos.NewTunnelMappingRepository(repo)
+	server.connCodeService = services.NewConnectionCodeService(
+		connCodeRepo,
+		mappingRepo,
+		nil, // 使用默认配置
+		parentCtx,
+	)
+	// ConnectionCodeService 使用 dispose 体系管理，不需要注册到 ServiceManager
+
+	// ✅ 创建 BruteForceProtector（暴力破解防护）
+	server.bruteForceProtector = security.NewBruteForceProtector(nil, parentCtx)
+	utils.Infof("Server: BruteForceProtector initialized with default config")
+
+	// ✅ 创建 IPManager（IP黑白名单管理）
+	server.ipManager = security.NewIPManager(serverStorage, parentCtx)
+	utils.Infof("Server: IPManager initialized")
+
+	// ✅ 创建 RateLimiter（速率限制器）
+	server.rateLimiter = security.NewRateLimiter(nil, nil, parentCtx)
+	utils.Infof("Server: RateLimiter initialized with default config")
+
 	// 创建并设置 AuthHandler 和 TunnelHandler
 	// 注意：先创建handler，稍后设置NodeID
-	authHandler := NewServerAuthHandler(cloudControl, server.session)
-	tunnelHandler := NewServerTunnelHandler(cloudControl)
+	authHandler := NewServerAuthHandler(cloudControl, server.session, server.bruteForceProtector, server.ipManager, server.rateLimiter) // ⭐ 注入安全组件
+	tunnelHandler := NewServerTunnelHandler(cloudControl, server.connCodeService) // ⭐ 注入 connCodeService
 	server.session.SetAuthHandler(authHandler)
 	server.session.SetTunnelHandler(tunnelHandler)
 

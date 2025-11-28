@@ -43,34 +43,222 @@
 
 ### 任务列表
 
-#### T0.1 映射通道权限验证（最高优先级）
+#### T0.1 基于连接码的隧道映射授权（ConnectionCode）
 
-**问题**: 当前任何客户端知道 SecretKey 即可访问映射，无权限检查
+**问题**: 当前SecretKey静态且无精细权限控制，新用户体验和安全性难以平衡
 
-**实施位置**: `internal/app/server/handlers.go`
+**✨ 新设计**: 连接码两阶段授权模型（详见 `TUNNEL_CONNECTION_CODE_DESIGN.md`）
 
-**任务内容**:
-1. 在 `ServerTunnelHandler.HandleTunnelOpen()` 中添加客户端身份提取逻辑
-   - 从TLS证书提取 ClientID（如果使用mTLS）
-   - 从控制连接映射查找 ClientID
-   - 如果无法获取 ClientID，拒绝连接
-2. 新增权限验证方法 `hasPermission(clientID, mapping)`
-   - 验证 ClientID 是否为 SourceClientID 或 TargetClientID
-   - 验证 ClientID 是否属于同一 UserID（如果配置）
-3. 权限验证失败时记录安全事件（高风险）
+**核心简化**:
+- ✅ **去除ClientID绑定** - 连接码全局唯一，任何客户端都可使用
+- ✅ **强制目标地址** - 必须包含目标地址（如 `tcp://192.168.100.10:8888`）
+- ✅ **一次性使用** - 使用后立即失效，但创建的映射继续有效
+- ✅ **CLI作为客户端交互界面** - 不是独立工具
+
+**术语更新**:
+- `AuthCode` → **ConnectionCode**（连接码）
+- `AccessPermit` → **TunnelMapping**（隧道映射）
+- `SourceClient` → **ListenClient**（监听端，使用连接码的客户端）
+- `TargetClient` 保持不变（被访问端，生成连接码的客户端）
+
+---
+
+### 两阶段授权模型
+
+⭐ **阶段1: 连接码（TunnelConnectionCode）**
+- **生成者**: TargetClient（被访问的一方）
+- **用途**: 临时授权任意客户端建立映射
+- **生命周期**: 短期（如10分钟激活期）
+- **使用次数**: **一次性**（使用后立即失效）
+- **必须包含**: 目标地址（`tcp://192.168.100.10:8888`）
+- **格式**: 好记的 `abc-def-123`
+- **无ClientID绑定**: 任何知道连接码的客户端都可使用
+
+⭐ **阶段2: 隧道映射（TunnelMapping）**
+- **激活者**: ListenClient（任意客户端使用连接码激活）
+- **用途**: 实际的端口映射和流量转发
+- **生命周期**: 长期（如7天）
+- **使用次数**: 多次（直到过期或撤销）
+- **绑定**: ListenClient + TargetClient（防止劫持）
+
+---
+
+### 业务场景示例
+
+```bash
+# 1. TargetClient生成连接码（交互式CLI）
+$ tunnox-client
+tunnox> connect my-server.tunnox.io
+tunnox> generate-code \
+    --target tcp://192.168.100.10:8888 \
+    --expire 10m \
+    --mapping-duration 7d
+
+🔑 连接码: abc-def-123
+目标地址: tcp://192.168.100.10:8888
+激活期限: 10分钟
+映射期限: 7天
+⚠️  一次性使用，使用后立即失效
+
+# 2. ListenClient使用连接码（交互式CLI）
+$ tunnox-client
+tunnox> connect my-server.tunnox.io
+tunnox> use-code abc-def-123 --listen 0.0.0.0:9999
+
+🔍 验证连接码...
+✓ 映射创建成功
+   本地监听: 0.0.0.0:9999
+   目标地址: tcp://192.168.100.10:8888
+   有效期: 7天
+
+# 3. 访问映射
+访问 localhost:9999 → 转发到 tcp://192.168.100.10:8888
+
+# 4. TargetClient查看和管理
+tunnox> list-inbound-mappings  # 查看谁在访问我
+tunnox> revoke-mapping mapping_xxx  # 撤销访问
+```
+
+---
+
+### CLI设计（客户端交互界面）
+
+**模式1: 交互式（默认）**
+```bash
+$ tunnox-client
+Tunnox Client v1.0.0
+tunnox> help
+tunnox> generate-code ...
+tunnox> use-code ...
+tunnox> list-mappings
+tunnox> exit
+```
+
+**模式2: 非交互式（守护进程）**
+```bash
+$ tunnox-client --use-code abc-def-123 --listen 0.0.0.0:9999 --daemon
+```
+
+---
+
+### 安全优势
+
+1. **连接码泄露风险**
+   - ✅ 短期有效（10分钟激活窗口）
+   - ✅ 一次性使用（使用后立即失效）
+   - ✅ 可主动撤销
+   - ✅ 好记格式（方便安全分享）
+
+2. **映射滥用风险**
+   - ✅ 绑定ListenClient（防止映射被劫持）
+   - ✅ 使用统计（监控异常使用）
+   - ✅ 可撤销（TargetClient随时终止）
+   - ✅ 有效期限制
+
+3. **暴力破解防护**
+   - ✅ 连接码复杂度（熵值 4.6 × 10^13）
+   - ✅ 激活失败次数限制
+   - ✅ IP黑名单
+
+---
+
+### 实施位置
+
+- 数据模型: `internal/cloud/models/tunnel_connection_code.go`, `tunnel_mapping.go`
+- 数据访问: `internal/cloud/repos/connection_code_repository.go`, `tunnel_mapping_repository.go`
+- 业务逻辑: `internal/cloud/services/connection_code_service.go`
+- API层: `internal/api/handlers_connection_code.go`
+- CLI: `cmd/client/cli/` (新增)
+- 验证集成: `internal/app/server/handlers.go`
+
+---
+
+### 任务拆分
+
+**T0.1a: 数据模型和Repository（4小时）**
+1. 创建 `TunnelConnectionCode` 模型
+   - ID, Code, TargetClientID, **TargetAddress（必填）**
+   - ActivationTTL, MappingDuration
+   - IsActivated, ActivatedAt, ActivatedBy, MappingID
+2. 创建 `TunnelMapping` 模型
+   - ListenClientID, TargetClientID
+   - ListenAddress, TargetAddress
+   - UsageCount, BytesSent, BytesReceived
+3. 创建 `ConnectionCodeRepository` 和 `TunnelMappingRepository`
+   - 按Code/ID存储
+   - 按TargetClient/ListenClient索引
+   - TTL自动过期
+
+**T0.1b: ConnectionCode生成器（已完成）**
+- ✅ 复用现有的 `AuthCodeGenerator`
+- ✅ 格式: "abc-def-123"
+- ✅ 单元测试覆盖率 100%
+
+**T0.1c: ConnectionCodeService业务逻辑（6小时）**
+1. `CreateConnectionCode(targetClientID, targetAddress, activationTTL, mappingDuration)`
+2. `ActivateConnectionCode(code, listenClientID, listenAddress)` → 创建TunnelMapping
+3. `ValidateMapping(mappingID, listenClientID)` → 验证隧道连接
+4. `ListConnectionCodesByTarget(targetClientID)`
+5. `ListInboundMappings(targetClientID)` - 谁在访问我
+6. `ListMappings(listenClientID)` - 我的映射
+7. `RevokeConnectionCode(code)`, `RevokeMapping(mappingID)`
+8. 单元测试（覆盖率 ≥85%）
+
+**T0.1d: 集成到隧道验证（4小时）**
+1. 扩展 `TunnelOpenRequest`
+   - 添加 `MappingID string` 字段
+   - 保留 `SecretKey` 字段（兼容）
+2. 修改 `HandleTunnelOpen()`
+   - 优先验证 MappingID
+   - 回退到 SecretKey（向后兼容）
+3. 更新使用统计
+
+**T0.1e: API接口（4小时）**
+1. `POST /api/connection-codes` - 创建连接码
+2. `POST /api/connection-codes/{code}/activate` - 激活连接码
+3. `GET /api/clients/{id}/connection-codes` - 列出连接码
+4. `GET /api/clients/{id}/inbound-mappings` - 入站映射
+5. `GET /api/clients/{id}/mappings` - 出站映射
+6. `DELETE /api/connection-codes/{code}` - 撤销连接码
+7. `DELETE /api/mappings/{id}` - 撤销映射
+
+**T0.1f: 单元测试（6小时）**
+1. `connection_code_repository_test.go`
+2. `tunnel_mapping_repository_test.go`
+3. `connection_code_service_test.go`
+   - 创建、激活、验证、撤销
+   - 一次性使用验证
+   - 并发安全测试
+4. 集成测试
+   - E2E流程：生成 → 激活 → 流量转发
+5. **目标覆盖率**: ≥85%
+   - 配额限制
+4. `handlers_test.go` - 隧道验证测试
+   - AuthCode验证成功/失败
+   - 匿名vs注册分层验证
+   - SecretKey兼容性
 
 **文件清单**:
-- 修改: `internal/app/server/handlers.go` (ServerTunnelHandler)
-- 新增: 无（在现有文件中扩展）
+- 新增: `internal/cloud/models/tunnel_auth.go`
+- 新增: `internal/cloud/models/tunnel_auth_test.go`
+- 新增: `internal/cloud/repos/auth_code_repository.go`
+- 新增: `internal/cloud/repos/auth_code_repository_test.go`
+- 新增: `internal/cloud/services/auth_code_service.go`
+- 新增: `internal/cloud/services/auth_code_service_test.go`
+- 新增: `internal/api/handlers_authcode.go`
+- 新增: `internal/api/handlers_authcode_test.go`
+- 修改: `internal/packet/packet.go` (TunnelOpenRequest扩展)
+- 修改: `internal/app/server/handlers.go` (集成AuthCode验证)
+- 修改: `internal/cloud/services/service_registry.go` (注册AuthCodeService)
 
-**测试要求**:
-- 单元测试: `handlers_test.go` - 测试权限验证逻辑
-- 测试用例: 
-  - 合法客户端（SourceClient/TargetClient）能访问
-  - 非法客户端被拒绝
-  - 同用户的其他客户端能访问（如果配置）
+**质量保证**:
+- ✅ 强类型: `TunnelAuthCode` 结构体（无 map/interface{}）
+- ✅ Dispose体系: AuthCodeService 定期清理过期码
+- ✅ 单一职责: Repository（存储）、Service（业务）、Handler（API）分离
+- ✅ 文件大小: 每个文件 < 400 行
+- ✅ 测试覆盖: >= 85%
 
-**预估工作量**: 4小时
+**预估工作量**: 28小时（约3.5个工作日）
 
 ---
 
@@ -225,18 +413,27 @@
 
 ### Phase 0 总结
 
-**总工作量**: 34小时（约5个工作日）  
+**总工作量**: 58小时（约7-8个工作日）  
+
 **关键产出**:
+- ⭐ 新增 AuthCode 动态授权体系（models + repos + services + API）
 - 新增 `internal/security/` 包（暴力破解、IP管理、速率限制）
 - 修复5个严重安全漏洞
-- 新增~15个单元测试文件
+- 大幅提升新用户体验（零门槛使用AuthCode）
+- 新增~20个单元测试文件
 - 安全事件审计基础设施
 
 **质量保证**:
 - ✅ 所有新增代码遵循强类型，避免 `map[string]interface{}`
-- ✅ 使用 dispose 体系管理资源（定时清理）
-- ✅ 单一职责原则，每个文件职责清晰
-- ✅ 100% 单元测试覆盖
+- ✅ 使用 dispose 体系管理资源（定时清理过期AuthCode、失败记录）
+- ✅ 单一职责：Repository（存储）、Service（业务）、Handler（API）三层分离
+- ✅ 文件职责清晰，无过大文件（< 400行）
+- ✅ 单元测试覆盖 >= 85%
+
+**业务价值**:
+- ✅ 新用户体验 ⬆️ 90%（匿名+AuthCode，零门槛体验）
+- ✅ 安全性 ⬆️ 80%（有时效、可撤销、可追踪）
+- ✅ 灵活性 ⬆️ 95%（临时授权、设备授权、精细控制）
 
 ---
 
@@ -1155,12 +1352,12 @@ health:
 ### 工作量汇总
 | Phase | 优先级 | 工作量 | 时间窗口 |
 |-------|--------|--------|---------|
-| Phase 0 | P0 | 34小时 | 1周 |
+| Phase 0 | P0 | 58小时 | 1.5周 |
 | Phase 1 | P1 | 54小时 | 2周 |
 | Phase 2 | P1 | 52-60小时 | 2-3周 |
 | Phase 3 | P2 | 68小时 | 1-2个月 |
 | Phase 4 | P3 | 152小时 | 按需 |
-| **总计** | - | **360-368小时** | **2-4个月** |
+| **总计** | - | **384-392小时** | **2-4个月** |
 
 ### 关键里程碑
 1. **第1周结束**: Phase 0完成，安全漏洞修复

@@ -61,6 +61,51 @@ const (
 	// KeyPrefixRuntimeSession 会话数据
 	// 格式：tunnox:runtime:session:{session_id}
 	KeyPrefixRuntimeSession = "tunnox:runtime:session:"
+	
+	// ============ 连接码相关（运行时数据，短期有效） ============
+	
+	// KeyPrefixRuntimeConnectionCodeByCode 连接码（按Code查询）
+	// 格式：tunnox:runtime:conncode:code:{code}
+	// TTL：ActivationTTL（如10分钟）
+	KeyPrefixRuntimeConnectionCodeByCode = "tunnox:runtime:conncode:code:"
+	
+	// KeyPrefixRuntimeConnectionCodeByID 连接码（按ID查询）
+	// 格式：tunnox:runtime:conncode:id:{id}
+	// TTL：ActivationTTL（如10分钟）
+	KeyPrefixRuntimeConnectionCodeByID = "tunnox:runtime:conncode:id:"
+	
+	// ============ 隧道映射相关（运行时数据，长期有效） ============
+	
+	// KeyPrefixRuntimeTunnelMappingByID 隧道映射（按ID查询）
+	// 格式：tunnox:runtime:mapping:id:{id}
+	// TTL：MappingDuration（如7天）
+	KeyPrefixRuntimeTunnelMappingByID = "tunnox:runtime:mapping:id:"
+	
+	// ============ 旧版访问许可相关（运行时数据，长期有效，待弃用） ============
+	
+	// KeyPrefixAccessPermit 访问许可（按ID查询）
+	// 格式：tunnox:runtime:permit:id:{permit_id}
+	// TTL：AccessDuration（如10天）
+	// ⚠️ 已弃用，使用KeyPrefixRuntimeTunnelMappingByID代替
+	KeyPrefixAccessPermit = "tunnox:runtime:permit:id:"
+	
+	// KeyPrefixPermitSource SourceClient的访问许可列表（我的访问许可）
+	// 格式：tunnox:runtime:permit:source:{source_client_id}
+	// TTL：永久（成员自动过期清理）
+	// ⚠️ 已弃用，使用KeyPrefixIndexTunnelMappingByListen代替
+	KeyPrefixPermitSource = "tunnox:runtime:permit:source:"
+	
+	// KeyPrefixPermitTarget TargetClient的访问许可列表（谁在访问我）
+	// 格式：tunnox:runtime:permit:target:{target_client_id}
+	// TTL：永久（成员自动过期清理）
+	// ⚠️ 已弃用，使用KeyPrefixIndexTunnelMappingByTarget代替
+	KeyPrefixPermitTarget = "tunnox:runtime:permit:target:"
+	
+	// KeyPrefixPermitMapping Mapping的访问许可列表
+	// 格式：tunnox:runtime:permit:mapping:{mapping_id}
+	// TTL：永久（成员自动过期清理）
+	// ⚠️ 已弃用
+	KeyPrefixPermitMapping = "tunnox:runtime:permit:mapping:"
 )
 
 // ============================================================================
@@ -82,6 +127,23 @@ const (
 	// 格式：tunnox:temp:rate_limit:{ip}:{endpoint}
 	// TTL：60秒
 	KeyPrefixTempRateLimit = "tunnox:temp:rate_limit:"
+	
+	// ============ 授权码相关（临时数据，用于激活） ============
+	
+	// KeyPrefixAuthCode 授权码（按Code查询）
+	// 格式：tunnox:temp:authcode:code:{code}
+	// TTL：ActivationTTL（如10分钟）
+	KeyPrefixAuthCode = "tunnox:temp:authcode:code:"
+	
+	// KeyPrefixAuthCodeID 授权码（按ID查询）
+	// 格式：tunnox:temp:authcode:id:{authcode_id}
+	// TTL：ActivationTTL
+	KeyPrefixAuthCodeID = "tunnox:temp:authcode:id:"
+	
+	// KeyPrefixAuthCodeTarget TargetClient的授权码列表
+	// 格式：tunnox:temp:authcode:target:{target_client_id}
+	// TTL：永久（成员自动过期清理）
+	KeyPrefixAuthCodeTarget = "tunnox:temp:authcode:target:"
 )
 
 // ============================================================================
@@ -101,6 +163,25 @@ const (
 	// KeyPrefixIndexClientMappings 客户端的端口映射列表
 	// 格式：tunnox:index:client:mappings:{client_id}
 	KeyPrefixIndexClientMappings = "tunnox:index:client:mappings:"
+	
+	// ============ 连接码索引 ============
+	
+	// KeyPrefixIndexConnectionCodeByTarget TargetClient的连接码列表
+	// 格式：tunnox:index:conncode:target:{target_client_id}
+	// 用途：查询某个TargetClient生成的所有连接码
+	KeyPrefixIndexConnectionCodeByTarget = "tunnox:index:conncode:target:"
+	
+	// ============ 隧道映射索引 ============
+	
+	// KeyPrefixIndexTunnelMappingByListen ListenClient的映射列表（我的出站映射）
+	// 格式：tunnox:index:mapping:listen:{listen_client_id}
+	// 用途：查询某个ListenClient创建的所有映射（我在访问谁）
+	KeyPrefixIndexTunnelMappingByListen = "tunnox:index:mapping:listen:"
+	
+	// KeyPrefixIndexTunnelMappingByTarget TargetClient的映射列表（我的入站映射）
+	// 格式：tunnox:index:mapping:target:{target_client_id}
+	// 用途：查询有哪些映射访问某个TargetClient（谁在访问我）
+	KeyPrefixIndexTunnelMappingByTarget = "tunnox:index:mapping:target:"
 )
 
 // ============================================================================

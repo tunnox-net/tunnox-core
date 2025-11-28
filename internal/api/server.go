@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/cloud/managers"
+	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 
@@ -32,6 +33,9 @@ type ManagementAPIServer struct {
 	router       *mux.Router
 	server       *http.Server
 	sessionMgr   SessionManager // 用于推送配置给客户端
+
+	// 新的连接码系统
+	connCodeHandlers *ConnectionCodeHandlers
 }
 
 // APIConfig API 配置
@@ -71,12 +75,17 @@ type RateLimitConfig struct {
 }
 
 // NewManagementAPIServer 创建 Management API 服务器
-func NewManagementAPIServer(ctx context.Context, config *APIConfig, cloudControl managers.CloudControlAPI) *ManagementAPIServer {
+func NewManagementAPIServer(ctx context.Context, config *APIConfig, cloudControl managers.CloudControlAPI, connCodeService *services.ConnectionCodeService) *ManagementAPIServer {
 	s := &ManagementAPIServer{
 		ManagerBase:  dispose.NewManager("ManagementAPIServer", ctx),
 		config:       config,
 		cloudControl: cloudControl,
 		router:       mux.NewRouter(),
+	}
+
+	// 初始化连接码handlers（如果提供了service）
+	if connCodeService != nil {
+		s.connCodeHandlers = NewConnectionCodeHandlers(connCodeService)
 	}
 
 	// 注册路由
@@ -161,6 +170,18 @@ func (s *ManagementAPIServer) registerRoutes() {
 	// 批量映射操作
 	api.HandleFunc("/mappings/batch/delete", s.handleBatchDeleteMappings).Methods("POST") // 新增：批量删除
 	api.HandleFunc("/mappings/batch/update", s.handleBatchUpdateMappings).Methods("POST") // 新增：批量更新
+
+	// 连接码管理路由（新的授权系统）
+	if s.connCodeHandlers != nil {
+		api.HandleFunc("/connection-codes", s.connCodeHandlers.HandleCreateConnectionCode).Methods("POST")
+		api.HandleFunc("/connection-codes/{code}/activate", s.connCodeHandlers.HandleActivateConnectionCode).Methods("POST")
+		api.HandleFunc("/connection-codes/{code}", s.connCodeHandlers.HandleRevokeConnectionCode).Methods("DELETE")
+		api.HandleFunc("/connection-codes", s.connCodeHandlers.HandleListConnectionCodes).Methods("GET")
+
+		// 隧道映射管理路由（新系统）
+		api.HandleFunc("/tunnel-mappings", s.connCodeHandlers.HandleListMappings).Methods("GET")
+		api.HandleFunc("/tunnel-mappings/{id}", s.connCodeHandlers.HandleRevokeMapping).Methods("DELETE")
+	}
 
 	// 统计查询路由
 	api.HandleFunc("/stats/users/{user_id}", s.handleGetUserStats).Methods("GET")
