@@ -200,6 +200,15 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 			}
 		}
 		if err != nil {
+			// ✅ UDP 连接的超时错误是临时错误，不应该导致连接关闭
+			if netErr, ok := err.(interface {
+				Timeout() bool
+				Temporary() bool
+			}); ok && netErr.Timeout() && netErr.Temporary() {
+				// UDP 超时错误，继续等待
+				utils.Debugf("TunnelBridge[%s]: %s UDP timeout, continuing...", b.tunnelID, direction)
+				continue
+			}
 			if err != io.EOF {
 				utils.Debugf("TunnelBridge[%s]: %s read error: %v", b.tunnelID, direction, err)
 			}

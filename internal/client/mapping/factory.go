@@ -8,13 +8,18 @@ import (
 )
 
 // CreateAdapter 工厂方法创建协议适配器
-func CreateAdapter(protocol string, config config.MappingConfig) (MappingAdapter, error) {
+// parentCtx: 父级 context，用于管理适配器的生命周期
+func CreateAdapter(protocol string, config config.MappingConfig, parentCtx context.Context) (MappingAdapter, error) {
 	switch protocol {
 	case "tcp":
 		return NewTCPMappingAdapter(), nil
 
 	case "udp":
-		return NewUDPMappingAdapter(context.Background()), nil
+		// ✅ 使用传入的 parentCtx，确保正确的生命周期管理
+		if parentCtx == nil {
+			parentCtx = context.Background()
+		}
+		return NewUDPMappingAdapter(parentCtx), nil
 
 	case "socks5":
 		// SOCKS5凭据从配置读取（如果需要）

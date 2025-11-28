@@ -3,7 +3,9 @@ package session
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"time"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -159,6 +161,19 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		// 添加到clientIDIndexMap用于快速查找（controlConnMap 已经在 RegisterControlConnection 中添加）
 		s.clientIDIndexMap[clientConn.ClientID] = clientConn
 		s.controlConnLock.Unlock()
+
+		// ✅ 如果是 UDP 控制连接，标记 UdpSessionConn 为控制连接
+		conn := s.getConnectionByConnID(connPacket.ConnectionID)
+		if conn != nil {
+			// 从 StreamProcessor 中获取 UdpSessionConn
+			if sp, ok := conn.Stream.(*stream.StreamProcessor); ok {
+				reader := sp.GetReader()
+				if udpSessionConn, ok := reader.(interface{ SetControlConnection(bool) }); ok {
+					udpSessionConn.SetControlConnection(true)
+					utils.Debugf("Marked UDP session connection %s as control connection", connPacket.ConnectionID)
+				}
+			}
+		}
 	}
 
 	utils.Infof("Handshake succeeded for connection %s, ClientID=%d",
@@ -451,13 +466,74 @@ func (s *SessionManager) extractNetConn(conn *types.Connection) net.Conn {
 		return conn.RawConn
 	}
 
-	// 回退方案：尝试从Stream中获取
+	// 回退方案1：尝试从Stream中获取
 	if sp, ok := conn.Stream.(*stream.StreamProcessor); ok {
 		if reader, ok := sp.GetReader().(net.Conn); ok {
 			return reader
 		}
+		// ✅ 回退方案2：检查是否是UDP会话连接，需要包装成net.Conn
+		reader := sp.GetReader()
+		if udpSessionConn, ok := reader.(interface {
+			Read([]byte) (int, error)
+			Write([]byte) (int, error)
+			Close() error
+		}); ok {
+			// 检查是否是UDP会话连接（通过检查是否有IsPersistent方法）
+			if _, hasPersistent := reader.(interface{ IsPersistent() bool }); hasPersistent {
+				// 这是一个UDP会话连接，需要包装成net.Conn
+				return newUdpConnWrapper(udpSessionConn)
+			}
+		}
 	}
 	return nil
+}
+
+// udpConnWrapper 将UDP会话连接包装成net.Conn
+type udpConnWrapper struct {
+	io.ReadWriteCloser
+	localAddr  net.Addr
+	remoteAddr net.Addr
+}
+
+func newUdpConnWrapper(conn io.ReadWriteCloser) net.Conn {
+	// 尝试从conn中提取地址信息
+	var localAddr, remoteAddr net.Addr
+
+	// 如果是UdpSessionConn，尝试获取地址
+	if sessionConn, ok := conn.(interface {
+		GetAddr() string
+	}); ok {
+		addrStr := sessionConn.GetAddr()
+		if addr, err := net.ResolveUDPAddr("udp", addrStr); err == nil {
+			remoteAddr = addr
+		}
+	}
+
+	return &udpConnWrapper{
+		ReadWriteCloser: conn,
+		localAddr:       localAddr,
+		remoteAddr:      remoteAddr,
+	}
+}
+
+func (w *udpConnWrapper) LocalAddr() net.Addr {
+	return w.localAddr
+}
+
+func (w *udpConnWrapper) RemoteAddr() net.Addr {
+	return w.remoteAddr
+}
+
+func (w *udpConnWrapper) SetDeadline(t time.Time) error {
+	return nil // UDP不支持deadline
+}
+
+func (w *udpConnWrapper) SetReadDeadline(t time.Time) error {
+	return nil // UDP不支持read deadline
+}
+
+func (w *udpConnWrapper) SetWriteDeadline(t time.Time) error {
+	return nil // UDP不支持write deadline
 }
 
 // notifyTargetClientToOpenTunnel 通知目标客户端建立隧道连接

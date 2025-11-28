@@ -14,11 +14,30 @@ import (
 
 const (
 	// UDP 相关常量
-	udpBufferSize      = 65535            // UDP 最大包大小
-	udpReadTimeout     = 1 * time.Second  // UDP 读取超时
-	udpSessionTimeout  = 30 * time.Second // UDP 会话超时
-	udpCleanupInterval = 10 * time.Second // 清理过期会话的间隔
+	udpBufferSize         = 65535                  // UDP 最大包大小
+	udpReadTimeout        = 100 * time.Millisecond // UDP 读取超时（用于 receivePackets）
+	udpControlReadTimeout = 5 * time.Millisecond   // ✅ 优化：控制连接读取超时（缩短到 5ms 以提高响应速度）
+	udpTunnelReadTimeout  = 100 * time.Millisecond // 隧道连接读取超时
+	udpSessionTimeout     = 30 * time.Second       // UDP 会话超时
+	udpCleanupInterval    = 10 * time.Second       // 清理过期会话的间隔
 )
+
+// udpTimeoutError UDP 读取超时错误（临时错误，不应该导致连接关闭）
+type udpTimeoutError struct {
+	msg string
+}
+
+func (e *udpTimeoutError) Error() string {
+	return e.msg
+}
+
+func (e *udpTimeoutError) Timeout() bool {
+	return true
+}
+
+func (e *udpTimeoutError) Temporary() bool {
+	return true
+}
 
 // UdpConn UDP连接包装器，用于客户端连接
 type UdpConn struct {
@@ -79,22 +98,27 @@ type UdpAdapter struct {
 
 // udpSession UDP会话，用于管理来自同一客户端的多个数据包
 type udpSession struct {
-	addr         net.Addr
-	lastActive   time.Time
-	buffer       chan []byte
-	conn         net.PacketConn
-	sessionConn  *UdpSessionConn // 持久的会话连接对象
-	isAccepted   bool             // 标记是否已经被Accept返回
-	mu           sync.RWMutex
+	addr        net.Addr
+	lastActive  time.Time
+	buffer      chan []byte
+	conn        net.PacketConn
+	sessionConn *UdpSessionConn // 持久的会话连接对象
+	isAccepted  bool            // 标记是否已经被Accept返回
+	ctx         context.Context // ✅ 添加 context 用于取消
+	cancel      context.CancelFunc
+	mu          sync.RWMutex
 }
 
-func newUdpSession(addr net.Addr, conn net.PacketConn) *udpSession {
+func newUdpSession(addr net.Addr, conn net.PacketConn, parentCtx context.Context) *udpSession {
+	ctx, cancel := context.WithCancel(parentCtx)
 	sess := &udpSession{
 		addr:       addr,
 		lastActive: time.Now(),
 		buffer:     make(chan []byte, 100), // 缓冲100个数据包
 		conn:       conn,
 		isAccepted: false,
+		ctx:        ctx,
+		cancel:     cancel,
 	}
 	// 立即创建持久的会话连接对象
 	sess.sessionConn = &UdpSessionConn{
@@ -199,8 +223,9 @@ func (u *UdpAdapter) receivePackets() {
 		default:
 		}
 
+		// ✅ 优化：缩短 receivePackets 的超时，提高响应速度
 		// 设置读取超时以便能够响应 ctx.Done()
-		if err := u.conn.SetReadDeadline(time.Now().Add(udpReadTimeout)); err != nil {
+		if err := u.conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
 			if !u.IsClosed() {
 				utils.Errorf("Failed to set read deadline: %v", err)
 			}
@@ -263,7 +288,7 @@ func (u *UdpAdapter) getOrCreateSession(addr net.Addr) (*udpSession, bool) {
 		return session, false
 	}
 
-	session = newUdpSession(addr, u.conn)
+	session = newUdpSession(addr, u.conn, u.ctx)
 	session.sessionConn.adapter = u // 设置adapter引用
 	u.sessions[addrStr] = session
 
@@ -306,7 +331,7 @@ func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
 	// 轮询等待新的未Accept的会话
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
-	
+
 	timeout := time.After(udpReadTimeout)
 
 	for {
@@ -324,7 +349,7 @@ func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
 				hasData := len(session.buffer) > 0
 				notAccepted := !session.isAccepted
 				session.mu.RUnlock()
-				
+
 				if hasData && notAccepted {
 					readySession = session
 					break
@@ -337,7 +362,7 @@ func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
 				readySession.mu.Lock()
 				readySession.isAccepted = true
 				readySession.mu.Unlock()
-				
+
 				utils.Debugf("UDP adapter accepting new session from %s", readySession.addr)
 				// 返回持久的会话连接对象
 				return readySession.sessionConn, nil
@@ -384,13 +409,19 @@ func (u *UdpAdapter) onClose() error {
 // UdpSessionConn UDP会话连接，用于处理特定客户端的数据流
 // 注意：这是一个持久连接，不应该在单次packet处理后关闭
 type UdpSessionConn struct {
-	session    *udpSession
-	addr       string
-	adapter    *UdpAdapter
-	readBuffer []byte
-	readPos    int
-	closed     bool
-	mu         sync.Mutex
+	session       *udpSession
+	addr          string
+	adapter       *UdpAdapter
+	readBuffer    []byte
+	readPos       int
+	closed        bool
+	isControlConn bool // ✅ 新增：标记是否为控制连接
+	mu            sync.Mutex
+}
+
+// GetAddr 获取远程地址字符串（用于包装成net.Conn）
+func (u *UdpSessionConn) GetAddr() string {
+	return u.addr
 }
 
 // IsPersistent 标记这是一个持久连接，不应该在handleConnection后关闭
@@ -398,12 +429,19 @@ func (u *UdpSessionConn) IsPersistent() bool {
 	return true
 }
 
-// Read 实现io.Reader接口
-func (u *UdpSessionConn) Read(p []byte) (n int, err error) {
+// SetControlConnection 设置连接类型（控制连接或隧道连接）
+func (u *UdpSessionConn) SetControlConnection(isControl bool) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	u.isControlConn = isControl
+}
 
+// Read 实现io.Reader接口
+func (u *UdpSessionConn) Read(p []byte) (n int, err error) {
+	// ✅ 优化：先快速检查缓冲数据，减少锁持有时间
+	u.mu.Lock()
 	if u.closed {
+		u.mu.Unlock()
 		return 0, io.EOF
 	}
 
@@ -415,24 +453,41 @@ func (u *UdpSessionConn) Read(p []byte) (n int, err error) {
 			u.readBuffer = nil
 			u.readPos = 0
 		}
+		u.mu.Unlock()
 		return n, nil
 	}
+	u.mu.Unlock()
 
-	// 从会话缓冲区读取新数据
+	// ✅ 从会话缓冲区读取新数据（不在锁内，避免阻塞 channel 操作）
+	// 根据连接类型决定超时行为
+	timeout := udpTunnelReadTimeout
+	if u.isControlConn {
+		timeout = udpControlReadTimeout // ✅ 控制连接使用更短的超时（5ms）
+	}
+
 	select {
 	case data, ok := <-u.session.buffer:
 		if !ok {
 			return 0, io.EOF
 		}
+		// ✅ 在锁内处理数据，确保线程安全
+		u.mu.Lock()
 		n = copy(p, data)
 		if n < len(data) {
 			// 数据太大，保存剩余部分
 			u.readBuffer = data
 			u.readPos = n
 		}
+		u.mu.Unlock()
 		return n, nil
-	case <-time.After(udpReadTimeout):
+	case <-u.session.ctx.Done():
 		return 0, io.EOF
+	case <-time.After(timeout):
+		// ✅ 超时返回临时错误，让调用者继续重试
+		if u.isControlConn {
+			return 0, &udpTimeoutError{msg: "udp read timeout, will retry"}
+		}
+		return 0, &udpTimeoutError{msg: "udp read timeout, connection still alive"}
 	}
 }
 

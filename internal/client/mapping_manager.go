@@ -71,7 +71,8 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 	}
 
 	// 创建协议适配器
-	adapter, err := mapping.CreateAdapter(protocol, mappingCfg)
+	// ✅ 传入 client context，确保适配器能正确响应 client 的生命周期
+	adapter, err := mapping.CreateAdapter(protocol, mappingCfg, c.GetContext())
 	if err != nil {
 		utils.Errorf("Client: failed to create adapter: %v", err)
 		return
@@ -100,4 +101,3 @@ func (c *TunnoxClient) RemoveMapping(mappingID string) {
 		utils.Infof("Client: mapping %s stopped", mappingID)
 	}
 }
-

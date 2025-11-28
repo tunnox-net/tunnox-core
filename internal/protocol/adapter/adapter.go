@@ -205,9 +205,31 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 		}
 
 		// 读取并处理数据包
-		utils.Debugf("Server: waiting for packet on connection %s", streamConn.ID)
 		pkt, _, err := streamConn.Stream.ReadPacket()
 		if err != nil {
+			// ✅ UDP 控制连接的超时错误是临时错误，应该继续重试
+			// 需要解包 StreamError 来检查底层错误
+			isTimeoutError := false
+			underlyingErr := err
+			for underlyingErr != nil {
+				if netErr, ok := underlyingErr.(interface {
+					Timeout() bool
+					Temporary() bool
+				}); ok && netErr.Timeout() && netErr.Temporary() {
+					// UDP 超时错误，继续循环等待下一个数据包
+					isTimeoutError = true
+					break
+				}
+				// 尝试解包错误（支持 errors.Unwrap）
+				if unwrapper, ok := underlyingErr.(interface{ Unwrap() error }); ok {
+					underlyingErr = unwrapper.Unwrap()
+				} else {
+					break
+				}
+			}
+			if isTimeoutError {
+				continue
+			}
 			if err != io.EOF {
 				utils.Errorf("Failed to read packet for connection %s: %v", streamConn.ID, err)
 			} else {
