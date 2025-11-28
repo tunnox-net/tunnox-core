@@ -402,7 +402,7 @@ func (h *ServerTunnelHandler) validateWithSecretKey(secretKey string, mapping *m
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // extractIP 从net.Addr中提取IP地址
-func extractIP(addr interface{}) string {
+func extractIP(addr net.Addr) string {
 	if addr == nil {
 		return "unknown"
 	}
@@ -414,14 +414,11 @@ func extractIP(addr interface{}) string {
 		return v.IP.String()
 	default:
 		// 尝试解析字符串格式（如 "192.168.1.1:12345"）
-		if addrStr, ok := addr.(net.Addr); ok {
-			host, _, err := net.SplitHostPort(addrStr.String())
-			if err == nil {
-				return host
-			}
-			return addrStr.String()
+		host, _, err := net.SplitHostPort(addr.String())
+		if err == nil {
+			return host
 		}
-		return fmt.Sprintf("%v", addr)
+		return addr.String()
 	}
 }
 
