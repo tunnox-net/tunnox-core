@@ -67,24 +67,37 @@ func (c *CLI) cmdUseCode(args []string) {
 
 // cmdListMappings 列出隧道映射
 func (c *CLI) cmdListMappings(args []string) {
+	// 检查连接状态
+	if !c.client.IsConnected() {
+		c.output.Error("Not connected to server. Please connect first using 'connect' command.")
+		return
+	}
+
 	// 解析参数
-	mappingType := ""
+	var direction, mappingType string
 	for i, arg := range args {
 		if arg == "--type" && i+1 < len(args) {
 			mappingType = args[i+1]
-			break
+		}
+		if arg == "--direction" && i+1 < len(args) {
+			direction = args[i+1]
 		}
 	}
 
-	if mappingType != "" {
-		c.output.Header(fmt.Sprintf("🔗 Tunnel Mappings (%s)", mappingType))
-	} else {
-		c.output.Header("🔗 Tunnel Mappings")
+	header := "🔗 Tunnel Mappings"
+	if direction != "" {
+		header = fmt.Sprintf("🔗 Tunnel Mappings (%s)", direction)
+	} else if mappingType != "" {
+		header = fmt.Sprintf("🔗 Tunnel Mappings (%s)", mappingType)
 	}
+	c.output.Header(header)
 
-	// 调用API
-	apiClient := c.client.GetAPIClient()
-	resp, err := apiClient.ListMappings(mappingType)
+	// 通过指令通道调用
+	req := &client.ListMappingsRequest{
+		Direction: direction,
+		Type:      mappingType,
+	}
+	resp, err := c.client.ListMappings(req)
 
 	if err != nil {
 		c.output.Error("Failed to list mappings: %v", err)
@@ -97,7 +110,7 @@ func (c *CLI) cmdListMappings(args []string) {
 	}
 
 	// 创建表格
-	table := NewTable("MAPPING ID", "TYPE", "TARGET", "USAGE", "STATUS")
+	table := NewTable("MAPPING ID", "TYPE", "TARGET", "LISTEN", "STATUS", "BYTES")
 
 	for _, mapping := range resp.Mappings {
 		typeIcon := "📤"
@@ -105,12 +118,15 @@ func (c *CLI) cmdListMappings(args []string) {
 			typeIcon = "📥"
 		}
 
+		bytesStr := formatBytes(mapping.BytesSent + mapping.BytesReceived)
+
 		table.AddRow(
 			Truncate(mapping.MappingID, 18),
 			typeIcon+" "+mapping.Type,
 			Truncate(mapping.TargetAddress, 30),
-			fmt.Sprintf("%d", mapping.UsageCount),
+			Truncate(mapping.ListenAddress, 20),
 			mapping.Status,
+			bytesStr,
 		)
 	}
 

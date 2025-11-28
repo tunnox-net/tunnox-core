@@ -131,6 +131,9 @@ func main() {
 			}
 		} else {
 			// CLI初始化成功，正常启动交互模式
+			// 启动自动重连监控（交互模式也需要自动重连）
+			go monitorConnectionAndReconnect(ctx, tunnoxClient)
+
 			// 在goroutine中处理信号
 			go func() {
 				sigChan := make(chan os.Signal, 1)
@@ -454,13 +457,14 @@ func connectWithRetry(tunnoxClient *client.TunnoxClient, maxRetries int) error {
 }
 
 // monitorConnectionAndReconnect 监控连接状态并自动重连
+// 注意：此函数仅作为备用重连机制，主要重连由 readLoop 退出时触发
+// 如果 readLoop 的重连机制正常工作，此函数通常不会触发
 func monitorConnectionAndReconnect(ctx context.Context, tunnoxClient *client.TunnoxClient) {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(30 * time.Second) // ✅ 增加检查间隔，避免与 readLoop 重连冲突
 	defer ticker.Stop()
 
 	consecutiveFailures := 0
 	maxFailures := 3
-	reconnectDelay := 5 * time.Second
 
 	for {
 		select {
@@ -468,13 +472,13 @@ func monitorConnectionAndReconnect(ctx context.Context, tunnoxClient *client.Tun
 			return
 		case <-ticker.C:
 			// 检查连接状态
+			// ✅ 仅在连接断开且持续一段时间后才触发重连（给 readLoop 的重连机制时间）
 			if !tunnoxClient.IsConnected() {
 				consecutiveFailures++
-				utils.Warnf("Connection lost (failure %d/%d), attempting to reconnect...",
+				utils.Warnf("Connection lost (failure %d/%d), attempting to reconnect via monitor...",
 					consecutiveFailures, maxFailures)
 
-				time.Sleep(reconnectDelay)
-
+				// ✅ 使用 Reconnect() 方法，它内部已经有防重复重连机制
 				if err := tunnoxClient.Reconnect(); err != nil {
 					utils.Errorf("Reconnection failed: %v", err)
 
@@ -483,7 +487,7 @@ func monitorConnectionAndReconnect(ctx context.Context, tunnoxClient *client.Tun
 						return
 					}
 				} else {
-					utils.Infof("Reconnected successfully")
+					utils.Infof("Reconnected successfully via monitor")
 					consecutiveFailures = 0
 				}
 			} else {

@@ -55,11 +55,29 @@ func (s *Server) setupConnectionCodeCommands() error {
 		return fmt.Errorf("command registry is not *CommandRegistry, got %T", registry)
 	}
 
-	// 注册处理器
+	// 注册连接码处理器
 	if err := cmdHandlers.RegisterHandlers(cmdRegistry); err != nil {
 		return fmt.Errorf("failed to register connection code command handlers: %w", err)
 	}
-
 	utils.Infof("Server: Connection code command handlers registered")
+
+	// 注册配置命令处理器
+	if s.authHandler == nil {
+		utils.Warnf("Server: auth handler not set, skipping ConfigGet handler registration")
+	} else {
+		configHandlers := NewConfigCommandHandlers(s.authHandler, s.session)
+		if err := configHandlers.RegisterHandlers(cmdRegistry); err != nil {
+			return fmt.Errorf("failed to register config command handlers: %w", err)
+		}
+		utils.Infof("Server: Config command handlers registered")
+	}
+
+	// 注册映射命令处理器
+	mappingHandlers := NewMappingCommandHandlers(s.connCodeService, s.session)
+	if err := mappingHandlers.RegisterHandlers(cmdRegistry); err != nil {
+		return fmt.Errorf("failed to register mapping command handlers: %w", err)
+	}
+	utils.Infof("Server: Mapping command handlers registered")
+
 	return nil
 }

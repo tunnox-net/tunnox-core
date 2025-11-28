@@ -37,6 +37,7 @@ type Server struct {
 	protocolFactory *ProtocolFactory
 	cloudControl    managers.CloudControlAPI
 	cloudBuiltin    *managers.BuiltinCloudControl
+	authHandler     *ServerAuthHandler
 	messageBroker   broker.MessageBroker
 	bridgeManager   *internalbridge.BridgeManager
 	grpcServer      *grpc.Server
@@ -165,6 +166,8 @@ func New(config *Config, parentCtx context.Context) *Server {
 	tunnelHandler := NewServerTunnelHandler(cloudControl, server.connCodeService)                                                       // ⭐ 注入 connCodeService
 	server.session.SetAuthHandler(authHandler)
 	server.session.SetTunnelHandler(tunnelHandler)
+	server.authHandler = authHandler
+	server.authHandler = authHandler // 保存引用以便后续使用
 
 	// ✅ 注入CloudControl，用于查询映射配置（使用适配器）
 	cloudControlAdapter := session.NewCloudControlAdapter(cloudControl)

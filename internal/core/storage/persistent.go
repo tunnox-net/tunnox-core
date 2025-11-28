@@ -7,25 +7,32 @@ import "time"
 type PersistentStorage interface {
 	// Set 设置键值对（持久化，不设置 TTL）
 	Set(key string, value interface{}) error
-	
+
 	// Get 获取值
 	Get(key string) (interface{}, error)
-	
+
 	// Delete 删除键
 	Delete(key string) error
-	
+
 	// Exists 检查键是否存在
 	Exists(key string) (bool, error)
-	
+
 	// BatchSet 批量设置
 	BatchSet(items map[string]interface{}) error
-	
+
 	// BatchGet 批量获取
 	BatchGet(keys []string) (map[string]interface{}, error)
-	
+
 	// BatchDelete 批量删除
 	BatchDelete(keys []string) error
-	
+
+	// QueryByField 按字段查询（扫描匹配前缀的所有键，解析 JSON，过滤字段）
+	// keyPrefix: 键前缀（如 "tunnox:port_mapping:"）
+	// fieldName: 字段名（如 "listen_client_id"）
+	// fieldValue: 字段值（如 int64(19072689)）
+	// 返回：匹配的 JSON 字符串列表
+	QueryByField(keyPrefix string, fieldName string, fieldValue interface{}) ([]string, error)
+
 	// Close 关闭连接
 	Close() error
 }
@@ -66,6 +73,10 @@ func (n *NullPersistentStorage) BatchDelete(keys []string) error {
 	return nil // 空操作
 }
 
+func (n *NullPersistentStorage) QueryByField(keyPrefix string, fieldName string, fieldValue interface{}) ([]string, error) {
+	return nil, ErrKeyNotFound
+}
+
 func (n *NullPersistentStorage) Close() error {
 	return nil
 }
@@ -78,4 +89,3 @@ type CacheStorage interface {
 	Exists(key string) (bool, error)
 	Close() error
 }
-

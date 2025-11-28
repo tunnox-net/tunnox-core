@@ -480,19 +480,28 @@ func (s *ConnectionCodeService) GetConnectionCode(code string) (*models.TunnelCo
 //
 // 返回指定ListenClient创建的所有映射（我在访问谁）
 func (s *ConnectionCodeService) ListOutboundMappings(listenClientID int64) ([]*models.PortMapping, error) {
-	allMappings, err := s.portMappingRepo.GetClientPortMappings(utils.Int64ToString(listenClientID))
+	clientKey := utils.Int64ToString(listenClientID)
+	utils.Infof("ConnectionCodeService.ListOutboundMappings: querying mappings for client %d (key=%s)", listenClientID, clientKey)
+
+	allMappings, err := s.portMappingRepo.GetClientPortMappings(clientKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client port mappings: %w", err)
 	}
+
+	utils.Infof("ConnectionCodeService.ListOutboundMappings: found %d mappings from index for client %d", len(allMappings), listenClientID)
 
 	// 过滤出 ListenClientID 匹配的映射
 	result := make([]*models.PortMapping, 0)
 	for _, m := range allMappings {
 		if m.ListenClientID == listenClientID || (m.ListenClientID == 0 && m.SourceClientID == listenClientID) {
+			utils.Debugf("ConnectionCodeService.ListOutboundMappings: adding mapping %s (ListenClientID=%d, SourceClientID=%d)", m.ID, m.ListenClientID, m.SourceClientID)
 			result = append(result, m)
+		} else {
+			utils.Debugf("ConnectionCodeService.ListOutboundMappings: skipping mapping %s (ListenClientID=%d != %d, SourceClientID=%d)", m.ID, m.ListenClientID, listenClientID, m.SourceClientID)
 		}
 	}
 
+	utils.Infof("ConnectionCodeService.ListOutboundMappings: returning %d outbound mappings for client %d", len(result), listenClientID)
 	return result, nil
 }
 
@@ -500,19 +509,28 @@ func (s *ConnectionCodeService) ListOutboundMappings(listenClientID int64) ([]*m
 //
 // 返回访问指定TargetClient的所有映射（谁在访问我）
 func (s *ConnectionCodeService) ListInboundMappings(targetClientID int64) ([]*models.PortMapping, error) {
-	allMappings, err := s.portMappingRepo.GetClientPortMappings(utils.Int64ToString(targetClientID))
+	clientKey := utils.Int64ToString(targetClientID)
+	utils.Infof("ConnectionCodeService.ListInboundMappings: querying mappings for client %d (key=%s)", targetClientID, clientKey)
+
+	allMappings, err := s.portMappingRepo.GetClientPortMappings(clientKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client port mappings: %w", err)
 	}
+
+	utils.Infof("ConnectionCodeService.ListInboundMappings: found %d mappings from index for client %d", len(allMappings), targetClientID)
 
 	// 过滤出 TargetClientID 匹配的映射
 	result := make([]*models.PortMapping, 0)
 	for _, m := range allMappings {
 		if m.TargetClientID == targetClientID {
+			utils.Debugf("ConnectionCodeService.ListInboundMappings: adding mapping %s (TargetClientID=%d)", m.ID, m.TargetClientID)
 			result = append(result, m)
+		} else {
+			utils.Debugf("ConnectionCodeService.ListInboundMappings: skipping mapping %s (TargetClientID=%d != %d)", m.ID, m.TargetClientID, targetClientID)
 		}
 	}
 
+	utils.Infof("ConnectionCodeService.ListInboundMappings: returning %d inbound mappings for client %d", len(result), targetClientID)
 	return result, nil
 }
 

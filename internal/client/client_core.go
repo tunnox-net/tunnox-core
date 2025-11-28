@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"net"
@@ -40,6 +41,18 @@ type TunnoxClient struct {
 
 	// 命令响应管理器（用于指令通道命令）
 	commandResponseManager *CommandResponseManager
+
+	// 配置请求控制（防止重复请求）
+	configRequesting atomic.Bool
+
+	// readLoop 控制（防止重复启动）
+	readLoopRunning atomic.Bool
+
+	// heartbeatLoop 控制（防止重复启动）
+	heartbeatLoopRunning atomic.Bool
+
+	// 重连控制（防止重复重连）
+	reconnecting atomic.Bool
 
 	// 重连控制
 	kicked     bool // 是否被踢下线

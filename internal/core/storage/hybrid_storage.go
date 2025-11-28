@@ -14,11 +14,11 @@ import (
 // 自动区分持久化数据和运行时数据，提供统一的存储接口
 type HybridStorage struct {
 	*dispose.ManagerBase
-	
-	cache      CacheStorage       // 缓存存储（Memory/Redis）
-	persistent PersistentStorage  // 持久化存储（Database/gRPC，纯内存模式为 nil）
-	config     *HybridConfig      // 配置
-	
+
+	cache      CacheStorage      // 缓存存储（Memory/Redis）
+	persistent PersistentStorage // 持久化存储（Database/gRPC，纯内存模式为 nil）
+	config     *HybridConfig     // 配置
+
 	mu sync.RWMutex // 保护配置修改
 }
 
@@ -27,55 +27,55 @@ func NewHybridStorage(parentCtx context.Context, cache CacheStorage, persistent 
 	if config == nil {
 		config = DefaultHybridConfig()
 	}
-	
+
 	// 如果未启用持久化，使用空实现
 	if !config.EnablePersistent || persistent == nil {
 		persistent = NewNullPersistentStorage()
 		config.EnablePersistent = false
 	}
-	
+
 	storage := &HybridStorage{
 		ManagerBase: dispose.NewManager("HybridStorage", parentCtx),
 		cache:       cache,
 		persistent:  persistent,
 		config:      config,
 	}
-	
+
 	storage.SetCtx(parentCtx, storage.onClose)
-	
+
 	mode := "memory-only"
 	if config.EnablePersistent {
 		mode = "hybrid"
 	}
 	dispose.Infof("HybridStorage: initialized in %s mode", mode)
-	
+
 	return storage
 }
 
 // onClose 资源释放回调
 func (h *HybridStorage) onClose() error {
 	dispose.Infof("HybridStorage: closing")
-	
+
 	var errs []error
-	
+
 	// 关闭缓存
 	if h.cache != nil {
 		if err := h.cache.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("cache close error: %w", err))
 		}
 	}
-	
+
 	// 关闭持久化存储
 	if h.persistent != nil {
 		if err := h.persistent.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("persistent close error: %w", err))
 		}
 	}
-	
+
 	if len(errs) > 0 {
 		return fmt.Errorf("HybridStorage close errors: %v", errs)
 	}
-	
+
 	return nil
 }
 
@@ -83,7 +83,7 @@ func (h *HybridStorage) onClose() error {
 func (h *HybridStorage) isPersistent(key string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	
+
 	for _, prefix := range h.config.PersistentPrefixes {
 		if strings.HasPrefix(key, prefix) {
 			return true
@@ -103,7 +103,7 @@ func (h *HybridStorage) getCategory(key string) DataCategory {
 // Set 设置键值对（自动识别数据类型）
 func (h *HybridStorage) Set(key string, value interface{}, ttl time.Duration) error {
 	category := h.getCategory(key)
-	
+
 	if category == DataCategoryPersistent {
 		return h.setPersistent(key, value, ttl)
 	}
@@ -118,18 +118,18 @@ func (h *HybridStorage) setPersistent(key string, value interface{}, ttl time.Du
 			return fmt.Errorf("persistent storage error: %w", err)
 		}
 	}
-	
+
 	// 2. 写入缓存（使用配置的 TTL）
 	cacheTTL := ttl
 	if cacheTTL == 0 {
 		cacheTTL = h.config.PersistentCacheTTL
 	}
-	
+
 	if err := h.cache.Set(key, value, cacheTTL); err != nil {
 		// 缓存写入失败不影响持久化结果，仅记录日志
 		dispose.Warnf("HybridStorage: cache set failed for key %s: %v", key, err)
 	}
-	
+
 	return nil
 }
 
@@ -148,7 +148,7 @@ func (h *HybridStorage) Get(key string) (interface{}, error) {
 	if value, err := h.cache.Get(key); err == nil {
 		return value, nil
 	}
-	
+
 	// 2. 如果是持久化数据，从持久化存储读取
 	category := h.getCategory(key)
 	if category == DataCategoryPersistent && h.config.EnablePersistent {
@@ -156,7 +156,7 @@ func (h *HybridStorage) Get(key string) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		
+
 		// 3. 写回缓存（异步）
 		go func() {
 			cacheTTL := h.config.PersistentCacheTTL
@@ -164,10 +164,10 @@ func (h *HybridStorage) Get(key string) (interface{}, error) {
 				dispose.Debugf("HybridStorage: cache write-back failed for key %s: %v", key, err)
 			}
 		}()
-		
+
 		return value, nil
 	}
-	
+
 	// 3. 运行时数据不在缓存中，返回未找到
 	return nil, ErrKeyNotFound
 }
@@ -175,25 +175,25 @@ func (h *HybridStorage) Get(key string) (interface{}, error) {
 // Delete 删除键（自动识别数据类型）
 func (h *HybridStorage) Delete(key string) error {
 	category := h.getCategory(key)
-	
+
 	var errs []error
-	
+
 	// 1. 从缓存删除
 	if err := h.cache.Delete(key); err != nil && err != ErrKeyNotFound {
 		errs = append(errs, fmt.Errorf("cache delete error: %w", err))
 	}
-	
+
 	// 2. 如果是持久化数据，从持久化存储删除
 	if category == DataCategoryPersistent && h.config.EnablePersistent {
 		if err := h.persistent.Delete(key); err != nil && err != ErrKeyNotFound {
 			errs = append(errs, fmt.Errorf("persistent delete error: %w", err))
 		}
 	}
-	
+
 	if len(errs) > 0 {
 		return fmt.Errorf("delete errors: %v", errs)
 	}
-	
+
 	return nil
 }
 
@@ -203,13 +203,13 @@ func (h *HybridStorage) Exists(key string) (bool, error) {
 	if exists, err := h.cache.Exists(key); err == nil && exists {
 		return true, nil
 	}
-	
+
 	// 2. 如果是持久化数据，检查持久化存储
 	category := h.getCategory(key)
 	if category == DataCategoryPersistent && h.config.EnablePersistent {
 		return h.persistent.Exists(key)
 	}
-	
+
 	return false, nil
 }
 
@@ -227,7 +227,7 @@ func (h *HybridStorage) SetRuntime(key string, value interface{}, ttl time.Durat
 func (h *HybridStorage) GetConfig() *HybridConfig {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	
+
 	// 返回副本，防止外部修改
 	configCopy := *h.config
 	configCopy.PersistentPrefixes = append([]string{}, h.config.PersistentPrefixes...)
@@ -238,7 +238,7 @@ func (h *HybridStorage) GetConfig() *HybridConfig {
 func (h *HybridStorage) UpdatePersistentPrefixes(prefixes []string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	
+
 	h.config.PersistentPrefixes = append([]string{}, prefixes...)
 	dispose.Infof("HybridStorage: updated persistent prefixes: %v", prefixes)
 }
@@ -248,6 +248,13 @@ func (h *HybridStorage) IsPersistentEnabled() bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.config.EnablePersistent
+}
+
+// GetPersistentStorage 获取持久化存储实例（用于按字段查询）
+func (h *HybridStorage) GetPersistentStorage() PersistentStorage {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.persistent
 }
 
 // 实现 Storage 接口的其他方法
@@ -262,7 +269,7 @@ func (h *HybridStorage) GetList(key string) ([]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if list, ok := value.([]interface{}); ok {
 		return list, nil
 	}
@@ -275,11 +282,11 @@ func (h *HybridStorage) AppendToList(key string, value interface{}) error {
 	if err != nil && err != ErrKeyNotFound {
 		return err
 	}
-	
+
 	if list == nil {
 		list = []interface{}{}
 	}
-	
+
 	list = append(list, value)
 	return h.cache.Set(key, list, h.config.DefaultCacheTTL)
 }
@@ -289,7 +296,7 @@ func (h *HybridStorage) RemoveFromList(key string, value interface{}) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// 移除匹配的元素
 	newList := []interface{}{}
 	for _, item := range list {
@@ -297,7 +304,7 @@ func (h *HybridStorage) RemoveFromList(key string, value interface{}) error {
 			newList = append(newList, item)
 		}
 	}
-	
+
 	return h.cache.Set(key, newList, h.config.DefaultCacheTTL)
 }
 
@@ -328,19 +335,19 @@ func (h *HybridStorage) Incr(key string) (int64, error) {
 	if err != nil && err != ErrKeyNotFound {
 		return 0, err
 	}
-	
+
 	var count int64
 	if value != nil {
 		if c, ok := value.(int64); ok {
 			count = c
 		}
 	}
-	
+
 	count++
 	if err := h.cache.Set(key, count, h.config.DefaultCacheTTL); err != nil {
 		return 0, err
 	}
-	
+
 	return count, nil
 }
 
@@ -349,19 +356,19 @@ func (h *HybridStorage) IncrBy(key string, delta int64) (int64, error) {
 	if err != nil && err != ErrKeyNotFound {
 		return 0, err
 	}
-	
+
 	var count int64
 	if value != nil {
 		if c, ok := value.(int64); ok {
 			count = c
 		}
 	}
-	
+
 	count += delta
 	if err := h.cache.Set(key, count, h.config.DefaultCacheTTL); err != nil {
 		return 0, err
 	}
-	
+
 	return count, nil
 }
 
@@ -389,10 +396,12 @@ func (h *HybridStorage) CleanupExpired() error {
 
 func (h *HybridStorage) SetNX(key string, value interface{}, ttl time.Duration) (bool, error) {
 	// 仅支持缓存的原子操作
-	if nxSetter, ok := h.cache.(interface{ SetNX(string, interface{}, time.Duration) (bool, error) }); ok {
+	if nxSetter, ok := h.cache.(interface {
+		SetNX(string, interface{}, time.Duration) (bool, error)
+	}); ok {
 		return nxSetter.SetNX(key, value, ttl)
 	}
-	
+
 	// 降级实现
 	exists, err := h.cache.Exists(key)
 	if err != nil {
@@ -423,4 +432,3 @@ func (h *HybridStorage) Close() error {
 	h.ManagerBase.Close()
 	return nil
 }
-

@@ -539,6 +539,10 @@ func DefaultPersistentPrefixes() []string {
 		"tunnox:user:",
 		"tunnox:client:",
 		"tunnox:mapping:",
+		"tunnox:port_mapping:",    // PortMapping 主数据
+		"tunnox:mappings:list",    // 全局映射列表
+		"tunnox:user_mappings:",   // 用户映射索引
+		"tunnox:client_mappings:", // 客户端映射索引
 		"tunnox:quota:",
 	}
 }
@@ -587,19 +591,19 @@ func GetDefaultConfig() *Config {
 		},
 		Storage: StorageConfig{
 			Type: "hybrid",
-		Hybrid: HybridStorageConfigYAML{
-			CacheType:            "memory",
-			EnablePersistent:     true, // 默认启用持久化（但会根据是否有Redis自动调整）
-			PersistentPrefixes:   DefaultPersistentPrefixes(),
-			RuntimePrefixes:      DefaultRuntimePrefixes(),
-			DefaultPersistentTTL: 0,     // 永久
-			DefaultRuntimeTTL:    86400, // 24小时
-			JSON: JSONStorageConfigYAML{
-				FilePath:     "",    // 留空，由智能逻辑自动决定
-				AutoSave:     true,
-				SaveInterval: 30,
+			Hybrid: HybridStorageConfigYAML{
+				CacheType:            "memory",
+				EnablePersistent:     true, // 默认启用持久化（但会根据是否有Redis自动调整）
+				PersistentPrefixes:   DefaultPersistentPrefixes(),
+				RuntimePrefixes:      DefaultRuntimePrefixes(),
+				DefaultPersistentTTL: 0,     // 永久
+				DefaultRuntimeTTL:    86400, // 24小时
+				JSON: JSONStorageConfigYAML{
+					FilePath:     "", // 留空，由智能逻辑自动决定
+					AutoSave:     true,
+					SaveInterval: 30,
+				},
 			},
-		},
 		},
 		Log: utils.LogConfig{
 			Level:  constants.LogLevelInfo,

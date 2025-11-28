@@ -103,7 +103,6 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 			}
 			clientConn = NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
 			s.RegisterControlConnection(clientConn)
-			utils.Debugf("Created control connection for handshake: %s", connPacket.ConnectionID)
 		}
 	} else {
 		// 隧道连接：不注册为控制连接，但仍需要认证
@@ -125,7 +124,6 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		s.controlConnLock.Lock()
 		s.controlConnMap[connPacket.ConnectionID] = clientConn
 		s.controlConnLock.Unlock()
-		utils.Debugf("Tunnel connection handshake (saved to controlConnMap but not clientIDIndexMap): %s", connPacket.ConnectionID)
 	}
 
 	// 调用 authHandler 处理
@@ -150,10 +148,17 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 	// 隧道连接已经保存到 controlConnMap（在 else 分支中），但不添加到 clientIDIndexMap
 	if isControlConnection && clientConn.Authenticated && clientConn.ClientID > 0 {
 		s.controlConnLock.Lock()
+		// ✅ 检查是否有旧连接，如果有则先清理
+		oldConn, exists := s.clientIDIndexMap[clientConn.ClientID]
+		if exists && oldConn != nil && oldConn.ConnID != clientConn.ConnID {
+			utils.Warnf("Client %d reconnected: oldConnID=%s, newConnID=%s, cleaning up old connection",
+				clientConn.ClientID, oldConn.ConnID, clientConn.ConnID)
+			// 清理旧连接（但不发送 Kick 命令，因为这是重连）
+			delete(s.controlConnMap, oldConn.ConnID)
+		}
 		// 添加到clientIDIndexMap用于快速查找（controlConnMap 已经在 RegisterControlConnection 中添加）
 		s.clientIDIndexMap[clientConn.ClientID] = clientConn
 		s.controlConnLock.Unlock()
-		utils.Debugf("SessionManager: added client %d to clientIDIndexMap", clientConn.ClientID)
 	}
 
 	utils.Infof("Handshake succeeded for connection %s, ClientID=%d",
@@ -382,23 +387,16 @@ func (s *SessionManager) sendHandshakeResponse(conn *ClientConnection, resp *pac
 		return fmt.Errorf("failed to marshal handshake response: %w", err)
 	}
 
-	utils.Debugf("sendHandshakeResponse: respData=%s, len=%d", string(respData), len(respData))
-
 	// 构造响应包
 	respPacket := &packet.TransferPacket{
 		PacketType: packet.HandshakeResp,
 		Payload:    respData,
 	}
 
-	utils.Debugf("sendHandshakeResponse: PacketType=%d, Payload len=%d", respPacket.PacketType, len(respPacket.Payload))
-
 	// 发送响应
-	written, err := conn.Stream.WritePacket(respPacket, false, 0)
-	if err != nil {
+	if _, err := conn.Stream.WritePacket(respPacket, false, 0); err != nil {
 		return fmt.Errorf("failed to write handshake response: %w", err)
 	}
-
-	utils.Debugf("sendHandshakeResponse: wrote %d bytes", written)
 	return nil
 }
 

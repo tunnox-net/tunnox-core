@@ -97,16 +97,21 @@ func (c *TunnoxClient) GenerateConnectionCode(req *GenerateConnectionCodeRequest
 	responseChan := c.commandResponseManager.RegisterRequest(cmdPkt.CommandId)
 	defer c.commandResponseManager.UnregisterRequest(cmdPkt.CommandId)
 
-	// 发送命令前再次检查连接状态（双重检查）
+	// 发送命令前再次检查连接状态
 	if !c.IsConnected() {
 		return nil, fmt.Errorf("control connection is closed, please reconnect to server")
 	}
 
-	utils.Debugf("Client.GenerateConnectionCode: sending command, CommandID=%s, CommandType=%d", cmdID, packet.ConnectionCodeGenerate)
-	utils.Debugf("Client.GenerateConnectionCode: request body: %s", string(reqBody))
-
 	// 发送命令
-	written, err := c.controlStream.WritePacket(transferPkt, false, 0)
+	c.mu.RLock()
+	controlStream := c.controlStream
+	c.mu.RUnlock()
+
+	if controlStream == nil {
+		return nil, fmt.Errorf("control stream is nil")
+	}
+
+	_, err = controlStream.WritePacket(transferPkt, false, 0)
 	if err != nil {
 		utils.Errorf("Client.GenerateConnectionCode: failed to send command: %v", err)
 		// 发送失败，清理连接状态
@@ -131,16 +136,11 @@ func (c *TunnoxClient) GenerateConnectionCode(req *GenerateConnectionCodeRequest
 		return nil, fmt.Errorf("failed to send command: %w", err)
 	}
 
-	utils.Infof("Client.GenerateConnectionCode: command sent successfully, bytes=%d, waiting for response, CommandID=%s", written, cmdPkt.CommandId)
-
 	// 等待响应
 	cmdResp, err := c.commandResponseManager.WaitForResponse(cmdPkt.CommandId, responseChan)
 	if err != nil {
-		utils.Errorf("Client.GenerateConnectionCode: failed to wait for response: %v", err)
 		return nil, err
 	}
-
-	utils.Debugf("Client.GenerateConnectionCode: received response, Success=%v, Error=%s, DataLen=%d", cmdResp.Success, cmdResp.Error, len(cmdResp.Data))
 
 	if !cmdResp.Success {
 		return nil, fmt.Errorf("command failed: %s", cmdResp.Error)
@@ -408,4 +408,101 @@ func parseTargetAddress(addr string) (string, int, string, error) {
 		return "", 0, "", fmt.Errorf("port %d out of range [1, 65535]", port)
 	}
 	return host, port, protocol, nil
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 映射列表命令
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// ListMappingsRequest 列出映射请求
+type ListMappingsRequest struct {
+	Direction string `json:"direction,omitempty"` // outbound | inbound
+	Type      string `json:"type,omitempty"`      // 映射类型过滤
+	Status    string `json:"status,omitempty"`    // 状态过滤
+}
+
+// ListMappingsResponseCmd 列出映射响应（通过指令通道）
+type ListMappingsResponseCmd struct {
+	Mappings []MappingInfoCmd `json:"mappings"`
+	Total    int              `json:"total"`
+}
+
+// MappingInfoCmd 映射信息（通过指令通道）
+type MappingInfoCmd struct {
+	MappingID     string `json:"mapping_id"`
+	Type          string `json:"type"` // outbound | inbound
+	TargetAddress string `json:"target_address"`
+	ListenAddress string `json:"listen_address"`
+	Status        string `json:"status"`
+	ExpiresAt     string `json:"expires_at"`
+	CreatedAt     string `json:"created_at"`
+	BytesSent     int64  `json:"bytes_sent"`
+	BytesReceived int64  `json:"bytes_received"`
+}
+
+// ListMappings 通过指令通道列出映射
+func (c *TunnoxClient) ListMappings(req *ListMappingsRequest) (*ListMappingsResponseCmd, error) {
+	if !c.IsConnected() {
+		return nil, fmt.Errorf("control connection not established, please connect to server first")
+	}
+
+	// 序列化请求
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// 生成命令ID
+	cmdID, err := utils.GenerateRandomString(16)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate command ID: %w", err)
+	}
+
+	// 构造命令包
+	cmdPkt := &packet.CommandPacket{
+		CommandType: packet.MappingList,
+		CommandId:   cmdID,
+		CommandBody: string(reqBody),
+	}
+
+	transferPkt := &packet.TransferPacket{
+		PacketType:    packet.JsonCommand,
+		CommandPacket: cmdPkt,
+	}
+
+	// 注册响应通道
+	responseChan := c.commandResponseManager.RegisterRequest(cmdID)
+	defer c.commandResponseManager.UnregisterRequest(cmdID)
+
+	// 发送命令
+	c.mu.RLock()
+	controlStream := c.controlStream
+	c.mu.RUnlock()
+
+	if controlStream == nil {
+		return nil, fmt.Errorf("control stream is nil")
+	}
+
+	_, err = controlStream.WritePacket(transferPkt, false, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send command: %w", err)
+	}
+
+	// 等待响应
+	cmdResp, err := c.commandResponseManager.WaitForResponse(cmdID, responseChan)
+	if err != nil {
+		return nil, err
+	}
+
+	if !cmdResp.Success {
+		return nil, fmt.Errorf("command failed: %s", cmdResp.Error)
+	}
+
+	// 解析响应数据
+	var resp ListMappingsResponseCmd
+	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response data: %w", err)
+	}
+
+	return &resp, nil
 }

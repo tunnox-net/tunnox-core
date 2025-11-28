@@ -1,6 +1,7 @@
 package repos
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -8,6 +9,8 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/storage"
+	"tunnox-core/internal/utils"
 )
 
 // PortMappingRepo 端口映射数据访问
@@ -92,30 +95,82 @@ func (r *PortMappingRepo) GetUserPortMappings(userID string) ([]*models.PortMapp
 
 // GetClientPortMappings 列出客户端的端口映射
 //
+// 查询流程：
+// 1. 先从缓存索引查询（tunnox:client_mappings:{clientID}）
+// 2. 如果索引为空，从持久存储按字段查询（QueryByField）
+// 3. 去重并返回结果
+//
 // ✅ 由于映射会同时添加到 ListenClientID 和 TargetClientID 的索引，
 // 同一个映射可能出现在两个索引中，需要去重
 func (r *PortMappingRepo) GetClientPortMappings(clientID string) ([]*models.PortMapping, error) {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, clientID)
-	allMappings, err := r.List(key)
-	if err != nil {
-		return nil, err
+	// 1. 先从缓存索引查询
+	indexKey := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, clientID)
+	allMappings, err := r.List(indexKey)
+	if err == nil && len(allMappings) > 0 {
+		// 索引查询成功，去重并返回
+		mappingMap := make(map[string]*models.PortMapping)
+		for _, m := range allMappings {
+			if m != nil && m.ID != "" {
+				mappingMap[m.ID] = m
+			}
+		}
+		result := make([]*models.PortMapping, 0, len(mappingMap))
+		for _, m := range mappingMap {
+			result = append(result, m)
+		}
+		return result, nil
 	}
 
-	// ✅ 去重：使用 map 按 ID 去重
-	mappingMap := make(map[string]*models.PortMapping)
-	for _, m := range allMappings {
-		if m != nil && m.ID != "" {
-			mappingMap[m.ID] = m
+	// 2. 索引查询失败或为空，从持久存储按字段查询
+	stor := r.GetStorage()
+	if hybridStorage, ok := stor.(interface {
+		GetPersistentStorage() storage.PersistentStorage
+	}); ok {
+		persistent := hybridStorage.GetPersistentStorage()
+		if persistent != nil {
+			// 查询 ListenClientID 匹配的映射
+			clientIDInt64 := int64(0)
+			if id, err := utils.StringToInt64(clientID); err == nil {
+				clientIDInt64 = id
+			}
+
+			mappingMap := make(map[string]*models.PortMapping)
+
+			// 查询 listen_client_id 匹配的映射
+			jsonStrs, err := persistent.QueryByField(constants.KeyPrefixPortMapping+":", "listen_client_id", clientIDInt64)
+			if err == nil {
+				for _, jsonStr := range jsonStrs {
+					var mapping models.PortMapping
+					if err := json.Unmarshal([]byte(jsonStr), &mapping); err == nil && mapping.ID != "" {
+						mappingMap[mapping.ID] = &mapping
+					}
+				}
+			}
+
+			// 查询 target_client_id 匹配的映射
+			jsonStrs, err = persistent.QueryByField(constants.KeyPrefixPortMapping+":", "target_client_id", clientIDInt64)
+			if err == nil {
+				for _, jsonStr := range jsonStrs {
+					var mapping models.PortMapping
+					if err := json.Unmarshal([]byte(jsonStr), &mapping); err == nil && mapping.ID != "" {
+						mappingMap[mapping.ID] = &mapping
+					}
+				}
+			}
+
+			// 转换为列表
+			if len(mappingMap) > 0 {
+				result := make([]*models.PortMapping, 0, len(mappingMap))
+				for _, m := range mappingMap {
+					result = append(result, m)
+				}
+				return result, nil
+			}
 		}
 	}
 
-	// 转换为列表
-	result := make([]*models.PortMapping, 0, len(mappingMap))
-	for _, m := range mappingMap {
-		result = append(result, m)
-	}
-
-	return result, nil
+	// 3. 持久存储查询也失败，返回空列表
+	return []*models.PortMapping{}, nil
 }
 
 // AddMappingToUser 添加映射到用户

@@ -191,6 +191,7 @@ func (s *SessionManager) SetAuthHandler(handler AuthHandler) {
 // ✅ 统一返回 *models.PortMapping，不再使用 interface{}
 type CloudControlAPI interface {
 	GetPortMapping(mappingID string) (*models.PortMapping, error)
+	UpdatePortMappingStats(mappingID string, stats interface{}) error
 }
 
 // SetCloudControl 设置CloudControl API

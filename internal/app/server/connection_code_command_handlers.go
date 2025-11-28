@@ -103,16 +103,11 @@ type GenerateConnectionCodeHandler struct {
 
 // Handle 处理生成连接码命令
 func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*command.CommandResponse, error) {
-	utils.Debugf("GenerateConnectionCodeHandler: handling command, ConnectionID=%s, CommandID=%s", ctx.ConnectionID, ctx.CommandId)
-
 	// 获取客户端ID
 	clientID := h.getClientID(ctx)
 	if clientID == 0 {
-		utils.Warnf("GenerateConnectionCodeHandler: client not authenticated for connection %s", ctx.ConnectionID)
 		return h.errorResponse(ctx, "client not authenticated")
 	}
-
-	utils.Debugf("GenerateConnectionCodeHandler: clientID=%d, requestBody=%s", clientID, ctx.RequestBody)
 
 	// 解析请求
 	var req struct {
@@ -127,10 +122,7 @@ func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 		return h.errorResponse(ctx, fmt.Sprintf("invalid request: %v", err))
 	}
 
-	utils.Debugf("GenerateConnectionCodeHandler: parsed request - TargetAddress=%s, ActivationTTL=%d, MappingTTL=%d", req.TargetAddress, req.ActivationTTL, req.MappingTTL)
-
 	// 调用服务
-	utils.Debugf("GenerateConnectionCodeHandler: calling CreateConnectionCode service")
 	connCode, err := h.connCodeService.CreateConnectionCode(&services.CreateConnectionCodeRequest{
 		TargetClientID:  clientID,
 		TargetAddress:   req.TargetAddress,
@@ -141,11 +133,9 @@ func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 	})
 
 	if err != nil {
-		utils.Errorf("GenerateConnectionCodeHandler: CreateConnectionCode failed: %v", err)
+		utils.Errorf("GenerateConnectionCodeHandler: failed to create connection code: %v", err)
 		return h.errorResponse(ctx, fmt.Sprintf("failed to create connection code: %v", err))
 	}
-
-	utils.Infof("GenerateConnectionCodeHandler: connection code created successfully, Code=%s", connCode.Code)
 
 	// 构造响应
 	resp := map[string]interface{}{
@@ -156,7 +146,6 @@ func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 	}
 
 	respBody, _ := json.Marshal(resp)
-	utils.Debugf("GenerateConnectionCodeHandler: response prepared, CommandID=%s, ResponseSize=%d", ctx.CommandId, len(respBody))
 	return &command.CommandResponse{
 		Success:   true,
 		Data:      string(respBody),
@@ -296,17 +285,13 @@ func (h *ActivateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 
 // getClientID 从上下文中获取客户端ID
 func (h *ConnectionCodeCommandHandlers) getClientID(ctx *command.CommandContext) int64 {
-	// 从 SessionManager 获取控制连接
 	if h.sessionMgr == nil {
 		return 0
 	}
-
-	// 通过 ConnectionID 获取控制连接
 	controlConn := h.sessionMgr.GetControlConnection(ctx.ConnectionID)
 	if controlConn == nil {
 		return 0
 	}
-
 	return controlConn.ClientID
 }
 

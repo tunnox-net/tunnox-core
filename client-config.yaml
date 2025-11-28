@@ -4,8 +4,8 @@ anonymous: true
 device_id: anonymous-device
 secret_key: 4MLtyXWfwrqOJKFGOCoZJx9yFe4mB9Wk
 server:
-    address: 127.0.0.1:8080
-    protocol: tcp
+    address: 127.0.0.1:8082
+    protocol: udp
 log:
     level: debug
     format: text

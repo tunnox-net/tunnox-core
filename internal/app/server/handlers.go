@@ -9,6 +9,7 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/services"
+	cloudutils "tunnox-core/internal/cloud/utils"
 	"tunnox-core/internal/config"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
@@ -270,10 +271,19 @@ func (h *ServerAuthHandler) GetClientConfig(conn *session.ClientConnection) (str
 
 		// ✅ 处理源端映射：需要监听本地端口
 		if listenClientID == conn.ClientID {
+			// 从 ListenAddress 解析端口
+			localPort := m.SourcePort
+			if localPort == 0 && m.ListenAddress != "" {
+				_, port, err := cloudutils.ParseListenAddress(m.ListenAddress)
+				if err == nil {
+					localPort = port
+				}
+			}
+
 			configs = append(configs, config.MappingConfig{
 				MappingID:         m.ID,
 				SecretKey:         m.SecretKey,
-				LocalPort:         m.SourcePort, // 从 ListenAddress 解析，或直接使用 SourcePort
+				LocalPort:         localPort,
 				TargetHost:        m.TargetHost,
 				TargetPort:        m.TargetPort,
 				Protocol:          string(m.Protocol),

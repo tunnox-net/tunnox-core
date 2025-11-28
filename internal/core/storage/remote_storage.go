@@ -12,17 +12,17 @@ import (
 type RemoteStorageConfig struct {
 	// gRPC 服务地址
 	GRPCAddress string
-	
+
 	// 连接超时
 	Timeout time.Duration
-	
+
 	// 最大重试次数
 	MaxRetries int
-	
+
 	// TLS 配置
-	TLSEnabled bool
+	TLSEnabled  bool
 	TLSCertFile string
-	TLSKeyFile string
+	TLSKeyFile  string
 }
 
 // RemoteStorage 远程存储实现（通过 gRPC）
@@ -32,7 +32,7 @@ type RemoteStorage struct {
 	config *RemoteStorageConfig
 	ctx    context.Context
 	dispose.Dispose
-	
+
 	// gRPC 客户端连接（预留，待实现）
 	// client storagepb.StorageServiceClient
 }
@@ -42,7 +42,7 @@ func NewRemoteStorage(parentCtx context.Context, config *RemoteStorageConfig) (*
 	if config == nil {
 		return nil, fmt.Errorf("remote storage config is required")
 	}
-	
+
 	// 设置默认值
 	if config.Timeout == 0 {
 		config.Timeout = 5 * time.Second
@@ -50,21 +50,21 @@ func NewRemoteStorage(parentCtx context.Context, config *RemoteStorageConfig) (*
 	if config.MaxRetries == 0 {
 		config.MaxRetries = 3
 	}
-	
+
 	storage := &RemoteStorage{
 		config: config,
 		ctx:    parentCtx,
 	}
-	
+
 	storage.SetCtx(parentCtx, storage.onClose)
-	
+
 	// gRPC 连接建立（预留，待实现）
 	// 在生产环境中需要实现以下逻辑：
 	// 1. 配置 TLS（如果启用）
 	// 2. 创建 gRPC 连接：conn, err := grpc.DialContext(...)
 	// 3. 创建客户端：storage.client = storagepb.NewStorageServiceClient(conn)
 	// 4. 实现重连和健康检查机制
-	
+
 	dispose.Infof("RemoteStorage: initialized (gRPC: %s, stub mode)", config.GRPCAddress)
 	return storage, nil
 }
@@ -131,9 +131,27 @@ func (r *RemoteStorage) BatchDelete(keys []string) error {
 	return nil
 }
 
+// QueryByField 按字段查询
+// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
+func (r *RemoteStorage) QueryByField(keyPrefix string, fieldName string, fieldValue interface{}) ([]string, error) {
+	dispose.Debugf("RemoteStorage.QueryByField: prefix=%s, field=%s (stub implementation)", keyPrefix, fieldName)
+	// 生产环境实现示例：
+	// ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+	// defer cancel()
+	// resp, err := r.client.QueryByField(ctx, &storagepb.QueryByFieldRequest{
+	//     KeyPrefix: keyPrefix,
+	//     FieldName: fieldName,
+	//     FieldValue: fieldValue,
+	// })
+	// if err != nil {
+	//     return nil, err
+	// }
+	// return resp.Results, nil
+	return nil, ErrKeyNotFound
+}
+
 // Close 关闭连接
 func (r *RemoteStorage) Close() error {
 	r.Dispose.Close()
 	return nil
 }
-

@@ -118,6 +118,7 @@ const (
 	ConnectionCodeList     CommandType = 71 // 列出连接码
 	ConnectionCodeActivate CommandType = 72 // 激活连接码
 	ConnectionCodeRevoke   CommandType = 73 // 撤销连接码
+	MappingList            CommandType = 74 // 列出映射列表
 )
 
 // InitPacket 初始化数据包

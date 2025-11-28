@@ -25,7 +25,7 @@ import (
 // - 连接监控：记录活跃隧道和传输状态
 type TunnelBridge struct {
 	*dispose.ManagerBase
-	
+
 	tunnelID     string
 	mappingID    string   // 映射ID（用于流量统计）
 	sourceConn   net.Conn // 源端客户端的隧道连接
@@ -73,12 +73,12 @@ func NewTunnelBridge(parentCtx context.Context, config *TunnelBridgeConfig) *Tun
 	// 注册清理处理器
 	bridge.AddCleanHandler(func() error {
 		utils.Infof("TunnelBridge[%s]: cleaning up resources", config.TunnelID)
-		
+
 		// 上报最终流量统计
 		bridge.reportTrafficStats()
-		
+
 		var errs []error
-		
+
 		// 关闭 StreamProcessor
 		if bridge.sourceStream != nil {
 			bridge.sourceStream.Close()
@@ -86,7 +86,7 @@ func NewTunnelBridge(parentCtx context.Context, config *TunnelBridgeConfig) *Tun
 		if bridge.targetStream != nil {
 			bridge.targetStream.Close()
 		}
-		
+
 		// 关闭底层连接
 		if bridge.sourceConn != nil {
 			if err := bridge.sourceConn.Close(); err != nil {
@@ -98,7 +98,7 @@ func NewTunnelBridge(parentCtx context.Context, config *TunnelBridgeConfig) *Tun
 				errs = append(errs, fmt.Errorf("target conn close error: %w", err))
 			}
 		}
-		
+
 		if len(errs) > 0 {
 			return fmt.Errorf("tunnel bridge cleanup errors: %v", errs)
 		}
@@ -169,7 +169,7 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 			return total
 		default:
 		}
-		
+
 		// 从源端读取
 		nr, err := src.Read(buf)
 		if nr > 0 {
@@ -223,9 +223,27 @@ func (b *TunnelBridge) reportTrafficStats() {
 		return // 无流量，不上报
 	}
 
-	// CloudControlAPI.ReportTraffic 尚未实现，目前仅记录日志
-	utils.Infof("TunnelBridge[%s]: traffic stats - mapping=%s, sent=%d, received=%d",
-		b.tunnelID, b.mappingID, sent, received)
+	// 获取当前映射的统计数据
+	mapping, err := b.cloudControl.GetPortMapping(b.mappingID)
+	if err != nil {
+		utils.Errorf("TunnelBridge[%s]: failed to get mapping for traffic stats: %v", b.tunnelID, err)
+		return
+	}
+
+	// 累加流量统计
+	trafficStats := mapping.TrafficStats
+	trafficStats.BytesSent += sent
+	trafficStats.BytesReceived += received
+	trafficStats.LastUpdated = time.Now()
+
+	// 更新映射统计
+	if err := b.cloudControl.UpdatePortMappingStats(b.mappingID, &trafficStats); err != nil {
+		utils.Errorf("TunnelBridge[%s]: failed to update traffic stats: %v", b.tunnelID, err)
+		return
+	}
+
+	utils.Infof("TunnelBridge[%s]: traffic stats updated - mapping=%s, sent=%d, received=%d, total_sent=%d, total_received=%d",
+		b.tunnelID, b.mappingID, sent, received, trafficStats.BytesSent, trafficStats.BytesReceived)
 }
 
 // Close 关闭桥接

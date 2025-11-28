@@ -88,14 +88,20 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 	}
 
 	if listenClientID > 0 {
-		if err := s.mappingRepo.AddMappingToClient(utils.Int64ToString(listenClientID), mapping); err != nil {
+		clientKey := utils.Int64ToString(listenClientID)
+		if err := s.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			s.baseService.LogWarning("add mapping to listen client list", err)
+		} else {
+			utils.Infof("PortMappingService: added mapping %s to listen client %s index", mapping.ID, clientKey)
 		}
 	}
 
 	if mapping.TargetClientID > 0 {
-		if err := s.mappingRepo.AddMappingToClient(utils.Int64ToString(mapping.TargetClientID), mapping); err != nil {
+		clientKey := utils.Int64ToString(mapping.TargetClientID)
+		if err := s.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			s.baseService.LogWarning("add mapping to target client list", err)
+		} else {
+			utils.Infof("PortMappingService: added mapping %s to target client %s index", mapping.ID, clientKey)
 		}
 	}
 
