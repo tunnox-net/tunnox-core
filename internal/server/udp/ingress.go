@@ -213,13 +213,9 @@ func (l *listener) getOrCreateSession(addr *net.UDPAddr) (*ingressSession, error
 }
 
 func (l *listener) lookupMapping() (*models.PortMapping, error) {
-	value, err := l.cloud.GetPortMapping(l.cfg.MappingID)
+	mapping, err := l.cloud.GetPortMapping(l.cfg.MappingID)
 	if err != nil {
 		return nil, fmt.Errorf("mapping %s not found: %w", l.cfg.MappingID, err)
-	}
-	mapping, ok := value.(*models.PortMapping)
-	if !ok {
-		return nil, fmt.Errorf("invalid mapping type for %s", l.cfg.MappingID)
 	}
 	return mapping, nil
 }

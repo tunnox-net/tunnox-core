@@ -5,11 +5,11 @@ import (
 	"sync"
 	"time"
 
+	"net"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
-	"net"
 )
 
 // TunnoxClient 隧道客户端
@@ -38,6 +38,9 @@ type TunnoxClient struct {
 	// API客户端（用于CLI调用Management API）
 	apiClient *ManagementAPIClient
 
+	// 命令响应管理器（用于指令通道命令）
+	commandResponseManager *CommandResponseManager
+
 	// 重连控制
 	kicked     bool // 是否被踢下线
 	authFailed bool // 是否认证失败
@@ -54,10 +57,11 @@ type localMappingStats struct {
 // NewClient 创建客户端
 func NewClient(ctx context.Context, config *ClientConfig) *TunnoxClient {
 	client := &TunnoxClient{
-		ManagerBase:       dispose.NewManager("TunnoxClient", ctx),
-		config:            config,
-		mappingHandlers:   make(map[string]MappingHandler),
-		localTrafficStats: make(map[string]*localMappingStats),
+		ManagerBase:            dispose.NewManager("TunnoxClient", ctx),
+		config:                 config,
+		mappingHandlers:        make(map[string]MappingHandler),
+		localTrafficStats:      make(map[string]*localMappingStats),
+		commandResponseManager: NewCommandResponseManager(),
 	}
 
 	// 初始化API客户端（用于CLI）
@@ -111,8 +115,38 @@ func (c *TunnoxClient) GetConfig() *ClientConfig {
 	return c.config
 }
 
-
 // GetAPIClient 获取Management API客户端（供CLI使用）
 func (c *TunnoxClient) GetAPIClient() *ManagementAPIClient {
 	return c.apiClient
+}
+
+// GetStatusInfo 获取客户端状态信息（供CLI使用）
+type StatusInfo struct {
+	ActiveMappings     int
+	TotalBytesSent     int64
+	TotalBytesReceived int64
+}
+
+// GetStatusInfo 获取客户端状态信息
+func (c *TunnoxClient) GetStatusInfo() *StatusInfo {
+	c.mu.RLock()
+	activeMappings := len(c.mappingHandlers)
+	c.mu.RUnlock()
+
+	// 汇总流量统计
+	var totalSent, totalReceived int64
+	c.trafficStatsMu.RLock()
+	for _, stats := range c.localTrafficStats {
+		stats.mu.RLock()
+		totalSent += stats.bytesSent
+		totalReceived += stats.bytesReceived
+		stats.mu.RUnlock()
+	}
+	c.trafficStatsMu.RUnlock()
+
+	return &StatusInfo{
+		ActiveMappings:     activeMappings,
+		TotalBytesSent:     totalSent,
+		TotalBytesReceived: totalReceived,
+	}
 }

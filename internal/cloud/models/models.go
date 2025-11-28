@@ -108,25 +108,61 @@ const (
 )
 
 type PortMapping struct {
-	ID             string                `json:"id"`               // 映射ID
-	UserID         string                `json:"user_id"`          // 所属用户ID（匿名映射可能为空）
-	SourceClientID int64                 `json:"source_client_id"` // 源客户端ID
-	TargetClientID int64                 `json:"target_client_id"` // 目标客户端ID
-	Protocol       Protocol              `json:"protocol"`         // 协议：tcp/udp/http/socks
-	SourcePort     int                   `json:"source_port"`      // 源端口
-	TargetHost     string                `json:"target_host"`      // 目标主机
-	TargetPort     int                   `json:"target_port"`      // 目标端口
-	
-	// ✅ 映射连接认证
-	SecretKey      string                `json:"secret_key"`       // 映射连接固定秘钥（随机生成，用于 TunnelOpen 认证）
-	
-	Config         configs.MappingConfig `json:"config"`           // 映射配置
-	Status         MappingStatus         `json:"status"`           // 映射状态
-	CreatedAt      time.Time             `json:"created_at"`       // 创建时间
-	UpdatedAt      time.Time             `json:"updated_at"`       // 更新时间
-	LastActive     *time.Time            `json:"last_active"`      // 最后活跃时间
-	TrafficStats   stats.TrafficStats    `json:"traffic_stats"`    // 流量统计
-	Type           MappingType           `json:"type"`             // 映射类型
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 基础信息
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	ID     string `json:"id"`                // 映射ID
+	UserID string `json:"user_id,omitempty"` // 所属用户ID（匿名映射可能为空）
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 映射双方（统一命名）
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	ListenClientID int64 `json:"listen_client_id"` // 监听端客户端ID（访问方）
+	// SourceClientID 已废弃，使用 ListenClientID
+	// 保持 JSON 标签向后兼容
+	SourceClientID int64 `json:"source_client_id,omitempty"` // 已废弃：使用 ListenClientID
+	TargetClientID int64 `json:"target_client_id"`           // 目标端客户端ID（被访问方）
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 地址信息
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	Protocol   Protocol `json:"protocol"`    // 协议：tcp/udp/http/socks
+	SourcePort int      `json:"source_port"` // 源端口（从 ListenAddress 解析）
+	TargetHost string   `json:"target_host"` // 目标主机（从 TargetAddress 解析）
+	TargetPort int      `json:"target_port"` // 目标端口（从 TargetAddress 解析）
+
+	// 地址字符串（用于连接码映射）
+	ListenAddress string `json:"listen_address,omitempty"` // 监听地址（格式：0.0.0.0:7788）
+	TargetAddress string `json:"target_address,omitempty"` // 目标地址（格式：tcp://10.51.22.69:3306）
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 认证和配置
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	SecretKey string                `json:"secret_key"` // 映射连接固定秘钥（随机生成，用于 TunnelOpen 认证）
+	Config    configs.MappingConfig `json:"config"`     // 映射配置
+	Status    MappingStatus         `json:"status"`     // 映射状态
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 时限控制（用于连接码映射）
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	ExpiresAt *time.Time `json:"expires_at,omitempty"` // 过期时间（可选，用于连接码映射）
+	IsRevoked bool       `json:"is_revoked,omitempty"` // 是否已撤销
+	RevokedAt *time.Time `json:"revoked_at,omitempty"` // 撤销时间
+	RevokedBy string     `json:"revoked_by,omitempty"` // 撤销者
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 时间戳和统计
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	CreatedAt    time.Time          `json:"created_at"`            // 创建时间
+	UpdatedAt    time.Time          `json:"updated_at"`            // 更新时间
+	LastActive   *time.Time         `json:"last_active,omitempty"` // 最后活跃时间
+	TrafficStats stats.TrafficStats `json:"traffic_stats"`         // 流量统计
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 元数据
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	Type        MappingType `json:"type"`                  // 映射类型
+	Description string      `json:"description,omitempty"` // 描述（可选）
 }
 
 type MappingType string

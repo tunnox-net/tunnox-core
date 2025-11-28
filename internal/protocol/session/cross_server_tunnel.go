@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"time"
-	
+
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -74,18 +74,18 @@ func (s *SessionManager) processTunnelOpenBroadcasts(msgChan <-chan *BroadcastMe
 
 // handleTunnelOpenBroadcast 处理收到的TunnelOpen广播
 func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessage) {
-	utils.Infof("SessionManager: received TunnelOpen broadcast for client %d, tunnel %s", 
+	utils.Infof("SessionManager: received TunnelOpen broadcast for client %d, tunnel %s",
 		msg.TargetClientID, msg.TunnelID)
 
 	// 检查目标客户端是否在本地
 	targetConn := s.GetControlConnectionByClientID(msg.TargetClientID)
 	if targetConn == nil {
-		utils.Debugf("SessionManager: target client %d not on this node, ignoring broadcast", 
+		utils.Debugf("SessionManager: target client %d not on this node, ignoring broadcast",
 			msg.TargetClientID)
 		return
 	}
 
-	utils.Infof("SessionManager: ✅ target client %d found locally, sending TunnelOpenRequest", 
+	utils.Infof("SessionManager: ✅ target client %d found locally, sending TunnelOpenRequest",
 		msg.TargetClientID)
 
 	// 获取映射配置
@@ -94,27 +94,10 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 		return
 	}
 
-	mappingInterface, err := s.cloudControl.GetPortMapping(msg.MappingID)
+	// ✅ 统一使用 GetPortMapping，直接返回 PortMapping
+	mapping, err := s.cloudControl.GetPortMapping(msg.MappingID)
 	if err != nil {
 		utils.Errorf("SessionManager: failed to get mapping %s: %v", msg.MappingID, err)
-		return
-	}
-
-	mapping, ok := mappingInterface.(interface {
-		GetTargetHost() string
-		GetTargetPort() int
-		GetProtocol() string
-		GetConfig() interface {
-			GetEnableCompression() bool
-			GetCompressionLevel() int
-			GetEnableEncryption() bool
-			GetEncryptionMethod() string
-			GetEncryptionKey() string
-			GetBandwidthLimit() int64
-		}
-	})
-	if !ok {
-		utils.Errorf("SessionManager: invalid mapping type for %s", msg.MappingID)
 		return
 	}
 
@@ -122,16 +105,16 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 	cmdBody := map[string]interface{}{
 		"tunnel_id":          msg.TunnelID,
 		"mapping_id":         msg.MappingID,
-		"secret_key":         msg.SecretKey,
-		"target_host":        mapping.GetTargetHost(),
-		"target_port":        mapping.GetTargetPort(),
-		"protocol":           mapping.GetProtocol(),
-		"enable_compression": mapping.GetConfig().GetEnableCompression(),
-		"compression_level":  mapping.GetConfig().GetCompressionLevel(),
-		"enable_encryption":  mapping.GetConfig().GetEnableEncryption(),
-		"encryption_method":  mapping.GetConfig().GetEncryptionMethod(),
-		"encryption_key":     mapping.GetConfig().GetEncryptionKey(),
-		"bandwidth_limit":    mapping.GetConfig().GetBandwidthLimit(),
+		"secret_key":         mapping.SecretKey,
+		"target_host":        mapping.TargetHost,
+		"target_port":        mapping.TargetPort,
+		"protocol":           string(mapping.Protocol),
+		"enable_compression": mapping.Config.EnableCompression,
+		"compression_level":  mapping.Config.CompressionLevel,
+		"enable_encryption":  mapping.Config.EnableEncryption,
+		"encryption_method":  mapping.Config.EncryptionMethod,
+		"encryption_key":     mapping.Config.EncryptionKey,
+		"bandwidth_limit":    mapping.Config.BandwidthLimit,
 	}
 
 	cmdBodyJSON, err := json.Marshal(cmdBody)
@@ -159,18 +142,17 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 	go func() {
 		select {
 		case <-ctx.Done():
-			utils.Errorf("SessionManager: sending TunnelOpenRequest to client %d timed out", 
+			utils.Errorf("SessionManager: sending TunnelOpenRequest to client %d timed out",
 				msg.TargetClientID)
 			return
 		default:
 			if _, err := targetConn.Stream.WritePacket(pkt, false, 0); err != nil {
-				utils.Errorf("SessionManager: failed to send TunnelOpenRequest to client %d: %v", 
+				utils.Errorf("SessionManager: failed to send TunnelOpenRequest to client %d: %v",
 					msg.TargetClientID, err)
 				return
 			}
-			utils.Infof("SessionManager: ✅ sent TunnelOpenRequest to client %d for tunnel %s (cross-server)", 
+			utils.Infof("SessionManager: ✅ sent TunnelOpenRequest to client %d for tunnel %s (cross-server)",
 				msg.TargetClientID, msg.TunnelID)
 		}
 	}()
 }
-

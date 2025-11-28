@@ -10,7 +10,8 @@ import (
 // CreateMappingRequest 创建端口映射请求
 type CreateMappingRequest struct {
 	UserID         string `json:"user_id"`
-	SourceClientID int64  `json:"source_client_id"`
+	ListenClientID int64  `json:"listen_client_id"`           // ✅ 统一命名
+	SourceClientID int64  `json:"source_client_id,omitempty"` // ⚠️ 已废弃，向后兼容
 	TargetClientID int64  `json:"target_client_id"`
 	Protocol       string `json:"protocol"`
 	SourcePort     int    `json:"source_port"` // 源端口
@@ -42,9 +43,15 @@ func (s *ManagementAPIServer) handleCreateMapping(w http.ResponseWriter, r *http
 		return
 	}
 
+	// ✅ 统一使用 ListenClientID（向后兼容：如果为 0 则使用 SourceClientID）
+	listenClientID := req.ListenClientID
+	if listenClientID == 0 {
+		listenClientID = req.SourceClientID
+	}
+
 	// 验证必填字段（UserID允许为空，用于匿名客户端）
-	if req.SourceClientID == 0 || req.TargetClientID == 0 {
-		s.respondError(w, http.StatusBadRequest, "source_client_id and target_client_id are required")
+	if listenClientID == 0 || req.TargetClientID == 0 {
+		s.respondError(w, http.StatusBadRequest, "listen_client_id (or source_client_id) and target_client_id are required")
 		return
 	}
 	if req.Protocol == "" || req.TargetHost == "" || req.TargetPort == 0 {
@@ -54,7 +61,8 @@ func (s *ManagementAPIServer) handleCreateMapping(w http.ResponseWriter, r *http
 
 	// 构造端口映射对象
 	mapping := &models.PortMapping{
-		SourceClientID: req.SourceClientID,
+		ListenClientID: listenClientID,     // ✅ 统一使用 ListenClientID
+		SourceClientID: req.SourceClientID, // 保留用于向后兼容
 		TargetClientID: req.TargetClientID,
 		UserID:         req.UserID,
 		Protocol:       models.Protocol(req.Protocol),

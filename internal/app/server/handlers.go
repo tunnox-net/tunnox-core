@@ -105,71 +105,95 @@ func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req 
 		// 先获取客户端信息以判断类型
 		client, err := h.cloudControl.GetClient(req.ClientID)
 		if err != nil || client == nil {
-			authError = fmt.Errorf("client not found")
-			utils.Errorf("ServerAuthHandler: client %d not found: %v", req.ClientID, err)
-			if h.bruteForceProtector != nil {
-				h.bruteForceProtector.RecordFailure(ip)
-			}
-			return &packet.HandshakeResponse{
-				Success: false,
-				Error:   "Client not found",
-			}, authError
-		}
-
-		// 根据客户端类型验证凭据
-		var authResp *models.AuthResponse
-		if client.Type == models.ClientTypeAnonymous {
-			// 匿名客户端：验证SecretKey
-			if client.SecretKey != req.Token {
-				authError = fmt.Errorf("invalid secret key")
-				utils.Warnf("ServerAuthHandler: invalid secret key for anonymous client %d", req.ClientID)
+			// ✅ 客户端不存在：如果是匿名客户端（Token不是"anonymous:"开头且长度合理），自动生成新客户端
+			// 这通常发生在服务端重启导致数据丢失，或客户端配置的ID无效时
+			if !strings.HasPrefix(req.Token, "anonymous:") && len(req.Token) >= 16 {
+				// 可能是匿名客户端的SecretKey，自动生成新匿名客户端
+				utils.Warnf("ServerAuthHandler: client %d not found, auto-generating new anonymous client (likely server restart or invalid config)", req.ClientID)
+				anonClient, genErr := h.cloudControl.GenerateAnonymousCredentials()
+				if genErr != nil {
+					authError = fmt.Errorf("failed to generate new anonymous client: %w", genErr)
+					utils.Errorf("ServerAuthHandler: failed to generate anonymous credentials: %v", genErr)
+					if h.bruteForceProtector != nil {
+						h.bruteForceProtector.RecordFailure(ip)
+					}
+					return &packet.HandshakeResponse{
+						Success: false,
+						Error:   "Client not found and failed to generate new client",
+					}, authError
+				}
+				clientID = anonClient.ID
+				utils.Infof("ServerAuthHandler: auto-generated new anonymous client ID: %d (replacing invalid client %d)", clientID, req.ClientID)
+				// 注意：这里不直接返回，继续执行后续逻辑以返回新凭据
+			} else {
+				// 注册客户端或首次匿名握手，返回错误
+				authError = fmt.Errorf("client not found")
+				utils.Errorf("ServerAuthHandler: client %d not found: %v", req.ClientID, err)
 				if h.bruteForceProtector != nil {
 					h.bruteForceProtector.RecordFailure(ip)
 				}
 				return &packet.HandshakeResponse{
 					Success: false,
-					Error:   "Invalid credentials",
+					Error:   "Client not found",
 				}, authError
 			}
-			// SecretKey正确，更新状态
-			authResp = &models.AuthResponse{
-				Success: true,
-				Client:  client,
-				Message: "Anonymous client re-authenticated",
-			}
-			utils.Infof("ServerAuthHandler: anonymous client %d re-authenticated with SecretKey", req.ClientID)
 		} else {
-			// 注册客户端：使用Authenticate验证AuthCode
-			authResp, err = h.cloudControl.Authenticate(&models.AuthRequest{
-				ClientID: req.ClientID,
-				AuthCode: req.Token,
-			})
-			if err != nil {
-				authError = err
-				utils.Errorf("ServerAuthHandler: authentication failed for client %d: %v", req.ClientID, err)
-				if h.bruteForceProtector != nil {
-					h.bruteForceProtector.RecordFailure(ip)
-				}
-				return &packet.HandshakeResponse{
-					Success: false,
-					Error:   "Authentication failed",
-				}, fmt.Errorf("authentication failed: %w", err)
-			}
 
-			if !authResp.Success {
-				authError = fmt.Errorf("authentication failed: %s", authResp.Message)
-				if h.bruteForceProtector != nil {
-					h.bruteForceProtector.RecordFailure(ip)
+			// 根据客户端类型验证凭据
+			var authResp *models.AuthResponse
+			if client.Type == models.ClientTypeAnonymous {
+				// 匿名客户端：验证SecretKey
+				if client.SecretKey != req.Token {
+					authError = fmt.Errorf("invalid secret key")
+					utils.Warnf("ServerAuthHandler: invalid secret key for anonymous client %d", req.ClientID)
+					if h.bruteForceProtector != nil {
+						h.bruteForceProtector.RecordFailure(ip)
+					}
+					return &packet.HandshakeResponse{
+						Success: false,
+						Error:   "Invalid credentials",
+					}, authError
 				}
-				return &packet.HandshakeResponse{
-					Success: false,
-					Error:   authResp.Message,
-				}, authError
+				// SecretKey正确，更新状态
+				authResp = &models.AuthResponse{
+					Success: true,
+					Client:  client,
+					Message: "Anonymous client re-authenticated",
+				}
+				utils.Infof("ServerAuthHandler: anonymous client %d re-authenticated with SecretKey", req.ClientID)
+				clientID = req.ClientID
+			} else {
+				// 注册客户端：使用Authenticate验证AuthCode
+				authResp, err = h.cloudControl.Authenticate(&models.AuthRequest{
+					ClientID: req.ClientID,
+					AuthCode: req.Token,
+				})
+				if err != nil {
+					authError = err
+					utils.Errorf("ServerAuthHandler: authentication failed for client %d: %v", req.ClientID, err)
+					if h.bruteForceProtector != nil {
+						h.bruteForceProtector.RecordFailure(ip)
+					}
+					return &packet.HandshakeResponse{
+						Success: false,
+						Error:   "Authentication failed",
+					}, fmt.Errorf("authentication failed: %w", err)
+				}
+
+				if !authResp.Success {
+					authError = fmt.Errorf("authentication failed: %s", authResp.Message)
+					if h.bruteForceProtector != nil {
+						h.bruteForceProtector.RecordFailure(ip)
+					}
+					return &packet.HandshakeResponse{
+						Success: false,
+						Error:   authResp.Message,
+					}, authError
+				}
+				utils.Infof("ServerAuthHandler: registered client %d authenticated", req.ClientID)
+				clientID = req.ClientID
 			}
-			utils.Infof("ServerAuthHandler: registered client %d authenticated", req.ClientID)
 		}
-
-		clientID = req.ClientID
 	}
 
 	// 5. 认证成功，清除失败记录
@@ -199,8 +223,9 @@ func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req 
 		Message: "Handshake successful",
 	}
 
-	// 匿名客户端首次握手（ClientID==0）：返回分配的凭据
-	if req.ClientID == 0 && strings.HasPrefix(req.Token, "anonymous:") {
+	// ✅ 匿名客户端首次握手（ClientID==0）或自动生成新客户端：返回分配的凭据
+	// 判断条件：首次握手（ClientID==0）或新生成的客户端（clientID != req.ClientID）
+	if (req.ClientID == 0 && strings.HasPrefix(req.Token, "anonymous:")) || (clientID != req.ClientID && clientID > 0) {
 		// 获取匿名客户端信息（包含SecretKey）
 		anonClient, err := h.cloudControl.GetClient(clientID)
 		if err != nil {
@@ -212,8 +237,14 @@ func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req 
 		} else {
 			response.ClientID = clientID
 			response.SecretKey = anonClient.SecretKey
-			response.Message = fmt.Sprintf("Anonymous client authenticated, client_id=%d", clientID)
-			utils.Infof("ServerAuthHandler: returning credentials for anonymous client %d (SecretKey=%s)", clientID, anonClient.SecretKey)
+			if clientID != req.ClientID {
+				// 自动生成的新客户端，提示客户端更新配置
+				response.Message = fmt.Sprintf("Client ID updated: %d -> %d (please update your config)", req.ClientID, clientID)
+				utils.Infof("ServerAuthHandler: returning new credentials for auto-generated anonymous client %d (replacing invalid client %d, SecretKey=%s)", clientID, req.ClientID, anonClient.SecretKey)
+			} else {
+				response.Message = fmt.Sprintf("Anonymous client authenticated, client_id=%d", clientID)
+				utils.Infof("ServerAuthHandler: returning credentials for anonymous client %d (SecretKey=%s)", clientID, anonClient.SecretKey)
+			}
 		}
 	}
 
@@ -231,12 +262,18 @@ func (h *ServerAuthHandler) GetClientConfig(conn *session.ClientConnection) (str
 	// 转换为客户端配置格式（使用共享的config.MappingConfig）
 	configs := make([]config.MappingConfig, 0, len(mappings))
 	for _, m := range mappings {
+		// ✅ 统一使用 ListenClientID（向后兼容：如果为 0 则使用 SourceClientID）
+		listenClientID := m.ListenClientID
+		if listenClientID == 0 {
+			listenClientID = m.SourceClientID
+		}
+
 		// ✅ 处理源端映射：需要监听本地端口
-		if m.SourceClientID == conn.ClientID {
+		if listenClientID == conn.ClientID {
 			configs = append(configs, config.MappingConfig{
 				MappingID:         m.ID,
 				SecretKey:         m.SecretKey,
-				LocalPort:         m.SourcePort,
+				LocalPort:         m.SourcePort, // 从 ListenAddress 解析，或直接使用 SourcePort
 				TargetHost:        m.TargetHost,
 				TargetPort:        m.TargetPort,
 				Protocol:          string(m.Protocol),
@@ -249,7 +286,7 @@ func (h *ServerAuthHandler) GetClientConfig(conn *session.ClientConnection) (str
 		}
 		// ✅ 处理目标端映射：需要准备接收TunnelOpen请求
 		// 目标端不需要监听端口，所以LocalPort设为0
-		if m.TargetClientID == conn.ClientID && m.TargetClientID != m.SourceClientID {
+		if m.TargetClientID == conn.ClientID && m.TargetClientID != listenClientID {
 			configs = append(configs, config.MappingConfig{
 				MappingID:         m.ID,
 				SecretKey:         m.SecretKey,
@@ -314,7 +351,7 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn *session.ClientConnection, r
 	}
 
 	var authMethod string
-	var mapping *models.TunnelMapping
+	var mapping *models.PortMapping
 
 	// 2. 优先级1: MappingID验证（新设计，推荐）
 	if req.MappingID != "" && req.SecretKey == "" {

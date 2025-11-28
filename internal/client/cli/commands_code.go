@@ -59,9 +59,8 @@ func (c *CLI) cmdGenerateCode(args []string) {
 	fmt.Println("")
 	c.output.Info("Generating connection code...")
 
-	// 调用API
-	apiClient := c.client.GetAPIClient()
-	resp, err := apiClient.GenerateConnectionCode(&client.GenerateCodeRequest{
+	// ✅ 通过指令通道发送命令
+	resp, err := c.client.GenerateConnectionCode(&client.GenerateConnectionCodeRequest{
 		TargetAddress: targetAddress,
 		ActivationTTL: activationTTL,
 		MappingTTL:    mappingTTL,
@@ -89,9 +88,14 @@ func (c *CLI) cmdGenerateCode(args []string) {
 func (c *CLI) cmdListCodes(args []string) {
 	c.output.Header("📋 Connection Codes")
 
-	// 调用API
-	apiClient := c.client.GetAPIClient()
-	resp, err := apiClient.ListConnectionCodes()
+	// ✅ 检查连接状态
+	if !c.client.IsConnected() {
+		c.output.Error("Not connected to server. Please connect first using 'connect' command.")
+		return
+	}
+
+	// ✅ 通过指令通道发送命令
+	resp, err := c.client.ListConnectionCodes()
 
 	if err != nil {
 		c.output.Error("Failed to list codes: %v", err)

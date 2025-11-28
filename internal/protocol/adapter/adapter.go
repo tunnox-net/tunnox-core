@@ -9,6 +9,7 @@ import (
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
+	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -160,13 +161,13 @@ func isIgnorableError(err error) bool {
 // handleConnection 通用连接处理逻辑
 func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWriteCloser) {
 	shouldCloseConn := true // 默认关闭连接
-	
+
 	// 检查是否为持久连接（如UDP会话连接）
 	if persistentConn, ok := conn.(interface{ IsPersistent() bool }); ok && persistentConn.IsPersistent() {
 		shouldCloseConn = false
 		utils.Debugf("%s adapter: persistent connection detected, will not close after handling", adapter.getConnectionType())
 	}
-	
+
 	defer func() {
 		// ✅ 只有非隧道连接且非持久连接才在此处关闭
 		// 隧道连接交给TunnelBridge管理生命周期
@@ -223,15 +224,24 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 			Timestamp:    time.Now(),
 		}
 
+		// ✅ 检查是否为隧道通道的首包（TunnelOpen）
+		isTunnelOpenPacket := (pkt.PacketType & 0x3F) == packet.TunnelOpen
+
 		// 处理数据包
 		if err := b.session.HandlePacket(streamPacket); err != nil {
-			// ✅ 检查是否为隧道切换标记
-			if err.Error() == "tunnel source connected, switching to stream mode" || 
-			   err.Error() == "tunnel target connected, switching to stream mode" {
-				utils.Infof("Connection %s switched to tunnel stream mode, not closing", streamConn.ID)
-				shouldCloseConn = false // ✅ 不关闭隧道连接
-				return
+			// ✅ 只有隧道通道的首包处理完成后才停止 packet loop
+			// 指令通道（Handshake, Command, Heartbeat等）不受影响，继续读取
+			if isTunnelOpenPacket {
+				errMsg := err.Error()
+				if errMsg == "tunnel source connected, switching to stream mode" ||
+					errMsg == "tunnel target connected, switching to stream mode" ||
+					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" {
+					utils.Infof("Tunnel connection %s: first packet (TunnelOpen) processed, switching to stream mode, stopping packet loop", streamConn.ID)
+					shouldCloseConn = false // ✅ 不关闭隧道连接
+					return                  // ✅ 隧道通道首包处理完成，停止读取数据包，切换到流模式
+				}
 			}
+			// 指令通道的错误或其他错误，继续处理下一个包
 			utils.Errorf("Failed to handle packet for connection %s: %v", streamConn.ID, err)
 			// 继续处理下一个包，不要直接返回
 		}

@@ -131,7 +131,7 @@ func (am *AnonymousManager) DeleteAnonymousClient(clientID int64) error {
 }
 
 // CreateAnonymousMapping 创建匿名端口映射
-func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
+func (am *AnonymousManager) CreateAnonymousMapping(listenClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
 	// 生成端口映射ID，确保不重复
 	var mappingID string
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
@@ -174,7 +174,8 @@ func (am *AnonymousManager) CreateAnonymousMapping(sourceClientID, targetClientI
 		ID:             mappingID,
 		SecretKey:      secretKey,
 		UserID:         "",
-		SourceClientID: sourceClientID,
+		ListenClientID: listenClientID, // ✅ 统一使用 ListenClientID
+		SourceClientID: listenClientID, // 向后兼容
 		TargetClientID: targetClientID,
 		Protocol:       protocol,
 		SourcePort:     sourcePort,

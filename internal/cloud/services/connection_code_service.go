@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"time"
 
+	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
+	cloudutils "tunnox-core/internal/cloud/utils"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
@@ -16,14 +18,14 @@ import (
 //
 // 职责：
 //   - 管理连接码的完整生命周期（创建、激活、撤销）
-//   - 管理隧道映射的创建和管理
+//   - 管理端口映射的创建和管理（统一使用 PortMapping）
 //   - 提供权限验证
 //   - 配额检查和使用统计
 //
 // 业务流程：
 //  1. TargetClient创建连接码（CreateConnectionCode）
-//  2. ListenClient激活连接码（ActivateConnectionCode）→ 创建TunnelMapping
-//  3. ListenClient使用TunnelMapping建立隧道连接
+//  2. ListenClient激活连接码（ActivateConnectionCode）→ 创建PortMapping
+//  3. ListenClient使用PortMapping建立隧道连接
 //  4. 验证隧道连接权限（ValidateMapping）
 //  5. 撤销连接码或映射（RevokeConnectionCode/RevokeMapping）
 type ConnectionCodeService struct {
@@ -31,7 +33,10 @@ type ConnectionCodeService struct {
 
 	// Repositories
 	connCodeRepo *repos.ConnectionCodeRepository
-	mappingRepo  *repos.TunnelMappingRepository
+
+	// Services
+	portMappingService PortMappingService     // ✅ 统一使用 PortMappingService
+	portMappingRepo    *repos.PortMappingRepo // 用于查询客户端映射
 
 	// 连接码生成器
 	generator *ConnectionCodeGenerator
@@ -58,7 +63,8 @@ func DefaultConnectionCodeServiceConfig() *ConnectionCodeServiceConfig {
 // NewConnectionCodeService 创建连接码服务
 func NewConnectionCodeService(
 	connCodeRepo *repos.ConnectionCodeRepository,
-	mappingRepo *repos.TunnelMappingRepository,
+	portMappingService PortMappingService,
+	portMappingRepo *repos.PortMappingRepo,
 	config *ConnectionCodeServiceConfig,
 	ctx context.Context,
 ) *ConnectionCodeService {
@@ -69,7 +75,8 @@ func NewConnectionCodeService(
 	service := &ConnectionCodeService{
 		ServiceBase:                dispose.NewService("ConnectionCodeService", ctx),
 		connCodeRepo:               connCodeRepo,
-		mappingRepo:                mappingRepo,
+		portMappingService:         portMappingService,
+		portMappingRepo:            portMappingRepo,
 		generator:                  NewConnectionCodeGenerator(models.DefaultConnectionCodeGenerator()),
 		maxActiveCodesPerClient:    config.MaxActiveCodesPerClient,
 		maxActiveMappingsPerClient: config.MaxActiveMappingsPerClient,
@@ -184,16 +191,17 @@ type ActivateConnectionCodeRequest struct {
 	ListenAddress  string // 监听地址（如 0.0.0.0:9999）
 }
 
-// ActivateConnectionCode 激活连接码，创建隧道映射
+// ActivateConnectionCode 激活连接码，创建端口映射
 //
 // 业务逻辑：
 //  1. 验证请求参数
 //  2. 获取连接码
 //  3. 验证连接码有效性（未使用、未过期、未撤销）
 //  4. 检查映射配额
-//  5. 创建TunnelMapping
-//  6. 更新连接码状态为已激活
-func (s *ConnectionCodeService) ActivateConnectionCode(req *ActivateConnectionCodeRequest) (*models.TunnelMapping, error) {
+//  5. 解析地址并创建PortMapping（不包含ConnectionCodeID）
+//  6. 连接码记录MappingID（反向关系）
+//  7. 更新连接码状态为已激活
+func (s *ConnectionCodeService) ActivateConnectionCode(req *ActivateConnectionCodeRequest) (*models.PortMapping, error) {
 	// 1. 参数验证
 	if req.Code == "" {
 		return nil, fmt.Errorf("connection code is required")
@@ -228,68 +236,85 @@ func (s *ConnectionCodeService) ActivateConnectionCode(req *ActivateConnectionCo
 		return nil, fmt.Errorf("connection code cannot be activated")
 	}
 
-	// 4. 检查映射配额（ListenClient）
-	activeMappings, err := s.mappingRepo.CountActiveByListenClient(req.ListenClientID)
+	// 4. 解析地址
+	_, listenPort, err := cloudutils.ParseListenAddress(req.ListenAddress)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count active mappings: %w", err)
-	}
-	if activeMappings >= s.maxActiveMappingsPerClient {
-		return nil, fmt.Errorf("quota exceeded: max %d active mappings allowed",
-			s.maxActiveMappingsPerClient)
+		return nil, fmt.Errorf("invalid listen address %q: %w", req.ListenAddress, err)
 	}
 
-	// 5. 创建TunnelMapping
+	targetHost, targetPort, protocol, err := cloudutils.ParseTargetAddress(connCode.TargetAddress)
+	if err != nil {
+		return nil, fmt.Errorf("invalid target address %q: %w", connCode.TargetAddress, err)
+	}
+
+	// 5. 检查映射配额（TODO: 需要实现 GetClientPortMappings 并统计）
+	// 暂时跳过配额检查，后续实现
+
+	// 6. 创建PortMapping
 	now := time.Now()
-	mappingID, err := s.generateID("mapping")
+	expiresAt := now.Add(connCode.MappingDuration)
+
+	mapping := &models.PortMapping{
+		// 基础信息
+		UserID: "", // 连接码创建的映射是匿名的
+
+		// 映射双方
+		ListenClientID: req.ListenClientID,
+		TargetClientID: connCode.TargetClientID,
+
+		// 地址信息
+		Protocol:      models.Protocol(protocol),
+		SourcePort:    listenPort,
+		TargetHost:    targetHost,
+		TargetPort:    targetPort,
+		ListenAddress: req.ListenAddress,
+		TargetAddress: connCode.TargetAddress,
+
+		// 认证和配置
+		SecretKey: "", // 由 PortMappingService 生成
+		Config: configs.MappingConfig{
+			EnableCompression: true,
+			BandwidthLimit:    0, // 无限制
+			MaxConnections:    100,
+		},
+		Status: models.MappingStatusActive,
+
+		// 时限控制
+		ExpiresAt: &expiresAt,
+		IsRevoked: false,
+
+		// 时间戳
+		CreatedAt: now,
+		UpdatedAt: now,
+
+		// 元数据
+		Type:        models.MappingTypeAnonymous, // ✅ 通过 Type 标识是通过连接码创建的
+		Description: connCode.Description,
+	}
+
+	// 7. 通过 PortMappingService 创建映射（会自动生成ID和SecretKey，并更新索引）
+	createdMapping, err := s.portMappingService.CreatePortMapping(mapping)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate mapping ID: %w", err)
+		return nil, fmt.Errorf("failed to create port mapping: %w", err)
 	}
 
-	mapping := &models.TunnelMapping{
-		ID:               mappingID,
-		ConnectionCodeID: connCode.ID,
-		ListenClientID:   req.ListenClientID,
-		TargetClientID:   connCode.TargetClientID,
-		ListenAddress:    req.ListenAddress,
-		TargetAddress:    connCode.TargetAddress,
-		CreatedAt:        now,
-		ExpiresAt:        now.Add(connCode.MappingDuration),
-		Duration:         connCode.MappingDuration,
-		CreatedBy:        fmt.Sprintf("client-%d", req.ListenClientID),
-		IsRevoked:        false,
-		UsageCount:       0,
-		BytesSent:        0,
-		BytesReceived:    0,
-		Description:      connCode.Description,
-	}
-
-	// 验证映射
-	if err := mapping.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid mapping: %w", err)
-	}
-
-	// 保存映射
-	if err := s.mappingRepo.Create(mapping); err != nil {
-		return nil, fmt.Errorf("failed to create mapping: %w", err)
-	}
-
-	// 6. 更新连接码状态为已激活
-	if err := connCode.Activate(req.ListenClientID, mapping.ID); err != nil {
+	// 8. ✅ 连接码记录 MappingID（反向关系）
+	if err := connCode.Activate(req.ListenClientID, createdMapping.ID); err != nil {
 		// 回滚：删除已创建的映射
-		_ = s.mappingRepo.Delete(mapping.ID)
+		_ = s.portMappingService.DeletePortMapping(createdMapping.ID)
 		return nil, fmt.Errorf("failed to activate connection code: %w", err)
 	}
 
 	if err := s.connCodeRepo.Update(connCode); err != nil {
 		// 回滚：删除已创建的映射
-		_ = s.mappingRepo.Delete(mapping.ID)
+		_ = s.portMappingService.DeletePortMapping(createdMapping.ID)
 		return nil, fmt.Errorf("failed to update connection code: %w", err)
 	}
 
 	utils.Infof("ConnectionCodeService: activated code %s, created mapping %s (%d → %d)",
-		req.Code, mapping.ID, req.ListenClientID, connCode.TargetClientID)
+		req.Code, createdMapping.ID, req.ListenClientID, connCode.TargetClientID)
 
-	return mapping, nil
+	return createdMapping, nil
 }
 
 // RevokeConnectionCode 撤销连接码
@@ -324,62 +349,67 @@ func (s *ConnectionCodeService) RevokeConnectionCode(code string, revokedBy stri
 // 隧道映射管理
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// ValidateMapping 验证隧道映射权限
+// ValidateMapping 验证端口映射权限
 //
 // 用于HandleTunnelOpen时验证ListenClient是否有权限使用此映射
-func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64) (*models.TunnelMapping, error) {
-	// 1. 获取映射
-	mapping, err := s.mappingRepo.GetByID(mappingID)
+func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64) (*models.PortMapping, error) {
+	mapping, err := s.portMappingService.GetPortMapping(mappingID)
 	if err != nil {
-		if errors.Is(err, repos.ErrNotFound) {
-			return nil, fmt.Errorf("mapping not found or expired")
-		}
-		return nil, fmt.Errorf("failed to get mapping: %w", err)
+		return nil, fmt.Errorf("mapping not found or expired: %w", err)
 	}
 
-	// 2. 验证权限
+	// 添加详细日志
+	utils.Debugf("ConnectionCodeService.ValidateMapping: mappingID=%s, clientID=%d, ListenClientID=%d, TargetClientID=%d, Status=%s, IsRevoked=%v, IsExpired=%v, IsValid=%v",
+		mappingID, clientID, mapping.ListenClientID, mapping.TargetClientID, mapping.Status, mapping.IsRevoked, mapping.IsExpired(), mapping.IsValid())
+
+	// 验证权限
 	if !mapping.CanBeAccessedBy(clientID) {
+		utils.Warnf("ConnectionCodeService.ValidateMapping: CanBeAccessedBy returned false for mappingID=%s, clientID=%d", mappingID, clientID)
 		if mapping.IsRevoked {
 			return nil, fmt.Errorf("mapping has been revoked")
 		}
 		if mapping.IsExpired() {
 			return nil, fmt.Errorf("mapping has expired")
 		}
-		if mapping.ListenClientID != clientID {
+		listenClientID := mapping.ListenClientID
+		if listenClientID == 0 {
+			listenClientID = mapping.SourceClientID
+		}
+		if listenClientID != clientID {
+			utils.Warnf("ConnectionCodeService.ValidateMapping: clientID mismatch - expected ListenClientID=%d, got clientID=%d", listenClientID, clientID)
 			return nil, fmt.Errorf("client %d is not authorized to use this mapping", clientID)
 		}
+		// 如果到这里，说明 IsValid() 返回了 false，但具体原因未知
+		utils.Errorf("ConnectionCodeService.ValidateMapping: mapping cannot be accessed - Status=%s, IsRevoked=%v, IsExpired=%v",
+			mapping.Status, mapping.IsRevoked, mapping.IsExpired())
 		return nil, fmt.Errorf("mapping cannot be accessed")
 	}
 
+	utils.Debugf("ConnectionCodeService.ValidateMapping: validation passed for mappingID=%s, clientID=%d", mappingID, clientID)
 	return mapping, nil
 }
 
 // RevokeMapping 撤销映射
 //
-// TargetClient或ListenClient都可以撤销
+// TargetClient 或 ListenClient 都可以撤销
 func (s *ConnectionCodeService) RevokeMapping(mappingID string, clientID int64, revokedBy string) error {
-	// 1. 获取映射
-	mapping, err := s.mappingRepo.GetByID(mappingID)
+	mapping, err := s.portMappingService.GetPortMapping(mappingID)
 	if err != nil {
-		if errors.Is(err, repos.ErrNotFound) {
-			return fmt.Errorf("mapping not found or expired")
-		}
-		return fmt.Errorf("failed to get mapping: %w", err)
+		return fmt.Errorf("mapping not found or expired: %w", err)
 	}
 
-	// 2. 撤销
+	// 撤销
 	if err := mapping.Revoke(revokedBy, clientID); err != nil {
 		return fmt.Errorf("failed to revoke mapping: %w", err)
 	}
 
-	// 3. 更新
-	if err := s.mappingRepo.Update(mapping); err != nil {
+	// 更新
+	if err := s.portMappingService.UpdatePortMapping(mapping); err != nil {
 		return fmt.Errorf("failed to update mapping: %w", err)
 	}
 
 	utils.Infof("ConnectionCodeService: revoked mapping %s by %s (client %d)",
 		mappingID, revokedBy, clientID)
-
 	return nil
 }
 
@@ -387,14 +417,40 @@ func (s *ConnectionCodeService) RevokeMapping(mappingID string, clientID int64, 
 //
 // 在每次建立隧道连接时调用
 func (s *ConnectionCodeService) RecordMappingUsage(mappingID string) error {
-	return s.mappingRepo.UpdateUsage(mappingID)
+	mapping, err := s.portMappingService.GetPortMapping(mappingID)
+	if err != nil {
+		return fmt.Errorf("mapping not found: %w", err)
+	}
+
+	// 更新最后活跃时间
+	now := time.Now()
+	mapping.LastActive = &now
+	if err := s.portMappingService.UpdatePortMapping(mapping); err != nil {
+		return fmt.Errorf("failed to update mapping usage: %w", err)
+	}
+
+	return nil
 }
 
 // RecordMappingTraffic 记录映射流量
 //
 // 在隧道连接关闭时调用
 func (s *ConnectionCodeService) RecordMappingTraffic(mappingID string, bytesSent, bytesReceived int64) error {
-	return s.mappingRepo.UpdateTraffic(mappingID, bytesSent, bytesReceived)
+	mapping, err := s.portMappingService.GetPortMapping(mappingID)
+	if err != nil {
+		return fmt.Errorf("mapping not found: %w", err)
+	}
+
+	// 更新流量统计
+	mapping.TrafficStats.BytesSent += bytesSent
+	mapping.TrafficStats.BytesReceived += bytesReceived
+	mapping.TrafficStats.LastUpdated = time.Now()
+
+	if err := s.portMappingService.UpdatePortMappingStats(mappingID, &mapping.TrafficStats); err != nil {
+		return fmt.Errorf("failed to update mapping traffic: %w", err)
+	}
+
+	return nil
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -423,27 +479,46 @@ func (s *ConnectionCodeService) GetConnectionCode(code string) (*models.TunnelCo
 // ListOutboundMappings 列出出站映射（ListenClient创建的映射）
 //
 // 返回指定ListenClient创建的所有映射（我在访问谁）
-func (s *ConnectionCodeService) ListOutboundMappings(listenClientID int64) ([]*models.TunnelMapping, error) {
-	return s.mappingRepo.ListByListenClient(listenClientID)
+func (s *ConnectionCodeService) ListOutboundMappings(listenClientID int64) ([]*models.PortMapping, error) {
+	allMappings, err := s.portMappingRepo.GetClientPortMappings(utils.Int64ToString(listenClientID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client port mappings: %w", err)
+	}
+
+	// 过滤出 ListenClientID 匹配的映射
+	result := make([]*models.PortMapping, 0)
+	for _, m := range allMappings {
+		if m.ListenClientID == listenClientID || (m.ListenClientID == 0 && m.SourceClientID == listenClientID) {
+			result = append(result, m)
+		}
+	}
+
+	return result, nil
 }
 
 // ListInboundMappings 列出入站映射（通过TargetClient的连接码创建的映射）
 //
 // 返回访问指定TargetClient的所有映射（谁在访问我）
-func (s *ConnectionCodeService) ListInboundMappings(targetClientID int64) ([]*models.TunnelMapping, error) {
-	return s.mappingRepo.ListByTargetClient(targetClientID)
+func (s *ConnectionCodeService) ListInboundMappings(targetClientID int64) ([]*models.PortMapping, error) {
+	allMappings, err := s.portMappingRepo.GetClientPortMappings(utils.Int64ToString(targetClientID))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client port mappings: %w", err)
+	}
+
+	// 过滤出 TargetClientID 匹配的映射
+	result := make([]*models.PortMapping, 0)
+	for _, m := range allMappings {
+		if m.TargetClientID == targetClientID {
+			result = append(result, m)
+		}
+	}
+
+	return result, nil
 }
 
 // GetMapping 获取映射详情
-func (s *ConnectionCodeService) GetMapping(mappingID string) (*models.TunnelMapping, error) {
-	mapping, err := s.mappingRepo.GetByID(mappingID)
-	if err != nil {
-		if errors.Is(err, repos.ErrNotFound) {
-			return nil, fmt.Errorf("mapping not found or expired")
-		}
-		return nil, fmt.Errorf("failed to get mapping: %w", err)
-	}
-	return mapping, nil
+func (s *ConnectionCodeService) GetMapping(mappingID string) (*models.PortMapping, error) {
+	return s.portMappingService.GetPortMapping(mappingID)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

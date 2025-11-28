@@ -41,7 +41,7 @@ type Server struct {
 	bridgeManager   *internalbridge.BridgeManager
 	grpcServer      *grpc.Server
 	apiServer       *api.ManagementAPIServer
-	
+
 	// 服务
 	connCodeService       *services.ConnectionCodeService
 	bruteForceProtector   *security.BruteForceProtector
@@ -106,10 +106,17 @@ func New(config *Config, parentCtx context.Context) *Server {
 	// ✅ 创建 ConnectionCodeService（连接码授权系统）
 	repo := repos.NewRepository(serverStorage)
 	connCodeRepo := repos.NewConnectionCodeRepository(repo)
-	mappingRepo := repos.NewTunnelMappingRepository(repo)
+
+	// ✅ 创建 PortMappingService（统一使用 PortMapping）
+	portMappingRepo := repos.NewPortMappingRepo(repo)
+	// TODO: 从 cloudControl 获取 statsCounter（如果需要）
+	// 暂时传入 nil，PortMappingService 可以处理
+	portMappingService := services.NewPortMappingService(portMappingRepo, server.idManager, nil, parentCtx)
+
 	server.connCodeService = services.NewConnectionCodeService(
 		connCodeRepo,
-		mappingRepo,
+		portMappingService,
+		portMappingRepo,
 		nil, // 使用默认配置
 		parentCtx,
 	)
@@ -143,7 +150,7 @@ func New(config *Config, parentCtx context.Context) *Server {
 	utils.Infof("Server: SessionTokenManager initialized")
 
 	// ✨ Phase 2: 创建 TunnelStateManager（隧道状态管理）
-	tunnelStateManager := session.NewTunnelStateManager(serverStorage, "")  // 空字符串使用默认密钥
+	tunnelStateManager := session.NewTunnelStateManager(serverStorage, "") // 空字符串使用默认密钥
 	server.session.SetTunnelStateManager(tunnelStateManager)
 	utils.Infof("Server: TunnelStateManager initialized")
 
@@ -155,7 +162,7 @@ func New(config *Config, parentCtx context.Context) *Server {
 	// 创建并设置 AuthHandler 和 TunnelHandler
 	// 注意：先创建handler，稍后设置NodeID
 	authHandler := NewServerAuthHandler(cloudControl, server.session, server.bruteForceProtector, server.ipManager, server.rateLimiter) // ⭐ 注入安全组件
-	tunnelHandler := NewServerTunnelHandler(cloudControl, server.connCodeService) // ⭐ 注入 connCodeService
+	tunnelHandler := NewServerTunnelHandler(cloudControl, server.connCodeService)                                                       // ⭐ 注入 connCodeService
 	server.session.SetAuthHandler(authHandler)
 	server.session.SetTunnelHandler(tunnelHandler)
 
@@ -166,6 +173,11 @@ func New(config *Config, parentCtx context.Context) *Server {
 	// ✅ 设置SessionManager的NodeID（使用动态分配的节点ID）
 	server.session.SetNodeID(server.nodeID)
 	utils.Infof("Server: SessionManager NodeID set to %s (dynamically allocated)", server.nodeID)
+
+	// ✅ 创建并注册连接码命令处理器
+	if err := server.setupConnectionCodeCommands(); err != nil {
+		utils.Errorf("Server: failed to setup connection code commands: %v", err)
+	}
 
 	// 创建协议工厂
 	server.protocolFactory = NewProtocolFactory(server.session)
@@ -252,7 +264,7 @@ func (s *Server) Stop() error {
 		utils.Info("Broadcasting shutdown notification to all connected clients...")
 		successCount, failureCount := s.session.BroadcastShutdown(
 			session.ShutdownReasonShutdown,
-			30, // 30秒优雅期
+			30,   // 30秒优雅期
 			true, // 建议重连
 			"Server is shutting down gracefully",
 		)

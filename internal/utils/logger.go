@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"tunnox-core/internal/constants"
@@ -13,6 +14,9 @@ import (
 
 // Logger 全局日志实例
 var Logger *logrus.Logger
+
+// currentLogFile 当前日志文件句柄（用于正确关闭）
+var currentLogFile *os.File
 
 // 初始化日志系统
 func init() {
@@ -74,13 +78,44 @@ func InitLogger(config *LogConfig) error {
 
 	// 设置日志输出
 	if config.Output == constants.LogOutputFile && config.File != "" {
-		file, err := os.OpenFile(config.File, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		// 展开路径（支持 ~ 和相对路径）
+		expandedPath, err := ExpandPath(config.File)
 		if err != nil {
-			return fmt.Errorf("failed to open log file: %v", err)
+			return fmt.Errorf("failed to expand log file path %q: %w", config.File, err)
 		}
+
+		// 确保日志目录存在
+		logDir := filepath.Dir(expandedPath)
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			return fmt.Errorf("failed to create log directory %q: %w", logDir, err)
+		}
+
+		// 关闭之前的日志文件（如果存在）
+		if currentLogFile != nil {
+			_ = currentLogFile.Close()
+			currentLogFile = nil
+		}
+
+		file, err := os.OpenFile(expandedPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			return fmt.Errorf("failed to open log file %q: %w", expandedPath, err)
+		}
+		currentLogFile = file
 		Logger.SetOutput(file)
 	} else if config.Output == constants.LogOutputStderr {
+		// 关闭之前的日志文件（如果存在）
+		if currentLogFile != nil {
+			_ = currentLogFile.Close()
+			currentLogFile = nil
+		}
 		Logger.SetOutput(os.Stderr)
+	} else {
+		// 输出到 stdout 或其他，关闭之前的日志文件（如果存在）
+		if currentLogFile != nil {
+			_ = currentLogFile.Close()
+			currentLogFile = nil
+		}
+		Logger.SetOutput(os.Stdout)
 	}
 
 	return nil

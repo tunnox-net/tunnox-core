@@ -30,8 +30,8 @@ func (c *CloudControl) DeleteAnonymousClient(clientID int64) error {
 }
 
 // CreateAnonymousMapping 创建匿名映射
-func (c *CloudControl) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
-	return c.anonymousManager.CreateAnonymousMapping(sourceClientID, targetClientID, protocol, sourcePort, targetPort)
+func (c *CloudControl) CreateAnonymousMapping(listenClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
+	return c.anonymousManager.CreateAnonymousMapping(listenClientID, targetClientID, protocol, sourcePort, targetPort)
 }
 
 // GetAnonymousMappings 获取匿名映射
@@ -114,4 +114,3 @@ func (c *CloudControl) GetClientConnections(clientID int64) ([]*models.Connectio
 func (c *CloudControl) UpdateConnectionStats(connID string, bytesSent, bytesReceived int64) error {
 	return c.connectionManager.UpdateConnectionStats(connID, bytesSent, bytesReceived)
 }
-

@@ -363,8 +363,8 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 		}
 	}
 
-	// 如果是JsonCommand包，解析为 CommandPacket
-	if packetType.IsJsonCommand() {
+	// 如果是JsonCommand包或CommandResp包，解析为 CommandPacket
+	if packetType.IsJsonCommand() || packetType.IsCommandResp() {
 		var commandPacket packet.CommandPacket
 		err = json.Unmarshal(bodyData, &commandPacket)
 		if err != nil {
@@ -464,8 +464,8 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	// 准备要写入的数据体
 	var bodyData []byte
 
-	// 如果是JsonCommand包，序列化 CommandPacket
-	if packetType.IsJsonCommand() && pkt.CommandPacket != nil {
+	// 如果是JsonCommand包或CommandResp包，序列化 CommandPacket
+	if (packetType.IsJsonCommand() || packetType.IsCommandResp()) && pkt.CommandPacket != nil {
 		// 将 CommandPacket 序列化为 JSON 字节数据
 		var err error
 		bodyData, err = json.Marshal(pkt.CommandPacket)

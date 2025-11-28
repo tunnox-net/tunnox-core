@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -131,19 +132,56 @@ func (c *CLI) cmdStatus(args []string) {
 		c.output.KeyValue("Connection", colorError("❌ Disconnected"))
 	}
 
-	// TODO: 从client获取实际配置和状态
-	c.output.KeyValue("Server", "localhost:7003")
-	c.output.KeyValue("Protocol", "QUIC")
-	c.output.KeyValue("Client ID", "10000001")
+	// 从client获取实际配置
+	config := c.client.GetConfig()
+	serverAddr := config.Server.Address
+	if serverAddr == "" {
+		serverAddr = "not configured"
+	}
+	protocol := strings.ToUpper(config.Server.Protocol)
+	if protocol == "" {
+		protocol = "TCP"
+	}
+	clientID := "N/A"
+	if config.ClientID > 0 {
+		clientID = fmt.Sprintf("%d", config.ClientID)
+	}
+
+	c.output.KeyValue("Server", serverAddr)
+	c.output.KeyValue("Protocol", protocol)
+	c.output.KeyValue("Client ID", clientID)
 	c.output.KeyValue("Uptime", FormatDuration(time.Since(c.startTime)))
 
+	// 获取实际状态信息
+	statusInfo := c.client.GetStatusInfo()
 	fmt.Println("")
-	c.output.KeyValue("Active Mappings", "2")
-	c.output.KeyValue("Active Tunnels", "1")
-	c.output.KeyValue("Bytes Sent", "1.2 MB")
-	c.output.KeyValue("Bytes Received", "3.4 MB")
+	c.output.KeyValue("Active Mappings", fmt.Sprintf("%d", statusInfo.ActiveMappings))
+
+	// 格式化流量统计
+	bytesSentStr := formatBytes(statusInfo.TotalBytesSent)
+	bytesReceivedStr := formatBytes(statusInfo.TotalBytesReceived)
+	c.output.KeyValue("Bytes Sent", bytesSentStr)
+	c.output.KeyValue("Bytes Received", bytesReceivedStr)
 
 	fmt.Println("")
+}
+
+// formatBytes 格式化字节数为可读格式
+func formatBytes(bytes int64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+
+	if bytes >= GB {
+		return fmt.Sprintf("%.2f GB", float64(bytes)/float64(GB))
+	} else if bytes >= MB {
+		return fmt.Sprintf("%.2f MB", float64(bytes)/float64(MB))
+	} else if bytes >= KB {
+		return fmt.Sprintf("%.2f KB", float64(bytes)/float64(KB))
+	}
+	return fmt.Sprintf("%d B", bytes)
 }
 
 // cmdConnect 连接到服务器

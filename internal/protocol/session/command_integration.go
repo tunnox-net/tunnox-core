@@ -108,15 +108,26 @@ func (s *SessionManager) SetCommandExecutor(executor types.CommandExecutor) erro
 
 // handleCommandPacket 处理命令数据包
 func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) error {
+	utils.Debugf("SessionManager.handleCommandPacket: received command packet, ConnectionID=%s, PacketType=%d",
+		connPacket.ConnectionID, connPacket.Packet.PacketType)
+
+	if connPacket.Packet.CommandPacket != nil {
+		utils.Debugf("SessionManager.handleCommandPacket: CommandType=%d, CommandID=%s",
+			connPacket.Packet.CommandPacket.CommandType, connPacket.Packet.CommandPacket.CommandId)
+	}
+
 	// 优先使用 Command 执行器
 	if s.commandExecutor != nil {
+		utils.Debugf("SessionManager.handleCommandPacket: executing command via CommandExecutor")
 		if err := s.commandExecutor.Execute(connPacket); err != nil {
-			utils.Errorf("Command execution failed: %v", err)
+			utils.Errorf("SessionManager.handleCommandPacket: command execution failed: %v", err)
 			return err
 		}
+		utils.Debugf("SessionManager.handleCommandPacket: command executed successfully")
 		return nil
 	}
 
+	utils.Warnf("SessionManager.handleCommandPacket: CommandExecutor is nil, falling back to default handler")
 	// 回退到默认处理
 	return s.handleDefaultCommand(connPacket)
 }
@@ -146,7 +157,7 @@ func (s *SessionManager) handleConfigGetCommand(connPacket *types.StreamPacket) 
 	s.controlConnLock.RLock()
 	controlConn, exists := s.controlConnMap[connPacket.ConnectionID]
 	s.controlConnLock.RUnlock()
-	
+
 	if !exists {
 		return fmt.Errorf("control connection not found: %s", connPacket.ConnectionID)
 	}
@@ -172,7 +183,7 @@ func (s *SessionManager) handleConfigGetCommand(connPacket *types.StreamPacket) 
 		// 回退到空配置
 		configBody = `{"mappings":[]}`
 	}
-	
+
 	utils.Infof("SessionManager: sending config to client %d (%d bytes)", clientID, len(configBody))
 
 	// 发送配置响应

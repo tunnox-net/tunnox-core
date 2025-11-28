@@ -35,11 +35,11 @@ type CloudControlAPI interface {
 	ListClients(userID string, clientType models.ClientType) ([]*models.Client, error)
 	ListUserClients(userID string) ([]*models.Client, error)             // 获取用户下的所有客户端
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) // 获取客户端下的所有端口映射
-	
+
 	// 客户端状态查询（快速接口，仅查Redis）
-	GetClientNodeID(clientID int64) (string, error)              // 获取客户端所在节点ID
+	GetClientNodeID(clientID int64) (string, error)             // 获取客户端所在节点ID
 	IsClientOnNode(clientID int64, nodeID string) (bool, error) // 检查客户端是否在指定节点
-	GetNodeClients(nodeID string) ([]*models.Client, error)      // 获取节点的所有在线客户端
+	GetNodeClients(nodeID string) ([]*models.Client, error)     // 获取节点的所有在线客户端
 
 	// 端口映射管理
 	CreatePortMapping(mapping *models.PortMapping) (*models.PortMapping, error)
@@ -57,7 +57,7 @@ type CloudControlAPI interface {
 	GetAnonymousClient(clientID int64) (*models.Client, error)
 	DeleteAnonymousClient(clientID int64) error
 	ListAnonymousClients() ([]*models.Client, error)
-	CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error)
+	CreateAnonymousMapping(listenClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) // ✅ 统一命名：listenClientID
 	GetAnonymousMappings() ([]*models.PortMapping, error)
 	CleanupExpiredAnonymous() error
 

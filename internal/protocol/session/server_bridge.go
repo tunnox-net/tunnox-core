@@ -5,7 +5,6 @@ import (
 	"net"
 	"time"
 
-	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -17,14 +16,10 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 		return fmt.Errorf("cloud control not configured")
 	}
 
-	mappingInterface, err := s.cloudControl.GetPortMapping(req.MappingID)
+	// ✅ 统一使用 GetPortMapping，直接返回 PortMapping
+	mapping, err := s.cloudControl.GetPortMapping(req.MappingID)
 	if err != nil {
 		return fmt.Errorf("mapping not found: %w", err)
-	}
-
-	mapping, ok := mappingInterface.(*models.PortMapping)
-	if !ok {
-		return fmt.Errorf("invalid mapping type for %s", req.MappingID)
 	}
 
 	bandwidthLimit := mapping.Config.BandwidthLimit
@@ -48,17 +43,23 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 
 	// ✅ 注册到路由表（用于跨服务器隧道）
 	if s.tunnelRouting != nil {
+		// ✅ 统一使用 ListenClientID（向后兼容：如果为 0 则使用 SourceClientID）
+		listenClientID := mapping.ListenClientID
+		if listenClientID == 0 {
+			listenClientID = mapping.SourceClientID
+		}
+
 		routingState := &TunnelWaitingState{
 			TunnelID:       req.TunnelID,
 			MappingID:      req.MappingID,
 			SecretKey:      req.SecretKey,
 			SourceNodeID:   s.getNodeID(),
-			SourceClientID: mapping.SourceClientID,
+			SourceClientID: listenClientID, // ✅ 使用 ListenClientID
 			TargetClientID: mapping.TargetClientID,
 			TargetHost:     mapping.TargetHost,
 			TargetPort:     mapping.TargetPort,
 		}
-		
+
 		if err := s.tunnelRouting.RegisterWaitingTunnel(s.Ctx(), routingState); err != nil {
 			utils.Warnf("Tunnel[%s]: failed to register routing state: %v", req.TunnelID, err)
 			// 不是致命错误，继续处理
@@ -80,14 +81,10 @@ func (s *SessionManager) StartServerTunnel(mappingID string, sourceConn net.Conn
 		return "", fmt.Errorf("cloud control not configured")
 	}
 
-	mappingInterface, err := s.cloudControl.GetPortMapping(mappingID)
+	// ✅ 统一使用 GetPortMapping，直接返回 PortMapping
+	mapping, err := s.cloudControl.GetPortMapping(mappingID)
 	if err != nil {
 		return "", fmt.Errorf("mapping not found: %w", err)
-	}
-
-	mapping, ok := mappingInterface.(*models.PortMapping)
-	if !ok {
-		return "", fmt.Errorf("invalid mapping type for %s", mappingID)
 	}
 
 	tunnelID := fmt.Sprintf("server-udp-%s-%d", mappingID, time.Now().UnixNano())

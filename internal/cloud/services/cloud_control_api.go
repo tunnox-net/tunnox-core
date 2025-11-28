@@ -177,7 +177,7 @@ func (api *CloudControlAPI) GetClientNodeID(clientID int64) (string, error) {
 	}); ok {
 		return refactoredService.GetClientNodeID(clientID)
 	}
-	
+
 	// Fallback：使用GetClient
 	client, err := api.clientService.GetClient(clientID)
 	if err != nil {
@@ -196,7 +196,7 @@ func (api *CloudControlAPI) IsClientOnNode(clientID int64, nodeID string) (bool,
 	}); ok {
 		return refactoredService.IsClientOnNode(clientID, nodeID)
 	}
-	
+
 	// Fallback：使用GetClient
 	client, err := api.clientService.GetClient(clientID)
 	if err != nil {
@@ -212,7 +212,7 @@ func (api *CloudControlAPI) GetNodeClients(nodeID string) ([]*models.Client, err
 	}); ok {
 		return refactoredService.GetNodeClients(nodeID)
 	}
-	
+
 	// Fallback：返回空列表
 	return []*models.Client{}, nil
 }
@@ -325,8 +325,8 @@ func (api *CloudControlAPI) ListAnonymousClients() ([]*models.Client, error) {
 	return api.anonymousService.ListAnonymousClients()
 }
 
-func (api *CloudControlAPI) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
-	return api.anonymousService.CreateAnonymousMapping(sourceClientID, targetClientID, protocol, sourcePort, targetPort)
+func (api *CloudControlAPI) CreateAnonymousMapping(listenClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
+	return api.anonymousService.CreateAnonymousMapping(listenClientID, targetClientID, protocol, sourcePort, targetPort)
 }
 
 func (api *CloudControlAPI) GetAnonymousMappings() ([]*models.PortMapping, error) {

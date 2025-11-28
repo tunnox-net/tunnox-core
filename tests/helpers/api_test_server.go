@@ -35,7 +35,7 @@ type TestAPIServerConfig struct {
 func DefaultTestAPIConfig() *TestAPIServerConfig {
 	return &TestAPIServerConfig{
 		ListenAddr: findAvailablePort(), // 找一个可用端口
-		AuthType:   "none",               // 测试时默认不需要认证
+		AuthType:   "none",              // 测试时默认不需要认证
 		APISecret:  "",
 		EnableCORS: false,
 	}
@@ -76,7 +76,7 @@ func NewTestAPIServer(ctx context.Context, cfg *TestAPIServerConfig) (*TestAPISe
 			Secret: cfg.APISecret,
 		},
 		CORS: api.CORSConfig{
-			Enabled: cfg.EnableCORS,
+			Enabled:        cfg.EnableCORS,
 			AllowedOrigins: []string{"*"},
 			AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 			AllowedHeaders: []string{"Content-Type", "Authorization"},
@@ -86,8 +86,8 @@ func NewTestAPIServer(ctx context.Context, cfg *TestAPIServerConfig) (*TestAPISe
 		},
 	}
 
-	// 创建API服务器
-	apiServer := api.NewManagementAPIServer(ctx, apiConfig, cloudControl)
+	// 创建API服务器（测试环境传入 nil 作为可选参数）
+	apiServer := api.NewManagementAPIServer(ctx, apiConfig, cloudControl, nil, nil)
 
 	server := &TestAPIServer{
 		ResourceBase: dispose.NewResourceBase("TestAPIServer"),
@@ -196,4 +196,3 @@ func (s *TestAPIServer) GetConfig() *api.APIConfig {
 func (s *TestAPIServer) Stop() error {
 	return s.Close()
 }
-

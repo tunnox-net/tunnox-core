@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"time"
+	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/idgen"
@@ -187,8 +188,9 @@ func (s *SessionManager) SetAuthHandler(handler AuthHandler) {
 }
 
 // CloudControlAPI 定义CloudControl接口
+// ✅ 统一返回 *models.PortMapping，不再使用 interface{}
 type CloudControlAPI interface {
-	GetPortMapping(mappingID string) (interface{}, error)
+	GetPortMapping(mappingID string) (*models.PortMapping, error)
 }
 
 // SetCloudControl 设置CloudControl API

@@ -44,18 +44,43 @@ func (c *CLI) cmdConfig(args []string) {
 func (c *CLI) cmdConfigList(args []string) {
 	c.output.Header("⚙️ Configuration")
 
-	// TODO: 从client获取实际配置
-	// 暂时显示示例配置
+	// 从client获取实际配置
+	config := c.client.GetConfig()
 
 	c.output.Section("Server")
-	c.output.KeyValue("address", "localhost:7003")
-	c.output.KeyValue("protocol", "quic")
-	c.output.KeyValue("management_api_address", "http://localhost:8080")
+	serverAddr := config.Server.Address
+	if serverAddr == "" {
+		serverAddr = "not configured"
+	}
+	protocol := config.Server.Protocol
+	if protocol == "" {
+		protocol = "tcp"
+	}
+	c.output.KeyValue("address", serverAddr)
+	c.output.KeyValue("protocol", protocol)
+
+	// Management API地址（从服务器地址推导，或使用默认值）
+	managementAPIAddr := serverAddr
+	if managementAPIAddr == "not configured" {
+		managementAPIAddr = "http://localhost:8080"
+	} else {
+		// 假设Management API在同一服务器，端口可能不同
+		managementAPIAddr = fmt.Sprintf("http://%s", serverAddr)
+	}
+	c.output.KeyValue("management_api_address", managementAPIAddr)
 
 	c.output.Section("Client")
-	c.output.KeyValue("client_id", "10000001")
-	c.output.KeyValue("device_id", "my-device")
-	c.output.KeyValue("anonymous", "false")
+	clientID := "N/A"
+	if config.ClientID > 0 {
+		clientID = fmt.Sprintf("%d", config.ClientID)
+	}
+	deviceID := config.DeviceID
+	if deviceID == "" {
+		deviceID = "N/A"
+	}
+	c.output.KeyValue("client_id", clientID)
+	c.output.KeyValue("device_id", deviceID)
+	c.output.KeyValue("anonymous", fmt.Sprintf("%v", config.Anonymous))
 
 	c.output.Section("Log")
 	c.output.KeyValue("level", "info")
@@ -82,18 +107,75 @@ func (c *CLI) cmdConfigGet(args []string) {
 
 	c.output.Header(fmt.Sprintf("⚙️ Config: %s", key))
 
-	// 示例值
-	sampleValues := map[string]string{
-		"server.address":                "localhost:7003",
-		"server.protocol":               "quic",
-		"server.management_api_address": "http://localhost:8080",
-		"client.client_id":              "10000001",
-		"client.anonymous":              "false",
-		"log.level":                     "info",
-		"log.output":                    "file",
+	// 从client获取实际配置值
+	config := c.client.GetConfig()
+	var value string
+	var found bool
+
+	switch key {
+	case "server.address":
+		value = config.Server.Address
+		if value == "" {
+			value = "not configured"
+		}
+		found = true
+	case "server.protocol":
+		value = config.Server.Protocol
+		if value == "" {
+			value = "tcp"
+		}
+		found = true
+	case "server.management_api_address":
+		serverAddr := config.Server.Address
+		if serverAddr == "" {
+			value = "http://localhost:8080"
+		} else {
+			value = fmt.Sprintf("http://%s", serverAddr)
+		}
+		found = true
+	case "client.client_id":
+		if config.ClientID > 0 {
+			value = fmt.Sprintf("%d", config.ClientID)
+		} else {
+			value = "N/A"
+		}
+		found = true
+	case "client.device_id":
+		value = config.DeviceID
+		if value == "" {
+			value = "N/A"
+		}
+		found = true
+	case "client.anonymous":
+		value = fmt.Sprintf("%v", config.Anonymous)
+		found = true
+	case "log.level":
+		value = config.Log.Level
+		if value == "" {
+			value = "info"
+		}
+		found = true
+	case "log.format":
+		value = config.Log.Format
+		if value == "" {
+			value = "text"
+		}
+		found = true
+	case "log.output":
+		value = config.Log.Output
+		if value == "" {
+			value = "stdout"
+		}
+		found = true
+	case "log.file":
+		value = config.Log.File
+		if value == "" {
+			value = "N/A"
+		}
+		found = true
 	}
 
-	if value, ok := sampleValues[key]; ok {
+	if found {
 		c.output.KeyValue(key, value)
 	} else {
 		c.output.Warning("Config key not found: %s", key)

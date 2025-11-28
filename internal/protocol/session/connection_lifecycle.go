@@ -75,17 +75,8 @@ func (s *SessionManager) AcceptConnection(reader io.Reader, writer io.Writer) (*
 		Stream: conn.Stream,
 	}
 
-	// 预注册控制连接，优先使用写端元信息
-	enforcedProtocol := conn.Protocol
-	if enforcedProtocol == "" {
-		enforcedProtocol = resolveProtocol(writer, reader)
-		if enforcedProtocol == "" {
-			enforcedProtocol = "tcp"
-		}
-	}
-	remoteAddr := resolveRemoteAddr(writer, reader)
-	controlConn := NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
-	s.RegisterControlConnection(controlConn)
+	// ✅ 不再预注册控制连接，等待收到 Handshake 包后再注册
+	// 这样可以区分控制连接（Handshake）和隧道连接（TunnelOpen with MappingID）
 
 	utils.Debugf("Connection accepted: %s", conn.ID)
 	return streamConn, nil
@@ -233,6 +224,14 @@ func (s *SessionManager) UpdateControlConnectionAuth(connID string, clientID int
 	return nil
 }
 
+// GetControlConnection 根据 ConnectionID 获取指令连接
+func (s *SessionManager) GetControlConnection(connID string) *ControlConnection {
+	s.controlConnLock.RLock()
+	defer s.controlConnLock.RUnlock()
+
+	return s.controlConnMap[connID]
+}
+
 // GetControlConnectionByClientID 根据 ClientID 获取指令连接（类型安全版本）
 func (s *SessionManager) GetControlConnectionByClientID(clientID int64) *ControlConnection {
 	s.controlConnLock.RLock()
@@ -302,9 +301,15 @@ func (s *SessionManager) RemoveControlConnection(connID string) {
 
 	conn, exists := s.controlConnMap[connID]
 	if exists {
-		// 从 clientIDIndexMap 移除
+		// ✅ 只有在 clientIDIndexMap 中的映射确实指向这个连接时，才从 clientIDIndexMap 移除
+		// 这样可以避免误删真正的控制连接（当隧道连接被错误注册为控制连接时）
 		if conn.Authenticated && conn.ClientID > 0 {
+			if existingConn, exists := s.clientIDIndexMap[conn.ClientID]; exists && existingConn.ConnID == connID {
 			delete(s.clientIDIndexMap, conn.ClientID)
+				utils.Debugf("Removed control connection from clientIDIndexMap: connID=%s, clientID=%d", connID, conn.ClientID)
+			} else {
+				utils.Debugf("Skipped removing control connection from clientIDIndexMap: connID=%s, clientID=%d (not the current control connection)", connID, conn.ClientID)
+			}
 		}
 		// 从 controlConnMap 移除
 		delete(s.controlConnMap, connID)

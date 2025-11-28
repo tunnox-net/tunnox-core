@@ -9,21 +9,26 @@ import (
 	"github.com/stretchr/testify/require"
 	
 	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/storage"
 )
 
 // setupConnCodeServiceTest 创建测试环境
-func setupConnCodeServiceTest(t *testing.T) (*ConnectionCodeService, *repos.ConnectionCodeRepository, *repos.TunnelMappingRepository, storage.Storage) {
+func setupConnCodeServiceTest(t *testing.T) (*ConnectionCodeService, *repos.ConnectionCodeRepository, *repos.PortMappingRepo, storage.Storage) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
 	
 	repo := repos.NewRepository(memStorage)
 	connCodeRepo := repos.NewConnectionCodeRepository(repo)
-	mappingRepo := repos.NewTunnelMappingRepository(repo)
+
+	// ✅ 创建 PortMappingService
+	portMappingRepo := repos.NewPortMappingRepo(repo)
+	idManager := idgen.NewIDManager(memStorage, ctx)
+	portMappingService := NewPortMappingService(portMappingRepo, idManager, nil, ctx)
 	
-	service := NewConnectionCodeService(connCodeRepo, mappingRepo, nil, ctx)
+	service := NewConnectionCodeService(connCodeRepo, portMappingService, portMappingRepo, nil, ctx)
 	
-	return service, connCodeRepo, mappingRepo, memStorage
+	return service, connCodeRepo, portMappingRepo, memStorage
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -527,10 +532,11 @@ func TestConnectionCodeService_RecordMappingUsage(t *testing.T) {
 	err = service.RecordMappingUsage(mapping.ID)
 	require.NoError(t, err, "Failed to record mapping usage")
 	
-	// 3. 验证使用次数
+	// 3. 验证使用次数（PortMapping 使用 LastActive 来记录使用）
 	retrieved, err := service.GetMapping(mapping.ID)
 	require.NoError(t, err, "Failed to get mapping")
-	assert.Equal(t, int64(1), retrieved.UsageCount)
+	// ✅ PortMapping 使用 LastActive 来记录最后使用时间，不再使用 UsageCount
+	assert.NotNil(t, retrieved.LastActive)
 }
 
 func TestConnectionCodeService_RecordMappingTraffic(t *testing.T) {
@@ -560,10 +566,10 @@ func TestConnectionCodeService_RecordMappingTraffic(t *testing.T) {
 	err = service.RecordMappingTraffic(mapping.ID, 1024, 2048)
 	require.NoError(t, err, "Failed to record mapping traffic")
 	
-	// 3. 验证流量
+	// 3. 验证流量（PortMapping 使用 TrafficStats）
 	retrieved, err := service.GetMapping(mapping.ID)
 	require.NoError(t, err, "Failed to get mapping")
-	assert.Equal(t, int64(1024), retrieved.BytesSent)
-	assert.Equal(t, int64(2048), retrieved.BytesReceived)
+	// ✅ PortMapping 使用 TrafficStats 来存储流量统计
+	assert.Equal(t, int64(1024), retrieved.TrafficStats.BytesSent)
+	assert.Equal(t, int64(2048), retrieved.TrafficStats.BytesReceived)
 }
-

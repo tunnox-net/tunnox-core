@@ -1,0 +1,13 @@
+client_id: 19072689
+auth_token: ""
+anonymous: true
+device_id: anonymous-device
+secret_key: 4MLtyXWfwrqOJKFGOCoZJx9yFe4mB9Wk
+server:
+    address: 127.0.0.1:8080
+    protocol: tcp
+log:
+    level: debug
+    format: text
+    output: file
+    file: ~/logs/listenClient.log

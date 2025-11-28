@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -369,17 +370,23 @@ func configureLogging(config *client.ClientConfig, interactive bool) (string, er
 			if err != nil {
 				logFile = "/tmp/tunnox-client.log"
 			} else {
-				logFile = homeDir + "/.tunnox/client.log"
+				logFile = filepath.Join(homeDir, ".tunnox", "client.log")
 			}
 		}
 
-		logConfig.Output = "file"
-		logConfig.File = logFile
+		// 展开路径（支持 ~ 和相对路径）
+		expandedPath, err := utils.ExpandPath(logFile)
+		if err != nil {
+			return "", fmt.Errorf("failed to expand log file path %q: %w", logFile, err)
+		}
 
-		// 确保日志目录存在
-		logDir := logFile[:strings.LastIndex(logFile, "/")]
+		logConfig.Output = "file"
+		logConfig.File = expandedPath
+
+		// 确保日志目录存在（ExpandPath 已经处理了，但这里再确保一次）
+		logDir := filepath.Dir(expandedPath)
 		if err := os.MkdirAll(logDir, 0755); err != nil {
-			return "", fmt.Errorf("failed to create log directory: %w", err)
+			return "", fmt.Errorf("failed to create log directory %q: %w", logDir, err)
 		}
 
 	} else {
@@ -391,10 +398,23 @@ func configureLogging(config *client.ClientConfig, interactive bool) (string, er
 		}
 
 		if logConfig.Output == "file" {
-			if config.Log.File != "" {
-				logConfig.File = config.Log.File
-			} else {
-				logConfig.File = "/var/log/tunnox-client.log"
+			logFile := config.Log.File
+			if logFile == "" {
+				logFile = "/var/log/tunnox-client.log"
+			}
+
+			// 展开路径（支持 ~ 和相对路径）
+			expandedPath, err := utils.ExpandPath(logFile)
+			if err != nil {
+				return "", fmt.Errorf("failed to expand log file path %q: %w", logFile, err)
+			}
+
+			logConfig.File = expandedPath
+
+			// 确保日志目录存在
+			logDir := filepath.Dir(expandedPath)
+			if err := os.MkdirAll(logDir, 0755); err != nil {
+				return "", fmt.Errorf("failed to create log directory %q: %w", logDir, err)
 			}
 		}
 	}

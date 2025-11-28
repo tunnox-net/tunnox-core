@@ -18,6 +18,12 @@ func (c *CLI) cmdUseCode(args []string) {
 		return
 	}
 
+	// ✅ 检查连接状态
+	if !c.client.IsConnected() {
+		c.output.Error("Not connected to server. Please connect first using 'connect' command.")
+		return
+	}
+
 	code := args[0]
 	c.output.Header(fmt.Sprintf("🔓 Activating Connection Code: %s", code))
 
@@ -34,9 +40,8 @@ func (c *CLI) cmdUseCode(args []string) {
 	fmt.Println("")
 	c.output.Info("Activating connection code...")
 
-	// 调用API
-	apiClient := c.client.GetAPIClient()
-	resp, err := apiClient.ActivateConnectionCode(&client.ActivateCodeRequest{
+	// ✅ 通过指令通道发送命令
+	resp, err := c.client.ActivateConnectionCode(&client.ActivateConnectionCodeRequest{
 		Code:          code,
 		ListenAddress: listenAddr,
 	})

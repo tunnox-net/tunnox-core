@@ -184,13 +184,18 @@ func (h *ConnectionCodeHandlers) HandleActivateConnectionCode(w http.ResponseWri
 	}
 
 	// 构造响应
+	var expiresAtStr string
+	if mapping.ExpiresAt != nil {
+		expiresAtStr = mapping.ExpiresAt.Format(time.RFC3339)
+	}
+
 	resp := ActivateConnectionCodeResponse{
 		MappingID:      mapping.ID,
 		ListenClientID: mapping.ListenClientID,
 		TargetClientID: mapping.TargetClientID,
 		ListenAddress:  mapping.ListenAddress,
 		TargetAddress:  mapping.TargetAddress,
-		ExpiresAt:      mapping.ExpiresAt.Format(time.RFC3339),
+		ExpiresAt:      expiresAtStr,
 		CreatedAt:      mapping.CreatedAt.Format(time.RFC3339),
 	}
 
@@ -247,11 +252,15 @@ type ConnectionCodeListItem struct {
 // HandleListConnectionCodes 处理列出连接码请求
 //
 // GET /api/v1/connection-codes?target_client_id=xxx
+// GET /api/v1/connection-codes?client_id=xxx (向后兼容)
 func (h *ConnectionCodeHandlers) HandleListConnectionCodes(w http.ResponseWriter, r *http.Request) {
-	// 从查询参数获取target_client_id
+	// ✅ 优先使用 target_client_id，如果没有则使用 client_id（向后兼容）
 	targetClientIDStr := r.URL.Query().Get("target_client_id")
 	if targetClientIDStr == "" {
-		respondError(w, http.StatusBadRequest, "target_client_id is required")
+		targetClientIDStr = r.URL.Query().Get("client_id")
+	}
+	if targetClientIDStr == "" {
+		respondError(w, http.StatusBadRequest, "target_client_id or client_id is required")
 		return
 	}
 
@@ -334,7 +343,7 @@ func (h *ConnectionCodeHandlers) HandleListMappings(w http.ResponseWriter, r *ht
 	}
 
 	// 列出映射
-	var mappings []*models.TunnelMapping
+	var mappings []*models.PortMapping
 	switch direction {
 	case "outbound":
 		mappings, err = h.connCodeService.ListOutboundMappings(clientID)
@@ -355,17 +364,21 @@ func (h *ConnectionCodeHandlers) HandleListMappings(w http.ResponseWriter, r *ht
 	// 构造响应
 	items := make([]MappingListItem, 0, len(mappings))
 	for _, mapping := range mappings {
+		expiresAtStr := ""
+		if mapping.ExpiresAt != nil {
+			expiresAtStr = mapping.ExpiresAt.Format(time.RFC3339)
+		}
 		item := MappingListItem{
 			ID:             mapping.ID,
 			ListenClientID: mapping.ListenClientID,
 			TargetClientID: mapping.TargetClientID,
 			ListenAddress:  mapping.ListenAddress,
 			TargetAddress:  mapping.TargetAddress,
-			ExpiresAt:      mapping.ExpiresAt.Format(time.RFC3339),
+			ExpiresAt:      expiresAtStr,
 			CreatedAt:      mapping.CreatedAt.Format(time.RFC3339),
-			UsageCount:     mapping.UsageCount,
-			BytesSent:      mapping.BytesSent,
-			BytesReceived:  mapping.BytesReceived,
+			UsageCount:     0, // PortMapping 不使用 UsageCount，使用 LastActive 记录最后使用时间
+			BytesSent:      mapping.TrafficStats.BytesSent,
+			BytesReceived:  mapping.TrafficStats.BytesReceived,
 			Description:    mapping.Description,
 		}
 		items = append(items, item)
@@ -417,7 +430,7 @@ func (h *ConnectionCodeHandlers) HandleRevokeMapping(w http.ResponseWriter, r *h
 	}
 
 	utils.Infof("ConnectionCodeAPI: revoked mapping %s by client %d", mappingID, clientID)
-	
+
 	respondSuccess(w, http.StatusOK, map[string]string{
 		"message": "mapping revoked successfully",
 	})

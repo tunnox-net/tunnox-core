@@ -138,11 +138,11 @@ func (s *anonymousService) ListAnonymousClients() ([]*models.Client, error) {
 }
 
 // CreateAnonymousMapping 创建匿名映射
-func (s *anonymousService) CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
-	// 验证源客户端
-	_, err := s.clientRepo.GetClient(utils.Int64ToString(sourceClientID))
+func (s *anonymousService) CreateAnonymousMapping(listenClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
+	// 验证监听客户端
+	_, err := s.clientRepo.GetClient(utils.Int64ToString(listenClientID))
 	if err != nil {
-		return nil, fmt.Errorf("source client %d not found: %w", sourceClientID, err)
+		return nil, fmt.Errorf("listen client %d not found: %w", listenClientID, err)
 	}
 
 	// 验证目标客户端
@@ -160,7 +160,8 @@ func (s *anonymousService) CreateAnonymousMapping(sourceClientID, targetClientID
 	// 创建映射
 	mapping := &models.PortMapping{
 		ID:             mappingID,
-		SourceClientID: sourceClientID,
+		ListenClientID: listenClientID, // ✅ 统一使用 ListenClientID
+		SourceClientID: listenClientID, // 向后兼容
 		TargetClientID: targetClientID,
 		Protocol:       protocol,
 		SourcePort:     sourcePort,
@@ -181,7 +182,7 @@ func (s *anonymousService) CreateAnonymousMapping(sourceClientID, targetClientID
 		return nil, fmt.Errorf("failed to create anonymous mapping: %w", err)
 	}
 
-	utils.Infof("Created anonymous mapping: %s between clients %d and %d", mappingID, sourceClientID, targetClientID)
+	utils.Infof("Created anonymous mapping: %s between clients %d and %d", mappingID, listenClientID, targetClientID)
 	return mapping, nil
 }
 

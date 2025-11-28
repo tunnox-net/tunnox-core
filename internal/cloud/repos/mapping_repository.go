@@ -91,9 +91,31 @@ func (r *PortMappingRepo) GetUserPortMappings(userID string) ([]*models.PortMapp
 }
 
 // GetClientPortMappings 列出客户端的端口映射
+//
+// ✅ 由于映射会同时添加到 ListenClientID 和 TargetClientID 的索引，
+// 同一个映射可能出现在两个索引中，需要去重
 func (r *PortMappingRepo) GetClientPortMappings(clientID string) ([]*models.PortMapping, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, clientID)
-	return r.List(key)
+	allMappings, err := r.List(key)
+	if err != nil {
+		return nil, err
+	}
+
+	// ✅ 去重：使用 map 按 ID 去重
+	mappingMap := make(map[string]*models.PortMapping)
+	for _, m := range allMappings {
+		if m != nil && m.ID != "" {
+			mappingMap[m.ID] = m
+		}
+	}
+
+	// 转换为列表
+	result := make([]*models.PortMapping, 0, len(mappingMap))
+	for _, m := range mappingMap {
+		result = append(result, m)
+	}
+
+	return result, nil
 }
 
 // AddMappingToUser 添加映射到用户
@@ -117,4 +139,3 @@ func (r *PortMappingRepo) ListAllMappings() ([]*models.PortMapping, error) {
 func (r *PortMappingRepo) AddMappingToList(mapping *models.PortMapping) error {
 	return r.AddToList(mapping, constants.KeyPrefixMappingList)
 }
-

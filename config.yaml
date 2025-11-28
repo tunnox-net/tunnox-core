@@ -44,16 +44,16 @@ server:
 
 log:
   # 日志级别: debug, info, warn, error, fatal, panic
-  level: "info"
+  level: "debug"
   
   # 日志格式: json, text
   format: "text"
   
   # 输出位置: stdout, stderr, file
-  output: "stdout"
+  output: "file"
   
   # 日志文件路径（当 output 为 file 时使用）
-  file: "logs/server.log"
+  file: "~/logs/server.log"
   
   # 日志轮转配置
   rotation:

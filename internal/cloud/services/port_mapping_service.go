@@ -8,6 +8,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
+	cloudutils "tunnox-core/internal/cloud/utils"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
@@ -44,7 +45,10 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 
 	// 设置映射基本信息
 	mapping.ID = mappingID
-	mapping.Status = models.MappingStatusInactive
+	// ✅ 如果状态未设置，默认为 Inactive；否则保留传入的状态
+	if mapping.Status == "" {
+		mapping.Status = models.MappingStatusInactive
+	}
 	s.baseService.SetTimestamps(&mapping.CreatedAt, &mapping.UpdatedAt)
 	mapping.TrafficStats = stats.TrafficStats{
 		LastUpdated: time.Now(),
@@ -74,9 +78,25 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 		}
 	}
 
-	// 添加到源客户端映射列表
-	if err := s.mappingRepo.AddMappingToClient(utils.Int64ToString(mapping.SourceClientID), mapping); err != nil {
-		s.baseService.LogWarning("add mapping to source client list", err)
+	// ✅ 双向索引：同时添加到 ListenClientID 和 TargetClientID 的索引
+	// 确保 GetClientPortMappings 能查询到该客户端作为 ListenClient 或 TargetClient 的所有映射
+	listenClientID := mapping.ListenClientID
+	if listenClientID == 0 {
+		// 向后兼容：如果 ListenClientID 为 0，尝试使用 SourceClientID
+		listenClientID = mapping.SourceClientID
+		mapping.ListenClientID = listenClientID
+	}
+
+	if listenClientID > 0 {
+		if err := s.mappingRepo.AddMappingToClient(utils.Int64ToString(listenClientID), mapping); err != nil {
+			s.baseService.LogWarning("add mapping to listen client list", err)
+		}
+	}
+
+	if mapping.TargetClientID > 0 {
+		if err := s.mappingRepo.AddMappingToClient(utils.Int64ToString(mapping.TargetClientID), mapping); err != nil {
+			s.baseService.LogWarning("add mapping to target client list", err)
+		}
 	}
 
 	// 更新统计计数器
@@ -86,8 +106,28 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 		}
 	}
 
-	s.baseService.LogCreated("port mapping", fmt.Sprintf("%s for client: %d", mappingID, mapping.SourceClientID))
+	clientID := mapping.ListenClientID
+	if clientID == 0 {
+		clientID = mapping.SourceClientID
+	}
+	s.baseService.LogCreated("port mapping", fmt.Sprintf("%s for client: %d", mappingID, clientID))
 	return mapping, nil
+}
+
+// ParseListenAddress 解析监听地址
+//
+// 格式：0.0.0.0:7788 或 127.0.0.1:9999
+// 返回：主机地址、端口、错误
+func (s *portMappingService) ParseListenAddress(addr string) (string, int, error) {
+	return cloudutils.ParseListenAddress(addr)
+}
+
+// ParseTargetAddress 解析目标地址
+//
+// 格式：tcp://10.51.22.69:3306 或 udp://192.168.1.1:53
+// 返回：主机地址、端口、协议、错误
+func (s *portMappingService) ParseTargetAddress(addr string) (string, int, string, error) {
+	return cloudutils.ParseTargetAddress(addr)
 }
 
 // GetPortMapping 获取端口映射

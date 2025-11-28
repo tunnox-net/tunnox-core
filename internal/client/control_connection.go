@@ -45,11 +45,14 @@ func (c *TunnoxClient) Connect() error {
 	}
 
 	c.config.Server.Protocol = strings.ToLower(protocol)
-	c.controlConn = conn
 
+	// 使用锁保护连接状态
+	c.mu.Lock()
+	c.controlConn = conn
 	// 2. 创建 Stream
 	streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
 	c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
+	c.mu.Unlock()
 
 	// 记录连接信息用于调试
 	localAddr := "unknown"
@@ -65,8 +68,17 @@ func (c *TunnoxClient) Connect() error {
 
 	// 3. 发送握手请求
 	if err := c.sendHandshake(); err != nil {
-		c.controlStream.Close()
-		conn.Close()
+		// 握手失败，清理连接资源
+		c.mu.Lock()
+		if c.controlStream != nil {
+			c.controlStream.Close()
+			c.controlStream = nil
+		}
+		if c.controlConn != nil {
+			c.controlConn.Close()
+			c.controlConn = nil
+		}
+		c.mu.Unlock()
 		return fmt.Errorf("handshake failed: %w", err)
 	}
 
@@ -85,6 +97,10 @@ func (c *TunnoxClient) Connect() error {
 func (c *TunnoxClient) Disconnect() error {
 	utils.Infof("Client: disconnecting from server")
 
+	// 使用锁保护连接状态
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	// 关闭控制流和连接
 	if c.controlStream != nil {
 		c.controlStream.Close()
@@ -102,6 +118,8 @@ func (c *TunnoxClient) Disconnect() error {
 
 // IsConnected 检查是否连接到服务器
 func (c *TunnoxClient) IsConnected() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.controlConn != nil && c.controlStream != nil
 }
 
@@ -118,7 +136,7 @@ func (c *TunnoxClient) Reconnect() error {
 
 // sendHandshake 发送握手请求（使用控制连接）
 func (c *TunnoxClient) sendHandshake() error {
-	return c.sendHandshakeOnStream(c.controlStream)
+	return c.sendHandshakeOnStream(c.controlStream, "control")
 }
 
 // saveAnonymousCredentials 保存匿名客户端凭据到配置文件
@@ -138,7 +156,7 @@ func (c *TunnoxClient) saveAnonymousCredentials() error {
 }
 
 // sendHandshakeOnStream 在指定的stream上发送握手请求（用于隧道连接）
-func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer) error {
+func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, connectionType string) error {
 	var req *packet.HandshakeRequest
 
 	// 认证策略：
@@ -149,27 +167,30 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer) erro
 		if c.config.ClientID > 0 && c.config.SecretKey != "" {
 			// 匿名客户端使用持久化凭据重新认证
 			req = &packet.HandshakeRequest{
-				ClientID: c.config.ClientID,
-				Token:    c.config.SecretKey, // ✅ 使用SecretKey而不是DeviceID
-				Version:  "2.0",
-				Protocol: c.config.Server.Protocol,
+				ClientID:       c.config.ClientID,
+				Token:          c.config.SecretKey, // ✅ 使用SecretKey而不是DeviceID
+				Version:        "2.0",
+				Protocol:       c.config.Server.Protocol,
+				ConnectionType: connectionType, // ✅ 标识连接类型
 			}
 		} else {
 			// 首次匿名握手，请求分配凭据
 			req = &packet.HandshakeRequest{
-				ClientID: 0,
-				Token:    fmt.Sprintf("anonymous:%s", c.config.DeviceID),
-				Version:  "2.0",
-				Protocol: c.config.Server.Protocol,
+				ClientID:       0,
+				Token:          fmt.Sprintf("anonymous:%s", c.config.DeviceID),
+				Version:        "2.0",
+				Protocol:       c.config.Server.Protocol,
+				ConnectionType: connectionType, // ✅ 标识连接类型
 			}
 		}
 	} else {
 		// 注册客户端使用AuthToken
 		req = &packet.HandshakeRequest{
-			ClientID: c.config.ClientID,
-			Token:    c.config.AuthToken,
-			Version:  "2.0",
-			Protocol: c.config.Server.Protocol,
+			ClientID:       c.config.ClientID,
+			Token:          c.config.AuthToken,
+			Version:        "2.0",
+			Protocol:       c.config.Server.Protocol,
+			ConnectionType: connectionType, // ✅ 标识连接类型
 		}
 	}
 
@@ -277,6 +298,17 @@ func (c *TunnoxClient) readLoop() {
 			} else {
 				utils.Infof("Client: connection closed (EOF)")
 			}
+			// 读取失败，清理连接状态
+			c.mu.Lock()
+			if c.controlStream != nil {
+				c.controlStream.Close()
+				c.controlStream = nil
+			}
+			if c.controlConn != nil {
+				c.controlConn.Close()
+				c.controlConn = nil
+			}
+			c.mu.Unlock()
 			return
 		}
 
@@ -287,8 +319,17 @@ func (c *TunnoxClient) readLoop() {
 		case packet.Heartbeat:
 			// 心跳响应
 			utils.Debugf("Client: heartbeat response received")
+		case packet.CommandResp:
+			// ✅ 命令响应（通过指令通道返回的响应）
+			if c.commandResponseManager != nil {
+				if handled := c.commandResponseManager.HandleResponse(pkt); handled {
+					utils.Debugf("Client: command response handled by response manager")
+					continue
+				}
+			}
+			utils.Debugf("Client: unhandled command response")
 		case packet.JsonCommand:
-			// 命令处理
+			// 命令处理（服务器推送的命令）
 			utils.Infof("Client: processing JsonCommand")
 			c.handleCommand(pkt)
 		default:

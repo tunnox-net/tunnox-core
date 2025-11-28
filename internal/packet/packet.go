@@ -31,6 +31,11 @@ func (t Type) IsJsonCommand() bool {
 	return t&0x3F == JsonCommand
 }
 
+// IsCommandResp 判断是否为CommandResp包
+func (t Type) IsCommandResp() bool {
+	return t&0x3F == CommandResp
+}
+
 // IsCompressed 判断是否压缩
 func (t Type) IsCompressed() bool {
 	return t&Compressed != 0
@@ -107,6 +112,12 @@ const (
 	RpcRegister   CommandType = 61 // 注册RPC服务
 	RpcUnregister CommandType = 62 // 注销RPC服务
 	RpcList       CommandType = 63 // 列出RPC服务
+
+	// ==================== 连接码管理类命令 (70-79) ====================
+	ConnectionCodeGenerate CommandType = 70 // 生成连接码
+	ConnectionCodeList     CommandType = 71 // 列出连接码
+	ConnectionCodeActivate CommandType = 72 // 激活连接码
+	ConnectionCodeRevoke   CommandType = 73 // 撤销连接码
 )
 
 // InitPacket 初始化数据包
@@ -198,10 +209,11 @@ type CommandPacket struct {
 
 // HandshakeRequest 握手请求（连接级认证）
 type HandshakeRequest struct {
-	ClientID int64  `json:"client_id"` // 客户端ID
-	Token    string `json:"token"`     // JWT Token
-	Version  string `json:"version"`   // 协议版本
-	Protocol string `json:"protocol"`  // 连接协议（tcp/websocket/quic）
+	ClientID       int64  `json:"client_id"`                 // 客户端ID
+	Token          string `json:"token"`                     // JWT Token
+	Version        string `json:"version"`                   // 协议版本
+	Protocol       string `json:"protocol"`                  // 连接协议（tcp/websocket/quic）
+	ConnectionType string `json:"connection_type,omitempty"` // 连接类型：control（控制连接）或 tunnel（隧道连接）
 }
 
 // HandshakeResponse 握手响应

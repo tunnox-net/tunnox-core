@@ -158,3 +158,4 @@ go.work.sum
 /server
 tunnox-server
 tunnox-client
+/data/

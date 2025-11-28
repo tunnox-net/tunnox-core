@@ -2,11 +2,13 @@ package command
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/types"
+	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
 
@@ -84,6 +86,9 @@ func (ce *CommandExecutor) executeDuplex(ctx *types.CommandContext, handler type
 	requestID := ce.generateRequestID()
 	ctx.RequestID = requestID
 
+	utils.Debugf("CommandExecutor: executing duplex command, ConnectionID=%s, CommandType=%d, CommandID=%s, RequestID=%s",
+		ctx.ConnectionID, ctx.CommandType, ctx.CommandId, requestID)
+
 	// 创建响应通道
 	responseChan := make(chan *types.CommandResponse, 1)
 	ce.rpcManager.RegisterRequest(requestID, responseChan)
@@ -91,6 +96,7 @@ func (ce *CommandExecutor) executeDuplex(ctx *types.CommandContext, handler type
 
 	// 获取超时时间
 	timeout := ce.rpcManager.GetTimeout()
+	utils.Debugf("CommandExecutor: timeout set to %v", timeout)
 
 	// 异步执行命令
 	go func() {
@@ -98,35 +104,46 @@ func (ce *CommandExecutor) executeDuplex(ctx *types.CommandContext, handler type
 		defer cancel()
 
 		ctx.Context = execCtx
+		utils.Debugf("CommandExecutor: calling handler.Handle, ConnectionID=%s, CommandID=%s", ctx.ConnectionID, ctx.CommandId)
 		response, err := ce.executeWithMiddleware(ctx, handler)
 		if err != nil {
+			utils.Errorf("CommandExecutor: handler execution failed: %v", err)
 			response = &types.CommandResponse{
 				Success: false,
 				Error:   err.Error(),
 			}
+		} else {
+			utils.Debugf("CommandExecutor: handler execution succeeded, Success=%v, CommandID=%s", response.Success, ctx.CommandId)
 		}
 
 		// 发送响应
+		utils.Debugf("CommandExecutor: sending response, ConnectionID=%s, CommandID=%s", ctx.ConnectionID, ctx.CommandId)
 		if err := ce.sendResponse(ctx.ConnectionID, response); err != nil {
-			utils.Errorf("Failed to send response: %v", err)
+			utils.Errorf("CommandExecutor: failed to send response: %v", err)
+		} else {
+			utils.Debugf("CommandExecutor: response sent successfully, ConnectionID=%s, CommandID=%s", ctx.ConnectionID, ctx.CommandId)
 		}
 
 		// 将响应发送到通道
 		select {
 		case responseChan <- response:
+			utils.Debugf("CommandExecutor: response sent to channel, CommandID=%s", ctx.CommandId)
 		default:
-			utils.Warnf("Response channel is full, dropping response")
+			utils.Warnf("CommandExecutor: response channel is full, dropping response")
 		}
 	}()
 
 	// 等待响应
+	utils.Debugf("CommandExecutor: waiting for response, CommandID=%s, timeout=%v", ctx.CommandId, timeout)
 	select {
 	case response := <-responseChan:
+		utils.Debugf("CommandExecutor: received response from channel, Success=%v, CommandID=%s", response.Success, ctx.CommandId)
 		if !response.Success {
 			return fmt.Errorf("command execution failed: %s", response.Error)
 		}
 		return nil
 	case <-time.After(timeout):
+		utils.Errorf("CommandExecutor: command timeout, CommandID=%s, ConnectionID=%s", ctx.CommandId, ctx.ConnectionID)
 		return fmt.Errorf("command timeout")
 	}
 }
@@ -176,14 +193,80 @@ func (ce *CommandExecutor) createCommandContext(streamPacket *types.StreamPacket
 
 // sendResponse 发送响应
 func (ce *CommandExecutor) sendResponse(connectionID string, response *types.CommandResponse) error {
-	// 如果有会话引用，通过会话发送响应
-	if ce.session != nil {
-		// 这里可以通过会话的流管理器发送响应
-		utils.Infof("Sending response to connection %s via session: success=%v", connectionID, response.Success)
-	} else {
-		// 否则只是记录日志
-		utils.Infof("Sending response to connection %s: success=%v", connectionID, response.Success)
+	utils.Debugf("CommandExecutor.sendResponse: sending response, ConnectionID=%s, CommandID=%s, Success=%v",
+		connectionID, response.CommandId, response.Success)
+
+	if ce.session == nil {
+		return fmt.Errorf("session not set, cannot send response")
 	}
+
+	// 通过 Session 接口获取连接
+	conn, exists := ce.session.GetConnection(connectionID)
+	if !exists || conn == nil {
+		utils.Errorf("CommandExecutor.sendResponse: connection not found, ConnectionID=%s", connectionID)
+		return fmt.Errorf("connection not found: %s", connectionID)
+	}
+
+	if conn.Stream == nil {
+		utils.Errorf("CommandExecutor.sendResponse: stream is nil, ConnectionID=%s", connectionID)
+		return fmt.Errorf("stream is nil for connection %s", connectionID)
+	}
+
+	pkgStream := conn.Stream
+	utils.Debugf("CommandExecutor.sendResponse: got stream, ConnectionID=%s, StreamType=%T", connectionID, pkgStream)
+
+	// 构造响应数据
+	responseData := map[string]interface{}{
+		"success":    response.Success,
+		"command_id": response.CommandId,
+		"request_id": response.RequestID,
+	}
+
+	if response.Data != "" {
+		// 如果 Data 是 JSON 字符串，直接使用；否则序列化
+		var dataObj interface{}
+		if err := json.Unmarshal([]byte(response.Data), &dataObj); err == nil {
+			responseData["data"] = dataObj
+		} else {
+			responseData["data"] = response.Data
+		}
+	}
+
+	if response.Error != "" {
+		responseData["error"] = response.Error
+	}
+
+	// 序列化响应
+	dataBytes, err := json.Marshal(responseData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal response: %w", err)
+	}
+
+	// 构造响应包（CommandResp 是 PacketType，不是 CommandType）
+	cmdPacket := &packet.CommandPacket{
+		CommandType: 0, // 响应不需要 CommandType
+		CommandId:   response.CommandId,
+		Token:       response.RequestID,
+		CommandBody: string(dataBytes),
+	}
+
+	transferPacket := &packet.TransferPacket{
+		PacketType:    packet.CommandResp,
+		CommandPacket: cmdPacket,
+	}
+
+	// 发送响应
+	utils.Debugf("CommandExecutor.sendResponse: writing packet, ConnectionID=%s, PacketType=%d, CommandID=%s",
+		connectionID, transferPacket.PacketType, response.CommandId)
+	written, err := pkgStream.WritePacket(transferPacket, false, 0)
+	if err != nil {
+		utils.Errorf("CommandExecutor.sendResponse: failed to write packet, ConnectionID=%s, Error=%v", connectionID, err)
+		return fmt.Errorf("failed to write response packet: %w", err)
+	}
+
+	utils.Infof("CommandExecutor.sendResponse: response sent successfully, ConnectionID=%s, CommandID=%s, Success=%v, Bytes=%d",
+		connectionID, response.CommandId, response.Success, written)
+
 	return nil
 }
 

@@ -132,22 +132,22 @@ func (c *CloudControl) UpdateClientStatus(clientID int64, status models.ClientSt
 func (c *CloudControl) ListClients(userID string, clientType models.ClientType) ([]*models.Client, error) {
 	var clients []*models.Client
 	var err error
-	
+
 	if userID != "" {
 		clients, err = c.clientRepo.ListUserClients(userID)
 	} else {
 		// 列出所有客户端（使用全局列表）
 		clients, err = c.clientRepo.ListClients()
 	}
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if clientType == "" {
 		return clients, nil
 	}
-	
+
 	var filtered []*models.Client
 	for _, client := range clients {
 		if client.Type == clientType {
@@ -200,7 +200,7 @@ func (c *CloudControl) GetNodeClients(nodeID string) ([]*models.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	nodeClients := make([]*models.Client, 0)
 	for _, client := range allClients {
 		if client.Status == models.ClientStatusOnline && client.NodeID == nodeID {
@@ -225,7 +225,9 @@ func (c *CloudControl) MigrateClientMappings(fromClientID, toClientID int64) err
 	// 迁移每个映射
 	for _, mapping := range mappings {
 		// 更新映射的源客户端ID
-		mapping.SourceClientID = toClientID
+		// ✅ 统一使用 ListenClientID
+		mapping.ListenClientID = toClientID
+		mapping.SourceClientID = toClientID // 向后兼容
 		mapping.UpdatedAt = time.Now()
 
 		// 保存更新后的映射
@@ -239,4 +241,3 @@ func (c *CloudControl) MigrateClientMappings(fromClientID, toClientID int64) err
 
 	return nil
 }
-

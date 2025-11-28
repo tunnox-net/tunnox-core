@@ -70,7 +70,7 @@ type AnonymousService interface {
 	GetAnonymousClient(clientID int64) (*models.Client, error)
 	DeleteAnonymousClient(clientID int64) error
 	ListAnonymousClients() ([]*models.Client, error)
-	CreateAnonymousMapping(sourceClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error)
+	CreateAnonymousMapping(listenClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) // ✅ 统一命名：listenClientID
 	GetAnonymousMappings() ([]*models.PortMapping, error)
 	CleanupExpiredAnonymous() error
 }
