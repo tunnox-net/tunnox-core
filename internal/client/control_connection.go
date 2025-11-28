@@ -81,18 +81,90 @@ func (c *TunnoxClient) Connect() error {
 	return nil
 }
 
-// sendHandshake 发送握手请求
+// Disconnect 断开与服务器的连接
+func (c *TunnoxClient) Disconnect() error {
+	utils.Infof("Client: disconnecting from server")
+
+	// 关闭控制流和连接
+	if c.controlStream != nil {
+		c.controlStream.Close()
+		c.controlStream = nil
+	}
+
+	if c.controlConn != nil {
+		c.controlConn.Close()
+		c.controlConn = nil
+	}
+
+	utils.Infof("Client: disconnected successfully")
+	return nil
+}
+
+// IsConnected 检查是否连接到服务器
+func (c *TunnoxClient) IsConnected() bool {
+	return c.controlConn != nil && c.controlStream != nil
+}
+
+// Reconnect 重新连接到服务器
+func (c *TunnoxClient) Reconnect() error {
+	utils.Infof("Client: attempting to reconnect...")
+
+	// 先断开旧连接
+	c.Disconnect()
+
+	// 建立新连接
+	return c.Connect()
+}
+
+// sendHandshake 发送握手请求（使用控制连接）
 func (c *TunnoxClient) sendHandshake() error {
+	return c.sendHandshakeOnStream(c.controlStream)
+}
+
+// saveAnonymousCredentials 保存匿名客户端凭据到配置文件
+func (c *TunnoxClient) saveAnonymousCredentials() error {
+	if !c.config.Anonymous || c.config.ClientID == 0 {
+		return nil // 非匿名客户端或无ClientID，无需保存
+	}
+
+	// 使用ConfigManager保存配置
+	configMgr := NewConfigManager()
+	if err := configMgr.SaveConfig(c.config); err != nil {
+		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	utils.Infof("Client: anonymous credentials saved to config file")
+	return nil
+}
+
+// sendHandshakeOnStream 在指定的stream上发送握手请求（用于隧道连接）
+func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer) error {
 	var req *packet.HandshakeRequest
 
+	// 认证策略：
+	// 1. 匿名客户端 + 有ClientID和SecretKey → 使用ClientID+SecretKey认证
+	// 2. 匿名客户端 + 无ClientID → 首次握手，服务端分配凭据
+	// 3. 注册客户端 → 使用ClientID+AuthToken认证
 	if c.config.Anonymous {
-		req = &packet.HandshakeRequest{
-			ClientID: 0,
-			Token:    fmt.Sprintf("anonymous:%s", c.config.DeviceID),
-			Version:  "2.0",
-			Protocol: c.config.Server.Protocol,
+		if c.config.ClientID > 0 && c.config.SecretKey != "" {
+			// 匿名客户端使用持久化凭据重新认证
+			req = &packet.HandshakeRequest{
+				ClientID: c.config.ClientID,
+				Token:    c.config.SecretKey, // ✅ 使用SecretKey而不是DeviceID
+				Version:  "2.0",
+				Protocol: c.config.Server.Protocol,
+			}
+		} else {
+			// 首次匿名握手，请求分配凭据
+			req = &packet.HandshakeRequest{
+				ClientID: 0,
+				Token:    fmt.Sprintf("anonymous:%s", c.config.DeviceID),
+				Version:  "2.0",
+				Protocol: c.config.Server.Protocol,
+			}
 		}
 	} else {
+		// 注册客户端使用AuthToken
 		req = &packet.HandshakeRequest{
 			ClientID: c.config.ClientID,
 			Token:    c.config.AuthToken,
@@ -107,12 +179,12 @@ func (c *TunnoxClient) sendHandshake() error {
 		Payload:    reqData,
 	}
 
-	if _, err := c.controlStream.WritePacket(handshakePkt, false, 0); err != nil {
+	if _, err := stream.WritePacket(handshakePkt, false, 0); err != nil {
 		return fmt.Errorf("failed to send handshake: %w", err)
 	}
 
 	// 等待握手响应
-	respPkt, _, err := c.controlStream.ReadPacket()
+	respPkt, _, err := stream.ReadPacket()
 	if err != nil {
 		return fmt.Errorf("failed to read handshake response: %w", err)
 	}
@@ -139,11 +211,24 @@ func (c *TunnoxClient) sendHandshake() error {
 		return fmt.Errorf("handshake failed: %s", resp.Error)
 	}
 
-	// 匿名模式下，服务器会返回分配的 ClientID
-	if c.config.Anonymous && resp.Message != "" {
-		var assignedClientID int64
-		if _, err := fmt.Sscanf(resp.Message, "Anonymous client authenticated, client_id=%d", &assignedClientID); err == nil {
-			c.config.ClientID = assignedClientID
+	// 匿名模式下，服务器会返回分配的凭据（仅对控制连接有用）
+	if c.config.Anonymous && stream == c.controlStream {
+		// ✅ 优先使用结构化字段
+		if resp.ClientID > 0 && resp.SecretKey != "" {
+			c.config.ClientID = resp.ClientID
+			c.config.SecretKey = resp.SecretKey
+			utils.Infof("Client: received anonymous credentials - ClientID=%d, SecretKey=***", resp.ClientID)
+
+			// 保存凭据到配置文件（供下次启动使用）
+			if err := c.saveAnonymousCredentials(); err != nil {
+				utils.Warnf("Client: failed to save anonymous credentials: %v", err)
+			}
+		} else if resp.Message != "" {
+			// 兼容旧版本：从Message解析ClientID
+			var assignedClientID int64
+			if _, err := fmt.Sscanf(resp.Message, "Anonymous client authenticated, client_id=%d", &assignedClientID); err == nil {
+				c.config.ClientID = assignedClientID
+			}
 		}
 	}
 
@@ -154,6 +239,12 @@ func (c *TunnoxClient) sendHandshake() error {
 	} else {
 		utils.Infof("Client: authenticated successfully, ClientID=%d, Token=%s",
 			c.config.ClientID, c.config.AuthToken)
+	}
+
+	// ✅ 握手成功后，请求映射配置（仅对控制连接）
+	// 这样客户端重启后能自动恢复映射列表
+	if stream == c.controlStream && c.config.ClientID > 0 {
+		go c.requestMappingConfig()
 	}
 
 	return nil
@@ -264,4 +355,3 @@ func (c *TunnoxClient) requestMappingConfig() {
 
 	utils.Infof("Client: ConfigGet request sent successfully, bytes=%d", n)
 }
-

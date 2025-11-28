@@ -88,6 +88,11 @@ type TunnelConnection struct {
 
 	// 底层连接（用于兼容）
 	baseConn *types.Connection
+
+	// ✨ Phase 2: 隧道迁移支持
+	sendBuffer    *TunnelSendBuffer    // 发送缓冲区（支持重传）
+	receiveBuffer *TunnelReceiveBuffer // 接收缓冲区（支持重组）
+	enableSeqNum  bool                 // 是否启用序列号（默认false，保持兼容）
 }
 
 // NewTunnelConnection 创建映射连接
@@ -100,7 +105,22 @@ func NewTunnelConnection(connID string, stream stream.PackageStreamer, remoteAdd
 		Authenticated: false,
 		CreatedAt:     time.Now(),
 		LastActiveAt:  time.Now(),
+		
+		// ✨ Phase 2: 初始化缓冲区（默认不启用）
+		sendBuffer:    NewTunnelSendBuffer(),
+		receiveBuffer: NewTunnelReceiveBuffer(),
+		enableSeqNum:  false, // 默认禁用，保持向后兼容
 	}
+}
+
+// EnableSequenceNumbers 启用序列号支持（用于支持迁移的隧道）
+func (t *TunnelConnection) EnableSequenceNumbers() {
+	t.enableSeqNum = true
+}
+
+// IsSequenceNumbersEnabled 检查是否启用序列号
+func (t *TunnelConnection) IsSequenceNumbersEnabled() bool {
+	return t.enableSeqNum
 }
 
 // UpdateActivity 更新活跃时间

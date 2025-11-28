@@ -12,6 +12,7 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/health"
 	"tunnox-core/internal/utils"
 
 	"github.com/gorilla/mux"
@@ -36,6 +37,9 @@ type ManagementAPIServer struct {
 
 	// 新的连接码系统
 	connCodeHandlers *ConnectionCodeHandlers
+
+	// 健康检查
+	healthManager *health.HealthManager
 }
 
 // APIConfig API 配置
@@ -75,12 +79,19 @@ type RateLimitConfig struct {
 }
 
 // NewManagementAPIServer 创建 Management API 服务器
-func NewManagementAPIServer(ctx context.Context, config *APIConfig, cloudControl managers.CloudControlAPI, connCodeService *services.ConnectionCodeService) *ManagementAPIServer {
+func NewManagementAPIServer(
+	ctx context.Context,
+	config *APIConfig,
+	cloudControl managers.CloudControlAPI,
+	connCodeService *services.ConnectionCodeService,
+	healthManager *health.HealthManager,
+) *ManagementAPIServer {
 	s := &ManagementAPIServer{
-		ManagerBase:  dispose.NewManager("ManagementAPIServer", ctx),
-		config:       config,
-		cloudControl: cloudControl,
-		router:       mux.NewRouter(),
+		ManagerBase:   dispose.NewManager("ManagementAPIServer", ctx),
+		config:        config,
+		cloudControl:  cloudControl,
+		router:        mux.NewRouter(),
+		healthManager: healthManager,
 	}
 
 	// 初始化连接码handlers（如果提供了service）
@@ -126,6 +137,16 @@ func (s *ManagementAPIServer) Start() error {
 
 // registerRoutes 注册所有路由
 func (s *ManagementAPIServer) registerRoutes() {
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 健康检查端点（不需要认证）
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	s.router.HandleFunc("/health", s.handleHealth).Methods("GET")
+	s.router.HandleFunc("/ready", s.handleReady).Methods("GET")
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// API 路由（需要认证）
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 	// API 基础路径
 	api := s.router.PathPrefix("/api/v1").Subrouter()
 
@@ -253,10 +274,33 @@ func (s *ManagementAPIServer) respondError(w http.ResponseWriter, statusCode int
 
 // handleHealth 健康检查
 func (s *ManagementAPIServer) handleHealth(w http.ResponseWriter, r *http.Request) {
-	s.respondJSON(w, http.StatusOK, map[string]string{
-		"status": "ok",
-		"time":   time.Now().Format(time.RFC3339),
-	})
+	if s.healthManager == nil {
+		// 如果没有配置HealthManager，返回简单的OK
+		s.respondJSON(w, http.StatusOK, map[string]string{
+			"status": "ok",
+			"time":   time.Now().Format(time.RFC3339),
+		})
+		return
+	}
+
+	info := s.healthManager.GetHealthInfo()
+
+	// 根据状态返回不同的HTTP状态码
+	var statusCode int
+	switch info.Status {
+	case health.HealthStatusHealthy:
+		statusCode = http.StatusOK // 200
+	case health.HealthStatusDraining:
+		statusCode = http.StatusServiceUnavailable // 503 (告诉负载均衡器不要路由新请求)
+	case health.HealthStatusUnhealthy:
+		statusCode = http.StatusServiceUnavailable // 503
+	default:
+		statusCode = http.StatusInternalServerError // 500
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(info)
 }
 
 // getInt64PathVar 获取路径参数（int64）
@@ -383,5 +427,29 @@ func (s *ManagementAPIServer) authMiddleware(next http.Handler) http.Handler {
 
 		// 认证成功，继续处理
 		next.ServeHTTP(w, r)
+	})
+}
+
+// handleReady 就绪检查端点
+//
+// GET /ready
+//
+// 检查服务器是否准备好接受新连接
+// 用于Kubernetes等容器编排系统的readiness probe
+func (s *ManagementAPIServer) handleReady(w http.ResponseWriter, r *http.Request) {
+	if s.healthManager == nil || s.healthManager.IsAcceptingConnections() {
+		s.respondJSON(w, http.StatusOK, map[string]interface{}{
+			"ready":  true,
+			"status": "accepting_connections",
+		})
+		return
+	}
+
+	// 不接受新连接
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ready":  false,
+		"status": s.healthManager.GetStatus(),
 	})
 }

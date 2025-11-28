@@ -8,8 +8,10 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"tunnox-core/internal/client"
+	"tunnox-core/internal/client/cli"
 	"tunnox-core/internal/utils"
 )
 
@@ -22,6 +24,8 @@ func main() {
 	deviceID := flag.String("device", "", "device ID for anonymous mode (overrides config)")
 	authToken := flag.String("token", "", "auth token (overrides config)")
 	anonymous := flag.Bool("anonymous", false, "use anonymous mode (overrides config)")
+	daemon := flag.Bool("daemon", false, "run in daemon mode (no interactive CLI)")
+	interactive := flag.Bool("interactive", true, "run in interactive mode with CLI (default)")
 	help := flag.Bool("h", false, "show help")
 
 	flag.Parse()
@@ -39,6 +43,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 决定运行模式
+	runInteractive := *interactive && !*daemon
+
+	// 配置日志输出
+	logFile, err := configureLogging(config, runInteractive)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to configure logging: %v\n", err)
+		os.Exit(1)
+	}
+
 	// 显示连接信息
 	fmt.Printf("🚀 Tunnox Client Starting...\n")
 	fmt.Printf("   Protocol: %s\n", config.Server.Protocol)
@@ -48,6 +62,12 @@ func main() {
 	} else {
 		fmt.Printf("   Mode:     Authenticated (client_id: %d)\n", config.ClientID)
 	}
+
+	// 在交互模式下显示日志文件位置
+	if runInteractive && logFile != "" {
+		fmt.Printf("   Logs:     %s\n", logFile)
+	}
+
 	fmt.Printf("\n")
 
 	// 创建上下文
@@ -57,28 +77,131 @@ func main() {
 	// 创建客户端
 	tunnoxClient := client.NewClient(ctx, config)
 
-	// 连接到服务器
-	if err := tunnoxClient.Connect(); err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to connect to server: %v\n", err)
-		os.Exit(1)
-	}
+	// 根据运行模式决定连接策略
+	if runInteractive {
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// 交互模式：可选连接，失败不退出
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-	fmt.Printf("✅ Connected to server successfully!\n\n")
+		// 在交互模式下，提示日志文件位置
+		if logFile != "" {
+			fmt.Printf("📝 Logs are being written to: %s\n", logFile)
+			fmt.Printf("   Use 'tail -f %s' to view logs in real-time\n\n", logFile)
+		}
 
-	// 连接成功后，客户端会自动从服务器获取映射配置
+		// 如果有完整配置，尝试连接（失败不退出）
+		if config.Server.Address != "" {
+			fmt.Println("⏳ Connecting to server...")
+			if err := tunnoxClient.Connect(); err != nil {
+				fmt.Printf("⚠️  Failed to connect: %v\n", err)
+				fmt.Println("💡 You can use 'connect' command in CLI to retry\n")
+			} else {
+				fmt.Printf("✅ Connected to server successfully!\n\n")
+			}
+		} else {
+			fmt.Println("ℹ️  No server configured")
+			fmt.Println("💡 Use 'connect' command to connect to a server\n")
+		}
 
-	// 等待终止信号
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		// 交互模式：尝试启动CLI
+		tunnoxCLI, err := cli.NewCLI(ctx, tunnoxClient)
+		if err != nil {
+			// CLI初始化失败（通常是因为没有TTY），自动降级到daemon模式
+			fmt.Fprintf(os.Stderr, "\n⚠️  CLI initialization failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "🔄 Auto-switching to daemon mode...\n\n")
 
-	select {
-	case sig := <-sigChan:
-		utils.Infof("Client: received signal %v, shutting down...", sig)
-	case <-ctx.Done():
-		utils.Infof("Client: context cancelled, shutting down...")
+			// 验证必须配置
+			if config.Server.Address == "" {
+				fmt.Fprintf(os.Stderr, "❌ Error: server address is required\n")
+				fmt.Fprintf(os.Stderr, "💡 Please configure server address in config file or use -s flag\n\n")
+				os.Exit(1)
+			}
+
+			// 如果还未连接，尝试连接
+			if !tunnoxClient.IsConnected() {
+				if err := connectWithRetry(tunnoxClient, 5); err != nil {
+					fmt.Fprintf(os.Stderr, "❌ Failed to connect to server after retries: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Println("✅ Connected to server successfully!")
+			}
+
+			fmt.Println("   Press Ctrl+C to stop")
+			fmt.Println("")
+
+			// 启动自动重连监控
+			go monitorConnectionAndReconnect(ctx, tunnoxClient)
+
+			// 等待信号（daemon模式）
+			sigChan := make(chan os.Signal, 1)
+			signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+			select {
+			case sig := <-sigChan:
+				utils.Infof("Client: received signal %v, shutting down...", sig)
+			case <-ctx.Done():
+				utils.Infof("Client: context cancelled, shutting down...")
+			}
+		} else {
+			// CLI初始化成功，正常启动交互模式
+			// 在goroutine中处理信号
+			go func() {
+				sigChan := make(chan os.Signal, 1)
+				signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+				select {
+				case sig := <-sigChan:
+					utils.Infof("Client: received signal %v, shutting down...", sig)
+					cancel()
+					tunnoxCLI.Stop()
+				case <-ctx.Done():
+					tunnoxCLI.Stop()
+				}
+			}()
+
+			// 启动CLI（阻塞）
+			tunnoxCLI.Start()
+		}
+
+	} else {
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+		// 守护进程模式：必须连接成功，支持自动重连
+		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+		fmt.Println("🔄 Running in daemon mode...")
+
+		// 验证必须配置
+		if config.Server.Address == "" {
+			fmt.Fprintf(os.Stderr, "❌ Error: server address is required in daemon mode\n")
+			os.Exit(1)
+		}
+
+		// 连接到服务器（带重试）
+		if err := connectWithRetry(tunnoxClient, 5); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to connect to server after retries: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("✅ Connected to server successfully!")
+		fmt.Println("   Press Ctrl+C to stop")
+		fmt.Println("")
+
+		// 启动自动重连监控
+		go monitorConnectionAndReconnect(ctx, tunnoxClient)
+
+		// 等待信号
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+		select {
+		case sig := <-sigChan:
+			utils.Infof("Client: received signal %v, shutting down...", sig)
+		case <-ctx.Done():
+			utils.Infof("Client: context cancelled, shutting down...")
+		}
 	}
 
 	// 停止客户端
+	fmt.Println("\n🛑 Shutting down client...")
 	tunnoxClient.Stop()
 	utils.Infof("Client: shutdown complete")
 }
@@ -179,41 +302,190 @@ USAGE:
     tunnox-client [OPTIONS]
 
 OPTIONS:
-    -config <file>     Path to config file (optional)
-    -p <protocol>      Protocol: tcp/websocket/ws/udp/quic
-    -s <address>       Server address (e.g., localhost:7001)
-    -id <client_id>    Client ID for authenticated mode
-    -token <token>     Auth token for authenticated mode
-    -device <id>       Device ID for anonymous mode
-    -anonymous         Use anonymous mode
-    -h                 Show this help
+    Connection:
+      -config <file>     Path to config file (optional)
+      -p <protocol>      Protocol: tcp/websocket/ws/udp/quic
+      -s <address>       Server address (e.g., localhost:7001)
+      -id <client_id>    Client ID for authenticated mode
+      -token <token>     Auth token for authenticated mode
+      -device <id>       Device ID for anonymous mode
+      -anonymous         Use anonymous mode
+
+    Mode:
+      -interactive       Run in interactive mode with CLI (default)
+      -daemon            Run in daemon mode (no CLI, for background service)
+
+    Help:
+      -h                 Show this help
 
 EXAMPLES:
+    # Interactive mode (default) - with CLI
+    tunnox-client -p quic -s localhost:7003 -anonymous
+
+    # Daemon mode - no CLI, runs in background
+    tunnox-client -p quic -s localhost:7003 -anonymous -daemon
+
     # Use config file
     tunnox-client -config client-config.yaml
 
-    # Quick start with TCP
-    tunnox-client -p tcp -s localhost:7001 -anonymous
-
-    # Quick start with WebSocket
-    tunnox-client -p ws -s localhost:7000 -anonymous
-
-    # Quick start with UDP
-    tunnox-client -p udp -s localhost:7002 -anonymous
-
-    # Quick start with QUIC
+    # Quick start with QUIC (recommended)
     tunnox-client -p quic -s localhost:7003 -anonymous
 
     # Authenticated mode
-    tunnox-client -p tcp -s localhost:7001 -id 10000001 -token "your-jwt-token"
+    tunnox-client -p quic -s localhost:7003 -id 10000001 -token "your-jwt-token"
 
-    # Override config file settings
-    tunnox-client -config client.yaml -p websocket -s example.com:8080
+INTERACTIVE MODE:
+    In interactive mode, you can use commands like:
+      - generate-code     Generate a connection code (TargetClient)
+      - use-code <code>   Use a connection code (ListenClient)
+      - list-mappings     List all tunnel mappings
+      - help              Show all available commands
+      - exit              Quit the client
 
+DAEMON MODE:
+    Use -daemon flag for:
+      - Running as a system service
+      - Background processes
+      - Automated deployments
+    
 NOTES:
     - Command line options override config file settings
-    - If no config file is specified, uses client-config.yaml if it exists
+    - Default mode is interactive (with CLI)
     - Default protocol is tcp if not specified
     - Anonymous mode is used if no client_id/token is provided
 `)
+}
+
+// configureLogging 配置日志输出
+//
+// 返回：日志文件路径（如果输出到文件）和可能的错误
+func configureLogging(config *client.ClientConfig, interactive bool) (string, error) {
+	logConfig := &client.LogConfig{
+		Level:  "info",
+		Format: "text",
+	}
+
+	// 从配置文件读取日志配置（如果有）
+	if config.Log.Level != "" {
+		logConfig.Level = config.Log.Level
+	}
+	if config.Log.Format != "" {
+		logConfig.Format = config.Log.Format
+	}
+
+	// 根据运行模式设置日志输出
+	if interactive {
+		// 交互模式：日志输出到文件，避免干扰CLI
+		logFile := config.Log.File
+		if logFile == "" {
+			// 默认日志文件：~/.tunnox/client.log
+			homeDir, err := os.UserHomeDir()
+			if err != nil {
+				logFile = "/tmp/tunnox-client.log"
+			} else {
+				logFile = homeDir + "/.tunnox/client.log"
+			}
+		}
+
+		logConfig.Output = "file"
+		logConfig.File = logFile
+
+		// 确保日志目录存在
+		logDir := logFile[:strings.LastIndex(logFile, "/")]
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			return "", fmt.Errorf("failed to create log directory: %w", err)
+		}
+
+	} else {
+		// 守护进程模式：日志输出到stderr（或文件）
+		if config.Log.Output != "" {
+			logConfig.Output = config.Log.Output
+		} else {
+			logConfig.Output = "stderr"
+		}
+
+		if logConfig.Output == "file" {
+			if config.Log.File != "" {
+				logConfig.File = config.Log.File
+			} else {
+				logConfig.File = "/var/log/tunnox-client.log"
+			}
+		}
+	}
+
+	// 初始化日志
+	if err := utils.InitLogger((*utils.LogConfig)(logConfig)); err != nil {
+		return "", err
+	}
+
+	// 返回日志文件路径（如果输出到文件）
+	if logConfig.Output == "file" {
+		return logConfig.File, nil
+	}
+	return "", nil
+}
+
+// connectWithRetry 带重试的连接
+func connectWithRetry(tunnoxClient *client.TunnoxClient, maxRetries int) error {
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			fmt.Printf("🔄 Retry %d/%d...\n", i, maxRetries)
+			time.Sleep(time.Duration(i) * 2 * time.Second) // 指数退避
+		}
+
+		if err := tunnoxClient.Connect(); err != nil {
+			if i == maxRetries-1 {
+				return err
+			}
+			fmt.Printf("⚠️  Connection failed: %v\n", err)
+			continue
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("max retries exceeded")
+}
+
+// monitorConnectionAndReconnect 监控连接状态并自动重连
+func monitorConnectionAndReconnect(ctx context.Context, tunnoxClient *client.TunnoxClient) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	consecutiveFailures := 0
+	maxFailures := 3
+	reconnectDelay := 5 * time.Second
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// 检查连接状态
+			if !tunnoxClient.IsConnected() {
+				consecutiveFailures++
+				utils.Warnf("Connection lost (failure %d/%d), attempting to reconnect...",
+					consecutiveFailures, maxFailures)
+
+				time.Sleep(reconnectDelay)
+
+				if err := tunnoxClient.Reconnect(); err != nil {
+					utils.Errorf("Reconnection failed: %v", err)
+
+					if consecutiveFailures >= maxFailures {
+						utils.Errorf("Max reconnection attempts reached, giving up")
+						return
+					}
+				} else {
+					utils.Infof("Reconnected successfully")
+					consecutiveFailures = 0
+				}
+			} else {
+				// 连接正常，重置失败计数
+				if consecutiveFailures > 0 {
+					consecutiveFailures = 0
+				}
+			}
+		}
+	}
 }

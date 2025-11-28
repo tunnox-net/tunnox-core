@@ -8,6 +8,7 @@ import (
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/types"
+	"tunnox-core/internal/security"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
@@ -104,6 +105,14 @@ type SessionManager struct {
 	// 配置
 	config *SessionConfig
 
+	// ReconnectTokenManager（用于生成重连Token）
+	reconnectTokenManager *security.ReconnectTokenManager
+	sessionTokenManager   *security.SessionTokenManager
+
+	// ✨ Phase 2: 隧道迁移支持
+	tunnelStateManager *TunnelStateManager
+	migrationManager   *TunnelMigrationManager
+
 	dispose.Dispose
 }
 
@@ -196,6 +205,12 @@ func (s *SessionManager) SetBridgeManager(bridgeManager BridgeManager) {
 	// 启动跨节点广播订阅
 	s.startTunnelOpenBroadcastSubscription()
 	s.startConfigPushBroadcastSubscription()
+}
+
+// SetReconnectTokenManager 设置ReconnectTokenManager（用于生成重连Token）
+func (s *SessionManager) SetReconnectTokenManager(manager *security.ReconnectTokenManager) {
+	s.reconnectTokenManager = manager
+	utils.Debugf("SessionManager: ReconnectTokenManager configured")
 }
 
 // ============================================================================

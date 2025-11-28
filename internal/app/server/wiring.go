@@ -261,7 +261,7 @@ func (s *Server) createManagementAPI(ctx context.Context) *api.ManagementAPIServ
 		},
 	}
 
-	apiServer := api.NewManagementAPIServer(ctx, apiConfig, s.cloudControl, s.connCodeService)
+	apiServer := api.NewManagementAPIServer(ctx, apiConfig, s.cloudControl, s.connCodeService, s.healthManager)
 	utils.Infof("Management API initialized: listen_addr=%s", apiConfig.ListenAddr)
 	return apiServer
 }

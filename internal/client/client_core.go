@@ -35,6 +35,9 @@ type TunnoxClient struct {
 	localTrafficStats map[string]*localMappingStats // mappingID -> stats
 	trafficStatsMu    sync.RWMutex
 
+	// API客户端（用于CLI调用Management API）
+	apiClient *ManagementAPIClient
+
 	// 重连控制
 	kicked     bool // 是否被踢下线
 	authFailed bool // 是否认证失败
@@ -56,6 +59,14 @@ func NewClient(ctx context.Context, config *ClientConfig) *TunnoxClient {
 		mappingHandlers:   make(map[string]MappingHandler),
 		localTrafficStats: make(map[string]*localMappingStats),
 	}
+
+	// 初始化API客户端（用于CLI）
+	// 假设Management API在服务器地址的8080端口
+	managementAPIAddr := config.Server.Address
+	if managementAPIAddr == "" {
+		managementAPIAddr = "localhost:8080"
+	}
+	client.apiClient = NewManagementAPIClient(managementAPIAddr, config.ClientID, config.AuthToken)
 
 	// 添加清理处理器
 	client.AddCleanHandler(func() error {
@@ -100,3 +111,8 @@ func (c *TunnoxClient) GetConfig() *ClientConfig {
 	return c.config
 }
 
+
+// GetAPIClient 获取Management API客户端（供CLI使用）
+func (c *TunnoxClient) GetAPIClient() *ManagementAPIClient {
+	return c.apiClient
+}

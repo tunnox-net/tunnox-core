@@ -41,6 +41,13 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 	streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
 	tunnelStream := streamFactory.CreateStreamProcessor(conn, conn)
 
+	// ✅ 新连接需要先进行握手认证
+	if err := c.sendHandshakeOnStream(tunnelStream); err != nil {
+		tunnelStream.Close()
+		conn.Close()
+		return nil, nil, fmt.Errorf("tunnel connection handshake failed: %w", err)
+	}
+
 	// 发送 TunnelOpen
 	req := &packet.TunnelOpenRequest{
 		MappingID: mappingID,
@@ -95,4 +102,3 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 func (c *TunnoxClient) DialTunnel(tunnelID, mappingID, secretKey string) (net.Conn, stream.PackageStreamer, error) {
 	return c.dialTunnel(tunnelID, mappingID, secretKey)
 }
-

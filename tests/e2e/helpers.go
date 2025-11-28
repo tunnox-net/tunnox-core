@@ -63,14 +63,15 @@ func GetClientIDFromContainer(t *testing.T, containerSuffix string) (int64, erro
 
 		t.Logf("Attempt %d: found container %s (suffix: %s)", attempt+1, actualContainerName, containerSuffix)
 
-		// 执行docker logs命令查找ClientID
-		cmd := exec.Command("docker", "logs", actualContainerName)
+		// 从客户端日志文件中读取ClientID（日志已重定向到文件）
+		// 日志文件路径: /home/tunnox/.tunnox/client.log
+		cmd := exec.Command("docker", "exec", actualContainerName, "cat", "/home/tunnox/.tunnox/client.log")
 		var out bytes.Buffer
 		cmd.Stdout = &out
 		cmd.Stderr = &out
 
 		if err := cmd.Run(); err != nil {
-			t.Logf("Attempt %d: failed to get logs from %s: %v", attempt+1, actualContainerName, err)
+			t.Logf("Attempt %d: failed to read log file from %s: %v", attempt+1, actualContainerName, err)
 			if attempt < 9 {
 				exec.Command("sleep", "1").Run()
 			}
@@ -79,17 +80,20 @@ func GetClientIDFromContainer(t *testing.T, containerSuffix string) (int64, erro
 
 		logs := out.String()
 
-		// 查找类似 "ClientID=12345678" 的行
+		// 查找类似 "Client: authenticated as anonymous client, ClientID=12345678, DeviceID=e2e-client-a" 的行
 		for _, line := range strings.Split(logs, "\n") {
+			// 匹配客户端日志中的 ClientID=
 			if strings.Contains(line, "ClientID=") && strings.Contains(line, "authenticated as anonymous client") {
-				// 提取ClientID
+				// 提取ClientID，格式：ClientID=12345678
 				parts := strings.Split(line, "ClientID=")
 				if len(parts) >= 2 {
+					// 提取数字部分（后面跟着逗号或空格）
 					idPart := strings.Split(parts[1], ",")[0]
+					idPart = strings.TrimSpace(idPart)
 					var clientID int64
 					_, err := fmt.Sscanf(idPart, "%d", &clientID)
 					if err == nil {
-						t.Logf("✅ Found ClientID=%d for container %s", clientID, actualContainerName)
+						t.Logf("✅ Found ClientID=%d for container %s from log file", clientID, actualContainerName)
 						return clientID, nil
 					}
 				}

@@ -14,6 +14,7 @@ import (
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/node"
 	"tunnox-core/internal/core/storage"
+	"tunnox-core/internal/health"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/security"
@@ -42,10 +43,13 @@ type Server struct {
 	apiServer       *api.ManagementAPIServer
 	
 	// 服务
-	connCodeService     *services.ConnectionCodeService
-	bruteForceProtector *security.BruteForceProtector
-	ipManager           *security.IPManager
-	rateLimiter         *security.RateLimiter
+	connCodeService       *services.ConnectionCodeService
+	bruteForceProtector   *security.BruteForceProtector
+	ipManager             *security.IPManager
+	rateLimiter           *security.RateLimiter
+	healthManager         *health.HealthManager
+	reconnectTokenManager *security.ReconnectTokenManager
+	sessionTokenManager   *security.SessionTokenManager
 }
 
 // New 创建新服务器
@@ -122,6 +126,31 @@ func New(config *Config, parentCtx context.Context) *Server {
 	// ✅ 创建 RateLimiter（速率限制器）
 	server.rateLimiter = security.NewRateLimiter(nil, nil, parentCtx)
 	utils.Infof("Server: RateLimiter initialized with default config")
+
+	// ✅ 创建 HealthManager（健康检查管理）
+	server.healthManager = health.NewHealthManager(allocatedNodeID, "1.0.0", parentCtx)
+	// 设置SessionManager为StatsProvider（提供连接和隧道统计）
+	server.healthManager.SetStatsProvider(server.session)
+	utils.Infof("Server: HealthManager initialized (node=%s)", allocatedNodeID)
+
+	// ✅ 创建 ReconnectTokenManager（重连Token管理）
+	server.reconnectTokenManager = security.NewReconnectTokenManager(nil, serverStorage)
+	server.session.SetReconnectTokenManager(server.reconnectTokenManager)
+	utils.Infof("Server: ReconnectTokenManager initialized")
+
+	// ✅ 创建 SessionTokenManager（会话Token管理）
+	server.sessionTokenManager = security.NewSessionTokenManager(nil)
+	utils.Infof("Server: SessionTokenManager initialized")
+
+	// ✨ Phase 2: 创建 TunnelStateManager（隧道状态管理）
+	tunnelStateManager := session.NewTunnelStateManager(serverStorage, "")  // 空字符串使用默认密钥
+	server.session.SetTunnelStateManager(tunnelStateManager)
+	utils.Infof("Server: TunnelStateManager initialized")
+
+	// ✨ Phase 2: 创建 MigrationManager（隧道迁移管理）
+	migrationManager := session.NewTunnelMigrationManager(tunnelStateManager, server.session)
+	server.session.SetMigrationManager(migrationManager)
+	utils.Infof("Server: MigrationManager initialized")
 
 	// 创建并设置 AuthHandler 和 TunnelHandler
 	// 注意：先创建handler，稍后设置NodeID
@@ -208,7 +237,58 @@ func (s *Server) Start() error {
 func (s *Server) Stop() error {
 	utils.Info(constants.MsgShuttingDownServer)
 
-	// 停止 gRPC 服务器
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 阶段0: 标记健康状态为draining（通知负载均衡器不再路由新请求）
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	if s.healthManager != nil {
+		s.healthManager.MarkDraining()
+		utils.Info("Server health status marked as 'draining'")
+	}
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 阶段1: 广播服务器关闭通知给所有客户端
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	if s.session != nil {
+		utils.Info("Broadcasting shutdown notification to all connected clients...")
+		successCount, failureCount := s.session.BroadcastShutdown(
+			session.ShutdownReasonShutdown,
+			30, // 30秒优雅期
+			true, // 建议重连
+			"Server is shutting down gracefully",
+		)
+		utils.Infof("Shutdown broadcast completed: success=%d, failure=%d", successCount, failureCount)
+	}
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 阶段2: 保存活跃隧道状态（Phase 2: 隧道迁移支持）
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	if s.session != nil {
+		utils.Info("Saving active tunnel states for migration...")
+		if err := s.session.SaveActiveTunnelStates(); err != nil {
+			utils.Warnf("Failed to save tunnel states (non-fatal): %v", err)
+			// 不阻塞关闭流程，继续执行
+		} else {
+			utils.Info("Active tunnel states saved successfully")
+		}
+	}
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 阶段3: 等待活跃隧道完成传输（最多30秒）
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	if s.session != nil {
+		utils.Info("Waiting for active tunnels to complete...")
+		allCompleted := s.session.WaitForTunnelsToComplete(30)
+		if allCompleted {
+			utils.Info("All active tunnels completed successfully")
+		} else {
+			activeTunnels := s.session.GetActiveTunnelCount()
+			utils.Warnf("Timeout waiting for tunnels (still have %d active tunnels), proceeding with shutdown", activeTunnels)
+		}
+	}
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 阶段4: 停止 gRPC 服务器和其他服务
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	if s.grpcServer != nil {
 		utils.Info("Stopping gRPC server...")
 		s.grpcServer.GracefulStop()

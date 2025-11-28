@@ -29,11 +29,12 @@ services:
       - UDP_ADDR=0.0.0.0:7002
       - QUIC_ADDR=0.0.0.0:7003
       - API_ADDR=0.0.0.0:9000
-      - STORAGE_TYPE=redis
+      - STORAGE_TYPE=hybrid
       - STORAGE_REDIS_ADDR=redis:6379
       - MESSAGE_BROKER_TYPE=redis
       - MESSAGE_BROKER_REDIS_ADDR=redis:6379
       - LOG_LEVEL=info
+      # 多节点模式：Redis做cache，自动禁用persistent（避免多节点写JSON冲突）
     depends_on:
       redis:
         condition: service_healthy
@@ -58,7 +59,7 @@ services:
       - UDP_ADDR=0.0.0.0:7002
       - QUIC_ADDR=0.0.0.0:7003
       - API_ADDR=0.0.0.0:9000
-      - STORAGE_TYPE=redis
+      - STORAGE_TYPE=hybrid
       - STORAGE_REDIS_ADDR=redis:6379
       - MESSAGE_BROKER_TYPE=redis
       - MESSAGE_BROKER_REDIS_ADDR=redis:6379
@@ -87,7 +88,7 @@ services:
       - UDP_ADDR=0.0.0.0:7002
       - QUIC_ADDR=0.0.0.0:7003
       - API_ADDR=0.0.0.0:9000
-      - STORAGE_TYPE=redis
+      - STORAGE_TYPE=hybrid
       - STORAGE_REDIS_ADDR=redis:6379
       - MESSAGE_BROKER_TYPE=redis
       - MESSAGE_BROKER_REDIS_ADDR=redis:6379
