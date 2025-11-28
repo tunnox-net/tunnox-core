@@ -296,10 +296,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 
 // readLoop 读取循环（接收服务器命令）
 func (c *TunnoxClient) readLoop() {
-	utils.Infof("Client: readLoop started, controlStream=%p", c.controlStream)
 	defer func() {
-		utils.Infof("Client: readLoop exited, checking if should reconnect")
-		// 读取循环退出，尝试重连
 		if c.shouldReconnect() {
 			go c.reconnect()
 		}
@@ -308,20 +305,15 @@ func (c *TunnoxClient) readLoop() {
 	for {
 		select {
 		case <-c.Ctx().Done():
-			utils.Infof("Client: readLoop stopped (context done)")
 			return
 		default:
 		}
 
-		utils.Debugf("Client: readLoop waiting for packet")
 		pkt, _, err := c.controlStream.ReadPacket()
 		if err != nil {
 			if err != io.EOF {
 				utils.Errorf("Client: failed to read packet: %v", err)
-			} else {
-				utils.Infof("Client: connection closed (EOF)")
 			}
-			// 读取失败，清理连接状态
 			c.mu.Lock()
 			if c.controlStream != nil {
 				c.controlStream.Close()
@@ -335,25 +327,13 @@ func (c *TunnoxClient) readLoop() {
 			return
 		}
 
-		utils.Infof("Client: received packet, type=%d", pkt.PacketType)
-
-		// 处理不同类型的数据包
 		switch pkt.PacketType & 0x3F {
 		case packet.Heartbeat:
-			// 心跳响应
-			utils.Debugf("Client: heartbeat response received")
 		case packet.CommandResp:
-			// ✅ 命令响应（通过指令通道返回的响应）
-			if c.commandResponseManager != nil {
-				if handled := c.commandResponseManager.HandleResponse(pkt); handled {
-					utils.Debugf("Client: command response handled by response manager")
-					continue
-				}
+			if c.commandResponseManager != nil && c.commandResponseManager.HandleResponse(pkt) {
+				continue
 			}
-			utils.Debugf("Client: unhandled command response")
 		case packet.JsonCommand:
-			// 命令处理（服务器推送的命令）
-			utils.Infof("Client: processing JsonCommand")
 			c.handleCommand(pkt)
 		default:
 			utils.Warnf("Client: unknown packet type: %d", pkt.PacketType)
@@ -363,7 +343,6 @@ func (c *TunnoxClient) readLoop() {
 
 // heartbeatLoop 心跳循环
 func (c *TunnoxClient) heartbeatLoop() {
-	// ✅ 优化：缩短心跳间隔到 5 秒，加快连接断开检测
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
@@ -374,10 +353,7 @@ func (c *TunnoxClient) heartbeatLoop() {
 		case <-ticker.C:
 			if err := c.sendHeartbeat(); err != nil {
 				utils.Errorf("Client: failed to send heartbeat: %v", err)
-				// ✅ 心跳失败，连接可能已断开
-				// 注意：不在这里触发重连，让 readLoop 检测到连接断开后统一处理
-				// 这样可以避免多个重连触发点冲突
-				return // 退出心跳循环，等待重连后重新启动
+				return
 			}
 		}
 	}
@@ -416,40 +392,28 @@ func (c *TunnoxClient) sendHeartbeat() error {
 
 // requestMappingConfig 请求当前客户端的映射配置
 func (c *TunnoxClient) requestMappingConfig() {
-	// ✅ 防止重复调用：使用原子操作检查是否已有请求在进行
 	if !c.configRequesting.CompareAndSwap(false, true) {
-		utils.Debugf("Client: requestMappingConfig() already in progress, skipping")
 		return
 	}
 	defer c.configRequesting.Store(false)
 
-	utils.Infof("Client: requestMappingConfig() started")
-
-	// ✅ 优化：移除延迟，立即请求配置以加快恢复速度
-	// 检查连接状态
 	c.mu.RLock()
 	controlStream := c.controlStream
 	c.mu.RUnlock()
 
 	if controlStream == nil {
-		utils.Errorf("Client: cannot request mapping config, control stream is nil")
 		return
 	}
 
-	utils.Infof("Client: preparing ConfigGet request")
-
-	// 生成命令ID
 	commandID, err := utils.GenerateRandomString(16)
 	if err != nil {
 		utils.Errorf("Client: failed to generate command ID: %v", err)
 		return
 	}
 
-	// 注册响应等待
 	responseChan := c.commandResponseManager.RegisterRequest(commandID)
 	defer c.commandResponseManager.UnregisterRequest(commandID)
 
-	// 构造请求
 	cmd := &packet.CommandPacket{
 		CommandType: packet.ConfigGet,
 		CommandBody: "{}",
@@ -461,35 +425,20 @@ func (c *TunnoxClient) requestMappingConfig() {
 		CommandPacket: cmd,
 	}
 
-	utils.Infof("Client: sending ConfigGet request via WritePacket, CommandID=%s", commandID)
-
-	n, err := controlStream.WritePacket(pkt, false, 0)
-	utils.Infof("Client: WritePacket returned: n=%d, err=%v", n, err)
-	if err != nil {
+	if _, err := controlStream.WritePacket(pkt, false, 0); err != nil {
 		utils.Errorf("Client: failed to request mapping config: %v", err)
 		return
 	}
 
-	utils.Infof("Client: ConfigGet request sent successfully, bytes=%d, waiting for response...", n)
-
-	// 等待响应（超时30秒）
 	select {
 	case resp := <-responseChan:
 		if !resp.Success {
 			utils.Errorf("Client: ConfigGet failed: %s", resp.Error)
 			return
 		}
-
-		utils.Infof("Client: ✅ received ConfigGet response, data length=%d", len(resp.Data))
-
-		// ✅ 处理配置响应（与 ConfigSet 相同的格式）
 		c.handleConfigUpdate(resp.Data)
-
 	case <-time.After(30 * time.Second):
 		utils.Errorf("Client: ConfigGet request timeout after 30s")
-		return
 	case <-c.Ctx().Done():
-		utils.Infof("Client: ConfigGet request cancelled (context done)")
-		return
 	}
 }

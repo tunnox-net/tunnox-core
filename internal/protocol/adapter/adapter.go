@@ -162,16 +162,11 @@ func isIgnorableError(err error) bool {
 func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWriteCloser) {
 	shouldCloseConn := true // 默认关闭连接
 
-	// 检查是否为持久连接（如UDP会话连接）
 	if persistentConn, ok := conn.(interface{ IsPersistent() bool }); ok && persistentConn.IsPersistent() {
 		shouldCloseConn = false
-		utils.Debugf("%s adapter: persistent connection detected, will not close after handling", adapter.getConnectionType())
 	}
 
 	defer func() {
-		// ✅ 只有非隧道连接且非持久连接才在此处关闭
-		// 隧道连接交给TunnelBridge管理生命周期
-		// 持久连接（如UDP会话）由会话管理器管理生命周期
 		if shouldCloseConn {
 			if closer, ok := conn.(interface{ Close() error }); ok {
 				_ = closer.Close()
@@ -194,21 +189,15 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 		return
 	}
 
-	// 启动包处理循环
-	utils.Debugf("Starting packet processing loop for connection %s", streamConn.ID)
 	for {
 		select {
 		case <-b.Ctx().Done():
-			utils.Debugf("Context cancelled, closing connection %s", streamConn.ID)
 			return
 		default:
 		}
 
-		// 读取并处理数据包
 		pkt, _, err := streamConn.Stream.ReadPacket()
 		if err != nil {
-			// ✅ UDP 控制连接的超时错误是临时错误，应该继续重试
-			// 需要解包 StreamError 来检查底层错误
 			isTimeoutError := false
 			underlyingErr := err
 			for underlyingErr != nil {
@@ -216,11 +205,9 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 					Timeout() bool
 					Temporary() bool
 				}); ok && netErr.Timeout() && netErr.Temporary() {
-					// UDP 超时错误，继续循环等待下一个数据包
 					isTimeoutError = true
 					break
 				}
-				// 尝试解包错误（支持 errors.Unwrap）
 				if unwrapper, ok := underlyingErr.(interface{ Unwrap() error }); ok {
 					underlyingErr = unwrapper.Unwrap()
 				} else {
@@ -232,40 +219,29 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 			}
 			if err != io.EOF {
 				utils.Errorf("Failed to read packet for connection %s: %v", streamConn.ID, err)
-			} else {
-				utils.Debugf("Connection %s closed by peer", streamConn.ID)
 			}
 			return
 		}
-		utils.Infof("Server: received packet, type=%d on connection %s", pkt.PacketType, streamConn.ID)
 
-		// 填充 ConnectionID 并处理
 		streamPacket := &types.StreamPacket{
 			ConnectionID: streamConn.ID,
 			Packet:       pkt,
 			Timestamp:    time.Now(),
 		}
 
-		// ✅ 检查是否为隧道通道的首包（TunnelOpen）
 		isTunnelOpenPacket := (pkt.PacketType & 0x3F) == packet.TunnelOpen
 
-		// 处理数据包
 		if err := b.session.HandlePacket(streamPacket); err != nil {
-			// ✅ 只有隧道通道的首包处理完成后才停止 packet loop
-			// 指令通道（Handshake, Command, Heartbeat等）不受影响，继续读取
 			if isTunnelOpenPacket {
 				errMsg := err.Error()
 				if errMsg == "tunnel source connected, switching to stream mode" ||
 					errMsg == "tunnel target connected, switching to stream mode" ||
 					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" {
-					utils.Infof("Tunnel connection %s: first packet (TunnelOpen) processed, switching to stream mode, stopping packet loop", streamConn.ID)
-					shouldCloseConn = false // ✅ 不关闭隧道连接
-					return                  // ✅ 隧道通道首包处理完成，停止读取数据包，切换到流模式
+					shouldCloseConn = false
+					return
 				}
 			}
-			// 指令通道的错误或其他错误，继续处理下一个包
 			utils.Errorf("Failed to handle packet for connection %s: %v", streamConn.ID, err)
-			// 继续处理下一个包，不要直接返回
 		}
 	}
 }

@@ -70,18 +70,11 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		}
 	}
 
-	utils.Debugf("Handshake request: ClientID=%d, Version=%s, Protocol=%s, ConnectionType=%s",
-		req.ClientID, req.Version, req.Protocol, req.ConnectionType)
-
-	// ✅ 根据 ConnectionType 判断是否为控制连接
-	// 如果是隧道连接（ConnectionType == "tunnel"），不注册为控制连接
 	isControlConnection := req.ConnectionType != "tunnel"
 	if req.ConnectionType == "" {
-		// 向后兼容：如果没有 ConnectionType，默认为控制连接
 		isControlConnection = true
 	}
 
-	// ✅ 只有控制连接才需要注册到 controlConnMap
 	var clientConn *ControlConnection
 	if isControlConnection {
 		// 获取或创建控制连接
@@ -107,8 +100,6 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 			s.RegisterControlConnection(clientConn)
 		}
 	} else {
-		// 隧道连接：不注册为控制连接，但仍需要认证
-		// 创建一个临时的 ControlConnection 用于认证，保存到 controlConnMap 但不添加到 clientIDIndexMap
 		conn := s.getConnectionByConnID(connPacket.ConnectionID)
 		if conn == nil {
 			return fmt.Errorf("connection not found: %s", connPacket.ConnectionID)
@@ -122,7 +113,6 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 			remoteAddr = conn.RawConn.RemoteAddr()
 		}
 		clientConn = NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
-		// ✅ 保存到 controlConnMap，但不添加到 clientIDIndexMap（避免影响真正的控制连接查找）
 		s.controlConnLock.Lock()
 		s.controlConnMap[connPacket.ConnectionID] = clientConn
 		s.controlConnLock.Unlock()
@@ -146,31 +136,23 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		return err
 	}
 
-	// ✅ 只有控制连接才添加到 clientIDIndexMap
-	// 隧道连接已经保存到 controlConnMap（在 else 分支中），但不添加到 clientIDIndexMap
 	if isControlConnection && clientConn.Authenticated && clientConn.ClientID > 0 {
 		s.controlConnLock.Lock()
-		// ✅ 检查是否有旧连接，如果有则先清理
 		oldConn, exists := s.clientIDIndexMap[clientConn.ClientID]
 		if exists && oldConn != nil && oldConn.ConnID != clientConn.ConnID {
 			utils.Warnf("Client %d reconnected: oldConnID=%s, newConnID=%s, cleaning up old connection",
 				clientConn.ClientID, oldConn.ConnID, clientConn.ConnID)
-			// 清理旧连接（但不发送 Kick 命令，因为这是重连）
 			delete(s.controlConnMap, oldConn.ConnID)
 		}
-		// 添加到clientIDIndexMap用于快速查找（controlConnMap 已经在 RegisterControlConnection 中添加）
 		s.clientIDIndexMap[clientConn.ClientID] = clientConn
 		s.controlConnLock.Unlock()
 
-		// ✅ 如果是 UDP 控制连接，标记 UdpSessionConn 为控制连接
 		conn := s.getConnectionByConnID(connPacket.ConnectionID)
 		if conn != nil {
-			// 从 StreamProcessor 中获取 UdpSessionConn
 			if sp, ok := conn.Stream.(*stream.StreamProcessor); ok {
 				reader := sp.GetReader()
 				if udpSessionConn, ok := reader.(interface{ SetControlConnection(bool) }); ok {
 					udpSessionConn.SetControlConnection(true)
-					utils.Debugf("Marked UDP session connection %s as control connection", connPacket.ConnectionID)
 				}
 			}
 		}
@@ -220,7 +202,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 
 	if exists {
 		// 这是目标端的连接，连接到本地已有的bridge
-		utils.Infof("Tunnel[%s]: target connection arrived, attaching to local bridge", req.TunnelID)
 
 		// ✅ 隧道连接（有 MappingID）不应该被注册为控制连接
 		// 由于现在在 Handshake 中已经通过 ConnectionType 识别，这里只需要清理可能的误注册
@@ -233,64 +214,43 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 					// 如果 clientIDIndexMap 中也指向这个连接，移除它
 					if currentControlConn, exists := s.clientIDIndexMap[controlConn.ClientID]; exists && currentControlConn.ConnID == connPacket.ConnectionID {
 						delete(s.clientIDIndexMap, controlConn.ClientID)
-						utils.Debugf("Tunnel[%s]: removed tunnel connection %s from clientIDIndexMap (has MappingID, is tunnel connection)",
-							req.TunnelID, connPacket.ConnectionID)
 					}
 				}
-				utils.Debugf("Tunnel[%s]: removed tunnel connection %s from control connection map (has MappingID, is tunnel connection)",
-					req.TunnelID, connPacket.ConnectionID)
 			}
 			s.controlConnLock.Unlock()
 		}
 
-		// 发送成功响应
 		s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{
 			TunnelID: req.TunnelID,
 			Success:  true,
 		})
 
-		// 获取底层的net.Conn
 		netConn := s.extractNetConn(conn)
 		if netConn == nil {
 			utils.Errorf("Tunnel[%s]: failed to extract net.Conn from target connection %s", req.TunnelID, conn.ID)
 			return fmt.Errorf("failed to extract net.Conn from connection")
 		}
-		utils.Infof("Tunnel[%s]: extracted targetConn=%v (LocalAddr=%v, RemoteAddr=%v)",
-			req.TunnelID, netConn, netConn.LocalAddr(), netConn.RemoteAddr())
 
-		// 将目标端连接设置到bridge
 		bridge.SetTargetConnection(netConn, conn.Stream)
 
-		// ✅ 透传通道：首个指令包处理完成后，从指令连接列表中移除
-		// 识别方式：有 MappingID 的就是透传通道
 		if req.MappingID != "" {
 			s.connLock.Lock()
-			if _, exists := s.connMap[connPacket.ConnectionID]; exists {
-				delete(s.connMap, connPacket.ConnectionID)
-				utils.Infof("Tunnel[%s]: removed passthrough connection %s from command connection list",
-					req.TunnelID, connPacket.ConnectionID)
-			}
+			delete(s.connMap, connPacket.ConnectionID)
 			s.connLock.Unlock()
 		}
 
-		// ✅ 返回特殊错误，让ProcessPacketLoop停止处理
 		return fmt.Errorf("tunnel target connected, switching to stream mode")
 	}
 
-	// 本地未找到bridge，检查是否是跨服务器的目标端连接
 	if s.tunnelRouting != nil {
 		routingState, err := s.tunnelRouting.LookupWaitingTunnel(s.Ctx(), req.TunnelID)
 		if err == nil {
-			// ✅ 找到跨服务器路由信息，这是目标端连接
 			return s.handleCrossServerTargetConnection(conn, req, routingState)
 		} else if err != ErrTunnelNotFound && err != ErrTunnelExpired {
-			// 其他错误（非未找到或过期）需要记录
 			utils.Errorf("Tunnel[%s]: failed to lookup routing state: %v", req.TunnelID, err)
 		}
 	}
 
-	// 这是源端的连接，需要验证权限并创建bridge
-	// ✅ 使用已注册的ControlConnection（包含认证信息）
 	clientConn := s.getControlConnectionByConnID(connPacket.ConnectionID)
 	if clientConn == nil {
 		utils.Warnf("Tunnel[%s]: control connection not found for connID %s", req.TunnelID, connPacket.ConnectionID)
@@ -312,81 +272,52 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		return err
 	}
 
-	// ✅ 隧道连接认证完成后，立即从 controlConnMap 移除，避免被 packet loop 误读
 	if req.MappingID != "" {
 		s.controlConnLock.Lock()
 		if _, exists := s.controlConnMap[connPacket.ConnectionID]; exists {
 			delete(s.controlConnMap, connPacket.ConnectionID)
-			// 如果 clientIDIndexMap 中也指向这个连接，移除它
 			if clientConn.Authenticated && clientConn.ClientID > 0 {
 				if currentControlConn, exists := s.clientIDIndexMap[clientConn.ClientID]; exists && currentControlConn.ConnID == connPacket.ConnectionID {
 					delete(s.clientIDIndexMap, clientConn.ClientID)
-					utils.Debugf("Tunnel[%s]: removed tunnel connection %s from clientIDIndexMap (after authentication)",
-						req.TunnelID, connPacket.ConnectionID)
 				}
 			}
-			utils.Debugf("Tunnel[%s]: removed tunnel connection %s from control connection map (after authentication)",
-				req.TunnelID, connPacket.ConnectionID)
 		}
 		s.controlConnLock.Unlock()
 	}
 
-	// 发送成功响应给源端
 	s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{
 		TunnelID: req.TunnelID,
 		Success:  true,
 	})
 
-	utils.Infof("Tunnel[%s]: source connection established, creating bridge", req.TunnelID)
-
-	// 获取底层的net.Conn
 	netConn := s.extractNetConn(conn)
 	if netConn == nil {
 		utils.Errorf("Tunnel[%s]: failed to extract net.Conn from connection %s", req.TunnelID, conn.ID)
 		return fmt.Errorf("failed to extract net.Conn from connection")
 	}
-	utils.Infof("Tunnel[%s]: extracted sourceConn=%v (LocalAddr=%v, RemoteAddr=%v)",
-		req.TunnelID, netConn, netConn.LocalAddr(), netConn.RemoteAddr())
 
 	if err := s.startSourceBridge(req, netConn, conn.Stream); err != nil {
 		utils.Errorf("Tunnel[%s]: failed to start bridge: %v", req.TunnelID, err)
 		return err
 	}
 
-	// ✅ 隧道连接（有 MappingID）不应该被注册为控制连接
-	// 由于现在在 Handshake 中已经通过 ConnectionType 识别，这里只需要清理可能的误注册
 	if req.MappingID != "" {
 		s.controlConnLock.Lock()
 		if controlConn, exists := s.controlConnMap[connPacket.ConnectionID]; exists {
-			// 如果这个连接被错误注册为控制连接，移除它
 			delete(s.controlConnMap, connPacket.ConnectionID)
 			if controlConn.Authenticated && controlConn.ClientID > 0 {
-				// 如果 clientIDIndexMap 中也指向这个连接，移除它
 				if currentControlConn, exists := s.clientIDIndexMap[controlConn.ClientID]; exists && currentControlConn.ConnID == connPacket.ConnectionID {
 					delete(s.clientIDIndexMap, controlConn.ClientID)
-					utils.Debugf("Tunnel[%s]: removed tunnel connection %s from clientIDIndexMap (has MappingID, is tunnel connection)",
-						req.TunnelID, connPacket.ConnectionID)
 				}
 			}
-			utils.Debugf("Tunnel[%s]: removed tunnel connection %s from control connection map (has MappingID, is tunnel connection)",
-				req.TunnelID, connPacket.ConnectionID)
 		}
 		s.controlConnLock.Unlock()
-	}
 
-	// ✅ 透传通道：首个指令包处理完成后，从指令连接列表中移除
-	// 识别方式：有 MappingID 的就是透传通道
-	if req.MappingID != "" {
 		s.connLock.Lock()
-		if _, exists := s.connMap[connPacket.ConnectionID]; exists {
-			delete(s.connMap, connPacket.ConnectionID)
-			utils.Infof("Tunnel[%s]: removed passthrough connection %s from command connection list",
-				req.TunnelID, connPacket.ConnectionID)
-		}
+		delete(s.connMap, connPacket.ConnectionID)
 		s.connLock.Unlock()
 	}
 
-	// ✅ 返回特殊错误，让ProcessPacketLoop停止处理
 	return fmt.Errorf("tunnel source connected, switching to stream mode")
 }
 
@@ -461,26 +392,21 @@ func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, re
 
 // extractNetConn 从types.Connection中提取底层的net.Conn
 func (s *SessionManager) extractNetConn(conn *types.Connection) net.Conn {
-	// ✅ 直接使用保存的原始连接
 	if conn.RawConn != nil {
 		return conn.RawConn
 	}
 
-	// 回退方案1：尝试从Stream中获取
 	if sp, ok := conn.Stream.(*stream.StreamProcessor); ok {
 		if reader, ok := sp.GetReader().(net.Conn); ok {
 			return reader
 		}
-		// ✅ 回退方案2：检查是否是UDP会话连接，需要包装成net.Conn
 		reader := sp.GetReader()
 		if udpSessionConn, ok := reader.(interface {
 			Read([]byte) (int, error)
 			Write([]byte) (int, error)
 			Close() error
 		}); ok {
-			// 检查是否是UDP会话连接（通过检查是否有IsPersistent方法）
 			if _, hasPersistent := reader.(interface{ IsPersistent() bool }); hasPersistent {
-				// 这是一个UDP会话连接，需要包装成net.Conn
 				return newUdpConnWrapper(udpSessionConn)
 			}
 		}
@@ -496,10 +422,8 @@ type udpConnWrapper struct {
 }
 
 func newUdpConnWrapper(conn io.ReadWriteCloser) net.Conn {
-	// 尝试从conn中提取地址信息
 	var localAddr, remoteAddr net.Addr
 
-	// 如果是UdpSessionConn，尝试获取地址
 	if sessionConn, ok := conn.(interface {
 		GetAddr() string
 	}); ok {
@@ -561,7 +485,7 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 			if err := s.bridgeManager.BroadcastTunnelOpen(req, mapping.TargetClientID); err != nil {
 				utils.Errorf("Tunnel[%s]: failed to broadcast to other nodes: %v", req.TunnelID, err)
 			} else {
-				utils.Infof("Tunnel[%s]: ✅ broadcasted to other nodes for client %d",
+				utils.Infof("Tunnel[%s]: broadcasted to other nodes for client %d",
 					req.TunnelID, mapping.TargetClientID)
 			}
 		} else {
@@ -584,7 +508,7 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 		"enable_encryption":  mapping.Config.EnableEncryption,
 		"encryption_method":  mapping.Config.EncryptionMethod,
 		"encryption_key":     mapping.Config.EncryptionKey,
-		"bandwidth_limit":    mapping.Config.BandwidthLimit, // ✅ 添加带宽限制
+		"bandwidth_limit":    mapping.Config.BandwidthLimit,
 	}
 
 	cmdBodyJSON, err := json.Marshal(cmdBody)
@@ -611,6 +535,6 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 		return
 	}
 
-	utils.Infof("Tunnel[%s]: ✅ sent TunnelOpenRequest to target client %d via control connection",
+	utils.Infof("Tunnel[%s]: sent TunnelOpenRequest to target client %d via control connection",
 		req.TunnelID, mapping.TargetClientID)
 }
