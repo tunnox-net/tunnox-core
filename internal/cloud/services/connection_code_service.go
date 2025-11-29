@@ -539,6 +539,11 @@ func (s *ConnectionCodeService) GetMapping(mappingID string) (*models.PortMappin
 	return s.portMappingService.GetPortMapping(mappingID)
 }
 
+// GetPortMappingService 获取端口映射服务
+func (s *ConnectionCodeService) GetPortMappingService() PortMappingService {
+	return s.portMappingService
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 后台任务
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

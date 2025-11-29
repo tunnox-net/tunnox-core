@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	clientconfig "tunnox-core/internal/config"
 	"tunnox-core/internal/packet"
@@ -307,7 +308,6 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 		return nil, fmt.Errorf("failed to parse response data: %w", err)
 	}
 
-	// ✅ 激活成功后，自动创建并启动映射处理器
 	if resp.MappingID != "" {
 		// 解析监听地址
 		_, port, err := parseListenAddress(resp.ListenAddress)
@@ -498,11 +498,168 @@ func (c *TunnoxClient) ListMappings(req *ListMappingsRequest) (*ListMappingsResp
 		return nil, fmt.Errorf("command failed: %s", cmdResp.Error)
 	}
 
-	// 解析响应数据
 	var resp ListMappingsResponseCmd
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse response data: %w", err)
 	}
 
+	c.updateTrafficStatsFromMappings(resp.Mappings)
+
 	return &resp, nil
+}
+
+// updateTrafficStatsFromMappings 从服务端返回的映射列表更新本地流量统计
+func (c *TunnoxClient) updateTrafficStatsFromMappings(mappings []MappingInfoCmd) {
+	c.trafficStatsMu.Lock()
+	defer c.trafficStatsMu.Unlock()
+
+	for _, m := range mappings {
+		stats, exists := c.localTrafficStats[m.MappingID]
+		if !exists {
+			stats = &localMappingStats{
+				lastReportTime: time.Now(),
+			}
+			c.localTrafficStats[m.MappingID] = stats
+		}
+		stats.mu.Lock()
+		stats.bytesSent = m.BytesSent
+		stats.bytesReceived = m.BytesReceived
+		stats.lastReportTime = time.Now()
+		stats.mu.Unlock()
+	}
+}
+
+// GetMappingRequest 获取映射详情请求
+type GetMappingRequest struct {
+	MappingID string `json:"mapping_id"`
+}
+
+// GetMappingResponseCmd 获取映射详情响应（通过指令通道）
+type GetMappingResponseCmd struct {
+	Mapping MappingInfoCmd `json:"mapping"`
+}
+
+// GetMapping 通过指令通道获取映射详情
+func (c *TunnoxClient) GetMapping(mappingID string) (*MappingInfoCmd, error) {
+	if !c.IsConnected() {
+		return nil, fmt.Errorf("control connection not established, please connect to server first")
+	}
+
+	req := &GetMappingRequest{MappingID: mappingID}
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	cmdID, err := utils.GenerateRandomString(16)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate command ID: %w", err)
+	}
+
+	cmdPkt := &packet.CommandPacket{
+		CommandType: packet.MappingGet,
+		CommandId:   cmdID,
+		CommandBody: string(reqBody),
+	}
+
+	transferPkt := &packet.TransferPacket{
+		PacketType:    packet.JsonCommand,
+		CommandPacket: cmdPkt,
+	}
+
+	responseChan := c.commandResponseManager.RegisterRequest(cmdID)
+	defer c.commandResponseManager.UnregisterRequest(cmdID)
+
+	c.mu.RLock()
+	controlStream := c.controlStream
+	c.mu.RUnlock()
+
+	if controlStream == nil {
+		return nil, fmt.Errorf("control stream is nil")
+	}
+
+	_, err = controlStream.WritePacket(transferPkt, false, 0)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send command: %w", err)
+	}
+
+	cmdResp, err := c.commandResponseManager.WaitForResponse(cmdID, responseChan)
+	if err != nil {
+		return nil, err
+	}
+
+	if !cmdResp.Success {
+		return nil, fmt.Errorf("command failed: %s", cmdResp.Error)
+	}
+
+	var resp GetMappingResponseCmd
+	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response data: %w", err)
+	}
+
+	c.updateTrafficStatsFromMappings([]MappingInfoCmd{resp.Mapping})
+
+	return &resp.Mapping, nil
+}
+
+// DeleteMappingRequest 删除映射请求
+type DeleteMappingRequest struct {
+	MappingID string `json:"mapping_id"`
+}
+
+// DeleteMapping 通过指令通道删除映射
+func (c *TunnoxClient) DeleteMapping(mappingID string) error {
+	if !c.IsConnected() {
+		return fmt.Errorf("control connection not established, please connect to server first")
+	}
+
+	req := &DeleteMappingRequest{MappingID: mappingID}
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	cmdID, err := utils.GenerateRandomString(16)
+	if err != nil {
+		return fmt.Errorf("failed to generate command ID: %w", err)
+	}
+
+	cmdPkt := &packet.CommandPacket{
+		CommandType: packet.MappingDelete,
+		CommandId:   cmdID,
+		CommandBody: string(reqBody),
+	}
+
+	transferPkt := &packet.TransferPacket{
+		PacketType:    packet.JsonCommand,
+		CommandPacket: cmdPkt,
+	}
+
+	responseChan := c.commandResponseManager.RegisterRequest(cmdID)
+	defer c.commandResponseManager.UnregisterRequest(cmdID)
+
+	c.mu.RLock()
+	controlStream := c.controlStream
+	c.mu.RUnlock()
+
+	if controlStream == nil {
+		return fmt.Errorf("control stream is nil")
+	}
+
+	_, err = controlStream.WritePacket(transferPkt, false, 0)
+	if err != nil {
+		return fmt.Errorf("failed to send command: %w", err)
+	}
+
+	cmdResp, err := c.commandResponseManager.WaitForResponse(cmdID, responseChan)
+	if err != nil {
+		return err
+	}
+
+	if !cmdResp.Success {
+		return fmt.Errorf("command failed: %s", cmdResp.Error)
+	}
+
+	c.RemoveMapping(mappingID)
+	return nil
 }

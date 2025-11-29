@@ -36,7 +36,6 @@ func (h *MappingCommandHandlers) RegisterHandlers(registry *command.CommandRegis
 		return fmt.Errorf("command registry is nil")
 	}
 
-	// 注册 ListMappings 命令
 	listHandler := &ListMappingsHandler{
 		BaseHandler: command.NewBaseHandler(
 			packet.MappingList,
@@ -50,6 +49,36 @@ func (h *MappingCommandHandlers) RegisterHandlers(registry *command.CommandRegis
 	}
 	if err := registry.Register(listHandler); err != nil {
 		return fmt.Errorf("failed to register list mappings handler: %w", err)
+	}
+
+	getHandler := &GetMappingHandler{
+		BaseHandler: command.NewBaseHandler(
+			packet.MappingGet,
+			command.CategoryMapping,
+			command.DirectionDuplex,
+			"mapping_get",
+			"获取映射详情",
+		),
+		connCodeService: h.connCodeService,
+		sessionMgr:      h.sessionMgr,
+	}
+	if err := registry.Register(getHandler); err != nil {
+		return fmt.Errorf("failed to register get mapping handler: %w", err)
+	}
+
+	deleteHandler := &DeleteMappingHandler{
+		BaseHandler: command.NewBaseHandler(
+			packet.MappingDelete,
+			command.CategoryMapping,
+			command.DirectionDuplex,
+			"mapping_delete",
+			"删除映射",
+		),
+		connCodeService: h.connCodeService,
+		sessionMgr:      h.sessionMgr,
+	}
+	if err := registry.Register(deleteHandler); err != nil {
+		return fmt.Errorf("failed to register delete mapping handler: %w", err)
 	}
 
 	return nil
@@ -70,13 +99,10 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 		return h.errorResponse(ctx, "client not authenticated")
 	}
 
-	utils.Infof("ListMappingsHandler: client %d requesting mappings", clientID)
-
-	// 解析请求参数
 	var req struct {
-		Direction string `json:"direction"` // outbound | inbound
-		Type      string `json:"type"`      // 映射类型过滤
-		Status    string `json:"status"`    // 状态过滤
+		Direction string `json:"direction"`
+		Type      string `json:"type"`
+		Status    string `json:"status"`
 	}
 
 	if ctx.RequestBody != "" {
@@ -85,8 +111,6 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 		}
 	}
 
-	utils.Infof("ListMappingsHandler: request params - direction=%s, type=%s, status=%s", req.Direction, req.Type, req.Status)
-
 	// 获取映射列表
 	var mappings []*models.PortMapping
 	var err error
@@ -94,43 +118,28 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 	switch req.Direction {
 	case "outbound":
 		mappings, err = h.connCodeService.ListOutboundMappings(clientID)
-		utils.Infof("ListMappingsHandler: ListOutboundMappings returned %d mappings", len(mappings))
 	case "inbound":
 		mappings, err = h.connCodeService.ListInboundMappings(clientID)
-		utils.Infof("ListMappingsHandler: ListInboundMappings returned %d mappings", len(mappings))
 	default:
-		// 获取所有映射
 		outboundMappings, err1 := h.connCodeService.ListOutboundMappings(clientID)
 		inboundMappings, err2 := h.connCodeService.ListInboundMappings(clientID)
-		utils.Infof("ListMappingsHandler: ListOutboundMappings returned %d mappings, ListInboundMappings returned %d mappings", len(outboundMappings), len(inboundMappings))
 		if err1 != nil {
 			err = err1
 		} else if err2 != nil {
 			err = err2
 		} else {
-			// 合并并去重
 			mappingMap := make(map[string]*models.PortMapping)
 			for _, m := range outboundMappings {
 				mappingMap[m.ID] = m
-				utils.Debugf("ListMappingsHandler: added outbound mapping %s (ListenClientID=%d, TargetClientID=%d)", m.ID, m.ListenClientID, m.TargetClientID)
 			}
 			for _, m := range inboundMappings {
 				mappingMap[m.ID] = m
-				utils.Debugf("ListMappingsHandler: added inbound mapping %s (ListenClientID=%d, TargetClientID=%d)", m.ID, m.ListenClientID, m.TargetClientID)
 			}
 			mappings = make([]*models.PortMapping, 0, len(mappingMap))
 			for _, m := range mappingMap {
 				mappings = append(mappings, m)
 			}
-			utils.Infof("ListMappingsHandler: merged %d unique mappings", len(mappings))
 		}
-	}
-
-	// ✅ 如果索引为空，记录警告（索引应该在创建映射时自动维护）
-	// 注意：不从全局列表加载所有数据再过滤，避免性能问题
-	// 如果存储层支持按字段查询，可以在存储层实现；否则应该确保索引正确维护
-	if len(mappings) == 0 && err == nil {
-		utils.Warnf("ListMappingsHandler: no mappings found from index for client %d. Index may be empty or not properly maintained.", clientID)
 	}
 
 	if err != nil {
@@ -138,22 +147,15 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 		return h.errorResponse(ctx, fmt.Sprintf("failed to list mappings: %v", err))
 	}
 
-	// 转换为响应格式
 	mappingItems := make([]map[string]interface{}, 0, len(mappings))
 	for _, m := range mappings {
-		// 状态过滤
 		if req.Status != "" && string(m.Status) != req.Status {
-			utils.Debugf("ListMappingsHandler: filtering out mapping %s (status mismatch: %s != %s)", m.ID, m.Status, req.Status)
 			continue
 		}
-
-		// 类型过滤
 		if req.Type != "" && string(m.Protocol) != req.Type {
-			utils.Debugf("ListMappingsHandler: filtering out mapping %s (type mismatch: %s != %s)", m.ID, m.Protocol, req.Type)
 			continue
 		}
 
-		// 确定映射类型（outbound 或 inbound）
 		mappingType := "outbound"
 		if m.TargetClientID == clientID && m.ListenClientID != clientID {
 			mappingType = "inbound"
@@ -177,10 +179,7 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 		}
 
 		mappingItems = append(mappingItems, item)
-		utils.Debugf("ListMappingsHandler: added mapping %s (type=%s, status=%s)", m.ID, mappingType, m.Status)
 	}
-
-	utils.Infof("ListMappingsHandler: returning %d mappings (after filtering)", len(mappingItems))
 
 	resp := map[string]interface{}{
 		"mappings": mappingItems,
@@ -188,7 +187,6 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 	}
 
 	respBody, _ := json.Marshal(resp)
-	utils.Debugf("ListMappingsHandler: response body length=%d", len(respBody))
 	return &command.CommandResponse{
 		Success:   true,
 		Data:      string(respBody),
@@ -211,6 +209,163 @@ func (h *ListMappingsHandler) getClientID(ctx *command.CommandContext) int64 {
 
 // errorResponse 构造错误响应
 func (h *ListMappingsHandler) errorResponse(ctx *command.CommandContext, message string) (*command.CommandResponse, error) {
+	return &command.CommandResponse{
+		Success:   false,
+		Error:     message,
+		RequestID: ctx.RequestID,
+		CommandId: ctx.CommandId,
+	}, nil
+}
+
+// GetMappingHandler 获取映射详情命令处理器
+type GetMappingHandler struct {
+	*command.BaseHandler
+	connCodeService *services.ConnectionCodeService
+	sessionMgr      *session.SessionManager
+}
+
+// Handle 处理 GetMapping 命令
+func (h *GetMappingHandler) Handle(ctx *command.CommandContext) (*command.CommandResponse, error) {
+	clientID := h.getClientID(ctx)
+	if clientID == 0 {
+		return h.errorResponse(ctx, "client not authenticated")
+	}
+
+	var req struct {
+		MappingID string `json:"mapping_id"`
+	}
+
+	if ctx.RequestBody != "" {
+		if err := json.Unmarshal([]byte(ctx.RequestBody), &req); err != nil {
+			return h.errorResponse(ctx, fmt.Sprintf("failed to parse request: %v", err))
+		}
+	}
+
+	if req.MappingID == "" {
+		return h.errorResponse(ctx, "mapping_id is required")
+	}
+
+	mapping, err := h.connCodeService.GetMapping(req.MappingID)
+	if err != nil {
+		return h.errorResponse(ctx, fmt.Sprintf("mapping not found: %v", err))
+	}
+
+	if mapping.ListenClientID != clientID && mapping.TargetClientID != clientID {
+		return h.errorResponse(ctx, "mapping not accessible")
+	}
+
+	mappingType := "outbound"
+	if mapping.TargetClientID == clientID && mapping.ListenClientID != clientID {
+		mappingType = "inbound"
+	}
+
+	expiresAtStr := ""
+	if mapping.ExpiresAt != nil {
+		expiresAtStr = mapping.ExpiresAt.Format(time.RFC3339)
+	}
+
+	item := map[string]interface{}{
+		"mapping_id":     mapping.ID,
+		"type":           mappingType,
+		"target_address": mapping.TargetAddress,
+		"listen_address": mapping.ListenAddress,
+		"status":         string(mapping.Status),
+		"expires_at":     expiresAtStr,
+		"created_at":     mapping.CreatedAt.Format(time.RFC3339),
+		"bytes_sent":     mapping.TrafficStats.BytesSent,
+		"bytes_received": mapping.TrafficStats.BytesReceived,
+	}
+
+	respBody, _ := json.Marshal(map[string]interface{}{"mapping": item})
+	return &command.CommandResponse{
+		Success:   true,
+		Data:      string(respBody),
+		RequestID: ctx.RequestID,
+		CommandId: ctx.CommandId,
+	}, nil
+}
+
+func (h *GetMappingHandler) getClientID(ctx *command.CommandContext) int64 {
+	if h.sessionMgr == nil {
+		return 0
+	}
+	controlConn := h.sessionMgr.GetControlConnection(ctx.ConnectionID)
+	if controlConn == nil {
+		return 0
+	}
+	return controlConn.ClientID
+}
+
+func (h *GetMappingHandler) errorResponse(ctx *command.CommandContext, message string) (*command.CommandResponse, error) {
+	return &command.CommandResponse{
+		Success:   false,
+		Error:     message,
+		RequestID: ctx.RequestID,
+		CommandId: ctx.CommandId,
+	}, nil
+}
+
+// DeleteMappingHandler 删除映射命令处理器
+type DeleteMappingHandler struct {
+	*command.BaseHandler
+	connCodeService *services.ConnectionCodeService
+	sessionMgr      *session.SessionManager
+}
+
+// Handle 处理 DeleteMapping 命令
+func (h *DeleteMappingHandler) Handle(ctx *command.CommandContext) (*command.CommandResponse, error) {
+	clientID := h.getClientID(ctx)
+	if clientID == 0 {
+		return h.errorResponse(ctx, "client not authenticated")
+	}
+
+	var req struct {
+		MappingID string `json:"mapping_id"`
+	}
+
+	if ctx.RequestBody != "" {
+		if err := json.Unmarshal([]byte(ctx.RequestBody), &req); err != nil {
+			return h.errorResponse(ctx, fmt.Sprintf("failed to parse request: %v", err))
+		}
+	}
+
+	if req.MappingID == "" {
+		return h.errorResponse(ctx, "mapping_id is required")
+	}
+
+	mapping, err := h.connCodeService.GetMapping(req.MappingID)
+	if err != nil {
+		return h.errorResponse(ctx, fmt.Sprintf("mapping not found: %v", err))
+	}
+
+	if mapping.ListenClientID != clientID && mapping.TargetClientID != clientID {
+		return h.errorResponse(ctx, "mapping not accessible")
+	}
+
+	if err := h.connCodeService.GetPortMappingService().DeletePortMapping(req.MappingID); err != nil {
+		return h.errorResponse(ctx, fmt.Sprintf("failed to delete mapping: %v", err))
+	}
+
+	return &command.CommandResponse{
+		Success:   true,
+		Data:      `{"message":"mapping deleted successfully"}`,
+		RequestID: ctx.RequestID,
+		CommandId: ctx.CommandId,
+	}, nil
+}
+
+func (h *DeleteMappingHandler) getClientID(ctx *command.CommandContext) int64 {
+	if h.sessionMgr == nil {
+		return 0
+	}
+	controlConn := h.sessionMgr.GetControlConnection(ctx.ConnectionID)
+	if controlConn == nil {
+		return 0
+	}
+	return controlConn.ClientID
+}
+
+func (h *DeleteMappingHandler) errorResponse(ctx *command.CommandContext, message string) (*command.CommandResponse, error) {
 	return &command.CommandResponse{
 		Success:   false,
 		Error:     message,

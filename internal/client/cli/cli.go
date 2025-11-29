@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -42,13 +43,12 @@ func NewCLI(ctx context.Context, tunnoxClient *client.TunnoxClient) (*CLI, error
 			"Please run directly in a terminal, not through pipe/redirect")
 	}
 
-	// 创建补全器
 	completer := NewCommandCompleter()
 
-	// 创建readline实例
+	historyFile := getHistoryFilePath(tunnoxClient)
 	rl, err := readline.NewEx(&readline.Config{
-		Prompt:          "\033[32mtunnox>\033[0m ", // 绿色提示符
-		HistoryFile:     os.ExpandEnv("$HOME/.tunnox_history"),
+		Prompt:          "\033[32mtunnox>\033[0m ",
+		HistoryFile:     historyFile,
 		HistoryLimit:    500,
 		AutoComplete:    completer.BuildCompleter(),
 		InterruptPrompt: "^C",
@@ -272,4 +272,43 @@ func (c *CLI) promptConfirm(prompt string) bool {
 
 	response := strings.ToLower(input)
 	return response == "yes" || response == "y"
+}
+
+// getHistoryFilePath 获取历史记录文件路径（按 clientId 和命令位置区分）
+func getHistoryFilePath(client *client.TunnoxClient) string {
+	config := client.GetConfig()
+	clientID := config.ClientID
+	if clientID == 0 {
+		clientID = -1
+	}
+
+	workDir, err := os.Getwd()
+	if err != nil {
+		workDir = "unknown"
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = os.TempDir()
+	}
+
+	historyDir := filepath.Join(homeDir, ".tunnox", "history")
+	os.MkdirAll(historyDir, 0755)
+
+	workDirHash := hashString(workDir)
+	historyFile := filepath.Join(historyDir, fmt.Sprintf("client_%d_%s.history", clientID, workDirHash))
+
+	return historyFile
+}
+
+// hashString 对字符串进行简单哈希（用于生成历史文件名）
+func hashString(s string) string {
+	hash := 0
+	for _, c := range s {
+		hash = hash*31 + int(c)
+	}
+	if hash < 0 {
+		hash = -hash
+	}
+	return fmt.Sprintf("%x", hash)[:8]
 }

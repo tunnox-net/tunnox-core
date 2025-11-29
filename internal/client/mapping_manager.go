@@ -10,7 +10,7 @@ import (
 
 // handleConfigUpdate 处理配置更新
 func (c *TunnoxClient) handleConfigUpdate(configBody string) {
-	utils.Infof("Client: ✅ received ConfigSet from server, body length=%d", len(configBody))
+	utils.Infof("Client: received ConfigSet from server, body length=%d", len(configBody))
 
 	var configUpdate struct {
 		Mappings []clientconfig.MappingConfig `json:"mappings"`
@@ -43,7 +43,7 @@ func (c *TunnoxClient) handleConfigUpdate(configBody string) {
 	}
 	c.mu.Unlock()
 
-	utils.Infof("Client: ✅ config updated successfully, total active mappings=%d", len(newMappingIDs))
+	utils.Infof("Client: config updated successfully, total active mappings=%d", len(newMappingIDs))
 }
 
 // addOrUpdateMapping 添加或更新映射
@@ -87,7 +87,7 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 	}
 
 	c.mappingHandlers[mappingCfg.MappingID] = handler
-	utils.Infof("Client: ✅ %s mapping %s started successfully on port %d", protocol, mappingCfg.MappingID, mappingCfg.LocalPort)
+	utils.Infof("Client: %s mapping %s started successfully on port %d", protocol, mappingCfg.MappingID, mappingCfg.LocalPort)
 }
 
 // RemoveMapping 移除映射

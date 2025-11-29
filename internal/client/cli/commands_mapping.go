@@ -18,7 +18,6 @@ func (c *CLI) cmdUseCode(args []string) {
 		return
 	}
 
-	// ✅ 检查连接状态
 	if !c.client.IsConnected() {
 		c.output.Error("Not connected to server. Please connect first using 'connect' command.")
 		return
@@ -40,7 +39,6 @@ func (c *CLI) cmdUseCode(args []string) {
 	fmt.Println("")
 	c.output.Info("Activating connection code...")
 
-	// ✅ 通过指令通道发送命令
 	resp, err := c.client.ActivateConnectionCode(&client.ActivateConnectionCodeRequest{
 		Code:          code,
 		ListenAddress: listenAddr,
@@ -145,19 +143,20 @@ func (c *CLI) cmdShowMapping(args []string) {
 		return
 	}
 
+	if !c.client.IsConnected() {
+		c.output.Error("Not connected to server. Please connect first using 'connect' command.")
+		return
+	}
+
 	mappingID := args[0]
 	c.output.Header(fmt.Sprintf("📝 Mapping Details: %s", mappingID))
 
-	// 调用API
-	apiClient := c.client.GetAPIClient()
-	mapping, err := apiClient.GetMapping(mappingID)
-
+	mapping, err := c.client.GetMapping(mappingID)
 	if err != nil {
 		c.output.Error("Failed to get mapping: %v", err)
 		return
 	}
 
-	// 显示详情
 	c.output.KeyValue("Mapping ID", mapping.MappingID)
 	c.output.KeyValue("Type", mapping.Type)
 	c.output.KeyValue("Target Address", mapping.TargetAddress)
@@ -167,7 +166,6 @@ func (c *CLI) cmdShowMapping(args []string) {
 	c.output.KeyValue("Expires At", FormatTime(mapping.ExpiresAt))
 
 	fmt.Println("")
-	c.output.KeyValue("Usage Count", fmt.Sprintf("%d", mapping.UsageCount))
 	c.output.KeyValue("Bytes Sent", FormatBytes(mapping.BytesSent))
 	c.output.KeyValue("Bytes Received", FormatBytes(mapping.BytesReceived))
 
@@ -182,10 +180,14 @@ func (c *CLI) cmdDeleteMapping(args []string) {
 		return
 	}
 
+	if !c.client.IsConnected() {
+		c.output.Error("Not connected to server. Please connect first using 'connect' command.")
+		return
+	}
+
 	mappingID := args[0]
 	c.output.Header(fmt.Sprintf("🗑️ Delete Mapping: %s", mappingID))
 
-	// 确认
 	if !c.promptConfirm("Are you sure?") {
 		c.output.Warning("Cancelled")
 		return
@@ -193,11 +195,7 @@ func (c *CLI) cmdDeleteMapping(args []string) {
 
 	c.output.Info("Deleting mapping...")
 
-	// 调用API
-	apiClient := c.client.GetAPIClient()
-	err := apiClient.DeleteMapping(mappingID)
-
-	if err != nil {
+	if err := c.client.DeleteMapping(mappingID); err != nil {
 		c.output.Error("Failed to delete mapping: %v", err)
 		return
 	}
