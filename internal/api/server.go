@@ -234,17 +234,6 @@ func (s *ManagementAPIServer) registerRoutes() {
 	api.HandleFunc("/users/{user_id}/quota", s.handleGetUserQuota).Methods("GET")    // 新增：获取配额
 	api.HandleFunc("/users/{user_id}/quota", s.handleUpdateUserQuota).Methods("PUT") // 新增：更新配额
 
-	// 调试和诊断路由（用于排查资源泄漏）
-	api.HandleFunc("/debug/goroutines", s.handleGetGoroutines).Methods("GET")           // 获取所有 goroutine 信息（支持 ?stack=true&limit=100&summary=true）
-	api.HandleFunc("/debug/goroutines/count", s.handleGetGoroutineCount).Methods("GET") // 获取 goroutine 数量统计
-	api.HandleFunc("/debug/goroutines/profile", s.handleGetGoroutineProfile).Methods("GET") // 获取 goroutine profile (pprof格式，支持 ?debug=1)
-	
-	// 内存调试路由
-	api.HandleFunc("/debug/memory/stats", s.handleGetMemoryStats).Methods("GET")        // 获取内存统计信息（支持 ?by_size=true）
-	api.HandleFunc("/debug/memory/profile", s.handleGetMemoryProfile).Methods("GET")    // 获取内存 profile (pprof格式，支持 ?debug=1)
-	api.HandleFunc("/debug/memory/gc", s.handleForceGC).Methods("POST")                 // 强制执行 GC
-	api.HandleFunc("/debug/memory/leak-report", s.handleGetMemoryLeakReport).Methods("GET") // 生成内存泄漏报告
-
 	// 健康检查
 	s.router.HandleFunc("/health", s.handleHealth).Methods("GET")
 }
