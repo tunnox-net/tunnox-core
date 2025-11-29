@@ -30,6 +30,9 @@ Tunnox Core 是一个基于 Go 开发的内网穿透平台内核，提供安全�
 - **分布式架构**：支持集群部署，节点间 gRPC 通信
 - **实时配置推送**：通过控制连接实时推送配置变更
 - **匿名接入**：支持匿名客户端，降低使用门槛
+- **交互式 CLI**：完善的命令行界面，支持连接码生成、端口映射管理等
+- **连接码系统**：一次性连接码，简化隧道建立流程
+- **优雅启动显示**：服务端启动时显示美观的运行时信息
 
 ### 应用场景
 
@@ -143,14 +146,48 @@ go build -o bin/tunnox-client ./cmd/client
 **2. 启动客户端**
 
 ```bash
-# 客户端 A (源端)
-./bin/tunnox-client -config client-a.yaml
-
-# 客户端 B (目标端)
-./bin/tunnox-client -config client-b.yaml
+# 启动客户端（交互式 CLI）
+./bin/tunnox-client -config client.yaml
 ```
 
-**3. 创建端口映射**
+客户端启动后会进入交互式命令行界面，支持以下命令：
+
+```bash
+tunnox> help                    # 显示帮助信息
+tunnox> connect                 # 连接到服务器
+tunnox> generate-code           # 生成连接码（目标端）
+tunnox> use-code <code>         # 使用连接码创建映射（源端）
+tunnox> list-codes              # 列出所有连接码
+tunnox> list-mappings           # 列出所有端口映射
+tunnox> status                  # 显示连接状态
+tunnox> exit                    # 退出 CLI
+```
+
+**3. 使用连接码创建映射（推荐方式）**
+
+**目标端（TargetClient）**：
+```bash
+tunnox> generate-code
+# 交互式选择协议（TCP/UDP/SOCKS5）
+# 输入目标地址（如：192.168.1.10:8080）
+# 生成连接码，例如：abc-def-123
+```
+
+**源端（ListenClient）**：
+```bash
+tunnox> use-code abc-def-123
+# 输入本地监听地址（如：127.0.0.1:8080）
+# 映射创建成功
+```
+
+**4. 访问服务**
+
+```bash
+# 通过映射访问目标服务
+mysql -h 127.0.0.1 -P 8080 -u user -p
+```
+
+**或者使用 Management API 创建映射**：
 
 ```bash
 curl -X POST http://localhost:9000/api/v1/mappings \
@@ -166,13 +203,6 @@ curl -X POST http://localhost:9000/api/v1/mappings \
     "enable_compression": true,
     "enable_encryption": true
   }'
-```
-
-**4. 访问服务**
-
-```bash
-# 通过映射访问目标服务
-mysql -h 127.0.0.1 -P 8080 -u user -p
 ```
 
 ### 配置示例
@@ -357,11 +387,17 @@ tunnox-core/
 - TCP/HTTP/SOCKS5 映射处理器
 - 多协议传输支持
 - 自动重连和心跳保活
+- 交互式 CLI 界面
+- 连接码生成和使用
+- 端口映射管理（列表、查看、删除）
+- 表格化数据显示
 
 **服务端功能** ✅
 - 会话管理和连接路由
 - 透明数据转发
 - 实时配置推送
+- 优雅的启动信息显示
+- 日志文件输出（不污染控制台）
 
 **认证系统** ✅
 - JWT Token 认证
@@ -372,11 +408,17 @@ tunnox-core/
 - RESTful 接口
 - 用户、客户端、映射管理
 - 统计和监控接口
+- 连接码管理接口
 
 **集群支持** ✅
 - gRPC 节点通信
 - Redis/内存消息广播
 - 跨节点数据转发
+
+**开发工具链** ✅
+- 版本管理和自动化发布
+- GitHub Actions CI/CD
+- 统一的版本信息管理
 
 ### 开发中功能
 
@@ -581,7 +623,8 @@ server:
 log:
   level: "info"        # debug/info/warn/error
   format: "text"       # text/json
-  output: "stdout"     # stdout/file
+  output: "file"       # 仅支持 file（日志写入文件，不输出到控制台）
+  file: "logs/server.log"
 
 # 云控配置
 cloud:
@@ -713,7 +756,7 @@ go test -race ./...
 
 ## 开发路线图
 
-### v0.1 (当前版本)
+### v1.0.0 (当前版本)
 
 - [x] 核心架构设计
 - [x] 四种传输协议支持
@@ -721,6 +764,10 @@ go test -race ./...
 - [x] 基础端口映射
 - [x] Management API
 - [x] 匿名客户端
+- [x] 交互式 CLI 界面
+- [x] 连接码系统
+- [x] 服务端启动信息显示
+- [x] 版本管理和 CI/CD
 
 ### v0.2 (计划中)
 
@@ -771,6 +818,49 @@ go test -race ./...
 
 ---
 
+## 客户端 CLI 使用
+
+### 主要命令
+
+| 命令 | 说明 | 示例 |
+|------|------|------|
+| `help` | 显示帮助信息 | `help generate-code` |
+| `connect` | 连接到服务器 | `connect` |
+| `status` | 显示连接状态 | `status` |
+| `generate-code` | 生成连接码（目标端） | `generate-code` |
+| `list-codes` | 列出所有连接码 | `list-codes` |
+| `use-code <code>` | 使用连接码创建映射（源端） | `use-code abc-def-123` |
+| `list-mappings` | 列出所有端口映射 | `list-mappings` |
+| `show-mapping <id>` | 显示映射详情 | `show-mapping mapping-001` |
+| `delete-mapping <id>` | 删除映射 | `delete-mapping mapping-001` |
+| `config` | 配置管理 | `config list` |
+| `exit` | 退出 CLI | `exit` |
+
+### 连接码工作流程
+
+1. **目标端生成连接码**：
+   ```bash
+   tunnox> generate-code
+   Select Protocol: TCP/UDP/SOCKS5
+   Target Address: 192.168.1.10:8080
+   ✅ Connection code generated: abc-def-123
+   ```
+
+2. **源端使用连接码**：
+   ```bash
+   tunnox> use-code abc-def-123
+   Local Listen Address: 127.0.0.1:8080
+   ✅ Mapping created successfully
+   ```
+
+3. **查看映射状态**：
+   ```bash
+   tunnox> list-mappings
+   # 显示所有映射的表格
+   ```
+
+---
+
 ## 常见问题
 
 **Q: Tunnox 与 frp、ngrok 有什么区别？**
@@ -796,6 +886,10 @@ A: 提供端到端 AES-256-GCM 加密、JWT 认证、细粒度权限控制。建
 **Q: 可以商业使用吗？**
 
 A: 可以，项目采用 MIT 许可证，允许商业使用和二次开发。
+
+**Q: 日志输出到哪里？**
+
+A: 服务端和客户端日志默认写入文件，不输出到控制台。服务端日志路径：`logs/server.log`，客户端日志路径：`~/.tunnox/client.log`（交互模式）或 `/var/log/tunnox-client.log`（守护进程模式）。
 
 ---
 

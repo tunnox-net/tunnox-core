@@ -30,6 +30,9 @@ Tunnox Core is a NAT traversal platform kernel developed in Go, providing secure
 - **Distributed Architecture**: Cluster deployment with gRPC inter-node communication
 - **Real-Time Configuration**: Push configuration changes through control connections
 - **Anonymous Access**: Support anonymous clients for lower barriers to entry
+- **Interactive CLI**: Comprehensive command-line interface with connection code generation and port mapping management
+- **Connection Code System**: One-time connection codes for simplified tunnel establishment
+- **Elegant Startup Display**: Beautiful runtime information display on server startup
 
 ### Use Cases
 
@@ -140,17 +143,51 @@ Default listening ports:
 - QUIC: 7003
 - Management API: 9000
 
-**2. Start Clients**
+**2. Start Client**
 
 ```bash
-# Client A (source)
-./bin/tunnox-client -config client-a.yaml
-
-# Client B (target)
-./bin/tunnox-client -config client-b.yaml
+# Start client (interactive CLI)
+./bin/tunnox-client -config client.yaml
 ```
 
-**3. Create Port Mapping**
+The client will enter an interactive command-line interface with the following commands:
+
+```bash
+tunnox> help                    # Show help
+tunnox> connect                 # Connect to server
+tunnox> generate-code           # Generate connection code (target)
+tunnox> use-code <code>         # Use connection code to create mapping (source)
+tunnox> list-codes              # List all connection codes
+tunnox> list-mappings           # List all port mappings
+tunnox> status                  # Show connection status
+tunnox> exit                    # Exit CLI
+```
+
+**3. Create Mapping Using Connection Code (Recommended)**
+
+**Target Client**:
+```bash
+tunnox> generate-code
+# Interactive protocol selection (TCP/UDP/SOCKS5)
+# Enter target address (e.g., 192.168.1.10:8080)
+# Connection code generated, e.g., abc-def-123
+```
+
+**Source Client**:
+```bash
+tunnox> use-code abc-def-123
+# Enter local listen address (e.g., 127.0.0.1:8080)
+# Mapping created successfully
+```
+
+**4. Access Service**
+
+```bash
+# Access target service through mapping
+mysql -h 127.0.0.1 -P 8080 -u user -p
+```
+
+**Or create mapping via Management API**:
 
 ```bash
 curl -X POST http://localhost:9000/api/v1/mappings \
@@ -166,13 +203,6 @@ curl -X POST http://localhost:9000/api/v1/mappings \
     "enable_compression": true,
     "enable_encryption": true
   }'
-```
-
-**4. Access Service**
-
-```bash
-# Access target service through mapping
-mysql -h 127.0.0.1 -P 8080 -u user -p
 ```
 
 ### Configuration Examples
@@ -357,11 +387,17 @@ tunnox-core/
 - TCP/HTTP/SOCKS5 mapping handlers
 - Multi-protocol transport support
 - Auto-reconnect and keepalive
+- Interactive CLI interface
+- Connection code generation and usage
+- Port mapping management (list, view, delete)
+- Tabular data display
 
 **Server Features** ✅
 - Session management and connection routing
 - Transparent data forwarding
 - Real-time configuration push
+- Elegant startup information display
+- Log file output (no console pollution)
 
 **Authentication System** ✅
 - JWT Token authentication
@@ -372,11 +408,17 @@ tunnox-core/
 - RESTful interface
 - User, client, mapping management
 - Statistics and monitoring endpoints
+- Connection code management endpoints
 
 **Cluster Support** ✅
 - gRPC node communication
 - Redis/Memory message broadcasting
 - Cross-node data forwarding
+
+**Development Toolchain** ✅
+- Version management and automated releases
+- GitHub Actions CI/CD
+- Unified version information management
 
 ### In Development
 
@@ -581,7 +623,8 @@ server:
 log:
   level: "info"        # debug/info/warn/error
   format: "text"       # text/json
-  output: "stdout"     # stdout/file
+  output: "file"       # Only "file" supported (logs to file, no console output)
+  file: "logs/server.log"
 
 # Cloud control
 cloud:
@@ -713,7 +756,7 @@ go test -race ./...
 
 ## Roadmap
 
-### v0.1 (Current)
+### v1.0.0 (Current)
 
 - [x] Core architecture design
 - [x] Four transport protocol support
@@ -721,6 +764,10 @@ go test -race ./...
 - [x] Basic port mapping
 - [x] Management API
 - [x] Anonymous clients
+- [x] Interactive CLI interface
+- [x] Connection code system
+- [x] Server startup information display
+- [x] Version management and CI/CD
 
 ### v0.2 (Planned)
 
@@ -771,6 +818,49 @@ We welcome all forms of contribution:
 
 ---
 
+## Client CLI Usage
+
+### Main Commands
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `help` | Show help information | `help generate-code` |
+| `connect` | Connect to server | `connect` |
+| `status` | Show connection status | `status` |
+| `generate-code` | Generate connection code (target) | `generate-code` |
+| `list-codes` | List all connection codes | `list-codes` |
+| `use-code <code>` | Use connection code to create mapping (source) | `use-code abc-def-123` |
+| `list-mappings` | List all port mappings | `list-mappings` |
+| `show-mapping <id>` | Show mapping details | `show-mapping mapping-001` |
+| `delete-mapping <id>` | Delete mapping | `delete-mapping mapping-001` |
+| `config` | Configuration management | `config list` |
+| `exit` | Exit CLI | `exit` |
+
+### Connection Code Workflow
+
+1. **Target Client Generates Connection Code**:
+   ```bash
+   tunnox> generate-code
+   Select Protocol: TCP/UDP/SOCKS5
+   Target Address: 192.168.1.10:8080
+   ✅ Connection code generated: abc-def-123
+   ```
+
+2. **Source Client Uses Connection Code**:
+   ```bash
+   tunnox> use-code abc-def-123
+   Local Listen Address: 127.0.0.1:8080
+   ✅ Mapping created successfully
+   ```
+
+3. **View Mapping Status**:
+   ```bash
+   tunnox> list-mappings
+   # Display table of all mappings
+   ```
+
+---
+
 ## FAQ
 
 **Q: What's the difference between Tunnox and frp/ngrok?**
@@ -796,6 +886,10 @@ A: Provides end-to-end AES-256-GCM encryption, JWT authentication, and fine-grai
 **Q: Can it be used commercially?**
 
 A: Yes, the project uses the MIT License, allowing commercial use and secondary development.
+
+**Q: Where are logs written?**
+
+A: Both server and client logs are written to files by default, not to console. Server log path: `logs/server.log`, client log path: `~/.tunnox/client.log` (interactive mode) or `/var/log/tunnox-client.log` (daemon mode).
 
 ---
 
