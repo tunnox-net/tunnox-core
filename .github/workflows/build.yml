@@ -70,6 +70,7 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+        shell: bash
         run: |
           VERSION=$(cat VERSION | tr -d '[:space:]')
           GIT_COMMIT=$(git rev-parse HEAD)
