@@ -159,3 +159,9 @@ go.work.sum
 tunnox-server
 tunnox-client
 /data/
+
+# Compiled binaries
+bin/
+*.exe
+tunnox-server-*
+tunnox-client-*
