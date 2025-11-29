@@ -1,0 +1,167 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 匹配所有 v 开头的标签，如 v1.0.0
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.1.0)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # 从标签中提取版本号（移除 v 前缀）
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          
+          # 验证版本号格式（语义化版本）
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "Version must follow semantic versioning: MAJOR.MINOR.PATCH"
+            exit 1
+          fi
+          
+          # 验证 VERSION 文件
+          FILE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          if [ "$FILE_VERSION" != "$VERSION" ]; then
+            echo "❌ Version mismatch!"
+            echo "VERSION file: $FILE_VERSION"
+            echo "Tag/Input: $VERSION"
+            exit 1
+          fi
+          
+          echo "✅ Version validated: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          # 获取 Git 提交哈希
+          GIT_COMMIT=$(git rev-parse HEAD)
+          BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          
+          # 构建参数
+          LDFLAGS="-X 'tunnox-core/internal/version.Version=$VERSION'"
+          LDFLAGS="$LDFLAGS -X 'tunnox-core/internal/version.BuildTime=$BUILD_TIME'"
+          LDFLAGS="$LDFLAGS -X 'tunnox-core/internal/version.GitCommit=$GIT_COMMIT'"
+          
+          # 构建矩阵
+          PLATFORMS=(
+            "linux/amd64"
+            "linux/arm64"
+            "darwin/amd64"
+            "darwin/arm64"
+            "windows/amd64"
+            "windows/arm64"
+          )
+          
+          mkdir -p dist
+          
+          for PLATFORM in "${PLATFORMS[@]}"; do
+            GOOS=$(echo $PLATFORM | cut -d'/' -f1)
+            GOARCH=$(echo $PLATFORM | cut -d'/' -f2)
+            
+            echo "Building for $GOOS/$GOARCH..."
+            
+            # 设置输出文件名
+            if [ "$GOOS" == "windows" ]; then
+              SERVER_BINARY="tunnox-server-${TAG}-${GOOS}-${GOARCH}.exe"
+              CLIENT_BINARY="tunnox-client-${TAG}-${GOOS}-${GOARCH}.exe"
+            else
+              SERVER_BINARY="tunnox-server-${TAG}-${GOOS}-${GOARCH}"
+              CLIENT_BINARY="tunnox-client-${TAG}-${GOOS}-${GOARCH}"
+            fi
+            
+            # 构建 server
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" \
+              -o "dist/$SERVER_BINARY" ./cmd/server
+            
+            # 构建 client
+            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" \
+              -o "dist/$CLIENT_BINARY" ./cmd/client
+            
+            echo "✅ Built $SERVER_BINARY and $CLIENT_BINARY"
+          done
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          echo "✅ Generated checksums.txt"
+
+      - name: Extract release notes
+        id: release_notes
+        run: |
+          # 从 CHANGELOG.md 提取当前版本的发布说明
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          
+          # 提取从 ## [版本号] 到下一个 ## 之间的内容
+          RELEASE_NOTES=$(awk "/^## \[${VERSION}\]/,/^## \[/{if (!/^## \[${VERSION}\]/ && !/^## \[/) print}" CHANGELOG.md | sed '/^$/d')
+          
+          # 如果为空，使用默认说明
+          if [ -z "$RELEASE_NOTES" ]; then
+            RELEASE_NOTES="Release $TAG"
+          fi
+          
+          # 添加标题
+          RELEASE_NOTES="# Release $TAG"$'\n\n'"$RELEASE_NOTES"
+          
+          # 保存到文件
+          echo "$RELEASE_NOTES" > release_notes.md
+          
+          # 输出（用于 GitHub Release）
+          {
+            echo 'notes<<EOF'
+            echo "$RELEASE_NOTES"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          body_path: release_notes.md
+          files: |
+            dist/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: dist/*
+          retention-days: 30
+

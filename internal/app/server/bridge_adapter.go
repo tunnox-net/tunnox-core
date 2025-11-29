@@ -56,8 +56,6 @@ func (a *BridgeAdapter) BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targe
 		return fmt.Errorf("failed to publish tunnel open message: %w", err)
 	}
 
-	utils.Infof("BridgeAdapter: ✅ broadcasted TunnelOpen for client %d, tunnel %s to topic %s", 
-		targetClientID, req.TunnelID, broker.TopicTunnelOpen)
 	return nil
 }
 
@@ -67,7 +65,6 @@ func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-c
 		return nil, fmt.Errorf("message broker not initialized")
 	}
 
-	utils.Infof("🌐 BridgeAdapter: Subscribe called for topic: %s", topicPattern)
 	
 	msgChan := make(chan *session.BroadcastMessage, 100)
 	
@@ -76,20 +73,17 @@ func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-c
 		defer close(msgChan)
 		
 		// 🔥 FIX: 使用传入的topicPattern，而不是硬编码TopicTunnelOpen
-		utils.Infof("🌐 BridgeAdapter: Subscribing to broker topic: %s", topicPattern)
 		brokerChan, err := a.messageBroker.Subscribe(ctx, topicPattern)
 		if err != nil {
 			utils.Errorf("BridgeAdapter: failed to subscribe to tunnel_open: %v", err)
 			return
 		}
 		
-		utils.Infof("BridgeAdapter: ✅ subscribed to %s for cross-server forwarding", broker.TopicTunnelOpen)
 		
 		for {
 			select {
 			case msg, ok := <-brokerChan:
 				if !ok {
-					utils.Infof("BridgeAdapter: subscription channel closed")
 					return
 				}
 				
@@ -106,7 +100,6 @@ func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-c
 				}
 				
 			case <-ctx.Done():
-				utils.Infof("BridgeAdapter: subscription context cancelled")
 				return
 			}
 		}
@@ -125,7 +118,6 @@ func (a *BridgeAdapter) PublishMessage(ctx context.Context, topic string, payloa
 		return fmt.Errorf("failed to publish to topic %s: %w", topic, err)
 	}
 
-	utils.Debugf("BridgeAdapter: published message to topic %s (%d bytes)", topic, len(payload))
 	return nil
 }
 

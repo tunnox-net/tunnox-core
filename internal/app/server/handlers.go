@@ -39,7 +39,6 @@ func NewServerAuthHandler(cloudControl managers.CloudControlAPI, sessionMgr *ses
 
 // HandleHandshake 处理握手请求
 func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req *packet.HandshakeRequest) (*packet.HandshakeResponse, error) {
-	utils.Debugf("ServerAuthHandler: handling handshake for connection %s, ClientID=%d", conn.ConnID, req.ClientID)
 
 	// 提取IP地址
 	ip := extractIP(conn.RemoteAddr)
@@ -124,7 +123,6 @@ func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req 
 					}, authError
 				}
 				clientID = anonClient.ID
-				utils.Infof("ServerAuthHandler: auto-generated new anonymous client ID: %d (replacing invalid client %d)", clientID, req.ClientID)
 				// 注意：这里不直接返回，继续执行后续逻辑以返回新凭据
 			} else {
 				// 注册客户端或首次匿名握手，返回错误
@@ -161,7 +159,6 @@ func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req 
 					Client:  client,
 					Message: "Anonymous client re-authenticated",
 				}
-				utils.Infof("ServerAuthHandler: anonymous client %d re-authenticated with SecretKey", req.ClientID)
 				clientID = req.ClientID
 			} else {
 				// 注册客户端：使用Authenticate验证AuthCode
@@ -191,7 +188,6 @@ func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req 
 						Error:   authResp.Message,
 					}, authError
 				}
-				utils.Infof("ServerAuthHandler: registered client %d authenticated", req.ClientID)
 				clientID = req.ClientID
 			}
 		}
@@ -215,7 +211,6 @@ func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req 
 		utils.Warnf("ServerAuthHandler: failed to update client %d status to online: %v", clientID, err)
 		// 不返回错误，只记录警告，握手仍然成功
 	} else {
-		utils.Infof("ServerAuthHandler: client %d status updated to online on node %s", clientID, nodeID)
 	}
 
 	// 构造握手响应
@@ -241,10 +236,8 @@ func (h *ServerAuthHandler) HandleHandshake(conn *session.ClientConnection, req 
 			if clientID != req.ClientID {
 				// 自动生成的新客户端，提示客户端更新配置
 				response.Message = fmt.Sprintf("Client ID updated: %d -> %d (please update your config)", req.ClientID, clientID)
-				utils.Infof("ServerAuthHandler: returning new credentials for auto-generated anonymous client %d (replacing invalid client %d, SecretKey=%s)", clientID, req.ClientID, anonClient.SecretKey)
 			} else {
 				response.Message = fmt.Sprintf("Anonymous client authenticated, client_id=%d", clientID)
-				utils.Infof("ServerAuthHandler: returning credentials for anonymous client %d (SecretKey=%s)", clientID, anonClient.SecretKey)
 			}
 		}
 	}
@@ -346,8 +339,6 @@ func NewServerTunnelHandler(cloudControl managers.CloudControlAPI, connCodeServi
 //  1. MappingID - 验证隧道映射权限（新设计）
 //  2. SecretKey - 传统密钥验证（向后兼容）
 func (h *ServerTunnelHandler) HandleTunnelOpen(conn *session.ClientConnection, req *packet.TunnelOpenRequest) error {
-	utils.Infof("ServerTunnelHandler: tunnel open - ConnID=%s, MappingID=%s, TunnelID=%s, SecretKey=%v, ResumeToken=%v",
-		conn.ConnID, req.MappingID, req.TunnelID, req.SecretKey != "", req.ResumeToken != "")
 
 	// ✨ Phase 2: 优先级0 - 检查是否是恢复请求
 	if req.ResumeToken != "" {
@@ -360,12 +351,10 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn *session.ClientConnection, r
 		return fmt.Errorf("client not authenticated")
 	}
 
-	var authMethod string
 	var mapping *models.PortMapping
 
 	// 2. 优先级1: MappingID验证（新设计，推荐）
 	if req.MappingID != "" && req.SecretKey == "" {
-		authMethod = "mapping_id"
 
 		// 验证隧道映射权限
 		if h.connCodeService == nil {
@@ -388,12 +377,9 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn *session.ClientConnection, r
 			// 不返回错误，只记录警告
 		}
 
-		utils.Infof("ServerTunnelHandler: tunnel opened with mapping - TunnelID=%s, MappingID=%s, Client=%d",
-			req.TunnelID, req.MappingID, conn.ClientID)
 
 	} else if req.SecretKey != "" {
 		// 优先级2: SecretKey验证（向后兼容，用于旧版API调用）
-		authMethod = "secret_key"
 
 		// 从旧的PortMapping获取（保持向后兼容）
 		portMapping, err := h.cloudControl.GetPortMapping(req.MappingID)
@@ -417,8 +403,6 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn *session.ClientConnection, r
 			return fmt.Errorf("client not authorized for this mapping")
 		}
 
-		utils.Infof("ServerTunnelHandler: tunnel opened with secret key - TunnelID=%s, MappingID=%s, Client=%d",
-			req.TunnelID, req.MappingID, conn.ClientID)
 
 	} else {
 		// 无有效凭证
@@ -427,8 +411,6 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn *session.ClientConnection, r
 		return fmt.Errorf("authentication required: either mapping_id or secret_key must be provided")
 	}
 
-	utils.Infof("ServerTunnelHandler: tunnel opened successfully - TunnelID=%s, AuthMethod=%s, Client=%d",
-		req.TunnelID, authMethod, conn.ClientID)
 
 	// 存储mapping信息到conn（如果需要后续使用）
 	_ = mapping // 暂时未使用，但保留以备后续扩展
@@ -520,7 +502,7 @@ func (h *ServerTunnelHandler) resumeTunnel(conn *session.ClientConnection, req *
 		}
 	}
 
-	// 4. 记录恢复成功
+	// 4. 记录恢复成功（日志写入文件）
 	utils.Infof("ServerTunnelHandler: tunnel resumed successfully - TunnelID=%s, MappingID=%s, Client=%d",
 		tunnelState.TunnelID, tunnelState.MappingID, conn.ClientID)
 

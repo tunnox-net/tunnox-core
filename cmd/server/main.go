@@ -45,6 +45,9 @@ func main() {
 
 	srv := server.New(config, context.Background())
 
+	// 显示启动信息横幅（在日志初始化之后，服务启动之前）
+	srv.DisplayStartupBanner(absConfigPath)
+
 	// 3. 运行服务器（包含信号处理和优雅关闭）
 	if err := srv.Run(); err != nil {
 		utils.Fatalf("Failed to run server: %v", err)

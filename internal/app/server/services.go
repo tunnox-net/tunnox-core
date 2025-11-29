@@ -65,7 +65,7 @@ func (s *BaseService) Start(ctx context.Context) error {
 		return s.onStart(ctx)
 	}
 
-	// 默认：仅记录日志
+	// 默认：仅记录日志（写入文件）
 	utils.Infof("Starting service: %s", s.name)
 	return nil
 }
@@ -97,7 +97,6 @@ func (s *BaseService) Stop(ctx context.Context) error {
 // NewCloudService 创建云控制服务
 func NewCloudService(name string, cloudControl managers.CloudControlAPI) *BaseService {
 	return NewBaseService(name, cloudControl).WithOnStart(func(ctx context.Context) error {
-		utils.Debugf("Starting cloud service: %s", name)
 		return nil
 	})
 }
@@ -107,7 +106,6 @@ func NewCloudService(name string, cloudControl managers.CloudControlAPI) *BaseSe
 func NewStorageService(name string, storage storage.Storage) *BaseService {
 	_ = storage // 保留参数以备将来使用
 	return NewBaseService(name, nil).WithOnStart(func(ctx context.Context) error {
-		utils.Infof("Starting storage service: %s", name)
 		return nil
 	})
 }
@@ -206,7 +204,6 @@ func (r *SimpleNodeRegistry) RegisterNode(nodeID, addr string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.nodes[nodeID] = addr
-	utils.Infof("SimpleNodeRegistry: registered node %s at %s", nodeID, addr)
 }
 
 // UnregisterNode 注销节点
@@ -214,5 +211,4 @@ func (r *SimpleNodeRegistry) UnregisterNode(nodeID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.nodes, nodeID)
-	utils.Infof("SimpleNodeRegistry: unregistered node %s", nodeID)
 }

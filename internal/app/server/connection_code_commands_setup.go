@@ -19,13 +19,11 @@ func (s *Server) setupConnectionCodeCommands() error {
 		if err := s.session.SetCommandExecutor(executor); err != nil {
 			return fmt.Errorf("failed to set command executor: %w", err)
 		}
-		utils.Infof("Server: CommandExecutor created and set to SessionManager")
 	} else {
 		// ✅ 如果执行器已存在，也要确保设置了 session
 		executor := s.session.GetCommandExecutor()
 		if executorWithSession, ok := executor.(interface{ SetSession(types.Session) }); ok {
 			executorWithSession.SetSession(s.session)
-			utils.Infof("Server: Session set in existing CommandExecutor")
 		}
 	}
 
@@ -59,8 +57,6 @@ func (s *Server) setupConnectionCodeCommands() error {
 	if err := cmdHandlers.RegisterHandlers(cmdRegistry); err != nil {
 		return fmt.Errorf("failed to register connection code command handlers: %w", err)
 	}
-	utils.Infof("Server: Connection code command handlers registered")
-
 	// 注册配置命令处理器
 	if s.authHandler == nil {
 		utils.Warnf("Server: auth handler not set, skipping ConfigGet handler registration")
@@ -69,7 +65,6 @@ func (s *Server) setupConnectionCodeCommands() error {
 		if err := configHandlers.RegisterHandlers(cmdRegistry); err != nil {
 			return fmt.Errorf("failed to register config command handlers: %w", err)
 		}
-		utils.Infof("Server: Config command handlers registered")
 	}
 
 	// 注册映射命令处理器
@@ -77,7 +72,6 @@ func (s *Server) setupConnectionCodeCommands() error {
 	if err := mappingHandlers.RegisterHandlers(cmdRegistry); err != nil {
 		return fmt.Errorf("failed to register mapping command handlers: %w", err)
 	}
-	utils.Infof("Server: Mapping command handlers registered")
 
 	return nil
 }

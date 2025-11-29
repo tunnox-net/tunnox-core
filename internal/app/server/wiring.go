@@ -118,7 +118,6 @@ func (s *Server) createMessageBroker(ctx context.Context) broker.MessageBroker {
 		utils.Fatalf("Failed to create message broker: %v", err)
 	}
 
-	utils.Infof("MessageBroker initialized: type=%s, node_id=%s", brokerConfig.Type, brokerConfig.NodeID)
 	return mb
 }
 
@@ -154,7 +153,6 @@ func (s *Server) createBridgeManager(ctx context.Context) *internalbridge.Bridge
 		utils.Fatalf("Failed to create bridge manager: %v", err)
 	}
 
-	utils.Infof("BridgeManager initialized: node_id=%s", managerConfig.NodeID)
 	return manager
 }
 
@@ -188,7 +186,6 @@ func (s *Server) startGRPCServer() *grpc.Server {
 
 	// 在后台启动 gRPC 服务器
 	go func() {
-		utils.Infof("gRPC Bridge Server listening on %s", addr)
 		if err := grpcServer.Serve(listener); err != nil {
 			utils.Errorf("gRPC server error: %v", err)
 		}
@@ -225,7 +222,6 @@ func (s *Server) setupProtocolAdapters() error {
 		registeredProtocols = append(registeredProtocols, protocolName)
 	}
 
-	utils.Infof("Registered %d protocol adapters", len(registeredProtocols))
 	return nil
 }
 
@@ -262,6 +258,5 @@ func (s *Server) createManagementAPI(ctx context.Context) *api.ManagementAPIServ
 	}
 
 	apiServer := api.NewManagementAPIServer(ctx, apiConfig, s.cloudControl, s.connCodeService, s.healthManager)
-	utils.Infof("Management API initialized: listen_addr=%s", apiConfig.ListenAddr)
 	return apiServer
 }

@@ -99,93 +99,67 @@ func New(config *Config, parentCtx context.Context) *Server {
 		utils.Fatalf("Failed to allocate node ID: %v", err)
 	}
 	server.nodeID = allocatedNodeID
-	utils.Infof("✅ Server: allocated node ID: %s", server.nodeID)
 
 	// 创建 SessionManager
 	server.session = session.NewSessionManager(server.idManager, parentCtx)
 
-	// ✅ 创建 ConnectionCodeService（连接码授权系统）
+	// 创建 ConnectionCodeService（连接码授权系统）
 	repo := repos.NewRepository(serverStorage)
 	connCodeRepo := repos.NewConnectionCodeRepository(repo)
 
-	// ✅ 创建 PortMappingService（统一使用 PortMapping）
+	// 创建 PortMappingService（统一使用 PortMapping）
 	portMappingRepo := repos.NewPortMappingRepo(repo)
-	// TODO: 从 cloudControl 获取 statsCounter（如果需要）
-	// 暂时传入 nil，PortMappingService 可以处理
 	portMappingService := services.NewPortMappingService(portMappingRepo, server.idManager, nil, parentCtx)
 
 	server.connCodeService = services.NewConnectionCodeService(
 		connCodeRepo,
 		portMappingService,
 		portMappingRepo,
-		nil, // 使用默认配置
+		nil,
 		parentCtx,
 	)
-	// ConnectionCodeService 使用 dispose 体系管理，不需要注册到 ServiceManager
 
-	// ✅ 创建 BruteForceProtector（暴力破解防护）
+	// 创建安全组件
 	server.bruteForceProtector = security.NewBruteForceProtector(nil, parentCtx)
-	utils.Infof("Server: BruteForceProtector initialized with default config")
-
-	// ✅ 创建 IPManager（IP黑白名单管理）
 	server.ipManager = security.NewIPManager(serverStorage, parentCtx)
-	utils.Infof("Server: IPManager initialized")
-
-	// ✅ 创建 RateLimiter（速率限制器）
 	server.rateLimiter = security.NewRateLimiter(nil, nil, parentCtx)
-	utils.Infof("Server: RateLimiter initialized with default config")
 
-	// ✅ 创建 HealthManager（健康检查管理）
+	// 创建 HealthManager（健康检查管理）
 	server.healthManager = health.NewHealthManager(allocatedNodeID, "1.0.0", parentCtx)
-	// 设置SessionManager为StatsProvider（提供连接和隧道统计）
 	server.healthManager.SetStatsProvider(server.session)
-	utils.Infof("Server: HealthManager initialized (node=%s)", allocatedNodeID)
 
-	// ✅ 创建 ReconnectTokenManager（重连Token管理）
+	// 创建 Token 管理器
 	server.reconnectTokenManager = security.NewReconnectTokenManager(nil, serverStorage)
 	server.session.SetReconnectTokenManager(server.reconnectTokenManager)
-	utils.Infof("Server: ReconnectTokenManager initialized")
-
-	// ✅ 创建 SessionTokenManager（会话Token管理）
 	server.sessionTokenManager = security.NewSessionTokenManager(nil)
-	utils.Infof("Server: SessionTokenManager initialized")
 
-	// ✨ Phase 2: 创建 TunnelStateManager（隧道状态管理）
-	tunnelStateManager := session.NewTunnelStateManager(serverStorage, "") // 空字符串使用默认密钥
+	// 创建隧道状态和迁移管理器
+	tunnelStateManager := session.NewTunnelStateManager(serverStorage, "")
 	server.session.SetTunnelStateManager(tunnelStateManager)
-	utils.Infof("Server: TunnelStateManager initialized")
-
-	// ✨ Phase 2: 创建 MigrationManager（隧道迁移管理）
 	migrationManager := session.NewTunnelMigrationManager(tunnelStateManager, server.session)
 	server.session.SetMigrationManager(migrationManager)
-	utils.Infof("Server: MigrationManager initialized")
 
 	// 创建并设置 AuthHandler 和 TunnelHandler
-	// 注意：先创建handler，稍后设置NodeID
-	authHandler := NewServerAuthHandler(cloudControl, server.session, server.bruteForceProtector, server.ipManager, server.rateLimiter) // ⭐ 注入安全组件
-	tunnelHandler := NewServerTunnelHandler(cloudControl, server.connCodeService)                                                       // ⭐ 注入 connCodeService
+	authHandler := NewServerAuthHandler(cloudControl, server.session, server.bruteForceProtector, server.ipManager, server.rateLimiter)
+	tunnelHandler := NewServerTunnelHandler(cloudControl, server.connCodeService)
 	server.session.SetAuthHandler(authHandler)
 	server.session.SetTunnelHandler(tunnelHandler)
 	server.authHandler = authHandler
-	server.authHandler = authHandler // 保存引用以便后续使用
 
-	// ✅ 注入CloudControl，用于查询映射配置（使用适配器）
+	// 注入 CloudControl 适配器
 	cloudControlAdapter := session.NewCloudControlAdapter(cloudControl)
 	server.session.SetCloudControl(cloudControlAdapter)
 
-	// ✅ 设置SessionManager的NodeID（使用动态分配的节点ID）
+	// 设置 SessionManager 的 NodeID（使用动态分配的节点ID）
 	server.session.SetNodeID(server.nodeID)
-	utils.Infof("Server: SessionManager NodeID set to %s (dynamically allocated)", server.nodeID)
 
-	// ✅ 创建并注册连接码命令处理器
+	// 创建并注册连接码命令处理器
 	if err := server.setupConnectionCodeCommands(); err != nil {
 		utils.Errorf("Server: failed to setup connection code commands: %v", err)
 	}
 
-	// 创建协议工厂
+	// 创建协议工厂和适配器管理器
 	server.protocolFactory = NewProtocolFactory(server.session)
-
-	// 创建协议适配器管理器
 	server.protocolMgr = protocol.NewProtocolManager(parentCtx)
 
 	server.serverID, _ = server.idManager.GenerateConnectionID()
@@ -199,29 +173,22 @@ func New(config *Config, parentCtx context.Context) *Server {
 		server.grpcServer = server.startGRPCServer()
 	}
 
-	// ✅ 注入BridgeAdapter到SessionManager，用于跨服务器隧道转发
+	// 注入 BridgeAdapter 到 SessionManager，用于跨服务器隧道转发
 	if server.messageBroker != nil {
 		bridgeAdapter := NewBridgeAdapter(server.messageBroker, config.MessageBroker.NodeID)
 		server.session.SetBridgeManager(bridgeAdapter)
-		utils.Infof("Server: BridgeAdapter injected into SessionManager for cross-server tunnel forwarding")
 	}
 
-	// ✅ 创建并注入TunnelRoutingTable，用于跨服务器隧道路由
+	// 创建并注入 TunnelRoutingTable，用于跨服务器隧道路由
 	if server.storage != nil {
 		tunnelRouting := session.NewTunnelRoutingTable(server.storage, 30*time.Second)
 		server.session.SetTunnelRoutingTable(tunnelRouting)
-		utils.Infof("Server: TunnelRoutingTable created and injected")
 	}
-
-	// ✅ 设置节点ID
-	server.session.SetNodeID(config.MessageBroker.NodeID)
 
 	// 初始化 Management API
 	if config.ManagementAPI.Enabled {
 		server.apiServer = server.createManagementAPI(parentCtx)
-		// ✅ 注入SessionManager，用于推送配置给客户端
 		server.apiServer.SetSessionManager(server.session)
-		utils.Infof("Server: SessionManager injected into Management API")
 	}
 
 	// 注册服务到服务管理器
@@ -232,8 +199,6 @@ func New(config *Config, parentCtx context.Context) *Server {
 
 // Start 启动服务器
 func (s *Server) Start() error {
-	utils.Info(constants.MsgStartingServer)
-
 	// 设置协议适配器
 	if err := s.setupProtocolAdapters(); err != nil {
 		return fmt.Errorf("failed to setup protocol adapters: %v", err)
@@ -244,7 +209,6 @@ func (s *Server) Start() error {
 		return fmt.Errorf("failed to start services: %v", err)
 	}
 
-	utils.Info(constants.MsgServerStarted)
 	return nil
 }
 
@@ -252,60 +216,35 @@ func (s *Server) Start() error {
 func (s *Server) Stop() error {
 	utils.Info(constants.MsgShuttingDownServer)
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// 阶段0: 标记健康状态为draining（通知负载均衡器不再路由新请求）
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 标记健康状态为draining（通知负载均衡器不再路由新请求）
 	if s.healthManager != nil {
 		s.healthManager.MarkDraining()
-		utils.Info("Server health status marked as 'draining'")
 	}
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// 阶段1: 广播服务器关闭通知给所有客户端
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 广播关闭通知给所有连接的客户端
 	if s.session != nil {
-		utils.Info("Broadcasting shutdown notification to all connected clients...")
-		successCount, failureCount := s.session.BroadcastShutdown(
+		s.session.BroadcastShutdown(
 			session.ShutdownReasonShutdown,
-			30,   // 30秒优雅期
-			true, // 建议重连
+			30,
+			true,
 			"Server is shutting down gracefully",
 		)
-		utils.Infof("Shutdown broadcast completed: success=%d, failure=%d", successCount, failureCount)
 	}
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// 阶段2: 保存活跃隧道状态（Phase 2: 隧道迁移支持）
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 保存活跃隧道状态（用于隧道迁移）
 	if s.session != nil {
-		utils.Info("Saving active tunnel states for migration...")
 		if err := s.session.SaveActiveTunnelStates(); err != nil {
 			utils.Warnf("Failed to save tunnel states (non-fatal): %v", err)
-			// 不阻塞关闭流程，继续执行
-		} else {
-			utils.Info("Active tunnel states saved successfully")
 		}
 	}
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// 阶段3: 等待活跃隧道完成传输（最多30秒）
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 等待活跃隧道完成传输（最多30秒）
 	if s.session != nil {
-		utils.Info("Waiting for active tunnels to complete...")
-		allCompleted := s.session.WaitForTunnelsToComplete(30)
-		if allCompleted {
-			utils.Info("All active tunnels completed successfully")
-		} else {
-			activeTunnels := s.session.GetActiveTunnelCount()
-			utils.Warnf("Timeout waiting for tunnels (still have %d active tunnels), proceeding with shutdown", activeTunnels)
-		}
+		s.session.WaitForTunnelsToComplete(30)
 	}
 
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// 阶段4: 停止 gRPC 服务器和其他服务
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// 停止 gRPC 服务器
 	if s.grpcServer != nil {
-		utils.Info("Stopping gRPC server...")
 		s.grpcServer.GracefulStop()
 	}
 
@@ -314,14 +253,11 @@ func (s *Server) Stop() error {
 		utils.Errorf("Failed to stop services: %v", err)
 	}
 
-	utils.Info(constants.MsgServerShutdownCompleted)
 	return nil
 }
 
 // Run 运行服务器（使用ServiceManager的优雅关闭）
 func (s *Server) Run() error {
-	utils.Info("Starting Tunnox Core with ServiceManager...")
-
 	// 设置协议适配器（但不启动服务）
 	if err := s.setupProtocolAdapters(); err != nil {
 		return fmt.Errorf("failed to setup protocol adapters: %v", err)
@@ -333,8 +269,6 @@ func (s *Server) Run() error {
 
 // RunWithContext 使用指定上下文运行服务器
 func (s *Server) RunWithContext(ctx context.Context) error {
-	utils.Info("Starting Tunnox Core with ServiceManager...")
-
 	// 设置协议适配器（但不启动服务）
 	if err := s.setupProtocolAdapters(); err != nil {
 		return fmt.Errorf("failed to setup protocol adapters: %v", err)

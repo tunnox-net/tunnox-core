@@ -1,0 +1,92 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: codecov-umbrella
+
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
+            goarch: amd64
+          - os: windows-latest
+            goos: windows
+            goarch: amd64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          GIT_COMMIT=$(git rev-parse HEAD)
+          BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          
+          LDFLAGS="-X 'tunnox-core/internal/version.Version=$VERSION'"
+          LDFLAGS="$LDFLAGS -X 'tunnox-core/internal/version.BuildTime=$BUILD_TIME'"
+          LDFLAGS="$LDFLAGS -X 'tunnox-core/internal/version.GitCommit=$GIT_COMMIT'"
+          
+          go build -ldflags "$LDFLAGS" -o tunnox-server ./cmd/server
+          go build -ldflags "$LDFLAGS" -o tunnox-client ./cmd/client
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            tunnox-server*
+            tunnox-client*
+

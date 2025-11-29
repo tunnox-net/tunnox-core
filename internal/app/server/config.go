@@ -264,6 +264,14 @@ func LoadConfig(configPath string) (*Config, error) {
 	// ✅ 应用环境变量覆盖（环境变量优先级高于配置文件）
 	ApplyEnvOverrides(&config)
 
+	// 确保日志输出到文件（不输出到console）
+	if config.Log.Output == "" || config.Log.Output == constants.LogOutputStdout || config.Log.Output == constants.LogOutputStderr {
+		config.Log.Output = constants.LogOutputFile
+		if config.Log.File == "" {
+			config.Log.File = "logs/server.log"
+		}
+	}
+
 	// 验证配置
 	if err := ValidateConfig(&config); err != nil {
 		return nil, fmt.Errorf(constants.MsgInvalidConfiguration, err)
@@ -332,7 +340,6 @@ func ValidateConfig(config *Config) error {
 	//        自动使用 Redis 作为消息队列
 	if config.Storage.Redis.Addr != "" {
 		if config.MessageBroker.Type == "" || config.MessageBroker.Type == "memory" {
-			utils.Infof("✅ Storage Redis detected, auto-configuring message_broker to use redis for multi-node support")
 			config.MessageBroker.Type = "redis"
 			config.MessageBroker.Redis.Addr = config.Storage.Redis.Addr
 			config.MessageBroker.Redis.Password = config.Storage.Redis.Password
@@ -350,7 +357,6 @@ func ValidateConfig(config *Config) error {
 	//        自动使用 message_broker 的 Redis 配置给 storage
 	if config.MessageBroker.Type == "redis" && config.MessageBroker.Redis.Addr != "" {
 		if config.Storage.Redis.Addr == "" {
-			utils.Infof("✅ MessageBroker Redis detected, auto-configuring storage.redis for distributed cache")
 			config.Storage.Redis.Addr = config.MessageBroker.Redis.Addr
 			config.Storage.Redis.Password = config.MessageBroker.Redis.Password
 			config.Storage.Redis.DB = config.MessageBroker.Redis.DB
@@ -365,7 +371,6 @@ func ValidateConfig(config *Config) error {
 	// 验证 MessageBroker 配置
 	if config.MessageBroker.Type == "" {
 		config.MessageBroker.Type = "memory"
-		utils.Infof("MessageBroker type not configured, using default: memory")
 	}
 	if config.MessageBroker.NodeID == "" {
 		config.MessageBroker.NodeID = "node-001"
@@ -374,7 +379,6 @@ func ValidateConfig(config *Config) error {
 	// 验证 Cloud 配置
 	if config.Cloud.Type == "" {
 		config.Cloud.Type = "built_in"
-		utils.Infof("Cloud type not configured, using default: built_in")
 	}
 
 	// 验证 ManagementAPI 配置
@@ -383,7 +387,6 @@ func ValidateConfig(config *Config) error {
 	}
 	// 默认启用 ManagementAPI
 	if !config.ManagementAPI.Enabled {
-		utils.Infof("ManagementAPI not enabled in config, enabling by default on %s", config.ManagementAPI.ListenAddr)
 		config.ManagementAPI.Enabled = true
 	}
 
@@ -456,7 +459,6 @@ func validateStorageConfig(config *StorageConfig) error {
 		// 这样可以支持多节点部署，共享运行时数据（会话、连接状态等）
 		if config.Hybrid.CacheType == "" || config.Hybrid.CacheType == "memory" {
 			if config.Redis.Addr != "" {
-				utils.Infof("✅ Redis detected, auto-upgrading cache from 'memory' to 'redis' for multi-node support")
 				config.Hybrid.CacheType = "redis"
 			} else {
 				// 没有配置 Redis，使用内存缓存
@@ -608,7 +610,8 @@ func GetDefaultConfig() *Config {
 		Log: utils.LogConfig{
 			Level:  constants.LogLevelInfo,
 			Format: constants.LogFormatText,
-			Output: constants.LogOutputStdout,
+			Output: constants.LogOutputFile,
+			File:   "logs/server.log",
 		},
 		Cloud: CloudConfig{
 			Type: "built_in",
