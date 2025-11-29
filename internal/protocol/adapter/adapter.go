@@ -161,12 +161,19 @@ func isIgnorableError(err error) bool {
 // handleConnection 通用连接处理逻辑
 func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWriteCloser) {
 	shouldCloseConn := true // 默认关闭连接
+	var streamConn *types.StreamConnection
 
 	if persistentConn, ok := conn.(interface{ IsPersistent() bool }); ok && persistentConn.IsPersistent() {
 		shouldCloseConn = false
 	}
 
 	defer func() {
+		// 清理 SessionManager 中的连接（如果已创建）
+		if streamConn != nil && b.session != nil {
+			_ = b.session.CloseConnection(streamConn.ID)
+		}
+
+		// 关闭底层连接（如果不是持久连接）
 		if shouldCloseConn {
 			if closer, ok := conn.(interface{ Close() error }); ok {
 				_ = closer.Close()
@@ -183,7 +190,8 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 	}
 
 	// 初始化连接
-	streamConn, err := b.session.AcceptConnection(conn, conn)
+	var err error
+	streamConn, err = b.session.AcceptConnection(conn, conn)
 	if err != nil {
 		utils.Errorf("Failed to initialize connection: %v", err)
 		return
@@ -238,6 +246,8 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 					errMsg == "tunnel target connected, switching to stream mode" ||
 					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" {
 					shouldCloseConn = false
+					// 注意：对于隧道连接，streamConn 会被转移到隧道管理，不需要在这里关闭
+					streamConn = nil
 					return
 				}
 			}
