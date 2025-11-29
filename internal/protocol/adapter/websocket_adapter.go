@@ -84,6 +84,9 @@ func (a *WebSocketAdapter) handleWebSocket(w http.ResponseWriter, r *http.Reques
 func (a *WebSocketAdapter) ListenFrom(addr string) error {
 	utils.Infof("WebSocket adapter starting on %s", addr)
 
+	// 设置地址到 BaseAdapter
+	a.SetAddr(addr)
+
 	// Create HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/_tunnox", a.handleWebSocket)

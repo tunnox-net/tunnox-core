@@ -93,6 +93,9 @@ func generateTLSConfig() *tls.Config {
 func (a *QuicAdapter) ListenFrom(addr string) error {
 	utils.Infof("QUIC adapter starting on %s", addr)
 
+	// 设置地址到 BaseAdapter
+	a.SetAddr(addr)
+
 	if a.tlsConfig == nil {
 		return fmt.Errorf("TLS config not initialized")
 	}
