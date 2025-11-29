@@ -195,9 +195,15 @@ func TestGetDefaultConfig(t *testing.T) {
 	if config.Server.Address == "" {
 		t.Error("Expected default server address to be set")
 	}
+	if config.Server.Address != "https://gw.tunnox.net/_tunnox" {
+		t.Errorf("Expected default server address to be 'https://gw.tunnox.net/_tunnox', got '%s'", config.Server.Address)
+	}
 
 	if config.Server.Protocol == "" {
 		t.Error("Expected default server protocol to be set")
+	}
+	if config.Server.Protocol != "websocket" {
+		t.Errorf("Expected default server protocol to be 'websocket', got '%s'", config.Server.Protocol)
 	}
 }
 
