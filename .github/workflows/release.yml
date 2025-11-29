@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'  # 匹配所有 v 开头的标签，如 v1.0.0
+      - 'v*'   # 匹配所有 v 开头的标签，如 v1.0.0
+      - '[0-9]+.[0-9]+.[0-9]+'  # 匹配纯数字版本号，如 1.0.7
   workflow_dispatch:
     inputs:
       version:
@@ -46,8 +47,13 @@ jobs:
           if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             VERSION="${{ github.event.inputs.version }}"
           else
-            # 从标签中提取版本号（移除 v 前缀）
-            VERSION=${GITHUB_REF#refs/tags/v}
+            # 从标签中提取版本号（移除 v 前缀，如果有的话）
+            TAG_NAME=${GITHUB_REF#refs/tags/}
+            if [[ "$TAG_NAME" == v* ]]; then
+              VERSION=${TAG_NAME#v}
+            else
+              VERSION=$TAG_NAME
+            fi
           fi
           
           # 验证版本号格式（语义化版本）
