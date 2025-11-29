@@ -27,7 +27,18 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.24.4'
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
 
       - name: Determine version
         id: version
@@ -101,12 +112,18 @@ jobs:
             fi
             
             # 构建 server
-            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" \
-              -o "dist/$SERVER_BINARY" ./cmd/server
+            if ! GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" \
+              -trimpath -o "dist/$SERVER_BINARY" ./cmd/server; then
+              echo "❌ Failed to build server for $GOOS/$GOARCH"
+              exit 1
+            fi
             
             # 构建 client
-            GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" \
-              -o "dist/$CLIENT_BINARY" ./cmd/client
+            if ! GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" \
+              -trimpath -o "dist/$CLIENT_BINARY" ./cmd/client; then
+              echo "❌ Failed to build client for $GOOS/$GOARCH"
+              exit 1
+            fi
             
             echo "✅ Built $SERVER_BINARY and $CLIENT_BINARY"
           done
@@ -114,7 +131,14 @@ jobs:
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum * > checksums.txt
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum * > checksums.txt
+          elif command -v shasum >/dev/null 2>&1; then
+            shasum -a 256 * > checksums.txt
+          else
+            echo "❌ No checksum tool found"
+            exit 1
+          fi
           echo "✅ Generated checksums.txt"
 
       - name: Extract release notes
@@ -125,11 +149,13 @@ jobs:
           TAG="${{ steps.version.outputs.tag }}"
           
           # 提取从 ## [版本号] 到下一个 ## 之间的内容
+          # 转义方括号以匹配 CHANGELOG 格式
           RELEASE_NOTES=$(awk "/^## \[${VERSION}\]/,/^## \[/{if (!/^## \[${VERSION}\]/ && !/^## \[/) print}" CHANGELOG.md | sed '/^$/d')
           
           # 如果为空，使用默认说明
           if [ -z "$RELEASE_NOTES" ]; then
             RELEASE_NOTES="Release $TAG"
+            echo "⚠️ No release notes found in CHANGELOG.md, using default"
           fi
           
           # 添加标题
@@ -137,6 +163,7 @@ jobs:
           
           # 保存到文件
           echo "$RELEASE_NOTES" > release_notes.md
+          echo "✅ Release notes extracted"
           
           # 输出（用于 GitHub Release）
           {
