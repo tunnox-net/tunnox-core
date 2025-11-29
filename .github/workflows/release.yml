@@ -111,16 +111,22 @@ jobs:
               CLIENT_BINARY="tunnox-client-${TAG}-${GOOS}-${GOARCH}"
             fi
             
-            # 构建 server
-            if ! GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" \
-              -trimpath -o "dist/$SERVER_BINARY" ./cmd/server; then
+            # 构建 server（禁用 CGO 以确保静态链接和跨平台兼容性）
+            if ! CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
+              -ldflags "$LDFLAGS" \
+              -trimpath \
+              -tags netgo \
+              -o "dist/$SERVER_BINARY" ./cmd/server; then
               echo "❌ Failed to build server for $GOOS/$GOARCH"
               exit 1
             fi
             
-            # 构建 client
-            if ! GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "$LDFLAGS" \
-              -trimpath -o "dist/$CLIENT_BINARY" ./cmd/client; then
+            # 构建 client（禁用 CGO 以确保静态链接和跨平台兼容性）
+            if ! CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build \
+              -ldflags "$LDFLAGS" \
+              -trimpath \
+              -tags netgo \
+              -o "dist/$CLIENT_BINARY" ./cmd/client; then
               echo "❌ Failed to build client for $GOOS/$GOARCH"
               exit 1
             fi

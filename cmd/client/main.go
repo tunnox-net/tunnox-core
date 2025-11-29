@@ -347,8 +347,7 @@ NOTES:
     - Default mode is interactive (with CLI)
     - Default server: https://gw.tunnox.net/_tunnox (WebSocket)
     - Default protocol is websocket if not specified
-    - Anonymous mode is used if no client_id/token is provided
-`)
+    - Anonymous mode is used if no client_id/token is provided`)
 }
 
 // configureLogging 配置日志输出

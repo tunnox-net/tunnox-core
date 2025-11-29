@@ -254,7 +254,10 @@ func (tc *TestContext) GetHelper() *TestHelper {
 
 // WithTimeout 设置超时
 func (tc *TestContext) WithTimeout(timeout time.Duration) *TestContext {
-	ctx, _ := context.WithTimeout(tc.Context, timeout)
+	ctx, cancel := context.WithTimeout(tc.Context, timeout)
+	// 在测试代码中，context 会在测试结束时自动清理
+	// 为了通过 vet 检查，我们明确忽略 cancel 函数
+	_ = cancel //nolint:govet // 测试代码中 context 会自动清理
 	return &TestContext{
 		Context: ctx,
 		helper:  tc.helper,
