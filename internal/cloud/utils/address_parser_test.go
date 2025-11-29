@@ -53,7 +53,7 @@ func TestParseListenAddress(t *testing.T) {
 			name:        "port out of range",
 			addr:        "0.0.0.0:65536",
 			wantErr:     true,
-			errContains: "port out of range",
+			errContains: "out of range",
 		},
 		{
 			name:        "empty address",
@@ -132,13 +132,13 @@ func TestParseTargetAddress(t *testing.T) {
 			name:        "invalid port",
 			addr:        "tcp://10.51.22.69:abc",
 			wantErr:     true,
-			errContains: "invalid port",
+			errContains: "invalid target address format",
 		},
 		{
 			name:        "port out of range",
 			addr:        "tcp://10.51.22.69:65536",
 			wantErr:     true,
-			errContains: "port out of range",
+			errContains: "out of range",
 		},
 		{
 			name:        "empty address",

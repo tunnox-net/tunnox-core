@@ -118,7 +118,8 @@ func TestConnectionCodeRepository_Update(t *testing.T) {
 	require.NoError(t, err, "Failed to get updated connection code")
 	assert.True(t, retrieved.IsActivated)
 	assert.NotNil(t, retrieved.ActivatedAt)
-	assert.Equal(t, int64(99999999), retrieved.ActivatedBy)
+	assert.NotNil(t, retrieved.ActivatedBy, "ActivatedBy should not be nil")
+	assert.Equal(t, int64(99999999), *retrieved.ActivatedBy)
 	assert.NotNil(t, retrieved.MappingID)
 	assert.Equal(t, "mapping_test001", *retrieved.MappingID)
 }

@@ -161,13 +161,11 @@ func TestUserRepository_ListUsers(t *testing.T) {
 
 	err := userRepo.CreateUser(user1)
 	require.NoError(t, err)
-	err = userRepo.AddUserToList(user1)
-	require.NoError(t, err)
+	// CreateUser 会自动调用 AddUserToList，不需要手动调用
 
 	err = userRepo.CreateUser(user2)
 	require.NoError(t, err)
-	err = userRepo.AddUserToList(user2)
-	require.NoError(t, err)
+	// CreateUser 会自动调用 AddUserToList，不需要手动调用
 
 	// List all users
 	users, err := userRepo.ListUsers("")

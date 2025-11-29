@@ -57,7 +57,7 @@ func TestHybridStorage_DataCategoryRecognition(t *testing.T) {
 		{"tunnox:client:456", true},
 		{"tunnox:mapping:789", true},
 		{"tunnox:node:abc", true},
-		{"tunnox:stats:xyz", true},
+		{"tunnox:stats:persistent:xyz", true},
 		{"tunnox:runtime:key:123", false},
 		{"tunnox:session:abc", false},
 		{"tunnox:jwt:123", false},

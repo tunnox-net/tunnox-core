@@ -101,18 +101,19 @@ func TestMappingAPI_CreateMapping(t *testing.T) {
 	})
 
 	t.Run("缺少必填字段", func(t *testing.T) {
-		// 缺少用户ID
+		// 缺少 ListenClientID 和 TargetClientID
 		mapping := &models.PortMapping{
-			SourceClientID: 12345678,
-			TargetClientID: 87654321,
-			Protocol:       models.ProtocolTCP,
-			SourcePort:     8080,
-			TargetHost:     "localhost",
-			TargetPort:     80,
+			// SourceClientID: 0, // 缺失
+			// TargetClientID: 0, // 缺失
+			Protocol:   models.ProtocolTCP,
+			SourcePort: 8080,
+			TargetHost: "localhost",
+			TargetPort: 80,
 		}
 
 		_, err := client.CreateMapping(mapping)
-		assert.Error(t, err)
+		assert.Error(t, err, "Expected error for missing required fields")
+		// 注意：UserID 允许为空（用于匿名客户端），所以这里不测试 UserID
 	})
 }
 
