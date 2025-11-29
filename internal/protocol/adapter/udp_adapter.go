@@ -7,15 +7,15 @@ import (
 	"net"
 	"sync"
 	"time"
-	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/utils"
 )
 
 const (
 	udpBufferSize         = 65535
-	udpReadTimeout        = 100 * time.Millisecond
-	udpControlReadTimeout = 5 * time.Millisecond
+	udpControlBufferSize  = 4096 // 控制连接缓冲区
+	udpReadTimeout        = 30 * time.Second
+	udpControlReadTimeout = 20 * time.Millisecond
 	udpTunnelReadTimeout  = 100 * time.Millisecond
 	udpSessionTimeout     = 30 * time.Second
 	udpCleanupInterval    = 10 * time.Second
@@ -54,7 +54,12 @@ func (u *UdpConn) Read(p []byte) (n int, err error) {
 		return 0, fmt.Errorf("connection closed")
 	}
 
-	n, _, err = u.conn.ReadFrom(p)
+	// 使用较小的缓冲区进行读取
+	buf := make([]byte, min(len(p), udpControlBufferSize))
+	n, _, err = u.conn.ReadFrom(buf)
+	if n > 0 {
+		copy(p, buf[:n])
+	}
 	return n, err
 }
 
@@ -222,7 +227,8 @@ func (u *UdpAdapter) receivePackets() {
 		default:
 		}
 
-		if err := u.conn.SetReadDeadline(time.Now().Add(50 * time.Millisecond)); err != nil {
+		// 设置较长的读取超时（1秒），避免频繁超时
+		if err := u.conn.SetReadDeadline(time.Now().Add(1 * time.Second)); err != nil {
 			if !u.IsClosed() {
 				utils.Errorf("Failed to set read deadline: %v", err)
 			}
@@ -318,49 +324,47 @@ func (u *UdpAdapter) cleanupSessions() {
 	}
 }
 
+// Accept 接受UDP连接
 func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
 	if u.conn == nil {
 		return nil, fmt.Errorf("UDP listener not initialized")
 	}
 
-	// 轮询等待新的未Accept的会话
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	timeout := time.After(udpReadTimeout)
-
+	// 直接检查会话，不使用 ticker 轮询
 	for {
 		select {
 		case <-u.ctx.Done():
 			return nil, fmt.Errorf("adapter closed")
-		case <-timeout:
-			return nil, errors.NewProtocolTimeoutError("UDP packet")
-		case <-ticker.C:
-			// 查找有数据且未被Accept的会话
-			u.sessLock.RLock()
-			var readySession *udpSession
-			for _, session := range u.sessions {
-				session.mu.RLock()
-				hasData := len(session.buffer) > 0
-				notAccepted := !session.isAccepted
-				session.mu.RUnlock()
+		default:
+		}
 
-				if hasData && notAccepted {
-					readySession = session
-					break
-				}
-			}
-			u.sessLock.RUnlock()
+		// 查找有数据且未被Accept的会话
+		u.sessLock.RLock()
+		var readySession *udpSession
+		for _, session := range u.sessions {
+			session.mu.RLock()
+			hasData := len(session.buffer) > 0
+			notAccepted := !session.isAccepted
+			session.mu.RUnlock()
 
-			if readySession != nil {
-				// 标记为已Accept
-				readySession.mu.Lock()
-				readySession.isAccepted = true
-				readySession.mu.Unlock()
-
-				return readySession.sessionConn, nil
+			if hasData && notAccepted {
+				readySession = session
+				break
 			}
 		}
+		u.sessLock.RUnlock()
+
+		if readySession != nil {
+			// 标记为已Accept
+			readySession.mu.Lock()
+			readySession.isAccepted = true
+			readySession.mu.Unlock()
+
+			return readySession.sessionConn, nil
+		}
+
+		// 短暂休眠避免 CPU 占用过高
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

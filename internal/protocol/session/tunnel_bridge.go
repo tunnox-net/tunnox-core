@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -115,7 +114,7 @@ func (b *TunnelBridge) SetTargetConnection(targetConn net.Conn, targetStream str
 	close(b.ready)
 }
 
-// Start 启动桥接（阻塞直到连接关闭）
+// Start 启动桥接
 func (b *TunnelBridge) Start() error {
 	// 等待目标端连接建立（超时30秒）
 	select {
@@ -127,33 +126,50 @@ func (b *TunnelBridge) Start() error {
 		return fmt.Errorf("bridge cancelled before target connection")
 	}
 
+	if b.sourceConn == nil || b.targetConn == nil {
+		return fmt.Errorf("source or target connection not set")
+	}
+
 	// ✅ 服务端是透明桥接，直接使用原始net.Conn转发（不解压不解密）
 	// 压缩/加密由客户端两端处理，服务端只负责纯转发
 	utils.Infof("TunnelBridge[%s]: bridge started, transparent forwarding (no compression/encryption on server)", b.tunnelID)
 
 	// 启动双向数据转发（带流量统计和限速）
-	var wg sync.WaitGroup
-	wg.Add(2)
-
 	// 源端 -> 目标端（带限速和统计）
 	go func() {
-		defer wg.Done()
 		written := b.copyWithControl(b.targetConn, b.sourceConn, "source->target", &b.bytesSent)
 		utils.Infof("TunnelBridge[%s]: source->target finished, %d bytes", b.tunnelID, written)
 	}()
 
 	// 目标端 -> 源端（带限速和统计）
 	go func() {
-		defer wg.Done()
 		written := b.copyWithControl(b.sourceConn, b.targetConn, "target->source", &b.bytesReceived)
 		utils.Infof("TunnelBridge[%s]: target->source finished, %d bytes", b.tunnelID, written)
 	}()
 
-	wg.Wait()
+	// 启动定期流量统计上报（每30秒）
+	if b.cloudControl != nil && b.mappingID != "" {
+		go b.periodicTrafficReport()
+	}
 
-	utils.Infof("TunnelBridge[%s]: bridge finished (sent: %d, received: %d)",
-		b.tunnelID, b.bytesSent.Load(), b.bytesReceived.Load())
 	return nil
+}
+
+// periodicTrafficReport 定期上报流量统计
+func (b *TunnelBridge) periodicTrafficReport() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			b.reportTrafficStats()
+		case <-b.Ctx().Done():
+			// 最终上报
+			b.reportTrafficStats()
+			return
+		}
+	}
 }
 
 // copyWithControl 带流量统计和限速的数据拷贝

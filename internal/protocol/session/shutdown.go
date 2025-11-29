@@ -109,7 +109,7 @@ func (s *SessionManager) BroadcastShutdown(
 
 			// 设置5秒超时
 			deadline := time.Now().Add(5 * time.Second)
-			if _, err := c.Stream.WritePacket(clientTransferPacket, false, 0); err != nil {
+			if _, err := c.Stream.WritePacket(clientTransferPacket, true, 0); err != nil {
 				utils.Warnf("SessionManager: failed to send shutdown notification to client %d (connID=%s): %v",
 					c.ClientID, c.ConnID, err)
 			} else {

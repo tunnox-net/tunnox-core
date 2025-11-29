@@ -287,7 +287,7 @@ func (s *SessionManager) sendKickCommand(conn *ControlConnection, reason, code s
 		},
 	}
 
-	if _, err := conn.Stream.WritePacket(kickPkt, false, 0); err != nil {
+	if _, err := conn.Stream.WritePacket(kickPkt, true, 0); err != nil {
 		utils.Warnf("Failed to send kick command to %s: %v", conn.ConnID, err)
 	} else {
 		utils.Infof("Sent kick command to client %d (connID=%s): %s", conn.ClientID, conn.ConnID, reason)

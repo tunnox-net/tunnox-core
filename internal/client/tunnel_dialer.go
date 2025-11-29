@@ -62,7 +62,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		Payload:    reqData,
 	}
 
-	if _, err := tunnelStream.WritePacket(openPkt, false, 0); err != nil {
+	if _, err := tunnelStream.WritePacket(openPkt, true, 0); err != nil {
 		tunnelStream.Close()
 		conn.Close()
 		return nil, nil, fmt.Errorf("failed to send tunnel open: %w", err)
@@ -76,7 +76,8 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		return nil, nil, fmt.Errorf("failed to read tunnel open ack: %w", err)
 	}
 
-	if ackPkt.PacketType != packet.TunnelOpenAck {
+	// 忽略压缩/加密标志，只检查基础类型
+	if ackPkt.PacketType&0x3F != packet.TunnelOpenAck {
 		tunnelStream.Close()
 		conn.Close()
 		return nil, nil, fmt.Errorf("unexpected packet type: %v", ackPkt.PacketType)

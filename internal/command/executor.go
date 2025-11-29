@@ -258,7 +258,7 @@ func (ce *CommandExecutor) sendResponse(connectionID string, response *types.Com
 	// 发送响应
 	utils.Debugf("CommandExecutor.sendResponse: writing packet, ConnectionID=%s, PacketType=%d, CommandID=%s",
 		connectionID, transferPacket.PacketType, response.CommandId)
-	written, err := pkgStream.WritePacket(transferPacket, false, 0)
+	written, err := pkgStream.WritePacket(transferPacket, true, 0)
 	if err != nil {
 		utils.Errorf("CommandExecutor.sendResponse: failed to write packet, ConnectionID=%s, Error=%v", connectionID, err)
 		return fmt.Errorf("failed to write response packet: %w", err)

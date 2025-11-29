@@ -146,7 +146,7 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 				msg.TargetClientID)
 			return
 		default:
-			if _, err := targetConn.Stream.WritePacket(pkt, false, 0); err != nil {
+			if _, err := targetConn.Stream.WritePacket(pkt, true, 0); err != nil {
 				utils.Errorf("SessionManager: failed to send TunnelOpenRequest to client %d: %v",
 					msg.TargetClientID, err)
 				return

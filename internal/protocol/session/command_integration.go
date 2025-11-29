@@ -197,11 +197,8 @@ func (s *SessionManager) handleConfigGetCommand(connPacket *types.StreamPacket) 
 		CommandPacket: responseCmd,
 	}
 
-	if _, err := controlConn.Stream.WritePacket(responsePacket, false, 0); err != nil {
-		return fmt.Errorf("failed to send config response: %w", err)
-	}
-
-	return nil
+	_, err := controlConn.Stream.WritePacket(responsePacket, true, 0)
+	return err
 }
 
 // sendEmptyConfig 发送空配置
@@ -245,7 +242,7 @@ func (s *SessionManager) handleHeartbeat(connPacket *types.StreamPacket) error {
 		respPacket := &packet.TransferPacket{
 			PacketType: packet.Heartbeat, // 心跳响应也用 Heartbeat
 		}
-		if _, err := conn.Stream.WritePacket(respPacket, false, 0); err != nil {
+		if _, err := conn.Stream.WritePacket(respPacket, true, 0); err != nil {
 			utils.Errorf("Failed to send heartbeat response: %v", err)
 		}
 	}

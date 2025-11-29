@@ -128,7 +128,7 @@ func (rm *ResponseManager) SendResponse(connID string, response *command.Command
 		return fmt.Errorf("connection %s has no stream", connID)
 	}
 
-	if _, err := conn.Stream.WritePacket(transferPacket, false, 0); err != nil {
+	if _, err := conn.Stream.WritePacket(transferPacket, true, 0); err != nil {
 		utils.Errorf("Failed to send response to connection %s: %v", connID, err)
 		return fmt.Errorf("failed to write response packet: %w", err)
 	}

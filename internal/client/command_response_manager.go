@@ -59,7 +59,8 @@ func (m *CommandResponseManager) UnregisterRequest(commandID string) {
 
 // HandleResponse 处理响应数据包
 func (m *CommandResponseManager) HandleResponse(pkt *packet.TransferPacket) bool {
-	if pkt.PacketType != packet.CommandResp || pkt.CommandPacket == nil {
+	// 忽略压缩/加密标志，只检查基础类型
+	if !pkt.PacketType.IsCommandResp() || pkt.CommandPacket == nil {
 		utils.Debugf("CommandResponseManager: packet is not CommandResp or has no CommandPacket")
 		return false
 	}

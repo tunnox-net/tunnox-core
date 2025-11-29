@@ -35,18 +35,18 @@ func (s *SessionManager) HandlePacket(connPacket *types.StreamPacket) error {
 
 	packetType := connPacket.Packet.PacketType
 
-	// 根据数据包类型分发
-	switch packetType {
-	case packet.JsonCommand, packet.CommandResp:
+	// 根据数据包类型分发（忽略压缩/加密标志）
+	switch {
+	case packetType.IsJsonCommand() || packetType.IsCommandResp():
 		return s.handleCommandPacket(connPacket)
 
-	case packet.Handshake:
+	case packetType&0x3F == packet.Handshake:
 		return s.handleHandshake(connPacket)
 
-	case packet.TunnelOpen:
+	case packetType&0x3F == packet.TunnelOpen:
 		return s.handleTunnelOpen(connPacket)
 
-	case packet.Heartbeat:
+	case packetType.IsHeartbeat():
 		return s.handleHeartbeat(connPacket)
 
 	default:
@@ -340,7 +340,7 @@ func (s *SessionManager) sendHandshakeResponse(conn *ClientConnection, resp *pac
 	}
 
 	// 发送响应
-	if _, err := conn.Stream.WritePacket(respPacket, false, 0); err != nil {
+	if _, err := conn.Stream.WritePacket(respPacket, true, 0); err != nil {
 		return fmt.Errorf("failed to write handshake response: %w", err)
 	}
 	return nil
@@ -383,7 +383,7 @@ func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, re
 	}
 
 	// 发送响应
-	if _, err := conn.Stream.WritePacket(respPacket, false, 0); err != nil {
+	if _, err := conn.Stream.WritePacket(respPacket, true, 0); err != nil {
 		return fmt.Errorf("failed to write tunnel open response: %w", err)
 	}
 

@@ -223,7 +223,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		Payload:    reqData,
 	}
 
-	if _, err := stream.WritePacket(handshakePkt, false, 0); err != nil {
+	if _, err := stream.WritePacket(handshakePkt, true, 0); err != nil {
 		return fmt.Errorf("failed to send handshake: %w", err)
 	}
 
@@ -238,7 +238,8 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		utils.Debugf("Client: Payload=%s", string(respPkt.Payload))
 	}
 
-	if respPkt.PacketType != packet.HandshakeResp {
+	// 忽略压缩/加密标志，只检查基础类型
+	if respPkt.PacketType&0x3F != packet.HandshakeResp {
 		return fmt.Errorf("unexpected response type: %v", respPkt.PacketType)
 	}
 
@@ -373,7 +374,7 @@ func (c *TunnoxClient) sendHeartbeat() error {
 		PacketType: packet.Heartbeat,
 		Payload:    []byte{},
 	}
-	_, err := controlStream.WritePacket(heartbeatPkt, false, 0)
+	_, err := controlStream.WritePacket(heartbeatPkt, true, 0)
 	if err != nil {
 		// 心跳失败，可能连接已断开，清理连接状态
 		c.mu.Lock()
@@ -425,7 +426,7 @@ func (c *TunnoxClient) requestMappingConfig() {
 		CommandPacket: cmd,
 	}
 
-	if _, err := controlStream.WritePacket(pkt, false, 0); err != nil {
+	if _, err := controlStream.WritePacket(pkt, true, 0); err != nil {
 		utils.Errorf("Client: failed to request mapping config: %v", err)
 		return
 	}

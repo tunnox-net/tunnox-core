@@ -35,7 +35,7 @@ func dialUDPControlConnection(address string) (net.Conn, error) {
 
 // udpStreamConn 将UDP连接包装成面向字节流的net.Conn
 // 通过内部缓冲区保证Read/Write语义符合StreamProcessor的要求
-// 
+//
 // 关键设计：
 // - UDP是面向数据包的，每次Read/Write操作对应一个完整的UDP数据包
 // - StreamProcessor期望字节流语义，所以需要缓冲区来桥接两者
@@ -75,7 +75,9 @@ func (c *udpStreamConn) Read(p []byte) (int, error) {
 		}
 		c.mu.Unlock()
 
-		// 缓冲区为空，从UDP连接读取新数据包
+		// 设置合理的读取超时（30秒）
+		c.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+
 		buf := make([]byte, udpControlMaxPacketSize)
 		n, err := c.conn.Read(buf)
 		if err != nil {

@@ -80,7 +80,7 @@ func sendPacketAsync(streamProcessor *stream.StreamProcessor, pkt *packet.Transf
 		done := make(chan error, 1)
 		
 		go func() {
-			_, err := streamProcessor.WritePacket(pkt, false, 0)
+			_, err := streamProcessor.WritePacket(pkt, true, 0)
 			done <- err
 		}()
 

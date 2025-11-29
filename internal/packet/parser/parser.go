@@ -49,8 +49,8 @@ func (p *DefaultPacketParser) ParsePacket(reader io.Reader) (*packet.TransferPac
 		return nil, err
 	}
 
-	// 根据类型解析具体内容
-	switch packetType {
+	// 根据类型解析具体内容（忽略压缩/加密标志）
+	switch packetType & 0x3F {
 	case packet.JsonCommand:
 		commandPacket, err := p.ParseCommandPacket(data)
 		if err != nil {

@@ -112,7 +112,7 @@ func (c *TunnoxClient) GenerateConnectionCode(req *GenerateConnectionCodeRequest
 		return nil, fmt.Errorf("control stream is nil")
 	}
 
-	_, err = controlStream.WritePacket(transferPkt, false, 0)
+	_, err = controlStream.WritePacket(transferPkt, true, 0)
 	if err != nil {
 		utils.Errorf("Client.GenerateConnectionCode: failed to send command: %v", err)
 		// 发送失败，清理连接状态
@@ -190,7 +190,7 @@ func (c *TunnoxClient) ListConnectionCodes() (*ListConnectionCodesResponseCmd, e
 	}
 
 	// 发送命令
-	_, err = c.controlStream.WritePacket(transferPkt, false, 0)
+	_, err = c.controlStream.WritePacket(transferPkt, true, 0)
 	if err != nil {
 		// 发送失败，清理连接状态
 		c.mu.Lock()
@@ -268,7 +268,7 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 	}
 
 	// 发送命令
-	_, err = c.controlStream.WritePacket(transferPkt, false, 0)
+	_, err = c.controlStream.WritePacket(transferPkt, true, 0)
 	if err != nil {
 		// 发送失败，清理连接状态
 		c.mu.Lock()
@@ -483,7 +483,7 @@ func (c *TunnoxClient) ListMappings(req *ListMappingsRequest) (*ListMappingsResp
 		return nil, fmt.Errorf("control stream is nil")
 	}
 
-	_, err = controlStream.WritePacket(transferPkt, false, 0)
+	_, err = controlStream.WritePacket(transferPkt, true, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send command: %w", err)
 	}
@@ -578,7 +578,7 @@ func (c *TunnoxClient) GetMapping(mappingID string) (*MappingInfoCmd, error) {
 		return nil, fmt.Errorf("control stream is nil")
 	}
 
-	_, err = controlStream.WritePacket(transferPkt, false, 0)
+	_, err = controlStream.WritePacket(transferPkt, true, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send command: %w", err)
 	}
@@ -646,7 +646,7 @@ func (c *TunnoxClient) DeleteMapping(mappingID string) error {
 		return fmt.Errorf("control stream is nil")
 	}
 
-	_, err = controlStream.WritePacket(transferPkt, false, 0)
+	_, err = controlStream.WritePacket(transferPkt, true, 0)
 	if err != nil {
 		return fmt.Errorf("failed to send command: %w", err)
 	}

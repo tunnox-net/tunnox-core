@@ -97,7 +97,7 @@ func (s *SessionManager) handleConfigPushBroadcast(msg *broker.ConfigPushMessage
 		case <-ctx.Done():
 			utils.Errorf("SessionManager: config push to client %d timed out", msg.ClientID)
 		default:
-			if _, err := targetConn.Stream.WritePacket(pkt, false, 0); err != nil {
+			if _, err := targetConn.Stream.WritePacket(pkt, true, 0); err != nil {
 				utils.Errorf("SessionManager: failed to push config to client %d: %v", msg.ClientID, err)
 			} else {
 				utils.Infof("SessionManager: ✅ config pushed successfully to client %d via broadcast", msg.ClientID)
