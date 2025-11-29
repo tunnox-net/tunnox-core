@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"tunnox-core/internal/client"
+	"tunnox-core/internal/version"
 
 	"github.com/chzyer/readline"
-	"github.com/mattn/go-isatty"
 	"golang.org/x/term"
+	"github.com/mattn/go-isatty"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -177,12 +178,17 @@ func (c *CLI) drawHeader() {
 	fmt.Printf("  %s _____ _   _ _   _ _   _  _____  __%s\n", cyan, reset)
 	fmt.Printf("  %s|_   _| | | | \\ | | \\ | |/ _ \\ \\/ /%s    %s%sPort Mapping & Tunneling%s\n", cyan, reset, dim, white, reset)
 	fmt.Printf("  %s  | | | | | |  \\| |  \\| | | | \\  /%s\n", blue, reset)
-	fmt.Printf("  %s  | | | |_| | |\\  | |\\  | |_| /  \\%s     %sType %shelp%s for commands%s\n", blue, reset, dim, white, dim, reset)
-	fmt.Printf("  %s  |_|  \\___/|_| \\_|_| \\_|\\___/_/\\_\\%s\n", magenta, reset)
+	fmt.Printf("  %s  | | | |_| | |\\  | |\\  | |_| /  \\%s     %sVersion %s%s\n", blue, reset, dim, getVersionString(), reset)
+	fmt.Printf("  %s  |_|  \\___/|_| \\_|_| \\_|\\___/_/\\_\\%s     %sType %shelp%s for commands%s\n", magenta, reset, dim, white, dim, reset)
 	fmt.Println()
 	fmt.Printf("  %s%s%s\n", gray, strings.Repeat("─", 70), reset)
 
 	c.headerHeight = 8
+}
+
+// getVersionString 获取版本号字符串
+func getVersionString() string {
+	return version.GetShortVersion()
 }
 
 // moveCursorToInputArea 移动光标到输入区域

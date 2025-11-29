@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/client"
+	"tunnox-core/internal/version"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -180,6 +181,7 @@ func (c *CLI) cmdStatus(args []string) {
 
 	// 使用表格显示状态
 	table := NewTable("PROPERTY", "VALUE")
+	table.AddRow("Version", version.GetShortVersion())
 	table.AddRow("Connection", connectionStatus)
 	table.AddRow("Server", serverAddr)
 	table.AddRow("Protocol", protocol)
