@@ -260,6 +260,7 @@ server:
 Support for multiple protocol mappings:
 
 - **TCP Mapping**: Databases, SSH, RDP, and other TCP services
+- **UDP Mapping**: DNS, gaming services, real-time applications, and other UDP services
 - **HTTP Mapping**: Web services, API endpoints
 - **SOCKS5 Proxy**: Global proxy supporting any protocol
 
@@ -384,7 +385,7 @@ tunnox-core/
 - Token bucket rate limiting
 
 **Client Features** ✅
-- TCP/HTTP/SOCKS5 mapping handlers
+- TCP/HTTP/SOCKS5/UDP mapping handlers
 - Multi-protocol transport support
 - Auto-reconnect and keepalive
 - Interactive CLI interface
@@ -410,6 +411,16 @@ tunnox-core/
 - Statistics and monitoring endpoints
 - Connection code management endpoints
 
+**Quota Management** ✅
+- User quota model (client count, connections, bandwidth, storage)
+- Quota checking and enforcement
+- Connection code and mapping count limits
+
+**Monitoring System** ✅
+- System metrics collection (CPU, memory, goroutines)
+- Resource monitoring and statistics
+- Basic metrics endpoints
+
 **Cluster Support** ✅
 - gRPC node communication
 - Redis/Memory message broadcasting
@@ -422,17 +433,9 @@ tunnox-core/
 
 ### In Development
 
-**UDP Mapping** 🔄
-- Server-side UDP Ingress implemented
-- Client-side UDP mapping handler in development
-
-**Quota Management** 🔄
-- Basic quota model implemented
-- Quota checking and enforcement in progress
-
-**Monitoring System** 🔄
-- Basic metrics collection implemented
+**Monitoring System Enhancement** 🔄
 - Prometheus integration and visualization in development
+- Richer metrics export
 
 **Web Management UI** 📋
 - Planned as a separate project
@@ -761,29 +764,30 @@ go test -race ./...
 - [x] Core architecture design
 - [x] Four transport protocol support
 - [x] Stream processing system
-- [x] Basic port mapping
+- [x] TCP/UDP/HTTP/SOCKS5 port mapping
 - [x] Management API
 - [x] Anonymous clients
 - [x] Interactive CLI interface
 - [x] Connection code system
 - [x] Server startup information display
 - [x] Version management and CI/CD
+- [x] Quota management system
+- [x] Basic monitoring and statistics
 
-### v0.2 (Planned)
+### v1.1.0 (Planned)
 
-- [ ] UDP port mapping refinement
-- [ ] Quota checking and enforcement
-- [ ] Prometheus monitoring integration
+- [ ] Prometheus monitoring integration and visualization
 - [ ] Performance optimization and stress testing
+- [ ] Richer metrics export
 
-### v0.3 (Future)
+### v1.2.0 (Future)
 
 - [ ] Web management UI
 - [ ] Client SDKs (Go/Python/Rust)
 - [ ] Plugin system
 - [ ] Additional protocol support
 
-### v1.0 (Long-term)
+### v2.0.0 (Long-term)
 
 - [ ] Production-grade stability
 - [ ] Complete documentation and examples

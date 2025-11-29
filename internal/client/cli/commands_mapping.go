@@ -37,11 +37,11 @@ func (c *CLI) cmdUseCode(args []string) {
 			// Ctrl+C 静默返回
 			return
 		}
-		if err != nil {
-			return
-		}
+	if err != nil {
+		return
+	}
 		if addr == "" {
-			c.output.Error("Listen address cannot be empty")
+		c.output.Error("Listen address cannot be empty")
 			c.output.Info("Valid format: host:port (e.g., 127.0.0.1:8888) or just port number")
 			continue
 		}
@@ -210,7 +210,7 @@ func (c *CLI) cmdShowMapping(args []string) {
 	table.AddRow("Expires At", FormatTime(mapping.ExpiresAt))
 	table.AddRow("Bytes Sent", FormatBytes(mapping.BytesSent))
 	table.AddRow("Bytes Received", FormatBytes(mapping.BytesReceived))
-	
+
 	table.Render()
 	fmt.Println("")
 }

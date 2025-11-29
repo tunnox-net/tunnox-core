@@ -170,8 +170,9 @@ func getDefaultConfig() *ClientConfig {
 		Anonymous: true,
 		DeviceID:  "anonymous-device",
 	}
-	config.Server.Address = "localhost:7001"
-	config.Server.Protocol = "tcp"
+	// 默认使用 WebSocket 连接到公共服务器
+	config.Server.Address = "https://gw.tunnox.net/_tunnox"
+	config.Server.Protocol = "websocket"
 	return config
 }
 

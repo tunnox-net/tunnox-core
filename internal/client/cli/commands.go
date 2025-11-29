@@ -188,7 +188,7 @@ func (c *CLI) cmdStatus(args []string) {
 	table.AddRow("Active Mappings", mappingInfo)
 	table.AddRow("Bytes Sent", bytesSentStr)
 	table.AddRow("Bytes Received", bytesReceivedStr)
-	
+
 	table.Render()
 	fmt.Println("")
 }

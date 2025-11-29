@@ -237,11 +237,15 @@ func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64,
 
 // validateConfig 验证配置
 func validateConfig(config *client.ClientConfig) error {
+	// 如果地址为空，使用默认 WebSocket 地址
 	if config.Server.Address == "" {
-		return fmt.Errorf("server address is required")
+		config.Server.Address = "https://gw.tunnox.net/_tunnox"
+		config.Server.Protocol = "websocket"
 	}
+	
+	// 如果协议为空，使用默认 WebSocket 协议
 	if config.Server.Protocol == "" {
-		config.Server.Protocol = "tcp"
+		config.Server.Protocol = "websocket"
 	}
 
 	// 规范化协议名称
@@ -341,7 +345,8 @@ DAEMON MODE:
 NOTES:
     - Command line options override config file settings
     - Default mode is interactive (with CLI)
-    - Default protocol is tcp if not specified
+    - Default server: https://gw.tunnox.net/_tunnox (WebSocket)
+    - Default protocol is websocket if not specified
     - Anonymous mode is used if no client_id/token is provided
 `)
 }
@@ -366,8 +371,8 @@ func configureLogging(config *client.ClientConfig, interactive bool) (string, er
 
 	// 日志总是输出到文件，不输出到console
 	// 如果有配置文件地址就使用，否则使用默认路径
-	logFile := config.Log.File
-	if logFile == "" {
+		logFile := config.Log.File
+		if logFile == "" {
 		// 默认日志文件路径
 		if interactive {
 			// 交互模式：~/.tunnox/client.log
@@ -381,20 +386,20 @@ func configureLogging(config *client.ClientConfig, interactive bool) (string, er
 			// 守护进程模式：/var/log/tunnox-client.log
 			logFile = "/var/log/tunnox-client.log"
 		}
-	}
+			}
 
-	// 展开路径（支持 ~ 和相对路径）
-	expandedPath, err := utils.ExpandPath(logFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to expand log file path %q: %w", logFile, err)
-	}
+			// 展开路径（支持 ~ 和相对路径）
+			expandedPath, err := utils.ExpandPath(logFile)
+			if err != nil {
+				return "", fmt.Errorf("failed to expand log file path %q: %w", logFile, err)
+			}
 
-	logConfig.File = expandedPath
+			logConfig.File = expandedPath
 
-	// 确保日志目录存在
-	logDir := filepath.Dir(expandedPath)
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create log directory %q: %w", logDir, err)
+			// 确保日志目录存在
+			logDir := filepath.Dir(expandedPath)
+			if err := os.MkdirAll(logDir, 0755); err != nil {
+				return "", fmt.Errorf("failed to create log directory %q: %w", logDir, err)
 	}
 
 	// 初始化日志
