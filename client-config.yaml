@@ -1,13 +1,13 @@
-client_id: 19072689
+client_id: 42249290
 auth_token: ""
 anonymous: true
 device_id: anonymous-device
-secret_key: 4MLtyXWfwrqOJKFGOCoZJx9yFe4mB9Wk
+secret_key: 6uQTpfFgW2iv8Nd09MaLmKjSgF1CCC9f
 server:
-    address: 127.0.0.1:8082
-    protocol: udp
+    address: 127.0.0.1:8080
+    protocol: tcp
 log:
     level: debug
     format: text
     output: file
-    file: ~/logs/listenClient.log
+    file: ~/logs/ListenClient.log
