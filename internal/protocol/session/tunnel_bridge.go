@@ -34,10 +34,12 @@ type TunnelBridge struct {
 	ready        chan struct{} // 用于通知目标端连接已建立
 
 	// 商业特性
-	rateLimiter   *rate.Limiter   // 带宽限制器
-	bytesSent     atomic.Int64    // 源端→目标端字节数
-	bytesReceived atomic.Int64    // 目标端→源端字节数
-	cloudControl  CloudControlAPI // 用于上报流量统计
+	rateLimiter          *rate.Limiter   // 带宽限制器
+	bytesSent            atomic.Int64    // 源端→目标端字节数
+	bytesReceived        atomic.Int64    // 目标端→源端字节数
+	lastReportedSent     atomic.Int64    // 上次上报的发送字节数
+	lastReportedReceived atomic.Int64    // 上次上报的接收字节数
+	cloudControl         CloudControlAPI // 用于上报流量统计
 }
 
 // TunnelBridgeConfig 隧道桥接器配置
@@ -241,11 +243,21 @@ func (b *TunnelBridge) reportTrafficStats() {
 		return
 	}
 
-	sent := b.bytesSent.Load()
-	received := b.bytesReceived.Load()
+	// 获取当前累计值
+	currentSent := b.bytesSent.Load()
+	currentReceived := b.bytesReceived.Load()
 
-	if sent == 0 && received == 0 {
-		return // 无流量，不上报
+	// 获取上次上报的值
+	lastSent := b.lastReportedSent.Load()
+	lastReceived := b.lastReportedReceived.Load()
+
+	// 计算增量
+	deltaSent := currentSent - lastSent
+	deltaReceived := currentReceived - lastReceived
+
+	// 如果没有增量，不上报
+	if deltaSent == 0 && deltaReceived == 0 {
+		return
 	}
 
 	// 获取当前映射的统计数据
@@ -255,10 +267,10 @@ func (b *TunnelBridge) reportTrafficStats() {
 		return
 	}
 
-	// 累加流量统计
+	// 累加增量到映射统计
 	trafficStats := mapping.TrafficStats
-	trafficStats.BytesSent += sent
-	trafficStats.BytesReceived += received
+	trafficStats.BytesSent += deltaSent
+	trafficStats.BytesReceived += deltaReceived
 	trafficStats.LastUpdated = time.Now()
 
 	// 更新映射统计
@@ -267,8 +279,12 @@ func (b *TunnelBridge) reportTrafficStats() {
 		return
 	}
 
-	utils.Infof("TunnelBridge[%s]: traffic stats updated - mapping=%s, sent=%d, received=%d, total_sent=%d, total_received=%d",
-		b.tunnelID, b.mappingID, sent, received, trafficStats.BytesSent, trafficStats.BytesReceived)
+	// 更新上次上报的值
+	b.lastReportedSent.Store(currentSent)
+	b.lastReportedReceived.Store(currentReceived)
+
+	utils.Infof("TunnelBridge[%s]: traffic stats updated - mapping=%s, delta_sent=%d, delta_received=%d, total_sent=%d, total_received=%d",
+		b.tunnelID, b.mappingID, deltaSent, deltaReceived, trafficStats.BytesSent, trafficStats.BytesReceived)
 }
 
 // Close 关闭桥接

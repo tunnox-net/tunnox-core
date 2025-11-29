@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"tunnox-core/internal/client"
+	"tunnox-core/internal/utils"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -152,10 +155,37 @@ func (c *CLI) cmdStatus(args []string) {
 	c.output.KeyValue("Client ID", clientID)
 	c.output.KeyValue("Uptime", FormatDuration(time.Since(c.startTime)))
 
+	// 如果已连接，先更新流量统计并获取映射信息
+	var inboundCount, outboundCount int
+	if isConnected {
+		resp, err := c.client.ListMappings(&client.ListMappingsRequest{})
+		if err != nil {
+			// 更新失败不影响状态显示，只记录错误
+			utils.Debugf("Failed to update traffic stats: %v", err)
+		} else {
+			// 统计 inbound 和 outbound 映射数量
+			for _, m := range resp.Mappings {
+				if m.Type == "inbound" {
+					inboundCount++
+				} else if m.Type == "outbound" {
+					outboundCount++
+				}
+			}
+		}
+	}
+
 	// 获取实际状态信息
 	statusInfo := c.client.GetStatusInfo()
 	fmt.Println("")
-	c.output.KeyValue("Active Mappings", fmt.Sprintf("%d", statusInfo.ActiveMappings))
+	
+	// 显示映射数量（区分 inbound 和 outbound）
+	if inboundCount > 0 || outboundCount > 0 {
+		mappingInfo := fmt.Sprintf("%d (Inbound: %d, Outbound: %d)", 
+			inboundCount+outboundCount, inboundCount, outboundCount)
+		c.output.KeyValue("Active Mappings", mappingInfo)
+	} else {
+		c.output.KeyValue("Active Mappings", fmt.Sprintf("%d", statusInfo.ActiveMappings))
+	}
 
 	// 格式化流量统计
 	bytesSentStr := formatBytes(statusInfo.TotalBytesSent)
