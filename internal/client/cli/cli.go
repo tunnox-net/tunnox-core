@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"tunnox-core/internal/client"
-	"tunnox-core/internal/utils"
 
 	"github.com/chzyer/readline"
 	"github.com/mattn/go-isatty"
@@ -98,7 +97,6 @@ func (c *CLI) Start() {
 	for {
 		select {
 		case <-c.ctx.Done():
-			utils.Infof("CLI: context cancelled, shutting down")
 			return
 		default:
 			line, err := c.readline.Readline()
@@ -114,7 +112,6 @@ func (c *CLI) Start() {
 				return
 			} else if err != nil {
 				// 其他错误
-				utils.Errorf("CLI: readline error: %v", err)
 				c.output.Error("Failed to read input: %v", err)
 				// 不要立即退出，尝试继续
 				time.Sleep(100 * time.Millisecond)
@@ -145,7 +142,7 @@ func (c *CLI) Stop() {
 	// 清屏并移到顶部
 	fmt.Print("\033[2J\033[H")
 
-	c.output.Info("👋 Goodbye!")
+	c.output.Info("Goodbye!")
 }
 
 // printWelcome 打印欢迎信息
@@ -251,22 +248,48 @@ func (c *CLI) executeCommand(commandLine string) {
 	}
 }
 
+// ErrCancelled 表示用户取消了输入（Ctrl+C）
+var ErrCancelled = fmt.Errorf("cancelled")
+
+// cleanInput 清理输入字符串，移除控制字符
+func cleanInput(s string) string {
+	// 移除所有控制字符（除了换行符、回车符、制表符）
+	var result strings.Builder
+	for _, r := range s {
+		// 保留可打印字符、空格、换行、回车、制表符
+		if r >= 32 || r == '\n' || r == '\r' || r == '\t' {
+			result.WriteRune(r)
+		}
+	}
+	return result.String()
+}
+
 // promptInput 提示用户输入
 func (c *CLI) promptInput(prompt string) (string, error) {
 	c.readline.SetPrompt(prompt)
 	defer c.readline.SetPrompt("\033[32mtunnox>\033[0m ")
 
 	line, err := c.readline.Readline()
+	if err == readline.ErrInterrupt {
+		// Ctrl+C 返回特殊错误，让调用者知道是取消操作
+		return "", ErrCancelled
+	}
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(line), nil
+	// 清理输入并去除首尾空白
+	cleaned := cleanInput(line)
+	return strings.TrimSpace(cleaned), nil
 }
 
 // promptConfirm 提示用户确认
 func (c *CLI) promptConfirm(prompt string) bool {
 	input, err := c.promptInput(prompt + " (yes/no): ")
-	if err != nil {
+	if err == ErrCancelled {
+		// Ctrl+C 静默返回 false
+		return false
+	}
+	if err != nil || input == "" {
 		return false
 	}
 

@@ -2,8 +2,12 @@ package cli
 
 import (
 	"fmt"
+	"net"
+	"strconv"
+	"strings"
 
 	"tunnox-core/internal/client"
+	cloudutils "tunnox-core/internal/cloud/utils"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -14,18 +18,123 @@ import (
 func (c *CLI) cmdGenerateCode(args []string) {
 	c.output.Header("🔑 Generate Connection Code")
 
-	// 提示输入目标地址
-	targetAddress, err := c.promptInput("Target Address (e.g., tcp://192.168.1.10:8080): ")
-	if err != nil {
+	// 1. 选择协议类型
+	// 先输出一个空行，确保与readline prompt分开
+	fmt.Println("")
+	protocolOptions := []string{"TCP", "UDP", "SOCKS5", "Back"}
+	protocolIndex, err := PromptSelect("Select Protocol:", protocolOptions)
+	if err != nil || protocolIndex < 0 {
+		// 静默返回，不显示警告
 		return
 	}
-	if targetAddress == "" {
-		c.output.Error("Target address cannot be empty")
+	
+	// If "Back" is selected
+	if protocolIndex == len(protocolOptions)-1 {
 		return
+	}
+	
+	fmt.Println("") // 选择后也输出空行
+
+	selectedProtocol := strings.ToLower(protocolOptions[protocolIndex])
+	var targetAddress string
+
+	// 2. 根据协议类型决定是否需要输入地址
+	if selectedProtocol == "socks5" {
+		// SOCKS5 不需要目标地址
+		targetAddress = "socks5://0.0.0.0:0"
+		c.output.Info("SOCKS5 proxy selected (dynamic targets)")
+	} else {
+		// TCP/UDP 需要输入目标地址（只需输入 host:port，协议会自动添加）
+		prompt := fmt.Sprintf("Target Address (e.g., 192.168.1.10:8080): ")
+		
+		for {
+			addr, err := c.promptInput(prompt)
+			if err == ErrCancelled {
+				// Ctrl+C 静默返回
+				return
+			}
+			if err != nil {
+				return
+			}
+			
+			if addr == "" {
+				c.output.Error("Target address cannot be empty")
+				c.output.Info("Valid format: host:port (e.g., 192.168.1.10:8080)")
+				continue
+			}
+
+			// 清理地址，移除可能的控制字符
+			addr = strings.TrimSpace(addr)
+			
+			// 如果用户输入了协议前缀，先移除它（因为我们已经在选择协议时确定了）
+			if strings.Contains(addr, "://") {
+				parts := strings.Split(addr, "://")
+				if len(parts) == 2 {
+					addr = strings.TrimSpace(parts[1]) // 只取地址部分，并清理
+				}
+			}
+
+			// 先验证地址格式（host:port）
+			if !strings.Contains(addr, ":") {
+				c.output.Error("Invalid address format: missing port")
+				c.output.Info("Valid format: host:port (e.g., 192.168.1.10:8080)")
+				continue
+			}
+
+			// 验证 host:port 格式
+			host, portStr, err := net.SplitHostPort(addr)
+			if err != nil {
+				c.output.Error("Invalid address format: %v", err)
+				c.output.Info("Valid format: host:port (e.g., 192.168.1.10:8080)")
+				continue
+			}
+
+			// 验证端口号
+			port, err := strconv.Atoi(portStr)
+			if err != nil {
+				c.output.Error("Invalid port number: %s", portStr)
+				c.output.Info("Port must be a number between 1 and 65535")
+				continue
+			}
+			if port < 1 || port > 65535 {
+				c.output.Error("Port out of range: %d (must be between 1 and 65535)", port)
+				continue
+			}
+
+			// 验证主机地址不为空
+			if host == "" {
+				c.output.Error("Invalid address: host cannot be empty")
+				c.output.Info("Valid format: host:port (e.g., 192.168.1.10:8080)")
+				continue
+			}
+
+			// 自动添加协议前缀
+			fullAddr := fmt.Sprintf("%s://%s:%d", selectedProtocol, host, port)
+
+			// 校验地址格式
+			_, _, protocol, err := cloudutils.ParseTargetAddress(fullAddr)
+			if err != nil {
+				c.output.Error("Invalid target address: %v", err)
+				c.output.Info("Valid format: host:port (e.g., 192.168.1.10:8080)")
+				continue
+			}
+
+			// 验证协议匹配（应该总是匹配，因为我们添加的）
+			if protocol != selectedProtocol {
+				c.output.Error("Protocol mismatch: expected %s, got %s", selectedProtocol, protocol)
+				continue
+			}
+
+			targetAddress = fullAddr
+			break
+		}
 	}
 
 	// 提示输入激活有效期
 	activationTTLInput, err := c.promptInput("Activation TTL in minutes (default: 10): ")
+	if err == ErrCancelled {
+		return
+	}
 	if err != nil {
 		return
 	}
@@ -42,6 +151,9 @@ func (c *CLI) cmdGenerateCode(args []string) {
 
 	// 提示输入映射有效期
 	mappingTTLInput, err := c.promptInput("Mapping TTL in days (default: 7): ")
+	if err == ErrCancelled {
+		return
+	}
 	if err != nil {
 		return
 	}
@@ -85,7 +197,7 @@ func (c *CLI) cmdGenerateCode(args []string) {
 
 // cmdListCodes 列出连接码
 func (c *CLI) cmdListCodes(args []string) {
-	c.output.Header("📋 Connection Codes")
+	c.output.Header("Connection Codes")
 
 	if !c.client.IsConnected() {
 		c.output.Error("Not connected to server. Please connect first using 'connect' command.")
@@ -105,18 +217,40 @@ func (c *CLI) cmdListCodes(args []string) {
 	}
 
 	// 创建表格
-	table := NewTable("CODE", "TARGET", "STATUS", "EXPIRES AT")
+	table := NewTable("CODE", "TARGET", "STATUS", "ACTIVATED BY", "EXPIRES AT")
 
 	for _, code := range resp.Codes {
-		status := code.Status
+		// 客户端再次过滤：跳过已过期的连接码（双重保险）
+		if code.Status == "expired" && !code.Activated {
+			continue
+		}
+
+		// 格式化状态 - 更清晰的状态显示
+		var status string
 		if code.Activated {
-			status = colorSuccess("✅ " + status)
+			// 已激活
+			status = colorSuccess("activated")
+		} else if code.Status == "available" || code.Status == "active" {
+			// 未激活但可用
+			status = "available"
+		} else if code.Status == "revoked" {
+			// 已撤销（未过期）
+			status = colorWarning("revoked")
+		} else {
+			status = code.Status
+		}
+
+		// 格式化激活者信息
+		activatedBy := "-"
+		if code.Activated && code.ActivatedBy != nil {
+			activatedBy = fmt.Sprintf("client-%d", *code.ActivatedBy)
 		}
 
 		table.AddRow(
 			Truncate(code.Code, 18),
 			Truncate(code.TargetAddress, 35),
 			status,
+			Truncate(activatedBy, 15),
 			FormatTime(code.ExpiresAt),
 		)
 	}

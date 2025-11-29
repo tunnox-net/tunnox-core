@@ -349,6 +349,7 @@ NOTES:
 // configureLogging 配置日志输出
 //
 // 返回：日志文件路径（如果输出到文件）和可能的错误
+// 注意：日志默认只输出到文件，不输出到console
 func configureLogging(config *client.ClientConfig, interactive bool) (string, error) {
 	logConfig := &client.LogConfig{
 		Level:  "info",
@@ -363,63 +364,37 @@ func configureLogging(config *client.ClientConfig, interactive bool) (string, er
 		logConfig.Format = config.Log.Format
 	}
 
-	// 根据运行模式设置日志输出
-	if interactive {
-		// 交互模式：日志输出到文件，避免干扰CLI
-		logFile := config.Log.File
-		if logFile == "" {
-			// 默认日志文件：~/.tunnox/client.log
+	// 日志总是输出到文件，不输出到console
+	// 如果有配置文件地址就使用，否则使用默认路径
+	logFile := config.Log.File
+	if logFile == "" {
+		// 默认日志文件路径
+		if interactive {
+			// 交互模式：~/.tunnox/client.log
 			homeDir, err := os.UserHomeDir()
 			if err != nil {
 				logFile = "/tmp/tunnox-client.log"
 			} else {
 				logFile = filepath.Join(homeDir, ".tunnox", "client.log")
 			}
-		}
-
-		// 展开路径（支持 ~ 和相对路径）
-		expandedPath, err := utils.ExpandPath(logFile)
-		if err != nil {
-			return "", fmt.Errorf("failed to expand log file path %q: %w", logFile, err)
-		}
-
-		logConfig.Output = "file"
-		logConfig.File = expandedPath
-
-		// 确保日志目录存在（ExpandPath 已经处理了，但这里再确保一次）
-		logDir := filepath.Dir(expandedPath)
-		if err := os.MkdirAll(logDir, 0755); err != nil {
-			return "", fmt.Errorf("failed to create log directory %q: %w", logDir, err)
-		}
-
-	} else {
-		// 守护进程模式：日志输出到stderr（或文件）
-		if config.Log.Output != "" {
-			logConfig.Output = config.Log.Output
 		} else {
-			logConfig.Output = "stderr"
+			// 守护进程模式：/var/log/tunnox-client.log
+			logFile = "/var/log/tunnox-client.log"
 		}
+	}
 
-		if logConfig.Output == "file" {
-			logFile := config.Log.File
-			if logFile == "" {
-				logFile = "/var/log/tunnox-client.log"
-			}
+	// 展开路径（支持 ~ 和相对路径）
+	expandedPath, err := utils.ExpandPath(logFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to expand log file path %q: %w", logFile, err)
+	}
 
-			// 展开路径（支持 ~ 和相对路径）
-			expandedPath, err := utils.ExpandPath(logFile)
-			if err != nil {
-				return "", fmt.Errorf("failed to expand log file path %q: %w", logFile, err)
-			}
+	logConfig.File = expandedPath
 
-			logConfig.File = expandedPath
-
-			// 确保日志目录存在
-			logDir := filepath.Dir(expandedPath)
-			if err := os.MkdirAll(logDir, 0755); err != nil {
-				return "", fmt.Errorf("failed to create log directory %q: %w", logDir, err)
-			}
-		}
+	// 确保日志目录存在
+	logDir := filepath.Dir(expandedPath)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create log directory %q: %w", logDir, err)
 	}
 
 	// 初始化日志
@@ -427,8 +402,8 @@ func configureLogging(config *client.ClientConfig, interactive bool) (string, er
 		return "", err
 	}
 
-	// 返回日志文件路径（如果输出到文件）
-	if logConfig.Output == "file" {
+	// 返回日志文件路径（总是输出到文件）
+	if logConfig.File != "" {
 		return logConfig.File, nil
 	}
 	return "", nil

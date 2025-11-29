@@ -2,6 +2,7 @@ package utils
 
 import (
 	"context"
+	"io"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,8 +29,9 @@ func init() {
 		FullTimestamp:   true,
 	})
 
-	// 设置默认输出到stdout
-	Logger.SetOutput(os.Stdout)
+	// 默认不输出到console，等待InitLogger配置
+	// 如果没有配置文件，日志将输出到 io.Discard（不显示）
+	Logger.SetOutput(io.Discard)
 
 	// 设置默认级别为info
 	Logger.SetLevel(logrus.InfoLevel)
@@ -76,8 +78,9 @@ func InitLogger(config *LogConfig) error {
 		})
 	}
 
-	// 设置日志输出
-	if config.Output == constants.LogOutputFile && config.File != "" {
+	// 设置日志输出 - 默认只输出到文件，不输出到console
+	// 如果有配置文件地址就写文件，否则不输出（/dev/null）
+	if config.File != "" {
 		// 展开路径（支持 ~ 和相对路径）
 		expandedPath, err := ExpandPath(config.File)
 		if err != nil {
@@ -102,20 +105,14 @@ func InitLogger(config *LogConfig) error {
 		}
 		currentLogFile = file
 		Logger.SetOutput(file)
-	} else if config.Output == constants.LogOutputStderr {
+	} else {
+		// 没有配置文件地址，不输出日志（输出到 io.Discard）
 		// 关闭之前的日志文件（如果存在）
 		if currentLogFile != nil {
 			_ = currentLogFile.Close()
 			currentLogFile = nil
 		}
-		Logger.SetOutput(os.Stderr)
-	} else {
-		// 输出到 stdout 或其他，关闭之前的日志文件（如果存在）
-		if currentLogFile != nil {
-			_ = currentLogFile.Close()
-			currentLogFile = nil
-		}
-		Logger.SetOutput(os.Stdout)
+		Logger.SetOutput(io.Discard)
 	}
 
 	return nil

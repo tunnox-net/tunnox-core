@@ -179,16 +179,20 @@ func (h *ListConnectionCodesHandler) Handle(ctx *command.CommandContext) (*comma
 		return h.errorResponse(ctx, fmt.Sprintf("failed to list connection codes: %v", err))
 	}
 
-	// 构造响应
+	// 构造响应（过滤掉已过期的连接码）
 	codeInfos := make([]map[string]interface{}, 0, len(codes))
 	for _, code := range codes {
-		status := "active"
+		// 跳过已过期的连接码（不显示）
+		if code.IsExpired() && !code.IsActivated {
+			// 已过期且未激活的连接码不显示，但已激活的可以显示（用于查看历史）
+			continue
+		}
+
+		status := "available"
 		if code.IsRevoked {
 			status = "revoked"
 		} else if code.IsActivated {
 			status = "activated"
-		} else if code.IsExpired() {
-			status = "expired"
 		}
 
 		codeInfo := map[string]interface{}{
@@ -198,6 +202,7 @@ func (h *ListConnectionCodesHandler) Handle(ctx *command.CommandContext) (*comma
 			"created_at":     code.CreatedAt.Format(time.RFC3339),
 			"expires_at":     code.ActivationExpiresAt.Format(time.RFC3339),
 			"activated":      code.IsActivated,
+			"activated_by":   code.ActivatedBy,
 			"description":    code.Description,
 		}
 		codeInfos = append(codeInfos, codeInfo)

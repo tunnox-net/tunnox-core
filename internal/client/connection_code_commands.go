@@ -48,6 +48,7 @@ type ConnectionCodeInfoCmd struct {
 	CreatedAt     string `json:"created_at"`
 	ExpiresAt     string `json:"expires_at"`
 	Activated     bool   `json:"activated"`
+	ActivatedBy   *int64 `json:"activated_by,omitempty"`
 	Description   string `json:"description,omitempty"`
 }
 

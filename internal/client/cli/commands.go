@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"tunnox-core/internal/client"
-	"tunnox-core/internal/utils"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -125,14 +124,13 @@ func (c *CLI) cmdClear(args []string) {
 
 // cmdStatus 显示状态
 func (c *CLI) cmdStatus(args []string) {
-	c.output.Header("📊 Client Status")
+	c.output.Header("Client Status")
 
 	// 连接状态
 	isConnected := c.client.IsConnected()
+	connectionStatus := colorError("Disconnected")
 	if isConnected {
-		c.output.KeyValue("Connection", colorSuccess("✅ Connected"))
-	} else {
-		c.output.KeyValue("Connection", colorError("❌ Disconnected"))
+		connectionStatus = colorSuccess("Connected")
 	}
 
 	// 从client获取实际配置
@@ -150,19 +148,11 @@ func (c *CLI) cmdStatus(args []string) {
 		clientID = fmt.Sprintf("%d", config.ClientID)
 	}
 
-	c.output.KeyValue("Server", serverAddr)
-	c.output.KeyValue("Protocol", protocol)
-	c.output.KeyValue("Client ID", clientID)
-	c.output.KeyValue("Uptime", FormatDuration(time.Since(c.startTime)))
-
 	// 如果已连接，先更新流量统计并获取映射信息
 	var inboundCount, outboundCount int
 	if isConnected {
 		resp, err := c.client.ListMappings(&client.ListMappingsRequest{})
-		if err != nil {
-			// 更新失败不影响状态显示，只记录错误
-			utils.Debugf("Failed to update traffic stats: %v", err)
-		} else {
+		if err == nil {
 			// 统计 inbound 和 outbound 映射数量
 			for _, m := range resp.Mappings {
 				if m.Type == "inbound" {
@@ -176,23 +166,30 @@ func (c *CLI) cmdStatus(args []string) {
 
 	// 获取实际状态信息
 	statusInfo := c.client.GetStatusInfo()
-	fmt.Println("")
 	
 	// 显示映射数量（区分 inbound 和 outbound）
+	mappingInfo := fmt.Sprintf("%d", statusInfo.ActiveMappings)
 	if inboundCount > 0 || outboundCount > 0 {
-		mappingInfo := fmt.Sprintf("%d (Inbound: %d, Outbound: %d)", 
+		mappingInfo = fmt.Sprintf("%d (Inbound: %d, Outbound: %d)", 
 			inboundCount+outboundCount, inboundCount, outboundCount)
-		c.output.KeyValue("Active Mappings", mappingInfo)
-	} else {
-		c.output.KeyValue("Active Mappings", fmt.Sprintf("%d", statusInfo.ActiveMappings))
 	}
 
 	// 格式化流量统计
 	bytesSentStr := formatBytes(statusInfo.TotalBytesSent)
 	bytesReceivedStr := formatBytes(statusInfo.TotalBytesReceived)
-	c.output.KeyValue("Bytes Sent", bytesSentStr)
-	c.output.KeyValue("Bytes Received", bytesReceivedStr)
 
+	// 使用表格显示状态
+	table := NewTable("PROPERTY", "VALUE")
+	table.AddRow("Connection", connectionStatus)
+	table.AddRow("Server", serverAddr)
+	table.AddRow("Protocol", protocol)
+	table.AddRow("Client ID", clientID)
+	table.AddRow("Uptime", FormatDuration(time.Since(c.startTime)))
+	table.AddRow("Active Mappings", mappingInfo)
+	table.AddRow("Bytes Sent", bytesSentStr)
+	table.AddRow("Bytes Received", bytesReceivedStr)
+	
+	table.Render()
 	fmt.Println("")
 }
 

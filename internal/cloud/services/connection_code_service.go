@@ -459,9 +459,30 @@ func (s *ConnectionCodeService) RecordMappingTraffic(mappingID string, bytesSent
 
 // ListConnectionCodesByTargetClient 列出TargetClient的连接码
 //
-// 返回指定TargetClient生成的所有连接码
+// 返回指定TargetClient生成的所有连接码（已过期的未激活连接码会被过滤）
 func (s *ConnectionCodeService) ListConnectionCodesByTargetClient(targetClientID int64) ([]*models.TunnelConnectionCode, error) {
-	return s.connCodeRepo.ListByTargetClient(targetClientID)
+	codes, err := s.connCodeRepo.ListByTargetClient(targetClientID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 过滤掉已过期且未激活的连接码
+	filtered := make([]*models.TunnelConnectionCode, 0, len(codes))
+	for _, code := range codes {
+		// 已过期且未激活的连接码不返回（会被清理）
+		if code.IsExpired() && !code.IsActivated {
+			// 异步清理过期的连接码
+			go func(c *models.TunnelConnectionCode) {
+				if err := s.connCodeRepo.Delete(c.ID); err != nil {
+					utils.Debugf("ConnectionCodeService: failed to cleanup expired code %s: %v", c.Code, err)
+				}
+			}(code)
+			continue
+		}
+		filtered = append(filtered, code)
+	}
+
+	return filtered, nil
 }
 
 // GetConnectionCode 获取连接码详情
@@ -562,9 +583,10 @@ func (s *ConnectionCodeService) cleanupExpiredEntities(ctx context.Context) {
 			return
 		case <-ticker.C:
 			utils.Debugf("ConnectionCodeService: running cleanup task")
-			// 注意：由于使用Redis TTL，过期的键会自动删除
-			// Repository的List方法会自动清理失效的索引引用
-			// 所以这里不需要做额外的清理工作
+			// 清理过期的连接码索引
+			// 注意：Redis TTL会自动删除过期的键，但索引列表需要手动清理
+			// 这里通过遍历所有客户端来清理索引中的过期引用
+			// 由于没有全局客户端列表，清理工作主要在List时进行
 		}
 	}
 }
