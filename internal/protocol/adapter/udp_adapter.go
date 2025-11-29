@@ -17,8 +17,9 @@ const (
 	udpReadTimeout        = 30 * time.Second
 	udpControlReadTimeout = 20 * time.Millisecond
 	udpTunnelReadTimeout  = 100 * time.Millisecond
-	udpSessionTimeout     = 30 * time.Second
-	udpCleanupInterval    = 10 * time.Second
+	udpSessionTimeout     = 20 * time.Second  // 缩短为20秒（负载均衡器后面需要更积极清理）
+	udpCleanupInterval    = 5 * time.Second   // 缩短为5秒（更频繁清理）
+	udpMaxSessions        = 10000             // 最大会话数限制
 )
 
 // udpTimeoutError UDP 读取超时错误
@@ -289,12 +290,75 @@ func (u *UdpAdapter) getOrCreateSession(addr net.Addr) (*udpSession, bool) {
 		return session, false
 	}
 
+	// 检查会话数限制
+	if len(u.sessions) >= udpMaxSessions {
+		// 清理最旧的会话
+		oldestSession := u.findOldestSessionLocked()
+		if oldestSession != nil {
+			utils.Warnf("UDP session limit reached (%d/%d), removing oldest session %s",
+				len(u.sessions), udpMaxSessions, oldestSession.addr.String())
+			if oldestSession.sessionConn != nil {
+				oldestSession.sessionConn.Close()
+			}
+			delete(u.sessions, oldestSession.addr.String())
+		} else {
+			utils.Warnf("UDP session limit reached (%d/%d), cannot create new session",
+				len(u.sessions), udpMaxSessions)
+			return nil, false
+		}
+	}
+
 	session = newUdpSession(addr, u.conn, u.ctx)
-	session.sessionConn.adapter = u // 设置adapter引用
+	session.sessionConn.adapter = u
 	u.sessions[addrStr] = session
 
-	utils.Infof("Created new UDP session for %s", addr)
-	return session, true // 返回新会话，isNew=true
+	return session, true
+}
+
+// findOldestSessionLocked 查找最旧的会话（需要在持有锁的情况下调用）
+func (u *UdpAdapter) findOldestSessionLocked() *udpSession {
+	var oldestSession *udpSession
+	var oldestTime time.Time
+
+	for _, session := range u.sessions {
+		session.mu.RLock()
+		lastActive := session.lastActive
+		session.mu.RUnlock()
+		if oldestSession == nil || lastActive.Before(oldestTime) {
+			oldestSession = session
+			oldestTime = lastActive
+		}
+	}
+
+	return oldestSession
+}
+
+// cleanupExpiredSessionsLocked 清理过期的会话（需要在持有锁的情况下调用）
+func (u *UdpAdapter) cleanupExpiredSessionsLocked() int {
+	var expiredAddrs []string
+	for addr, session := range u.sessions {
+		if session.isExpired() {
+			expiredAddrs = append(expiredAddrs, addr)
+		}
+	}
+
+	for _, addr := range expiredAddrs {
+		if session, exists := u.sessions[addr]; exists {
+			// 关闭会话连接
+			if session.sessionConn != nil {
+				session.sessionConn.Close()
+			}
+			// 安全关闭 channel（避免重复关闭）
+			select {
+			case <-session.buffer:
+			default:
+			}
+			close(session.buffer)
+			delete(u.sessions, addr)
+		}
+	}
+
+	return len(expiredAddrs)
 }
 
 // cleanupSessions 定期清理过期的 UDP 会话
@@ -308,18 +372,11 @@ func (u *UdpAdapter) cleanupSessions() {
 			return
 		case <-ticker.C:
 			u.sessLock.Lock()
-			for addr, session := range u.sessions {
-				if session.isExpired() {
-					// 关闭会话连接
-					if session.sessionConn != nil {
-						session.sessionConn.Close()
-					}
-					close(session.buffer)
-					delete(u.sessions, addr)
-					utils.Infof("Cleaned up expired UDP session for %s", addr)
-				}
-			}
+			expiredCount := u.cleanupExpiredSessionsLocked()
 			u.sessLock.Unlock()
+			if expiredCount > 0 {
+				utils.Debugf("UDP adapter: cleaned up %d expired sessions", expiredCount)
+			}
 		}
 	}
 }
@@ -387,14 +444,30 @@ func (u *UdpAdapter) onClose() error {
 
 	// 清理所有会话
 	u.sessLock.Lock()
+	sessionCount := len(u.sessions)
 	for addr, session := range u.sessions {
+		// 取消会话上下文
+		if session.cancel != nil {
+			session.cancel()
+		}
+		// 关闭会话连接
 		if session.sessionConn != nil {
 			session.sessionConn.Close()
+		}
+		// 安全关闭 channel（避免重复关闭）
+		select {
+		case <-session.buffer:
+		default:
 		}
 		close(session.buffer)
 		delete(u.sessions, addr)
 	}
+	u.sessions = make(map[string]*udpSession)
 	u.sessLock.Unlock()
+
+	if sessionCount > 0 {
+		utils.Debugf("UDP adapter: closed %d sessions", sessionCount)
+	}
 
 	baseErr := u.BaseAdapter.onClose()
 	if err != nil {
@@ -504,5 +577,9 @@ func (u *UdpSessionConn) Close() error {
 	}
 
 	u.closed = true
+	// 取消会话上下文，停止相关 goroutine
+	if u.session != nil && u.session.cancel != nil {
+		u.session.cancel()
+	}
 	return nil
 }

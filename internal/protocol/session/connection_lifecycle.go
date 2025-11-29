@@ -16,6 +16,16 @@ import (
 
 // CreateConnection 创建新连接
 func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*types.Connection, error) {
+	// 检查连接数限制
+	if s.config != nil && s.config.MaxConnections > 0 {
+		s.connLock.RLock()
+		currentCount := len(s.connMap)
+		s.connLock.RUnlock()
+		if currentCount >= s.config.MaxConnections {
+			return nil, fmt.Errorf("connection limit reached: %d/%d", currentCount, s.config.MaxConnections)
+		}
+	}
+
 	// 生成连接ID
 	connID, err := s.idManager.GenerateConnectionID()
 	if err != nil {
@@ -52,7 +62,6 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 	s.connMap[connID] = conn
 	s.connLock.Unlock()
 
-	utils.Debugf("Connection created: %s", connID)
 	return conn, nil
 }
 
@@ -78,7 +87,6 @@ func (s *SessionManager) AcceptConnection(reader io.Reader, writer io.Writer) (*
 	// ✅ 不再预注册控制连接，等待收到 Handshake 包后再注册
 	// 这样可以区分控制连接（Handshake）和隧道连接（TunnelOpen with MappingID）
 
-	utils.Debugf("Connection accepted: %s", conn.ID)
 	return streamConn, nil
 }
 
@@ -119,11 +127,10 @@ func (s *SessionManager) UpdateConnectionState(connID string, state types.Connec
 	}
 
 	conn.State = state
-	utils.Debugf("Connection state updated: %s -> %v", connID, state)
 	return nil
 }
 
-// CloseConnection 关闭连接
+// CloseConnection 关闭连接并释放所有资源
 func (s *SessionManager) CloseConnection(connectionId string) error {
 	// 从连接映射中移除
 	s.connLock.Lock()
@@ -133,12 +140,15 @@ func (s *SessionManager) CloseConnection(connectionId string) error {
 	}
 	s.connLock.Unlock()
 
-	// 从流管理器中注销（如果有的话）
-	// Note: 流管理器可能没有 UnregisterStream 方法
-
-	// 关闭流处理器
-	if conn != nil && conn.Stream != nil {
-		conn.Stream.Close()
+	// 关闭底层连接
+	if conn != nil {
+		if conn.RawConn != nil {
+			conn.RawConn.Close()
+		}
+		// 关闭流处理器
+		if conn.Stream != nil {
+			conn.Stream.Close()
+		}
 	}
 
 	// 从控制连接映射中移除
@@ -147,7 +157,6 @@ func (s *SessionManager) CloseConnection(connectionId string) error {
 	// 从隧道连接映射中移除
 	s.RemoveTunnelConnection(connectionId)
 
-	utils.Infof("Closed connection: %s", connectionId)
 	return nil
 }
 
@@ -185,6 +194,52 @@ func (s *SessionManager) GetActiveChannels() int {
 	return controlCount + tunnelCount
 }
 
+// GetConnectionStats 获取连接统计信息
+func (s *SessionManager) GetConnectionStats() ConnectionStats {
+	s.connLock.RLock()
+	totalConnections := len(s.connMap)
+	s.connLock.RUnlock()
+
+	s.controlConnLock.RLock()
+	controlConnections := len(s.controlConnMap)
+	s.controlConnLock.RUnlock()
+
+	s.tunnelConnLock.RLock()
+	tunnelConnections := len(s.tunnelConnMap)
+	s.tunnelConnLock.RUnlock()
+
+	return ConnectionStats{
+		TotalConnections:    totalConnections,
+		ControlConnections:  controlConnections,
+		TunnelConnections:   tunnelConnections,
+		MaxConnections:      s.getMaxConnections(),
+		MaxControlConnections: s.getMaxControlConnections(),
+	}
+}
+
+// ConnectionStats 连接统计信息
+type ConnectionStats struct {
+	TotalConnections     int
+	ControlConnections  int
+	TunnelConnections   int
+	MaxConnections      int
+	MaxControlConnections int
+}
+
+func (s *SessionManager) getMaxConnections() int {
+	if s.config != nil {
+		return s.config.MaxConnections
+	}
+	return 0
+}
+
+func (s *SessionManager) getMaxControlConnections() int {
+	if s.config != nil {
+		return s.config.MaxControlConnections
+	}
+	return 0
+}
+
 // ============================================================================
 // Control Connection 管理
 // ============================================================================
@@ -194,13 +249,40 @@ func (s *SessionManager) RegisterControlConnection(conn *ControlConnection) {
 	s.controlConnLock.Lock()
 	defer s.controlConnLock.Unlock()
 
+	// 检查控制连接数限制
+	if s.config != nil && s.config.MaxControlConnections > 0 {
+		currentCount := len(s.controlConnMap)
+		if currentCount >= s.config.MaxControlConnections {
+			// 尝试清理最旧的连接
+			oldestConn := s.findOldestControlConnectionLocked()
+			if oldestConn != nil {
+				utils.Warnf("Control connection limit reached (%d/%d), removing oldest connection %s",
+					currentCount, s.config.MaxControlConnections, oldestConn.ConnID)
+				if oldestConn.Stream != nil {
+					oldestConn.Stream.Close()
+				}
+				delete(s.controlConnMap, oldestConn.ConnID)
+				if oldestConn.ClientID > 0 {
+					delete(s.clientIDIndexMap, oldestConn.ClientID)
+				}
+			}
+		}
+	}
+
+	// 检查是否已存在
+	if existing, exists := s.controlConnMap[conn.ConnID]; exists {
+		utils.Warnf("Control connection %s already exists, replacing", conn.ConnID)
+		// 关闭旧连接
+		if existing.Stream != nil {
+			existing.Stream.Close()
+		}
+	}
+
 	s.controlConnMap[conn.ConnID] = conn
 	// 如果已认证，更新 clientIDIndexMap
 	if conn.Authenticated && conn.ClientID > 0 {
 		s.clientIDIndexMap[conn.ClientID] = conn
 	}
-
-	utils.Debugf("Registered control connection: %s", conn.ConnID)
 }
 
 // UpdateControlConnectionAuth 更新指令连接的认证信息
@@ -306,14 +388,11 @@ func (s *SessionManager) RemoveControlConnection(connID string) {
 		if conn.Authenticated && conn.ClientID > 0 {
 			if existingConn, exists := s.clientIDIndexMap[conn.ClientID]; exists && existingConn.ConnID == connID {
 			delete(s.clientIDIndexMap, conn.ClientID)
-				utils.Debugf("Removed control connection from clientIDIndexMap: connID=%s, clientID=%d", connID, conn.ClientID)
 			} else {
-				utils.Debugf("Skipped removing control connection from clientIDIndexMap: connID=%s, clientID=%d (not the current control connection)", connID, conn.ClientID)
 			}
 		}
 		// 从 controlConnMap 移除
 		delete(s.controlConnMap, connID)
-		utils.Debugf("Removed control connection: %s", connID)
 	}
 }
 
@@ -325,31 +404,6 @@ func (s *SessionManager) getControlConnectionByConnID(connID string) *ControlCon
 	return s.controlConnMap[connID]
 }
 
-func resolveRemoteAddr(primary interface{}, secondary interface{}) net.Addr {
-	type remote interface {
-		RemoteAddr() net.Addr
-	}
-	if conn, ok := primary.(remote); ok && conn.RemoteAddr() != nil {
-		return conn.RemoteAddr()
-	}
-	if conn, ok := secondary.(remote); ok {
-		return conn.RemoteAddr()
-	}
-	return nil
-}
-
-func resolveProtocol(primary interface{}, secondary interface{}) string {
-	type local interface {
-		LocalAddr() net.Addr
-	}
-	if conn, ok := primary.(local); ok && conn.LocalAddr() != nil {
-		return conn.LocalAddr().Network()
-	}
-	if conn, ok := secondary.(local); ok && conn.LocalAddr() != nil {
-		return conn.LocalAddr().Network()
-	}
-	return ""
-}
 
 // ============================================================================
 // Tunnel Connection 管理
@@ -365,7 +419,6 @@ func (s *SessionManager) RegisterTunnelConnection(conn *TunnelConnection) {
 		s.tunnelIDMap[conn.TunnelID] = conn
 	}
 
-	utils.Debugf("Registered tunnel connection: connID=%s, tunnelID=%s", conn.ConnID, conn.TunnelID)
 }
 
 // UpdateTunnelConnectionAuth 更新映射连接的认证信息
@@ -487,7 +540,6 @@ func (s *SessionManager) cleanupStaleConnections() int {
 		// 更新CloudControl状态（标记客户端离线）
 		if s.cloudControl != nil && conn.ClientID > 0 {
 			// CloudControl会在DisconnectClient中清理状态
-			utils.Debugf("SessionManager: will update CloudControl for stale client %d", conn.ClientID)
 		}
 
 		// 关闭连接（会自动从映射中移除）
@@ -497,4 +549,19 @@ func (s *SessionManager) cleanupStaleConnections() int {
 	}
 
 	return len(staleConns)
+}
+
+// findOldestControlConnectionLocked 查找最旧的控制连接（需要在持有锁的情况下调用）
+func (s *SessionManager) findOldestControlConnectionLocked() *ControlConnection {
+	var oldestConn *ControlConnection
+	var oldestTime time.Time
+
+	for _, conn := range s.controlConnMap {
+		if oldestConn == nil || conn.CreatedAt.Before(oldestTime) {
+			oldestConn = conn
+			oldestTime = conn.CreatedAt
+		}
+	}
+
+	return oldestConn
 }

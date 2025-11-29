@@ -21,13 +21,21 @@ type SessionConfig struct {
 
 	// CleanupInterval 清理检查间隔（定期扫描并清理过期连接）
 	CleanupInterval time.Duration
+
+	// MaxConnections 最大连接数限制（0表示无限制）
+	MaxConnections int
+
+	// MaxControlConnections 最大控制连接数限制（0表示无限制）
+	MaxControlConnections int
 }
 
 // DefaultSessionConfig 返回默认配置
 func DefaultSessionConfig() *SessionConfig {
 	return &SessionConfig{
-		HeartbeatTimeout: 90 * time.Second, // 3倍心跳间隔（客户端30秒发一次）
-		CleanupInterval:  30 * time.Second, // 每30秒检查一次
+		HeartbeatTimeout:      60 * time.Second, // 缩短为60秒（负载均衡器后面连接多，需要更积极清理）
+		CleanupInterval:        15 * time.Second, // 缩短为15秒（更频繁检查）
+		MaxConnections:         10000,           // 最大10000个连接
+		MaxControlConnections:  5000,            // 最大5000个控制连接
 	}
 }
 
@@ -243,22 +251,25 @@ func (s *SessionManager) onClose() error {
 
 	// 关闭所有连接
 	s.connLock.Lock()
-	for connID, conn := range s.connMap {
+	connCount := len(s.connMap)
+	for _, conn := range s.connMap {
 		if conn.Stream != nil {
 			conn.Stream.Close()
 		}
-		utils.Debugf("Closed connection: %s", connID)
+		if conn.RawConn != nil {
+			conn.RawConn.Close()
+		}
 	}
 	s.connMap = make(map[string]*types.Connection)
 	s.connLock.Unlock()
 
 	// 关闭所有控制连接
 	s.controlConnLock.Lock()
-	for connID, conn := range s.controlConnMap {
+	controlConnCount := len(s.controlConnMap)
+	for _, conn := range s.controlConnMap {
 		if conn.Stream != nil {
 			conn.Stream.Close()
 		}
-		utils.Debugf("Closed control connection: %s", connID)
 	}
 	s.controlConnMap = make(map[string]*ControlConnection)
 	s.clientIDIndexMap = make(map[int64]*ControlConnection)
@@ -266,15 +277,18 @@ func (s *SessionManager) onClose() error {
 
 	// 关闭所有隧道连接
 	s.tunnelConnLock.Lock()
-	for connID, conn := range s.tunnelConnMap {
+	tunnelConnCount := len(s.tunnelConnMap)
+	for _, conn := range s.tunnelConnMap {
 		if conn.Stream != nil {
 			conn.Stream.Close()
 		}
-		utils.Debugf("Closed tunnel connection: %s", connID)
 	}
 	s.tunnelConnMap = make(map[string]*TunnelConnection)
 	s.tunnelIDMap = make(map[string]*TunnelConnection)
 	s.tunnelConnLock.Unlock()
+
+	utils.Infof("SessionManager: closed %d connections, %d control connections, %d tunnel connections",
+		connCount, controlConnCount, tunnelConnCount)
 
 	// 关闭流管理器
 	if s.streamMgr != nil {
