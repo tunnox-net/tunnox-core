@@ -25,7 +25,8 @@ func (r *ResourceBase) Initialize(parentCtx context.Context) {
 
 // onClose 通用资源清理回调
 func (r *ResourceBase) onClose() error {
-	Infof("%s resources cleaned up", r.name)
+	// 不输出清理日志，避免在 CLI 模式下污染控制台
+	// 日志已配置为只输出到文件
 	return nil
 }
 

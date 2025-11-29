@@ -15,6 +15,11 @@ import (
 
 // Connect 连接到服务器并建立指令连接
 func (c *TunnoxClient) Connect() error {
+	// 如果配置中没有地址，使用自动连接
+	if c.config.Server.Address == "" {
+		return c.connectWithAutoDetection()
+	}
+
 	utils.Infof("Client: connecting to server %s", c.config.Server.Address)
 
 	protocol := c.config.Server.Protocol
@@ -442,4 +447,121 @@ func (c *TunnoxClient) requestMappingConfig() {
 		utils.Errorf("Client: ConfigGet request timeout after 30s")
 	case <-c.Ctx().Done():
 	}
+}
+
+// connectWithAutoDetection 使用自动连接检测连接到服务器
+func (c *TunnoxClient) connectWithAutoDetection() error {
+	connector := NewAutoConnector(c.Ctx(), c)
+	defer connector.Close()
+
+	endpoint, err := connector.ConnectWithAutoDetection(c.Ctx())
+	if err != nil {
+		return fmt.Errorf("auto connection failed: %w", err)
+	}
+
+	// 更新配置
+	c.config.Server.Protocol = endpoint.Protocol
+	c.config.Server.Address = endpoint.Address
+
+	utils.Infof("Client: auto-detected server endpoint - %s://%s", endpoint.Protocol, endpoint.Address)
+
+	// 使用选中的端点建立控制连接
+	return c.connectWithEndpoint(endpoint.Protocol, endpoint.Address)
+}
+
+// connectWithEndpoint 使用指定的协议和地址建立控制连接
+func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
+	utils.Infof("Client: connecting to server %s://%s", protocol, address)
+
+	var (
+		conn net.Conn
+		err  error
+	)
+	switch strings.ToLower(protocol) {
+	case "tcp":
+		conn, err = net.DialTimeout("tcp", address, 10*time.Second)
+		if err == nil {
+			if tcpConn, ok := conn.(*net.TCPConn); ok {
+				if err := tcpConn.SetKeepAlive(true); err != nil {
+					_ = err
+				}
+				if err := tcpConn.SetKeepAlivePeriod(30 * time.Second); err != nil {
+					_ = err
+				}
+				if err := tcpConn.SetNoDelay(true); err != nil {
+					_ = err
+				}
+			}
+		}
+	case "udp":
+		conn, err = dialUDPControlConnection(address)
+	case "websocket":
+		conn, err = dialWebSocket(c.Ctx(), address)
+	case "quic":
+		conn, err = dialQUIC(c.Ctx(), address)
+	default:
+		return fmt.Errorf("unsupported server protocol: %s", protocol)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to dial server (%s): %w", protocol, err)
+	}
+
+	c.config.Server.Protocol = strings.ToLower(protocol)
+
+	// 使用锁保护连接状态
+	c.mu.Lock()
+	c.controlConn = conn
+	streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
+	c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
+	c.mu.Unlock()
+
+	// 记录连接信息
+	localAddr := "unknown"
+	remoteAddr := "unknown"
+	if conn.LocalAddr() != nil {
+		localAddr = conn.LocalAddr().String()
+	}
+	if conn.RemoteAddr() != nil {
+		remoteAddr = conn.RemoteAddr().String()
+	}
+	utils.Infof("Client: %s connection established - Local=%s, Remote=%s",
+		strings.ToUpper(protocol), localAddr, remoteAddr)
+
+	// 发送握手请求
+	if err := c.sendHandshake(); err != nil {
+		c.mu.Lock()
+		if c.controlStream != nil {
+			c.controlStream.Close()
+			c.controlStream = nil
+		}
+		if c.controlConn != nil {
+			c.controlConn.Close()
+			c.controlConn = nil
+		}
+		c.mu.Unlock()
+		return fmt.Errorf("handshake failed: %w", err)
+	}
+
+	// 启动读取循环
+	if !c.readLoopRunning.CompareAndSwap(false, true) {
+		utils.Warnf("Client: readLoop already running, skipping")
+	} else {
+		go func() {
+			defer c.readLoopRunning.Store(false)
+			c.readLoop()
+		}()
+	}
+
+	// 启动心跳循环
+	if !c.heartbeatLoopRunning.CompareAndSwap(false, true) {
+		utils.Debugf("Client: heartbeatLoop already running, skipping")
+	} else {
+		go func() {
+			defer c.heartbeatLoopRunning.Store(false)
+			c.heartbeatLoop()
+		}()
+	}
+
+	utils.Infof("Client: control connection established successfully")
+	return nil
 }

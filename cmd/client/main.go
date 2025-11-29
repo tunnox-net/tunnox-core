@@ -37,15 +37,15 @@ func main() {
 		os.Exit(0)
 	}
 
+	// 决定运行模式
+	runInteractive := *interactive && !*daemon
+
 	// 加载配置
-	config, err := loadOrCreateConfig(*configFile, *protocol, *serverAddr, *clientID, *deviceID, *authToken, *anonymous)
+	config, err := loadOrCreateConfig(*configFile, *protocol, *serverAddr, *clientID, *deviceID, *authToken, *anonymous, runInteractive)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
 	}
-
-	// 决定运行模式
-	runInteractive := *interactive && !*daemon
 
 	// 配置日志输出
 	logFile, err := configureLogging(config, runInteractive)
@@ -83,11 +83,10 @@ func main() {
 		// 交互模式：可选连接，失败不退出
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-		// 如果有完整配置，尝试连接（失败不退出，仅简单提示）
-		if config.Server.Address != "" {
-			if err := tunnoxClient.Connect(); err != nil {
-				// 连接失败，静默处理，用户可通过CLI命令重连
-			}
+		// 尝试连接（如果有配置地址或需要自动连接）
+		// 自动连接会在 Connect() 内部处理
+		if err := tunnoxClient.Connect(); err != nil {
+			// 连接失败，静默处理，用户可通过CLI命令重连
 		}
 
 		// 交互模式：尝试启动CLI
@@ -197,7 +196,7 @@ func main() {
 }
 
 // loadOrCreateConfig 加载或创建配置
-func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64, deviceID, authToken string, anonymous bool) (*client.ClientConfig, error) {
+func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64, deviceID, authToken string, anonymous bool, isCLIMode bool) (*client.ClientConfig, error) {
 	// 使用配置管理器加载配置
 	configManager := client.NewConfigManager()
 	config, err := configManager.LoadConfig(configFile)
@@ -227,8 +226,14 @@ func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64,
 		config.Anonymous = true
 	}
 
-	// 验证配置
-	if err := validateConfig(config); err != nil {
+	// 检测是否需要自动连接（符合设计文档的三个条件）：
+	// 1. 配置文件中没有指定服务器地址
+	// 2. 命令行参数中没有指定服务器地址（-s 参数）
+	// 3. 以cli的方式启动（runInteractive == true）
+	needsAutoConnect := isCLIMode && config.Server.Address == "" && serverAddr == ""
+
+	// 验证配置（如果不需要自动连接，则设置默认值）
+	if err := validateConfig(config, !needsAutoConnect); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
@@ -236,33 +241,39 @@ func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64,
 }
 
 // validateConfig 验证配置
-func validateConfig(config *client.ClientConfig) error {
-	// 如果地址为空，使用默认 WebSocket 地址
-	if config.Server.Address == "" {
-		config.Server.Address = "https://gw.tunnox.net/_tunnox"
-		config.Server.Protocol = "websocket"
-	}
-	
-	// 如果协议为空，使用默认 WebSocket 协议
-	if config.Server.Protocol == "" {
-		config.Server.Protocol = "websocket"
-	}
+func validateConfig(config *client.ClientConfig, setDefaults bool) error {
+	// 如果需要设置默认值（非自动连接模式）
+	if setDefaults {
+		// 如果地址为空，使用默认 WebSocket 地址
+		if config.Server.Address == "" {
+			config.Server.Address = "https://gw.tunnox.net/_tunnox"
+			config.Server.Protocol = "websocket"
+		}
 
-	// 规范化协议名称
-	config.Server.Protocol = normalizeProtocol(config.Server.Protocol)
-
-	// 验证协议
-	validProtocols := []string{"tcp", "websocket", "udp", "quic"}
-	valid := false
-	for _, p := range validProtocols {
-		if config.Server.Protocol == p {
-			valid = true
-			break
+		// 如果协议为空，使用默认 WebSocket 协议
+		if config.Server.Protocol == "" {
+			config.Server.Protocol = "websocket"
 		}
 	}
-	if !valid {
-		return fmt.Errorf("invalid protocol: %s (must be one of: tcp, websocket, udp, quic)", config.Server.Protocol)
+
+	// 规范化协议名称（如果有协议）
+	if config.Server.Protocol != "" {
+		config.Server.Protocol = normalizeProtocol(config.Server.Protocol)
+
+		// 验证协议
+		validProtocols := []string{"tcp", "websocket", "udp", "quic"}
+		valid := false
+		for _, p := range validProtocols {
+			if config.Server.Protocol == p {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return fmt.Errorf("invalid protocol: %s (must be one of: tcp, websocket, udp, quic)", config.Server.Protocol)
+		}
 	}
+	// 如果协议为空且地址也为空，说明是自动连接模式，协议会在自动连接时确定
 
 	// 验证认证配置
 	if !config.Anonymous {
@@ -370,36 +381,31 @@ func configureLogging(config *client.ClientConfig, interactive bool) (string, er
 
 	// 日志总是输出到文件，不输出到console
 	// 如果有配置文件地址就使用，否则使用默认路径
-		logFile := config.Log.File
-		if logFile == "" {
-		// 默认日志文件路径
-		if interactive {
-			// 交互模式：~/.tunnox/client.log
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				logFile = "/tmp/tunnox-client.log"
-			} else {
-				logFile = filepath.Join(homeDir, ".tunnox", "client.log")
-			}
-		} else {
-			// 守护进程模式：/var/log/tunnox-client.log
-			logFile = "/var/log/tunnox-client.log"
+	logFile := config.Log.File
+	if logFile == "" {
+		// 使用默认路径列表（按优先级）
+		candidates := utils.GetDefaultClientLogPath(interactive)
+		var err error
+		logFile, err = utils.ResolveLogPath(candidates)
+		if err != nil {
+			return "", fmt.Errorf("failed to resolve log path: %w", err)
 		}
-			}
+	} else {
+		// 展开路径（支持 ~ 和相对路径）
+		expandedPath, err := utils.ExpandPath(logFile)
+		if err != nil {
+			return "", fmt.Errorf("failed to expand log file path %q: %w", logFile, err)
+		}
+		logFile = expandedPath
 
-			// 展开路径（支持 ~ 和相对路径）
-			expandedPath, err := utils.ExpandPath(logFile)
-			if err != nil {
-				return "", fmt.Errorf("failed to expand log file path %q: %w", logFile, err)
-			}
-
-			logConfig.File = expandedPath
-
-			// 确保日志目录存在
-			logDir := filepath.Dir(expandedPath)
-			if err := os.MkdirAll(logDir, 0755); err != nil {
-				return "", fmt.Errorf("failed to create log directory %q: %w", logDir, err)
+		// 确保日志目录存在
+		logDir := filepath.Dir(logFile)
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			return "", fmt.Errorf("failed to create log directory %q: %w", logDir, err)
+		}
 	}
+
+	logConfig.File = logFile
 
 	// 初始化日志
 	if err := utils.InitLogger((*utils.LogConfig)(logConfig)); err != nil {

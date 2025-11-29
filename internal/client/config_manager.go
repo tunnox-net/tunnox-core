@@ -60,9 +60,14 @@ func (cm *ConfigManager) LoadConfig(cmdConfigPath string) (*ClientConfig, error)
 		}
 	}
 	
-	// 3. 所有路径都没有配置文件，使用默认配置
-	utils.Infof("ConfigManager: no config file found, using default anonymous mode")
-	return getDefaultConfig(), nil
+	// 3. 所有路径都没有配置文件，返回空配置（不设置默认地址）
+	// 这样可以在 CLI 模式下触发自动连接
+	utils.Infof("ConfigManager: no config file found, using empty config")
+	return &ClientConfig{
+		Anonymous: true,
+		DeviceID:  "anonymous-device",
+		// 不设置 Server.Address，让自动连接机制处理
+	}, nil
 }
 
 // SaveConfig 保存配置（按优先级尝试多个路径，权限不足时降级）

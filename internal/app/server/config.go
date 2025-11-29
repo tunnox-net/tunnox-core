@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/utils"
 
@@ -268,7 +269,21 @@ func LoadConfig(configPath string) (*Config, error) {
 	if config.Log.Output == "" || config.Log.Output == constants.LogOutputStdout || config.Log.Output == constants.LogOutputStderr {
 		config.Log.Output = constants.LogOutputFile
 		if config.Log.File == "" {
-			config.Log.File = "logs/server.log"
+			// 使用默认路径
+			config.Log.File = utils.GetDefaultServerLogPath()
+		} else {
+			// 展开路径（支持 ~ 和相对路径）
+			expandedPath, err := utils.ExpandPath(config.Log.File)
+			if err != nil {
+				return nil, fmt.Errorf("failed to expand log file path %q: %w", config.Log.File, err)
+			}
+			config.Log.File = expandedPath
+		}
+
+		// 确保日志目录存在
+		logDir := filepath.Dir(config.Log.File)
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create log directory %q: %w", logDir, err)
 		}
 	}
 
