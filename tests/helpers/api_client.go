@@ -545,7 +545,8 @@ func (c *APIClient) SearchMappings(keyword string) ([]*models.PortMapping, error
 
 // HealthCheck 健康检查
 func (c *APIClient) HealthCheck() (bool, error) {
-	apiResp, resp, err := c.request("GET", "/health", nil)
+	// 健康检查端点在 /tunnox/v1/health
+	apiResp, resp, err := c.request("GET", "/tunnox/v1/health", nil)
 	if err != nil {
 		return false, err
 	}

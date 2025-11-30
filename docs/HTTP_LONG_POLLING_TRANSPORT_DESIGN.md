@@ -361,389 +361,450 @@ func (c *HTTPLongPollingConn) pollLoop() {
 }
 ```
 
-### 3.2 服务器实现
+### 3.2 服务器实现（统一架构设计）
 
-#### 3.2.1 上行端点处理（Push）
+#### 3.2.1 核心设计原则
+
+**关键原则**：服务器端也应该像客户端一样，将 HTTP 请求/响应转换为 `net.Conn` 接口，然后统一使用 `StreamProcessor`。
+
+**架构对比**：
+
+```
+其他协议（TCP/WebSocket/QUIC/UDP）：
+  客户端: net.Conn → StreamProcessor ✅
+  服务器: AcceptConnection(net.Conn) → StreamProcessor ✅
+
+HTTP Long Polling（当前实现）：
+  客户端: HTTPLongPollingConn(net.Conn) → StreamProcessor ✅
+  服务器: HTTPLongPollingManager + 特殊转发逻辑 ❌
+
+HTTP Long Polling（目标实现）：
+  客户端: HTTPLongPollingConn(net.Conn) → StreamProcessor ✅
+  服务器: HTTPLongPollingConn(net.Conn) → StreamProcessor ✅
+```
+
+#### 3.2.2 服务器端 HTTPLongPollingConn 设计
+
+服务器端也需要实现一个 `HTTPLongPollingConn`，实现 `net.Conn` 接口：
 
 ```go
-func (s *HTTPServer) handlePush(w http.ResponseWriter, r *http.Request) {
-    // 1. 认证
-    clientID, token, err := s.authenticateRequest(r)
+// internal/protocol/session/httppoll_server_conn.go
+package session
+
+import (
+    "io"
+    "net"
+    "sync"
+    "time"
+)
+
+// ServerHTTPLongPollingConn 服务器端 HTTP 长轮询连接
+// 实现 net.Conn 接口，将 HTTP 请求/响应转换为双向流
+type ServerHTTPLongPollingConn struct {
+    clientID int64
+    
+    // 上行数据（客户端 → 服务器）
+    pushDataChan chan []byte  // 从 HTTP POST 接收的数据
+    pushSeq      uint64
+    
+    // 下行数据（服务器 → 客户端）
+    pollDataChan chan []byte  // 发送到 HTTP GET 响应的数据
+    pollSeq      uint64
+    
+    // 控制
+    mu           sync.RWMutex
+    closed       bool
+    closeOnce    sync.Once
+    
+    // 地址信息
+    localAddr    net.Addr
+    remoteAddr   net.Addr
+}
+
+// NewServerHTTPLongPollingConn 创建服务器端 HTTP 长轮询连接
+func NewServerHTTPLongPollingConn(clientID int64) *ServerHTTPLongPollingConn {
+    return &ServerHTTPLongPollingConn{
+        clientID:     clientID,
+        pushDataChan: make(chan []byte, 100),
+        pollDataChan: make(chan []byte, 100),
+        localAddr:    &httppollServerAddr{addr: "server"},
+        remoteAddr:   &httppollServerAddr{addr: fmt.Sprintf("client-%d", clientID)},
+    }
+    }
+    
+// Read 实现 io.Reader（从 HTTP POST 读取数据）
+func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
+    c.mu.RLock()
+    closed := c.closed
+    c.mu.RUnlock()
+    
+    if closed {
+        return 0, io.EOF
+    }
+    
+    // 从 pushDataChan 读取数据（由 handleHTTPPush 写入）
+    select {
+    case data, ok := <-c.pushDataChan:
+        if !ok {
+            return 0, io.EOF
+        }
+        n := copy(p, data)
+        return n, nil
+    case <-time.After(30 * time.Second):
+        return 0, io.EOF // 超时
+    }
+}
+
+// Write 实现 io.Writer（通过 HTTP GET 响应发送数据）
+func (c *ServerHTTPLongPollingConn) Write(p []byte) (int, error) {
+    c.mu.RLock()
+    closed := c.closed
+    c.mu.RUnlock()
+    
+    if closed {
+        return 0, io.ErrClosedPipe
+    }
+    
+    // 将数据发送到 pollDataChan（由 handleHTTPPoll 读取）
+    select {
+    case c.pollDataChan <- p:
+        return len(p), nil
+    default:
+        return 0, io.ErrShortWrite // 通道满
+    }
+}
+
+// Close 实现 io.Closer
+func (c *ServerHTTPLongPollingConn) Close() error {
+    var err error
+    c.closeOnce.Do(func() {
+        c.mu.Lock()
+        c.closed = true
+        c.mu.Unlock()
+        
+        close(c.pushDataChan)
+        close(c.pollDataChan)
+    })
+    return err
+    }
+    
+// LocalAddr, RemoteAddr, SetDeadline 等实现 net.Conn 接口
+func (c *ServerHTTPLongPollingConn) LocalAddr() net.Addr  { return c.localAddr }
+func (c *ServerHTTPLongPollingConn) RemoteAddr() net.Addr { return c.remoteAddr }
+func (c *ServerHTTPLongPollingConn) SetDeadline(t time.Time) error {
+    // HTTP 长轮询的 deadline 由 HTTP 请求控制
+    return nil
+}
+func (c *ServerHTTPLongPollingConn) SetReadDeadline(t time.Time) error  { return nil }
+func (c *ServerHTTPLongPollingConn) SetWriteDeadline(t time.Time) error { return nil }
+    
+// PushData 从 HTTP POST 请求接收数据（由 handleHTTPPush 调用）
+func (c *ServerHTTPLongPollingConn) PushData(data []byte) error {
+    c.mu.RLock()
+    closed := c.closed
+    c.mu.RUnlock()
+    
+    if closed {
+        return io.ErrClosedPipe
+    }
+    
+    select {
+    case c.pushDataChan <- data:
+        return nil
+    default:
+        return io.ErrShortWrite
+    }
+}
+
+// PollData 等待数据用于 HTTP GET 响应（由 handleHTTPPoll 调用）
+func (c *ServerHTTPLongPollingConn) PollData(ctx context.Context) ([]byte, error) {
+    select {
+    case <-ctx.Done():
+        return nil, ctx.Err()
+    case data, ok := <-c.pollDataChan:
+        if !ok {
+            return nil, io.EOF
+        }
+        return data, nil
+    }
+}
+```
+
+#### 3.2.3 统一的连接创建流程
+
+服务器端处理 HTTP 请求时，创建统一的连接：
+
+```go
+// internal/api/handlers_httppoll.go
+
+// handleHTTPPush 处理客户端推送数据
+func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Request) {
+    // 1. 获取 ClientID
+    clientID, err := s.getClientIDFromRequest(r)
     if err != nil {
-        http.Error(w, "Unauthorized", http.StatusUnauthorized)
+        s.respondError(w, http.StatusBadRequest, err.Error())
         return
     }
     
-    // 2. 解析请求
-    var req struct {
-        Data      string `json:"data"`
-        Seq       uint64 `json:"seq"`
-        Timestamp int64  `json:"timestamp"`
-    }
+    // 2. 解析请求数据
+    var req HTTPPushRequest
     if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "Invalid request", http.StatusBadRequest)
+        s.respondError(w, http.StatusBadRequest, "Invalid request")
         return
     }
     
     // 3. 解码数据
     data, err := base64.StdEncoding.DecodeString(req.Data)
     if err != nil {
-        http.Error(w, "Invalid data", http.StatusBadRequest)
+        s.respondError(w, http.StatusBadRequest, "Invalid data")
         return
     }
     
-    // 4. 处理数据（转发到 StreamProcessor）
-    sessionMgr := s.getSessionManager()
-    conn := sessionMgr.GetControlConnection(clientID)
-    if conn != nil {
-        // 将数据写入连接的 StreamProcessor
-        // 这里需要适配，将 HTTP 数据转换为 StreamProcessor 输入
-    }
+    // 4. 获取或创建 HTTP 长轮询连接
+    httppollConn := s.getOrCreateHTTPLongPollingConn(clientID)
     
-    // 5. 返回 ACK
-    resp := map[string]interface{}{
-        "success":   true,
-        "ack":       req.Seq,
-        "timestamp": time.Now().Unix(),
-    }
-    json.NewEncoder(w).Encode(resp)
-}
-```
-
-#### 3.2.2 下行端点处理（Poll）
-
-```go
-func (s *HTTPServer) handlePoll(w http.ResponseWriter, r *http.Request) {
-    // 1. 认证
-    clientID, token, err := s.authenticateRequest(r)
-    if err != nil {
-        http.Error(w, "Unauthorized", http.StatusUnauthorized)
+    // 5. 将数据推送到连接（触发 Read()）
+    if err := httppollConn.PushData(data); err != nil {
+        s.respondError(w, http.StatusServiceUnavailable, "Connection closed")
         return
     }
     
-    // 2. 解析参数
-    timeout := 30 // 默认 30 秒
-    if t := r.URL.Query().Get("timeout"); t != "" {
-        timeout, _ = strconv.Atoi(t)
-    }
-    since := uint64(0)
-    if s := r.URL.Query().Get("since"); s != "" {
-        since, _ = strconv.ParseUint(s, 10, 64)
-    }
-    
-    // 3. 获取客户端连接
-    sessionMgr := s.getSessionManager()
-    conn := sessionMgr.GetControlConnection(clientID)
-    if conn == nil {
-        // 客户端未连接，返回空响应
-        resp := map[string]interface{}{
-            "success":   true,
-            "data":      nil,
-            "timeout":   true,
-            "timestamp": time.Now().Unix(),
-        }
-        json.NewEncoder(w).Encode(resp)
-        return
-    }
-    
-    // 4. 获取 HTTP 长轮询连接管理器
-    httppollMgr := s.getHTTPLongPollingManager()
-    pollConn := httppollMgr.GetOrCreatePollConnection(clientID, conn)
-    
-    // 5. 长轮询：等待数据或超时
-    ctx, cancel := context.WithTimeout(r.Context(), time.Duration(timeout)*time.Second)
-    defer cancel()
-    
-    // 从轮询连接的输出队列获取数据
-    dataChan := pollConn.GetOutputChannel()
-    
-    select {
-    case <-ctx.Done():
-        // 超时，返回空响应
-        resp := map[string]interface{}{
-            "success":   true,
-            "data":      nil,
-            "timeout":   true,
-            "timestamp": time.Now().Unix(),
-        }
-        json.NewEncoder(w).Encode(resp)
-        
-    case data := <-dataChan:
-        // 有数据，立即返回
-        encoded := base64.StdEncoding.EncodeToString(data)
-        resp := map[string]interface{}{
-            "success":   true,
-            "data":      encoded,
-            "seq":       pollConn.GetNextSeq(),
-            "timestamp": time.Now().Unix(),
-        }
-        json.NewEncoder(w).Encode(resp)
-    }
-}
-```
-
-#### 3.2.3 HTTP 长轮询连接管理器
-
-需要创建一个管理器来管理 HTTP 长轮询连接的生命周期：
-
-```go
-type HTTPLongPollingManager struct {
-    sessionMgr SessionManager
-    
-    // 客户端连接映射
-    pushConnections map[int64]*HTTPPushConnection  // clientID -> push connection
-    pollConnections map[int64]*HTTPPollConnection  // clientID -> poll connection
-    
-    mu sync.RWMutex
-}
-
-type HTTPPushConnection struct {
-    clientID    int64
-    sessionConn *session.ClientConnection
-    inputChan   chan []byte  // 接收来自 HTTP 的数据
-    seq         uint64
-    mu          sync.Mutex
-}
-
-type HTTPPollConnection struct {
-    clientID    int64
-    sessionConn *session.ClientConnection
-    outputChan  chan []byte  // 发送到 HTTP 的数据
-    seq         uint64
-    mu          sync.Mutex
-}
-
-func (m *HTTPLongPollingManager) GetOrCreatePushConnection(clientID int64, sessionConn *session.ClientConnection) *HTTPPushConnection {
-    m.mu.Lock()
-    defer m.mu.Unlock()
-    
-    if conn, exists := m.pushConnections[clientID]; exists {
-        return conn
-    }
-    
-    conn := &HTTPPushConnection{
-        clientID:    clientID,
-        sessionConn: sessionConn,
-        inputChan:   make(chan []byte, 100),
-    }
-    
-    m.pushConnections[clientID] = conn
-    
-    // 启动数据转发 goroutine
-    go m.forwardPushData(conn)
-    
-    return conn
-}
-
-func (m *HTTPLongPollingManager) forwardPushData(conn *HTTPPushConnection) {
-    // 从 HTTP 接收数据，转发到 StreamProcessor
-    for data := range conn.inputChan {
-        // 将数据写入 StreamProcessor
-        // 这里需要适配，将 HTTP 数据转换为 StreamProcessor 输入
-        stream := conn.sessionConn.Stream
-        // 构造 TransferPacket 并写入
-    }
-}
-```
-
-### 3.3 与现有体系集成
-
-#### 3.3.1 客户端集成
-
-**步骤 1**：在 `internal/client/control_connection.go` 中添加协议支持：
-
-```go
-case "httppoll", "http-long-polling", "httplp":
-    conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, c.config.ClientID, c.config.Token)
-```
-
-**步骤 2**：创建 `internal/client/transport_httppoll.go`：
-
-```go
-package client
-
-import (
-    "context"
-    "net"
-)
-
-func dialHTTPLongPolling(ctx context.Context, baseURL string, clientID int64, token string) (net.Conn, error) {
-    return NewHTTPLongPollingConn(baseURL, clientID, token)
-}
-```
-
-**步骤 3**：在 `internal/client/auto_connector.go` 中添加默认端点：
-
-```go
-var DefaultServerEndpoints = []ServerEndpoint{
-    {Protocol: "tcp", Address: "gw.tunnox.net:8000"},
-    {Protocol: "udp", Address: "gw.tunnox.net:8000"},
-    {Protocol: "quic", Address: "gw.tunnox.net:443"},
-    {Protocol: "websocket", Address: "https://gw.tunnox.net/_tunnox"},
-    {Protocol: "httppoll", Address: "https://gw.tunnox.net"},  // 新增
-}
-```
-
-**步骤 4**：在 `tryConnect` 方法中添加：
-
-```go
-case "httppoll", "http-long-polling", "httplp":
-    conn, err = dialHTTPLongPolling(timeoutCtx, endpoint.Address, 0, "")
-```
-
-#### 3.3.2 服务器集成
-
-**步骤 1**：在 `internal/api/server.go` 的 `registerRoutes` 方法中添加路由：
-
-```go
-// HTTP 长轮询端点（用于客户端连接）
-api.HandleFunc("/tunnox/push", s.handleHTTPPush).Methods("POST")
-api.HandleFunc("/tunnox/poll", s.handleHTTPPoll).Methods("GET")
-```
-
-**步骤 2**：创建 `internal/api/handlers_httppoll.go`：
-
-```go
-package api
-
-import (
-    "encoding/base64"
-    "encoding/json"
-    "net/http"
-    "strconv"
-    "time"
-    
-    "tunnox-core/internal/protocol/session"
-)
-
-// handleHTTPPush 处理客户端推送数据
-func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Request) {
-    // 1. 认证
-    clientID, err := s.authenticateHTTPRequest(r)
-    if err != nil {
-        http.Error(w, "Unauthorized", http.StatusUnauthorized)
-        return
-    }
-    
-    // 2. 获取 SessionManager
-    if s.sessionMgr == nil {
-        http.Error(w, "SessionManager not available", http.StatusInternalServerError)
-        return
-    }
-    
-    // 3. 获取客户端连接
-    connInterface := s.sessionMgr.GetControlConnectionInterface(clientID)
-    if connInterface == nil {
-        http.Error(w, "Client not connected", http.StatusNotFound)
-        return
-    }
-    
-    // 4. 类型断言
-    conn, ok := connInterface.(*session.ClientConnection)
-    if !ok {
-        http.Error(w, "Invalid connection type", http.StatusInternalServerError)
-        return
-    }
-    
-    // 5. 解析请求
-    var req struct {
-        Data      string `json:"data"`
-        Seq       uint64 `json:"seq"`
-        Timestamp int64  `json:"timestamp"`
-    }
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        http.Error(w, "Invalid request", http.StatusBadRequest)
-        return
-    }
-    
-    // 6. 解码数据
-    data, err := base64.StdEncoding.DecodeString(req.Data)
-    if err != nil {
-        http.Error(w, "Invalid data", http.StatusBadRequest)
-        return
-    }
-    
-    // 7. 将数据写入 StreamProcessor
-    // 这里需要将 HTTP 数据转换为 TransferPacket
-    // 可以通过创建一个适配器来实现
-    
-    // 8. 返回 ACK
-    resp := map[string]interface{}{
-        "success":   true,
-        "ack":       req.Seq,
-        "timestamp": time.Now().Unix(),
-    }
-    json.NewEncoder(w).Encode(resp)
+    // 6. 返回 ACK
+    s.respondJSON(w, http.StatusOK, HTTPPushResponse{
+        Success:   true,
+        Ack:       req.Seq,
+        Timestamp: time.Now().Unix(),
+    })
 }
 
 // handleHTTPPoll 处理客户端长轮询
 func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Request) {
-    // 实现长轮询逻辑
-    // ...
+    // 1. 获取 ClientID
+    clientID, err := s.getClientIDFromRequest(r)
+    if err != nil {
+        s.respondError(w, http.StatusBadRequest, err.Error())
+        return
+    }
+    
+    // 2. 获取或创建 HTTP 长轮询连接
+    httppollConn := s.getOrCreateHTTPLongPollingConn(clientID)
+    
+    // 3. 解析超时参数
+    timeout := 30 * time.Second
+    if t := r.URL.Query().Get("timeout"); t != "" {
+        if parsed, err := strconv.Atoi(t); err == nil {
+            timeout = time.Duration(parsed) * time.Second
+        }
+    }
+    
+    // 4. 长轮询：等待数据（触发 Write()）
+    ctx, cancel := context.WithTimeout(r.Context(), timeout)
+    defer cancel()
+    
+    data, err := httppollConn.PollData(ctx)
+    if err == context.DeadlineExceeded {
+        // 超时，返回空响应
+        s.respondJSON(w, http.StatusOK, HTTPPollResponse{
+            Success:   true,
+            Timeout:   true,
+            Timestamp: time.Now().Unix(),
+        })
+        return
+    }
+    if err != nil {
+        s.respondError(w, http.StatusInternalServerError, err.Error())
+        return
+    }
+    
+    // 5. 有数据，立即返回
+    encoded := base64.StdEncoding.EncodeToString(data)
+    s.respondJSON(w, http.StatusOK, HTTPPollResponse{
+        Success:   true,
+        Data:      encoded,
+        Seq:       httppollConn.GetNextSeq(),
+        Timestamp: time.Now().Unix(),
+    })
+}
+
+// getOrCreateHTTPLongPollingConn 获取或创建 HTTP 长轮询连接
+func (s *ManagementAPIServer) getOrCreateHTTPLongPollingConn(clientID int64) *session.ServerHTTPLongPollingConn {
+    // 1. 检查是否已存在连接
+    if conn := s.getHTTPLongPollingConn(clientID); conn != nil {
+        return conn
+    }
+    
+    // 2. 创建新的 HTTP 长轮询连接（实现 net.Conn）
+    httppollConn := session.NewServerHTTPLongPollingConn(clientID)
+    
+    // 3. ✅ 统一使用 CreateConnection，就像其他协议一样
+    conn, err := s.sessionMgr.CreateConnection(httppollConn, httppollConn)
+    if err != nil {
+        // 处理错误
+        return nil
+    }
+    
+    // 4. 设置协议类型
+    conn.Protocol = "httppoll"
+    
+    // 5. 保存连接映射（用于后续查找）
+    s.registerHTTPLongPollingConn(clientID, httppollConn, conn)
+    
+    return httppollConn
 }
 ```
 
-**步骤 3**：创建 HTTP 长轮询适配器，将 HTTP 数据转换为 StreamProcessor 输入：
+#### 3.2.4 架构优势
+
+**统一性**：
+- 所有协议都使用相同的 `CreateConnection` → `StreamProcessor` 流程
+- 不需要协议特定的管理器或转发逻辑
+- 代码更简洁，维护更容易
+
+**清晰性**：
+- 协议适配器只负责：实现 `net.Conn` 接口
+- `StreamProcessor` 负责：数据包读写
+- 职责分离，层次清晰
+
+**可扩展性**：
+- 新增协议只需实现 `net.Conn` 接口
+- 不需要修改核心逻辑
+- 易于测试和维护
+
+### 3.3 与现有体系集成（统一架构）
+
+#### 3.3.1 客户端集成（已完成 ✅）
+
+客户端已经正确实现：
+- `HTTPLongPollingConn` 实现 `net.Conn` 接口
+- 直接传给 `StreamProcessor`
+- 与其他协议完全一致
 
 ```go
-// internal/protocol/adapter/httppoll_adapter.go
-package adapter
-
-import (
-    "io"
-    "net"
-    "tunnox-core/internal/protocol/session"
-    "tunnox-core/internal/stream"
-)
-
-// HTTPPollAdapter HTTP 长轮询适配器
-// 将 HTTP 长轮询连接包装成 net.Conn，供 StreamProcessor 使用
-type HTTPPollAdapter struct {
-    BaseAdapter
-    pushConn *HTTPPushConn
-    pollConn *HTTPPollConn
-}
-
-// HTTPPushConn HTTP 推送连接（客户端 -> 服务器）
-type HTTPPushConn struct {
-    sessionConn *session.ClientConnection
-    inputChan   chan []byte
-    closed      bool
-}
-
-// HTTPPollConn HTTP 轮询连接（服务器 -> 客户端）
-type HTTPPollConn struct {
-    sessionConn *session.ClientConnection
-    outputChan  chan []byte
-    closed      bool
-}
-
-func (c *HTTPPushConn) Read(p []byte) (int, error) {
-    data := <-c.inputChan
-    if data == nil {
-        return 0, io.EOF
-    }
-    return copy(p, data), nil
-}
-
-func (c *HTTPPushConn) Write(p []byte) (int, error) {
-    // 数据已经通过 HTTP POST 发送，这里不需要实现
-    return len(p), nil
-}
-
-// ... 实现其他 net.Conn 方法 ...
+// internal/client/control_connection.go
+case "httppoll", "http-long-polling", "httplp":
+    conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, clientID, token)
+    // conn 是 net.Conn，直接传给 StreamProcessor
+    c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
 ```
 
-#### 3.3.3 数据流转换
+#### 3.3.2 服务器集成（需要重构）
 
-**关键点**：HTTP 长轮询的数据需要与 `StreamProcessor` 的数据格式兼容。
+**当前问题**：
+- 服务器端使用了 `HTTPLongPollingManager` 和特殊转发逻辑
+- 没有统一使用 `CreateConnection` → `StreamProcessor`
 
-**方案**：
-1. HTTP 传输的是 Base64 编码的 `TransferPacket` 序列化数据
-2. 客户端：`StreamProcessor` → 序列化 → Base64 → HTTP POST
-3. 服务器：HTTP POST → Base64 解码 → 反序列化 → `StreamProcessor`
-4. 服务器：`StreamProcessor` → 序列化 → Base64 → HTTP GET 响应
-5. 客户端：HTTP GET 响应 → Base64 解码 → 反序列化 → `StreamProcessor`
+**目标架构**：
+- 服务器端也实现 `ServerHTTPLongPollingConn`（实现 `net.Conn`）
+- 统一使用 `CreateConnection(httppollConn, httppollConn)` → `StreamProcessor`
+- 移除 `HTTPLongPollingManager` 和特殊转发逻辑
+
+**实现步骤**：
+
+**步骤 1**：创建 `internal/protocol/session/httppoll_server_conn.go`
+
+```go
+package session
+
+// ServerHTTPLongPollingConn 服务器端 HTTP 长轮询连接
+// 实现 net.Conn 接口，统一使用 StreamProcessor
+type ServerHTTPLongPollingConn struct {
+    // 实现 net.Conn 接口
+    // Read: 从 HTTP POST 读取数据
+    // Write: 通过 HTTP GET 响应发送数据
+}
+```
+
+**步骤 2**：修改 `internal/api/handlers_httppoll.go`
+
+```go
+func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Request) {
+    // 1. 获取或创建 ServerHTTPLongPollingConn
+    httppollConn := s.getOrCreateHTTPLongPollingConn(clientID)
+    
+    // 2. 将 HTTP POST 数据推送到连接（触发 Read()）
+    httppollConn.PushData(data)
+    
+    // 3. StreamProcessor 会自动从 Read() 读取数据
+}
+
+func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Request) {
+    // 1. 获取 ServerHTTPLongPollingConn
+    httppollConn := s.getOrCreateHTTPLongPollingConn(clientID)
+    
+    // 2. 等待数据（触发 Write()）
+    data := httppollConn.PollData(ctx)
+    
+    // 3. StreamProcessor 会自动通过 Write() 写入数据
+}
+```
+
+**步骤 3**：统一连接创建
+
+```go
+func (s *ManagementAPIServer) getOrCreateHTTPLongPollingConn(clientID int64) *session.ServerHTTPLongPollingConn {
+    // 1. 创建 ServerHTTPLongPollingConn（实现 net.Conn）
+    httppollConn := session.NewServerHTTPLongPollingConn(clientID)
+    
+    // 2. ✅ 统一使用 CreateConnection，就像 TCP/WebSocket/QUIC 一样
+    conn, err := s.sessionMgr.CreateConnection(httppollConn, httppollConn)
+    if err != nil {
+        return nil
+    }
+    
+    // 3. 设置协议类型
+    conn.Protocol = "httppoll"
+    
+    // 4. 后续握手、数据包处理都通过 StreamProcessor 统一处理
+    return httppollConn
+}
+```
+
+**步骤 4**：移除 `HTTPLongPollingManager`
+
+- 删除 `internal/protocol/session/httppoll_manager.go`
+- 删除 `forwardPushData`/`forwardPollData` 逻辑
+- 删除临时连接、poll reader 等复杂概念
+
+#### 3.3.3 数据流转换（统一架构）
+
+**关键点**：HTTP 长轮询的数据流与其他协议完全一致，都通过 `StreamProcessor` 处理。
+
+**数据流**：
+
+```
+客户端：
+  StreamProcessor.WritePacket()
+    ↓
+  HTTPLongPollingConn.Write() → HTTP POST (Base64编码)
+    ↓
+  服务器接收
+
+服务器：
+  HTTP POST → Base64解码 → ServerHTTPLongPollingConn.PushData()
+    ↓
+  ServerHTTPLongPollingConn.Read() → StreamProcessor.ReadPacket()
+    ↓
+  统一处理（握手、命令、数据包）
+
+服务器：
+  StreamProcessor.WritePacket()
+    ↓
+  ServerHTTPLongPollingConn.Write() → pollDataChan
+    ↓
+  ServerHTTPLongPollingConn.PollData() → HTTP GET 响应 (Base64编码)
+
+客户端：
+  HTTP GET 响应 → Base64解码 → HTTPLongPollingConn.pollLoop()
+    ↓
+  HTTPLongPollingConn.Read() → StreamProcessor.ReadPacket()
+    ↓
+  统一处理
+```
+
+**优势**：
+- 数据格式完全统一：所有协议都使用 `StreamProcessor` 的序列化格式
+- 不需要特殊的数据转换逻辑
+- 代码路径统一，易于调试和维护
 
 ## 4. 性能优化
 
@@ -1029,9 +1090,9 @@ type HTTPLongPollingServerConfig struct {
 3. HTTP/2 支持
 4. 监控和统计
 
-## 12. 数据流详细设计
+## 12. 数据流详细设计（统一架构）
 
-### 12.1 客户端数据流
+### 12.1 客户端数据流（上行）
 
 ```
 应用程序数据
@@ -1040,110 +1101,199 @@ StreamProcessor.WritePacket()
     ↓
 TransferPacket 序列化（二进制）
     ↓
+HTTPLongPollingConn.Write() 
+    ↓
+writeFlushLoop 检测完整包
+    ↓
 Base64 编码
     ↓
-HTTP POST /api/v1/tunnox/push
+HTTP POST /tunnox/v1/push
     ↓
 服务器接收
 ```
 
-### 12.2 服务器数据流
+### 12.2 服务器数据流（上行）
 
 ```
-StreamProcessor 输出
+HTTP POST /tunnox/v1/push
+    ↓
+Base64 解码
+    ↓
+ServerHTTPLongPollingConn.PushData()
+    ↓
+ServerHTTPLongPollingConn.Read() (被 StreamProcessor 调用)
+    ↓
+StreamProcessor.ReadPacket()
+    ↓
+统一处理（握手、命令、数据包）
+```
+
+### 12.3 服务器数据流（下行）
+
+```
+StreamProcessor.WritePacket()
     ↓
 TransferPacket 序列化（二进制）
     ↓
+ServerHTTPLongPollingConn.Write() (被 StreamProcessor 调用)
+    ↓
+写入 pollDataChan
+    ↓
+ServerHTTPLongPollingConn.PollData() (handleHTTPPoll 调用)
+    ↓
 Base64 编码
     ↓
-缓存到输出队列
-    ↓
-HTTP GET /api/v1/tunnox/poll (长轮询)
-    ↓
-返回 JSON 响应
+HTTP GET /tunnox/v1/poll 响应
 ```
 
-### 12.3 数据格式转换
+### 12.4 客户端数据流（下行）
 
-**关键实现**：需要创建一个适配层，将 HTTP 请求/响应与 StreamProcessor 连接。
-
-```go
-// HTTPLongPollingStreamAdapter 适配器
-type HTTPLongPollingStreamAdapter struct {
-    pushConn *HTTPPushConn
-    pollConn *HTTPPollConn
-    stream   stream.PackageStreamer
-}
-
-// 从 HTTP POST 接收数据，写入 StreamProcessor
-func (a *HTTPLongPollingStreamAdapter) handlePushData(data []byte) {
-    // Base64 解码
-    decoded, _ := base64.StdEncoding.DecodeString(string(data))
-    
-    // 反序列化为 TransferPacket
-    pkt := deserializeTransferPacket(decoded)
-    
-    // 写入 StreamProcessor
-    a.stream.WritePacket(pkt, false, 0)
-}
-
-// 从 StreamProcessor 读取数据，通过 HTTP GET 返回
-func (a *HTTPLongPollingStreamAdapter) handlePollRequest() []byte {
-    // 从 StreamProcessor 读取
-    pkt, _, err := a.stream.ReadPacket()
-    if err != nil {
-        return nil
-    }
-    
-    // 序列化 TransferPacket
-    serialized := serializeTransferPacket(pkt)
-    
-    // Base64 编码
-    encoded := base64.StdEncoding.EncodeToString(serialized)
-    
-    return []byte(encoded)
-}
+```
+HTTP GET /tunnox/v1/poll 响应
+    ↓
+Base64 解码
+    ↓
+HTTPLongPollingConn.pollLoop()
+    ↓
+写入 readChan
+    ↓
+HTTPLongPollingConn.Read() (被 StreamProcessor 调用)
+    ↓
+StreamProcessor.ReadPacket()
+    ↓
+统一处理
 ```
 
-## 13. 连接生命周期管理
+### 12.5 关键设计点
+
+**统一性**：
+- 所有数据都通过 `StreamProcessor` 处理
+- 不需要特殊的数据转换逻辑
+- HTTP 层只负责 Base64 编码/解码
+
+**职责分离**：
+- `HTTPLongPollingConn` / `ServerHTTPLongPollingConn`：实现 `net.Conn`，处理 HTTP 请求/响应
+- `StreamProcessor`：处理数据包序列化/反序列化
+- `SessionManager`：统一管理所有连接
+
+## 13. 连接生命周期管理（统一架构）
 
 ### 13.1 客户端连接管理
 
-- **连接建立**：首次 HTTP POST/GET 请求时建立
+- **连接建立**：`dialHTTPLongPolling` → `HTTPLongPollingConn` → `StreamProcessor`
 - **连接保持**：通过长轮询保持连接活跃
 - **连接断开**：HTTP 请求超时或错误时断开
 - **自动重连**：检测到断开后自动重连
 
-### 13.2 服务器连接管理
+### 13.2 服务器连接管理（统一流程）
 
-- **连接注册**：HTTP 请求到达时注册连接
-- **连接超时**：30 秒无活动后清理连接
-- **数据缓存**：连接断开时缓存未推送的数据
-- **重连恢复**：客户端重连后推送缓存的数据
+- **连接建立**：`handleHTTPPush`/`handleHTTPPoll` → `ServerHTTPLongPollingConn` → `CreateConnection` → `StreamProcessor`
+- **连接注册**：通过 `CreateConnection` 自动注册到 `SessionManager`
+- **连接超时**：由 `SessionManager` 统一管理
+- **数据路由**：通过 `StreamProcessor` 统一处理，不需要特殊路由逻辑
 
-## 14. 与 SessionManager 集成
+### 13.3 与 SessionManager 集成（统一接口）
 
-### 14.1 连接注册
-
-当客户端通过 HTTP 长轮询连接时，需要在 `SessionManager` 中注册：
-
+**连接创建**：
 ```go
-// 在 handlePush 或 handlePoll 中
-sessionMgr.RegisterHTTPLongPollingConnection(clientID, httppollConn)
+// 服务器端（统一流程）
+httppollConn := session.NewServerHTTPLongPollingConn(clientID)
+conn, err := s.sessionMgr.CreateConnection(httppollConn, httppollConn)
+// 后续握手、数据包处理都通过 StreamProcessor 统一处理
 ```
 
-### 14.2 数据路由
-
-`SessionManager` 需要能够将数据路由到 HTTP 长轮询连接：
-
+**数据路由**：
 ```go
 // 当有数据需要发送给客户端时
-if httppollConn := sessionMgr.GetHTTPLongPollingConnection(clientID); httppollConn != nil {
-    httppollConn.SendData(data)
-}
+// 通过 StreamProcessor.WritePacket() 统一处理
+// ServerHTTPLongPollingConn.Write() 会自动将数据发送到 pollDataChan
+// handleHTTPPoll 会从 pollDataChan 读取并返回给客户端
 ```
 
-## 15. 后续优化方向
+**优势**：
+- 不需要 `RegisterHTTPLongPollingConnection` 等特殊方法
+- 不需要 `GetHTTPLongPollingConnection` 等特殊查找逻辑
+- 所有协议都使用相同的 `CreateConnection` 接口
+
+## 15. 架构对比与重构方案
+
+### 15.1 当前架构问题
+
+**问题 1：服务器端混层**
+- 使用了 `HTTPLongPollingManager` 特殊管理器
+- 需要 `forwardPushData`/`forwardPollData` 转发逻辑
+- 需要临时连接、poll reader 等复杂概念
+- 与其他协议不一致
+
+**问题 2：职责不清**
+- 协议适配器应该只负责实现 `net.Conn`
+- 但当前实现把数据转发、连接管理都混在一起
+
+**问题 3：代码复杂**
+- `httppoll_manager.go` 有 600+ 行代码
+- 包含大量特殊处理逻辑
+- 难以维护和扩展
+
+### 15.2 目标架构
+
+**统一原则**：
+```
+所有协议都遵循相同的模式：
+  协议适配器（实现 net.Conn） → CreateConnection → StreamProcessor → 统一处理
+```
+
+**架构对比**：
+
+| 协议 | 客户端 | 服务器端 |
+|------|--------|----------|
+| TCP | `net.Dial` → `StreamProcessor` ✅ | `AcceptConnection` → `StreamProcessor` ✅ |
+| WebSocket | `websocketStreamConn` → `StreamProcessor` ✅ | `AcceptConnection` → `StreamProcessor` ✅ |
+| QUIC | `quicStreamConn` → `StreamProcessor` ✅ | `AcceptConnection` → `StreamProcessor` ✅ |
+| UDP | `udpStreamConn` → `StreamProcessor` ✅ | `AcceptConnection` → `StreamProcessor` ✅ |
+| HTTP Long Polling | `HTTPLongPollingConn` → `StreamProcessor` ✅ | `ServerHTTPLongPollingConn` → `StreamProcessor` ✅ |
+
+### 15.3 重构步骤
+
+**阶段 1：创建 ServerHTTPLongPollingConn**
+1. 创建 `internal/protocol/session/httppoll_server_conn.go`
+2. 实现 `net.Conn` 接口
+3. 实现 `PushData()` 和 `PollData()` 方法
+
+**阶段 2：修改 HTTP 处理器**
+1. 修改 `handleHTTPPush`：使用 `ServerHTTPLongPollingConn.PushData()`
+2. 修改 `handleHTTPPoll`：使用 `ServerHTTPLongPollingConn.PollData()`
+3. 统一使用 `CreateConnection` 创建连接
+
+**阶段 3：移除特殊逻辑**
+1. 删除 `HTTPLongPollingManager`
+2. 删除 `forwardPushData`/`forwardPollData`
+3. 删除临时连接、poll reader 等概念
+4. 简化 `handlers_httppoll.go`
+
+**阶段 4：测试验证**
+1. 测试握手流程
+2. 测试数据收发
+3. 测试连接管理
+4. 性能对比测试
+
+### 15.4 预期收益
+
+**代码简化**：
+- 删除 `httppoll_manager.go`（~600 行）
+- 简化 `handlers_httppoll.go`（减少 ~200 行）
+- 总代码量减少 ~40%
+
+**架构统一**：
+- 所有协议使用相同的连接创建流程
+- 所有协议使用相同的 `StreamProcessor` 处理
+- 代码路径统一，易于调试
+
+**维护性提升**：
+- 职责清晰，易于理解
+- 新增协议只需实现 `net.Conn`
+- 减少特殊逻辑，降低 bug 风险
+
+## 16. 后续优化方向
 
 1. **HTTP/2 Server Push**：利用 HTTP/2 的服务器推送功能，减少轮询延迟
 2. **WebSocket 降级**：HTTP 长轮询作为 WebSocket 的降级方案

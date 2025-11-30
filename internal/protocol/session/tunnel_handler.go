@@ -6,15 +6,15 @@ import (
 
 // TunnelHandler 隧道处理器接口（避免循环依赖）
 type TunnelHandler interface {
-	HandleTunnelOpen(conn *ClientConnection, req *packet.TunnelOpenRequest) error
+	HandleTunnelOpen(conn ControlConnectionInterface, req *packet.TunnelOpenRequest) error
 	// ✅ HandleTunnelData 和 HandleTunnelClose 已删除
 	// 前置包后直接 io.Copy，不再有数据包
 }
 
 // AuthHandler 认证处理器接口
 type AuthHandler interface {
-	HandleHandshake(conn *ClientConnection, req *packet.HandshakeRequest) (*packet.HandshakeResponse, error)
-	GetClientConfig(conn *ClientConnection) (string, error)
+	HandleHandshake(conn ControlConnectionInterface, req *packet.HandshakeRequest) (*packet.HandshakeResponse, error)
+	GetClientConfig(conn ControlConnectionInterface) (string, error)
 }
 
 // ============================================================================

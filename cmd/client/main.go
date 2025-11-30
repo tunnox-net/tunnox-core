@@ -19,12 +19,13 @@ import (
 func main() {
 	// 解析命令行参数
 	configFile := flag.String("config", "", "path to config file (optional)")
-	protocol := flag.String("p", "", "protocol: tcp/websocket/ws/udp/quic (overrides config)")
+	protocol := flag.String("p", "", "protocol: tcp/websocket/ws/udp/quic/httppoll (overrides config)")
 	serverAddr := flag.String("s", "", "server address (e.g., localhost:7001, overrides config)")
 	clientID := flag.Int64("id", 0, "client ID (overrides config)")
 	deviceID := flag.String("device", "", "device ID for anonymous mode (overrides config)")
 	authToken := flag.String("token", "", "auth token (overrides config)")
 	anonymous := flag.Bool("anonymous", false, "use anonymous mode (overrides config)")
+	logFile := flag.String("log", "", "log file path (overrides config file)")
 	daemon := flag.Bool("daemon", false, "run in daemon mode (no interactive CLI)")
 	interactive := flag.Bool("interactive", true, "run in interactive mode with CLI (default)")
 	help := flag.Bool("h", false, "show help")
@@ -47,8 +48,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 配置日志输出
-	logFile, err := configureLogging(config, runInteractive)
+	// 配置日志输出（如果指定了日志文件路径，覆盖配置）
+	if *logFile != "" {
+		expandedPath, err := utils.ExpandPath(*logFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to expand log file path %q: %v\n", *logFile, err)
+			os.Exit(1)
+		}
+		config.Log.File = expandedPath
+		// 确保日志目录存在
+		logDir := filepath.Dir(expandedPath)
+		if err := os.MkdirAll(logDir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to create log directory %q: %v\n", logDir, err)
+			os.Exit(1)
+		}
+	}
+	
+	logFilePath, err := configureLogging(config, runInteractive)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to configure logging: %v\n", err)
 		os.Exit(1)
@@ -64,8 +80,8 @@ func main() {
 		} else {
 			fmt.Printf("   Mode:     Authenticated (client_id: %d)\n", config.ClientID)
 		}
-		if logFile != "" {
-			fmt.Printf("   Logs:     %s\n", logFile)
+		if logFilePath != "" {
+			fmt.Printf("   Logs:     %s\n", logFilePath)
 		}
 		fmt.Printf("\n")
 	}
@@ -90,8 +106,10 @@ func main() {
 		}
 
 		// 交互模式：尝试启动CLI
+		utils.Infof("Client: initializing CLI...")
 		tunnoxCLI, err := cli.NewCLI(ctx, tunnoxClient)
 		if err != nil {
+			utils.Errorf("Client: CLI initialization failed: %v", err)
 			// CLI初始化失败（通常是因为没有TTY），自动降级到daemon模式
 			fmt.Fprintf(os.Stderr, "\n⚠️  CLI initialization failed: %v\n", err)
 			fmt.Fprintf(os.Stderr, "🔄 Auto-switching to daemon mode...\n")
@@ -130,6 +148,7 @@ func main() {
 			}
 		} else {
 			// CLI初始化成功，正常启动交互模式
+			utils.Infof("Client: CLI initialized successfully, starting...")
 			// 启动自动重连监控（交互模式也需要自动重连）
 			go monitorConnectionAndReconnect(ctx, tunnoxClient)
 
@@ -148,7 +167,9 @@ func main() {
 			}()
 
 			// 启动CLI（阻塞）
+			utils.Infof("Client: calling CLI.Start()...")
 			tunnoxCLI.Start()
+			utils.Infof("Client: CLI.Start() returned")
 		}
 
 	} else {
@@ -261,7 +282,7 @@ func validateConfig(config *client.ClientConfig, setDefaults bool) error {
 		config.Server.Protocol = normalizeProtocol(config.Server.Protocol)
 
 		// 验证协议
-		validProtocols := []string{"tcp", "websocket", "udp", "quic"}
+		validProtocols := []string{"tcp", "websocket", "udp", "quic", "httppoll", "http-long-polling", "httplp"}
 		valid := false
 		for _, p := range validProtocols {
 			if config.Server.Protocol == p {
@@ -270,7 +291,7 @@ func validateConfig(config *client.ClientConfig, setDefaults bool) error {
 			}
 		}
 		if !valid {
-			return fmt.Errorf("invalid protocol: %s (must be one of: tcp, websocket, udp, quic)", config.Server.Protocol)
+			return fmt.Errorf("invalid protocol: %s (must be one of: tcp, websocket, udp, quic, httppoll)", config.Server.Protocol)
 		}
 	}
 	// 如果协议为空且地址也为空，说明是自动连接模式，协议会在自动连接时确定
@@ -309,12 +330,13 @@ USAGE:
 OPTIONS:
     Connection:
       -config <file>     Path to config file (optional)
-      -p <protocol>      Protocol: tcp/websocket/ws/udp/quic
+      -p <protocol>      Protocol: tcp/websocket/ws/udp/quic/httppoll
       -s <address>       Server address (e.g., localhost:7001)
       -id <client_id>    Client ID for authenticated mode
       -token <token>     Auth token for authenticated mode
       -device <id>       Device ID for anonymous mode
       -anonymous         Use anonymous mode
+      -log <file>        Log file path (overrides config file)
 
     Mode:
       -interactive       Run in interactive mode with CLI (default)

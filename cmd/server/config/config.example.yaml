@@ -2,13 +2,6 @@
 # 服务器配置文件示例 - 请复制为 config.yaml 并根据需要修改
 
 server:
-  # 服务器监听配置
-  host: "0.0.0.0"           # 监听地址
-  port: 8080                # 监听端口
-  read_timeout: 30          # 读取超时（秒）
-  write_timeout: 30         # 写入超时（秒）
-  idle_timeout: 60          # 空闲超时（秒）
-  
   # 多协议监听配置
   protocols:
     tcp:
@@ -27,20 +20,6 @@ server:
       enabled: true
       port: 8083
       host: "0.0.0.0"
-  
-  # 安全配置
-  cors:
-    allowed_origins: ["*"]  # 允许的源
-    allowed_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    allowed_headers: ["Content-Type", "Authorization", "X-Request-ID"]
-    allow_credentials: true
-    max_age: 43200          # 预检请求缓存时间（秒）
-
-  # 限流配置
-  rate_limit:
-    enabled: true
-    requests_per_minute: 1000
-    burst_size: 100
 
 log:
   # 日志级别: debug, info, warn, error, fatal, panic
@@ -89,56 +68,45 @@ cloud:
     api_secret: ""
     timeout: 30
 
-# 性能配置
-performance:
-  # 内存池配置
-  buffer_pool:
-    initial_size: 1000         # 初始缓冲区数量
-    max_size: 10000           # 最大缓冲区数量
-    buffer_size: 4096         # 缓冲区大小（字节）
-  
-  # 连接池配置
-  connection_pool:
-    max_connections: 1000     # 最大连接数
-    idle_timeout: 300         # 空闲超时（秒）
-    max_lifetime: 3600        # 最大生存时间（秒）
+# 消息代理配置
+message_broker:
+  type: "memory"  # memory | redis
+  # 如需使用 Redis，取消下面的注释并配置
+  # redis:
+  #   addr: "localhost:6379"
+  #   password: ""
+  #   db: 0
+  #   pool_size: 10
 
-# 监控配置
-monitoring:
-  # 指标收集
-  metrics:
-    enabled: true
-    port: 9090                # 指标端口
-    path: "/metrics"          # 指标路径
+# 存储配置
+storage:
+  # 存储类型: memory | redis | hybrid
+  type: hybrid
   
-  # 健康检查
-  health_check:
-    enabled: true
-    interval: 30              # 检查间隔（秒）
-    timeout: 5                # 超时时间（秒）
+  # 混合存储配置
+  hybrid:
+    cache_type: memory        # memory | redis
+    enable_persistent: true    # 是否启用持久化
+  # 如需使用 Redis，取消下面的注释并配置
+  # redis:
+  #   addr: "localhost:6379"
+  #   password: ""
+  #   db: 0
+  #   pool_size: 10
 
-# 安全配置
-security:
-  # TLS 配置
-  tls:
-    enabled: false
-    cert_file: "certs/server.crt"
-    key_file: "certs/server.key"
+# Management API 配置
+management_api:
+    enabled: true
+  listen_addr: "0.0.0.0:9000"
   
   # 认证配置
   auth:
-    # 管理员用户
-    admin:
-      username: "admin"
-      password: "admin123"    # 生产环境请使用强密码
-    
-    # API 密钥认证
-    api_keys:
-      enabled: false
-      keys: []                # API 密钥列表
-
-# 开发配置
-development:
-  debug: false               # 调试模式
-  hot_reload: false          # 热重载
-  profiling: false           # 性能分析 
+    type: "bearer"            # bearer | basic | none
+    token: "your-api-key-here" # Bearer token（请修改为安全的密钥）
+  
+  # PProf 性能分析配置
+  pprof:
+    enabled: true              # 是否启用 pprof（默认启用，需要密钥访问）
+    data_dir: "logs/pprof"     # pprof 数据保存目录
+    retention: 10              # 保留分钟数（默认10分钟，最多保留10份文件）
+    auto_capture: true         # 是否自动抓取（每分钟抓取一次） 

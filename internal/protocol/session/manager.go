@@ -122,6 +122,7 @@ type SessionManager struct {
 	tunnelStateManager *TunnelStateManager
 	migrationManager   *TunnelMigrationManager
 
+
 	dispose.Dispose
 }
 
@@ -167,6 +168,7 @@ func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.C
 		tunnelHandler:   nil,
 		authHandler:     nil,
 	}
+
 
 	// 设置资源清理回调
 	session.SetCtx(parentCtx, session.onClose)
@@ -232,6 +234,12 @@ func (s *SessionManager) SetReconnectTokenManager(manager *security.ReconnectTok
 func (s *SessionManager) GetStreamManager() *stream.StreamManager {
 	return s.streamMgr
 }
+
+// GetStreamFactory 获取流工厂
+func (s *SessionManager) GetStreamFactory() stream.StreamFactory {
+	return s.streamFactory
+}
+
 
 // ============================================================================
 // 资源清理

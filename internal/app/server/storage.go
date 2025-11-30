@@ -127,15 +127,13 @@ func createHybridStorage(factory *storage.StorageFactory, config *StorageConfig)
 		}
 	}
 
-	// 准备混合存储配置
+	// 准备混合存储配置（使用默认的前缀配置，这些是内部实现细节）
 	hybridConfig := &storage.HybridStorageConfig{
 		CacheType:        cacheType,
 		EnablePersistent: enablePersistent,
-		HybridConfig: &storage.HybridConfig{
-			PersistentPrefixes: config.Hybrid.PersistentPrefixes,
-			EnablePersistent:   enablePersistent,
-		},
+		HybridConfig:     storage.DefaultHybridConfig(), // 使用默认配置（包含默认前缀）
 	}
+	hybridConfig.HybridConfig.EnablePersistent = enablePersistent
 
 	// 如果缓存类型是 Redis，提供 Redis 配置
 	if cacheType == "redis" {

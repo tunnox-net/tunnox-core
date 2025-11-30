@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 	"tunnox-core/internal/api"
 	internalbridge "tunnox-core/internal/bridge"
@@ -260,6 +261,8 @@ func (s *Server) Stop() error {
 func (s *Server) Run() error {
 	// 设置协议适配器（但不启动服务）
 	if err := s.setupProtocolAdapters(); err != nil {
+		// 确保错误信息输出到控制台
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to setup protocol adapters: %v\n", err)
 		return fmt.Errorf("failed to setup protocol adapters: %v", err)
 	}
 

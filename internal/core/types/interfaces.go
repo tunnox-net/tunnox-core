@@ -6,6 +6,7 @@ import (
 	"net"
 	"reflect"
 	"time"
+	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 )
@@ -91,10 +92,10 @@ type Session interface {
 
 	// 事件驱动相关方法
 	// SetEventBus 设置事件总线
-	SetEventBus(eventBus interface{}) error
+	SetEventBus(eventBus events.EventBus) error
 
 	// GetEventBus 获取事件总线
-	GetEventBus() interface{}
+	GetEventBus() events.EventBus
 
 	// ==================== Command集成相关方法 ====================
 	// RegisterCommandHandler 注册命令处理器

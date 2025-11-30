@@ -174,7 +174,8 @@ func (s *TestAPIServer) GetBaseURL() string {
 
 // GetAPIURL 获取API基础URL
 func (s *TestAPIServer) GetAPIURL() string {
-	return fmt.Sprintf("http://%s/api/v1", s.address)
+	// 使用统一的 API 路径：/tunnox/v1（API 路由直接注册在 /tunnox/v1 下）
+	return fmt.Sprintf("http://%s/tunnox/v1", s.address)
 }
 
 // GetCloudControl 获取CloudControl实例

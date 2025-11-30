@@ -13,13 +13,12 @@ import (
 // ============================================================================
 
 // SetEventBus 设置事件总线
-func (s *SessionManager) SetEventBus(eventBus interface{}) error {
+func (s *SessionManager) SetEventBus(eventBus events.EventBus) error {
 	if eventBus == nil {
 		return fmt.Errorf("event bus cannot be nil")
 	}
 
-	if eb, ok := eventBus.(events.EventBus); ok {
-		s.eventBus = eb
+	s.eventBus = eventBus
 		s.responseManager = NewResponseManager(s, s.Ctx())
 
 		// 订阅断开连接请求事件
@@ -29,13 +28,10 @@ func (s *SessionManager) SetEventBus(eventBus interface{}) error {
 
 		utils.Debug("Event bus configured in SessionManager")
 		return nil
-	}
-
-	return fmt.Errorf("invalid event bus type")
 }
 
 // GetEventBus 获取事件总线
-func (s *SessionManager) GetEventBus() interface{} {
+func (s *SessionManager) GetEventBus() events.EventBus {
 	return s.eventBus
 }
 

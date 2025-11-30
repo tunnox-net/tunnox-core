@@ -9,16 +9,9 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// ControlConnectionAccessor 控制连接访问器接口
-type ControlConnectionAccessor interface {
-	GetConnID() string
-	GetRemoteAddr() string
-	GetStream() *stream.StreamProcessor
-}
-
-// getStreamFromConnection 从控制连接获取StreamProcessor
-// 返回streamProcessor, connID, remoteAddr, error
-func getStreamFromConnection(connInterface interface{}, clientID int64) (*stream.StreamProcessor, string, string, error) {
+// getStreamFromConnection 从控制连接获取Stream
+// 返回stream, connID, remoteAddr, error
+func getStreamFromConnection(connInterface interface{}, clientID int64) (stream.PackageStreamer, string, string, error) {
 	if connInterface == nil {
 		return nil, "", "", fmt.Errorf("connection interface is nil")
 	}
@@ -34,7 +27,7 @@ func getStreamFromConnection(connInterface interface{}, clientID int64) (*stream
 
 	// 回退方案：使用反射式接口
 	var connID, remoteAddr string
-	var streamProcessor *stream.StreamProcessor
+	var streamProcessor stream.PackageStreamer
 
 	// 获取ConnID
 	type hasConnID interface {
@@ -52,20 +45,14 @@ func getStreamFromConnection(connInterface interface{}, clientID int64) (*stream
 		remoteAddr = v.GetRemoteAddr()
 	}
 
-	// 获取Stream
+	// 获取Stream（使用接口类型）
 	type hasGetStream interface {
-		GetStream() interface{}
+		GetStream() stream.PackageStreamer
 	}
 	if hs, ok := connInterface.(hasGetStream); ok {
-		streamInterface := hs.GetStream()
-		if streamInterface == nil {
+		streamProcessor = hs.GetStream()
+		if streamProcessor == nil {
 			return nil, connID, remoteAddr, fmt.Errorf("stream is nil")
-		}
-
-		var ok bool
-		streamProcessor, ok = streamInterface.(*stream.StreamProcessor)
-		if !ok {
-			return nil, connID, remoteAddr, fmt.Errorf("stream type assertion failed, got type %T", streamInterface)
 		}
 	} else {
 		return nil, connID, remoteAddr, fmt.Errorf("connection does not implement GetStream()")
@@ -75,7 +62,7 @@ func getStreamFromConnection(connInterface interface{}, clientID int64) (*stream
 }
 
 // sendPacketAsync 异步发送数据包（带超时）
-func sendPacketAsync(streamProcessor *stream.StreamProcessor, pkt *packet.TransferPacket, clientID int64, timeout time.Duration) {
+func sendPacketAsync(streamProcessor stream.PackageStreamer, pkt *packet.TransferPacket, clientID int64, timeout time.Duration) {
 	go func() {
 		done := make(chan error, 1)
 		

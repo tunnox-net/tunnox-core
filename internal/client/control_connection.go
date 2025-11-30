@@ -13,6 +13,13 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+// ClientIDUpdater 协议层 clientID 更新接口
+// 某些协议（如 HTTP Long Polling）需要在协议层（HTTP 请求头）使用 clientID
+// 这些协议需要在握手后更新协议层的 clientID，但不影响指令通道的统一处理
+type ClientIDUpdater interface {
+	UpdateClientID(clientID int64)
+}
+
 // Connect 连接到服务器并建立指令连接
 func (c *TunnoxClient) Connect() error {
 	// 如果配置中没有地址，使用自动连接
@@ -42,6 +49,20 @@ func (c *TunnoxClient) Connect() error {
 		conn, err = dialWebSocket(c.Ctx(), c.config.Server.Address)
 	case "quic":
 		conn, err = dialQUIC(c.Ctx(), c.config.Server.Address)
+	case "httppoll", "http-long-polling", "httplp":
+		// HTTP 长轮询使用 AuthToken 或 SecretKey
+		token := c.config.AuthToken
+		if token == "" && c.config.Anonymous {
+			token = c.config.SecretKey
+		}
+		// 首次握手时，对于匿名客户端，必须使用 clientID=0
+		// 对于已注册客户端，使用配置的 clientID
+		clientID := c.config.ClientID
+		if c.config.Anonymous {
+			// 匿名客户端首次握手，强制使用 0（不管配置文件中是否有保存的 ClientID）
+			clientID = 0
+		}
+		conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, clientID, token)
 	default:
 		return fmt.Errorf("unsupported server protocol: %s", protocol)
 	}
@@ -232,20 +253,34 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		return fmt.Errorf("failed to send handshake: %w", err)
 	}
 
-	// 等待握手响应
-	respPkt, _, err := stream.ReadPacket()
-	if err != nil {
-		return fmt.Errorf("failed to read handshake response: %w", err)
+	// 等待握手响应（忽略心跳包）
+	var respPkt *packet.TransferPacket
+	for {
+		pkt, _, err := stream.ReadPacket()
+		if err != nil {
+			return fmt.Errorf("failed to read handshake response: %w", err)
+		}
+
+		// 忽略压缩/加密标志，只检查基础类型
+		baseType := pkt.PacketType & 0x3F
+		if baseType == packet.Heartbeat {
+			// 收到心跳包，继续等待握手响应
+			utils.Debugf("Client: received heartbeat during handshake, ignoring")
+			continue
+		}
+
+		if baseType == packet.HandshakeResp {
+			respPkt = pkt
+			break
+		}
+
+		// 收到其他类型的包，返回错误
+		return fmt.Errorf("unexpected response type: %v (expected HandshakeResp)", pkt.PacketType)
 	}
 
 	utils.Debugf("Client: received response PacketType=%d, Payload len=%d", respPkt.PacketType, len(respPkt.Payload))
 	if len(respPkt.Payload) > 0 {
 		utils.Debugf("Client: Payload=%s", string(respPkt.Payload))
-	}
-
-	// 忽略压缩/加密标志，只检查基础类型
-	if respPkt.PacketType&0x3F != packet.HandshakeResp {
-		return fmt.Errorf("unexpected response type: %v", respPkt.PacketType)
 	}
 
 	var resp packet.HandshakeResponse
@@ -273,11 +308,24 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 			if err := c.saveAnonymousCredentials(); err != nil {
 				utils.Warnf("Client: failed to save anonymous credentials: %v", err)
 			}
+
+			// ✅ 更新协议层的 clientID（仅对需要协议层 clientID 的协议，如 HTTP Long Polling）
+			// 注意：这不会影响指令通道的统一处理，指令包仍然通过 StreamProcessor 统一处理
+			if updater, ok := c.controlConn.(ClientIDUpdater); ok {
+				utils.Debugf("Client: updating protocol layer clientID to %d", resp.ClientID)
+				updater.UpdateClientID(resp.ClientID)
+			} else {
+				utils.Debugf("Client: controlConn does not implement ClientIDUpdater interface")
+			}
 		} else if resp.Message != "" {
 			// 兼容旧版本：从Message解析ClientID
 			var assignedClientID int64
 			if _, err := fmt.Sscanf(resp.Message, "Anonymous client authenticated, client_id=%d", &assignedClientID); err == nil {
 				c.config.ClientID = assignedClientID
+				// ✅ 更新协议层的 clientID（仅对需要协议层 clientID 的协议）
+				if updater, ok := c.controlConn.(ClientIDUpdater); ok {
+					updater.UpdateClientID(assignedClientID)
+				}
 			}
 		}
 	}
@@ -481,17 +529,8 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 	case "tcp":
 		conn, err = net.DialTimeout("tcp", address, 10*time.Second)
 		if err == nil {
-			if tcpConn, ok := conn.(*net.TCPConn); ok {
-				if err := tcpConn.SetKeepAlive(true); err != nil {
-					_ = err
-				}
-				if err := tcpConn.SetKeepAlivePeriod(30 * time.Second); err != nil {
-					_ = err
-				}
-				if err := tcpConn.SetNoDelay(true); err != nil {
-					_ = err
-				}
-			}
+			// 使用接口而不是具体类型
+			SetKeepAliveIfSupported(conn, true)
 		}
 	case "udp":
 		conn, err = dialUDPControlConnection(address)
@@ -499,6 +538,18 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 		conn, err = dialWebSocket(c.Ctx(), address)
 	case "quic":
 		conn, err = dialQUIC(c.Ctx(), address)
+	case "httppoll", "http-long-polling", "httplp":
+		// HTTP 长轮询使用 AuthToken 或 SecretKey
+		token := c.config.AuthToken
+		if token == "" && c.config.Anonymous {
+			token = c.config.SecretKey
+		}
+		// 首次握手时，对于匿名客户端，必须使用 clientID=0
+		clientID := c.config.ClientID
+		if c.config.Anonymous {
+			clientID = 0
+		}
+		conn, err = dialHTTPLongPolling(c.Ctx(), address, clientID, token)
 	default:
 		return fmt.Errorf("unsupported server protocol: %s", protocol)
 	}

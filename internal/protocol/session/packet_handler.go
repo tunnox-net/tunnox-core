@@ -3,12 +3,9 @@ package session
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
-	"time"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
 
@@ -75,11 +72,13 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		isControlConnection = true
 	}
 
-	var clientConn *ControlConnection
+	var clientConn ControlConnectionInterface
 	if isControlConnection {
 		// 获取或创建控制连接
-		clientConn = s.getControlConnectionByConnID(connPacket.ConnectionID)
-		if clientConn == nil {
+		existingConn := s.getControlConnectionByConnID(connPacket.ConnectionID)
+		if existingConn != nil {
+			clientConn = existingConn
+		} else {
 			// 获取底层连接信息
 			conn := s.getConnectionByConnID(connPacket.ConnectionID)
 			if conn == nil {
@@ -96,8 +95,9 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 			if conn.RawConn != nil {
 				remoteAddr = conn.RawConn.RemoteAddr()
 			}
-			clientConn = NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
-			s.RegisterControlConnection(clientConn)
+			newConn := NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
+			s.RegisterControlConnection(newConn)
+			clientConn = newConn
 		}
 	} else {
 		conn := s.getConnectionByConnID(connPacket.ConnectionID)
@@ -112,10 +112,11 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		if conn.RawConn != nil {
 			remoteAddr = conn.RawConn.RemoteAddr()
 		}
-		clientConn = NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
+		newConn := NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
 		s.controlConnLock.Lock()
-		s.controlConnMap[connPacket.ConnectionID] = clientConn
+		s.controlConnMap[connPacket.ConnectionID] = newConn
 		s.controlConnLock.Unlock()
+		clientConn = newConn
 	}
 
 	// 调用 authHandler 处理
@@ -136,30 +137,34 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		return err
 	}
 
-	if isControlConnection && clientConn.Authenticated && clientConn.ClientID > 0 {
+	if isControlConnection && clientConn.IsAuthenticated() && clientConn.GetClientID() > 0 {
 		s.controlConnLock.Lock()
-		oldConn, exists := s.clientIDIndexMap[clientConn.ClientID]
-		if exists && oldConn != nil && oldConn.ConnID != clientConn.ConnID {
+		oldConn, exists := s.clientIDIndexMap[clientConn.GetClientID()]
+		if exists && oldConn != nil && oldConn.GetConnID() != clientConn.GetConnID() {
 			utils.Warnf("Client %d reconnected: oldConnID=%s, newConnID=%s, cleaning up old connection",
-				clientConn.ClientID, oldConn.ConnID, clientConn.ConnID)
-			delete(s.controlConnMap, oldConn.ConnID)
+				clientConn.GetClientID(), oldConn.GetConnID(), clientConn.GetConnID())
+			delete(s.controlConnMap, oldConn.GetConnID())
 		}
-		s.clientIDIndexMap[clientConn.ClientID] = clientConn
+		// 需要将接口转换为具体类型存储（内部实现需要）
+		if concreteConn, ok := clientConn.(*ControlConnection); ok {
+			s.clientIDIndexMap[clientConn.GetClientID()] = concreteConn
+		}
 		s.controlConnLock.Unlock()
 
 		conn := s.getConnectionByConnID(connPacket.ConnectionID)
-		if conn != nil {
-			if sp, ok := conn.Stream.(*stream.StreamProcessor); ok {
-				reader := sp.GetReader()
-				if udpSessionConn, ok := reader.(interface{ SetControlConnection(bool) }); ok {
-					udpSessionConn.SetControlConnection(true)
-				}
+		if conn != nil && conn.Stream != nil {
+			// 使用接口获取 Reader，而不是类型断言
+			reader := conn.Stream.GetReader()
+
+			// 协议特定的握手后处理（通过统一的回调接口）
+			if handshakeHandler, ok := reader.(interface{ OnHandshakeComplete(clientID int64) }); ok {
+				handshakeHandler.OnHandshakeComplete(clientConn.GetClientID())
 			}
 		}
 	}
 
 	utils.Infof("Handshake succeeded for connection %s, ClientID=%d",
-		connPacket.ConnectionID, clientConn.ClientID)
+		connPacket.ConnectionID, clientConn.GetClientID())
 	return nil
 }
 
@@ -210,7 +215,7 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			if controlConn, exists := s.controlConnMap[connPacket.ConnectionID]; exists {
 				// 如果这个连接被错误注册为控制连接，移除它
 				delete(s.controlConnMap, connPacket.ConnectionID)
-				if controlConn.Authenticated && controlConn.ClientID > 0 {
+				if controlConn.IsAuthenticated() && controlConn.GetClientID() > 0 {
 					// 如果 clientIDIndexMap 中也指向这个连接，移除它
 					if currentControlConn, exists := s.clientIDIndexMap[controlConn.ClientID]; exists && currentControlConn.ConnID == connPacket.ConnectionID {
 						delete(s.clientIDIndexMap, controlConn.ClientID)
@@ -276,9 +281,9 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		s.controlConnLock.Lock()
 		if _, exists := s.controlConnMap[connPacket.ConnectionID]; exists {
 			delete(s.controlConnMap, connPacket.ConnectionID)
-			if clientConn.Authenticated && clientConn.ClientID > 0 {
-				if currentControlConn, exists := s.clientIDIndexMap[clientConn.ClientID]; exists && currentControlConn.ConnID == connPacket.ConnectionID {
-					delete(s.clientIDIndexMap, clientConn.ClientID)
+			if clientConn.IsAuthenticated() && clientConn.GetClientID() > 0 {
+				if currentControlConn, exists := s.clientIDIndexMap[clientConn.GetClientID()]; exists && currentControlConn.GetConnID() == connPacket.ConnectionID {
+					delete(s.clientIDIndexMap, clientConn.GetClientID())
 				}
 			}
 		}
@@ -305,9 +310,9 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		s.controlConnLock.Lock()
 		if controlConn, exists := s.controlConnMap[connPacket.ConnectionID]; exists {
 			delete(s.controlConnMap, connPacket.ConnectionID)
-			if controlConn.Authenticated && controlConn.ClientID > 0 {
-				if currentControlConn, exists := s.clientIDIndexMap[controlConn.ClientID]; exists && currentControlConn.ConnID == connPacket.ConnectionID {
-					delete(s.clientIDIndexMap, controlConn.ClientID)
+			if controlConn.IsAuthenticated() && controlConn.GetClientID() > 0 {
+				if currentControlConn, exists := s.clientIDIndexMap[controlConn.GetClientID()]; exists && currentControlConn.GetConnID() == connPacket.ConnectionID {
+					delete(s.clientIDIndexMap, controlConn.GetClientID())
 				}
 			}
 		}
@@ -326,7 +331,7 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 // ============================================================================
 
 // sendHandshakeResponse 发送握手响应
-func (s *SessionManager) sendHandshakeResponse(conn *ClientConnection, resp *packet.HandshakeResponse) error {
+func (s *SessionManager) sendHandshakeResponse(conn ControlConnectionInterface, resp *packet.HandshakeResponse) error {
 	// 序列化响应
 	respData, err := json.Marshal(resp)
 	if err != nil {
@@ -339,15 +344,20 @@ func (s *SessionManager) sendHandshakeResponse(conn *ClientConnection, resp *pac
 		Payload:    respData,
 	}
 
-	// 发送响应
-	if _, err := conn.Stream.WritePacket(respPacket, true, 0); err != nil {
-		return fmt.Errorf("failed to write handshake response: %w", err)
+	// 发送响应（统一通过 StreamProcessor 处理，所有协议都同步处理）
+	utils.Debugf("Sending handshake response to connection %s, ClientID=%d", conn.GetConnID(), conn.GetClientID())
+
+	if _, err := conn.GetStream().WritePacket(respPacket, true, 0); err != nil {
+		utils.Errorf("Failed to write handshake response to connection %s: %v", conn.GetConnID(), err)
+		return err
 	}
+
+	utils.Debugf("Handshake response written successfully to connection %s", conn.GetConnID())
 	return nil
 }
 
 // sendTunnelOpenResponse 发送隧道打开响应
-func (s *SessionManager) sendTunnelOpenResponse(conn *ClientConnection, resp *packet.TunnelOpenAckResponse) error {
+func (s *SessionManager) sendTunnelOpenResponse(conn ControlConnectionInterface, resp *packet.TunnelOpenAckResponse) error {
 	// 序列化响应
 	respData, err := json.Marshal(resp)
 	if err != nil {
@@ -361,7 +371,7 @@ func (s *SessionManager) sendTunnelOpenResponse(conn *ClientConnection, resp *pa
 	}
 
 	// 发送响应
-	if _, err := conn.Stream.WritePacket(respPacket, false, 0); err != nil {
+	if _, err := conn.GetStream().WritePacket(respPacket, false, 0); err != nil {
 		return fmt.Errorf("failed to write tunnel open response: %w", err)
 	}
 
@@ -390,74 +400,32 @@ func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, re
 	return nil
 }
 
+// ToNetConn 统一接口：将适配层连接转换为 net.Conn
+type ToNetConn interface {
+	ToNetConn() net.Conn
+}
+
 // extractNetConn 从types.Connection中提取底层的net.Conn
 func (s *SessionManager) extractNetConn(conn *types.Connection) net.Conn {
 	if conn.RawConn != nil {
 		return conn.RawConn
 	}
 
-	if sp, ok := conn.Stream.(*stream.StreamProcessor); ok {
-		if reader, ok := sp.GetReader().(net.Conn); ok {
-			return reader
+	if conn.Stream != nil {
+		// 使用接口获取 Reader，而不是类型断言
+		reader := conn.Stream.GetReader()
+
+		// 优先使用统一接口
+		if toNetConn, ok := reader.(ToNetConn); ok {
+			return toNetConn.ToNetConn()
 		}
-		reader := sp.GetReader()
-		if udpSessionConn, ok := reader.(interface {
-			Read([]byte) (int, error)
-			Write([]byte) (int, error)
-			Close() error
-		}); ok {
-			if _, hasPersistent := reader.(interface{ IsPersistent() bool }); hasPersistent {
-				return newUdpConnWrapper(udpSessionConn)
-			}
+
+		// 回退：直接实现 net.Conn
+		if netConn, ok := reader.(net.Conn); ok {
+			return netConn
 		}
 	}
 	return nil
-}
-
-// udpConnWrapper 将UDP会话连接包装成net.Conn
-type udpConnWrapper struct {
-	io.ReadWriteCloser
-	localAddr  net.Addr
-	remoteAddr net.Addr
-}
-
-func newUdpConnWrapper(conn io.ReadWriteCloser) net.Conn {
-	var localAddr, remoteAddr net.Addr
-
-	if sessionConn, ok := conn.(interface {
-		GetAddr() string
-	}); ok {
-		addrStr := sessionConn.GetAddr()
-		if addr, err := net.ResolveUDPAddr("udp", addrStr); err == nil {
-			remoteAddr = addr
-		}
-	}
-
-	return &udpConnWrapper{
-		ReadWriteCloser: conn,
-		localAddr:       localAddr,
-		remoteAddr:      remoteAddr,
-	}
-}
-
-func (w *udpConnWrapper) LocalAddr() net.Addr {
-	return w.localAddr
-}
-
-func (w *udpConnWrapper) RemoteAddr() net.Addr {
-	return w.remoteAddr
-}
-
-func (w *udpConnWrapper) SetDeadline(t time.Time) error {
-	return nil // UDP不支持deadline
-}
-
-func (w *udpConnWrapper) SetReadDeadline(t time.Time) error {
-	return nil // UDP不支持read deadline
-}
-
-func (w *udpConnWrapper) SetWriteDeadline(t time.Time) error {
-	return nil // UDP不支持write deadline
 }
 
 // notifyTargetClientToOpenTunnel 通知目标客户端建立隧道连接

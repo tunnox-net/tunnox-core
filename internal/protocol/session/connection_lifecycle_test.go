@@ -254,5 +254,5 @@ func TestConnectionCleanup_ConfigNil(t *testing.T) {
 
 	// config应该被设为默认值
 	require.NotNil(t, sessionMgr.config, "Config should be set to default if nil")
-	assert.Equal(t, 90*time.Second, sessionMgr.config.HeartbeatTimeout)
+	assert.Equal(t, 60*time.Second, sessionMgr.config.HeartbeatTimeout) // 默认值已更新为60秒
 }

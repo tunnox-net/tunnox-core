@@ -6,8 +6,25 @@ import (
 	"tunnox-core/internal/stream/compression"
 )
 
+// StreamReader 流读取器接口（用于获取底层 Reader）
+type StreamReader interface {
+	GetReader() io.Reader
+}
+
+// StreamWriter 流写入器接口（用于获取底层 Writer）
+type StreamWriter interface {
+	GetWriter() io.Writer
+}
+
+// Stream 流接口（组合 StreamReader 和 StreamWriter）
+type Stream interface {
+	StreamReader
+	StreamWriter
+}
+
 // PackageStreamer 数据包流接口
 type PackageStreamer interface {
+	Stream
 	// ReadPacket 读取数据包
 	ReadPacket() (*packet.TransferPacket, int, error)
 
@@ -19,10 +36,6 @@ type PackageStreamer interface {
 
 	// WriteExact 写入指定长度的数据
 	WriteExact(data []byte) error
-
-	GetReader() io.Reader
-
-	GetWriter() io.Writer
 
 	// Close 关闭流
 	Close()

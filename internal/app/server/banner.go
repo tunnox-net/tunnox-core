@@ -86,7 +86,7 @@ func displayProtocolListeners(s *Server, reset func(...interface{}) string) {
 	fmt.Println(bannerBold("  Protocol Listeners"))
 	fmt.Println(bannerFaint("  " + strings.Repeat("─", bannerWidth)))
 
-	protocolNames := []string{"tcp", "websocket", "udp", "quic"}
+	protocolNames := []string{"tcp", "websocket", "udp", "quic", "httppoll"}
 	for _, name := range protocolNames {
 		cfg, exists := s.config.Server.Protocols[name]
 		if !exists {
@@ -132,6 +132,11 @@ func displayManagementAPI(s *Server, reset func(...interface{}) string) {
 	fmt.Printf("  %-18s %s\n", bannerBold("Status:"), bannerGreen("✓ Enabled"))
 	fmt.Printf("  %-18s %s\n", bannerBold("Address:"), fmt.Sprintf("http://%s", s.config.ManagementAPI.ListenAddr))
 	fmt.Printf("  %-18s %s\n", bannerBold("Authentication:"), authType)
+	fmt.Printf("  %-18s %s\n", bannerBold("Base Path:"), bannerFaint("/tunnox/v1"))
+	fmt.Printf("  %-18s %s\n", bannerBold("HTTP Long Poll:"), bannerFaint("POST /tunnox/v1/push, GET /tunnox/v1/poll"))
+	if s.config.ManagementAPI.PProf.Enabled {
+		fmt.Printf("  %-18s %s\n", bannerBold("PProf:"), bannerFaint("/tunnox/v1/debug/pprof/"))
+	}
 	fmt.Println()
 }
 

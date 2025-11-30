@@ -252,6 +252,10 @@ func Error(args ...interface{}) {
 }
 
 func Fatal(args ...interface{}) {
+	// 确保错误信息输出到控制台（即使日志配置为只输出到文件）
+	msg := fmt.Sprint(args...)
+	fmt.Fprintf(os.Stderr, "FATAL: %s\n", msg)
+	// 同时记录到日志（如果已配置）
 	Logger.Fatal(args...)
 }
 
@@ -272,6 +276,10 @@ func Errorf(format string, args ...interface{}) {
 }
 
 func Fatalf(format string, args ...interface{}) {
+	// 确保错误信息输出到控制台（即使日志配置为只输出到文件）
+	msg := fmt.Sprintf(format, args...)
+	fmt.Fprintf(os.Stderr, "FATAL: %s\n", msg)
+	// 同时记录到日志（如果已配置）
 	Logger.Fatalf(format, args...)
 }
 

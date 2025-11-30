@@ -111,6 +111,15 @@ type ManagementAPIConfig struct {
 	Auth       AuthConfig      `yaml:"auth"`
 	CORS       CORSConfig      `yaml:"cors"`
 	RateLimit  RateLimitConfig `yaml:"rate_limit"`
+	PProf      PProfConfig     `yaml:"pprof"`
+}
+
+// PProfConfig PProf 性能分析配置
+type PProfConfig struct {
+	Enabled     bool   `yaml:"enabled"`      // 是否启用 pprof
+	DataDir     string `yaml:"data_dir"`     // pprof 数据保存目录
+	Retention   int    `yaml:"retention"`    // 保留分钟数（默认10分钟）
+	AutoCapture bool   `yaml:"auto_capture"` // 是否自动抓取（默认true）
 }
 
 // AuthConfig 认证配置
@@ -173,14 +182,10 @@ type RedisStorageConfig struct {
 
 // HybridStorageConfigYAML 混合存储YAML配置
 type HybridStorageConfigYAML struct {
-	CacheType            string                  `yaml:"cache_type"` // memory | redis
-	EnablePersistent     bool                    `yaml:"enable_persistent"`
-	PersistentPrefixes   []string                `yaml:"persistent_prefixes"`
-	RuntimePrefixes      []string                `yaml:"runtime_prefixes"`
-	DefaultPersistentTTL int64                   `yaml:"default_persistent_ttl"` // 秒
-	DefaultRuntimeTTL    int64                   `yaml:"default_runtime_ttl"`    // 秒
-	JSON                 JSONStorageConfigYAML   `yaml:"json"`                   // JSON 文件存储配置（优先）
-	Remote               RemoteStorageConfigYAML `yaml:"remote"`
+	CacheType        string                  `yaml:"cache_type"`        // memory | redis
+	EnablePersistent bool                    `yaml:"enable_persistent"` // 是否启用持久化
+	JSON             JSONStorageConfigYAML   `yaml:"json"`             // JSON 文件存储配置（优先）
+	Remote           RemoteStorageConfigYAML `yaml:"remote"`            // 远程存储配置
 }
 
 // JSONStorageConfigYAML JSON 文件存储配置
@@ -491,18 +496,7 @@ func validateStorageConfig(config *StorageConfig) error {
 			return fmt.Errorf("redis.addr is required when hybrid.cache_type is redis")
 		}
 
-		// 设置默认前缀
-		if len(config.Hybrid.PersistentPrefixes) == 0 {
-			config.Hybrid.PersistentPrefixes = DefaultPersistentPrefixes()
-		}
-		if len(config.Hybrid.RuntimePrefixes) == 0 {
-			config.Hybrid.RuntimePrefixes = DefaultRuntimePrefixes()
-		}
-
-		// 设置默认 TTL
-		if config.Hybrid.DefaultRuntimeTTL <= 0 {
-			config.Hybrid.DefaultRuntimeTTL = 86400 // 24小时
-		}
+		// 前缀和 TTL 使用 storage.DefaultHybridConfig() 中的默认值，不需要用户配置
 
 		if config.Hybrid.EnablePersistent {
 			// 检查是否配置了 JSON 或 Remote 存储
@@ -550,29 +544,8 @@ func containsString(slice []string, item string) bool {
 	return false
 }
 
-// DefaultPersistentPrefixes 默认持久化前缀
-func DefaultPersistentPrefixes() []string {
-	return []string{
-		"tunnox:user:",
-		"tunnox:client:",
-		"tunnox:mapping:",
-		"tunnox:port_mapping:",    // PortMapping 主数据
-		"tunnox:mappings:list",    // 全局映射列表
-		"tunnox:user_mappings:",   // 用户映射索引
-		"tunnox:client_mappings:", // 客户端映射索引
-		"tunnox:quota:",
-	}
-}
-
-// DefaultRuntimePrefixes 默认运行时前缀
-func DefaultRuntimePrefixes() []string {
-	return []string{
-		"tunnox:runtime:",
-		"tunnox:session:",
-		"tunnox:connection:",
-		"tunnox:id:used:",
-	}
-}
+// 注意：前缀配置已移至 internal/core/storage/hybrid_config.go
+// 使用 storage.DefaultHybridConfig() 获取默认配置
 
 // GetDefaultConfig 获取默认配置
 func GetDefaultConfig() *Config {
@@ -609,12 +582,8 @@ func GetDefaultConfig() *Config {
 		Storage: StorageConfig{
 			Type: "hybrid",
 			Hybrid: HybridStorageConfigYAML{
-				CacheType:            "memory",
-				EnablePersistent:     true, // 默认启用持久化（但会根据是否有Redis自动调整）
-				PersistentPrefixes:   DefaultPersistentPrefixes(),
-				RuntimePrefixes:      DefaultRuntimePrefixes(),
-				DefaultPersistentTTL: 0,     // 永久
-				DefaultRuntimeTTL:    86400, // 24小时
+				CacheType:        "memory",
+				EnablePersistent: true, // 默认启用持久化（但会根据是否有Redis自动调整）
 				JSON: JSONStorageConfigYAML{
 					FilePath:     "", // 留空，由智能逻辑自动决定
 					AutoSave:     true,
@@ -642,7 +611,14 @@ func GetDefaultConfig() *Config {
 			Enabled:    true,
 			ListenAddr: "0.0.0.0:9000",
 			Auth: AuthConfig{
-				Type: "none", // 默认不需要认证
+				Type:  "bearer", // 默认需要 bearer token 认证
+				Token: "",       // 需要在配置文件中设置
+			},
+			PProf: PProfConfig{
+				Enabled:     true,                     // 默认启用 pprof（需要密钥访问）
+				DataDir:     "logs/pprof",             // 默认保存目录
+				Retention:   10,                        // 默认保留10分钟
+				AutoCapture: true,                     // 默认启用自动抓取
 			},
 		},
 		UDPIngress: UDPIngressConfig{

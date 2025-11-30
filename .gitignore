@@ -1,7 +1,5 @@
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
 
 ### VisualStudioCode template
 **/*.log
@@ -98,9 +96,6 @@ fabric.properties
 .idea/caches/build_file_checksums.ser
 
 ### Go template
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -114,29 +109,7 @@ fabric.properties
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
-go.work
-go.work.sum
-
-# env file
-.env
-
-
-
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binary, built with `go test -c`
-#*.test
-
 # Code coverage profiles and other test artifacts
-*.out
 coverage.*
 *.coverprofile
 profile.cov
@@ -151,17 +124,32 @@ go.work.sum
 # env file
 .env
 
-# Editor/IDE
-# .idea/
-# .vscode/
+# Compiled binaries
+bin/
 /client
 /server
 tunnox-server
 tunnox-client
-/data/
-
-# Compiled binaries
-bin/
-*.exe
 tunnox-server-*
 tunnox-client-*
+cmd/server/server
+
+# Runtime data directories
+/data/
+cmd/server/data/
+
+# Log files and directories
+logs/
+cmd/server/logs/
+test-env/logs/
+
+# pprof profiling files
+*.heap
+*.allocs
+*.block
+*.goroutine
+*.mutex
+*.prof
+*.cpu
+*.trace
+**/pprof/

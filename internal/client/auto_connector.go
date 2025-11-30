@@ -23,6 +23,7 @@ var DefaultServerEndpoints = []ServerEndpoint{
 	{Protocol: "udp", Address: "gw.tunnox.net:8000"},
 	{Protocol: "quic", Address: "gw.tunnox.net:443"},
 	{Protocol: "websocket", Address: "https://gw.tunnox.net/_tunnox"},
+	{Protocol: "httppoll", Address: "https://gw.tunnox.net"},
 }
 
 // ConnectionAttempt 连接尝试结果
@@ -168,17 +169,8 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 		conn, err = net.DialTimeout("tcp", endpoint.Address, 5*time.Second)
 		if err == nil {
 			// 配置 TCP 连接选项
-			if tcpConn, ok := conn.(*net.TCPConn); ok {
-				if err := tcpConn.SetKeepAlive(true); err != nil {
-					_ = err
-				}
-				if err := tcpConn.SetKeepAlivePeriod(30 * time.Second); err != nil {
-					_ = err
-				}
-				if err := tcpConn.SetNoDelay(true); err != nil {
-					_ = err
-				}
-			}
+			// 使用接口而不是具体类型
+			SetKeepAliveIfSupported(conn, true)
 		}
 	case "udp":
 		conn, err = dialUDPControlConnection(endpoint.Address)
@@ -186,6 +178,9 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 		conn, err = dialWebSocket(timeoutCtx, endpoint.Address)
 	case "quic":
 		conn, err = dialQUIC(timeoutCtx, endpoint.Address)
+	case "httppoll", "http-long-polling", "httplp":
+		// HTTP 长轮询需要 clientID 和 token，自动连接时使用 0 和空字符串
+		conn, err = dialHTTPLongPolling(timeoutCtx, endpoint.Address, 0, "")
 	default:
 		attempt.Err = fmt.Errorf("unsupported protocol: %s", endpoint.Protocol)
 		return attempt

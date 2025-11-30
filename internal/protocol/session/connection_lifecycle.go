@@ -145,9 +145,9 @@ func (s *SessionManager) CloseConnection(connectionId string) error {
 		if conn.RawConn != nil {
 			conn.RawConn.Close()
 		}
-		// 关闭流处理器
+	// 关闭流处理器
 		if conn.Stream != nil {
-			conn.Stream.Close()
+		conn.Stream.Close()
 		}
 	}
 
@@ -322,7 +322,7 @@ func (s *SessionManager) GetControlConnectionByClientID(clientID int64) *Control
 	return s.clientIDIndexMap[clientID]
 }
 
-// GetControlConnectionInterface 根据 ClientID 获取指令连接（返回interface{}用于API）
+// GetControlConnectionInterface 根据 ClientID 获取指令连接（返回接口用于API）
 func (s *SessionManager) GetControlConnectionInterface(clientID int64) interface{} {
 	return s.GetControlConnectionByClientID(clientID)
 }

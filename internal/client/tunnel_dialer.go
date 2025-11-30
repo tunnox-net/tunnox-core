@@ -29,6 +29,13 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		conn, err = dialWebSocket(c.Ctx(), c.config.Server.Address)
 	case "quic":
 		conn, err = dialQUIC(c.Ctx(), c.config.Server.Address)
+	case "httppoll", "http-long-polling", "httplp":
+		// HTTP 长轮询使用 AuthToken 或 SecretKey
+		token := c.config.AuthToken
+		if token == "" && c.config.Anonymous {
+			token = c.config.SecretKey
+		}
+		conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, c.config.ClientID, token)
 	default:
 		return nil, nil, fmt.Errorf("unsupported server protocol: %s", protocol)
 	}

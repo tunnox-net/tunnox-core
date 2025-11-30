@@ -264,6 +264,8 @@ func (sm *ServiceManager) Run() error {
 
 	// 启动所有服务
 	if err := sm.StartAllServices(); err != nil {
+		// 确保错误信息输出到控制台
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to start services: %v\n", err)
 		return fmt.Errorf("failed to start services: %v", err)
 	}
 
@@ -283,6 +285,8 @@ func (sm *ServiceManager) RunWithContext(ctx context.Context) error {
 
 	// 启动所有服务
 	if err := sm.StartAllServices(); err != nil {
+		// 确保错误信息输出到控制台
+		fmt.Fprintf(os.Stderr, "ERROR: Failed to start services: %v\n", err)
 		return fmt.Errorf("failed to start services: %v", err)
 	}
 

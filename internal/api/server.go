@@ -13,12 +13,21 @@ import (
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/health"
+	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
 	"github.com/gorilla/mux"
 )
 
+// ControlConnectionAccessor 控制连接访问器接口（用于API层）
+type ControlConnectionAccessor interface {
+	GetConnID() string
+	GetRemoteAddr() string
+	GetStream() stream.PackageStreamer
+}
+
 // SessionManager 接口（避免循环依赖）
+// 注意：GetControlConnectionInterface 返回 interface{}，调用方需要类型断言为 ControlConnectionAccessor
 type SessionManager interface {
 	GetControlConnectionInterface(clientID int64) interface{}
 	BroadcastConfigPush(clientID int64, configBody string) error
@@ -40,6 +49,12 @@ type ManagementAPIServer struct {
 
 	// 健康检查
 	healthManager *health.HealthManager
+
+	// pprof 自动抓取器
+	pprofCapture *PProfCapture
+
+	// HTTP 长轮询连接管理器
+	httppollConnMgr *httppollConnectionManager
 }
 
 // APIConfig API 配置
@@ -55,6 +70,17 @@ type APIConfig struct {
 
 	// 限流配置
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
+
+	// PProf 配置
+	PProf PProfConfig `yaml:"pprof"`
+}
+
+// PProfConfig PProf 性能分析配置
+type PProfConfig struct {
+	Enabled     bool   `yaml:"enabled"`      // 是否启用 pprof
+	DataDir     string `yaml:"data_dir"`     // pprof 数据保存目录
+	Retention   int    `yaml:"retention"`    // 保留分钟数（默认10分钟）
+	AutoCapture bool   `yaml:"auto_capture"` // 是否自动抓取（默认true）
 }
 
 // AuthConfig 认证配置
@@ -101,6 +127,20 @@ func NewManagementAPIServer(
 
 	// 注册路由
 	s.registerRoutes()
+	
+	// 注册 HTTP 长轮询路由（独立路径）
+	s.registerHTTPLongPollingRoutes()
+	
+	// 注册 pprof 性能分析路由
+	s.registerPProfRoutes()
+
+	// 初始化 pprof 自动抓取器
+	if config.PProf.Enabled && config.PProf.AutoCapture {
+		s.pprofCapture = NewPProfCapture(ctx, &config.PProf)
+		s.AddCleanHandler(func() error {
+			return s.pprofCapture.Stop()
+		})
+	}
 
 	// 创建 HTTP 服务器
 	s.server = &http.Server{
@@ -125,6 +165,18 @@ func NewManagementAPIServer(
 // Start 启动服务器
 func (s *ManagementAPIServer) Start() error {
 	utils.Infof("ManagementAPIServer: starting on %s", s.config.ListenAddr)
+	utils.Infof("ManagementAPIServer: API base path: http://%s/tunnox/v1", s.config.ListenAddr)
+	utils.Infof("ManagementAPIServer: HTTP long polling endpoints:")
+	utils.Infof("  - POST http://%s/tunnox/v1/push (client -> server)", s.config.ListenAddr)
+	utils.Infof("  - GET  http://%s/tunnox/v1/poll (server -> client)", s.config.ListenAddr)
+	if s.config.PProf.Enabled {
+		utils.Infof("ManagementAPIServer: pprof enabled at http://%s/tunnox/v1/debug/pprof/", s.config.ListenAddr)
+		if s.config.PProf.AutoCapture && s.pprofCapture != nil {
+			if err := s.pprofCapture.Start(); err != nil {
+				utils.Warnf("ManagementAPIServer: failed to start pprof capture: %v", err)
+			}
+		}
+	}
 
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -138,17 +190,18 @@ func (s *ManagementAPIServer) Start() error {
 // registerRoutes 注册所有路由
 func (s *ManagementAPIServer) registerRoutes() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// 健康检查端点（不需要认证）
+	// 健康检查端点（统一到 /tunnox/v1，不需要认证）
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	s.router.HandleFunc("/health", s.handleHealth).Methods("GET")
-	s.router.HandleFunc("/ready", s.handleReady).Methods("GET")
+	healthRouter := s.router.PathPrefix("/tunnox/v1").Subrouter()
+	healthRouter.HandleFunc("/health", s.handleHealth).Methods("GET")
+	healthRouter.HandleFunc("/ready", s.handleReady).Methods("GET")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// API 路由（需要认证）
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-	// API 基础路径
-	api := s.router.PathPrefix("/api/v1").Subrouter()
+	// API 基础路径（统一使用 /tunnox/v1）
+	api := s.router.PathPrefix("/tunnox/v1").Subrouter()
 
 	// 应用中间件
 	api.Use(s.loggingMiddleware)
@@ -234,8 +287,42 @@ func (s *ManagementAPIServer) registerRoutes() {
 	api.HandleFunc("/users/{user_id}/quota", s.handleGetUserQuota).Methods("GET")    // 新增：获取配额
 	api.HandleFunc("/users/{user_id}/quota", s.handleUpdateUserQuota).Methods("PUT") // 新增：更新配额
 
-	// 健康检查
-	s.router.HandleFunc("/health", s.handleHealth).Methods("GET")
+	// 注意：健康检查端点已在 registerRoutes() 开头单独注册为免认证，不在此处重复注册
+}
+
+// registerHTTPLongPollingRoutes 注册 HTTP 长轮询路由（统一到 /tunnox/v1）
+// 注意：HTTP Long Polling 端点不需要 HTTP 层面的认证，认证在握手阶段进行（与其他传输协议一致）
+func (s *ManagementAPIServer) registerHTTPLongPollingRoutes() {
+	// HTTP 长轮询端点（用于客户端连接，统一到 /tunnox/v1）
+	longPollRouter := s.router.PathPrefix("/tunnox/v1").Subrouter()
+	
+	// 不应用认证中间件，认证在握手阶段进行
+	// 应用 CORS 中间件
+	longPollRouter.Use(s.corsMiddleware)
+	
+	// 注册长轮询端点
+	longPollRouter.HandleFunc("/push", s.handleHTTPPush).Methods("POST")
+	longPollRouter.HandleFunc("/poll", s.handleHTTPPoll).Methods("GET")
+}
+
+// registerPProfRoutes 注册 pprof 性能分析路由（统一到 /tunnox/v1）
+func (s *ManagementAPIServer) registerPProfRoutes() {
+	if !s.config.PProf.Enabled {
+		return
+	}
+
+	// pprof 路由需要认证（如果配置了认证），统一到 /tunnox/v1/debug/pprof
+	pprofRouter := s.router.PathPrefix("/tunnox/v1/debug/pprof").Subrouter()
+	
+	// 应用认证中间件（如果需要）
+	if s.config.Auth.Type != "none" {
+		pprofRouter.Use(s.authMiddleware)
+	}
+	
+	// 注册 pprof 路由（使用 http.DefaultServeMux，它已经注册了所有 pprof 路由）
+	pprofRouter.PathPrefix("/").Handler(http.DefaultServeMux)
+	
+	utils.Infof("ManagementAPIServer: pprof enabled at http://%s/tunnox/v1/debug/pprof/", s.config.ListenAddr)
 }
 
 // ResponseData 统一响应结构
@@ -405,8 +492,8 @@ func (s *ManagementAPIServer) authMiddleware(next http.Handler) http.Handler {
 		token := parts[1]
 
 		switch s.config.Auth.Type {
-		case "api_key":
-			// API Key 认证
+		case "api_key", "bearer":
+			// API Key 或 Bearer Token 认证（两者使用相同的验证逻辑）
 			if token != s.config.Auth.Secret {
 				s.respondError(w, http.StatusUnauthorized, "Invalid API key")
 				return

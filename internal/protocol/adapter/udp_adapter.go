@@ -506,6 +506,64 @@ func (u *UdpSessionConn) SetControlConnection(isControl bool) {
 	u.isControlConn = isControl
 }
 
+// OnHandshakeComplete 握手完成回调（统一接口）
+// 当握手成功且 clientID > 0 时，自动调用此方法
+func (u *UdpSessionConn) OnHandshakeComplete(clientID int64) {
+	// UDP 连接在握手成功后标记为控制连接
+	u.SetControlConnection(true)
+}
+
+// ToNetConn 将 UDP 会话连接转换为 net.Conn（统一接口）
+func (u *UdpSessionConn) ToNetConn() net.Conn {
+	return newUdpConnWrapper(u)
+}
+
+// udpConnWrapper 将UDP会话连接包装成net.Conn
+type udpConnWrapper struct {
+	io.ReadWriteCloser
+	localAddr  net.Addr
+	remoteAddr net.Addr
+}
+
+func newUdpConnWrapper(conn io.ReadWriteCloser) net.Conn {
+	var localAddr, remoteAddr net.Addr
+
+	if sessionConn, ok := conn.(interface {
+		GetAddr() string
+	}); ok {
+		addrStr := sessionConn.GetAddr()
+		if addr, err := net.ResolveUDPAddr("udp", addrStr); err == nil {
+			remoteAddr = addr
+		}
+	}
+
+	return &udpConnWrapper{
+		ReadWriteCloser: conn,
+		localAddr:       localAddr,
+		remoteAddr:      remoteAddr,
+	}
+}
+
+func (w *udpConnWrapper) LocalAddr() net.Addr {
+	return w.localAddr
+}
+
+func (w *udpConnWrapper) RemoteAddr() net.Addr {
+	return w.remoteAddr
+}
+
+func (w *udpConnWrapper) SetDeadline(t time.Time) error {
+	return nil // UDP不支持deadline
+}
+
+func (w *udpConnWrapper) SetReadDeadline(t time.Time) error {
+	return nil // UDP不支持read deadline
+}
+
+func (w *udpConnWrapper) SetWriteDeadline(t time.Time) error {
+	return nil // UDP不支持write deadline
+}
+
 // Read 实现io.Reader接口
 func (u *UdpSessionConn) Read(p []byte) (n int, err error) {
 	u.mu.Lock()

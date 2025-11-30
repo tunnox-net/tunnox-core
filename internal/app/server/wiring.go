@@ -255,6 +255,12 @@ func (s *Server) createManagementAPI(ctx context.Context) *api.ManagementAPIServ
 		RateLimit: api.RateLimitConfig{
 			Enabled: s.config.ManagementAPI.RateLimit.Enabled,
 		},
+		PProf: api.PProfConfig{
+			Enabled:     s.config.ManagementAPI.PProf.Enabled,
+			DataDir:     s.config.ManagementAPI.PProf.DataDir,
+			Retention:   s.config.ManagementAPI.PProf.Retention,
+			AutoCapture: s.config.ManagementAPI.PProf.AutoCapture,
+		},
 	}
 
 	apiServer := api.NewManagementAPIServer(ctx, apiConfig, s.cloudControl, s.connCodeService, s.healthManager)

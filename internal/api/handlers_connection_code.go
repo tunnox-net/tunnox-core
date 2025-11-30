@@ -50,7 +50,7 @@ type CreateConnectionCodeResponse struct {
 
 // HandleCreateConnectionCode 处理创建连接码请求
 //
-// POST /api/v1/connection-codes
+// POST /tunnox/v1/connection-codes
 func (h *ConnectionCodeHandlers) HandleCreateConnectionCode(w http.ResponseWriter, r *http.Request) {
 	var req CreateConnectionCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -135,7 +135,7 @@ type ActivateConnectionCodeResponse struct {
 
 // HandleActivateConnectionCode 处理激活连接码请求
 //
-// POST /api/v1/connection-codes/:code/activate
+// POST /tunnox/v1/connection-codes/:code/activate
 func (h *ConnectionCodeHandlers) HandleActivateConnectionCode(w http.ResponseWriter, r *http.Request) {
 	// 从URL路径提取code
 	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
@@ -207,7 +207,7 @@ func (h *ConnectionCodeHandlers) HandleActivateConnectionCode(w http.ResponseWri
 
 // HandleRevokeConnectionCode 处理撤销连接码请求
 //
-// DELETE /api/v1/connection-codes/:code
+// DELETE /tunnox/v1/connection-codes/:code
 func (h *ConnectionCodeHandlers) HandleRevokeConnectionCode(w http.ResponseWriter, r *http.Request) {
 	// 从URL路径提取code
 	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
@@ -251,8 +251,8 @@ type ConnectionCodeListItem struct {
 
 // HandleListConnectionCodes 处理列出连接码请求
 //
-// GET /api/v1/connection-codes?target_client_id=xxx
-// GET /api/v1/connection-codes?client_id=xxx (向后兼容)
+// GET /tunnox/v1/connection-codes?target_client_id=xxx
+// GET /tunnox/v1/connection-codes?client_id=xxx (向后兼容)
 func (h *ConnectionCodeHandlers) HandleListConnectionCodes(w http.ResponseWriter, r *http.Request) {
 	// ✅ 优先使用 target_client_id，如果没有则使用 client_id（向后兼容）
 	targetClientIDStr := r.URL.Query().Get("target_client_id")
@@ -322,7 +322,7 @@ type MappingListItem struct {
 
 // HandleListMappings 处理列出映射请求
 //
-// GET /api/v1/mappings?client_id=xxx&direction=outbound|inbound
+// GET /tunnox/v1/mappings?client_id=xxx&direction=outbound|inbound
 func (h *ConnectionCodeHandlers) HandleListMappings(w http.ResponseWriter, r *http.Request) {
 	// 从查询参数获取client_id和direction
 	clientIDStr := r.URL.Query().Get("client_id")
@@ -393,7 +393,7 @@ func (h *ConnectionCodeHandlers) HandleListMappings(w http.ResponseWriter, r *ht
 
 // HandleRevokeMapping 处理撤销映射请求
 //
-// DELETE /api/v1/mappings/:id?client_id=xxx
+// DELETE /tunnox/v1/mappings/:id?client_id=xxx
 func (h *ConnectionCodeHandlers) HandleRevokeMapping(w http.ResponseWriter, r *http.Request) {
 	// 从URL路径提取mapping ID
 	pathParts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")

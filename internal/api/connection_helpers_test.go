@@ -10,7 +10,7 @@ import (
 type mockConnection struct {
 	connID     string
 	remoteAddr string
-	stream     *stream.StreamProcessor
+	stream     stream.PackageStreamer
 }
 
 func (m *mockConnection) GetConnID() string {
@@ -21,7 +21,7 @@ func (m *mockConnection) GetRemoteAddr() string {
 	return m.remoteAddr
 }
 
-func (m *mockConnection) GetStream() *stream.StreamProcessor {
+func (m *mockConnection) GetStream() stream.PackageStreamer {
 	return m.stream
 }
 

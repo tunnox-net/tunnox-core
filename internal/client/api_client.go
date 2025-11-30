@@ -57,7 +57,7 @@ type GenerateCodeResponse struct {
 
 // GenerateConnectionCode 生成连接码
 func (c *ManagementAPIClient) GenerateConnectionCode(req *GenerateCodeRequest) (*GenerateCodeResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/connection-codes", c.baseURL)
+	url := fmt.Sprintf("%s/tunnox/v1/connection-codes", c.baseURL)
 
 	respBody, err := c.doRequest("POST", url, req)
 	if err != nil {
@@ -90,7 +90,7 @@ type ConnectionCodeInfo struct {
 
 // ListConnectionCodes 列出连接码
 func (c *ManagementAPIClient) ListConnectionCodes() (*ListConnectionCodesResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/connection-codes?client_id=%d", c.baseURL, c.clientID)
+	url := fmt.Sprintf("%s/tunnox/v1/connection-codes?client_id=%d", c.baseURL, c.clientID)
 
 	respBody, err := c.doRequest("GET", url, nil)
 	if err != nil {
@@ -125,7 +125,7 @@ type ActivateCodeResponse struct {
 
 // ActivateConnectionCode 激活连接码
 func (c *ManagementAPIClient) ActivateConnectionCode(req *ActivateCodeRequest) (*ActivateCodeResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/connection-codes/%s/activate", c.baseURL, req.Code)
+	url := fmt.Sprintf("%s/tunnox/v1/connection-codes/%s/activate", c.baseURL, req.Code)
 
 	respBody, err := c.doRequest("POST", url, req)
 	if err != nil {
@@ -162,7 +162,7 @@ type MappingInfo struct {
 
 // ListMappings 列出隧道映射
 func (c *ManagementAPIClient) ListMappings(mappingType string) (*ListMappingsResponse, error) {
-	url := fmt.Sprintf("%s/api/v1/mappings?client_id=%d", c.baseURL, c.clientID)
+	url := fmt.Sprintf("%s/tunnox/v1/mappings?client_id=%d", c.baseURL, c.clientID)
 	if mappingType != "" {
 		url += fmt.Sprintf("&type=%s", mappingType)
 	}
@@ -182,7 +182,7 @@ func (c *ManagementAPIClient) ListMappings(mappingType string) (*ListMappingsRes
 
 // GetMapping 获取映射详情
 func (c *ManagementAPIClient) GetMapping(mappingID string) (*MappingInfo, error) {
-	url := fmt.Sprintf("%s/api/v1/mappings/%s", c.baseURL, mappingID)
+	url := fmt.Sprintf("%s/tunnox/v1/mappings/%s", c.baseURL, mappingID)
 
 	respBody, err := c.doRequest("GET", url, nil)
 	if err != nil {
@@ -199,7 +199,7 @@ func (c *ManagementAPIClient) GetMapping(mappingID string) (*MappingInfo, error)
 
 // DeleteMapping 删除映射
 func (c *ManagementAPIClient) DeleteMapping(mappingID string) error {
-	url := fmt.Sprintf("%s/api/v1/mappings/%s", c.baseURL, mappingID)
+	url := fmt.Sprintf("%s/tunnox/v1/mappings/%s", c.baseURL, mappingID)
 
 	_, err := c.doRequest("DELETE", url, nil)
 	return err
