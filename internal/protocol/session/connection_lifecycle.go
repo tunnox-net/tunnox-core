@@ -26,10 +26,28 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 		}
 	}
 
-	// 生成连接ID
-	connID, err := s.idManager.GenerateConnectionID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate connection ID: %w", err)
+	// ✅ 对于支持自定义 connectionID 的连接，使用其 connectionID 而不是生成新的
+	// 这样可以确保 connMap 中的连接ID和协议特定注册表中的一致
+	var connID string
+	var err error
+	if connIDProvider, ok := reader.(interface{ GetConnectionID() string }); ok {
+		connID = connIDProvider.GetConnectionID()
+		if connID != "" {
+			utils.Debugf("CreateConnection: using provided connectionID=%s", connID)
+		}
+	} else if connIDProvider, ok := writer.(interface{ GetConnectionID() string }); ok {
+		connID = connIDProvider.GetConnectionID()
+		if connID != "" {
+			utils.Debugf("CreateConnection: using provided connectionID=%s", connID)
+		}
+	}
+	
+	// 如果没有从连接获取到 connectionID，则生成新的
+	if connID == "" {
+		connID, err = s.idManager.GenerateConnectionID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate connection ID: %w", err)
+		}
 	}
 
 	// ✅ 尝试提取原始的net.Conn（用于纯流转发）

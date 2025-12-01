@@ -9,16 +9,11 @@ import (
 	"time"
 
 	"tunnox-core/internal/packet"
+	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
 
-// ClientIDUpdater 协议层 clientID 更新接口
-// 某些协议（如 HTTP Long Polling）需要在协议层（HTTP 请求头）使用 clientID
-// 这些协议需要在握手后更新协议层的 clientID，但不影响指令通道的统一处理
-type ClientIDUpdater interface {
-	UpdateClientID(clientID int64)
-}
 
 // Connect 连接到服务器并建立指令连接
 func (c *TunnoxClient) Connect() error {
@@ -37,8 +32,9 @@ func (c *TunnoxClient) Connect() error {
 
 	// 1. 根据协议建立控制连接
 	var (
-		conn net.Conn
-		err  error
+		conn  net.Conn
+		err   error
+		token string // HTTP 长轮询使用的 token
 	)
 	switch strings.ToLower(protocol) {
 	case "tcp":
@@ -51,7 +47,7 @@ func (c *TunnoxClient) Connect() error {
 		conn, err = dialQUIC(c.Ctx(), c.config.Server.Address)
 	case "httppoll", "http-long-polling", "httplp":
 		// HTTP 长轮询使用 AuthToken 或 SecretKey
-		token := c.config.AuthToken
+		token = c.config.AuthToken
 		if token == "" && c.config.Anonymous {
 			token = c.config.SecretKey
 		}
@@ -62,7 +58,7 @@ func (c *TunnoxClient) Connect() error {
 			// 匿名客户端首次握手，强制使用 0（不管配置文件中是否有保存的 ClientID）
 			clientID = 0
 		}
-		conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, clientID, token)
+		conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, clientID, token, c.GetInstanceID(), "")
 	default:
 		return fmt.Errorf("unsupported server protocol: %s", protocol)
 	}
@@ -76,8 +72,28 @@ func (c *TunnoxClient) Connect() error {
 	c.mu.Lock()
 	c.controlConn = conn
 	// 2. 创建 Stream
-	streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
-	c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
+	// HTTP 长轮询协议直接使用 HTTPStreamProcessor，不需要通过 CreateStreamProcessor
+	if protocol == "httppoll" || protocol == "http-long-polling" || protocol == "httplp" {
+		// 对于 HTTP 长轮询，conn 是 HTTPLongPollingConn，需要转换为 HTTPStreamProcessor
+		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
+			// 创建 HTTPStreamProcessor
+			baseURL := httppollConn.baseURL
+			pushURL := baseURL + "/tunnox/v1/push"
+			pollURL := baseURL + "/tunnox/v1/poll"
+			c.controlStream = httppoll.NewStreamProcessor(c.Ctx(), baseURL, pushURL, pollURL, c.config.ClientID, token, c.GetInstanceID(), "")
+			// 设置 ConnectionID（如果已从握手响应中获取）
+			if httppollConn.connectionID != "" {
+				c.controlStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)
+			}
+		} else {
+			// 回退到默认方式
+			streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
+			c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
+		}
+	} else {
+		streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
+		c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
+	}
 	c.mu.Unlock()
 
 	// 记录连接信息用于调试
@@ -296,6 +312,15 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		return fmt.Errorf("handshake failed: %s", resp.Error)
 	}
 
+	// ✅ 更新 ConnectionID（如果服务端返回了 ConnectionID）
+	if resp.ConnectionID != "" {
+		// 对于 HTTP 长轮询，更新 HTTPStreamProcessor 的 ConnectionID
+		if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
+			httppollStream.SetConnectionID(resp.ConnectionID)
+			utils.Infof("Client: received ConnectionID from server: %s", resp.ConnectionID)
+		}
+	}
+
 	// 匿名模式下，服务器会返回分配的凭据（仅对控制连接有用）
 	if c.config.Anonymous && stream == c.controlStream {
 		// ✅ 优先使用结构化字段
@@ -309,22 +334,20 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 				utils.Warnf("Client: failed to save anonymous credentials: %v", err)
 			}
 
-			// ✅ 更新协议层的 clientID（仅对需要协议层 clientID 的协议，如 HTTP Long Polling）
-			// 注意：这不会影响指令通道的统一处理，指令包仍然通过 StreamProcessor 统一处理
-			if updater, ok := c.controlConn.(ClientIDUpdater); ok {
-				utils.Debugf("Client: updating protocol layer clientID to %d", resp.ClientID)
-				updater.UpdateClientID(resp.ClientID)
-			} else {
-				utils.Debugf("Client: controlConn does not implement ClientIDUpdater interface")
+			// ✅ 更新 HTTPStreamProcessor 的 clientID
+			if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
+				httppollStream.UpdateClientID(resp.ClientID)
+				utils.Debugf("Client: updated HTTPStreamProcessor clientID to %d", resp.ClientID)
 			}
 		} else if resp.Message != "" {
 			// 兼容旧版本：从Message解析ClientID
 			var assignedClientID int64
 			if _, err := fmt.Sscanf(resp.Message, "Anonymous client authenticated, client_id=%d", &assignedClientID); err == nil {
 				c.config.ClientID = assignedClientID
-				// ✅ 更新协议层的 clientID（仅对需要协议层 clientID 的协议）
-				if updater, ok := c.controlConn.(ClientIDUpdater); ok {
-					updater.UpdateClientID(assignedClientID)
+				// ✅ 更新 HTTPStreamProcessor 的 clientID
+				if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
+					httppollStream.UpdateClientID(assignedClientID)
+					utils.Debugf("Client: updated HTTPStreamProcessor clientID to %d", assignedClientID)
 				}
 			}
 		}
@@ -389,6 +412,12 @@ func (c *TunnoxClient) readLoop() {
 			}
 		case packet.JsonCommand:
 			c.handleCommand(pkt)
+		case packet.TunnelOpen:
+			// ✅ TunnelOpen 应该由隧道连接处理，控制连接忽略它
+			utils.Debugf("Client: ignoring TunnelOpen in control connection read loop")
+		case packet.TunnelOpenAck:
+			// ✅ TunnelOpenAck 应该由隧道连接处理，控制连接忽略它
+			utils.Debugf("Client: ignoring TunnelOpenAck in control connection read loop")
 		default:
 			utils.Warnf("Client: unknown packet type: %d", pkt.PacketType)
 		}
@@ -549,7 +578,7 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 		if c.config.Anonymous {
 			clientID = 0
 		}
-		conn, err = dialHTTPLongPolling(c.Ctx(), address, clientID, token)
+		conn, err = dialHTTPLongPolling(c.Ctx(), address, clientID, token, c.GetInstanceID(), "")
 	default:
 		return fmt.Errorf("unsupported server protocol: %s", protocol)
 	}

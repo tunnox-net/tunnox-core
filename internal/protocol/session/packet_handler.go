@@ -6,6 +6,7 @@ import (
 	"net"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
 
@@ -200,13 +201,30 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 	utils.Infof("Tunnel open request: TunnelID=%s, MappingID=%s, ConnID=%s",
 		req.TunnelID, req.MappingID, connPacket.ConnectionID)
 
-	// 检查是否已有bridge（目标端连接）
+	// ✅ 对于支持 mappingID 的连接，立即设置 mappingID 并注册隧道连接
+	// 这样后续的请求就能正确路由到隧道连接
+	if req.MappingID != "" && conn != nil && conn.Stream != nil {
+		reader := conn.Stream.GetReader()
+		if mappingConn, ok := reader.(interface {
+			GetClientID() int64
+			SetMappingID(mappingID string)
+		}); ok {
+			clientID := mappingConn.GetClientID()
+			if clientID > 0 {
+				utils.Infof("Tunnel[%s]: setting mappingID immediately for tunnel connection, MappingID=%s, ConnID=%s, ClientID=%d",
+					req.TunnelID, req.MappingID, connPacket.ConnectionID, clientID)
+				mappingConn.SetMappingID(req.MappingID)
+			}
+		}
+	}
+
+	// 检查是否已有bridge（目标端连接或源端重连）
 	s.bridgeLock.Lock()
 	bridge, exists := s.tunnelBridges[req.TunnelID]
 	s.bridgeLock.Unlock()
 
 	if exists {
-		// 这是目标端的连接，连接到本地已有的bridge
+		// 这是目标端的连接，或源端重连（HTTP 长轮询每次都创建新连接）
 
 		// ✅ 隧道连接（有 MappingID）不应该被注册为控制连接
 		// 由于现在在 Handshake 中已经通过 ConnectionType 识别，这里只需要清理可能的误注册
@@ -232,19 +250,73 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 
 		netConn := s.extractNetConn(conn)
 		if netConn == nil {
-			utils.Errorf("Tunnel[%s]: failed to extract net.Conn from target connection %s", req.TunnelID, conn.ID)
+			utils.Errorf("Tunnel[%s]: failed to extract net.Conn from connection %s", req.TunnelID, conn.ID)
 			return fmt.Errorf("failed to extract net.Conn from connection")
 		}
 
-		bridge.SetTargetConnection(netConn, conn.Stream)
+		// ✅ 判断是源端还是目标端连接，更新对应的连接
+		// 通过 cloudControl 获取映射配置，判断 clientID 是源端还是目标端
+		var isSourceClient bool
+		if s.cloudControl != nil && req.MappingID != "" {
+			mapping, err := s.cloudControl.GetPortMapping(req.MappingID)
+			if err == nil {
+				listenClientID := mapping.ListenClientID
+				if listenClientID == 0 {
+					listenClientID = mapping.SourceClientID
+				}
+				// 从连接中获取 clientID
+				var connClientID int64
+				if conn.Stream != nil {
+					reader := conn.Stream.GetReader()
+					if clientIDConn, ok := reader.(interface{ GetClientID() int64 }); ok {
+						connClientID = clientIDConn.GetClientID()
+					}
+				}
+				isSourceClient = (connClientID == listenClientID)
+				utils.Infof("Tunnel[%s]: identified connection type - isSourceClient=%v, connClientID=%d, listenClientID=%d, targetClientID=%d",
+					req.TunnelID, isSourceClient, connClientID, listenClientID, mapping.TargetClientID)
+			}
+		}
 
-		if req.MappingID != "" {
+		if isSourceClient {
+			// 源端重连，更新 sourceConn
+			bridge.SetSourceConnection(netConn, conn.Stream)
+			utils.Infof("Tunnel[%s]: updated sourceConn for existing bridge, connID=%s", req.TunnelID, conn.ID)
+		} else {
+			// 目标端连接
+			bridge.SetTargetConnection(netConn, conn.Stream)
+			utils.Infof("Tunnel[%s]: set targetConn for existing bridge, connID=%s", req.TunnelID, conn.ID)
+		}
+
+		// ✅ 切换到流模式（通过接口调用，协议无关）
+		if conn != nil && conn.Stream != nil {
+			reader := conn.Stream.GetReader()
+			if streamModeConn, ok := reader.(interface {
+				SetStreamMode(streamMode bool)
+			}); ok {
+				utils.Infof("Tunnel[%s]: switching connection to stream mode (existing bridge), connID=%s", req.TunnelID, conn.ID)
+				streamModeConn.SetStreamMode(true)
+			}
+		}
+
+		// ✅ 判断是否应该保留在 connMap（通过接口判断，协议无关）
+		shouldKeep := false
+		if conn != nil && conn.Stream != nil {
+			reader := conn.Stream.GetReader()
+			if keepConn, ok := reader.(interface {
+				ShouldKeepInConnMap() bool
+			}); ok {
+				shouldKeep = keepConn.ShouldKeepInConnMap()
+			}
+		}
+
+		if !shouldKeep && req.MappingID != "" {
 			s.connLock.Lock()
 			delete(s.connMap, connPacket.ConnectionID)
 			s.connLock.Unlock()
 		}
 
-		return fmt.Errorf("tunnel target connected, switching to stream mode")
+		return fmt.Errorf("tunnel connected to existing bridge, switching to stream mode")
 	}
 
 	if s.tunnelRouting != nil {
@@ -258,13 +330,44 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 
 	clientConn := s.getControlConnectionByConnID(connPacket.ConnectionID)
 	if clientConn == nil {
-		utils.Warnf("Tunnel[%s]: control connection not found for connID %s", req.TunnelID, connPacket.ConnectionID)
-		s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{
-			TunnelID: req.TunnelID,
-			Success:  false,
-			Error:    "connection not found or not authenticated",
-		})
-		return fmt.Errorf("control connection not found: %s", connPacket.ConnectionID)
+		// ✅ 尝试从 connMap 创建临时控制连接（通过接口判断，协议无关）
+		conn := s.getConnectionByConnID(connPacket.ConnectionID)
+		if conn != nil && conn.Stream != nil {
+			reader := conn.Stream.GetReader()
+			if tempConn, ok := reader.(interface {
+				CanCreateTemporaryControlConn() bool
+				GetClientID() int64
+			}); ok && tempConn.CanCreateTemporaryControlConn() {
+				utils.Infof("Tunnel[%s]: creating temporary control connection, connID=%s", req.TunnelID, connPacket.ConnectionID)
+				var remoteAddr net.Addr
+				if conn.RawConn != nil {
+					remoteAddr = conn.RawConn.RemoteAddr()
+				}
+				protocol := conn.Protocol
+				if protocol == "" {
+					protocol = "tcp"
+				}
+				newConn := NewControlConnection(conn.ID, conn.Stream, remoteAddr, protocol)
+				clientID := tempConn.GetClientID()
+				if clientID > 0 {
+					newConn.SetClientID(clientID)
+					newConn.SetAuthenticated(true)
+					utils.Infof("Tunnel[%s]: set clientID=%d for temporary control connection", req.TunnelID, clientID)
+				}
+				clientConn = newConn
+			}
+		}
+		if clientConn == nil {
+			utils.Warnf("Tunnel[%s]: control connection not found for connID %s", req.TunnelID, connPacket.ConnectionID)
+			if conn != nil {
+				s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{
+					TunnelID: req.TunnelID,
+					Success:  false,
+					Error:    "connection not found or not authenticated",
+				})
+			}
+			return fmt.Errorf("control connection not found: %s", connPacket.ConnectionID)
+		}
 	}
 
 	if err := s.tunnelHandler.HandleTunnelOpen(clientConn, req); err != nil {
@@ -295,13 +398,112 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		Success:  true,
 	})
 
-	netConn := s.extractNetConn(conn)
-	if netConn == nil {
-		utils.Errorf("Tunnel[%s]: failed to extract net.Conn from connection %s", req.TunnelID, conn.ID)
-		return fmt.Errorf("failed to extract net.Conn from connection")
+	// 如果有 mappingID，设置映射ID（通过接口调用，协议无关）
+	if req.MappingID != "" && clientConn.IsAuthenticated() && clientConn.GetClientID() > 0 {
+		if conn != nil && conn.Stream != nil {
+			reader := conn.Stream.GetReader()
+			if mappingConn, ok := reader.(interface {
+				SetMappingID(mappingID string)
+			}); ok {
+				utils.Infof("Tunnel[%s]: setting mappingID=%s", req.TunnelID, req.MappingID)
+				mappingConn.SetMappingID(req.MappingID)
+			}
+		}
 	}
 
-	if err := s.startSourceBridge(req, netConn, conn.Stream); err != nil {
+	// ✅ 在创建 bridge 之前，查找是否有已存在的数据推送连接（通过 mappingID 和 clientID）
+	// 因为数据推送可能发生在 TunnelOpen 之前，所以需要查找已存在的连接
+	var existingConn *types.Connection
+	var existingNetConn net.Conn
+	var existingStream stream.PackageStreamer
+	if req.MappingID != "" && clientConn != nil && clientConn.IsAuthenticated() && clientConn.GetClientID() > 0 {
+		clientID := clientConn.GetClientID()
+		// 遍历 connMap 查找匹配的连接
+		allConns := s.ListConnections()
+		utils.Infof("Tunnel[%s]: searching for existing data push connection, mappingID=%s, clientID=%d, total connections=%d, tunnelOpenConnID=%s",
+			req.TunnelID, req.MappingID, clientID, len(allConns), connPacket.ConnectionID)
+		for _, c := range allConns {
+			if c == nil {
+				continue
+			}
+			if c.Stream == nil {
+				utils.Debugf("Tunnel[%s]: skipping connection %s (no stream)", req.TunnelID, c.ID)
+				continue
+			}
+			reader := c.Stream.GetReader()
+			if reader == nil {
+				utils.Debugf("Tunnel[%s]: skipping connection %s (no reader)", req.TunnelID, c.ID)
+				continue
+			}
+			// 检查连接是否支持 clientID 和 mappingID 查询，并且有相同的 mappingID 和 clientID
+			if clientMappingConn, ok := reader.(interface {
+				GetClientID() int64
+				GetMappingID() string
+			}); ok {
+				connClientID := clientMappingConn.GetClientID()
+				connMappingID := clientMappingConn.GetMappingID()
+				utils.Infof("Tunnel[%s]: checking connection, connID=%s, connClientID=%d, connMappingID=%s, targetClientID=%d, targetMappingID=%s, match=%v",
+					req.TunnelID, c.ID, connClientID, connMappingID, clientID, req.MappingID,
+					connClientID == clientID && connMappingID == req.MappingID && c.ID != connPacket.ConnectionID)
+				if connClientID == clientID && connMappingID == req.MappingID && c.ID != connPacket.ConnectionID {
+					// 找到已存在的连接，使用它作为 sourceConn
+					existingConn = c
+					existingNetConn = s.extractNetConn(c)
+					existingStream = c.Stream
+					utils.Infof("Tunnel[%s]: found existing data push connection, using it as sourceConn, existingConnID=%s, tunnelOpenConnID=%s",
+						req.TunnelID, c.ID, connPacket.ConnectionID)
+					break
+				}
+			}
+		}
+	}
+
+	// 如果找到已存在的连接，使用它；否则使用 TunnelOpen 的连接
+	var sourceConn net.Conn
+	var sourceStream stream.PackageStreamer
+	if existingNetConn != nil && existingConn != nil {
+		sourceConn = existingNetConn
+		sourceStream = existingStream
+		utils.Infof("Tunnel[%s]: using existing data push connection as sourceConn, connID=%s", req.TunnelID, existingConn.ID)
+	} else {
+		netConn := s.extractNetConn(conn)
+		if netConn == nil {
+			if conn != nil {
+				utils.Errorf("Tunnel[%s]: failed to extract net.Conn from connection %s", req.TunnelID, conn.ID)
+			} else {
+				utils.Errorf("Tunnel[%s]: failed to extract net.Conn, conn is nil", req.TunnelID)
+			}
+			return fmt.Errorf("failed to extract net.Conn from connection")
+		}
+		if netConn != nil && conn != nil {
+			sourceConn = netConn
+			sourceStream = conn.Stream
+			utils.Infof("Tunnel[%s]: extracted sourceConn, connID=%s, netConn type=%T", req.TunnelID, conn.ID, netConn)
+		}
+	}
+
+	// ✅ 切换到流模式（通过接口调用，协议无关）
+	// 对已存在的连接和 TunnelOpen 的连接都切换到流模式
+	if existingStream != nil {
+		reader := existingStream.GetReader()
+		if streamModeConn, ok := reader.(interface {
+			SetStreamMode(streamMode bool)
+		}); ok {
+			utils.Infof("Tunnel[%s]: switching existing connection to stream mode", req.TunnelID)
+			streamModeConn.SetStreamMode(true)
+		}
+	}
+	if conn != nil && conn.Stream != nil {
+		reader := conn.Stream.GetReader()
+		if streamModeConn, ok := reader.(interface {
+			SetStreamMode(streamMode bool)
+		}); ok {
+			utils.Infof("Tunnel[%s]: switching connection to stream mode", req.TunnelID)
+			streamModeConn.SetStreamMode(true)
+		}
+	}
+
+	if err := s.startSourceBridge(req, sourceConn, sourceStream); err != nil {
 		utils.Errorf("Tunnel[%s]: failed to start bridge: %v", req.TunnelID, err)
 		return err
 	}
@@ -318,9 +520,24 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		}
 		s.controlConnLock.Unlock()
 
-		s.connLock.Lock()
-		delete(s.connMap, connPacket.ConnectionID)
-		s.connLock.Unlock()
+		// ✅ 判断是否应该保留在 connMap（通过接口判断，协议无关）
+		shouldKeep := false
+		if conn != nil && conn.Stream != nil {
+			reader := conn.Stream.GetReader()
+			if keepConn, ok := reader.(interface {
+				ShouldKeepInConnMap() bool
+			}); ok {
+				shouldKeep = keepConn.ShouldKeepInConnMap()
+			}
+		}
+
+		if !shouldKeep && req.MappingID != "" {
+			s.connLock.Lock()
+			delete(s.connMap, connPacket.ConnectionID)
+			s.connLock.Unlock()
+		} else if shouldKeep {
+			utils.Debugf("Tunnel[%s]: keeping connection %s in connMap", req.TunnelID, connPacket.ConnectionID)
+		}
 	}
 
 	return fmt.Errorf("tunnel source connected, switching to stream mode")
@@ -392,10 +609,13 @@ func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, re
 		Payload:    respData,
 	}
 
+	utils.Infof("Tunnel[%s]: sending TunnelOpenAck, Success=%v, conn.Protocol=%s", resp.TunnelID, resp.Success, conn.Protocol)
 	// 发送响应
 	if _, err := conn.Stream.WritePacket(respPacket, true, 0); err != nil {
+		utils.Errorf("Tunnel[%s]: failed to write tunnel open response: %v", resp.TunnelID, err)
 		return fmt.Errorf("failed to write tunnel open response: %w", err)
 	}
+	utils.Infof("Tunnel[%s]: TunnelOpenAck sent successfully", resp.TunnelID)
 
 	return nil
 }
@@ -444,7 +664,40 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 	}
 
 	// 2. 找到目标客户端的控制连接（本地或跨服务器）
+	utils.Infof("Tunnel[%s]: looking for target client control connection, targetClientID=%d", req.TunnelID, mapping.TargetClientID)
 	targetControlConn := s.GetControlConnectionByClientID(mapping.TargetClientID)
+	if targetControlConn == nil {
+		// ✅ 某些协议可能没有注册为控制连接，尝试通过 connMap 查找
+		utils.Infof("Tunnel[%s]: target client %d control connection not found, searching in connMap", req.TunnelID, mapping.TargetClientID)
+		allConns := s.ListConnections()
+		for _, c := range allConns {
+			if c.Stream != nil {
+				reader := c.Stream.GetReader()
+				if clientIDConn, ok := reader.(interface {
+					GetClientID() int64
+				}); ok {
+					connClientID := clientIDConn.GetClientID()
+					if connClientID == mapping.TargetClientID {
+						// 找到目标客户端的连接，创建临时控制连接
+						utils.Infof("Tunnel[%s]: found target client connection in connMap, creating temporary control connection, connID=%s", req.TunnelID, c.ID)
+						var remoteAddr net.Addr
+						if c.RawConn != nil {
+							remoteAddr = c.RawConn.RemoteAddr()
+						}
+						protocol := c.Protocol
+						tempConn := NewControlConnection(c.ID, c.Stream, remoteAddr, protocol)
+						tempConn.SetClientID(mapping.TargetClientID)
+						tempConn.SetAuthenticated(true)
+						// 注册为控制连接（临时）
+						s.RegisterControlConnection(tempConn)
+						targetControlConn = tempConn
+						utils.Infof("Tunnel[%s]: created and registered temporary control connection for target client %d", req.TunnelID, mapping.TargetClientID)
+						break
+					}
+				}
+			}
+		}
+	}
 	if targetControlConn == nil {
 		// ✅ 本地未找到，尝试跨服务器转发
 		if s.bridgeManager != nil {

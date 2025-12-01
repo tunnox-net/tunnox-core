@@ -124,6 +124,7 @@ func (h *BaseMappingHandler) acceptLoop() {
 			continue
 		}
 
+		utils.Infof("BaseMappingHandler[%s]: new connection accepted", h.config.MappingID)
 		// 处理连接（公共）
 		go h.handleConnection(localConn)
 	}
@@ -133,7 +134,7 @@ func (h *BaseMappingHandler) acceptLoop() {
 func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	defer localConn.Close()
 
-	utils.Debugf("BaseMappingHandler[%s]: new connection received", h.config.MappingID)
+	utils.Infof("BaseMappingHandler[%s]: new connection received", h.config.MappingID)
 
 	// 1. 配额检查：连接数限制
 	if err := h.checkConnectionQuota(); err != nil {
@@ -163,7 +164,7 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	}
 
 	// 5. 建立隧道连接
-	utils.Debugf("BaseMappingHandler[%s]: dialing tunnel %s", h.config.MappingID, tunnelID)
+	utils.Infof("BaseMappingHandler[%s]: dialing tunnel %s", h.config.MappingID, tunnelID)
 	tunnelConn, tunnelStream, err := h.client.DialTunnel(
 		tunnelID,
 		h.config.MappingID,
@@ -175,22 +176,27 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	}
 	defer tunnelConn.Close()
 
-	utils.Debugf("BaseMappingHandler[%s]: tunnel %s established", h.config.MappingID, tunnelID)
+	utils.Infof("BaseMappingHandler[%s]: tunnel %s established", h.config.MappingID, tunnelID)
 
 	// 6. ✅ 使用StreamProcessor的Reader/Writer进行透传
 	// StreamProcessor已经包含了压缩/加密层，不应该关闭它或绕过它
 	tunnelReader := tunnelStream.GetReader()
 	tunnelWriter := tunnelStream.GetWriter()
-	
+
 	// 7. 包装隧道连接成ReadWriteCloser
 	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
-	tunnelStream.Close()
+		tunnelStream.Close()
 		tunnelConn.Close()
 		return nil
 	})
 
 	// 8. 双向转发（Transformer只处理限速，压缩/加密已在StreamProcessor中）
-	utils.BidirectionalCopy(localConn, tunnelRWC, &utils.BidirectionalCopyOptions{
+	// 使用策略模式选择适合协议的拷贝策略
+	strategyFactory := utils.NewCopyStrategyFactory()
+	protocol := h.client.GetServerProtocol()
+	copyStrategy := strategyFactory.CreateStrategy(protocol)
+
+	copyStrategy.Copy(localConn, tunnelRWC, &utils.BidirectionalCopyOptions{
 		Transformer: h.transformer,
 		LogPrefix:   fmt.Sprintf("BaseMappingHandler[%s][%s]", h.config.MappingID, tunnelID),
 	})

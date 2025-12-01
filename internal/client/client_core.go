@@ -11,6 +11,8 @@ import (
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
+
+	"github.com/google/uuid"
 )
 
 // TunnoxClient 隧道客户端
@@ -18,6 +20,9 @@ type TunnoxClient struct {
 	*dispose.ManagerBase
 
 	config *ClientConfig
+
+	// 客户端实例标识（进程级别的唯一标识）
+	instanceID string
 
 	// 指令连接
 	controlConn   net.Conn
@@ -59,6 +64,11 @@ type TunnoxClient struct {
 	authFailed bool // 是否认证失败
 }
 
+// GetInstanceID 获取客户端实例标识
+func (c *TunnoxClient) GetInstanceID() string {
+	return c.instanceID
+}
+
 // localMappingStats 本地映射流量统计
 type localMappingStats struct {
 	bytesSent      int64
@@ -69,13 +79,19 @@ type localMappingStats struct {
 
 // NewClient 创建客户端
 func NewClient(ctx context.Context, config *ClientConfig) *TunnoxClient {
+	// 生成客户端实例标识（进程级别的唯一UUID）
+	instanceID := uuid.New().String()
+
 	client := &TunnoxClient{
 		ManagerBase:            dispose.NewManager("TunnoxClient", ctx),
 		config:                 config,
+		instanceID:             instanceID,
 		mappingHandlers:        make(map[string]MappingHandler),
 		localTrafficStats:      make(map[string]*localMappingStats),
 		commandResponseManager: NewCommandResponseManager(),
 	}
+
+	utils.Infof("Client: instance ID generated: %s", instanceID)
 
 	// 初始化API客户端（用于CLI）
 	// 假设Management API在服务器地址的8080端口
@@ -126,6 +142,18 @@ func (c *TunnoxClient) GetContext() context.Context {
 // GetConfig 获取配置（供映射处理器使用）
 func (c *TunnoxClient) GetConfig() *ClientConfig {
 	return c.config
+}
+
+// GetServerProtocol 获取服务器协议（供映射处理器使用）
+func (c *TunnoxClient) GetServerProtocol() string {
+	if c.config == nil {
+		return "tcp" // 默认协议
+	}
+	protocol := c.config.Server.Protocol
+	if protocol == "" {
+		return "tcp" // 默认协议
+	}
+	return protocol
 }
 
 // GetAPIClient 获取Management API客户端（供CLI使用）

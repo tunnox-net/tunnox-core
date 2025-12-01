@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/stream"
 )
@@ -180,7 +181,9 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 		conn, err = dialQUIC(timeoutCtx, endpoint.Address)
 	case "httppoll", "http-long-polling", "httplp":
 		// HTTP 长轮询需要 clientID 和 token，自动连接时使用 0 和空字符串
-		conn, err = dialHTTPLongPolling(timeoutCtx, endpoint.Address, 0, "")
+		// 自动连接阶段生成临时 instanceID（后续会被正式连接替换）
+		tempInstanceID := uuid.New().String()
+		conn, err = dialHTTPLongPolling(timeoutCtx, endpoint.Address, 0, "", tempInstanceID, "")
 	default:
 		attempt.Err = fmt.Errorf("unsupported protocol: %s", endpoint.Protocol)
 		return attempt

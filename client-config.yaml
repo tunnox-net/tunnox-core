@@ -1,13 +1,13 @@
-client_id: 90521524
+client_id: 56512552
 auth_token: ""
 anonymous: true
 device_id: anonymous-device
-secret_key: ew2HUdwOKIRJU0hr5OFkufinh97O69Ey
+secret_key: vAeGPBINSWCkP9TboqdGFxCtPI9X9Mrb
 server:
-    address: http://127.0.0.1:9000
-    protocol: httppoll
+    address: 127.0.0.1:8080
+    protocol: tcp
 log:
     level: ""
     format: ""
     output: ""
-    file: /tmp/tunnox-client.log
+    file: /tmp/tunnox-target-client.log

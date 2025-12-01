@@ -13,6 +13,7 @@ import (
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/health"
+	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
@@ -32,6 +33,12 @@ type SessionManager interface {
 	GetControlConnectionInterface(clientID int64) interface{}
 	BroadcastConfigPush(clientID int64, configBody string) error
 	GetNodeID() string // 获取当前节点ID
+	// GetTunnelBridgeByConnectionID 通过 ConnectionID 查找 tunnel bridge（优先使用）
+	// 返回 interface{} 避免循环依赖，调用方需要类型断言
+	GetTunnelBridgeByConnectionID(connID string) interface{}
+	// GetTunnelBridgeByMappingID 通过 mappingID 查找 tunnel bridge（向后兼容）
+	// 返回 interface{} 避免循环依赖，调用方需要类型断言
+	GetTunnelBridgeByMappingID(mappingID string, clientID int64) interface{}
 }
 
 // ManagementAPIServer Management API 服务器
@@ -53,8 +60,8 @@ type ManagementAPIServer struct {
 	// pprof 自动抓取器
 	pprofCapture *PProfCapture
 
-	// HTTP 长轮询连接管理器
-	httppollConnMgr *httppollConnectionManager
+	// HTTP 长轮询连接注册表
+	httppollRegistry *httppoll.ConnectionRegistry
 }
 
 // APIConfig API 配置
@@ -127,10 +134,10 @@ func NewManagementAPIServer(
 
 	// 注册路由
 	s.registerRoutes()
-	
+
 	// 注册 HTTP 长轮询路由（独立路径）
 	s.registerHTTPLongPollingRoutes()
-	
+
 	// 注册 pprof 性能分析路由
 	s.registerPProfRoutes()
 
@@ -295,11 +302,11 @@ func (s *ManagementAPIServer) registerRoutes() {
 func (s *ManagementAPIServer) registerHTTPLongPollingRoutes() {
 	// HTTP 长轮询端点（用于客户端连接，统一到 /tunnox/v1）
 	longPollRouter := s.router.PathPrefix("/tunnox/v1").Subrouter()
-	
+
 	// 不应用认证中间件，认证在握手阶段进行
 	// 应用 CORS 中间件
 	longPollRouter.Use(s.corsMiddleware)
-	
+
 	// 注册长轮询端点
 	longPollRouter.HandleFunc("/push", s.handleHTTPPush).Methods("POST")
 	longPollRouter.HandleFunc("/poll", s.handleHTTPPoll).Methods("GET")
@@ -313,15 +320,15 @@ func (s *ManagementAPIServer) registerPProfRoutes() {
 
 	// pprof 路由需要认证（如果配置了认证），统一到 /tunnox/v1/debug/pprof
 	pprofRouter := s.router.PathPrefix("/tunnox/v1/debug/pprof").Subrouter()
-	
+
 	// 应用认证中间件（如果需要）
 	if s.config.Auth.Type != "none" {
 		pprofRouter.Use(s.authMiddleware)
 	}
-	
+
 	// 注册 pprof 路由（使用 http.DefaultServeMux，它已经注册了所有 pprof 路由）
 	pprofRouter.PathPrefix("/").Handler(http.DefaultServeMux)
-	
+
 	utils.Infof("ManagementAPIServer: pprof enabled at http://%s/tunnox/v1/debug/pprof/", s.config.ListenAddr)
 }
 

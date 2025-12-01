@@ -227,6 +227,7 @@ type HandshakeResponse struct {
 	SessionToken string `json:"session_token,omitempty"` // 会话Token（认证成功后返回）
 	ClientID     int64  `json:"client_id,omitempty"`     // 分配的ClientID（匿名客户端首次握手）
 	SecretKey    string `json:"secret_key,omitempty"`    // 分配的SecretKey（匿名客户端首次握手）
+	ConnectionID string `json:"connection_id,omitempty"` // 服务端分配的ConnectionID（HTTP长轮询专用）
 }
 
 // TunnelOpenRequest 隧道打开请求（映射连接认证）

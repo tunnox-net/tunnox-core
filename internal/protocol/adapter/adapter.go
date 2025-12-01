@@ -204,6 +204,22 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 		default:
 		}
 
+		// ✅ 设计改进：在每次循环开始时检查连接是否已切换到流模式
+		// 如果已切换到流模式，readLoop 应该立即退出，因为：
+		// 1. 流模式下数据是原始数据（如 MySQL 协议），不再是 Tunnox 协议包
+		// 2. 流模式下的数据应该通过 net.Conn 直接转发，而不是通过 ReadPacket()
+		// 3. 这样可以避免不必要的 ReadPacket 调用和解压缩错误
+		if streamConn != nil && streamConn.Stream != nil {
+			if reader, ok := streamConn.Stream.GetReader().(interface {
+				IsStreamMode() bool
+			}); ok && reader.IsStreamMode() {
+				utils.Infof("Connection %s is in stream mode, readLoop exiting (data will be forwarded directly via net.Conn)", streamConn.ID)
+				shouldCloseConn = false
+				streamConn = nil
+				return
+			}
+		}
+
 		pkt, _, err := streamConn.Stream.ReadPacket()
 		if err != nil {
 			isTimeoutError := false
@@ -244,10 +260,14 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 				errMsg := err.Error()
 				if errMsg == "tunnel source connected, switching to stream mode" ||
 					errMsg == "tunnel target connected, switching to stream mode" ||
-					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" {
+					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" ||
+					errMsg == "tunnel connected to existing bridge, switching to stream mode" {
+					// 在设置为 nil 之前保存 ID 用于日志
+					connID := streamConn.ID
 					shouldCloseConn = false
 					// 注意：对于隧道连接，streamConn 会被转移到隧道管理，不需要在这里关闭
 					streamConn = nil
+					utils.Infof("Connection %s switched to stream mode, readLoop exiting", connID)
 					return
 				}
 			}

@@ -28,6 +28,9 @@ type ClientInterface interface {
 
 	// GetUserQuota 获取用户配额信息
 	GetUserQuota() (*models.UserQuota, error)
+
+	// GetServerProtocol 获取服务器协议（用于选择拷贝策略）
+	GetServerProtocol() string
 }
 
 // TrafficStats 流量统计（本地缓存）
@@ -52,4 +55,3 @@ func (t *TrafficStats) Reset() {
 func (t *TrafficStats) GetStats() (sent, received, count int64) {
 	return t.BytesSent.Load(), t.BytesReceived.Load(), t.ConnectionCount.Load()
 }
-

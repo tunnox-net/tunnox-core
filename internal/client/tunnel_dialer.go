@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -8,15 +9,18 @@ import (
 	"time"
 
 	"tunnox-core/internal/packet"
+	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
+	"tunnox-core/internal/utils"
 )
 
 // dialTunnel 建立隧道连接（通用方法）
 func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Conn, stream.PackageStreamer, error) {
 	// 根据协议建立到服务器的连接
 	var (
-		conn net.Conn
-		err  error
+		conn  net.Conn
+		err   error
+		token string // HTTP 长轮询使用的 token
 	)
 
 	protocol := strings.ToLower(c.config.Server.Protocol)
@@ -31,11 +35,15 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		conn, err = dialQUIC(c.Ctx(), c.config.Server.Address)
 	case "httppoll", "http-long-polling", "httplp":
 		// HTTP 长轮询使用 AuthToken 或 SecretKey
-		token := c.config.AuthToken
+		token = c.config.AuthToken
 		if token == "" && c.config.Anonymous {
 			token = c.config.SecretKey
 		}
-		conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, c.config.ClientID, token)
+		// 隧道连接需要传入 mappingID
+		utils.Infof("Client: dialing HTTP long polling tunnel connection, mappingID=%s, clientID=%d", mappingID, c.config.ClientID)
+		conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, c.config.ClientID, token, c.GetInstanceID(), mappingID)
+		// 保存 token 供后续使用
+		_ = token
 	default:
 		return nil, nil, fmt.Errorf("unsupported server protocol: %s", protocol)
 	}
@@ -45,14 +53,39 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 	}
 
 	// 创建 StreamProcessor
-	streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
-	tunnelStream := streamFactory.CreateStreamProcessor(conn, conn)
+	// HTTP 长轮询协议直接使用 HTTPStreamProcessor，不需要通过 CreateStreamProcessor
+	var tunnelStream stream.PackageStreamer
+	if protocol == "httppoll" || protocol == "http-long-polling" || protocol == "httplp" {
+		// 对于 HTTP 长轮询，conn 是 HTTPLongPollingConn，需要转换为 HTTPStreamProcessor
+		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
+			// 创建 HTTPStreamProcessor
+			baseURL := httppollConn.baseURL
+			pushURL := baseURL + "/tunnox/v1/push"
+			pollURL := baseURL + "/tunnox/v1/poll"
+			tunnelStream = httppoll.NewStreamProcessor(c.Ctx(), baseURL, pushURL, pollURL, c.config.ClientID, token, c.GetInstanceID(), mappingID)
+			// 设置 ConnectionID（如果已从握手响应中获取）
+			if httppollConn.connectionID != "" {
+				tunnelStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)
+			}
+		} else {
+			// 回退到默认方式
+			streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
+			tunnelStream = streamFactory.CreateStreamProcessor(conn, conn)
+		}
+	} else {
+		streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
+		tunnelStream = streamFactory.CreateStreamProcessor(conn, conn)
+	}
 
-	// ✅ 新连接需要先进行握手认证（标识为隧道连接）
-	if err := c.sendHandshakeOnStream(tunnelStream, "tunnel"); err != nil {
-		tunnelStream.Close()
-		conn.Close()
-		return nil, nil, fmt.Errorf("tunnel connection handshake failed: %w", err)
+	// ✅ HTTP 长轮询连接已经通过 HTTP 请求认证，不需要再次握手
+	// 其他协议（TCP/UDP/WebSocket/QUIC）需要握手
+	if protocol != "httppoll" && protocol != "http-long-polling" && protocol != "httplp" {
+		// ✅ 新连接需要先进行握手认证（标识为隧道连接）
+		if err := c.sendHandshakeOnStream(tunnelStream, "tunnel"); err != nil {
+			tunnelStream.Close()
+			conn.Close()
+			return nil, nil, fmt.Errorf("tunnel connection handshake failed: %w", err)
+		}
 	}
 
 	// 发送 TunnelOpen
@@ -75,19 +108,80 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		return nil, nil, fmt.Errorf("failed to send tunnel open: %w", err)
 	}
 
-	// 等待 TunnelOpenAck
-	ackPkt, _, err := tunnelStream.ReadPacket()
-	if err != nil {
-		tunnelStream.Close()
-		conn.Close()
-		return nil, nil, fmt.Errorf("failed to read tunnel open ack: %w", err)
-	}
+	// 等待 TunnelOpenAck（忽略心跳包）
+	utils.Infof("Client: waiting for TunnelOpenAck, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
+	var ackPkt *packet.TransferPacket
+	timeout := time.After(30 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			tunnelStream.Close()
+			conn.Close()
+			return nil, nil, fmt.Errorf("timeout waiting for tunnel open ack (30s)")
+		default:
+		}
 
-	// 忽略压缩/加密标志，只检查基础类型
-	if ackPkt.PacketType&0x3F != packet.TunnelOpenAck {
+		pkt, bytesRead, err := tunnelStream.ReadPacket()
+		if err != nil {
+			utils.Errorf("Client: failed to read packet while waiting for TunnelOpenAck: %v", err)
+			tunnelStream.Close()
+			conn.Close()
+			return nil, nil, fmt.Errorf("failed to read tunnel open ack: %w", err)
+		}
+
+		// 忽略心跳包和TunnelOpen包（可能是其他连接的TunnelOpen）
+		baseType := pkt.PacketType & 0x3F
+		utils.Debugf("Client: received packet while waiting for TunnelOpenAck, type=%d (base=%d), bytesRead=%d", pkt.PacketType, baseType, bytesRead)
+		if baseType == packet.Heartbeat {
+			utils.Debugf("Client: ignoring heartbeat packet while waiting for TunnelOpenAck")
+			// 对于 HTTP 长轮询连接，心跳包已经被 ReadPacket 消耗，不需要恢复
+			continue
+		}
+		if baseType == packet.TunnelOpen {
+			utils.Debugf("Client: ignoring TunnelOpen packet while waiting for TunnelOpenAck")
+			// 对于 HTTP 长轮询连接，TunnelOpen 包已经被 ReadPacket 消耗，不需要恢复
+			continue
+		}
+
+		// 检查是否是 TunnelOpenAck
+		if baseType == packet.TunnelOpenAck {
+			utils.Infof("Client: received TunnelOpenAck, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
+			ackPkt = pkt
+			break
+		}
+
+		// 收到其他类型的包（可能是 MySQL 握手包等原始数据）
+		// 对于 HTTP 长轮询连接，这些数据应该被保留在 readBuffer 中，供流模式使用
+		// 但由于 ReadPacket 已经消耗了数据，我们需要将数据放回 readBuffer
+		if httppollConn, ok := conn.(interface {
+			Unread(data []byte)
+		}); ok {
+			// 尝试从 Payload 恢复数据（如果 Payload 存在）
+			if len(pkt.Payload) > 0 {
+				// 构造完整的数据包：包类型(1字节) + 包体大小(4字节) + 包体
+				restoreData := make([]byte, 1+4+len(pkt.Payload))
+				restoreData[0] = byte(pkt.PacketType)
+				binary.BigEndian.PutUint32(restoreData[1:5], uint32(len(pkt.Payload)))
+				copy(restoreData[5:], pkt.Payload)
+				utils.Infof("Client: restoring %d bytes to readBuffer (packet type=%d, payload len=%d), tunnelID=%s, mappingID=%s",
+					len(restoreData), baseType, len(pkt.Payload), tunnelID, mappingID)
+				httppollConn.Unread(restoreData)
+			} else {
+				// 如果没有 Payload，至少恢复包类型和包体大小
+				restoreData := make([]byte, 5)
+				restoreData[0] = byte(pkt.PacketType)
+				binary.BigEndian.PutUint32(restoreData[1:5], 0)
+				utils.Infof("Client: restoring packet header (5 bytes) to readBuffer, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
+				httppollConn.Unread(restoreData)
+			}
+			continue
+		}
+
+		// 收到其他类型的包，返回错误
+		utils.Errorf("Client: unexpected packet type: %v (expected TunnelOpenAck), baseType=%d", pkt.PacketType, baseType)
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, fmt.Errorf("unexpected packet type: %v", ackPkt.PacketType)
+		return nil, nil, fmt.Errorf("unexpected packet type: %v (expected TunnelOpenAck)", pkt.PacketType)
 	}
 
 	var ack packet.TunnelOpenAckResponse
@@ -101,6 +195,16 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		tunnelStream.Close()
 		conn.Close()
 		return nil, nil, fmt.Errorf("tunnel open failed: %s", ack.Error)
+	}
+
+	// ✅ 对于 HTTP 长轮询连接，切换到流模式（不再解析数据包格式，直接转发原始数据）
+	if protocol == "httppoll" || protocol == "http-long-polling" || protocol == "httplp" {
+		if httppollConn, ok := conn.(interface {
+			SetStreamMode(streamMode bool)
+		}); ok {
+			utils.Infof("Client: switching HTTP long polling tunnel connection to stream mode, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
+			httppollConn.SetStreamMode(true)
+		}
 	}
 
 	return conn, tunnelStream, nil

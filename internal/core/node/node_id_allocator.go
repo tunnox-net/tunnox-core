@@ -106,9 +106,16 @@ func (a *NodeIDAllocator) tryAcquireNodeID(key, nodeID string) (bool, error) {
 	}
 
 	// 尝试设置（带TTL）
-	// 注意：这里有个小的竞态窗口，但在实际场景中可以接受
-	// 如果需要完全原子性，需要使用Redis的Lua脚本
-	err = a.storage.Set(key, nodeID, NodeIDLockTTL)
+	// 注意：节点分配是运行时缓存，不应该持久化
+	// 如果 storage 支持 SetRuntime，使用它来显式设置为运行时数据
+	// 否则使用普通的 Set（对于非 HybridStorage 的情况）
+	if hybridStorage, ok := a.storage.(interface {
+		SetRuntime(key string, value interface{}, ttl time.Duration) error
+	}); ok {
+		err = hybridStorage.SetRuntime(key, nodeID, NodeIDLockTTL)
+	} else {
+		err = a.storage.Set(key, nodeID, NodeIDLockTTL)
+	}
 	if err != nil {
 		return false, fmt.Errorf("failed to set node ID: %w", err)
 	}
@@ -145,8 +152,15 @@ func (a *NodeIDAllocator) heartbeatLoop(ctx context.Context, key, nodeID string)
 			utils.Infof("NodeIDAllocator: stop signal received, stopping heartbeat for %s", nodeID)
 			return
 		case <-ticker.C:
-			// 续期
-			err := a.storage.Set(key, nodeID, NodeIDLockTTL)
+			// 续期（节点分配是运行时缓存，不应该持久化）
+			var err error
+			if hybridStorage, ok := a.storage.(interface {
+				SetRuntime(key string, value interface{}, ttl time.Duration) error
+			}); ok {
+				err = hybridStorage.SetRuntime(key, nodeID, NodeIDLockTTL)
+			} else {
+				err = a.storage.Set(key, nodeID, NodeIDLockTTL)
+			}
 			if err != nil {
 				utils.Errorf("NodeIDAllocator: failed to renew node ID %s: %v", nodeID, err)
 			} else {

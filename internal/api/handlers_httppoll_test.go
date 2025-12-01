@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"tunnox-core/internal/core/types"
-	"tunnox-core/internal/protocol/session"
+	httppoll "tunnox-core/internal/protocol/httppoll"
 )
 
 // mockSessionManager 模拟 SessionManager
@@ -41,6 +41,14 @@ func (m *mockSessionManager) BroadcastConfigPush(clientID int64, configBody stri
 
 func (m *mockSessionManager) GetNodeID() string {
 	return "test-node"
+}
+
+func (m *mockSessionManager) GetTunnelBridgeByConnectionID(connID string) interface{} {
+	return nil
+}
+
+func (m *mockSessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID int64) interface{} {
+	return nil
 }
 
 func (m *mockSessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*types.Connection, error) {
@@ -80,17 +88,20 @@ func TestHTTPPushRequest_Handle(t *testing.T) {
 	server := NewManagementAPIServer(ctx, config, nil, nil, nil)
 	server.SetSessionManager(newMockSessionManager())
 
-	// 初始化 httppollConnMgr（如果为 nil）
-	if server.httppollConnMgr == nil {
-		server.httppollConnMgr = newHTTPPollConnectionManager()
+	// 初始化 httppollRegistry
+	if server.httppollRegistry == nil {
+		server.httppollRegistry = httppoll.NewConnectionRegistry()
 	}
 
-	// 手动创建并注册连接，确保测试可预测
-	clientID := int64(123)
-	httppollConn := session.NewServerHTTPLongPollingConn(ctx, clientID)
-	server.httppollConnMgr.mu.Lock()
-	server.httppollConnMgr.connections[clientID] = httppollConn
-	server.httppollConnMgr.mu.Unlock()
+	// 创建测试用的 ConnectionID 和 TunnelPackage
+	connID := "conn_test123"
+	pkg := &httppoll.TunnelPackage{
+		ConnectionID: connID,
+		ClientID:     123,
+		MappingID:    "",
+		TunnelType:   "control",
+	}
+	encodedPkg, _ := httppoll.EncodeTunnelPackage(pkg)
 
 	// 准备请求数据
 	testData := []byte("test data")
@@ -104,7 +115,7 @@ func TestHTTPPushRequest_Handle(t *testing.T) {
 
 	// 创建 HTTP 请求
 	req := httptest.NewRequest("POST", "/tunnox/v1/push", bytes.NewReader(reqJSON))
-	req.Header.Set("X-Client-ID", "123")
+	req.Header.Set("X-Tunnel-Package", encodedPkg)
 	w := httptest.NewRecorder()
 
 	// 处理请求
@@ -119,7 +130,7 @@ func TestHTTPPushRequest_Handle(t *testing.T) {
 	assert.Equal(t, uint64(1), resp.Ack)
 }
 
-func TestHTTPLongPollingConnection_Migration(t *testing.T) {
+func TestHTTPLongPollingConnection_UpdateClientID(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -131,68 +142,26 @@ func TestHTTPLongPollingConnection_Migration(t *testing.T) {
 	server := NewManagementAPIServer(ctx, config, nil, nil, nil)
 	server.SetSessionManager(newMockSessionManager())
 
-	// 创建临时连接（clientID=0）
-	httppollConn := server.getOrCreateHTTPLongPollingConn(0, ctx, "127.0.0.1")
-	require.NotNil(t, httppollConn)
-	assert.Equal(t, int64(0), httppollConn.GetClientID())
+	// 初始化 httppollRegistry
+	if server.httppollRegistry == nil {
+		server.httppollRegistry = httppoll.NewConnectionRegistry()
+	}
 
-	// 获取连接 ID（通过 SessionManager 创建的 Connection）
-	var connID string
-	conns := server.sessionMgr.(interface{ ListConnections() []*types.Connection }).ListConnections()
-	for _, conn := range conns {
-		if conn.Protocol == "httppoll" {
-			connID = conn.ID
-			break
-		}
-	}
-	
-	// 如果还是找不到，尝试从 tempConnections 中查找
-	if connID == "" && server.httppollConnMgr != nil {
-		server.httppollConnMgr.mu.RLock()
-		for id, conn := range server.httppollConnMgr.tempConnections {
-			if conn == httppollConn {
-				connID = id
-				break
-			}
-		}
-		server.httppollConnMgr.mu.RUnlock()
-	}
-	
-	// 如果仍然找不到，使用一个测试用的连接 ID（这种情况不应该发生，但为了测试的健壮性）
-	if connID == "" {
-		connID = "test-conn-migration-" + strconv.FormatInt(time.Now().UnixNano(), 10)
-		// 手动注册到 tempConnections 以便迁移测试
-		if server.httppollConnMgr != nil {
-			server.httppollConnMgr.mu.Lock()
-			server.httppollConnMgr.tempConnections[connID] = httppollConn
-			server.httppollConnMgr.mu.Unlock()
-		}
-	}
-	
-	// 设置连接 ID 和迁移回调（getOrCreateHTTPLongPollingConn 应该已经设置，但为了测试的健壮性，再次设置）
-	httppollConn.SetConnectionID(connID)
-	if server.httppollConnMgr != nil {
-		migrationCallback := server.httppollConnMgr.createMigrationCallback(connID)
-		httppollConn.SetMigrationCallback(migrationCallback)
-	}
-	
-	require.NotEmpty(t, connID, "Connection ID should be set")
+	// 创建连接（clientID=0）
+	connID := "conn_test456"
+	streamProcessor := httppoll.NewServerStreamProcessor(ctx, connID, 0, "")
+	server.httppollRegistry.Register(connID, streamProcessor)
 
-	// 模拟握手完成，更新 clientID（应该触发迁移）
-	httppollConn.OnHandshakeComplete(999)
+	require.NotNil(t, streamProcessor)
+	assert.Equal(t, int64(0), streamProcessor.GetClientID())
+	assert.Equal(t, connID, streamProcessor.GetConnectionID())
 
-	// 验证连接已迁移到正式映射
-	if server.httppollConnMgr != nil {
-		server.httppollConnMgr.mu.RLock()
-		_, existsInTemp := server.httppollConnMgr.tempConnections[connID]
-		migratedConn := server.httppollConnMgr.connections[999]
-		server.httppollConnMgr.mu.RUnlock()
+	// 更新 clientID（模拟握手完成）
+	streamProcessor.UpdateClientID(999)
 
-		assert.False(t, existsInTemp, "Connection should be removed from temp connections")
-		assert.NotNil(t, migratedConn, "Connection should be in clientID mapping")
-		assert.Equal(t, httppollConn, migratedConn, "Migrated connection should be the same instance")
-		assert.Equal(t, int64(999), httppollConn.GetClientID())
-	}
+	// 验证 clientID 已更新
+	assert.Equal(t, int64(999), streamProcessor.GetClientID())
+	assert.Equal(t, connID, streamProcessor.GetConnectionID()) // ConnectionID 不变
 }
 
 // TestHTTPPollRequest_Handle 测试 HTTP 轮询请求处理
@@ -215,18 +184,26 @@ func TestHTTPPollRequest_Timeout(t *testing.T) {
 	server := NewManagementAPIServer(ctx, config, nil, nil, nil)
 	server.SetSessionManager(newMockSessionManager())
 
-	// 初始化 httppollConnMgr 并创建一个连接（但不发送数据）
-	if server.httppollConnMgr == nil {
-		server.httppollConnMgr = newHTTPPollConnectionManager()
+	// 初始化 httppollRegistry 并创建一个连接（但不发送数据）
+	if server.httppollRegistry == nil {
+		server.httppollRegistry = httppoll.NewConnectionRegistry()
 	}
-	httppollConn := session.NewServerHTTPLongPollingConn(ctx, 123)
-	server.httppollConnMgr.mu.Lock()
-	server.httppollConnMgr.connections[123] = httppollConn
-	server.httppollConnMgr.mu.Unlock()
+	connID := "conn_test789"
+	streamProcessor := httppoll.NewServerStreamProcessor(ctx, connID, 123, "")
+	server.httppollRegistry.Register(connID, streamProcessor)
+
+	// 创建 TunnelPackage
+	pkg := &httppoll.TunnelPackage{
+		ConnectionID: connID,
+		ClientID:     123,
+		MappingID:    "",
+		TunnelType:   "control",
+	}
+	encodedPkg, _ := httppoll.EncodeTunnelPackage(pkg)
 
 	// 创建 HTTP 请求（短超时）
 	req := httptest.NewRequest("GET", "/tunnox/v1/poll?timeout=1", nil)
-	req.Header.Set("X-Client-ID", "123")
+	req.Header.Set("X-Tunnel-Package", encodedPkg)
 	w := httptest.NewRecorder()
 
 	// 处理请求
@@ -275,5 +252,88 @@ func TestHTTPPushRequest_InvalidClientID(t *testing.T) {
 
 	// 验证响应（应该返回错误）
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// TestHTTPLongPollingConnection_MultipleConnections 测试多个连接
+// 验证使用 ConnectionID 可以正确区分不同的连接
+func TestHTTPLongPollingConnection_MultipleConnections(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	config := &APIConfig{
+		Enabled:    true,
+		ListenAddr: ":0",
+		Auth:       AuthConfig{Type: "none"},
+	}
+	server := NewManagementAPIServer(ctx, config, nil, nil, nil)
+	server.SetSessionManager(newMockSessionManager())
+
+	// 初始化 httppollRegistry
+	if server.httppollRegistry == nil {
+		server.httppollRegistry = httppoll.NewConnectionRegistry()
+	}
+
+	// 创建三个不同 ConnectionID 的连接
+	connID1 := "conn_test1"
+	connID2 := "conn_test2"
+	connID3 := "conn_test3"
+
+	conn1 := httppoll.NewServerStreamProcessor(ctx, connID1, 0, "")
+	conn2 := httppoll.NewServerStreamProcessor(ctx, connID2, 0, "")
+	conn3 := httppoll.NewServerStreamProcessor(ctx, connID3, 0, "")
+
+	server.httppollRegistry.Register(connID1, conn1)
+	server.httppollRegistry.Register(connID2, conn2)
+	server.httppollRegistry.Register(connID3, conn3)
+
+	require.NotNil(t, conn1)
+	require.NotNil(t, conn2)
+	require.NotNil(t, conn3)
+
+	// 验证三个连接是不同的实例
+	assert.NotEqual(t, conn1, conn2, "Connections with different ConnectionIDs should be different")
+	assert.NotEqual(t, conn2, conn3, "Connections with different ConnectionIDs should be different")
+	assert.NotEqual(t, conn1, conn3, "Connections with different ConnectionIDs should be different")
+
+	// 验证每个 ConnectionID 都能找到对应的连接
+	foundConn1 := server.httppollRegistry.Get(connID1)
+	foundConn2 := server.httppollRegistry.Get(connID2)
+	foundConn3 := server.httppollRegistry.Get(connID3)
+
+	assert.Equal(t, conn1, foundConn1, "Should find connection 1 by connID1")
+	assert.Equal(t, conn2, foundConn2, "Should find connection 2 by connID2")
+	assert.Equal(t, conn3, foundConn3, "Should find connection 3 by connID3")
+}
+
+// TestConnectionRegistry 测试 ConnectionRegistry
+func TestConnectionRegistry(t *testing.T) {
+	ctx := context.Background()
+	registry := httppoll.NewConnectionRegistry()
+
+	// 创建测试连接
+	conn1 := httppoll.NewServerStreamProcessor(ctx, "conn_test1", 123, "")
+	conn2 := httppoll.NewServerStreamProcessor(ctx, "conn_test2", 456, "")
+
+	// 注册连接
+	registry.Register("conn_test1", conn1)
+	registry.Register("conn_test2", conn2)
+
+	// 验证连接数量
+	assert.Equal(t, 2, registry.Count())
+
+	// 验证可以获取连接
+	foundConn1 := registry.Get("conn_test1")
+	foundConn2 := registry.Get("conn_test2")
+	assert.Equal(t, conn1, foundConn1)
+	assert.Equal(t, conn2, foundConn2)
+
+	// 验证不存在的连接返回 nil
+	assert.Nil(t, registry.Get("conn_nonexistent"))
+
+	// 移除连接
+	registry.Remove("conn_test1")
+	assert.Equal(t, 1, registry.Count())
+	assert.Nil(t, registry.Get("conn_test1"))
+	assert.Equal(t, conn2, registry.Get("conn_test2"))
 }
 

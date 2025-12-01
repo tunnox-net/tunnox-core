@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -29,7 +30,8 @@ type TunnelBridge struct {
 	mappingID    string   // 映射ID（用于流量统计）
 	sourceConn   net.Conn // 源端客户端的隧道连接
 	sourceStream stream.PackageStreamer
-	targetConn   net.Conn // 目标端客户端的隧道连接（等待建立）
+	sourceConnMu sync.RWMutex // 保护 sourceConn 的读写
+	targetConn   net.Conn     // 目标端客户端的隧道连接（等待建立）
 	targetStream stream.PackageStreamer
 	ready        chan struct{} // 用于通知目标端连接已建立
 
@@ -116,6 +118,26 @@ func (b *TunnelBridge) SetTargetConnection(targetConn net.Conn, targetStream str
 	close(b.ready)
 }
 
+// SetSourceConnection 设置源端连接（用于更新连接）
+func (b *TunnelBridge) SetSourceConnection(sourceConn net.Conn, sourceStream stream.PackageStreamer) {
+	b.sourceConnMu.Lock()
+	oldConn := b.sourceConn
+	b.sourceConn = sourceConn
+	b.sourceConnMu.Unlock()
+	if sourceStream != nil {
+		b.sourceStream = sourceStream
+	}
+	utils.Infof("TunnelBridge[%s]: updated sourceConn, mappingID=%s, oldConn=%v, newConn=%v",
+		b.tunnelID, b.mappingID, oldConn, sourceConn)
+}
+
+// getSourceConn 获取源端连接（线程安全）
+func (b *TunnelBridge) getSourceConn() net.Conn {
+	b.sourceConnMu.RLock()
+	defer b.sourceConnMu.RUnlock()
+	return b.sourceConn
+}
+
 // Start 启动桥接
 func (b *TunnelBridge) Start() error {
 	// 等待目标端连接建立（超时30秒）
@@ -138,14 +160,45 @@ func (b *TunnelBridge) Start() error {
 
 	// 启动双向数据转发（带流量统计和限速）
 	// 源端 -> 目标端（带限速和统计）
+	// ✅ 使用动态获取 sourceConn 的方式，支持连接更新
 	go func() {
-		written := b.copyWithControl(b.targetConn, b.sourceConn, "source->target", &b.bytesSent)
-		utils.Infof("TunnelBridge[%s]: source->target finished, %d bytes", b.tunnelID, written)
+		for {
+			sourceConn := b.getSourceConn()
+			if sourceConn == nil {
+				utils.Warnf("TunnelBridge[%s]: sourceConn is nil, waiting...", b.tunnelID)
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			utils.Infof("TunnelBridge[%s]: starting source->target copy, sourceConn=%v", b.tunnelID, sourceConn)
+			written := b.copyWithControl(b.targetConn, sourceConn, "source->target", &b.bytesSent)
+			utils.Infof("TunnelBridge[%s]: source->target copy finished, %d bytes", b.tunnelID, written)
+			// 如果读取完成（EOF 或错误），检查是否有新的连接
+			// 如果有新连接，继续读取；否则退出
+			newSourceConn := b.getSourceConn()
+			if newSourceConn == nil {
+				// 连接被清空，退出
+				utils.Infof("TunnelBridge[%s]: sourceConn is nil, exiting", b.tunnelID)
+				break
+			}
+			if newSourceConn == sourceConn {
+				// 连接没有更新，正常退出（EOF 或错误）
+				utils.Infof("TunnelBridge[%s]: sourceConn unchanged (conn=%v), exiting", b.tunnelID, sourceConn)
+				break
+			}
+			// 连接已更新，继续使用新连接读取
+			utils.Infof("TunnelBridge[%s]: sourceConn updated (old=%v, new=%v), continuing with new connection",
+				b.tunnelID, sourceConn, newSourceConn)
+		}
 	}()
 
 	// 目标端 -> 源端（带限速和统计）
+	// ✅ 使用动态获取 sourceConn 的方式，支持连接更新
+	// 注意：target->source 方向是从 targetConn 读取，写入到 sourceConn
+	// 所以需要在每次写入时获取最新的 sourceConn
 	go func() {
-		written := b.copyWithControl(b.sourceConn, b.targetConn, "target->source", &b.bytesReceived)
+		// 创建一个包装器，每次写入时都获取最新的 sourceConn
+		dynamicWriter := &dynamicSourceWriter{bridge: b}
+		written := b.copyWithControl(dynamicWriter, b.targetConn, "target->source", &b.bytesReceived)
 		utils.Infof("TunnelBridge[%s]: target->source finished, %d bytes", b.tunnelID, written)
 	}()
 
@@ -188,9 +241,27 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 		default:
 		}
 
-		// 从源端读取
+		// 从源端读取（带超时检测）
+		// ✅ 提取连接的 connID 用于调试
+		srcConnID := "unknown"
+		if srcConn, ok := src.(interface{ GetConnectionID() string }); ok {
+			srcConnID = srcConn.GetConnectionID()
+		} else if srcConn, ok := src.(interface{ GetClientID() int64 }); ok {
+			srcConnID = fmt.Sprintf("client_%d", srcConn.GetClientID())
+		}
+		utils.Infof("TunnelBridge[%s]: %s calling src.Read(buf), src type=%T, srcConnID=%s, buf size=%d", b.tunnelID, direction, src, srcConnID, len(buf))
 		nr, err := src.Read(buf)
+		firstByte := byte(0)
 		if nr > 0 {
+			firstByte = buf[0]
+		}
+		utils.Infof("TunnelBridge[%s]: %s src.Read returned, n=%d, err=%v, firstByte=0x%02x, srcConnID=%s", b.tunnelID, direction, nr, err, firstByte, srcConnID)
+		if nr > 0 {
+			firstByte := byte(0)
+			if len(buf) > 0 {
+				firstByte = buf[0]
+			}
+			utils.Infof("TunnelBridge[%s]: %s read %d bytes, firstByte=0x%02x", b.tunnelID, direction, nr, firstByte)
 			// 应用限速（如果启用）
 			if b.rateLimiter != nil {
 				// 使用 bridge 的 context 进行限速等待
@@ -205,6 +276,7 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 			if nw > 0 {
 				total += int64(nw)
 				counter.Add(int64(nw)) // 更新流量统计
+				utils.Infof("TunnelBridge[%s]: %s wrote %d bytes (total: %d)", b.tunnelID, direction, nw, total)
 			}
 			if ew != nil {
 				if ew != io.EOF {
@@ -228,7 +300,9 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 				continue
 			}
 			if err != io.EOF {
-				utils.Debugf("TunnelBridge[%s]: %s read error: %v", b.tunnelID, direction, err)
+				utils.Infof("TunnelBridge[%s]: %s read error: %v (total bytes: %d)", b.tunnelID, direction, err, total)
+			} else {
+				utils.Infof("TunnelBridge[%s]: %s read EOF (total bytes: %d)", b.tunnelID, direction, total)
 			}
 			break
 		}
@@ -291,4 +365,18 @@ func (b *TunnelBridge) reportTrafficStats() {
 func (b *TunnelBridge) Close() error {
 	b.ManagerBase.Close()
 	return nil
+}
+
+// dynamicSourceWriter 动态获取 sourceConn 的 Writer 包装器
+// 用于在 target->source 方向时，每次写入都使用最新的 sourceConn
+type dynamicSourceWriter struct {
+	bridge *TunnelBridge
+}
+
+func (w *dynamicSourceWriter) Write(p []byte) (n int, err error) {
+	sourceConn := w.bridge.getSourceConn()
+	if sourceConn == nil {
+		return 0, fmt.Errorf("sourceConn is nil")
+	}
+	return sourceConn.Write(p)
 }

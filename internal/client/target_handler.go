@@ -64,7 +64,7 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	transformConfig *transform.TransformConfig) {
 	// 1. 连接到目标服务
 	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
-	targetConn, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
+	targetConn, err := net.DialTimeout("tcp", targetAddr, 30*time.Second)
 	if err != nil {
 		utils.Errorf("Client: failed to connect to target %s: %v", targetAddr, err)
 		return
@@ -81,12 +81,33 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 
 	utils.Infof("Client: TCP tunnel %s established for target %s", tunnelID, targetAddr)
 
-	// 3. 关闭 StreamProcessor，切换到裸连接模式
-	tunnelStream.Close()
+	// 3. 对于TCP协议，tunnelStream 和 tunnelConn 是同一个连接
+	// 使用 tunnelStream 的 Reader/Writer 进行双向转发（支持压缩/加密）
+	// 注意：不要关闭 tunnelStream，因为它的 Close() 只关闭压缩/加密资源，不影响底层连接
+	tunnelReader := tunnelStream.GetReader()
+	tunnelWriter := tunnelStream.GetWriter()
 
-	// 4. 创建转换器并启动双向转发
+	// 如果 GetReader/GetWriter 返回 nil（如 HTTP 长轮询），则使用原始连接
+	if tunnelReader == nil {
+		utils.Infof("Client[TCP-target][%s]: tunnelStream.GetReader() returned nil, using tunnelConn directly", tunnelID)
+		tunnelReader = tunnelConn
+	}
+	if tunnelWriter == nil {
+		utils.Infof("Client[TCP-target][%s]: tunnelStream.GetWriter() returned nil, using tunnelConn directly", tunnelID)
+		tunnelWriter = tunnelConn
+	}
+
+	// 4. 包装隧道连接成 ReadWriteCloser（确保关闭时同时关闭 stream 和 conn）
+	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
+		utils.Debugf("Client[TCP-target][%s]: closing tunnel stream and connection", tunnelID)
+		tunnelStream.Close()
+		tunnelConn.Close()
+		return nil
+	})
+
+	// 5. 创建转换器并启动双向转发
 	transformer, _ := transform.NewTransformer(transformConfig)
-	utils.BidirectionalCopy(targetConn, tunnelConn, &utils.BidirectionalCopyOptions{
+	utils.BidirectionalCopy(targetConn, tunnelRWC, &utils.BidirectionalCopyOptions{
 		Transformer: transformer,
 		LogPrefix:   fmt.Sprintf("Client[TCP-target][%s]", tunnelID),
 	})
@@ -212,4 +233,3 @@ func (c *TunnoxClient) bidirectionalCopyUDPTarget(tunnelConn net.Conn, targetCon
 	wg.Wait()
 	utils.Infof("UDPTarget[%s]: tunnel closed", tunnelID)
 }
-
