@@ -34,11 +34,9 @@ type ServerStreamProcessor struct {
 	pollDataQueue *session.PriorityQueue
 	pollDataChan  chan []byte
 	pollWaitChan  chan struct{}
-	pollMu        sync.Mutex
 
 	// 控制包响应通道（用于控制包，通过 X-Tunnel-Package header 返回）
 	controlPacketChan chan *packet.TransferPacket
-	controlPacketMu   sync.Mutex
 
 	// 等待控制包的 Poll 请求队列（requestID -> pollRequestInfo）
 	pendingPollRequests map[string]*pollRequestInfo
@@ -51,6 +49,9 @@ type ServerStreamProcessor struct {
 	// 读取缓冲区（用于从 Push 请求读取数据）
 	readBuffer []byte
 	readBufMu  sync.Mutex
+
+	// 分片重组器（用于接收端重组分片）
+	fragmentReassembler *FragmentReassembler
 
 	// 控制
 	closed  bool
@@ -81,12 +82,13 @@ func NewServerStreamProcessor(ctx context.Context, connID string, clientID int64
 		mappingID:             mappingID,
 		tunnelType:            connType,
 		pollDataQueue:         session.NewPriorityQueue(3),
-		pollDataChan:          make(chan []byte, 1),
+		pollDataChan:          make(chan []byte, 100), // 增加容量，避免阻塞
 		pollWaitChan:          make(chan struct{}, 1),
 		controlPacketChan:     make(chan *packet.TransferPacket, 10), // 控制包通道
 		pushDataChan:          make(chan string, 100),
 		pendingPollRequests:   make(map[string]*pollRequestInfo),
 		pendingControlPackets: make([]*packet.TransferPacket, 0),
+		fragmentReassembler:   NewFragmentReassembler(), // 创建分片重组器
 	}
 
 	sp.converter.SetConnectionInfo(connID, clientID, mappingID, connType)
@@ -268,6 +270,11 @@ func (sp *ServerStreamProcessor) GetConnectionID() string {
 	return sp.connectionID
 }
 
+// GetFragmentReassembler 获取分片重组器
+func (sp *ServerStreamProcessor) GetFragmentReassembler() *FragmentReassembler {
+	return sp.fragmentReassembler
+}
+
 // GetClientID 获取客户端 ID
 func (sp *ServerStreamProcessor) GetClientID() int64 {
 	sp.closeMu.RLock()
@@ -391,7 +398,7 @@ func (sp *ServerStreamProcessor) WritePacket(pkt *packet.TransferPacket, useComp
 	return len(data), nil
 }
 
-// WriteExact 将数据流写入 Poll 响应
+// WriteExact 将数据流写入 Poll 响应（支持分片）
 func (sp *ServerStreamProcessor) WriteExact(data []byte) error {
 	sp.closeMu.RLock()
 	closed := sp.closed
@@ -401,16 +408,121 @@ func (sp *ServerStreamProcessor) WriteExact(data []byte) error {
 		return io.ErrClosedPipe
 	}
 
-	// 推送到优先级队列
-	sp.pollDataQueue.Push(data)
+	utils.Infof("ServerStreamProcessor[%s]: WriteExact called, data len=%d, pollDataQueue len=%d",
+		sp.connectionID, len(data), sp.pollDataQueue.Len())
+
+	// 分片数据
+	fragments, err := SplitDataIntoFragments(data)
+	if err != nil {
+		utils.Errorf("ServerStreamProcessor[%s]: WriteExact failed to split data into fragments: %v", sp.connectionID, err)
+		return err
+	}
+
+	// 序列化每个分片并推送到队列
+	for _, fragment := range fragments {
+		fragmentJSON, err := MarshalFragmentResponse(fragment)
+		if err != nil {
+			utils.Errorf("ServerStreamProcessor[%s]: WriteExact failed to marshal fragment: %v", sp.connectionID, err)
+			return err
+		}
+
+		sp.pollDataQueue.Push(fragmentJSON)
+		utils.Infof("ServerStreamProcessor[%s]: WriteExact pushed fragment %d/%d to pollDataQueue (groupID=%s, size=%d)",
+			sp.connectionID, fragment.FragmentIndex, fragment.TotalFragments, fragment.FragmentGroupID, fragment.FragmentSize)
+	}
+
+	utils.Infof("ServerStreamProcessor[%s]: WriteExact pushed %d fragments to pollDataQueue, queue len=%d",
+		sp.connectionID, len(fragments), sp.pollDataQueue.Len())
 
 	// 通知等待的 Poll 请求
 	select {
 	case sp.pollWaitChan <- struct{}{}:
+		utils.Debugf("ServerStreamProcessor[%s]: WriteExact notified pollWaitChan", sp.connectionID)
 	default:
+		utils.Debugf("ServerStreamProcessor[%s]: WriteExact pollWaitChan full", sp.connectionID)
 	}
 
 	return nil
+}
+
+// ReadAvailable 读取可用数据（不等待完整长度，用于适配 io.Reader）
+// 支持分片重组：接收分片数据，重组后返回完整数据
+func (sp *ServerStreamProcessor) ReadAvailable(maxLength int) ([]byte, error) {
+	utils.Infof("ServerStreamProcessor[%s]: ReadAvailable called, maxLength=%d", sp.connectionID, maxLength)
+	sp.readBufMu.Lock()
+	bufferLen := len(sp.readBuffer)
+	sp.readBufMu.Unlock()
+
+	// 如果缓冲区有数据，直接返回
+	if bufferLen > 0 {
+		sp.readBufMu.Lock()
+		readLen := len(sp.readBuffer)
+		if readLen > maxLength {
+			readLen = maxLength
+		}
+		data := make([]byte, readLen)
+		n := copy(data, sp.readBuffer[:readLen])
+		sp.readBuffer = sp.readBuffer[n:]
+		remaining := len(sp.readBuffer)
+		sp.readBufMu.Unlock()
+		utils.Infof("ServerStreamProcessor[%s]: ReadAvailable returning %d bytes from buffer (remaining=%d, maxLength=%d)", sp.connectionID, n, remaining, maxLength)
+		return data, nil
+	}
+
+	// 缓冲区为空，阻塞等待数据（使用短超时，避免长时间阻塞）
+	utils.Infof("ServerStreamProcessor[%s]: ReadAvailable buffer empty, waiting for pushDataChan, pushDataChan len=%d, cap=%d", sp.connectionID, len(sp.pushDataChan), cap(sp.pushDataChan))
+	timeout := time.NewTimer(1 * time.Second) // 1秒超时，快速响应
+	defer timeout.Stop()
+
+	select {
+	case <-sp.Ctx().Done():
+		utils.Infof("ServerStreamProcessor[%s]: ReadAvailable context cancelled", sp.connectionID)
+		return nil, sp.Ctx().Err()
+	case base64Data, ok := <-sp.pushDataChan:
+		timeout.Stop()
+		if !ok {
+			sp.readBufMu.Lock()
+			utils.Infof("ServerStreamProcessor[%s]: ReadAvailable pushDataChan closed", sp.connectionID)
+			return nil, io.EOF
+		}
+		utils.Infof("ServerStreamProcessor[%s]: ReadAvailable received from pushDataChan, base64Data len=%d", sp.connectionID, len(base64Data))
+
+		// 解码Base64数据
+		data, err := base64.StdEncoding.DecodeString(base64Data)
+		if err != nil {
+			sp.readBufMu.Lock()
+			utils.Errorf("ServerStreamProcessor[%s]: ReadAvailable failed to decode base64: %v", sp.connectionID, err)
+			return nil, fmt.Errorf("failed to decode base64: %w", err)
+		}
+
+		// 注意：这里接收的是原始数据，不是分片格式
+		// 分片格式应该在客户端发送时处理，服务端接收时已经是重组后的数据
+		// 但为了完整性，我们也支持接收分片格式（如果客户端发送了分片）
+		// 目前先按原始数据处理，后续如果需要可以添加分片检测逻辑
+
+		sp.readBufMu.Lock()
+		sp.readBuffer = append(sp.readBuffer, data...)
+		utils.Infof("ServerStreamProcessor[%s]: ReadAvailable decoded %d bytes, buffer now has %d bytes", sp.connectionID, len(data), len(sp.readBuffer))
+
+		// 返回可用数据（最多 maxLength 字节）
+		readLen := len(sp.readBuffer)
+		if readLen > maxLength {
+			readLen = maxLength
+		}
+		dataToReturn := make([]byte, readLen)
+		n := copy(dataToReturn, sp.readBuffer[:readLen])
+		sp.readBuffer = sp.readBuffer[n:]
+		remaining := len(sp.readBuffer)
+		sp.readBufMu.Unlock()
+		utils.Infof("ServerStreamProcessor[%s]: ReadAvailable returning %d bytes (buffer had %d bytes, maxLength=%d, remaining=%d)", sp.connectionID, n, remaining+n, maxLength, remaining)
+		return dataToReturn, nil
+	case <-timeout.C:
+		// 超时，返回空数据（但不返回错误，让 io.Copy 重试）
+		sp.readBufMu.Lock()
+		utils.Infof("ServerStreamProcessor[%s]: ReadAvailable timed out waiting for data (1s), pushDataChan len=%d, cap=%d, buffer len=%d, returning empty to allow retry", sp.connectionID, len(sp.pushDataChan), cap(sp.pushDataChan), len(sp.readBuffer))
+		sp.readBufMu.Unlock()
+		return nil, nil // 返回空，让 io.Copy 重试
+	}
 }
 
 // ReadExact 从 Push 请求读取数据流
@@ -418,35 +530,82 @@ func (sp *ServerStreamProcessor) ReadExact(length int) ([]byte, error) {
 	sp.readBufMu.Lock()
 	defer sp.readBufMu.Unlock()
 
+	utils.Infof("ServerStreamProcessor[%s]: ReadExact called, requested=%d, buffer len=%d",
+		sp.connectionID, length, len(sp.readBuffer))
+
 	// 从缓冲读取，如果不够则等待更多数据
+	// ReadExact 应该等待完整数据，而不是返回部分数据（对于MySQL等协议，数据包必须完整）
 	for len(sp.readBuffer) < length {
 		sp.readBufMu.Unlock()
-		// 等待从 pushDataChan 接收更多数据
+		utils.Infof("ServerStreamProcessor[%s]: ReadExact waiting for data, buffer len=%d, need=%d, pushDataChan len=%d",
+			sp.connectionID, len(sp.readBuffer), length, len(sp.pushDataChan))
+
+		// 使用合理的超时时间，平衡响应速度和数据完整性
+		// 对于MySQL等协议，数据包通常较小，但需要等待完整数据包
+		// 如果超时后缓冲区有数据，返回部分数据，由上层处理
+		timeout := time.NewTimer(30 * time.Second) // 30秒超时，等待完整数据包
 		select {
 		case <-sp.Ctx().Done():
+			timeout.Stop()
 			return nil, sp.Ctx().Err()
 		case base64Data, ok := <-sp.pushDataChan:
+			timeout.Stop()
 			if !ok {
+				utils.Infof("ServerStreamProcessor[%s]: ReadExact pushDataChan closed, buffer len=%d, need=%d", sp.connectionID, len(sp.readBuffer), length)
+				sp.readBufMu.Lock()
+				// 如果缓冲区有数据但不够，返回部分数据（连接已关闭）
+				if len(sp.readBuffer) > 0 {
+					readLen := len(sp.readBuffer)
+					data := make([]byte, readLen)
+					n := copy(data, sp.readBuffer)
+					sp.readBuffer = sp.readBuffer[n:]
+					utils.Infof("ServerStreamProcessor[%s]: ReadExact returning partial data due to EOF, n=%d, requested=%d", sp.connectionID, n, length)
+					return data, io.EOF
+				}
 				return nil, io.EOF
 			}
+			utils.Infof("ServerStreamProcessor[%s]: ReadExact received from pushDataChan, base64Data len=%d",
+				sp.connectionID, len(base64Data))
 			// Base64 解码
 			data, err := base64.StdEncoding.DecodeString(base64Data)
 			if err != nil {
+				sp.readBufMu.Lock()
 				return nil, fmt.Errorf("failed to decode base64: %w", err)
 			}
+			utils.Infof("ServerStreamProcessor[%s]: ReadExact decoded, data len=%d", sp.connectionID, len(data))
 			sp.readBufMu.Lock()
 			sp.readBuffer = append(sp.readBuffer, data...)
-			sp.readBufMu.Unlock()
+		case <-timeout.C:
+			// 超时，检查缓冲区状态
+			sp.readBufMu.Lock()
+			if len(sp.readBuffer) >= length {
+				// 缓冲区已经有足够的数据，继续循环以读取完整数据
+				utils.Debugf("ServerStreamProcessor[%s]: ReadExact timed out but buffer has enough data (len=%d >= requested=%d), continuing", sp.connectionID, len(sp.readBuffer), length)
+				continue
+			}
+			// 如果缓冲区有数据但不够，继续等待（不返回部分数据）
+			// 对于MySQL等协议，数据包必须完整，返回部分数据会导致序列号错误
+			// ReadExact 的设计就是等待完整数据，不应该返回部分数据
+			if len(sp.readBuffer) > 0 {
+				utils.Debugf("ServerStreamProcessor[%s]: ReadExact timed out, buffer has partial data (len=%d, requested=%d), continuing wait", sp.connectionID, len(sp.readBuffer), length)
+				continue
+			}
+			// 如果缓冲区为空，继续等待
+			utils.Debugf("ServerStreamProcessor[%s]: ReadExact timed out, buffer empty, continuing wait", sp.connectionID)
+			continue
 		}
-		sp.readBufMu.Lock()
 	}
 
-	// 读取指定长度
+	// 读取指定长度（现在缓冲区应该有足够的数据）
 	data := make([]byte, length)
 	n := copy(data, sp.readBuffer)
 	sp.readBuffer = sp.readBuffer[n:]
 
+	utils.Infof("ServerStreamProcessor[%s]: ReadExact returning, n=%d, requested=%d, remaining buffer=%d",
+		sp.connectionID, n, length, len(sp.readBuffer))
+
 	if n < length {
+		// 不应该发生，因为我们已经等待了足够的数据
 		return nil, io.ErrUnexpectedEOF
 	}
 
@@ -475,25 +634,33 @@ func (sp *ServerStreamProcessor) PushData(base64Data string) error {
 	sp.closeMu.RUnlock()
 
 	if closed {
+		utils.Errorf("ServerStreamProcessor[%s]: PushData called but connection is closed", sp.connectionID)
 		return io.ErrClosedPipe
 	}
 
+	utils.Infof("ServerStreamProcessor[%s]: PushData called, base64Data len=%d, pushDataChan len=%d, cap=%d, closed=%v",
+		sp.connectionID, len(base64Data), len(sp.pushDataChan), cap(sp.pushDataChan), closed)
+
 	select {
 	case <-sp.Ctx().Done():
+		utils.Errorf("ServerStreamProcessor[%s]: PushData context cancelled", sp.connectionID)
 		return sp.Ctx().Err()
 	case sp.pushDataChan <- base64Data:
+		utils.Infof("ServerStreamProcessor[%s]: PushData succeeded, pushed to pushDataChan, pushDataChan len=%d", sp.connectionID, len(sp.pushDataChan))
 		return nil
 	default:
+		utils.Errorf("ServerStreamProcessor[%s]: PushData failed, pushDataChan full (len=%d, cap=%d)", sp.connectionID, len(sp.pushDataChan), cap(sp.pushDataChan))
 		return io.ErrShortWrite
 	}
 }
 
 // PollData 等待数据用于 HTTP Poll 响应（由 handleHTTPPoll 调用）
+// 返回分片响应的JSON字符串（而不是Base64数据）
 func (sp *ServerStreamProcessor) PollData(ctx context.Context) (string, error) {
 	// 先检查队列中是否有数据（非阻塞）
-	if data, ok := sp.pollDataQueue.Pop(); ok {
-		base64Data := base64.StdEncoding.EncodeToString(data)
-		return base64Data, nil
+	if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
+		// 返回分片响应的JSON字符串
+		return string(fragmentJSON), nil
 	}
 
 	// 队列为空，阻塞等待调度器推送数据
@@ -504,9 +671,8 @@ func (sp *ServerStreamProcessor) PollData(ctx context.Context) (string, error) {
 		return "", sp.Ctx().Err()
 	case <-sp.pollWaitChan:
 		// 收到信号，立即检查队列
-		if data, ok := sp.pollDataQueue.Pop(); ok {
-			base64Data := base64.StdEncoding.EncodeToString(data)
-			return base64Data, nil
+		if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
+			return string(fragmentJSON), nil
 		}
 		// 如果队列仍为空，继续等待 pollDataChan
 		select {
@@ -518,15 +684,15 @@ func (sp *ServerStreamProcessor) PollData(ctx context.Context) (string, error) {
 			if !ok {
 				return "", io.EOF
 			}
-			base64Data := base64.StdEncoding.EncodeToString(data)
-			return base64Data, nil
+			// pollDataChan 中的数据已经是 JSON 字节数组
+			return string(data), nil
 		}
 	case data, ok := <-sp.pollDataChan:
 		if !ok {
 			return "", io.EOF
 		}
-		base64Data := base64.StdEncoding.EncodeToString(data)
-		return base64Data, nil
+		// pollDataChan 中的数据已经是 JSON 字节数组
+		return string(data), nil
 	}
 }
 
@@ -559,9 +725,10 @@ func (sp *ServerStreamProcessor) pollDataScheduler() {
 				default:
 					// pollDataChan 已满，将数据放回队列
 					sp.pollDataQueue.Push(data)
-					break
+					goto nextTick
 				}
 			}
+		nextTick:
 		}
 	}
 }
@@ -613,15 +780,53 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 	}
 
 	// keepalive 请求不应该注册到等待队列，因为它们不应该接收控制包
+	// 但是它们应该能够接收数据流（从 pollDataQueue）
 	if tunnelType == "keepalive" {
-		utils.Debugf("ServerStreamProcessor: HandlePollRequest - keepalive request, not registering for control packets, requestID=%s, connID=%s", actualRequestID, sp.connectionID)
+		utils.Debugf("ServerStreamProcessor: HandlePollRequest - keepalive request, not registering for control packets, but checking for data stream, requestID=%s, connID=%s", actualRequestID, sp.connectionID)
 		// keepalive 请求只等待数据流，不等待控制包
-		// 直接返回超时（因为没有数据流）
+		// 先检查队列中是否有数据（非阻塞）
+		if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
+			// 返回分片响应的JSON字符串
+			utils.Infof("ServerStreamProcessor: HandlePollRequest - keepalive request received fragment from queue, len=%d, connID=%s", len(fragmentJSON), sp.connectionID)
+			return string(fragmentJSON), nil, nil
+		}
+		// 队列为空，等待数据流（带超时）
 		select {
 		case <-ctx.Done():
 			return "", nil, ctx.Err()
 		case <-sp.Ctx().Done():
 			return "", nil, sp.Ctx().Err()
+		case <-sp.pollWaitChan:
+			// 收到信号，立即检查队列
+			if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
+				utils.Infof("ServerStreamProcessor: HandlePollRequest - keepalive request received fragment after wait, len=%d, connID=%s", len(fragmentJSON), sp.connectionID)
+				return string(fragmentJSON), nil, nil
+			}
+			// 如果队列仍为空，继续等待 pollDataChan
+			select {
+			case <-ctx.Done():
+				return "", nil, ctx.Err()
+			case <-sp.Ctx().Done():
+				return "", nil, sp.Ctx().Err()
+			case data, ok := <-sp.pollDataChan:
+				if !ok {
+					return "", nil, io.EOF
+				}
+				// pollDataChan 中的数据已经是 JSON 字节数组（由 pollDataScheduler 从 pollDataQueue Pop 出来的）
+				// 直接返回，不需要再次包装
+				utils.Infof("ServerStreamProcessor: HandlePollRequest - keepalive request received data from pollDataChan, len=%d, connID=%s", len(data), sp.connectionID)
+				return string(data), nil, nil
+			case <-time.After(28 * time.Second):
+				return "", nil, context.DeadlineExceeded
+			}
+		case data, ok := <-sp.pollDataChan:
+			if !ok {
+				return "", nil, io.EOF
+			}
+			// pollDataChan 中的数据已经是 JSON 字节数组（由 pollDataScheduler 从 pollDataQueue Pop 出来的）
+			// 直接返回，不需要再次包装
+			utils.Infof("ServerStreamProcessor: HandlePollRequest - keepalive request received data from pollDataChan (immediate), len=%d, connID=%s", len(data), sp.connectionID)
+			return string(data), nil, nil
 		case <-time.After(28 * time.Second):
 			return "", nil, context.DeadlineExceeded
 		}
@@ -685,11 +890,11 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 	}
 
 	// 从队列获取数据流（非阻塞检查）
-	var base64Data string
-	if data, ok := sp.pollDataQueue.Pop(); ok {
-		base64Data = base64.StdEncoding.EncodeToString(data)
-		utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received, len=%d, connID=%s", len(base64Data), sp.connectionID)
-		return base64Data, nil, nil
+	var fragmentJSONStr string
+	if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
+		fragmentJSONStr = string(fragmentJSON)
+		utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received, len=%d, connID=%s", len(fragmentJSONStr), sp.connectionID)
+		return fragmentJSONStr, nil, nil
 	}
 
 	// 队列为空，阻塞等待（控制包或数据流）
@@ -731,10 +936,10 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 	// 注意：不再使用 controlPacketChan，所有控制包都通过 pendingControlPackets 和 tryMatchControlPacket 匹配
 	case <-sp.pollWaitChan:
 		// 收到通知，检查队列
-		if data, ok := sp.pollDataQueue.Pop(); ok {
-			base64Data = base64.StdEncoding.EncodeToString(data)
-			utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received after wait, len=%d, connID=%s", len(base64Data), sp.connectionID)
-			return base64Data, nil, nil
+		if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
+			fragmentJSONStr = string(fragmentJSON)
+			utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received after wait, len=%d, connID=%s", len(fragmentJSONStr), sp.connectionID)
+			return fragmentJSONStr, nil, nil
 		}
 		// 如果队列仍为空，尝试匹配控制包（可能新的控制包已到达）
 		sp.tryMatchControlPacket()
@@ -763,9 +968,10 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 			if !ok {
 				return "", nil, io.EOF
 			}
-			base64Data = base64.StdEncoding.EncodeToString(data)
-			utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received from chan, len=%d, connID=%s", len(base64Data), sp.connectionID)
-			return base64Data, nil, nil
+			// pollDataChan 中的数据已经是 JSON 字节数组
+			fragmentJSONStr = string(data)
+			utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received from chan, len=%d, connID=%s", len(fragmentJSONStr), sp.connectionID)
+			return fragmentJSONStr, nil, nil
 		default:
 			// 继续等待（回到外层 select 循环）
 		}
@@ -806,10 +1012,10 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 				return "", responsePkg, nil
 			case <-sp.pollWaitChan:
 				// 收到通知，检查队列
-				if data, ok := sp.pollDataQueue.Pop(); ok {
-					base64Data = base64.StdEncoding.EncodeToString(data)
-					utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received after wait, len=%d, connID=%s", len(base64Data), sp.connectionID)
-					return base64Data, nil, nil
+				if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
+					fragmentJSONStr = string(fragmentJSON)
+					utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received after wait, len=%d, connID=%s", len(fragmentJSONStr), sp.connectionID)
+					return fragmentJSONStr, nil, nil
 				}
 				// 尝试匹配控制包
 				sp.tryMatchControlPacket()
@@ -817,9 +1023,10 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 				if !ok {
 					return "", nil, io.EOF
 				}
-				base64Data = base64.StdEncoding.EncodeToString(data)
-				utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received from chan, len=%d, connID=%s", len(base64Data), sp.connectionID)
-				return base64Data, nil, nil
+				// pollDataChan 中的数据已经是 JSON 字节数组
+				fragmentJSONStr = string(data)
+				utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received from chan, len=%d, connID=%s", len(fragmentJSONStr), sp.connectionID)
+				return fragmentJSONStr, nil, nil
 			case <-time.After(100 * time.Millisecond):
 				// 定期尝试匹配控制包
 				sp.tryMatchControlPacket()
@@ -829,9 +1036,10 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 		if !ok {
 			return "", nil, io.EOF
 		}
-		base64Data = base64.StdEncoding.EncodeToString(data)
-		utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received from chan, len=%d, connID=%s", len(base64Data), sp.connectionID)
-		return base64Data, nil, nil
+		// pollDataChan 中的数据已经是 JSON 字节数组
+		fragmentJSONStr = string(data)
+		utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received from chan, len=%d, connID=%s", len(fragmentJSONStr), sp.connectionID)
+		return fragmentJSONStr, nil, nil
 	}
 }
 

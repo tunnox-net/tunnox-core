@@ -53,13 +53,11 @@ type HTTPLongPollingConn struct {
 	// 上行连接（发送数据）
 	pushURL    string
 	pushClient *http.Client
-	pushSeq    uint64
 	pushMu     sync.Mutex
 
 	// 下行连接（接收数据）
 	pollURL    string
 	pollClient *http.Client
-	pollSeq    uint64
 	pollMu     sync.Mutex
 
 	// Base64 数据通道（接收 Base64 编码的数据）
@@ -86,6 +84,9 @@ type HTTPLongPollingConn struct {
 	streamMode bool
 	streamMu   sync.RWMutex
 
+	// 分片重组器（用于接收端重组分片）
+	fragmentReassembler *httppoll.FragmentReassembler
+
 	// 地址信息（用于实现 net.Conn 接口）
 	localAddr  net.Addr
 	remoteAddr net.Addr
@@ -95,8 +96,6 @@ type HTTPLongPollingConn struct {
 func (c *HTTPLongPollingConn) UpdateClientID(newClientID int64) {
 	c.pushMu.Lock()
 	defer c.pushMu.Unlock()
-	c.pollMu.Lock()
-	defer c.pollMu.Unlock()
 
 	oldClientID := c.clientID
 	c.clientID = newClientID
@@ -141,10 +140,11 @@ func NewHTTPLongPollingConn(ctx context.Context, baseURL string, clientID int64,
 		pollClient: &http.Client{
 			Timeout: httppollDefaultPollTimeout + 5*time.Second, // 轮询超时 + 缓冲
 		},
-		base64DataChan: make(chan string, 100),
-		writeFlush:     make(chan struct{}, 1),
-		localAddr:      &httppollAddr{network: "httppoll", addr: "local"},
-		remoteAddr:     &httppollAddr{network: "httppoll", addr: baseURL},
+		base64DataChan:      make(chan string, 100),
+		writeFlush:          make(chan struct{}, 1),
+		fragmentReassembler: httppoll.NewFragmentReassembler(), // 创建分片重组器
+		localAddr:           &httppollAddr{network: "httppoll", addr: "local"},
+		remoteAddr:          &httppollAddr{network: "httppoll", addr: baseURL},
 	}
 
 	// 注册清理处理器
@@ -260,49 +260,65 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 		}
 
 		// 验证解码后的数据不是 Base64 字符串（防止循环编码）
-		if len(data) > 0 {
+		// 注意：对于流模式，数据可能是任意二进制数据，包括Base64字符
+		// 所以这个检查应该更宽松，或者只在非流模式下进行
+		if len(data) > 0 && !streamMode {
 			isBase64Char := func(b byte) bool {
 				return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') ||
 					(b >= '0' && b <= '9') || b == '+' || b == '/' || b == '='
 			}
 			base64Count := 0
-			for i := 0; i < len(data) && i < 10; i++ {
+			for i := 0; i < len(data) && i < 20; i++ {
 				if isBase64Char(data[i]) {
 					base64Count++
 				}
 			}
-			if base64Count >= 8 {
-				utils.Errorf("HTTP long polling: decoded data appears to be Base64 string (first %d bytes are Base64 chars), possible double encoding", base64Count)
-				return 0, fmt.Errorf("decoded data appears to be Base64 string, possible double encoding")
+			// 提高阈值，避免误判（MySQL等协议的数据可能包含Base64字符）
+			if base64Count >= 15 {
+				utils.Warnf("HTTP long polling: decoded data appears to be Base64 string (first %d bytes are Base64 chars), possible double encoding", base64Count)
+				// 不返回错误，只记录警告，因为可能是误判
 			}
 		}
 
 		// 追加到 readBuffer
 		c.readBufMu.Lock()
+		oldBufferLen := len(c.readBuffer)
 		c.readBuffer = append(c.readBuffer, data...)
+		newBufferLen := len(c.readBuffer)
+		utils.Infof("HTTP long polling: [Read] appended %d bytes to readBuffer (old len=%d, new len=%d), streamMode=%v, connType=%s, mappingID=%s",
+			len(data), oldBufferLen, newBufferLen, streamMode, c.connType, c.mappingID)
 
-		// 流模式下，过滤心跳包（心跳包只有1字节，类型为0x03或0x43）
-		// 注意：心跳包不应该通过隧道连接传递，应该由控制连接处理
-		if streamMode && len(c.readBuffer) > 0 {
+		// 只有指令通道（control）才需要过滤心跳包
+		// 数据通道（data）不应该有心跳包，数据流中的 0x03 字节是正常数据，不应该被过滤
+		if !streamMode && c.connType == "control" && len(c.readBuffer) > 0 {
 			// 检查 readBuffer 中是否有心跳包，如果有则过滤掉
+			// 注意：只在非流模式的指令通道中过滤，避免误过滤数据流中的正常数据
 			filtered := make([]byte, 0, len(c.readBuffer))
 			for i := 0; i < len(c.readBuffer); i++ {
 				// 检查是否是心跳包（0x03 或 0x43）
 				packetType := packet.Type(c.readBuffer[i])
 				if packetType.IsHeartbeat() {
-					utils.Debugf("HTTP long polling: [Read] stream mode: filtering heartbeat packet (0x%02x) at index %d, mappingID=%s",
-						c.readBuffer[i], i, c.mappingID)
+					utils.Debugf("HTTP long polling: [Read] control channel: filtering heartbeat packet (0x%02x) at index %d",
+						c.readBuffer[i], i)
 					continue // 跳过心跳包
 				}
 				filtered = append(filtered, c.readBuffer[i])
+			}
+			if len(filtered) != len(c.readBuffer) {
+				utils.Infof("HTTP long polling: [Read] filtered %d bytes from readBuffer (before=%d, after=%d)",
+					len(c.readBuffer)-len(filtered), len(c.readBuffer), len(filtered))
 			}
 			c.readBuffer = filtered
 		}
 
 		// 从 readBuffer 读取
+		beforeReadLen := len(c.readBuffer)
 		n := copy(p, c.readBuffer)
 		c.readBuffer = c.readBuffer[n:]
+		afterReadLen := len(c.readBuffer)
 		c.readBufMu.Unlock()
+		utils.Infof("HTTP long polling: [Read] copied %d bytes from readBuffer (before=%d, after=%d, requested=%d), streamMode=%v, connType=%s, mappingID=%s",
+			n, beforeReadLen, afterReadLen, len(p), streamMode, c.connType, c.mappingID)
 
 		// 流模式下，直接返回数据，不验证 Base64 格式（因为已经是原始数据）
 		if !streamMode {
@@ -608,22 +624,39 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 	}
 }
 
-// sendData 发送数据到服务器
+// sendData 发送数据到服务器（支持分片）
 func (c *HTTPLongPollingConn) sendData(data []byte) error {
-	// 序列号管理
-	c.pushMu.Lock()
-	seq := c.pushSeq
-	c.pushSeq++
-	c.pushMu.Unlock()
+	// 分片数据
+	fragments, err := httppoll.SplitDataIntoFragments(data)
+	if err != nil {
+		return fmt.Errorf("failed to split data into fragments: %w", err)
+	}
 
-	// Base64 编码
-	encoded := base64.StdEncoding.EncodeToString(data)
+	utils.Infof("HTTP long polling: sendData splitting %d bytes into %d fragments, connectionID=%s", len(data), len(fragments), c.connectionID)
 
-	// 构造请求
-	reqBody := map[string]interface{}{
-		"data":      encoded,
-		"seq":       seq,
-		"timestamp": time.Now().Unix(),
+	// 发送每个分片
+	for _, fragment := range fragments {
+		if err := c.sendFragment(fragment); err != nil {
+			return fmt.Errorf("failed to send fragment %d/%d: %w", fragment.FragmentIndex, fragment.TotalFragments, err)
+		}
+		utils.Infof("HTTP long polling: sendData sent fragment %d/%d (size=%d, groupID=%s), connectionID=%s",
+			fragment.FragmentIndex, fragment.TotalFragments, fragment.FragmentSize, fragment.FragmentGroupID, c.connectionID)
+	}
+
+	return nil
+}
+
+// sendFragment 发送单个分片
+func (c *HTTPLongPollingConn) sendFragment(fragment *httppoll.FragmentResponse) error {
+	// 构造请求（使用分片格式，统一使用 FragmentResponse）
+	reqBody := &httppoll.FragmentResponse{
+		FragmentGroupID: fragment.FragmentGroupID,
+		OriginalSize:    fragment.OriginalSize,
+		FragmentSize:    fragment.FragmentSize,
+		FragmentIndex:   fragment.FragmentIndex,
+		TotalFragments:  fragment.TotalFragments,
+		Data:            fragment.Data,
+		Timestamp:       time.Now().Unix(),
 	}
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
@@ -656,8 +689,8 @@ func (c *HTTPLongPollingConn) sendData(data []byte) error {
 	}
 	req.Header.Set("X-Tunnel-Package", encodedPkg)
 
-	utils.Infof("HTTP long polling: sending push request, connectionID=%s, clientID=%d, mappingID=%s, dataLen=%d, url=%s",
-		c.connectionID, c.clientID, c.mappingID, len(data), c.pushURL)
+	utils.Infof("HTTP long polling: sending push request (fragment %d/%d), connectionID=%s, clientID=%d, mappingID=%s, fragmentSize=%d, url=%s",
+		fragment.FragmentIndex, fragment.TotalFragments, c.connectionID, c.clientID, c.mappingID, fragment.FragmentSize, c.pushURL)
 
 	var resp *http.Response
 	var retryCount int
@@ -702,14 +735,7 @@ func (c *HTTPLongPollingConn) sendData(data []byte) error {
 		return fmt.Errorf("push request failed: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	utils.Infof("HTTP long polling: push request succeeded, status=%d, seq=%d", resp.StatusCode, seq)
-
-	// 解析 ACK（可选，用于确认）
-	var ackResp struct {
-		Success bool   `json:"success"`
-		Ack     uint64 `json:"ack"`
-	}
-	json.NewDecoder(resp.Body).Decode(&ackResp)
+	utils.Infof("HTTP long polling: push request succeeded, status=%d", resp.StatusCode)
 
 	return nil
 }
@@ -743,7 +769,6 @@ func (c *HTTPLongPollingConn) pollLoop() {
 
 		q := u.Query()
 		q.Set("timeout", strconv.Itoa(int(httppollDefaultPollTimeout.Seconds())))
-		q.Set("since", strconv.FormatUint(c.pollSeq, 10))
 		u.RawQuery = q.Encode()
 
 		req, err := http.NewRequestWithContext(c.Ctx(), "GET", u.String(), nil)
@@ -803,13 +828,8 @@ func (c *HTTPLongPollingConn) pollLoop() {
 			// 不处理，因为 keepalive 请求不应该包含指令
 		}
 
-		// 解析响应
-		var pollResp struct {
-			Success bool   `json:"success"`
-			Data    string `json:"data"`
-			Seq     uint64 `json:"seq"`
-			Timeout bool   `json:"timeout"`
-		}
+		// 解析响应（分片格式）
+		var pollResp httppoll.FragmentResponse
 		if err := json.NewDecoder(resp.Body).Decode(&pollResp); err != nil {
 			resp.Body.Close()
 			utils.Errorf("HTTP long polling: failed to decode poll response: %v", err)
@@ -818,34 +838,100 @@ func (c *HTTPLongPollingConn) pollLoop() {
 		}
 		resp.Body.Close()
 
-		// 处理数据：按照 Base64 适配层设计，Base64 数据直接发送到 base64DataChan
-		// Read() 方法会从 base64DataChan 接收并解码，追加到 readBuffer
+		// 处理数据：如果是分片，需要重组；如果是完整数据，直接处理
 		if pollResp.Data != "" {
-			utils.Infof("HTTP long polling: received Base64 data in poll response, len=%d, seq=%d, mappingID=%s", len(pollResp.Data), pollResp.Seq, c.mappingID)
+			// 判断是否为分片：total_fragments > 1
+			isFragment := pollResp.TotalFragments > 1
+			utils.Infof("HTTP long polling: received fragment response, groupID=%s, index=%d/%d, size=%d, isFragment=%v, mappingID=%s",
+				pollResp.FragmentGroupID, pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentSize, isFragment, c.mappingID)
 
-			// 验证 Base64 数据格式（前几个字符应该是有效的 Base64 字符）
-			previewLen := 20
+			// 解码Base64数据
+			previewLen := 50
 			if len(pollResp.Data) < previewLen {
 				previewLen = len(pollResp.Data)
 			}
-			utils.Debugf("HTTP long polling: Base64 data preview (first %d chars): %s", previewLen, pollResp.Data[:previewLen])
+			utils.Infof("HTTP long polling: decoding fragment data, Data field len=%d, preview=%s, mappingID=%s",
+				len(pollResp.Data), pollResp.Data[:previewLen], c.mappingID)
+			fragmentData, err := base64.StdEncoding.DecodeString(pollResp.Data)
+			if err != nil {
+				previewLen2 := 100
+				if len(pollResp.Data) < previewLen2 {
+					previewLen2 = len(pollResp.Data)
+				}
+				utils.Errorf("HTTP long polling: failed to decode fragment data: %v, Data preview=%s", err, pollResp.Data[:previewLen2])
+				time.Sleep(httppollRetryInterval)
+				continue
+			}
+			firstByte := byte(0)
+			if len(fragmentData) > 0 {
+				firstByte = fragmentData[0]
+			}
+			utils.Infof("HTTP long polling: decoded fragment data, len=%d, firstByte=0x%02x, mappingID=%s",
+				len(fragmentData), firstByte, c.mappingID)
 
-			// 更新序列号
-			c.pollMu.Lock()
-			c.pollSeq = pollResp.Seq + 1
-			c.pollMu.Unlock()
+			// 如果是分片，需要重组
+			if isFragment {
+				// 添加到分片重组器
+				group, err := c.fragmentReassembler.AddFragment(
+					pollResp.FragmentGroupID,
+					pollResp.OriginalSize,
+					pollResp.FragmentSize,
+					pollResp.FragmentIndex,
+					pollResp.TotalFragments,
+					fragmentData,
+				)
+				if err != nil {
+					utils.Errorf("HTTP long polling: failed to add fragment: %v", err)
+					time.Sleep(httppollRetryInterval)
+					continue
+				}
 
-			// 发送 Base64 数据到 base64DataChan（Read() 会解码并追加到 readBuffer）
-			select {
-			case <-c.Ctx().Done():
-				return
-			case c.base64DataChan <- pollResp.Data:
-				utils.Infof("HTTP long polling: sent Base64 data to base64DataChan, len=%d, mappingID=%s", len(pollResp.Data), c.mappingID)
-			default:
-				utils.Warnf("HTTP long polling: base64DataChan full, dropping data")
+				// 检查是否完整
+				if group.IsComplete() {
+					// 重组数据
+					reassembledData, err := group.Reassemble()
+					if err != nil {
+						utils.Errorf("HTTP long polling: failed to reassemble fragments: %v", err)
+						c.fragmentReassembler.RemoveGroup(pollResp.FragmentGroupID)
+						time.Sleep(httppollRetryInterval)
+						continue
+					}
+
+					// Base64编码重组后的数据
+					base64Data := base64.StdEncoding.EncodeToString(reassembledData)
+					utils.Infof("HTTP long polling: reassembled %d bytes from %d fragments, groupID=%s, mappingID=%s",
+						len(reassembledData), pollResp.TotalFragments, pollResp.FragmentGroupID, c.mappingID)
+
+					// 发送到 base64DataChan
+					select {
+					case <-c.Ctx().Done():
+						return
+					case c.base64DataChan <- base64Data:
+						utils.Infof("HTTP long polling: sent reassembled data to base64DataChan, len=%d, mappingID=%s", len(base64Data), c.mappingID)
+					default:
+						utils.Warnf("HTTP long polling: base64DataChan full, dropping reassembled data")
+					}
+
+					// 移除分片组
+					c.fragmentReassembler.RemoveGroup(pollResp.FragmentGroupID)
+				} else {
+					utils.Debugf("HTTP long polling: fragment %d/%d received, waiting for more fragments, groupID=%s",
+						pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentGroupID)
+				}
+			} else {
+				// 完整数据，直接发送到 base64DataChan
+				base64Data := pollResp.Data // 已经是Base64编码
+				select {
+				case <-c.Ctx().Done():
+					return
+				case c.base64DataChan <- base64Data:
+					utils.Infof("HTTP long polling: sent complete data to base64DataChan, len=%d, mappingID=%s", len(base64Data), c.mappingID)
+				default:
+					utils.Warnf("HTTP long polling: base64DataChan full, dropping data")
+				}
 			}
 		} else if pollResp.Timeout {
-			utils.Debugf("HTTP long polling: poll request timeout (seq=%d), retrying...", pollResp.Seq)
+			utils.Debugf("HTTP long polling: poll request timeout, retrying...")
 		}
 
 		// 继续循环，立即发起下一个请求（无论是否超时）

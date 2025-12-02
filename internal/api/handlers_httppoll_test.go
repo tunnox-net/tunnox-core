@@ -107,9 +107,13 @@ func TestHTTPPushRequest_Handle(t *testing.T) {
 	testData := []byte("test data")
 	encodedData := base64.StdEncoding.EncodeToString(testData)
 	reqBody := HTTPPushRequest{
-		Data:      encodedData,
-		Seq:       1,
-		Timestamp: time.Now().Unix(),
+		FragmentGroupID: "",
+		OriginalSize:    len(testData),
+		FragmentSize:    len(testData),
+		FragmentIndex:   0,
+		TotalFragments:  1,
+		Data:            encodedData,
+		Timestamp:       time.Now().Unix(),
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 
@@ -127,7 +131,7 @@ func TestHTTPPushRequest_Handle(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &resp)
 	require.NoError(t, err)
 	assert.True(t, resp.Success)
-	assert.Equal(t, uint64(1), resp.Ack)
+	assert.NotZero(t, resp.Timestamp)
 }
 
 func TestHTTPLongPollingConnection_UpdateClientID(t *testing.T) {
@@ -238,10 +242,16 @@ func TestHTTPPushRequest_InvalidClientID(t *testing.T) {
 	server.SetSessionManager(newMockSessionManager())
 
 	// 创建 HTTP 请求（缺少 ClientID）
+	testData := []byte("test")
+	encodedData := base64.StdEncoding.EncodeToString(testData)
 	reqBody := HTTPPushRequest{
-		Data:      base64.StdEncoding.EncodeToString([]byte("test")),
-		Seq:       1,
-		Timestamp: time.Now().Unix(),
+		FragmentGroupID: "",
+		OriginalSize:    len(testData),
+		FragmentSize:    len(testData),
+		FragmentIndex:   0,
+		TotalFragments:  1,
+		Data:            encodedData,
+		Timestamp:       time.Now().Unix(),
 	}
 	reqJSON, _ := json.Marshal(reqBody)
 	req := httptest.NewRequest("POST", "/tunnox/v1/push", bytes.NewReader(reqJSON))

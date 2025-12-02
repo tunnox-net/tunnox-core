@@ -178,15 +178,54 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 
 	utils.Infof("BaseMappingHandler[%s]: tunnel %s established", h.config.MappingID, tunnelID)
 
-	// 6. ✅ 使用StreamProcessor的Reader/Writer进行透传
+	// 6. ✅ 通过接口抽象获取 Reader/Writer（不依赖具体协议）
 	// StreamProcessor已经包含了压缩/加密层，不应该关闭它或绕过它
 	tunnelReader := tunnelStream.GetReader()
 	tunnelWriter := tunnelStream.GetWriter()
 
+	// 如果 GetReader/GetWriter 返回 nil，尝试使用 tunnelConn（通过接口抽象）
+	if tunnelReader == nil {
+		if tunnelConn != nil {
+			// tunnelConn 实现了 io.Reader（通过接口抽象）
+			if reader, ok := tunnelConn.(io.Reader); ok && reader != nil {
+				tunnelReader = reader
+				utils.Infof("BaseMappingHandler[%s]: using tunnelConn as Reader (via interface)", h.config.MappingID)
+			} else {
+				utils.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Reader or reader is nil, GetReader() returned nil", h.config.MappingID)
+				return
+			}
+		} else {
+			utils.Errorf("BaseMappingHandler[%s]: tunnelConn is nil and GetReader() returned nil", h.config.MappingID)
+			return
+		}
+	}
+	if tunnelWriter == nil {
+		if tunnelConn != nil {
+			// tunnelConn 实现了 io.Writer（通过接口抽象）
+			if writer, ok := tunnelConn.(io.Writer); ok && writer != nil {
+				tunnelWriter = writer
+				utils.Infof("BaseMappingHandler[%s]: using tunnelConn as Writer (via interface)", h.config.MappingID)
+			} else {
+				utils.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Writer or writer is nil, GetWriter() returned nil", h.config.MappingID)
+				return
+			}
+		} else {
+			utils.Errorf("BaseMappingHandler[%s]: tunnelConn is nil and GetWriter() returned nil", h.config.MappingID)
+			return
+		}
+	}
+
 	// 7. 包装隧道连接成ReadWriteCloser
+	// 添加额外的 nil 检查，确保不会传入 nil
+	if tunnelReader == nil || tunnelWriter == nil {
+		utils.Errorf("BaseMappingHandler[%s]: tunnelReader or tunnelWriter is nil after setup, reader=%v, writer=%v", h.config.MappingID, tunnelReader != nil, tunnelWriter != nil)
+		return
+	}
 	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
 		tunnelStream.Close()
+		if tunnelConn != nil {
 		tunnelConn.Close()
+		}
 		return nil
 	})
 

@@ -81,27 +81,56 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 
 	utils.Infof("Client: TCP tunnel %s established for target %s", tunnelID, targetAddr)
 
-	// 3. 对于TCP协议，tunnelStream 和 tunnelConn 是同一个连接
-	// 使用 tunnelStream 的 Reader/Writer 进行双向转发（支持压缩/加密）
-	// 注意：不要关闭 tunnelStream，因为它的 Close() 只关闭压缩/加密资源，不影响底层连接
+	// 3. 通过接口抽象获取 Reader/Writer（不依赖具体协议）
+	// 优先使用 tunnelStream 的 Reader/Writer（支持压缩/加密）
+	// 如果没有，则使用 tunnelConn（通过接口抽象，不依赖具体类型）
 	tunnelReader := tunnelStream.GetReader()
 	tunnelWriter := tunnelStream.GetWriter()
 
-	// 如果 GetReader/GetWriter 返回 nil（如 HTTP 长轮询），则使用原始连接
+	// 如果 GetReader/GetWriter 返回 nil，尝试使用 tunnelConn（通过接口抽象）
 	if tunnelReader == nil {
-		utils.Infof("Client[TCP-target][%s]: tunnelStream.GetReader() returned nil, using tunnelConn directly", tunnelID)
-		tunnelReader = tunnelConn
+		if tunnelConn != nil {
+			// tunnelConn 实现了 io.Reader（通过接口抽象）
+			if reader, ok := tunnelConn.(io.Reader); ok && reader != nil {
+				tunnelReader = reader
+				utils.Infof("Client[TCP-target][%s]: using tunnelConn as Reader (via interface)", tunnelID)
+			} else {
+				utils.Errorf("Client[TCP-target][%s]: tunnelConn does not implement io.Reader or reader is nil, GetReader() returned nil", tunnelID)
+				return
+			}
+		} else {
+			utils.Errorf("Client[TCP-target][%s]: tunnelConn is nil and GetReader() returned nil", tunnelID)
+			return
+		}
 	}
 	if tunnelWriter == nil {
-		utils.Infof("Client[TCP-target][%s]: tunnelStream.GetWriter() returned nil, using tunnelConn directly", tunnelID)
-		tunnelWriter = tunnelConn
+		if tunnelConn != nil {
+			// tunnelConn 实现了 io.Writer（通过接口抽象）
+			if writer, ok := tunnelConn.(io.Writer); ok && writer != nil {
+				tunnelWriter = writer
+				utils.Infof("Client[TCP-target][%s]: using tunnelConn as Writer (via interface)", tunnelID)
+			} else {
+				utils.Errorf("Client[TCP-target][%s]: tunnelConn does not implement io.Writer or writer is nil, GetWriter() returned nil", tunnelID)
+				return
+			}
+		} else {
+			utils.Errorf("Client[TCP-target][%s]: tunnelConn is nil and GetWriter() returned nil", tunnelID)
+			return
+		}
 	}
 
 	// 4. 包装隧道连接成 ReadWriteCloser（确保关闭时同时关闭 stream 和 conn）
+	// 添加额外的 nil 检查，确保不会传入 nil
+	if tunnelReader == nil || tunnelWriter == nil {
+		utils.Errorf("Client[TCP-target][%s]: tunnelReader or tunnelWriter is nil after setup, reader=%v, writer=%v", tunnelID, tunnelReader != nil, tunnelWriter != nil)
+		return
+	}
 	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
 		utils.Debugf("Client[TCP-target][%s]: closing tunnel stream and connection", tunnelID)
 		tunnelStream.Close()
-		tunnelConn.Close()
+		if tunnelConn != nil {
+			tunnelConn.Close()
+		}
 		return nil
 	})
 

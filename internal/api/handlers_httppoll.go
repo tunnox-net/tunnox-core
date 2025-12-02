@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,28 +23,17 @@ const (
 	httppollMaxTimeout     = 60          // 最大 60 秒
 )
 
-// HTTPPushRequest HTTP 推送请求
-type HTTPPushRequest struct {
-	Data      string `json:"data"`      // Base64 编码的数据流
-	Seq       uint64 `json:"seq"`       // 序列号
-	Timestamp int64  `json:"timestamp"` // 时间戳
-}
+// HTTPPushRequest HTTP 推送请求（统一使用 FragmentResponse）
+type HTTPPushRequest = httppoll.FragmentResponse
 
 // HTTPPushResponse HTTP 推送响应
 type HTTPPushResponse struct {
-	Success   bool   `json:"success"`
-	Ack       uint64 `json:"ack"`       // 确认的序列号
-	Timestamp int64  `json:"timestamp"` // 时间戳
+	Success   bool  `json:"success"`
+	Timestamp int64 `json:"timestamp"`
 }
 
-// HTTPPollResponse HTTP 轮询响应
-type HTTPPollResponse struct {
-	Success   bool   `json:"success"`
-	Data      string `json:"data,omitempty"`    // Base64 编码的数据流
-	Seq       uint64 `json:"seq,omitempty"`     // 序列号
-	Timeout   bool   `json:"timeout,omitempty"` // 是否超时
-	Timestamp int64  `json:"timestamp"`         // 时间戳
-}
+// HTTPPollResponse HTTP 轮询响应（统一使用 FragmentResponse）
+type HTTPPollResponse = httppoll.FragmentResponse
 
 // SessionManagerWithConnection 扩展的 SessionManager 接口
 type SessionManagerWithConnection interface {
@@ -147,16 +137,93 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 
 	// 6. 处理 Push 请求（body 可能为空，用于控制包）
 	var pushReq HTTPPushRequest
-	if r.Body != nil && r.ContentLength > 0 {
-		if err := json.NewDecoder(r.Body).Decode(&pushReq); err == nil {
-			// 处理数据流
-			if pushReq.Data != "" {
-				if err := streamProcessor.PushData(pushReq.Data); err != nil {
-					utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to push data: %v, connID=%s", err, connID)
-					s.respondError(w, http.StatusServiceUnavailable, "Connection closed")
-					return
+	if r.Body != nil {
+		// 尝试读取请求体（不依赖ContentLength，因为可能未正确设置）
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err == nil && len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, &pushReq); err == nil {
+				// 处理数据流（支持分片格式）
+				if pushReq.Data != "" {
+					// 判断是否为分片：total_fragments > 1
+					isFragment := pushReq.TotalFragments > 1
+					utils.Infof("HTTP long polling: [HANDLE_PUSH] received data in body, dataLen=%d, totalFragments=%d, isFragment=%v, connID=%s", len(pushReq.Data), pushReq.TotalFragments, isFragment, connID)
+
+					// 如果是分片，需要重组
+					if isFragment {
+						// 解码Base64数据
+						fragmentData, err := base64.StdEncoding.DecodeString(pushReq.Data)
+						if err != nil {
+							utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to decode fragment data: %v, connID=%s", err, connID)
+							s.respondError(w, http.StatusBadRequest, "Failed to decode fragment data")
+							return
+						}
+
+						// 添加到分片重组器
+						group, err := streamProcessor.GetFragmentReassembler().AddFragment(
+							pushReq.FragmentGroupID,
+							pushReq.OriginalSize,
+							pushReq.FragmentSize,
+							pushReq.FragmentIndex,
+							pushReq.TotalFragments,
+							fragmentData,
+						)
+						if err != nil {
+							utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to add fragment: %v, connID=%s", err, connID)
+							s.respondError(w, http.StatusBadRequest, "Failed to add fragment")
+							return
+						}
+
+						utils.Infof("HTTP long polling: [HANDLE_PUSH] added fragment %d/%d, groupID=%s, connID=%s",
+							pushReq.FragmentIndex, pushReq.TotalFragments, pushReq.FragmentGroupID, connID)
+
+						// 检查是否完整
+						if group.IsComplete() {
+							// 重组数据
+							reassembledData, err := group.Reassemble()
+							if err != nil {
+								utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to reassemble fragments: %v, connID=%s", err, connID)
+								streamProcessor.GetFragmentReassembler().RemoveGroup(pushReq.FragmentGroupID)
+								s.respondError(w, http.StatusInternalServerError, "Failed to reassemble fragments")
+								return
+							}
+
+							// Base64编码重组后的数据
+							base64Data := base64.StdEncoding.EncodeToString(reassembledData)
+							utils.Infof("HTTP long polling: [HANDLE_PUSH] reassembled %d bytes from %d fragments, groupID=%s, connID=%s",
+								len(reassembledData), pushReq.TotalFragments, pushReq.FragmentGroupID, connID)
+
+							// 推送到流处理器
+							if err := streamProcessor.PushData(base64Data); err != nil {
+								utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to push reassembled data: %v, connID=%s", err, connID)
+								streamProcessor.GetFragmentReassembler().RemoveGroup(pushReq.FragmentGroupID)
+								s.respondError(w, http.StatusServiceUnavailable, "Connection closed")
+								return
+							}
+
+							// 移除分片组
+							streamProcessor.GetFragmentReassembler().RemoveGroup(pushReq.FragmentGroupID)
+							utils.Infof("HTTP long polling: [HANDLE_PUSH] pushed reassembled data successfully, len=%d, connID=%s", len(base64Data), connID)
+						} else {
+							utils.Debugf("HTTP long polling: [HANDLE_PUSH] fragment %d/%d received, waiting for more fragments, groupID=%s, connID=%s",
+								pushReq.FragmentIndex, pushReq.TotalFragments, pushReq.FragmentGroupID, connID)
+						}
+					} else {
+						// 完整数据，直接推送
+						if err := streamProcessor.PushData(pushReq.Data); err != nil {
+							utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to push data: %v, connID=%s", err, connID)
+							s.respondError(w, http.StatusServiceUnavailable, "Connection closed")
+							return
+						}
+						utils.Infof("HTTP long polling: [HANDLE_PUSH] pushed data successfully, dataLen=%d, connID=%s", len(pushReq.Data), connID)
+					}
+				} else {
+					utils.Debugf("HTTP long polling: [HANDLE_PUSH] body parsed but data field is empty, connID=%s", connID)
 				}
+			} else {
+				utils.Debugf("HTTP long polling: [HANDLE_PUSH] failed to parse JSON body: %v, bodyLen=%d, connID=%s", err, len(bodyBytes), connID)
 			}
+		} else if err != nil {
+			utils.Debugf("HTTP long polling: [HANDLE_PUSH] failed to read body: %v, connID=%s", err, connID)
 		}
 	}
 
@@ -191,11 +258,10 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	// 9. 返回 ACK
-	utils.Debugf("HTTP long polling: [HANDLE_PUSH] preparing ACK response, connID=%s", connID)
+	// 9. 返回响应
+	utils.Debugf("HTTP long polling: [HANDLE_PUSH] preparing response, connID=%s", connID)
 	resp := HTTPPushResponse{
 		Success:   true,
-		Ack:       pushReq.Seq,
 		Timestamp: time.Now().Unix(),
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -257,12 +323,11 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// 6. 检查是否是 keepalive 类型的请求（仅用于维持连接，不包含指令）
+	// 6. 检查是否是 keepalive 类型的请求
+	// keepalive 请求可以接收数据流，但不接收控制包
 	if pkg.TunnelType == "keepalive" {
 		utils.Debugf("HTTP long polling: [HANDLE_POLL] received keepalive Poll request, connID=%s, requestID=%s", connID, pkg.RequestID)
 
-		// keepalive 请求仅用于维持连接，不应该包含控制包或数据
-		// 控制包应该通过正常的 Poll 请求（TunnelType="control" 或 "data"）返回
 		// 解析超时参数
 		timeout := httppollDefaultTimeout
 		if t := r.URL.Query().Get("timeout"); t != "" {
@@ -271,26 +336,49 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 			}
 		}
 
-		// 等待接近超时时间（留出 1-2 秒缓冲），这样可以减少请求频率
-		waitTime := time.Duration(timeout-2) * time.Second
-		if waitTime < 1*time.Second {
-			waitTime = 1 * time.Second // 至少等待 1 秒
-		}
-		if waitTime > 28*time.Second {
-			waitTime = 28 * time.Second // 最多等待 28 秒
-		}
-
-		// 等待期间检查连接是否被取消
-		ctx, cancel := context.WithTimeout(r.Context(), waitTime)
+		// 创建带超时的 context
+		ctx, cancel := context.WithTimeout(r.Context(), time.Duration(timeout)*time.Second)
 		defer cancel()
 
-		select {
-		case <-ctx.Done():
-		case <-r.Context().Done():
+		// 调用 HandlePollRequest 处理 keepalive 请求（可以接收数据流）
+		base64Data, _, err := streamProcessor.HandlePollRequest(ctx, pkg.RequestID, "keepalive")
+		if err != nil {
+			if err == context.DeadlineExceeded || err == context.Canceled {
+				// 超时或取消，返回超时响应
+				resp := HTTPPollResponse{
+					Success:   true,
+					Timeout:   true,
+					Timestamp: time.Now().Unix(),
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(resp)
+				return
+			}
+			utils.Errorf("HTTP long polling: [HANDLE_POLL] HandlePollRequest failed for keepalive: %v, connID=%s", err, connID)
+			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Poll request failed: %v", err))
 			return
 		}
 
-		// 返回空响应（keepalive 请求不应该包含控制包）
+		// 如果收到数据流，返回数据（分片格式）
+		if base64Data != "" {
+			utils.Infof("HTTP long polling: [HANDLE_POLL] keepalive request received data, len=%d, connID=%s", len(base64Data), connID)
+			// base64Data 现在是分片响应的JSON字符串，直接解析并返回
+			var fragmentResp HTTPPollResponse
+			if err := json.Unmarshal([]byte(base64Data), &fragmentResp); err != nil {
+				utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to unmarshal fragment response: %v, connID=%s", err, connID)
+				s.respondError(w, http.StatusInternalServerError, "Failed to parse fragment response")
+				return
+			}
+			fragmentResp.Success = true
+			fragmentResp.Timestamp = time.Now().Unix()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(fragmentResp)
+			return
+		}
+
+		// 如果没有数据，返回超时响应
 		resp := HTTPPollResponse{
 			Success:   true,
 			Timeout:   true,
@@ -382,22 +470,34 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 		utils.Debugf("HTTP long polling: [HANDLE_POLL] no control packet to return, connID=%s", connID)
 	}
 
-	// 10. 返回响应
-	resp := HTTPPollResponse{
-		Success:   true,
-		Data:      base64Data,
-		Seq:       0, // 序列号暂时不使用
-		Timeout:   false,
-		Timestamp: time.Now().Unix(),
-	}
+	// 10. 返回响应（分片格式）
+	// base64Data 是 HandlePollRequest 返回的分片响应的JSON字符串，直接作为响应 body 返回
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	utils.Infof("HTTP long polling: [HANDLE_POLL] writing HTTP response, status=200, hasControlPacket=%v, hasData=%v, connID=%s",
-		responsePkg != nil, base64Data != "", connID)
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to write response body: %v, connID=%s", err, connID)
+
+	if base64Data != "" {
+		// 直接返回 JSON 字符串，不需要解析和重新序列化
+		utils.Infof("HTTP long polling: [HANDLE_POLL] writing HTTP response with data, status=200, hasControlPacket=%v, dataLen=%d, connID=%s",
+			responsePkg != nil, len(base64Data), connID)
+		if _, err := w.Write([]byte(base64Data)); err != nil {
+			utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to write response body: %v, connID=%s", err, connID)
+		} else {
+			utils.Infof("HTTP long polling: [HANDLE_POLL] HTTP response written successfully, connID=%s", connID)
+		}
 	} else {
-		utils.Infof("HTTP long polling: [HANDLE_POLL] HTTP response written successfully, connID=%s", connID)
+		// 没有数据，返回超时响应
+		resp := HTTPPollResponse{
+			Success:   true,
+			Timeout:   true,
+			Timestamp: time.Now().Unix(),
+		}
+		utils.Infof("HTTP long polling: [HANDLE_POLL] writing timeout response, status=200, hasControlPacket=%v, connID=%s",
+			responsePkg != nil, connID)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to write timeout response: %v, connID=%s", err, connID)
+		} else {
+			utils.Infof("HTTP long polling: [HANDLE_POLL] timeout response written successfully, connID=%s", connID)
+		}
 	}
 }
 
@@ -449,6 +549,10 @@ func (a *httppollStreamAdapter) GetWriter() io.Writer {
 
 func (a *httppollStreamAdapter) ReadExact(length int) ([]byte, error) {
 	return a.streamProcessor.ReadExact(length)
+}
+
+func (a *httppollStreamAdapter) ReadAvailable(maxLength int) ([]byte, error) {
+	return a.streamProcessor.ReadAvailable(maxLength)
 }
 
 func (a *httppollStreamAdapter) WriteExact(data []byte) error {
@@ -631,24 +735,13 @@ func (s *ManagementAPIServer) handleHandshakePackage(streamProcessor *httppoll.S
 	}
 
 	// 从 SessionManager 获取握手响应（通过控制连接）
-	var handshakeResp *packet.HandshakeResponse
-	if controlConn := s.getControlConnectionByConnID(connID); controlConn != nil {
-		// 等待握手完成（通过轮询控制连接状态）
-		// 注意：这里简化处理，实际应该通过事件或回调获取响应
-		// 暂时返回空响应，让客户端通过 Poll 获取响应
-		// TODO: 实现握手响应的异步获取机制
-	}
-
-	// 如果还没有响应，构造一个临时响应（包含 ConnectionID）
-	if handshakeResp == nil {
-		handshakeResp = &packet.HandshakeResponse{
-			Success:      true,
-			Message:      "Handshake in progress",
-			ConnectionID: connID, // 服务端分配的 ConnectionID
-		}
-	} else {
-		// 确保响应中包含 ConnectionID
-		handshakeResp.ConnectionID = connID
+	// 注意：这里简化处理，实际应该通过事件或回调获取响应
+	// 暂时构造一个临时响应，让客户端通过 Poll 获取响应
+	// TODO: 实现握手响应的异步获取机制
+	handshakeResp := &packet.HandshakeResponse{
+		Success:      true,
+		Message:      "Handshake in progress",
+		ConnectionID: connID, // 服务端分配的 ConnectionID
 	}
 
 	// 构建响应 TunnelPackage

@@ -86,7 +86,7 @@ echo -e "${GREEN}✓ Server copied${NC}"
 # 4. 启动 server
 echo -e "${YELLOW}Step 4: Starting server...${NC}"
 cd /Users/roger.tong/GolandProjects/tunnox-core/cmd/server
-./server > /tmp/server_startup.log 2>&1 &
+./server > /tmp/server_startup.log 2>&1 < /dev/null &
 SERVER_PID=$!
 sleep 3
 if ! ps -p $SERVER_PID > /dev/null 2>&1; then
@@ -117,7 +117,7 @@ echo -e "${YELLOW}Step 7: Starting targetclient (with debug API)...${NC}"
 cd /Users/roger.tong/GolandProjects/tunnox-core
 # 使用配置的日志路径，不重定向（客户端会自己处理日志）
 # 启用调试 API，端口 18081
-./client -daemon -debug-api -debug-api-port 18081 &
+./client -daemon -debug-api -debug-api-port 18081 < /dev/null > /dev/null 2>&1 &
 TARGET_CLIENT_PID=$!
 sleep 3
 if ! ps -p $TARGET_CLIENT_PID > /dev/null 2>&1; then
@@ -137,7 +137,7 @@ echo -e "${GREEN}✓ Client copied for listenclient${NC}"
 echo -e "${YELLOW}Step 9: Starting listenclient...${NC}"
 cd /Users/roger.tong/GolandProjects/docs
 # 使用配置的日志路径，不重定向（客户端会自己处理日志）
-./client -daemon &
+./client -daemon < /dev/null > /dev/null 2>&1 &
 LISTEN_CLIENT_PID=$!
 sleep 3
 if ! ps -p $LISTEN_CLIENT_PID > /dev/null 2>&1; then

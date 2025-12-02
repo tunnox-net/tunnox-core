@@ -27,13 +27,25 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 
 	bandwidthLimit := mapping.Config.BandwidthLimit
 
+	// 创建统一接口连接
+	var sourceTunnelConn TunnelConnectionInterface
+	if sourceConn != nil || sourceStream != nil {
+		connID := ""
+		if sourceConn != nil {
+			connID = sourceConn.RemoteAddr().String()
+		}
+		clientID := extractClientID(sourceStream, sourceConn)
+		sourceTunnelConn = CreateTunnelConnection(connID, sourceConn, sourceStream, clientID, req.MappingID, req.TunnelID)
+	}
+
 	bridge := NewTunnelBridge(s.Ctx(), &TunnelBridgeConfig{
-		TunnelID:       req.TunnelID,
-		MappingID:      req.MappingID,
-		SourceConn:     sourceConn,
-		SourceStream:   sourceStream,
-		BandwidthLimit: bandwidthLimit,
-		CloudControl:   s.cloudControl,
+		TunnelID:        req.TunnelID,
+		MappingID:       req.MappingID,
+		SourceTunnelConn: sourceTunnelConn,
+		SourceConn:      sourceConn,  // 向后兼容
+		SourceStream:    sourceStream, // 向后兼容
+		BandwidthLimit:  bandwidthLimit,
+		CloudControl:    s.cloudControl,
 	})
 
 	s.bridgeLock.Lock()

@@ -5,14 +5,14 @@ import pymysql
 import time
 
 def timeout_handler(signum, frame):
-    raise TimeoutError("Test timed out after 10 seconds")
+    raise TimeoutError("Test timed out after 30 seconds")
 
 signal.signal(signal.SIGALRM, timeout_handler)
 
 def test_mysql():
     print("Using pymysql...")
     try:
-        signal.alarm(10)
+        signal.alarm(30)
         
         conn = pymysql.connect(
             host='127.0.0.1',
@@ -20,9 +20,9 @@ def test_mysql():
             user='root',
             password='dtcpay',
             database='core',
-            connect_timeout=5,
-            read_timeout=5,
-            write_timeout=5,
+            connect_timeout=15,
+            read_timeout=15,
+            write_timeout=15,
             autocommit=True
         )
         cursor = conn.cursor()

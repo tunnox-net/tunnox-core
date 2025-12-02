@@ -21,7 +21,14 @@ func (rw *readWriteCloser) Close() error {
 }
 
 // NewReadWriteCloser 创建 ReadWriteCloser 适配器
+// 如果 Reader 或 Writer 为 nil，会返回错误（通过 panic 或返回 nil）
 func NewReadWriteCloser(r io.Reader, w io.Writer, closeFunc func() error) io.ReadWriteCloser {
+	if r == nil {
+		panic("NewReadWriteCloser: Reader cannot be nil")
+	}
+	if w == nil {
+		panic("NewReadWriteCloser: Writer cannot be nil")
+	}
 	return &readWriteCloser{
 		Reader:    r,
 		Writer:    w,
@@ -96,7 +103,9 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		buf := make([]byte, 32*1024)
 		var totalWritten int64
 		for {
+			Infof("%s: A→B calling connA.Read(buf), buf size=%d", options.LogPrefix, len(buf))
 			nr, err := connA.Read(buf)
+			Infof("%s: A→B connA.Read returned, n=%d, err=%v", options.LogPrefix, nr, err)
 			if nr > 0 {
 				// 循环写入，确保所有数据都被写入
 				written := 0
@@ -154,7 +163,9 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		buf := make([]byte, 32*1024)
 		var totalWritten int64
 		for {
+			Infof("%s: B→A calling readerB.Read(buf), buf size=%d", options.LogPrefix, len(buf))
 			nr, err := readerB.Read(buf)
+			Infof("%s: B→A readerB.Read returned, n=%d, err=%v", options.LogPrefix, nr, err)
 			if nr > 0 {
 				Infof("%s: B→A read %d bytes from tunnel", options.LogPrefix, nr)
 				// 循环写入，确保所有数据都被写入
