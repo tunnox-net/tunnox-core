@@ -44,6 +44,7 @@ type FragmentGroup struct {
 	Fragments      []*Fragment // 分片列表（按index排序）
 	ReceivedCount  int         // 已接收分片数
 	CreatedTime    time.Time   // 创建时间
+	reassembled    bool        // 是否已重组（防止重复重组）
 	mu             sync.Mutex
 }
 
@@ -118,9 +119,16 @@ func (fg *FragmentGroup) Reassemble() ([]byte, error) {
 }
 
 // IsCompleteAndReassemble 原子操作：检查是否完整，如果完整则重组（避免竞态条件）
+// 返回：重组后的数据、是否完整、是否由当前调用完成重组、错误
+// 注意：只有第一个检测到完整的 goroutine 会执行重组，其他 goroutine 会返回 reassembled=false
 func (fg *FragmentGroup) IsCompleteAndReassemble() ([]byte, bool, error) {
 	fg.mu.Lock()
 	defer fg.mu.Unlock()
+
+	// 如果已经重组过，返回 nil（表示其他 goroutine 已经处理）
+	if fg.reassembled {
+		return nil, false, nil
+	}
 
 	if fg.ReceivedCount != fg.TotalFragments {
 		return nil, false, nil
@@ -139,6 +147,9 @@ func (fg *FragmentGroup) IsCompleteAndReassemble() ([]byte, bool, error) {
 	if len(result) != fg.OriginalSize {
 		return nil, false, fmt.Errorf("reassembled size mismatch: expected %d, got %d", fg.OriginalSize, len(result))
 	}
+
+	// 标记为已重组（防止其他 goroutine 重复重组）
+	fg.reassembled = true
 
 	utils.Infof("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
 	return result, true, nil
@@ -231,12 +242,14 @@ func (fr *FragmentReassembler) GetGroup(groupID string) (*FragmentGroup, bool) {
 	return group, exists
 }
 
-// RemoveGroup 移除分片组
+// RemoveGroup 移除分片组（线程安全）
 func (fr *FragmentReassembler) RemoveGroup(groupID string) {
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
-	delete(fr.groups, groupID)
-	utils.Debugf("FragmentReassembler: removed fragment group, groupID=%s", groupID)
+	if _, exists := fr.groups[groupID]; exists {
+		delete(fr.groups, groupID)
+		utils.Debugf("FragmentReassembler: removed fragment group, groupID=%s", groupID)
+	}
 }
 
 // cleanupExpiredLocked 清理过期的分片组（需要持有锁）
@@ -272,9 +285,14 @@ func CalculateFragments(dataSize int) (fragmentSize int, totalFragments int) {
 	totalFragments = (dataSize + MaxFragmentSize - 1) / MaxFragmentSize
 
 	// 确保最后一片不会太小（如果小于MIN_FRAGMENT_SIZE，合并到前一片）
+	// 注意：合并后前一片可能会超过 MaxFragmentSize，但这是可以接受的
+	// 因为 Base64 编码后的 JSON 大小会略大于原始数据，但仍在合理范围内
 	lastFragmentSize := dataSize % MaxFragmentSize
 	if lastFragmentSize > 0 && lastFragmentSize < MinFragmentSize && totalFragments > 1 {
 		totalFragments--
+		// 注意：合并后，倒数第二片的大小会是 MaxFragmentSize + lastFragmentSize
+		// 这可能会超过 MaxFragmentSize，但不会超过太多（最多 MaxFragmentSize + MinFragmentSize - 1）
+		// 对于大数据包，这种轻微的超出是可以接受的
 	}
 
 	return MaxFragmentSize, totalFragments

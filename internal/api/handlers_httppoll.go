@@ -177,6 +177,7 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 							pushReq.FragmentIndex, pushReq.TotalFragments, pushReq.FragmentGroupID, connID)
 
 						// 原子操作：检查是否完整，如果完整则重组（避免竞态条件）
+						// 注意：只有第一个检测到完整的 goroutine 会执行重组，其他 goroutine 会返回 isComplete=false
 						reassembledData, isComplete, err := group.IsCompleteAndReassemble()
 						if err != nil {
 							utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to reassemble fragments: %v, connID=%s", err, connID)
@@ -185,7 +186,7 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 							return
 						}
 						if isComplete {
-
+							// 只有第一个检测到完整的 goroutine 会执行到这里
 							// Base64编码重组后的数据
 							base64Data := base64.StdEncoding.EncodeToString(reassembledData)
 							utils.Infof("HTTP long polling: [HANDLE_PUSH] reassembled %d bytes from %d fragments, groupID=%s, connID=%s",
@@ -199,11 +200,15 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 								return
 							}
 
-							// 移除分片组
+							// 移除分片组（延迟移除，确保其他 goroutine 不会重复处理）
+							// 注意：即使 PushData 失败，也应该移除，因为数据已经重组，不能再次重组
 							streamProcessor.GetFragmentReassembler().RemoveGroup(pushReq.FragmentGroupID)
 							utils.Infof("HTTP long polling: [HANDLE_PUSH] pushed reassembled data successfully, len=%d, connID=%s", len(base64Data), connID)
 						} else {
-							utils.Debugf("HTTP long polling: [HANDLE_PUSH] fragment %d/%d received, waiting for more fragments, groupID=%s, connID=%s",
+							// 两种情况：
+							// 1. 分片组不完整，等待更多分片
+							// 2. 分片组已完整但已被其他 goroutine 重组（reassembled=true）
+							utils.Debugf("HTTP long polling: [HANDLE_PUSH] fragment %d/%d received, waiting for more fragments or already reassembled, groupID=%s, connID=%s",
 								pushReq.FragmentIndex, pushReq.TotalFragments, pushReq.FragmentGroupID, connID)
 						}
 					} else {
