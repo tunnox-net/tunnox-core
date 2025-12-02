@@ -175,10 +175,10 @@ func (a *streamDataForwarderAdapter) Read(p []byte) (int, error) {
 
 	// 从流读取数据：使用 ReadAvailable 读取可用数据，避免长时间阻塞
 	// ReadAvailable 会返回可用数据，不等待完整长度，适合 io.Reader 接口
-	// 对于MySQL等协议，数据包通常较小，使用较小的 maxLength 可以快速返回数据
+	// 对于大数据包，需要支持更大的 maxLength 以确保数据完整性
 	maxLength := len(p)
-	if maxLength > 1024 {
-		maxLength = 1024 // 限制最大读取长度，避免一次性读取过多数据
+	if maxLength > 32*1024 {
+		maxLength = 32 * 1024 // 限制最大读取长度为 32KB，平衡性能和内存使用
 	}
 	if maxLength == 0 {
 		return 0, nil

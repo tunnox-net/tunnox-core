@@ -547,11 +547,20 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 				respPkt, _ := sp.converter.ReadPacket(resp)
 				// 将响应包放入队列，供后续读取
 				if respPkt != nil {
-					select {
-					case sp.packetQueue <- respPkt:
-					default:
-						// 队列满，丢弃
-					}
+					// 安全地向 packetQueue 写入，使用 recover 捕获可能的 panic（channel 已关闭）
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								utils.Warnf("HTTPStreamProcessor: WritePacket - panic when writing to packetQueue (likely closed), requestID=%s, connID=%s, error=%v", requestID, sp.connectionID, r)
+							}
+						}()
+						select {
+						case sp.packetQueue <- respPkt:
+						default:
+							// 队列满，丢弃
+							utils.Warnf("HTTPStreamProcessor: WritePacket - packetQueue full, dropping response packet, requestID=%s, connID=%s", requestID, sp.connectionID)
+						}
+					}()
 				}
 				// 更新连接信息
 				if pkg.ConnectionID != "" {

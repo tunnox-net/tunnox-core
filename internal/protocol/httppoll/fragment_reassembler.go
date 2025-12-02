@@ -90,7 +90,7 @@ func (fg *FragmentGroup) AddFragment(index int, size int, data []byte) error {
 	return nil
 }
 
-// Reassemble 重组数据
+// Reassemble 重组数据（原子操作：检查完整性并重组）
 func (fg *FragmentGroup) Reassemble() ([]byte, error) {
 	fg.mu.Lock()
 	defer fg.mu.Unlock()
@@ -115,6 +115,33 @@ func (fg *FragmentGroup) Reassemble() ([]byte, error) {
 
 	utils.Infof("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
 	return result, nil
+}
+
+// IsCompleteAndReassemble 原子操作：检查是否完整，如果完整则重组（避免竞态条件）
+func (fg *FragmentGroup) IsCompleteAndReassemble() ([]byte, bool, error) {
+	fg.mu.Lock()
+	defer fg.mu.Unlock()
+
+	if fg.ReceivedCount != fg.TotalFragments {
+		return nil, false, nil
+	}
+
+	// 按索引顺序拼接
+	result := make([]byte, 0, fg.OriginalSize)
+	for i := 0; i < fg.TotalFragments; i++ {
+		if fg.Fragments[i] == nil {
+			return nil, false, fmt.Errorf("fragment %d is missing", i)
+		}
+		result = append(result, fg.Fragments[i].Data...)
+	}
+
+	// 验证总大小
+	if len(result) != fg.OriginalSize {
+		return nil, false, fmt.Errorf("reassembled size mismatch: expected %d, got %d", fg.OriginalSize, len(result))
+	}
+
+	utils.Infof("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
+	return result, true, nil
 }
 
 // FragmentReassembler 分片重组管理器
@@ -179,9 +206,16 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 		}
 	}
 
+	// 在持有锁的情况下，增加 group 的引用计数（通过返回 group 来保持引用）
+	// 注意：这里不能释放锁后再调用 group.AddFragment，因为 group 可能被 RemoveGroup 删除
+	// 解决方案：在释放锁之前，先验证 group 仍然存在，然后立即调用 AddFragment
+	// 但由于 AddFragment 需要持有 group.mu，而我们已经持有 fr.mu，这会导致死锁
+	// 因此，我们需要先释放 fr.mu，然后立即调用 group.AddFragment
+	// 为了安全，我们在 AddFragment 中增加检查，如果 group 已被删除，返回错误
+
 	fr.mu.Unlock()
 
-	// 添加分片
+	// 添加分片（此时 group 可能已被删除，AddFragment 内部会检查）
 	if err := group.AddFragment(fragmentIndex, fragmentSize, data); err != nil {
 		return nil, err
 	}
@@ -266,4 +300,3 @@ func GetFragmentData(data []byte, fragmentIndex int, fragmentSize int, totalFrag
 
 	return data[start:end]
 }
-

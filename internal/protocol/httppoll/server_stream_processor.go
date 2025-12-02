@@ -82,10 +82,10 @@ func NewServerStreamProcessor(ctx context.Context, connID string, clientID int64
 		mappingID:             mappingID,
 		tunnelType:            connType,
 		pollDataQueue:         session.NewPriorityQueue(3),
-		pollDataChan:          make(chan []byte, 100), // 增加容量，避免阻塞
-		pollWaitChan:          make(chan struct{}, 1),
+		pollDataChan:          make(chan []byte, 100),                // 增加容量，避免阻塞
+		pollWaitChan:          make(chan struct{}, 10),               // 增加容量，避免丢失通知
 		controlPacketChan:     make(chan *packet.TransferPacket, 10), // 控制包通道
-		pushDataChan:          make(chan string, 100),
+		pushDataChan:          make(chan string, 1000),               // 增加容量，支持大数据包分片
 		pendingPollRequests:   make(map[string]*pollRequestInfo),
 		pendingControlPackets: make([]*packet.TransferPacket, 0),
 		fragmentReassembler:   NewFragmentReassembler(), // 创建分片重组器
@@ -449,15 +449,17 @@ func (sp *ServerStreamProcessor) WriteExact(data []byte) error {
 // 支持分片重组：接收分片数据，重组后返回完整数据
 func (sp *ServerStreamProcessor) ReadAvailable(maxLength int) ([]byte, error) {
 	utils.Infof("ServerStreamProcessor[%s]: ReadAvailable called, maxLength=%d", sp.connectionID, maxLength)
+
+	// 原子操作：检查并读取缓冲区（避免检查和读取之间的竞态条件）
 	sp.readBufMu.Lock()
 	bufferLen := len(sp.readBuffer)
-	sp.readBufMu.Unlock()
-
-	// 如果缓冲区有数据，直接返回
 	if bufferLen > 0 {
-		sp.readBufMu.Lock()
-		readLen := len(sp.readBuffer)
+		// 如果缓冲区数据量较小（小于 maxLength），直接返回全部数据
+		// 这样可以避免在 SSL/TLS 记录中间切分，导致解密失败
+		// 只有当缓冲区数据量很大时，才进行切分
+		readLen := bufferLen
 		if readLen > maxLength {
+			// 如果缓冲区数据量很大，优先返回 maxLength，但保留剩余数据
 			readLen = maxLength
 		}
 		data := make([]byte, readLen)
@@ -468,10 +470,12 @@ func (sp *ServerStreamProcessor) ReadAvailable(maxLength int) ([]byte, error) {
 		utils.Infof("ServerStreamProcessor[%s]: ReadAvailable returning %d bytes from buffer (remaining=%d, maxLength=%d)", sp.connectionID, n, remaining, maxLength)
 		return data, nil
 	}
+	sp.readBufMu.Unlock()
 
-	// 缓冲区为空，阻塞等待数据（使用短超时，避免长时间阻塞）
+	// 缓冲区为空，阻塞等待数据（使用合理的超时，平衡响应速度和数据完整性）
+	// 对于大数据包，需要更长的超时时间以确保所有分片都能到达
 	utils.Infof("ServerStreamProcessor[%s]: ReadAvailable buffer empty, waiting for pushDataChan, pushDataChan len=%d, cap=%d", sp.connectionID, len(sp.pushDataChan), cap(sp.pushDataChan))
-	timeout := time.NewTimer(1 * time.Second) // 1秒超时，快速响应
+	timeout := time.NewTimer(5 * time.Second) // 5秒超时，给大数据包分片足够的时间到达
 	defer timeout.Stop()
 
 	select {
@@ -519,7 +523,7 @@ func (sp *ServerStreamProcessor) ReadAvailable(maxLength int) ([]byte, error) {
 	case <-timeout.C:
 		// 超时，返回空数据（但不返回错误，让 io.Copy 重试）
 		sp.readBufMu.Lock()
-		utils.Infof("ServerStreamProcessor[%s]: ReadAvailable timed out waiting for data (1s), pushDataChan len=%d, cap=%d, buffer len=%d, returning empty to allow retry", sp.connectionID, len(sp.pushDataChan), cap(sp.pushDataChan), len(sp.readBuffer))
+		utils.Infof("ServerStreamProcessor[%s]: ReadAvailable timed out waiting for data (5s), pushDataChan len=%d, cap=%d, buffer len=%d, returning empty to allow retry", sp.connectionID, len(sp.pushDataChan), cap(sp.pushDataChan), len(sp.readBuffer))
 		sp.readBufMu.Unlock()
 		return nil, nil // 返回空，让 io.Copy 重试
 	}
@@ -641,16 +645,21 @@ func (sp *ServerStreamProcessor) PushData(base64Data string) error {
 	utils.Infof("ServerStreamProcessor[%s]: PushData called, base64Data len=%d, pushDataChan len=%d, cap=%d, closed=%v",
 		sp.connectionID, len(base64Data), len(sp.pushDataChan), cap(sp.pushDataChan), closed)
 
+	// 使用带超时的阻塞写入，避免在 channel 满时立即失败
+	// 对于大数据量场景，需要等待 channel 有空间，而不是立即返回错误
+	timeout := time.NewTimer(5 * time.Second)
+	defer timeout.Stop()
+
 	select {
 	case <-sp.Ctx().Done():
 		utils.Errorf("ServerStreamProcessor[%s]: PushData context cancelled", sp.connectionID)
 		return sp.Ctx().Err()
+	case <-timeout.C:
+		utils.Errorf("ServerStreamProcessor[%s]: PushData failed, pushDataChan full timeout (len=%d, cap=%d)", sp.connectionID, len(sp.pushDataChan), cap(sp.pushDataChan))
+		return io.ErrShortWrite
 	case sp.pushDataChan <- base64Data:
 		utils.Infof("ServerStreamProcessor[%s]: PushData succeeded, pushed to pushDataChan, pushDataChan len=%d", sp.connectionID, len(sp.pushDataChan))
 		return nil
-	default:
-		utils.Errorf("ServerStreamProcessor[%s]: PushData failed, pushDataChan full (len=%d, cap=%d)", sp.connectionID, len(sp.pushDataChan), cap(sp.pushDataChan))
-		return io.ErrShortWrite
 	}
 }
 
@@ -698,7 +707,7 @@ func (sp *ServerStreamProcessor) PollData(ctx context.Context) (string, error) {
 
 // pollDataScheduler 优先级队列调度循环
 func (sp *ServerStreamProcessor) pollDataScheduler() {
-	ticker := time.NewTicker(10 * time.Millisecond)
+	ticker := time.NewTicker(5 * time.Millisecond) // 减少检查间隔，提高响应速度
 	defer ticker.Stop()
 
 	for {
@@ -706,26 +715,30 @@ func (sp *ServerStreamProcessor) pollDataScheduler() {
 		case <-sp.Ctx().Done():
 			return
 		case <-ticker.C:
-			// 定期检查队列，如果有数据且 pollDataChan 为空，则推送
+			// 定期检查队列，如果有数据且 pollDataChan 有空闲，则推送
+			// 持续推送直到队列为空或 channel 满
 			for {
 				data, ok := sp.pollDataQueue.Pop()
 				if !ok {
-					break
+					break // 队列为空
 				}
 				select {
 				case <-sp.Ctx().Done():
+					// 如果 context 取消，将数据放回队列
 					sp.pollDataQueue.Push(data)
 					return
 				case sp.pollDataChan <- data:
-					// 通知 PollData 有数据可用
+					// 通知 PollData 有数据可用（非阻塞，避免丢失通知）
 					select {
 					case sp.pollWaitChan <- struct{}{}:
 					default:
+						// pollWaitChan 已满，忽略（已有通知在等待）
 					}
+					// 继续推送下一个数据包
 				default:
-					// pollDataChan 已满，将数据放回队列
+					// pollDataChan 已满（有数据正在等待），将数据放回队列（保持优先级）
 					sp.pollDataQueue.Push(data)
-					goto nextTick
+					goto nextTick // 退出内层循环，等待下次 tick
 				}
 			}
 		nextTick:

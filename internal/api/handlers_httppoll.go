@@ -176,16 +176,15 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 						utils.Infof("HTTP long polling: [HANDLE_PUSH] added fragment %d/%d, groupID=%s, connID=%s",
 							pushReq.FragmentIndex, pushReq.TotalFragments, pushReq.FragmentGroupID, connID)
 
-						// 检查是否完整
-						if group.IsComplete() {
-							// 重组数据
-							reassembledData, err := group.Reassemble()
-							if err != nil {
-								utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to reassemble fragments: %v, connID=%s", err, connID)
-								streamProcessor.GetFragmentReassembler().RemoveGroup(pushReq.FragmentGroupID)
-								s.respondError(w, http.StatusInternalServerError, "Failed to reassemble fragments")
-								return
-							}
+						// 原子操作：检查是否完整，如果完整则重组（避免竞态条件）
+						reassembledData, isComplete, err := group.IsCompleteAndReassemble()
+						if err != nil {
+							utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to reassemble fragments: %v, connID=%s", err, connID)
+							streamProcessor.GetFragmentReassembler().RemoveGroup(pushReq.FragmentGroupID)
+							s.respondError(w, http.StatusInternalServerError, "Failed to reassemble fragments")
+							return
+						}
+						if isComplete {
 
 							// Base64编码重组后的数据
 							base64Data := base64.StdEncoding.EncodeToString(reassembledData)
