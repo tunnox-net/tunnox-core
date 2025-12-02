@@ -62,6 +62,9 @@ type TunnoxClient struct {
 	// 重连控制
 	kicked     bool // 是否被踢下线
 	authFailed bool // 是否认证失败
+
+	// 启动时间（用于计算运行时间）
+	startTime time.Time
 }
 
 // GetInstanceID 获取客户端实例标识
@@ -89,6 +92,7 @@ func NewClient(ctx context.Context, config *ClientConfig) *TunnoxClient {
 		mappingHandlers:        make(map[string]MappingHandler),
 		localTrafficStats:      make(map[string]*localMappingStats),
 		commandResponseManager: NewCommandResponseManager(),
+		startTime:              time.Now(),
 	}
 
 	utils.Infof("Client: instance ID generated: %s", instanceID)
@@ -189,5 +193,53 @@ func (c *TunnoxClient) GetStatusInfo() *StatusInfo {
 		ActiveMappings:     activeMappings,
 		TotalBytesSent:     totalSent,
 		TotalBytesReceived: totalReceived,
+	}
+}
+
+// Status 客户端状态（供调试 API 使用）
+type Status struct {
+	Connected    bool
+	ClientID     int64
+	DeviceID     string
+	ServerAddr   string
+	Protocol     string
+	Uptime       time.Duration
+	MappingCount int
+}
+
+// GetStatus 获取客户端状态
+func (c *TunnoxClient) GetStatus() *Status {
+	c.mu.RLock()
+	connected := c.controlConn != nil && c.controlStream != nil
+	c.mu.RUnlock()
+
+	config := c.GetConfig()
+	serverAddr := config.Server.Address
+	if serverAddr == "" {
+		serverAddr = "not configured"
+	}
+	protocol := config.Server.Protocol
+	if protocol == "" {
+		protocol = "tcp"
+	}
+
+	clientID := int64(0)
+	deviceID := ""
+	if config.ClientID > 0 {
+		clientID = config.ClientID
+	} else if config.Anonymous {
+		deviceID = config.DeviceID
+	}
+
+	statusInfo := c.GetStatusInfo()
+
+	return &Status{
+		Connected:    connected,
+		ClientID:     clientID,
+		DeviceID:     deviceID,
+		ServerAddr:   serverAddr,
+		Protocol:     protocol,
+		Uptime:       time.Since(c.startTime),
+		MappingCount: statusInfo.ActiveMappings,
 	}
 }

@@ -656,7 +656,7 @@ func (c *HTTPLongPollingConn) sendData(data []byte) error {
 	}
 	req.Header.Set("X-Tunnel-Package", encodedPkg)
 
-	utils.Infof("HTTP long polling: sending push request, connectionID=%s, clientID=%d, mappingID=%s, dataLen=%d, url=%s", 
+	utils.Infof("HTTP long polling: sending push request, connectionID=%s, clientID=%d, mappingID=%s, dataLen=%d, url=%s",
 		c.connectionID, c.clientID, c.mappingID, len(data), c.pushURL)
 
 	var resp *http.Response
@@ -757,12 +757,16 @@ func (c *HTTPLongPollingConn) pollLoop() {
 			req.Header.Set("Authorization", "Bearer "+c.token)
 		}
 
-		// 构造 TunnelPackage（包含连接信息）
+		// 构造 TunnelPackage（包含连接信息和 requestID）
+		// 生成 requestID（用于匹配请求和响应）
+		// 注意：这种 Poll 请求主要用于维持连接（keepalive），而不是实际的数据传输
+		requestID := generateRequestID()
 		tunnelPkg := &httppoll.TunnelPackage{
 			ConnectionID: c.connectionID,
+			RequestID:    requestID,
 			ClientID:     c.clientID,
 			MappingID:    c.mappingID,
-			TunnelType:   c.connType,
+			TunnelType:   "keepalive", // 标记为 keepalive 类型，用于维持连接
 		}
 
 		// 编码并设置 X-Tunnel-Package header
@@ -789,6 +793,15 @@ func (c *HTTPLongPollingConn) pollLoop() {
 		}
 
 		utils.Debugf("HTTP long polling: poll request succeeded, status=%d", resp.StatusCode)
+
+		// 注意：keepalive 请求仅用于维持连接，不应该包含指令
+		// 指令应该通过 HTTPStreamProcessor 的 Poll 请求（TunnelType="control" 或 "data"）接收
+		// 如果服务端在 keepalive 响应中返回了控制包，这可能是设计问题，应该忽略
+		xTunnelPackage := resp.Header.Get("X-Tunnel-Package")
+		if xTunnelPackage != "" {
+			utils.Warnf("HTTP long polling: received X-Tunnel-Package in keepalive response (unexpected), len=%d, requestID=%s. Keepalive requests should not contain control packets.", len(xTunnelPackage), requestID)
+			// 不处理，因为 keepalive 请求不应该包含指令
+		}
 
 		// 解析响应
 		var pollResp struct {

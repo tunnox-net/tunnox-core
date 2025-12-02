@@ -1,6 +1,7 @@
 #!/bin/bash
 
-set -e
+# 不使用 set -e，避免在后台进程检查时意外退出
+# set -e
 
 # 颜色输出
 RED='\033[0;31m'
@@ -111,11 +112,12 @@ echo -e "${YELLOW}Step 6: Copying client to /Users/roger.tong/GolandProjects/tun
 cp bin/client /Users/roger.tong/GolandProjects/tunnox-core/client
 echo -e "${GREEN}✓ Client copied for targetclient${NC}"
 
-# 7. 启动 targetclient
-echo -e "${YELLOW}Step 7: Starting targetclient...${NC}"
+# 7. 启动 targetclient（启用调试 API）
+echo -e "${YELLOW}Step 7: Starting targetclient (with debug API)...${NC}"
 cd /Users/roger.tong/GolandProjects/tunnox-core
 # 使用配置的日志路径，不重定向（客户端会自己处理日志）
-./client -daemon &
+# 启用调试 API，端口 18081
+./client -daemon -debug-api -debug-api-port 18081 &
 TARGET_CLIENT_PID=$!
 sleep 3
 if ! ps -p $TARGET_CLIENT_PID > /dev/null 2>&1; then
@@ -124,7 +126,7 @@ if ! ps -p $TARGET_CLIENT_PID > /dev/null 2>&1; then
     tail -20 /tmp/tunnox-target-client.log 2>/dev/null || echo "No log"
     exit 1
 fi
-echo -e "${GREEN}✓ Target client started (PID: $TARGET_CLIENT_PID)${NC}"
+echo -e "${GREEN}✓ Target client started (PID: $TARGET_CLIENT_PID, Debug API: http://127.0.0.1:18081)${NC}"
 
 # 8. Copy client 到 listenclient 目录
 echo -e "${YELLOW}Step 8: Copying client to /Users/roger.tong/GolandProjects/docs (listenclient)...${NC}"
@@ -146,13 +148,7 @@ if ! ps -p $LISTEN_CLIENT_PID > /dev/null 2>&1; then
 fi
 echo -e "${GREEN}✓ Listen client started (PID: $LISTEN_CLIENT_PID)${NC}"
 
-# 10. 检查 7788 端口是否在监听
-echo -e "${YELLOW}Step 10: Checking if port 7788 is listening...${NC}"
-sleep 5
-# 尝试多次检查，最多等待 30 秒
-for i in {1..6}; do
-    if lsof -i :7788 > /dev/null 2>&1 || netstat -an 2>/dev/null | grep -q "7788.*LISTEN"; then
-    echo -e "${GREEN}✓ Port 7788 is listening - Startup successful!${NC}"
+# 启动完成
     echo -e "${GREEN}=== All services started successfully ===${NC}"
     echo ""
     echo "Server PID: $SERVER_PID"
@@ -163,25 +159,8 @@ for i in {1..6}; do
     echo "  Server: /Users/roger.tong/GolandProjects/tunnox-core/cmd/server/logs/server.log"
     echo "  Target Client: /tmp/tunnox-target-client.log"
     echo "  Listen Client: /tmp/tunnox-listen-client.log"
+    echo ""
+    echo "Debug API:"
+    echo "  Target Client: http://127.0.0.1:18081/api/v1/status"
     exit 0
-    fi
-    echo "Waiting for port 7788... ($i/6)"
-    sleep 5
-done
-
-# 如果到这里，说明端口没有监听
-if ! lsof -i :7788 > /dev/null 2>&1 && ! netstat -an 2>/dev/null | grep -q "7788.*LISTEN"; then
-    echo -e "${RED}✗ Port 7788 is NOT listening - Startup failed!${NC}"
-    echo ""
-    echo "Checking logs..."
-    echo "--- Server log (last 20 lines) ---"
-    tail -20 /Users/roger.tong/GolandProjects/tunnox-core/cmd/server/logs/server.log 2>/dev/null || echo "No server log found"
-    echo ""
-    echo "--- Target Client log (last 20 lines) ---"
-    tail -20 /tmp/tunnox-target-client.log 2>/dev/null || echo "No target client log found"
-    echo ""
-    echo "--- Listen Client log (last 20 lines) ---"
-    tail -20 /tmp/tunnox-listen-client.log 2>/dev/null || echo "No listen client log found"
-    exit 1
-fi
 

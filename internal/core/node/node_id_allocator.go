@@ -114,7 +114,7 @@ func (a *NodeIDAllocator) tryAcquireNodeID(key, nodeID string) (bool, error) {
 	}); ok {
 		err = hybridStorage.SetRuntime(key, nodeID, NodeIDLockTTL)
 	} else {
-		err = a.storage.Set(key, nodeID, NodeIDLockTTL)
+	err = a.storage.Set(key, nodeID, NodeIDLockTTL)
 	}
 	if err != nil {
 		return false, fmt.Errorf("failed to set node ID: %w", err)

@@ -14,7 +14,6 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-
 // Connect 连接到服务器并建立指令连接
 func (c *TunnoxClient) Connect() error {
 	// 如果配置中没有地址，使用自动连接
@@ -81,9 +80,13 @@ func (c *TunnoxClient) Connect() error {
 			pushURL := baseURL + "/tunnox/v1/push"
 			pollURL := baseURL + "/tunnox/v1/poll"
 			c.controlStream = httppoll.NewStreamProcessor(c.Ctx(), baseURL, pushURL, pollURL, c.config.ClientID, token, c.GetInstanceID(), "")
-			// 设置 ConnectionID（如果已从握手响应中获取）
+			// ✅ 重要：设置客户端生成的临时 ConnectionID（用于初始握手）
+			// 服务端会在握手响应中分配正式的 ConnectionID，然后会更新这个值
 			if httppollConn.connectionID != "" {
 				c.controlStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)
+				utils.Debugf("Client: set initial ConnectionID from HTTPLongPollingConn: %s", httppollConn.connectionID)
+			} else {
+				utils.Warnf("Client: HTTPLongPollingConn has empty connectionID")
 			}
 		} else {
 			// 回退到默认方式
@@ -276,6 +279,11 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		if err != nil {
 			return fmt.Errorf("failed to read handshake response: %w", err)
 		}
+		if pkt == nil {
+			// ReadPacket 返回 nil 但没有错误，可能是超时或空响应，继续等待
+			utils.Debugf("Client: ReadPacket returned nil packet, continuing to wait for handshake response")
+			continue
+		}
 
 		// 忽略压缩/加密标志，只检查基础类型
 		baseType := pkt.PacketType & 0x3F
@@ -364,8 +372,13 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 
 	// ✅ 握手成功后，请求映射配置（仅对控制连接）
 	// 这样客户端重启后能自动恢复映射列表
+	// 延迟一小段时间，确保连接完全稳定后再发送请求
 	if stream == c.controlStream && c.config.ClientID > 0 {
-		go c.requestMappingConfig()
+		go func() {
+			// 等待 500ms，确保连接稳定
+			time.Sleep(500 * time.Millisecond)
+			c.requestMappingConfig()
+		}()
 	}
 
 	return nil
@@ -508,8 +521,22 @@ func (c *TunnoxClient) requestMappingConfig() {
 		CommandPacket: cmd,
 	}
 
-	if _, err := controlStream.WritePacket(pkt, true, 0); err != nil {
-		utils.Errorf("Client: failed to request mapping config: %v", err)
+	// 重试发送请求（最多3次，每次间隔1秒）
+	var writeErr error
+	for retry := 0; retry < 3; retry++ {
+		if retry > 0 {
+			time.Sleep(time.Second)
+			utils.Debugf("Client: retrying mapping config request (attempt %d/3)", retry+1)
+		}
+		_, writeErr = controlStream.WritePacket(pkt, true, 0)
+		if writeErr == nil {
+			break
+		}
+		utils.Warnf("Client: failed to request mapping config (attempt %d/3): %v", retry+1, writeErr)
+	}
+
+	if writeErr != nil {
+		utils.Errorf("Client: failed to request mapping config after 3 attempts: %v", writeErr)
 		return
 	}
 

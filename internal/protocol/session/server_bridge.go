@@ -192,8 +192,8 @@ func (s *SessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID i
 				}
 			}
 			utils.Debugf("GetTunnelBridgeByMappingID: found matching bridge, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
-			return bridge
-		}
+						return bridge
+					}
 	}
 
 	utils.Debugf("GetTunnelBridgeByMappingID: bridge not found, mappingID=%s, clientID=%d", mappingID, clientID)

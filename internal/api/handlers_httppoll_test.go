@@ -146,7 +146,7 @@ func TestHTTPLongPollingConnection_UpdateClientID(t *testing.T) {
 	if server.httppollRegistry == nil {
 		server.httppollRegistry = httppoll.NewConnectionRegistry()
 	}
-
+	
 	// 创建连接（clientID=0）
 	connID := "conn_test456"
 	streamProcessor := httppoll.NewServerStreamProcessor(ctx, connID, 0, "")
@@ -303,7 +303,7 @@ func TestHTTPLongPollingConnection_MultipleConnections(t *testing.T) {
 	assert.Equal(t, conn1, foundConn1, "Should find connection 1 by connID1")
 	assert.Equal(t, conn2, foundConn2, "Should find connection 2 by connID2")
 	assert.Equal(t, conn3, foundConn3, "Should find connection 3 by connID3")
-}
+	}
 
 // TestConnectionRegistry 测试 ConnectionRegistry
 func TestConnectionRegistry(t *testing.T) {

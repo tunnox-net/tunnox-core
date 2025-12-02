@@ -14,19 +14,25 @@ import (
 type TunnelPackage struct {
 	// 连接标识（必须）
 	ConnectionID string `json:"connection_id"`
-	
+
+	// 请求ID（可选，客户端生成，用于匹配请求和响应）
+	RequestID string `json:"request_id,omitempty"`
+
 	// 客户端信息（可选，握手阶段 clientID=0）
 	ClientID int64 `json:"client_id,omitempty"`
-	
+
 	// 映射ID（可选，隧道连接才有）
 	MappingID string `json:"mapping_id,omitempty"`
-	
-	// 连接类型（可选，"control" | "data"）
+
+	// 连接类型（可选，"control" | "data" | "keepalive"）
+	// - "control": 控制连接，用于握手、命令等控制包
+	// - "data": 数据连接，用于隧道数据传输
+	// - "keepalive": 保持连接请求，仅用于维持连接并接收服务端响应
 	TunnelType string `json:"tunnel_type,omitempty"`
-	
+
 	// 包类型（可选，"Handshake", "HandshakeResponse", "JsonCommand", "CommandResp", "TunnelOpen", "TunnelOpenAck" 等）
 	Type string `json:"type,omitempty"`
-	
+
 	// 包数据（可选，根据包类型不同，可以是 HandshakeRequest, JsonCommand, TunnelOpenRequest 等）
 	Data interface{} `json:"data,omitempty"`
 }
@@ -37,13 +43,13 @@ func EncodeTunnelPackage(pkg *TunnelPackage) (string, error) {
 	if pkg == nil {
 		return "", fmt.Errorf("tunnel package is nil")
 	}
-	
+
 	// 1. JSON 序列化
 	jsonData, err := json.Marshal(pkg)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal tunnel package: %w", err)
 	}
-	
+
 	// 2. Gzip 压缩
 	var buf bytes.Buffer
 	writer := gzip.NewWriter(&buf)
@@ -54,7 +60,7 @@ func EncodeTunnelPackage(pkg *TunnelPackage) (string, error) {
 	if err := writer.Close(); err != nil {
 		return "", fmt.Errorf("failed to close gzip writer: %w", err)
 	}
-	
+
 	// 3. Base64 编码
 	return base64.StdEncoding.EncodeToString(buf.Bytes()), nil
 }
@@ -65,31 +71,31 @@ func DecodeTunnelPackage(encoded string) (*TunnelPackage, error) {
 	if encoded == "" {
 		return nil, fmt.Errorf("encoded tunnel package is empty")
 	}
-	
+
 	// 1. Base64 解码
 	compressed, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode base64: %w", err)
 	}
-	
+
 	// 2. Gzip 解压
 	reader, err := gzip.NewReader(bytes.NewReader(compressed))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
 	}
 	defer reader.Close()
-	
+
 	jsonData, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decompress tunnel package: %w", err)
 	}
-	
+
 	// 3. JSON 反序列化
 	var pkg TunnelPackage
 	if err := json.Unmarshal(jsonData, &pkg); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal tunnel package: %w", err)
 	}
-	
+
 	return &pkg, nil
 }
 
@@ -106,4 +112,3 @@ func ValidateConnectionID(connID string) bool {
 	// 可以添加更严格的 UUID 格式验证
 	return true
 }
-

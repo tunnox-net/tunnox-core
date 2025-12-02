@@ -4,8 +4,8 @@ anonymous: true
 device_id: anonymous-device
 secret_key: vAeGPBINSWCkP9TboqdGFxCtPI9X9Mrb
 server:
-    address: 127.0.0.1:8080
-    protocol: tcp
+    address: http://127.0.0.1:9000
+    protocol: httppoll
 log:
     level: ""
     format: ""

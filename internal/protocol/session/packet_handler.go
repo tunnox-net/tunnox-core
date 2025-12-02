@@ -562,14 +562,29 @@ func (s *SessionManager) sendHandshakeResponse(conn ControlConnectionInterface, 
 	}
 
 	// 发送响应（统一通过 StreamProcessor 处理，所有协议都同步处理）
-	utils.Debugf("Sending handshake response to connection %s, ClientID=%d", conn.GetConnID(), conn.GetClientID())
+	utils.Infof("Sending handshake response to connection %s, ClientID=%d", conn.GetConnID(), conn.GetClientID())
 
-	if _, err := conn.GetStream().WritePacket(respPacket, true, 0); err != nil {
+	stream := conn.GetStream()
+	if stream == nil {
+		utils.Errorf("Failed to send handshake response: stream is nil for connection %s", conn.GetConnID())
+		return fmt.Errorf("stream is nil")
+	}
+
+	// 调试：检查是否是 httppollStreamAdapter，如果是，检查其内部的 ServerStreamProcessor
+	utils.Infof("sendHandshakeResponse: stream type=%T, connID=%s", stream, conn.GetConnID())
+	if adapter, ok := stream.(interface {
+		GetStreamProcessor() interface{}
+	}); ok {
+		sp := adapter.GetStreamProcessor()
+		utils.Infof("sendHandshakeResponse: adapter contains streamProcessor type=%T, pointer=%p, connID=%s", sp, sp, conn.GetConnID())
+	}
+
+	if _, err := stream.WritePacket(respPacket, true, 0); err != nil {
 		utils.Errorf("Failed to write handshake response to connection %s: %v", conn.GetConnID(), err)
 		return err
 	}
 
-	utils.Debugf("Handshake response written successfully to connection %s", conn.GetConnID())
+	utils.Infof("Handshake response written successfully to connection %s", conn.GetConnID())
 	return nil
 }
 

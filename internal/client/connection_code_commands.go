@@ -11,6 +11,7 @@ import (
 
 	clientconfig "tunnox-core/internal/config"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/utils"
 )
 
@@ -113,9 +114,15 @@ func (c *TunnoxClient) GenerateConnectionCode(req *GenerateConnectionCodeRequest
 		return nil, fmt.Errorf("control stream is nil")
 	}
 
+	// [CMD_TRACE] 客户端发送命令开始
+	cmdStartTime := time.Now()
+	utils.Infof("[CMD_TRACE] [CLIENT] [SEND_START] CommandID=%s, CommandType=%d, Time=%s",
+		cmdPkt.CommandId, cmdPkt.CommandType, cmdStartTime.Format("15:04:05.000"))
+
 	_, err = controlStream.WritePacket(transferPkt, true, 0)
 	if err != nil {
-		utils.Errorf("Client.GenerateConnectionCode: failed to send command: %v", err)
+		utils.Errorf("[CMD_TRACE] [CLIENT] [SEND_FAILED] CommandID=%s, Error=%v, Time=%s",
+			cmdPkt.CommandId, err, time.Now().Format("15:04:05.000"))
 		// 发送失败，清理连接状态
 		c.mu.Lock()
 		if c.controlStream != nil {
@@ -138,8 +145,32 @@ func (c *TunnoxClient) GenerateConnectionCode(req *GenerateConnectionCodeRequest
 		return nil, fmt.Errorf("failed to send command: %w", err)
 	}
 
+	utils.Infof("[CMD_TRACE] [CLIENT] [SEND_COMPLETE] CommandID=%s, SendDuration=%v, Time=%s",
+		cmdPkt.CommandId, time.Since(cmdStartTime), time.Now().Format("15:04:05.000"))
+
+	// 优化：发送命令后立即触发 Poll 请求，以快速获取响应
+	if httppollStream, ok := controlStream.(*httppoll.StreamProcessor); ok {
+		triggerTime := time.Now()
+		pollRequestID := httppollStream.TriggerImmediatePoll()
+		utils.Infof("[CMD_TRACE] [CLIENT] [TRIGGER_POLL] CommandID=%s, PollRequestID=%s, Time=%s",
+			cmdPkt.CommandId, pollRequestID, triggerTime.Format("15:04:05.000"))
+	}
+
 	// 等待响应
+	waitStartTime := time.Now()
+	utils.Infof("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
+		cmdPkt.CommandId, waitStartTime.Format("15:04:05.000"))
+
 	cmdResp, err := c.commandResponseManager.WaitForResponse(cmdPkt.CommandId, responseChan)
+
+	if err != nil {
+		utils.Errorf("[CMD_TRACE] [CLIENT] [WAIT_FAILED] CommandID=%s, WaitDuration=%v, Error=%v, Time=%s",
+			cmdPkt.CommandId, time.Since(waitStartTime), err, time.Now().Format("15:04:05.000"))
+		return nil, err
+	}
+
+	utils.Infof("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, TotalDuration=%v, Time=%s",
+		cmdPkt.CommandId, time.Since(waitStartTime), time.Since(cmdStartTime), time.Now().Format("15:04:05.000"))
 	if err != nil {
 		return nil, err
 	}
@@ -213,6 +244,11 @@ func (c *TunnoxClient) ListConnectionCodes() (*ListConnectionCodesResponseCmd, e
 			return nil, fmt.Errorf("control connection is closed, please reconnect to server")
 		}
 		return nil, fmt.Errorf("failed to send command: %w", err)
+	}
+
+	// 优化：发送命令后立即触发 Poll 请求，以快速获取响应
+	if httppollStream, ok := c.controlStream.(*httppoll.StreamProcessor); ok {
+		httppollStream.TriggerImmediatePoll()
 	}
 
 	// 等待响应
@@ -291,6 +327,11 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 			return nil, fmt.Errorf("control connection is closed, please reconnect to server")
 		}
 		return nil, fmt.Errorf("failed to send command: %w", err)
+	}
+
+	// 优化：发送命令后立即触发 Poll 请求，以快速获取响应
+	if httppollStream, ok := c.controlStream.(*httppoll.StreamProcessor); ok {
+		httppollStream.TriggerImmediatePoll()
 	}
 
 	// 等待响应
@@ -489,8 +530,23 @@ func (c *TunnoxClient) ListMappings(req *ListMappingsRequest) (*ListMappingsResp
 		return nil, fmt.Errorf("failed to send command: %w", err)
 	}
 
+	// 优化：发送命令后立即触发 Poll 请求，以快速获取响应
+	if httppollStream, ok := controlStream.(*httppoll.StreamProcessor); ok {
+		httppollStream.TriggerImmediatePoll()
+	}
+
 	// 等待响应
+	waitStartTime := time.Now()
+	utils.Infof("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
+		cmdID, waitStartTime.Format("15:04:05.000"))
 	cmdResp, err := c.commandResponseManager.WaitForResponse(cmdID, responseChan)
+	if err != nil {
+		utils.Errorf("[CMD_TRACE] [CLIENT] [WAIT_FAILED] CommandID=%s, WaitDuration=%v, Error=%v, Time=%s",
+			cmdID, time.Since(waitStartTime), err, time.Now().Format("15:04:05.000"))
+		return nil, err
+	}
+	utils.Infof("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, Success=%v, Time=%s",
+		cmdID, time.Since(waitStartTime), cmdResp.Success, time.Now().Format("15:04:05.000"))
 	if err != nil {
 		return nil, err
 	}

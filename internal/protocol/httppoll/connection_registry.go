@@ -19,7 +19,7 @@ func NewConnectionRegistry() *ConnectionRegistry {
 }
 
 // Register 注册连接
-// 如果已存在相同 ConnectionID 的连接，关闭旧的
+// 如果已存在相同 ConnectionID 的连接，关闭旧的（除非是同一个连接对象）
 func (r *ConnectionRegistry) Register(connID string, conn *ServerStreamProcessor) {
 	if connID == "" {
 		return
@@ -28,8 +28,9 @@ func (r *ConnectionRegistry) Register(connID string, conn *ServerStreamProcessor
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	
-	// 如果已存在，关闭旧的（防止重复连接）
+	// 如果已存在且不是同一个连接对象，关闭旧的（防止重复连接）
 	if oldConn, exists := r.connections[connID]; exists && oldConn != conn {
+		// 只有在确实不同时才关闭旧的
 		oldConn.Close()
 	}
 	
@@ -64,5 +65,31 @@ func (r *ConnectionRegistry) Count() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.connections)
+}
+
+// GetOrCreate 获取或创建连接（原子操作）
+// 如果连接不存在，使用 createFunc 创建新连接并注册
+// 如果连接已存在，返回已存在的连接
+func (r *ConnectionRegistry) GetOrCreate(connID string, createFunc func() *ServerStreamProcessor) *ServerStreamProcessor {
+	if connID == "" {
+		return nil
+	}
+	
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	
+	// 先检查是否已存在
+	if existingConn, exists := r.connections[connID]; exists {
+		return existingConn
+	}
+	
+	// 不存在，创建新连接
+	newConn := createFunc()
+	if newConn == nil {
+		return nil
+	}
+	
+	r.connections[connID] = newConn
+	return newConn
 }
 

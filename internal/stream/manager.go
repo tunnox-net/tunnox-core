@@ -42,8 +42,21 @@ func (m *StreamManager) CreateStream(id string, reader io.Reader, writer io.Writ
 		return nil, fmt.Errorf("stream with id %s already exists", id)
 	}
 
+	// 检查 reader 或 writer 是否已经是 PackageStreamer（如 HTTP Long Polling 的 ServerStreamProcessor）
+	// 注意：需要递归检查，因为可能被包装在适配器中
+	var stream PackageStreamer
+	if streamer, ok := reader.(PackageStreamer); ok {
+		stream = streamer
+		utils.Infof("CreateStream: reader is already a PackageStreamer, using it directly, id=%s, type=%T", id, streamer)
+	} else if streamer, ok := writer.(PackageStreamer); ok {
+		stream = streamer
+		utils.Infof("CreateStream: writer is already a PackageStreamer, using it directly, id=%s, type=%T", id, streamer)
+	} else {
 	// 创建新流
-	stream := m.factory.NewStreamProcessor(reader, writer)
+		stream = m.factory.NewStreamProcessor(reader, writer)
+		utils.Debugf("CreateStream: created new stream processor, id=%s", id)
+	}
+
 	m.streams[id] = stream
 
 	utils.Debugf("Created stream: %s", id)

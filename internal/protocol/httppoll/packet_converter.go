@@ -32,7 +32,8 @@ func (c *PacketConverter) SetConnectionInfo(connID string, clientID int64, mappi
 
 // WritePacket 将 Tunnox 包转换为 HTTP Request
 // 返回的 Request 包含所有必要的 Header 和 Body
-func (c *PacketConverter) WritePacket(pkt *packet.TransferPacket) (*http.Request, error) {
+// requestID 是可选的，如果提供则设置到 TunnelPackage 中
+func (c *PacketConverter) WritePacket(pkt *packet.TransferPacket, requestID ...string) (*http.Request, error) {
 	if pkt == nil {
 		return nil, fmt.Errorf("packet is nil")
 	}
@@ -93,6 +94,11 @@ func (c *PacketConverter) WritePacket(pkt *packet.TransferPacket) (*http.Request
 		Type:         packetTypeToString(packetType),
 		Data:         packetData,
 	}
+	
+	// 如果提供了 requestID，设置到 TunnelPackage 中
+	if len(requestID) > 0 && requestID[0] != "" {
+		tunnelPkg.RequestID = requestID[0]
+	}
 
 	// 3. 编码 TunnelPackage
 	encoded, err := EncodeTunnelPackage(tunnelPkg)
@@ -100,13 +106,15 @@ func (c *PacketConverter) WritePacket(pkt *packet.TransferPacket) (*http.Request
 		return nil, fmt.Errorf("failed to encode tunnel package: %w", err)
 	}
 
-	// 4. 构建 HTTP Request
-	req, err := http.NewRequest("POST", "/tunnox/v1/push", nil)
+	// 4. 构建 HTTP Request（控制包不需要 body，但需要设置 Content-Length: 0）
+	req, err := http.NewRequest("POST", "/tunnox/v1/push", http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("X-Tunnel-Package", encoded)
+	req.Header.Set("Content-Type", "application/json")
+	req.ContentLength = 0
 	return req, nil
 }
 
@@ -187,7 +195,7 @@ func stringToPacketType(s string) packet.Type {
 		return packet.HandshakeResp
 	case "JsonCommand":
 		return packet.JsonCommand
-	case "CommandResp":
+	case "CommandResp", "CommandResponse":
 		return packet.CommandResp
 	case "TunnelOpen":
 		return packet.TunnelOpen

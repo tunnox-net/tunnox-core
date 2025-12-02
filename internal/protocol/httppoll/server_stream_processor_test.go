@@ -86,7 +86,7 @@ func TestServerStreamProcessor_PollData(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// PollData 应该能获取到数据
-	data, responsePkg, err := sp.HandlePollRequest(ctx)
+	data, responsePkg, err := sp.HandlePollRequest(ctx, "", "control")
 	if err != nil && err != context.DeadlineExceeded {
 		t.Fatalf("PollData failed: %v", err)
 	}
