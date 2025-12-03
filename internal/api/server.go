@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/health"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/protocol/session"
@@ -116,6 +118,33 @@ func (a *apiSessionManagerAdapter) GetTunnelBridgeByMappingID(mappingID string, 
 		return nil
 	}
 	return a.sessionMgr.GetTunnelBridgeByMappingID(mappingID, clientID)
+}
+
+// CreateConnection 创建连接（实现 SessionManagerWithConnection 接口）
+func (a *apiSessionManagerAdapter) CreateConnection(reader io.Reader, writer io.Writer) (*types.Connection, error) {
+	if a.sessionMgr == nil {
+		return nil, fmt.Errorf("session manager is nil")
+	}
+	// session.SessionManager 直接实现了 CreateConnection 方法
+	return a.sessionMgr.CreateConnection(reader, writer)
+}
+
+// GetConnection 获取连接（实现 SessionManagerWithConnection 接口）
+func (a *apiSessionManagerAdapter) GetConnection(connID string) (*types.Connection, bool) {
+	if a.sessionMgr == nil {
+		return nil, false
+	}
+	// session.SessionManager 直接实现了 GetConnection 方法
+	return a.sessionMgr.GetConnection(connID)
+}
+
+// HandlePacket 处理数据包（用于握手等流程）
+func (a *apiSessionManagerAdapter) HandlePacket(connPacket *types.StreamPacket) error {
+	if a.sessionMgr == nil {
+		return fmt.Errorf("session manager is nil")
+	}
+	// session.SessionManager 直接实现了 HandlePacket 方法
+	return a.sessionMgr.HandlePacket(connPacket)
 }
 
 // AdaptSessionManager 将 session.SessionManager 适配为 api.SessionManager

@@ -22,21 +22,29 @@ func (s *ManagementAPIServer) handleControlPackage(streamProcessor *httppoll.Ser
 	}
 
 	// 获取连接对应的 Connection 对象
+	// 注意：对于握手包，连接可能还没有在 SessionManager 中注册，需要先创建连接
+	utils.Infof("HTTP long polling: handleControlPackage - getting sessionMgrWithConn, connID=%s, pkgType=%s", connID, pkg.Type)
 	sessionMgrWithConn := getSessionManagerWithConnection(s.sessionMgr)
 	if sessionMgrWithConn == nil {
-		utils.Debugf("HTTP long polling: handleControlPackage - sessionMgrWithConn is nil, connID=%s", connID)
+		utils.Errorf("HTTP long polling: handleControlPackage - sessionMgrWithConn is nil, connID=%s, pkgType=%s", connID, pkg.Type)
 		return nil
 	}
+	utils.Infof("HTTP long polling: handleControlPackage - sessionMgrWithConn obtained, connID=%s, pkgType=%s", connID, pkg.Type)
 
 	typesConn, exists := sessionMgrWithConn.GetConnection(connID)
+	utils.Infof("HTTP long polling: handleControlPackage - GetConnection result, connID=%s, exists=%v, typesConn=%v, pkgType=%s", connID, exists, typesConn != nil, pkg.Type)
 	if !exists || typesConn == nil {
-		utils.Warnf("HTTP long polling: connection not found in SessionManager, connID=%s", connID)
-		return nil
+		// 对于握手包，连接可能还没有创建，这是正常的
+		// 让 HandlePacket 来处理连接的创建
+		utils.Infof("HTTP long polling: connection not found in SessionManager (may be created during handshake), connID=%s, pkgType=%s", connID, pkg.Type)
+		// 不返回 nil，继续处理握手包
 	}
 
 	// 根据包类型处理
+	utils.Infof("HTTP long polling: handleControlPackage - switching on pkgType=%s, connID=%s", pkg.Type, connID)
 	switch pkg.Type {
 	case "Handshake":
+		utils.Infof("HTTP long polling: calling handleHandshakePackage, connID=%s", connID)
 		return s.handleHandshakePackage(streamProcessor, pkg, typesConn)
 	case "JsonCommand":
 		utils.Infof("HTTP long polling: handleControlPackage - processing JsonCommand, connID=%s", connID)
@@ -52,7 +60,9 @@ func (s *ManagementAPIServer) handleControlPackage(streamProcessor *httppoll.Ser
 }
 
 // handleHandshakePackage 处理握手包
+// 注意：typesConn 可能为 nil（握手时连接尚未创建），这是正常的
 func (s *ManagementAPIServer) handleHandshakePackage(streamProcessor *httppoll.ServerStreamProcessor, pkg *httppoll.TunnelPackage, typesConn *types.Connection) *httppoll.TunnelPackage {
+	utils.Infof("HTTP long polling: handleHandshakePackage called, connID=%s, typesConn=%v", streamProcessor.GetConnectionID(), typesConn != nil)
 	// 解析 HandshakeRequest
 	dataBytes, err := json.Marshal(pkg.Data)
 	if err != nil {
@@ -97,11 +107,27 @@ func (s *ManagementAPIServer) handleHandshakePackage(streamProcessor *httppoll.S
 	}
 
 	// 处理数据包（通过 SessionManager）
-	if handler, ok := s.sessionMgr.(interface {
+	// HandlePacket 会调用 sendHandshakeResponse，将响应通过 WritePacket 放入队列
+	// 响应会通过 Poll 请求返回给客户端，不需要在这里直接返回
+	handler, ok := s.sessionMgr.(interface {
 		HandlePacket(*types.StreamPacket) error
-	}); ok {
+	})
+	if !ok {
+		utils.Errorf("HTTP long polling: SessionManager does not support HandlePacket, connID=%s", connID)
+		return &httppoll.TunnelPackage{
+			ConnectionID: connID,
+			Type:         "HandshakeResponse",
+			Data: &packet.HandshakeResponse{
+				Success: false,
+				Error:   "SessionManager does not support HandlePacket",
+			},
+		}
+	}
+
+	utils.Infof("HTTP long polling: calling HandlePacket for handshake, connID=%s", connID)
 		if err := handler.HandlePacket(streamPacket); err != nil {
-			utils.Errorf("HTTP long polling: failed to handle handshake packet: %v", err)
+		utils.Errorf("HTTP long polling: failed to handle handshake packet: %v, connID=%s", err, connID)
+		// 错误情况下，返回错误响应（通过 Push 响应立即返回）
 			return &httppoll.TunnelPackage{
 				ConnectionID: connID,
 				Type:         "HandshakeResponse",
@@ -111,26 +137,10 @@ func (s *ManagementAPIServer) handleHandshakePackage(streamProcessor *httppoll.S
 				},
 			}
 		}
-	}
-
-	// 从 SessionManager 获取握手响应（通过控制连接）
-	// 注意：这里简化处理，实际应该通过事件或回调获取响应
-	// 暂时构造一个临时响应，让客户端通过 Poll 获取响应
-	// TODO: 实现握手响应的异步获取机制
-	handshakeResp := &packet.HandshakeResponse{
-		Success:      true,
-		Message:      "Handshake in progress",
-		ConnectionID: connID, // 服务端分配的 ConnectionID
-	}
-
-	// 构建响应 TunnelPackage
-	return &httppoll.TunnelPackage{
-		ConnectionID: connID,
-		ClientID:     streamProcessor.GetClientID(),
-		TunnelType:   "control",
-		Type:         "HandshakeResponse",
-		Data:         handshakeResp,
-	}
+	// 成功处理：握手响应已通过 WritePacket 放入队列，将通过 Poll 请求返回
+	// 不需要在这里返回响应，避免重复响应
+	utils.Infof("HTTP long polling: handshake packet handled successfully, response will be sent via Poll request, connID=%s", connID)
+	return nil
 }
 
 // getControlConnectionByConnID 通过 ConnectionID 获取控制连接

@@ -16,11 +16,11 @@ func getStreamFromConnection(accessor ControlConnectionAccessor, clientID int64)
 		return nil, "", "", fmt.Errorf("connection accessor is nil")
 	}
 
-	stream := accessor.GetStream()
-	if stream == nil {
-		return nil, "", "", fmt.Errorf("stream is nil")
-	}
-	return stream, accessor.GetConnID(), accessor.GetRemoteAddr(), nil
+		stream := accessor.GetStream()
+		if stream == nil {
+			return nil, "", "", fmt.Errorf("stream is nil")
+		}
+		return stream, accessor.GetConnID(), accessor.GetRemoteAddr(), nil
 }
 
 // sendPacketAsync 异步发送数据包（带超时）

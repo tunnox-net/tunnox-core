@@ -414,10 +414,15 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 		}
 
 		// ✅ 验证客户端是否有权限使用这个mapping
-		// 检查SourceClientID或TargetClientID是否匹配
-		if portMapping.SourceClientID != conn.GetClientID() && portMapping.TargetClientID != conn.GetClientID() {
-			utils.Warnf("ServerTunnelHandler: client %d not authorized for mapping %s (source=%d, target=%d)",
-				conn.GetClientID(), req.MappingID, portMapping.SourceClientID, portMapping.TargetClientID)
+		// 使用与 MappingID 验证路径相同的逻辑：检查 ListenClientID（如果为 0 则使用 SourceClientID）
+		// 只有 ListenClient 可以使用此映射（防止映射被其他客户端劫持）
+		listenClientID := portMapping.ListenClientID
+		if listenClientID == 0 {
+			listenClientID = portMapping.SourceClientID
+		}
+		if listenClientID != conn.GetClientID() && portMapping.TargetClientID != conn.GetClientID() {
+			utils.Warnf("ServerTunnelHandler: client %d not authorized for mapping %s (listenClientID=%d, source=%d, target=%d)",
+				conn.GetClientID(), req.MappingID, portMapping.ListenClientID, portMapping.SourceClientID, portMapping.TargetClientID)
 			return fmt.Errorf("client not authorized for this mapping")
 		}
 
