@@ -85,7 +85,7 @@ func (fg *FragmentGroup) AddFragment(index int, size int, data []byte) error {
 	}
 	fg.ReceivedCount++
 
-	utils.Infof("FragmentGroup[%s]: added fragment %d/%d (size=%d, received=%d/%d)",
+	utils.Debugf("FragmentGroup[%s]: added fragment %d/%d (size=%d, received=%d/%d)",
 		fg.GroupID, index, fg.TotalFragments, size, fg.ReceivedCount, fg.TotalFragments)
 
 	return nil
@@ -114,7 +114,7 @@ func (fg *FragmentGroup) Reassemble() ([]byte, error) {
 		return nil, fmt.Errorf("reassembled size mismatch: expected %d, got %d", fg.OriginalSize, len(result))
 	}
 
-	utils.Infof("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
+	utils.Debugf("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
 	return result, nil
 }
 
@@ -151,7 +151,7 @@ func (fg *FragmentGroup) IsCompleteAndReassemble() ([]byte, bool, error) {
 	// 标记为已重组（防止其他 goroutine 重复重组）
 	fg.reassembled = true
 
-	utils.Infof("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
+	utils.Debugf("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
 	return result, true, nil
 }
 
@@ -204,7 +204,7 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 			CreatedTime:    time.Now(),
 		}
 		fr.groups[groupID] = group
-		utils.Infof("FragmentReassembler: created new fragment group, groupID=%s, originalSize=%d, totalFragments=%d", groupID, originalSize, totalFragments)
+		utils.Debugf("FragmentReassembler: created new fragment group, groupID=%s, originalSize=%d, totalFragments=%d", groupID, originalSize, totalFragments)
 	} else {
 		// 验证一致性
 		if group.OriginalSize != originalSize {

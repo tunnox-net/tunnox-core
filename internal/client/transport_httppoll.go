@@ -226,13 +226,6 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 		c.peekBufMu.Unlock()
 		c.readBuffer = c.readBuffer[n:]
 		c.readBufMu.Unlock()
-		if streamMode {
-			utils.Infof("HTTP long polling: [Read] stream mode: read %d bytes from buffer (remaining: %d, requested: %d), mappingID=%s",
-				n, len(c.readBuffer), len(p), c.mappingID)
-		} else {
-			utils.Infof("HTTP long polling: Read %d bytes from buffer (remaining: %d, requested: %d, bufferLen: %d)",
-				n, len(c.readBuffer), len(p), len(c.readBuffer)+n)
-		}
 		return n, nil
 	}
 	c.readBufMu.Unlock()
@@ -285,8 +278,8 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 		oldBufferLen := len(c.readBuffer)
 		c.readBuffer = append(c.readBuffer, data...)
 		newBufferLen := len(c.readBuffer)
-		utils.Infof("HTTP long polling: [Read] appended %d bytes to readBuffer (old len=%d, new len=%d), streamMode=%v, connType=%s, mappingID=%s",
-			len(data), oldBufferLen, newBufferLen, streamMode, c.connType, c.mappingID)
+		utils.Debugf("HTTP long polling: [Read] appended %d bytes to readBuffer (old len=%d, new len=%d), mappingID=%s",
+			len(data), oldBufferLen, newBufferLen, c.mappingID)
 
 		// 只有指令通道（control）才需要过滤心跳包
 		// 数据通道（data）不应该有心跳包，数据流中的 0x03 字节是正常数据，不应该被过滤
@@ -305,20 +298,18 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 				filtered = append(filtered, c.readBuffer[i])
 			}
 			if len(filtered) != len(c.readBuffer) {
-				utils.Infof("HTTP long polling: [Read] filtered %d bytes from readBuffer (before=%d, after=%d)",
+				utils.Debugf("HTTP long polling: [Read] filtered %d bytes from readBuffer (before=%d, after=%d)",
 					len(c.readBuffer)-len(filtered), len(c.readBuffer), len(filtered))
 			}
 			c.readBuffer = filtered
 		}
 
 		// 从 readBuffer 读取
-		beforeReadLen := len(c.readBuffer)
 		n := copy(p, c.readBuffer)
 		c.readBuffer = c.readBuffer[n:]
-		afterReadLen := len(c.readBuffer)
 		c.readBufMu.Unlock()
-		utils.Infof("HTTP long polling: [Read] copied %d bytes from readBuffer (before=%d, after=%d, requested=%d), streamMode=%v, connType=%s, mappingID=%s",
-			n, beforeReadLen, afterReadLen, len(p), streamMode, c.connType, c.mappingID)
+		utils.Debugf("HTTP long polling: [Read] copied %d bytes from readBuffer, mappingID=%s",
+			n, c.mappingID)
 
 		// 流模式下，直接返回数据，不验证 Base64 格式（因为已经是原始数据）
 		if !streamMode {
@@ -345,17 +336,6 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 			}
 		}
 
-		firstByte := byte(0)
-		if n > 0 {
-			firstByte = p[0]
-		}
-		if streamMode {
-			utils.Infof("HTTP long polling: [Read] stream mode: read %d bytes (decoded from Base64, remaining in buffer: %d), firstByte=0x%02x, mappingID=%s",
-				n, len(c.readBuffer), firstByte, c.mappingID)
-		} else {
-			utils.Infof("HTTP long polling: Read %d bytes (decoded from Base64, remaining in buffer: %d), firstByte=0x%02x, mappingID=%s",
-				n, len(c.readBuffer), firstByte, c.mappingID)
-		}
 		return n, nil
 	}
 }
@@ -850,8 +830,8 @@ func (c *HTTPLongPollingConn) pollLoop() {
 			if len(pollResp.Data) < previewLen {
 				previewLen = len(pollResp.Data)
 			}
-			utils.Infof("HTTP long polling: decoding fragment data, Data field len=%d, preview=%s, mappingID=%s",
-				len(pollResp.Data), pollResp.Data[:previewLen], c.mappingID)
+			utils.Debugf("HTTP long polling: decoding fragment data, Data field len=%d, mappingID=%s",
+				len(pollResp.Data), c.mappingID)
 			fragmentData, err := base64.StdEncoding.DecodeString(pollResp.Data)
 			if err != nil {
 				previewLen2 := 100
@@ -862,12 +842,8 @@ func (c *HTTPLongPollingConn) pollLoop() {
 				time.Sleep(httppollRetryInterval)
 				continue
 			}
-			firstByte := byte(0)
-			if len(fragmentData) > 0 {
-				firstByte = fragmentData[0]
-			}
-			utils.Infof("HTTP long polling: decoded fragment data, len=%d, firstByte=0x%02x, mappingID=%s",
-				len(fragmentData), firstByte, c.mappingID)
+			utils.Debugf("HTTP long polling: decoded fragment data, len=%d, mappingID=%s",
+				len(fragmentData), c.mappingID)
 
 			// 如果是分片，需要重组
 			if isFragment {
@@ -899,7 +875,7 @@ func (c *HTTPLongPollingConn) pollLoop() {
 
 					// Base64编码重组后的数据
 					base64Data := base64.StdEncoding.EncodeToString(reassembledData)
-					utils.Infof("HTTP long polling: reassembled %d bytes from %d fragments, groupID=%s, mappingID=%s",
+					utils.Debugf("HTTP long polling: reassembled %d bytes from %d fragments, groupID=%s, mappingID=%s",
 						len(reassembledData), pollResp.TotalFragments, pollResp.FragmentGroupID, c.mappingID)
 
 					// 发送到 base64DataChan
@@ -907,7 +883,6 @@ func (c *HTTPLongPollingConn) pollLoop() {
 					case <-c.Ctx().Done():
 						return
 					case c.base64DataChan <- base64Data:
-						utils.Infof("HTTP long polling: sent reassembled data to base64DataChan, len=%d, mappingID=%s", len(base64Data), c.mappingID)
 					default:
 						utils.Warnf("HTTP long polling: base64DataChan full, dropping reassembled data")
 					}
@@ -925,7 +900,6 @@ func (c *HTTPLongPollingConn) pollLoop() {
 				case <-c.Ctx().Done():
 					return
 				case c.base64DataChan <- base64Data:
-					utils.Infof("HTTP long polling: sent complete data to base64DataChan, len=%d, mappingID=%s", len(base64Data), c.mappingID)
 				default:
 					utils.Warnf("HTTP long polling: base64DataChan full, dropping data")
 				}

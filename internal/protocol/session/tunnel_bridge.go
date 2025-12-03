@@ -184,22 +184,14 @@ func (a *streamDataForwarderAdapter) Read(p []byte) (int, error) {
 		return 0, nil
 	}
 
-	// 尝试获取连接ID用于调试
-	connID := "unknown"
-	if streamConn, ok := a.stream.(interface{ GetConnectionID() string }); ok {
-		connID = streamConn.GetConnectionID()
-	}
-	utils.Infof("streamDataForwarderAdapter: calling ReadAvailable, maxLength=%d, buffer len=%d, connID=%s", maxLength, len(a.buf), connID)
 	data, err := a.stream.ReadAvailable(maxLength)
 	if err != nil {
-		utils.Infof("streamDataForwarderAdapter[connID=%s]: ReadAvailable returned error, err=%v, data len=%d", connID, err, len(data))
 		if err == io.EOF {
 			a.closed = true
 		}
 		// 如果有部分数据，返回它
 		if len(data) > 0 {
 			n := copy(p, data)
-			utils.Infof("streamDataForwarderAdapter[connID=%s]: ReadAvailable returned partial data, n=%d", connID, n)
 			return n, nil
 		}
 		return 0, err
@@ -208,7 +200,6 @@ func (a *streamDataForwarderAdapter) Read(p []byte) (int, error) {
 	if len(data) == 0 {
 		// 没有数据，返回0但不返回错误（表示暂时没有数据）
 		// 注意：io.Reader 的 Read 方法返回 0, nil 表示暂时没有数据，调用者应该重试
-		utils.Infof("streamDataForwarderAdapter[connID=%s]: ReadAvailable returned no data (len=0), will retry", connID)
 		return 0, nil
 	}
 
@@ -217,9 +208,6 @@ func (a *streamDataForwarderAdapter) Read(p []byte) (int, error) {
 	if n < len(data) {
 		// 如果读取的数据比请求的多，将多余的数据放入缓冲区
 		a.buf = append(a.buf, data[n:]...)
-		utils.Infof("streamDataForwarderAdapter[connID=%s]: Read returned %d bytes, buffered %d bytes (data len=%d, requested=%d)", connID, n, len(a.buf), len(data), len(p))
-	} else {
-		utils.Infof("streamDataForwarderAdapter[connID=%s]: Read returned %d bytes (data len=%d, maxLength=%d, requested=%d)", connID, n, len(data), maxLength, len(p))
 	}
 	return n, nil
 }
@@ -664,29 +652,9 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 		default:
 		}
 
-		// 从源端读取（带超时检测）
-		// ✅ 提取连接的 connID 用于调试
-		srcConnID := "unknown"
-		if srcConn, ok := src.(interface{ GetConnectionID() string }); ok {
-			srcConnID = srcConn.GetConnectionID()
-		} else if srcConn, ok := src.(interface{ GetClientID() int64 }); ok {
-			srcConnID = fmt.Sprintf("client_%d", srcConn.GetClientID())
-		}
-		utils.Infof("TunnelBridge[%s]: %s calling src.Read(buf), src type=%T, srcConnID=%s, buf size=%d", b.tunnelID, direction, src, srcConnID, len(buf))
-		readStartTime := time.Now()
+		// 从源端读取
 		nr, err := src.Read(buf)
-		readDuration := time.Since(readStartTime)
-		firstByte := byte(0)
 		if nr > 0 {
-			firstByte = buf[0]
-		}
-		utils.Infof("TunnelBridge[%s]: %s src.Read returned, n=%d, err=%v, firstByte=0x%02x, srcConnID=%s, duration=%v", b.tunnelID, direction, nr, err, firstByte, srcConnID, readDuration)
-		if nr > 0 {
-			firstByte := byte(0)
-			if len(buf) > 0 {
-				firstByte = buf[0]
-			}
-			utils.Infof("TunnelBridge[%s]: %s read %d bytes, firstByte=0x%02x", b.tunnelID, direction, nr, firstByte)
 			// 应用限速（如果启用）
 			if b.rateLimiter != nil {
 				// 使用 bridge 的 context 进行限速等待
@@ -697,19 +665,10 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 			}
 
 			// 写入目标端
-			dstConnID := "unknown"
-			if dstConn, ok := dst.(interface{ GetConnectionID() string }); ok {
-				dstConnID = dstConn.GetConnectionID()
-			}
-			writeStartTime := time.Now()
 			nw, ew := dst.Write(buf[0:nr])
-			writeDuration := time.Since(writeStartTime)
 			if nw > 0 {
 				total += int64(nw)
 				counter.Add(int64(nw)) // 更新流量统计
-				utils.Infof("TunnelBridge[%s]: %s wrote %d bytes to dst (type=%T, dstConnID=%s), err=%v, duration=%v (total: %d)", b.tunnelID, direction, nw, dst, dstConnID, ew, writeDuration, total)
-			} else {
-				utils.Infof("TunnelBridge[%s]: %s write returned 0 bytes, err=%v, dstConnID=%s", b.tunnelID, direction, ew, dstConnID)
 			}
 			if ew != nil {
 				if ew != io.EOF {
@@ -733,9 +692,7 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 				continue
 			}
 			if err != io.EOF {
-				utils.Infof("TunnelBridge[%s]: %s read error: %v (total bytes: %d)", b.tunnelID, direction, err, total)
-			} else {
-				utils.Infof("TunnelBridge[%s]: %s read EOF (total bytes: %d)", b.tunnelID, direction, total)
+				utils.Debugf("TunnelBridge[%s]: %s read error: %v (total bytes: %d)", b.tunnelID, direction, err, total)
 			}
 			break
 		}

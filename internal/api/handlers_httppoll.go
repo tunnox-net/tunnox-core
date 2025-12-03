@@ -82,7 +82,7 @@ func (a *sessionManagerAdapter) GetConnection(connID string) (*types.Connection,
 // handleHTTPPush 处理客户端推送数据
 // POST /tunnox/v1/push
 func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Request) {
-	utils.Infof("HTTP long polling: [HANDLE_PUSH] received Push request, method=%s, contentLength=%d", r.Method, r.ContentLength)
+	utils.Debugf("HTTP long polling: [HANDLE_PUSH] received Push request, method=%s, contentLength=%d", r.Method, r.ContentLength)
 
 	// 1. 获取并解码 X-Tunnel-Package（必须）
 	packageHeader := r.Header.Get("X-Tunnel-Package")
@@ -91,7 +91,7 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 		s.respondError(w, http.StatusBadRequest, "missing X-Tunnel-Package header")
 		return
 	}
-	utils.Infof("HTTP long polling: [HANDLE_PUSH] X-Tunnel-Package len=%d", len(packageHeader))
+	utils.Debugf("HTTP long polling: [HANDLE_PUSH] X-Tunnel-Package len=%d", len(packageHeader))
 
 	// 2. 解码控制包
 	pkg, err := httppoll.DecodeTunnelPackage(packageHeader)
@@ -146,7 +146,6 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 				if pushReq.Data != "" {
 					// 判断是否为分片：total_fragments > 1
 					isFragment := pushReq.TotalFragments > 1
-					utils.Infof("HTTP long polling: [HANDLE_PUSH] received data in body, dataLen=%d, totalFragments=%d, isFragment=%v, connID=%s", len(pushReq.Data), pushReq.TotalFragments, isFragment, connID)
 
 					// 如果是分片，需要重组
 					if isFragment {
@@ -173,7 +172,7 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 							return
 						}
 
-						utils.Infof("HTTP long polling: [HANDLE_PUSH] added fragment %d/%d, groupID=%s, connID=%s",
+						utils.Debugf("HTTP long polling: [HANDLE_PUSH] added fragment %d/%d, groupID=%s, connID=%s",
 							pushReq.FragmentIndex, pushReq.TotalFragments, pushReq.FragmentGroupID, connID)
 
 						// 原子操作：检查是否完整，如果完整则重组（避免竞态条件）
@@ -189,7 +188,7 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 							// 只有第一个检测到完整的 goroutine 会执行到这里
 							// Base64编码重组后的数据
 							base64Data := base64.StdEncoding.EncodeToString(reassembledData)
-							utils.Infof("HTTP long polling: [HANDLE_PUSH] reassembled %d bytes from %d fragments, groupID=%s, connID=%s",
+							utils.Debugf("HTTP long polling: [HANDLE_PUSH] reassembled %d bytes from %d fragments, groupID=%s, connID=%s",
 								len(reassembledData), pushReq.TotalFragments, pushReq.FragmentGroupID, connID)
 
 							// 推送到流处理器
@@ -203,7 +202,6 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 							// 移除分片组（延迟移除，确保其他 goroutine 不会重复处理）
 							// 注意：即使 PushData 失败，也应该移除，因为数据已经重组，不能再次重组
 							streamProcessor.GetFragmentReassembler().RemoveGroup(pushReq.FragmentGroupID)
-							utils.Infof("HTTP long polling: [HANDLE_PUSH] pushed reassembled data successfully, len=%d, connID=%s", len(base64Data), connID)
 						} else {
 							// 两种情况：
 							// 1. 分片组不完整，等待更多分片
@@ -218,7 +216,7 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 							s.respondError(w, http.StatusServiceUnavailable, "Connection closed")
 							return
 						}
-						utils.Infof("HTTP long polling: [HANDLE_PUSH] pushed data successfully, dataLen=%d, connID=%s", len(pushReq.Data), connID)
+						utils.Debugf("HTTP long polling: [HANDLE_PUSH] pushed data successfully, dataLen=%d, connID=%s", len(pushReq.Data), connID)
 					}
 				} else {
 					utils.Debugf("HTTP long polling: [HANDLE_PUSH] body parsed but data field is empty, connID=%s", connID)
@@ -233,13 +231,9 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 
 	// 7. 处理控制包（如果有 type 字段）
 	var responsePkg *httppoll.TunnelPackage
-	utils.Infof("HTTP long polling: [HANDLE_PUSH] checking control package, type=%s, connID=%s", pkg.Type, connID)
 	if pkg.Type != "" {
-		utils.Infof("HTTP long polling: [HANDLE_PUSH] processing control package, type=%s, connID=%s", pkg.Type, connID)
+		utils.Debugf("HTTP long polling: [HANDLE_PUSH] processing control package, type=%s, connID=%s", pkg.Type, connID)
 		responsePkg = s.handleControlPackage(streamProcessor, pkg)
-		utils.Infof("HTTP long polling: [HANDLE_PUSH] handleControlPackage returned, hasResponse=%v, connID=%s", responsePkg != nil, connID)
-	} else {
-		utils.Infof("HTTP long polling: [HANDLE_PUSH] no type field in tunnel package, skipping control package handling, connID=%s", connID)
 	}
 
 	// 8. 返回响应（如果有控制包响应，放在 X-Tunnel-Package 中）
@@ -275,7 +269,7 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 		utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to write response: %v, connID=%s", err, connID)
 		return
 	}
-	utils.Infof("HTTP long polling: [HANDLE_PUSH] response written successfully, connID=%s", connID)
+	utils.Debugf("HTTP long polling: [HANDLE_PUSH] response written successfully, connID=%s", connID)
 }
 
 // handleHTTPPoll 处理客户端长轮询
@@ -287,7 +281,7 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 		s.respondError(w, http.StatusBadRequest, "missing X-Tunnel-Package header")
 		return
 	}
-	utils.Infof("HTTP long polling: [HANDLE_POLL] received Poll request, X-Tunnel-Package len=%d", len(packageHeader))
+	utils.Debugf("HTTP long polling: [HANDLE_POLL] received Poll request, X-Tunnel-Package len=%d", len(packageHeader))
 
 	// 2. 解码控制包
 	pkg, err := httppoll.DecodeTunnelPackage(packageHeader)
@@ -366,7 +360,7 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 
 		// 如果收到数据流，返回数据（分片格式）
 		if base64Data != "" {
-			utils.Infof("HTTP long polling: [HANDLE_POLL] keepalive request received data, len=%d, connID=%s", len(base64Data), connID)
+			utils.Debugf("HTTP long polling: [HANDLE_POLL] keepalive request received data, len=%d, connID=%s", len(base64Data), connID)
 			// base64Data 现在是分片响应的JSON字符串，直接解析并返回
 			var fragmentResp HTTPPollResponse
 			if err := json.Unmarshal([]byte(base64Data), &fragmentResp); err != nil {
@@ -420,12 +414,12 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 	if tunnelType == "" {
 		tunnelType = "control" // 默认为 control
 	}
-	utils.Infof("HTTP long polling: [HANDLE_POLL] calling HandlePollRequest, connID=%s, pointer=%p, requestID=%s, tunnelType=%s", connID, streamProcessor, requestID, tunnelType)
+	utils.Debugf("HTTP long polling: [HANDLE_POLL] calling HandlePollRequest, connID=%s, pointer=%p, requestID=%s, tunnelType=%s", connID, streamProcessor, requestID, tunnelType)
 	base64Data, responsePkg, err := streamProcessor.HandlePollRequest(ctx, requestID, tunnelType)
 	if err != nil {
 		utils.Errorf("HTTP long polling: [HANDLE_POLL] HandlePollRequest returned error: %v, connID=%s", err, connID)
 	} else {
-		utils.Infof("HTTP long polling: [HANDLE_POLL] HandlePollRequest returned successfully, hasControlPacket=%v, hasData=%v, connID=%s",
+		utils.Debugf("HTTP long polling: [HANDLE_POLL] HandlePollRequest returned successfully, hasControlPacket=%v, hasData=%v, connID=%s",
 			responsePkg != nil, base64Data != "", connID)
 	}
 	if err == context.DeadlineExceeded {
@@ -465,7 +459,7 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 		encodedPkg, err := httppoll.EncodeTunnelPackage(responsePkg)
 		if err == nil {
 			w.Header().Set("X-Tunnel-Package", encodedPkg)
-			utils.Infof("HTTP long polling: [HANDLE_POLL] returning control packet in X-Tunnel-Package header, type=%s, connID=%s, encodedLen=%d",
+			utils.Debugf("HTTP long polling: [HANDLE_POLL] returning control packet in X-Tunnel-Package header, type=%s, connID=%s, encodedLen=%d",
 				responsePkg.Type, connID, len(encodedPkg))
 		} else {
 			utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to encode tunnel package: %v, connID=%s", err, connID)
@@ -481,12 +475,12 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 
 	if base64Data != "" {
 		// 直接返回 JSON 字符串，不需要解析和重新序列化
-		utils.Infof("HTTP long polling: [HANDLE_POLL] writing HTTP response with data, status=200, hasControlPacket=%v, dataLen=%d, connID=%s",
+		utils.Debugf("HTTP long polling: [HANDLE_POLL] writing HTTP response with data, status=200, hasControlPacket=%v, dataLen=%d, connID=%s",
 			responsePkg != nil, len(base64Data), connID)
 		if _, err := w.Write([]byte(base64Data)); err != nil {
 			utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to write response body: %v, connID=%s", err, connID)
 		} else {
-			utils.Infof("HTTP long polling: [HANDLE_POLL] HTTP response written successfully, connID=%s", connID)
+			utils.Debugf("HTTP long polling: [HANDLE_POLL] HTTP response written successfully, connID=%s", connID)
 		}
 	} else {
 		// 没有数据，返回超时响应
@@ -495,12 +489,12 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 			Timeout:   true,
 			Timestamp: time.Now().Unix(),
 		}
-		utils.Infof("HTTP long polling: [HANDLE_POLL] writing timeout response, status=200, hasControlPacket=%v, connID=%s",
+		utils.Debugf("HTTP long polling: [HANDLE_POLL] writing timeout response, status=200, hasControlPacket=%v, connID=%s",
 			responsePkg != nil, connID)
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to write timeout response: %v, connID=%s", err, connID)
 		} else {
-			utils.Infof("HTTP long polling: [HANDLE_POLL] timeout response written successfully, connID=%s", connID)
+			utils.Debugf("HTTP long polling: [HANDLE_POLL] timeout response written successfully, connID=%s", connID)
 		}
 	}
 }
