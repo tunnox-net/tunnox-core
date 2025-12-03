@@ -153,3 +153,7 @@ test-env/logs/
 *.cpu
 *.trace
 **/pprof/
+internal/stream/stream_processor.go
+.gitignore
+gw/client
+gw/client-config.yaml

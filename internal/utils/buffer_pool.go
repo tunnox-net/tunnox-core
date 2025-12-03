@@ -7,6 +7,13 @@ import (
 	"sync"
 )
 
+const (
+	// MaxBufferSize 最大缓冲区大小（16MB），超过此大小直接分配，不放入池中
+	MaxBufferSize = 16 * 1024 * 1024
+	// BufferSizeAlignment 缓冲区大小对齐（4KB），减少不同大小的 pool 数量
+	BufferSizeAlignment = 4 * 1024
+)
+
 // BufferPool 内存池，用于管理不同大小的缓冲区
 type BufferPool struct {
 	pools map[int]*sync.Pool
@@ -35,10 +42,32 @@ func (bp *BufferPool) onClose() error {
 	return nil
 }
 
+// alignBufferSize 对齐缓冲区大小，减少不同大小的 pool 数量
+func alignBufferSize(size int) int {
+	if size <= 0 {
+		return BufferSizeAlignment
+	}
+	if size > MaxBufferSize {
+		// 超过最大大小，不对齐，直接返回（不会放入池中）
+		return size
+	}
+	// 对齐到 BufferSizeAlignment 的倍数
+	aligned := (size + BufferSizeAlignment - 1) / BufferSizeAlignment * BufferSizeAlignment
+	return aligned
+}
+
 // Get(size int) []byte 获取指定大小的缓冲区
 func (bp *BufferPool) Get(size int) []byte {
+	// 超过最大大小，直接分配，不放入池中
+	if size > MaxBufferSize {
+		return make([]byte, size)
+	}
+
+	// 对齐大小，减少不同大小的 pool 数量
+	alignedSize := alignBufferSize(size)
+
 	bp.mu.RLock()
-	pool, exists := bp.pools[size]
+	pool, exists := bp.pools[alignedSize]
 	bp.mu.RUnlock()
 
 	if !exists {
@@ -46,17 +75,24 @@ func (bp *BufferPool) Get(size int) []byte {
 		defer bp.mu.Unlock()
 
 		// 双重检查
-		if pool, exists = bp.pools[size]; !exists {
+		if pool, exists = bp.pools[alignedSize]; !exists {
 			pool = &sync.Pool{
 				New: func() interface{} {
-					return make([]byte, size)
+					return make([]byte, alignedSize)
 				},
 			}
-			bp.pools[size] = pool
+			bp.pools[alignedSize] = pool
 		}
 	}
 
-	return pool.Get().([]byte)
+	buf := pool.Get().([]byte)
+	// 确保返回的切片长度正确，但保持底层数组的容量
+	// 这样 Put 时可以通过 cap(buf) 正确识别并归还
+	if len(buf) != size {
+		// 如果长度不匹配，调整长度但保持容量不变
+		return buf[:size:cap(buf)]
+	}
+	return buf
 }
 
 // Put(buf []byte) 归还缓冲区
@@ -65,16 +101,30 @@ func (bp *BufferPool) Put(buf []byte) {
 		return
 	}
 
+	// 获取底层数组的容量（可能大于 len(buf)）
+	// 注意：如果 buf 是通过 buf[:size] 切片的，cap(buf) 仍然是原始大小
+	actualSize := cap(buf)
+
+	// 超过最大大小，不放入池中，直接丢弃
+	if actualSize > MaxBufferSize {
+		return
+	}
+
+	// 对齐大小
+	alignedSize := alignBufferSize(actualSize)
+
 	bp.mu.RLock()
-	pool, exists := bp.pools[len(buf)]
+	pool, exists := bp.pools[alignedSize]
 	bp.mu.RUnlock()
 
 	if exists {
+		// 恢复到底层数组的完整大小
+		fullBuf := buf[:actualSize]
 		// 清空缓冲区内容
-		for i := range buf {
-			buf[i] = 0
+		for i := range fullBuf {
+			fullBuf[i] = 0
 		}
-		pool.Put(buf)
+		pool.Put(fullBuf)
 	}
 }
 
@@ -116,23 +166,20 @@ func (bm *BufferManager) Release(buf []byte) {
 }
 
 // ReadIntoBuffer(reader io.Reader, size int) ([]byte, error) 读取数据到缓冲区
+// 注意：返回的切片是 buf 的子切片，调用方需要负责释放原始缓冲区
+// 如果调用方需要长期持有数据，应该复制数据
 func (bm *BufferManager) ReadIntoBuffer(reader io.Reader, size int) ([]byte, error) {
 	buf := bm.Allocate(size)
-	var err error
-	defer func() {
-		if err != nil {
-			bm.Release(buf)
-		}
-	}()
-
 	totalRead := 0
+
 	for totalRead < size {
 		n, readErr := reader.Read(buf[totalRead:])
 		totalRead += n
 
 		if readErr != nil {
-			err = readErr
-			return buf[:totalRead], err
+			// 读取错误，释放缓冲区
+			bm.Release(buf)
+			return nil, readErr
 		}
 
 		if n == 0 {
@@ -140,6 +187,8 @@ func (bm *BufferManager) ReadIntoBuffer(reader io.Reader, size int) ([]byte, err
 		}
 	}
 
+	// 成功读取，返回数据切片（调用方需要负责释放原始缓冲区）
+	// 注意：这里返回的是 buf 的子切片，调用方应该复制数据或确保释放原始缓冲区
 	return buf[:totalRead], nil
 }
 

@@ -33,7 +33,7 @@ func newWebSocketStreamConn(wsURL string) (*websocketStreamConn, error) {
 	utils.Debugf("WebSocket: connecting to %s", wsURL)
 
 	dialer := websocket.Dialer{
-		HandshakeTimeout: 30 * time.Second,
+		HandshakeTimeout: 20 * time.Second,
 		ReadBufferSize:   64 * 1024,
 		WriteBufferSize:  64 * 1024,
 	}

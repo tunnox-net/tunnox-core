@@ -10,19 +10,19 @@ server:
   protocols:
     tcp:
       enabled: true
-      port: 8080
+      port: 8000
       host: "0.0.0.0"
     websocket:
       enabled: true
-      port: 8081
+      port: 8443
       host: "0.0.0.0"
     udp:
       enabled: true
-      port: 8082
+      port: 8000
       host: "0.0.0.0"
     quic:
       enabled: true
-      port: 8083
+      port: 443
       host: "0.0.0.0"
 
 log:

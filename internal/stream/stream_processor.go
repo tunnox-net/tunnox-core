@@ -43,16 +43,55 @@ func NewStreamProcessor(reader io.Reader, writer io.Writer, parentCtx context.Co
 		bufferMgr:   utils.NewBufferManager(parentCtx),
 		// 注意：加密功能已移至 internal/stream/transform 模块
 	}
+	sp.AddCleanHandler(sp.onClose)
 	return sp
 }
 
-
 func (ps *StreamProcessor) onClose() error {
+	var errs []error
+
+	// 关闭 buffer manager
 	if ps.bufferMgr != nil {
 		result := ps.bufferMgr.Close()
 		if result.HasErrors() {
-			return fmt.Errorf("buffer manager cleanup failed: %v", result.Error())
+			errs = append(errs, fmt.Errorf("buffer manager cleanup failed: %v", result.Error()))
 		}
+	}
+
+	// 关闭 writer（如果实现了 Close 方法且不是 Disposable，手动关闭）
+	// 注意：实现了 Dispose 接口的对象（如 GzipWriter）会在 context 取消时自动关闭
+	if ps.writer != nil {
+		// 检查是否实现了 Dispose 接口（会自动关闭，不需要手动关闭）
+		if _, isDisposable := ps.writer.(dispose.Disposable); !isDisposable {
+			// 不是 Disposable，手动关闭
+			if closer, ok := ps.writer.(interface{ Close() error }); ok {
+				if err := closer.Close(); err != nil {
+					errs = append(errs, fmt.Errorf("writer close failed: %w", err))
+				}
+			} else if closer, ok := ps.writer.(interface{ Close() }); ok {
+				closer.Close()
+			}
+		}
+	}
+
+	// 关闭 reader（如果实现了 Close 方法且不是 Disposable，手动关闭）
+	// 注意：实现了 Dispose 接口的对象（如 GzipReader）会在 context 取消时自动关闭
+	if ps.reader != nil {
+		// 检查是否实现了 Dispose 接口（会自动关闭，不需要手动关闭）
+		if _, isDisposable := ps.reader.(dispose.Disposable); !isDisposable {
+			// 不是 Disposable，手动关闭
+			if closer, ok := ps.reader.(interface{ Close() error }); ok {
+				if err := closer.Close(); err != nil {
+					errs = append(errs, fmt.Errorf("reader close failed: %w", err))
+				}
+			} else if closer, ok := ps.reader.(interface{ Close() }); ok {
+				closer.Close()
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("stream processor cleanup errors: %v", errs)
 	}
 	return nil
 }
@@ -526,4 +565,3 @@ func (ps *StreamProcessor) Close() {
 func (ps *StreamProcessor) CloseWithResult() *dispose.DisposeResult {
 	return ps.ResourceBase.Dispose.Close()
 }
-

@@ -558,19 +558,57 @@ func (c *TunnoxClient) connectWithAutoDetection() error {
 	connector := NewAutoConnector(c.Ctx(), c)
 	defer connector.Close()
 
-	endpoint, err := connector.ConnectWithAutoDetection(c.Ctx())
+	attempt, err := connector.ConnectWithAutoDetection(c.Ctx())
 	if err != nil {
 		return fmt.Errorf("auto connection failed: %w", err)
 	}
 
 	// 更新配置
-	c.config.Server.Protocol = endpoint.Protocol
-	c.config.Server.Address = endpoint.Address
+	c.config.Server.Protocol = attempt.Endpoint.Protocol
+	c.config.Server.Address = attempt.Endpoint.Address
 
-	utils.Infof("Client: auto-detected server endpoint - %s://%s", endpoint.Protocol, endpoint.Address)
+	utils.Infof("Client: auto-detected server endpoint - %s://%s", attempt.Endpoint.Protocol, attempt.Endpoint.Address)
 
-	// 使用选中的端点建立控制连接
-	return c.connectWithEndpoint(endpoint.Protocol, endpoint.Address)
+	// 使用已建立的连接和 Stream（握手已在 ConnectWithAutoDetection 中完成）
+	c.mu.Lock()
+	c.controlConn = attempt.Conn
+	c.controlStream = attempt.Stream
+	c.mu.Unlock()
+
+	// 记录连接信息
+	localAddr := "unknown"
+	remoteAddr := "unknown"
+	if attempt.Conn.LocalAddr() != nil {
+		localAddr = attempt.Conn.LocalAddr().String()
+	}
+	if attempt.Conn.RemoteAddr() != nil {
+		remoteAddr = attempt.Conn.RemoteAddr().String()
+	}
+	utils.Infof("Client: %s connection established and handshake completed - Local=%s, Remote=%s",
+		strings.ToUpper(attempt.Endpoint.Protocol), localAddr, remoteAddr)
+
+	// 启动读取循环（接收服务器命令）
+	if !c.readLoopRunning.CompareAndSwap(false, true) {
+		utils.Warnf("Client: readLoop already running, skipping")
+	} else {
+		go func() {
+			defer c.readLoopRunning.Store(false)
+			c.readLoop()
+		}()
+	}
+
+	// 启动心跳循环
+	if !c.heartbeatLoopRunning.CompareAndSwap(false, true) {
+		utils.Debugf("Client: heartbeatLoop already running, skipping")
+	} else {
+		go func() {
+			defer c.heartbeatLoopRunning.Store(false)
+			c.heartbeatLoop()
+		}()
+	}
+
+	utils.Infof("Client: control connection established successfully")
+	return nil
 }
 
 // connectWithEndpoint 使用指定的协议和地址建立控制连接

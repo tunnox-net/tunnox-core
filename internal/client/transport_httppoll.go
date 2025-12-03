@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	httppollDefaultPushTimeout = 30 * time.Second
-	httppollDefaultPollTimeout = 30 * time.Second
+	httppollDefaultPushTimeout = 20 * time.Second
+	httppollDefaultPollTimeout = 20 * time.Second
 	httppollMaxRetries         = 3
 	httppollRetryInterval      = 1 * time.Second
 	httppollMaxRequestSize     = 1024 * 1024 // 1MB

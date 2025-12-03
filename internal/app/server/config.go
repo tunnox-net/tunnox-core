@@ -313,7 +313,7 @@ func ValidateConfig(config *Config) error {
 		config.Server.Host = "0.0.0.0"
 	}
 	if config.Server.Port <= 0 {
-		config.Server.Port = 8080
+		config.Server.Port = 8000
 	}
 
 	// 验证协议配置
@@ -325,29 +325,40 @@ func ValidateConfig(config *Config) error {
 	defaultProtocols := map[string]ProtocolConfig{
 		"tcp": {
 			Enabled: true,
-			Port:    8080,
+			Port:    8000,
 			Host:    "0.0.0.0",
 		},
 		"websocket": {
 			Enabled: true,
-			Port:    8081,
+			Port:    8443,
 			Host:    "0.0.0.0",
 		},
 		"udp": {
 			Enabled: true,
-			Port:    8082,
+			Port:    8000,
 			Host:    "0.0.0.0",
 		},
 		"quic": {
 			Enabled: true,
-			Port:    8083,
+			Port:    443,
 			Host:    "0.0.0.0",
 		},
 	}
 
-	// 合并默认配置
+	// 合并默认配置（智能合并：如果用户配置了协议但某些字段缺失，使用默认值填充）
 	for name, defaultConfig := range defaultProtocols {
-		if _, exists := config.Server.Protocols[name]; !exists {
+		if userConfig, exists := config.Server.Protocols[name]; exists {
+			// 用户已配置该协议，合并缺失的字段
+			if userConfig.Port <= 0 {
+				userConfig.Port = defaultConfig.Port
+			}
+			if userConfig.Host == "" {
+				userConfig.Host = defaultConfig.Host
+			}
+			// 如果用户没有明确设置 Enabled，保持默认值（但通常用户会设置）
+			config.Server.Protocols[name] = userConfig
+		} else {
+			// 用户未配置该协议，使用默认配置
 			config.Server.Protocols[name] = defaultConfig
 		}
 	}
@@ -552,29 +563,29 @@ func GetDefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
 			Host:         "0.0.0.0",
-			Port:         8080,
+			Port:         8000,
 			ReadTimeout:  30,
 			WriteTimeout: 30,
 			IdleTimeout:  60,
 			Protocols: map[string]ProtocolConfig{
 				"tcp": {
 					Enabled: true,
-					Port:    8080,
+					Port:    8000,
 					Host:    "0.0.0.0",
 				},
 				"websocket": {
 					Enabled: true,
-					Port:    8081,
+					Port:    8443,
 					Host:    "0.0.0.0",
 				},
 				"udp": {
 					Enabled: true,
-					Port:    8082,
+					Port:    8000,
 					Host:    "0.0.0.0",
 				},
 				"quic": {
 					Enabled: true,
-					Port:    8083,
+					Port:    443,
 					Host:    "0.0.0.0",
 				},
 			},

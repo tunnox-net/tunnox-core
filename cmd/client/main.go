@@ -93,6 +93,18 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// 在连接之前就设置信号处理，使 Ctrl+C 能够中断连接过程
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		select {
+		case sig := <-sigChan:
+			fmt.Fprintf(os.Stderr, "\n⚠️  Received signal %v, cancelling connection...\n", sig)
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
 	// 创建客户端
 	tunnoxClient := client.NewClient(ctx, config)
 
@@ -115,8 +127,22 @@ func main() {
 
 		// 尝试连接（如果有配置地址或需要自动连接）
 		// 自动连接会在 Connect() 内部处理
+		if config.Server.Address == "" {
+			// 没有配置地址，会触发自动连接，显示提示信息
+			fmt.Fprintf(os.Stderr, "🔍 No server address configured, attempting auto-connection...\n")
+			fmt.Fprintf(os.Stderr, "💡 Press Ctrl+C to cancel\n")
+		}
 		if err := tunnoxClient.Connect(); err != nil {
-			// 连接失败，静默处理，用户可通过CLI命令重连
+			// 检查是否是因为 context 取消导致的错误
+			if ctx.Err() == context.Canceled {
+				fmt.Fprintf(os.Stderr, "\n⚠️  Connection cancelled by user\n")
+				os.Exit(0)
+			}
+			// 连接失败，显示提示信息，用户可通过CLI命令重连
+			fmt.Fprintf(os.Stderr, "⚠️  Failed to connect to server: %v\n", err)
+			fmt.Fprintf(os.Stderr, "💡 You can use CLI commands to connect later, or configure server address with -s flag\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "✅ Connected to server successfully\n")
 		}
 
 		// 交互模式：尝试启动CLI
@@ -138,6 +164,11 @@ func main() {
 			// 如果还未连接，尝试连接
 			if !tunnoxClient.IsConnected() {
 				if err := connectWithRetry(tunnoxClient, 5); err != nil {
+					// 检查是否是因为 context 取消导致的错误
+					if ctx.Err() == context.Canceled {
+						fmt.Fprintf(os.Stderr, "\n⚠️  Connection cancelled by user\n")
+						os.Exit(0)
+					}
 					fmt.Fprintf(os.Stderr, "❌ Failed to connect to server after retries: %v\n", err)
 					os.Exit(1)
 				}
@@ -201,6 +232,11 @@ func main() {
 
 		// 连接到服务器（带重试）
 		if err := connectWithRetry(tunnoxClient, 5); err != nil {
+			// 检查是否是因为 context 取消导致的错误
+			if ctx.Err() == context.Canceled {
+				fmt.Fprintf(os.Stderr, "\n⚠️  Connection cancelled by user\n")
+				os.Exit(0)
+			}
 			fmt.Fprintf(os.Stderr, "❌ Failed to connect to server after retries: %v\n", err)
 			os.Exit(1)
 		}
