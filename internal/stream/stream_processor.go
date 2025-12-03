@@ -46,14 +46,6 @@ func NewStreamProcessor(reader io.Reader, writer io.Writer, parentCtx context.Co
 	return sp
 }
 
-// NewStreamProcessorWithEncryption 已废弃：加密功能已移至 internal/stream/transform 模块
-// 使用 transform.NewTransformer() 配置加密
-//
-// Deprecated: 使用 transform 包代替
-func NewStreamProcessorWithEncryption(reader io.Reader, writer io.Writer, key []byte, parentCtx context.Context) *StreamProcessor {
-	// 直接创建基本流处理器，加密功能应通过 transform 模块配置
-	return NewStreamProcessor(reader, writer, parentCtx)
-}
 
 func (ps *StreamProcessor) onClose() error {
 	if ps.bufferMgr != nil {
@@ -535,34 +527,3 @@ func (ps *StreamProcessor) CloseWithResult() *dispose.DisposeResult {
 	return ps.ResourceBase.Dispose.Close()
 }
 
-// EnableEncryption 已废弃：加密功能已移至 internal/stream/transform 模块
-//
-// Deprecated: 使用 transform 包代替
-func (ps *StreamProcessor) EnableEncryption(key []byte) {
-	// 加密功能已移至 transform 模块，此方法为兼容性保留
-}
-
-// DisableEncryption 禁用加密
-// DisableEncryption 已废弃：加密功能已移至 internal/stream/transform 模块
-//
-// Deprecated: 使用 transform 包代替
-func (ps *StreamProcessor) DisableEncryption() {
-	// 加密功能已移至 transform 模块，此方法为兼容性保留
-}
-
-// IsEncryptionEnabled 检查是否启用了加密
-// IsEncryptionEnabled 已废弃：加密功能已移至 internal/stream/transform 模块
-//
-// Deprecated: 使用 transform 包代替
-func (ps *StreamProcessor) IsEncryptionEnabled() bool {
-	// 加密功能已移至 transform 模块，此方法为兼容性保留
-	return false
-}
-
-// GetEncryptionKey 已废弃：加密功能已移至 internal/stream/transform 模块
-//
-// Deprecated: 使用 transform 包代替
-func (ps *StreamProcessor) GetEncryptionKey() []byte {
-	// 加密功能已移至 transform 模块，此方法为兼容性保留
-	return nil
-}

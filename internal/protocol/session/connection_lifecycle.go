@@ -341,7 +341,7 @@ func (s *SessionManager) GetControlConnectionByClientID(clientID int64) *Control
 }
 
 // GetControlConnectionInterface 根据 ClientID 获取指令连接（返回接口用于API）
-func (s *SessionManager) GetControlConnectionInterface(clientID int64) interface{} {
+func (s *SessionManager) GetControlConnectionInterface(clientID int64) ControlConnectionInterface {
 	return s.GetControlConnectionByClientID(clientID)
 }
 

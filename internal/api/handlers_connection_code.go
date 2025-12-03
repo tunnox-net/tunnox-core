@@ -440,22 +440,12 @@ func (h *ConnectionCodeHandlers) HandleRevokeMapping(w http.ResponseWriter, r *h
 // 辅助方法
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// respondSuccess 返回成功响应
+// respondSuccess 返回成功响应（使用统一响应格式）
 func respondSuccess(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"data":    data,
-	})
+	SuccessFunc(w, statusCode, data)
 }
 
-// respondError 返回错误响应
+// respondError 返回错误响应（使用统一响应格式）
 func respondError(w http.ResponseWriter, statusCode int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": false,
-		"error":   message,
-	})
+	ErrorFunc(w, statusCode, message)
 }

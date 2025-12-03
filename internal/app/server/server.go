@@ -189,7 +189,7 @@ func New(config *Config, parentCtx context.Context) *Server {
 	// 初始化 Management API
 	if config.ManagementAPI.Enabled {
 		server.apiServer = server.createManagementAPI(parentCtx)
-		server.apiServer.SetSessionManager(server.session)
+		server.apiServer.SetSessionManager(api.AdaptSessionManager(server.session))
 	}
 
 	// 注册服务到服务管理器

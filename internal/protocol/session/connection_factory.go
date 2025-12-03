@@ -6,6 +6,9 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+// StreamProcessorAccessor 类型别名，用于在接口定义中使用
+type StreamProcessorAccessor = stream.StreamProcessorAccessor
+
 // CreateTunnelConnection 从现有连接创建统一接口的隧道连接
 // 根据协议类型自动选择合适的实现
 func CreateTunnelConnection(
@@ -99,14 +102,13 @@ func extractClientID(stream stream.PackageStreamer, netConn net.Conn) int64 {
 		}
 
 		// 尝试从适配器获取
-		if adapter, ok := stream.(interface {
-			GetStreamProcessor() interface{}
-		}); ok {
+		type streamProcessorGetter interface {
+			GetStreamProcessor() StreamProcessorAccessor
+		}
+		if adapter, ok := stream.(streamProcessorGetter); ok {
 			streamProc := adapter.GetStreamProcessor()
-			if streamProcWithClientID, ok := streamProc.(interface {
-				GetClientID() int64
-			}); ok {
-				clientID := streamProcWithClientID.GetClientID()
+			if streamProc != nil {
+				clientID := streamProc.GetClientID()
 				if clientID > 0 {
 					return clientID
 				}

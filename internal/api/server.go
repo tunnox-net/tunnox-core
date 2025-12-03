@@ -14,6 +14,7 @@ import (
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/health"
 	httppoll "tunnox-core/internal/protocol/httppoll"
+	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
@@ -27,18 +28,102 @@ type ControlConnectionAccessor interface {
 	GetStream() stream.PackageStreamer
 }
 
+// controlConnectionAdapter 适配器，将 session.ControlConnectionInterface 转换为 api.ControlConnectionAccessor
+type controlConnectionAdapter struct {
+	conn session.ControlConnectionInterface
+}
+
+func (a *controlConnectionAdapter) GetConnID() string {
+	if a.conn == nil {
+		return ""
+	}
+	return a.conn.GetConnID()
+}
+
+func (a *controlConnectionAdapter) GetRemoteAddr() string {
+	if a.conn == nil {
+		return ""
+	}
+	addr := a.conn.GetRemoteAddr()
+	if addr == nil {
+		return ""
+	}
+	return addr.String()
+}
+
+func (a *controlConnectionAdapter) GetStream() stream.PackageStreamer {
+	if a.conn == nil {
+		return nil
+	}
+	return a.conn.GetStream()
+}
+
+// adaptControlConnection 将 session.ControlConnectionInterface 适配为 api.ControlConnectionAccessor
+func adaptControlConnection(conn session.ControlConnectionInterface) ControlConnectionAccessor {
+	if conn == nil {
+		return nil
+	}
+	return &controlConnectionAdapter{conn: conn}
+}
+
 // SessionManager 接口（避免循环依赖）
-// 注意：GetControlConnectionInterface 返回 interface{}，调用方需要类型断言为 ControlConnectionAccessor
 type SessionManager interface {
-	GetControlConnectionInterface(clientID int64) interface{}
+	GetControlConnectionInterface(clientID int64) ControlConnectionAccessor
 	BroadcastConfigPush(clientID int64, configBody string) error
 	GetNodeID() string // 获取当前节点ID
 	// GetTunnelBridgeByConnectionID 通过 ConnectionID 查找 tunnel bridge（优先使用）
-	// 返回 interface{} 避免循环依赖，调用方需要类型断言
-	GetTunnelBridgeByConnectionID(connID string) interface{}
+	GetTunnelBridgeByConnectionID(connID string) session.TunnelBridgeAccessor
 	// GetTunnelBridgeByMappingID 通过 mappingID 查找 tunnel bridge（向后兼容）
-	// 返回 interface{} 避免循环依赖，调用方需要类型断言
-	GetTunnelBridgeByMappingID(mappingID string, clientID int64) interface{}
+	GetTunnelBridgeByMappingID(mappingID string, clientID int64) session.TunnelBridgeAccessor
+}
+
+// apiSessionManagerAdapter 适配器，将 session.SessionManager 适配为 api.SessionManager
+type apiSessionManagerAdapter struct {
+	sessionMgr *session.SessionManager
+}
+
+func (a *apiSessionManagerAdapter) GetControlConnectionInterface(clientID int64) ControlConnectionAccessor {
+	if a.sessionMgr == nil {
+		return nil
+	}
+	conn := a.sessionMgr.GetControlConnectionInterface(clientID)
+	return adaptControlConnection(conn)
+}
+
+func (a *apiSessionManagerAdapter) BroadcastConfigPush(clientID int64, configBody string) error {
+	if a.sessionMgr == nil {
+		return fmt.Errorf("session manager is nil")
+	}
+	return a.sessionMgr.BroadcastConfigPush(clientID, configBody)
+}
+
+func (a *apiSessionManagerAdapter) GetNodeID() string {
+	if a.sessionMgr == nil {
+		return ""
+	}
+	return a.sessionMgr.GetNodeID()
+}
+
+func (a *apiSessionManagerAdapter) GetTunnelBridgeByConnectionID(connID string) session.TunnelBridgeAccessor {
+	if a.sessionMgr == nil {
+		return nil
+	}
+	return a.sessionMgr.GetTunnelBridgeByConnectionID(connID)
+}
+
+func (a *apiSessionManagerAdapter) GetTunnelBridgeByMappingID(mappingID string, clientID int64) session.TunnelBridgeAccessor {
+	if a.sessionMgr == nil {
+		return nil
+	}
+	return a.sessionMgr.GetTunnelBridgeByMappingID(mappingID, clientID)
+}
+
+// AdaptSessionManager 将 session.SessionManager 适配为 api.SessionManager
+func AdaptSessionManager(sessionMgr *session.SessionManager) SessionManager {
+	if sessionMgr == nil {
+		return nil
+	}
+	return &apiSessionManagerAdapter{sessionMgr: sessionMgr}
 }
 
 // ManagementAPIServer Management API 服务器
@@ -340,30 +425,25 @@ type ResponseData struct {
 	Message string      `json:"message,omitempty"`
 }
 
-// respondJSON 发送 JSON 响应
+// respondJSON 发送 JSON 响应（使用统一响应格式）
 func (s *ManagementAPIServer) respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-
-	response := ResponseData{
-		Success: statusCode >= 200 && statusCode < 300,
-		Data:    data,
+	helper := NewResponseHelper()
+	if statusCode >= 200 && statusCode < 300 {
+		helper.Success(w, statusCode, data)
+	} else {
+		// 对于非成功状态码，如果data是字符串，作为错误消息
+		if msg, ok := data.(string); ok {
+			helper.Error(w, statusCode, msg)
+		} else {
+			helper.Success(w, statusCode, data)
+		}
 	}
-
-	json.NewEncoder(w).Encode(response)
 }
 
-// respondError 发送错误响应
+// respondError 发送错误响应（使用统一响应格式）
 func (s *ManagementAPIServer) respondError(w http.ResponseWriter, statusCode int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-
-	response := ResponseData{
-		Success: false,
-		Error:   message,
-	}
-
-	json.NewEncoder(w).Encode(response)
+	helper := NewResponseHelper()
+	helper.Error(w, statusCode, message)
 }
 
 // handleHealth 健康检查

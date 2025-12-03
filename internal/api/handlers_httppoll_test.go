@@ -17,6 +17,7 @@ import (
 
 	"tunnox-core/internal/core/types"
 	httppoll "tunnox-core/internal/protocol/httppoll"
+	"tunnox-core/internal/protocol/session"
 )
 
 // mockSessionManager 模拟 SessionManager
@@ -31,7 +32,7 @@ func newMockSessionManager() *mockSessionManager {
 	}
 }
 
-func (m *mockSessionManager) GetControlConnectionInterface(clientID int64) interface{} {
+func (m *mockSessionManager) GetControlConnectionInterface(clientID int64) ControlConnectionAccessor {
 	return nil
 }
 
@@ -43,11 +44,11 @@ func (m *mockSessionManager) GetNodeID() string {
 	return "test-node"
 }
 
-func (m *mockSessionManager) GetTunnelBridgeByConnectionID(connID string) interface{} {
+func (m *mockSessionManager) GetTunnelBridgeByConnectionID(connID string) session.TunnelBridgeAccessor {
 	return nil
 }
 
-func (m *mockSessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID int64) interface{} {
+func (m *mockSessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID int64) session.TunnelBridgeAccessor {
 	return nil
 }
 

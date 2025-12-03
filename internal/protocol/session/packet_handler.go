@@ -347,16 +347,21 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			}); ok {
 				clientID = streamWithClientID.GetClientID()
 				utils.Infof("Tunnel[%s]: got clientID=%d from stream, connID=%s", req.TunnelID, clientID, connPacket.ConnectionID)
-			} else if adapter, ok := conn.Stream.(interface {
-				GetStreamProcessor() interface{}
-			}); ok {
-				// 尝试从适配器获取底层的 ServerStreamProcessor
-				streamProc := adapter.GetStreamProcessor()
-				if streamProcWithClientID, ok := streamProc.(interface {
-					GetClientID() int64
-				}); ok {
-					clientID = streamProcWithClientID.GetClientID()
-					utils.Infof("Tunnel[%s]: got clientID=%d from stream adapter, connID=%s", req.TunnelID, clientID, connPacket.ConnectionID)
+			} else {
+				type streamProcessorGetter interface {
+					GetStreamProcessor() interface {
+						GetClientID() int64
+						GetConnectionID() string
+						GetMappingID() string
+					}
+				}
+				if adapter, ok := conn.Stream.(streamProcessorGetter); ok {
+					// 尝试从适配器获取底层的 StreamProcessorAccessor
+					streamProc := adapter.GetStreamProcessor()
+					if streamProc != nil {
+						clientID = streamProc.GetClientID()
+						utils.Infof("Tunnel[%s]: got clientID=%d from stream adapter, connID=%s", req.TunnelID, clientID, connPacket.ConnectionID)
+					}
 				}
 			}
 
@@ -621,11 +626,18 @@ func (s *SessionManager) sendHandshakeResponse(conn ControlConnectionInterface, 
 
 	// 调试：检查是否是 httppollStreamAdapter，如果是，检查其内部的 ServerStreamProcessor
 	utils.Infof("sendHandshakeResponse: stream type=%T, connID=%s", stream, conn.GetConnID())
-	if adapter, ok := stream.(interface {
-		GetStreamProcessor() interface{}
-	}); ok {
+	type streamProcessorGetter interface {
+		GetStreamProcessor() interface {
+			GetClientID() int64
+			GetConnectionID() string
+			GetMappingID() string
+		}
+	}
+	if adapter, ok := stream.(streamProcessorGetter); ok {
 		sp := adapter.GetStreamProcessor()
-		utils.Infof("sendHandshakeResponse: adapter contains streamProcessor type=%T, pointer=%p, connID=%s", sp, sp, conn.GetConnID())
+		if sp != nil {
+			utils.Infof("sendHandshakeResponse: adapter contains streamProcessor type=%T, connID=%s, clientID=%d", sp, conn.GetConnID(), sp.GetClientID())
+		}
 	}
 
 	if _, err := stream.WritePacket(respPacket, true, 0); err != nil {

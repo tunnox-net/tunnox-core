@@ -137,8 +137,7 @@ func (s *SessionManager) runBridgeLifecycle(tunnelID string, bridge *TunnelBridg
 
 // GetTunnelBridgeByConnectionID 通过 ConnectionID 查找 tunnel bridge
 // 统一基于 ConnectionID 寻址
-// 返回 interface{} 避免循环依赖
-func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) interface{} {
+func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) TunnelBridgeAccessor {
 	if connID == "" {
 		return nil
 	}
@@ -148,20 +147,33 @@ func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) interface{
 
 	// 遍历所有 bridge，检查 sourceConn 或 targetConn 的 ConnectionID
 	for tunnelID, bridge := range s.tunnelBridges {
-		// 检查 sourceConn 的 ConnectionID
+		// 检查 sourceTunnelConn 的 ConnectionID
+		if bridge.sourceTunnelConn != nil {
+			if bridge.sourceTunnelConn.GetConnectionID() == connID {
+				utils.Infof("GetTunnelBridgeByConnectionID: found bridge by sourceTunnelConn, tunnelID=%s, connID=%s", tunnelID, connID)
+				return bridge
+			}
+		}
+		// 检查 targetTunnelConn 的 ConnectionID
+		if bridge.targetTunnelConn != nil {
+			if bridge.targetTunnelConn.GetConnectionID() == connID {
+				utils.Infof("GetTunnelBridgeByConnectionID: found bridge by targetTunnelConn, tunnelID=%s, connID=%s", tunnelID, connID)
+				return bridge
+			}
+		}
+		// 向后兼容：检查旧接口
 		if bridge.sourceConn != nil {
 			if srcConn, ok := bridge.sourceConn.(interface{ GetConnectionID() string }); ok {
 				if srcConn.GetConnectionID() == connID {
-					utils.Infof("GetTunnelBridgeByConnectionID: found bridge by sourceConn, tunnelID=%s, connID=%s", tunnelID, connID)
+					utils.Infof("GetTunnelBridgeByConnectionID: found bridge by sourceConn (legacy), tunnelID=%s, connID=%s", tunnelID, connID)
 					return bridge
 				}
 			}
 		}
-		// 检查 targetConn 的 ConnectionID
 		if bridge.targetConn != nil {
 			if tgtConn, ok := bridge.targetConn.(interface{ GetConnectionID() string }); ok {
 				if tgtConn.GetConnectionID() == connID {
-					utils.Infof("GetTunnelBridgeByConnectionID: found bridge by targetConn, tunnelID=%s, connID=%s", tunnelID, connID)
+					utils.Infof("GetTunnelBridgeByConnectionID: found bridge by targetConn (legacy), tunnelID=%s, connID=%s", tunnelID, connID)
 					return bridge
 				}
 			}
@@ -174,8 +186,7 @@ func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) interface{
 
 // GetTunnelBridgeByMappingID 通过 mappingID 查找 tunnel bridge（向后兼容）
 // 优先使用 GetTunnelBridgeByConnectionID
-// 返回 interface{} 避免循环依赖
-func (s *SessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID int64) interface{} {
+func (s *SessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID int64) TunnelBridgeAccessor {
 	if mappingID == "" {
 		return nil
 	}
