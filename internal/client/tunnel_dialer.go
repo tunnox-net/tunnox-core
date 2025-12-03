@@ -26,9 +26,13 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 	protocol := strings.ToLower(c.config.Server.Protocol)
 	switch protocol {
 	case "tcp", "":
-		conn, err = net.DialTimeout("tcp", c.config.Server.Address, 10*time.Second)
+		// TCP 连接使用 DialContext 以支持 context 取消
+		dialer := &net.Dialer{
+			Timeout: 10 * time.Second,
+		}
+		conn, err = dialer.DialContext(c.Ctx(), "tcp", c.config.Server.Address)
 	case "udp":
-		conn, err = dialUDPControlConnection(c.config.Server.Address)
+		conn, err = dialUDPControlConnection(c.Ctx(), c.config.Server.Address)
 	case "websocket":
 		conn, err = dialWebSocket(c.Ctx(), c.config.Server.Address)
 	case "quic":

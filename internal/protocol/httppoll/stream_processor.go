@@ -49,6 +49,9 @@ type StreamProcessor struct {
 	dataBufMu   sync.Mutex
 	packetQueue chan *packet.TransferPacket
 
+	// 分片重组器（用于处理服务器端发送的分片数据）
+	fragmentReassembler *FragmentReassembler
+
 	// 控制
 	closed  bool
 	closeMu sync.RWMutex
@@ -86,17 +89,18 @@ func NewStreamProcessor(ctx context.Context, baseURL, pushURL, pollURL string, c
 		httpClient: &http.Client{
 			Timeout: defaultPollTimeout + 5*time.Second,
 		},
-		pushURL:         pushURL,
-		pollURL:         pollURL,
-		clientID:        clientID,
-		token:           token,
-		instanceID:      instanceID,
-		mappingID:       mappingID,
-		tunnelType:      connType,
-		dataBuffer:      bytes.NewBuffer(nil),
-		packetQueue:     make(chan *packet.TransferPacket, 100),
-		responseCache:   make(map[string]*cachedResponse),
-		pollRequestChan: make(chan string, 10), // 缓冲 10 个请求
+		pushURL:             pushURL,
+		pollURL:             pollURL,
+		clientID:            clientID,
+		token:               token,
+		instanceID:          instanceID,
+		mappingID:           mappingID,
+		tunnelType:          connType,
+		dataBuffer:          bytes.NewBuffer(nil),
+		packetQueue:         make(chan *packet.TransferPacket, 100),
+		responseCache:       make(map[string]*cachedResponse),
+		pollRequestChan:     make(chan string, 10),    // 缓冲 10 个请求
+		fragmentReassembler: NewFragmentReassembler(), // 创建分片重组器
 	}
 
 	sp.converter.SetConnectionInfo("", clientID, mappingID, connType)
@@ -275,23 +279,245 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 			requestID, byte(pkt.PacketType)&0x3F)
 	}
 
-	// 处理数据流（如果有）
-	var pollResp struct {
-		Success bool   `json:"success"`
-		Data    string `json:"data,omitempty"`
-		Timeout bool   `json:"timeout,omitempty"`
-	}
+	// 处理数据流（如果有）- 支持分片数据
+	var pollResp FragmentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&pollResp); err == nil && pollResp.Data != "" {
-		// Base64 解码
-		data, err := base64.StdEncoding.DecodeString(pollResp.Data)
-		if err == nil {
-			// 将数据放入缓冲，供 ReadExact 使用
-			sp.dataBufMu.Lock()
-			if sp.dataBuffer.Len()+len(data) <= maxBufferSize {
-				sp.dataBuffer.Write(data)
-			}
-			sp.dataBufMu.Unlock()
+		// 判断是否为分片：total_fragments > 1
+		isFragment := pollResp.TotalFragments > 1
+		utils.Infof("HTTPStreamProcessor[%s]: sendPollRequest - received data, groupID=%s, index=%d/%d, size=%d, originalSize=%d, isFragment=%v, requestID=%s, connID=%s",
+			sp.connectionID, pollResp.FragmentGroupID, pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentSize, pollResp.OriginalSize, isFragment, requestID, sp.connectionID)
+
+		// 解码Base64数据
+		fragmentData, err := base64.StdEncoding.DecodeString(pollResp.Data)
+		if err != nil {
+			utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to decode fragment data: %v, requestID=%s", err, requestID)
+			return
 		}
+
+		// 验证解码后的数据长度是否与 FragmentSize 匹配
+		if len(fragmentData) != pollResp.FragmentSize {
+			utils.Errorf("HTTPStreamProcessor: sendPollRequest - fragment size mismatch: expected %d, got %d, groupID=%s, index=%d, requestID=%s",
+				pollResp.FragmentSize, len(fragmentData), pollResp.FragmentGroupID, pollResp.FragmentIndex, requestID)
+			return
+		}
+
+		// 如果是分片，需要重组
+		if isFragment {
+			// 添加到分片重组器
+			// 注意：使用 FragmentSize 字段（这是实际数据长度，CreateFragmentResponse 中设置的）
+			utils.Debugf("HTTPStreamProcessor: sendPollRequest - adding fragment, groupID=%s, index=%d/%d, size=%d, originalSize=%d, requestID=%s",
+				pollResp.FragmentGroupID, pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentSize, pollResp.OriginalSize, requestID)
+			group, err := sp.fragmentReassembler.AddFragment(
+				pollResp.FragmentGroupID,
+				pollResp.OriginalSize,
+				pollResp.FragmentSize,
+				pollResp.FragmentIndex,
+				pollResp.TotalFragments,
+				pollResp.SequenceNumber,
+				fragmentData,
+			)
+			if err != nil {
+				utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to add fragment: %v, groupID=%s, index=%d, requestID=%s", err, pollResp.FragmentGroupID, pollResp.FragmentIndex, requestID)
+				return
+			}
+
+			// 使用原子操作检查是否完整（避免竞态条件）
+			// 注意：不在这里重组，而是通过 GetNextCompleteGroup 按序列号顺序重组
+			isComplete := group.IsComplete()
+			if !isComplete {
+				// 分片组不完整，继续等待更多分片
+				utils.Debugf("HTTPStreamProcessor: sendPollRequest - fragment %d/%d received, waiting for more, groupID=%s, receivedCount=%d, requestID=%s",
+					pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentGroupID, group.ReceivedCount, requestID)
+				return
+			}
+
+			// 分片组完整，检查是否可以按序列号顺序发送
+			// 使用 GetNextCompleteGroup 确保按序列号顺序发送
+			utils.Infof("HTTPStreamProcessor: sendPollRequest - fragment group complete, checking sequence order, groupID=%s, sequenceNumber=%d, requestID=%s",
+				pollResp.FragmentGroupID, pollResp.SequenceNumber, requestID)
+
+			// 尝试获取下一个按序列号顺序的完整分片组
+			nextGroup, found, err := sp.fragmentReassembler.GetNextCompleteGroup()
+			if err != nil {
+				utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to get next complete group: %v, requestID=%s", err, requestID)
+				return
+			}
+
+			if found {
+				// 这是下一个应该发送的分片组，重组并发送
+				reassembledData, err := nextGroup.Reassemble()
+				if err != nil {
+					utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to reassemble: %v, groupID=%s, requestID=%s", err, pollResp.FragmentGroupID, requestID)
+					sp.fragmentReassembler.RemoveGroup(pollResp.FragmentGroupID)
+					return
+				}
+
+				utils.Infof("HTTPStreamProcessor: sendPollRequest - reassembled %d bytes from %d fragments, groupID=%s, sequenceNumber=%d, originalSize=%d, requestID=%s",
+					len(reassembledData), nextGroup.TotalFragments, nextGroup.GroupID, nextGroup.SequenceNumber, nextGroup.OriginalSize, requestID)
+				// 验证重组后的数据大小
+				if len(reassembledData) != nextGroup.OriginalSize {
+					utils.Errorf("HTTPStreamProcessor: sendPollRequest - reassembled size mismatch: expected %d, got %d, groupID=%s, requestID=%s",
+						nextGroup.OriginalSize, len(reassembledData), nextGroup.GroupID, requestID)
+					sp.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
+					return
+				}
+				sp.dataBufMu.Lock()
+				oldBufferLen := sp.dataBuffer.Len()
+				if sp.dataBuffer.Len()+len(reassembledData) <= maxBufferSize {
+					n, err := sp.dataBuffer.Write(reassembledData)
+					if err != nil {
+						utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to write to data buffer: %v, requestID=%s", err, requestID)
+					} else {
+						utils.Infof("HTTPStreamProcessor: sendPollRequest - wrote %d bytes to data buffer, buffer size: %d -> %d, sequenceNumber=%d, requestID=%s",
+							n, oldBufferLen, sp.dataBuffer.Len(), pollResp.SequenceNumber, requestID)
+					}
+				} else {
+					utils.Errorf("HTTPStreamProcessor: sendPollRequest - data buffer full, dropping %d bytes, buffer size=%d, requestID=%s", len(reassembledData), sp.dataBuffer.Len(), requestID)
+				}
+				sp.dataBufMu.Unlock()
+
+				// 移除分片组
+				sp.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
+
+				// 继续检查是否有更多按序列号顺序的完整分片组
+				for {
+					nextGroup2, found2, err2 := sp.fragmentReassembler.GetNextCompleteGroup()
+					if err2 != nil || !found2 {
+						break
+					}
+					reassembledData2, err2 := nextGroup2.Reassemble()
+					if err2 != nil {
+						utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to reassemble next group: %v, groupID=%s, requestID=%s", err2, nextGroup2.GroupID, requestID)
+						sp.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
+						break
+					}
+					utils.Infof("HTTPStreamProcessor: sendPollRequest - sending next complete group, groupID=%s, sequenceNumber=%d, size=%d, requestID=%s",
+						nextGroup2.GroupID, nextGroup2.SequenceNumber, len(reassembledData2), requestID)
+					sp.dataBufMu.Lock()
+					if sp.dataBuffer.Len()+len(reassembledData2) <= maxBufferSize {
+						n, err := sp.dataBuffer.Write(reassembledData2)
+						if err != nil {
+							utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to write next group: %v, requestID=%s", err, requestID)
+						} else {
+							utils.Infof("HTTPStreamProcessor: sendPollRequest - wrote next group %d bytes, sequenceNumber=%d, requestID=%s",
+								n, nextGroup2.SequenceNumber, requestID)
+						}
+					} else {
+						utils.Errorf("HTTPStreamProcessor: sendPollRequest - data buffer full, dropping next group %d bytes, requestID=%s", len(reassembledData2), requestID)
+					}
+					sp.dataBufMu.Unlock()
+					sp.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
+				}
+			} else {
+				// 这不是下一个应该发送的分片组，等待序列号更小的分片组完成
+				utils.Debugf("HTTPStreamProcessor: sendPollRequest - fragment group complete but not next in sequence, groupID=%s, sequenceNumber=%d, waiting for earlier groups, requestID=%s",
+					pollResp.FragmentGroupID, pollResp.SequenceNumber, requestID)
+			}
+		} else {
+			// 单分片数据（TotalFragments=1），也需要按序列号顺序发送
+			// 添加到分片重组器，以便按序列号顺序处理
+			utils.Infof("HTTPStreamProcessor[%s]: sendPollRequest - received single fragment (TotalFragments=1), adding to reassembler for sequence ordering, groupID=%s, sequenceNumber=%d, requestID=%s, connID=%s",
+				sp.connectionID, pollResp.FragmentGroupID, pollResp.SequenceNumber, requestID, sp.connectionID)
+			_, err := sp.fragmentReassembler.AddFragment(
+				pollResp.FragmentGroupID,
+				pollResp.OriginalSize,
+				pollResp.FragmentSize,
+				pollResp.FragmentIndex,
+				pollResp.TotalFragments,
+				pollResp.SequenceNumber,
+				fragmentData,
+			)
+			if err != nil {
+				utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to add single fragment: %v, groupID=%s, requestID=%s", err, pollResp.FragmentGroupID, requestID)
+				return
+			}
+
+			// 单分片数据应该立即完整，检查是否可以按序列号顺序发送
+			utils.Infof("HTTPStreamProcessor[%s]: sendPollRequest - single fragment complete, checking sequence order, groupID=%s, sequenceNumber=%d, requestID=%s, connID=%s",
+				sp.connectionID, pollResp.FragmentGroupID, pollResp.SequenceNumber, requestID, sp.connectionID)
+
+			// 尝试获取下一个按序列号顺序的完整分片组
+			nextGroup, found, err := sp.fragmentReassembler.GetNextCompleteGroup()
+			if err != nil {
+				utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to get next complete group for single fragment: %v, requestID=%s", err, requestID)
+				return
+			}
+
+			if found {
+				utils.Infof("HTTPStreamProcessor[%s]: sendPollRequest - GetNextCompleteGroup found next group for single fragment, groupID=%s, sequenceNumber=%d, requestID=%s, connID=%s",
+					sp.connectionID, nextGroup.GroupID, nextGroup.SequenceNumber, requestID, sp.connectionID)
+				// 这是下一个应该发送的分片组，重组并发送
+				reassembledData, err := nextGroup.Reassemble()
+				if err != nil {
+					utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to reassemble single fragment: %v, groupID=%s, requestID=%s", err, nextGroup.GroupID, requestID)
+					sp.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
+					return
+				}
+
+				utils.Infof("HTTPStreamProcessor[%s]: sendPollRequest - reassembled single fragment, groupID=%s, sequenceNumber=%d, originalSize=%d, requestID=%s, connID=%s",
+					sp.connectionID, nextGroup.GroupID, nextGroup.SequenceNumber, nextGroup.OriginalSize, requestID, sp.connectionID)
+				// 验证重组后的数据大小
+				if len(reassembledData) != nextGroup.OriginalSize {
+					utils.Errorf("HTTPStreamProcessor: sendPollRequest - reassembled size mismatch: expected %d, got %d, groupID=%s, requestID=%s",
+						nextGroup.OriginalSize, len(reassembledData), nextGroup.GroupID, requestID)
+					sp.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
+					return
+				}
+				sp.dataBufMu.Lock()
+				oldBufferLen := sp.dataBuffer.Len()
+				if sp.dataBuffer.Len()+len(reassembledData) <= maxBufferSize {
+					n, err := sp.dataBuffer.Write(reassembledData)
+					if err != nil {
+						utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to write to data buffer: %v, requestID=%s", err, requestID)
+					} else {
+						utils.Infof("HTTPStreamProcessor: sendPollRequest - wrote %d bytes to data buffer, buffer size: %d -> %d, sequenceNumber=%d, requestID=%s",
+							n, oldBufferLen, sp.dataBuffer.Len(), nextGroup.SequenceNumber, requestID)
+					}
+				} else {
+					utils.Errorf("HTTPStreamProcessor: sendPollRequest - data buffer full, dropping %d bytes, buffer size=%d, requestID=%s", len(reassembledData), sp.dataBuffer.Len(), requestID)
+				}
+				sp.dataBufMu.Unlock()
+
+				// 移除分片组
+				sp.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
+
+				// 继续检查是否有更多按序列号顺序的完整分片组
+				for {
+					nextGroup2, found2, err2 := sp.fragmentReassembler.GetNextCompleteGroup()
+					if err2 != nil || !found2 {
+						break
+					}
+					reassembledData2, err2 := nextGroup2.Reassemble()
+					if err2 != nil {
+						utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to reassemble next group: %v, groupID=%s, requestID=%s", err2, nextGroup2.GroupID, requestID)
+						sp.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
+						break
+					}
+					utils.Infof("HTTPStreamProcessor: sendPollRequest - sending next complete group, groupID=%s, sequenceNumber=%d, size=%d, requestID=%s",
+						nextGroup2.GroupID, nextGroup2.SequenceNumber, len(reassembledData2), requestID)
+					sp.dataBufMu.Lock()
+					if sp.dataBuffer.Len()+len(reassembledData2) <= maxBufferSize {
+						n, err := sp.dataBuffer.Write(reassembledData2)
+						if err != nil {
+							utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to write next group: %v, requestID=%s", err, requestID)
+						} else {
+							utils.Infof("HTTPStreamProcessor: sendPollRequest - wrote next group %d bytes, sequenceNumber=%d, requestID=%s",
+								n, nextGroup2.SequenceNumber, requestID)
+						}
+					} else {
+						utils.Errorf("HTTPStreamProcessor: sendPollRequest - data buffer full, dropping next group %d bytes, requestID=%s", len(reassembledData2), requestID)
+					}
+					sp.dataBufMu.Unlock()
+					sp.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
+				}
+			} else {
+				// 这不是下一个应该发送的分片组，等待序列号更小的分片组完成
+				utils.Infof("HTTPStreamProcessor[%s]: sendPollRequest - single fragment complete but GetNextCompleteGroup returned not found, groupID=%s, sequenceNumber=%d, waiting for expected sequence, requestID=%s, connID=%s",
+					sp.connectionID, pollResp.FragmentGroupID, pollResp.SequenceNumber, requestID, sp.connectionID)
+			}
+		}
+	} else if pollResp.Timeout {
+		utils.Debugf("HTTPStreamProcessor: sendPollRequest - poll request timeout, requestID=%s", requestID)
 	}
 }
 
@@ -608,87 +834,135 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 		return io.ErrClosedPipe
 	}
 
-	// Base64 编码数据
-	encoded := base64.StdEncoding.EncodeToString(data)
+	// 获取序列号（客户端也需要序列号，但主要用于日志追踪）
+	// 注意：客户端发送数据时，序列号由服务器端分配，这里使用0作为占位符
+	// 实际上，客户端发送的分片会在服务器端重新分配序列号
+	sequenceNumber := int64(0)
 
-	// 生成 RequestId（用于匹配请求和响应）
-	requestID := uuid.New().String()
-
-	// 构建 HTTP Request
-	// 数据流传输时，X-Tunnel-Package 只包含连接标识（用于路由）
-	dataPkg := &TunnelPackage{
-		ConnectionID: sp.connectionID,
-		RequestID:    requestID,
-		ClientID:     sp.clientID,
-		MappingID:    sp.mappingID,
-		TunnelType:   "data",
-		// Type 为空，表示这是数据流传输
-	}
-	encodedPkg, err := EncodeTunnelPackage(dataPkg)
+	// 对大数据包进行分片处理（类似服务器端的 WriteExact）
+	utils.Infof("HTTPStreamProcessor[%s]: WriteExact - splitting %d bytes, connID=%s", sp.connectionID, len(data), sp.connectionID)
+	fragments, err := SplitDataIntoFragments(data, sequenceNumber)
 	if err != nil {
-		return fmt.Errorf("failed to encode data package: %w", err)
+		utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - failed to split data into fragments: %v, connID=%s", sp.connectionID, err, sp.connectionID)
+		return fmt.Errorf("failed to split data into fragments: %w", err)
 	}
 
-	reqBody := map[string]interface{}{
-		"data":      encoded,
-		"timestamp": time.Now().Unix(),
-	}
-	reqJSON, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+	utils.Infof("HTTPStreamProcessor[%s]: WriteExact - split into %d fragments, connID=%s", sp.connectionID, len(fragments), sp.connectionID)
+
+	// 发送每个分片
+	for i, fragment := range fragments {
+		utils.Infof("HTTPStreamProcessor[%s]: WriteExact - sending fragment %d/%d, groupID=%s, size=%d, originalSize=%d, connID=%s",
+			sp.connectionID, i+1, len(fragments), fragment.FragmentGroupID, fragment.FragmentSize, fragment.OriginalSize, sp.connectionID)
+		// 序列化分片响应为 JSON
+		fragmentJSON, err := MarshalFragmentResponse(fragment)
+		if err != nil {
+			return fmt.Errorf("failed to marshal fragment: %w", err)
+		}
+
+		// 生成 RequestId（用于匹配请求和响应）
+		requestID := uuid.New().String()
+
+		// 构建 HTTP Request
+		// 数据流传输时，X-Tunnel-Package 只包含连接标识（用于路由）
+		dataPkg := &TunnelPackage{
+			ConnectionID: sp.connectionID,
+			RequestID:    requestID,
+			ClientID:     sp.clientID,
+			MappingID:    sp.mappingID,
+			TunnelType:   "data",
+			// Type 为空，表示这是数据流传输
+		}
+		encodedPkg, err := EncodeTunnelPackage(dataPkg)
+		if err != nil {
+			return fmt.Errorf("failed to encode data package: %w", err)
+		}
+
+		// 将分片 JSON 作为 data 字段发送（服务器端会识别并处理分片）
+		reqBody := map[string]interface{}{
+			"data":      string(fragmentJSON), // 发送 JSON 字符串，而不是 Base64 编码的原始数据
+			"timestamp": time.Now().Unix(),
+		}
+		reqJSON, err := json.Marshal(reqBody)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(sp.Ctx(), "POST", sp.pushURL, bytes.NewReader(reqJSON))
+		if err != nil {
+			return fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Tunnel-Package", encodedPkg)
+		if sp.token != "" {
+			req.Header.Set("Authorization", "Bearer "+sp.token)
+		}
+
+		// 发送请求
+		utils.Debugf("HTTPStreamProcessor[%s]: WriteExact - sending fragment %d/%d push request, groupID=%s, requestID=%s, connID=%s",
+			sp.connectionID, i+1, len(fragments), fragment.FragmentGroupID, requestID, sp.connectionID)
+		resp, err := sp.httpClient.Do(req)
+		if err != nil {
+			utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - push request failed for fragment %d/%d: %v, groupID=%s, requestID=%s, connID=%s",
+				sp.connectionID, i+1, len(fragments), err, fragment.FragmentGroupID, requestID, sp.connectionID)
+			return fmt.Errorf("push data request failed: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - push request failed for fragment %d/%d: status %d, body: %s, groupID=%s, requestID=%s, connID=%s",
+				sp.connectionID, i+1, len(fragments), resp.StatusCode, string(body), fragment.FragmentGroupID, requestID, sp.connectionID)
+			return fmt.Errorf("push data request failed: status %d, body: %s", resp.StatusCode, string(body))
+		}
+		utils.Debugf("HTTPStreamProcessor[%s]: WriteExact - fragment %d/%d sent successfully, groupID=%s, requestID=%s, connID=%s",
+			sp.connectionID, i+1, len(fragments), fragment.FragmentGroupID, requestID, sp.connectionID)
 	}
 
-	req, err := http.NewRequestWithContext(sp.Ctx(), "POST", sp.pushURL, bytes.NewReader(reqJSON))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Tunnel-Package", encodedPkg)
-	if sp.token != "" {
-		req.Header.Set("Authorization", "Bearer "+sp.token)
-	}
-
-	// 发送请求
-	resp, err := sp.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("push data request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("push data request failed: status %d, body: %s", resp.StatusCode, string(body))
-	}
+	utils.Infof("HTTPStreamProcessor[%s]: WriteExact - all %d fragments sent successfully, originalSize=%d, connID=%s",
+		sp.connectionID, len(fragments), len(data), sp.connectionID)
 
 	return nil
 }
 
 // ReadExact 从数据流缓冲读取指定长度
 func (sp *StreamProcessor) ReadExact(length int) ([]byte, error) {
+	utils.Debugf("HTTPStreamProcessor[%s]: ReadExact - requested %d bytes, current buffer size=%d, connID=%s",
+		sp.connectionID, length, sp.dataBuffer.Len(), sp.connectionID)
+
 	sp.dataBufMu.Lock()
 	defer sp.dataBufMu.Unlock()
 
 	// 从缓冲读取，如果不够则触发 Poll 请求获取更多数据
 	for sp.dataBuffer.Len() < length {
+		currentBufferLen := sp.dataBuffer.Len()
 		sp.dataBufMu.Unlock()
+		utils.Debugf("HTTPStreamProcessor[%s]: ReadExact - buffer has %d bytes, need %d, triggering Poll request, connID=%s",
+			sp.connectionID, currentBufferLen, length, sp.connectionID)
 		// 触发 Poll 获取更多数据
 		_, _, err := sp.ReadPacket()
 		if err != nil {
+			utils.Errorf("HTTPStreamProcessor[%s]: ReadExact - ReadPacket failed: %v, connID=%s", sp.connectionID, err, sp.connectionID)
 			return nil, err
 		}
 		sp.dataBufMu.Lock()
+		utils.Debugf("HTTPStreamProcessor[%s]: ReadExact - after Poll, buffer size=%d, need %d, connID=%s",
+			sp.connectionID, sp.dataBuffer.Len(), length, sp.connectionID)
 	}
 
 	data := make([]byte, length)
 	n, err := sp.dataBuffer.Read(data)
 	if err != nil {
+		utils.Errorf("HTTPStreamProcessor[%s]: ReadExact - failed to read from buffer: %v, connID=%s", sp.connectionID, err, sp.connectionID)
 		return nil, err
 	}
 	if n < length {
+		utils.Errorf("HTTPStreamProcessor[%s]: ReadExact - read %d bytes, expected %d, connID=%s", sp.connectionID, n, length, sp.connectionID)
 		return nil, io.ErrUnexpectedEOF
 	}
 
+	utils.Debugf("HTTPStreamProcessor[%s]: ReadExact - read %d bytes successfully, remaining buffer size=%d, connID=%s",
+		sp.connectionID, n, sp.dataBuffer.Len(), sp.connectionID)
 	return data[:n], nil
 }
 

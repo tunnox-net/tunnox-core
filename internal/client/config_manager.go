@@ -71,7 +71,32 @@ func (cm *ConfigManager) LoadConfig(cmdConfigPath string) (*ClientConfig, error)
 }
 
 // SaveConfig 保存配置（按优先级尝试多个路径，权限不足时降级）
+// 注意：此方法会保留已存在的配置文件中的 Server.Address 和 Server.Protocol
+// 除非明确指定 allowUpdateServerConfig=true，否则不会更新服务器配置
 func (cm *ConfigManager) SaveConfig(config *ClientConfig) error {
+	return cm.SaveConfigWithOptions(config, false)
+}
+
+// SaveConfigWithOptions 保存配置（带选项）
+// allowUpdateServerConfig: 是否允许更新 Server.Address 和 Server.Protocol
+func (cm *ConfigManager) SaveConfigWithOptions(config *ClientConfig, allowUpdateServerConfig bool) error {
+	// 如果不允许更新服务器配置，先尝试从已存在的配置文件中加载，保留 Server.Address 和 Server.Protocol
+	if !allowUpdateServerConfig {
+		var existingConfig *ClientConfig
+		for _, path := range cm.searchPaths {
+			if cfg, err := cm.loadConfigFromFile(path); err == nil {
+				existingConfig = cfg
+				break
+			}
+		}
+		
+		// 如果存在已加载的配置，保留其 Server.Address 和 Server.Protocol
+		if existingConfig != nil {
+			config.Server.Address = existingConfig.Server.Address
+			config.Server.Protocol = existingConfig.Server.Protocol
+		}
+	}
+	
 	var lastErr error
 	
 	for _, path := range cm.savePaths {

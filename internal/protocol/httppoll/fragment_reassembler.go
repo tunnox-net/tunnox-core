@@ -41,6 +41,7 @@ type FragmentGroup struct {
 	GroupID        string      // 分片组ID
 	OriginalSize   int         // 原始总大小
 	TotalFragments int         // 总分片数
+	SequenceNumber int64       // 序列号（用于保证数据包顺序）
 	Fragments      []*Fragment // 分片列表（按index排序）
 	ReceivedCount  int         // 已接收分片数
 	CreatedTime    time.Time   // 创建时间
@@ -72,6 +73,8 @@ func (fg *FragmentGroup) AddFragment(index int, size int, data []byte) error {
 	}
 
 	// 检查大小
+	// 注意：size 参数应该是实际数据长度（从 FragmentSize 字段获取）
+	// 对于最后一片，可能小于 MaxFragmentSize，但应该等于 FragmentSize 字段的值
 	if len(data) != size {
 		return fmt.Errorf("fragment size mismatch: expected %d, got %d", size, len(data))
 	}
@@ -85,8 +88,8 @@ func (fg *FragmentGroup) AddFragment(index int, size int, data []byte) error {
 	}
 	fg.ReceivedCount++
 
-	utils.Debugf("FragmentGroup[%s]: added fragment %d/%d (size=%d, received=%d/%d)",
-		fg.GroupID, index, fg.TotalFragments, size, fg.ReceivedCount, fg.TotalFragments)
+	utils.Infof("FragmentGroup[%s]: added fragment %d/%d (size=%d, received=%d/%d, originalSize=%d)",
+		fg.GroupID, index, fg.TotalFragments, size, fg.ReceivedCount, fg.TotalFragments, fg.OriginalSize)
 
 	return nil
 }
@@ -131,6 +134,7 @@ func (fg *FragmentGroup) IsCompleteAndReassemble() ([]byte, bool, error) {
 	}
 
 	if fg.ReceivedCount != fg.TotalFragments {
+		utils.Debugf("FragmentGroup[%s]: IsCompleteAndReassemble - not complete yet, received=%d/%d", fg.GroupID, fg.ReceivedCount, fg.TotalFragments)
 		return nil, false, nil
 	}
 
@@ -151,20 +155,24 @@ func (fg *FragmentGroup) IsCompleteAndReassemble() ([]byte, bool, error) {
 	// 标记为已重组（防止其他 goroutine 重复重组）
 	fg.reassembled = true
 
-	utils.Debugf("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
+	utils.Infof("FragmentGroup[%s]: IsCompleteAndReassemble - reassembled %d bytes from %d fragments, originalSize=%d", fg.GroupID, len(result), fg.TotalFragments, fg.OriginalSize)
 	return result, true, nil
 }
 
 // FragmentReassembler 分片重组管理器
 type FragmentReassembler struct {
-	groups map[string]*FragmentGroup
-	mu     sync.RWMutex
+	groups          map[string]*FragmentGroup // groupID -> FragmentGroup
+	sequenceGroups  map[int64]*FragmentGroup  // sequenceNumber -> FragmentGroup（用于按序列号查找）
+	nextExpectedSeq int64                     // 期望的下一个序列号（用于按顺序发送）
+	mu              sync.RWMutex
 }
 
 // NewFragmentReassembler 创建分片重组管理器
 func NewFragmentReassembler() *FragmentReassembler {
 	reassembler := &FragmentReassembler{
-		groups: make(map[string]*FragmentGroup),
+		groups:          make(map[string]*FragmentGroup),
+		sequenceGroups:  make(map[int64]*FragmentGroup),
+		nextExpectedSeq: 0,
 	}
 
 	// 启动清理协程
@@ -174,7 +182,7 @@ func NewFragmentReassembler() *FragmentReassembler {
 }
 
 // AddFragment 添加分片
-func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fragmentSize int, fragmentIndex int, totalFragments int, data []byte) (*FragmentGroup, error) {
+func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fragmentSize int, fragmentIndex int, totalFragments int, sequenceNumber int64, data []byte) (*FragmentGroup, error) {
 	fr.mu.Lock()
 
 	// 检查分片组数量限制
@@ -200,11 +208,13 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 			GroupID:        groupID,
 			OriginalSize:   originalSize,
 			TotalFragments: totalFragments,
+			SequenceNumber: sequenceNumber,
 			Fragments:      make([]*Fragment, totalFragments),
 			CreatedTime:    time.Now(),
 		}
 		fr.groups[groupID] = group
-		utils.Debugf("FragmentReassembler: created new fragment group, groupID=%s, originalSize=%d, totalFragments=%d", groupID, originalSize, totalFragments)
+		fr.sequenceGroups[sequenceNumber] = group
+		utils.Debugf("FragmentReassembler: created new fragment group, groupID=%s, sequenceNumber=%d, originalSize=%d, totalFragments=%d", groupID, sequenceNumber, originalSize, totalFragments)
 	} else {
 		// 验证一致性
 		if group.OriginalSize != originalSize {
@@ -214,6 +224,10 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 		if group.TotalFragments != totalFragments {
 			fr.mu.Unlock()
 			return nil, fmt.Errorf("fragment group total fragments mismatch: expected %d, got %d", group.TotalFragments, totalFragments)
+		}
+		if group.SequenceNumber != sequenceNumber {
+			fr.mu.Unlock()
+			return nil, fmt.Errorf("fragment group sequence number mismatch: expected %d, got %d", group.SequenceNumber, sequenceNumber)
 		}
 	}
 
@@ -246,9 +260,13 @@ func (fr *FragmentReassembler) GetGroup(groupID string) (*FragmentGroup, bool) {
 func (fr *FragmentReassembler) RemoveGroup(groupID string) {
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
-	if _, exists := fr.groups[groupID]; exists {
+	if group, exists := fr.groups[groupID]; exists {
 		delete(fr.groups, groupID)
-		utils.Debugf("FragmentReassembler: removed fragment group, groupID=%s", groupID)
+		// 同时从序列号映射中删除
+		if group.SequenceNumber >= 0 {
+			delete(fr.sequenceGroups, group.SequenceNumber)
+		}
+		utils.Debugf("FragmentReassembler: removed fragment group, groupID=%s, sequenceNumber=%d", groupID, group.SequenceNumber)
 	}
 }
 
@@ -258,9 +276,49 @@ func (fr *FragmentReassembler) cleanupExpiredLocked() {
 	for groupID, group := range fr.groups {
 		if now.Sub(group.CreatedTime) > FragmentGroupTimeout {
 			delete(fr.groups, groupID)
-			utils.Warnf("FragmentReassembler: removed expired fragment group, groupID=%s, age=%v", groupID, now.Sub(group.CreatedTime))
+			// 同时从序列号映射中删除
+			if group.SequenceNumber >= 0 {
+				delete(fr.sequenceGroups, group.SequenceNumber)
+			}
+			utils.Warnf("FragmentReassembler: removed expired fragment group, groupID=%s, sequenceNumber=%d, age=%v", groupID, group.SequenceNumber, now.Sub(group.CreatedTime))
 		}
 	}
+}
+
+// GetNextCompleteGroup 获取下一个已完整的分片组（按序列号顺序）
+// 返回：分片组、是否找到、错误
+// 注意：只有序列号 == nextExpectedSeq 且已完整的分片组才会被返回
+// 如果序列号不连续（比如序列号0还没完整，序列号1已经完整），会等待序列号0完成
+func (fr *FragmentReassembler) GetNextCompleteGroup() (*FragmentGroup, bool, error) {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+
+	// 只检查期望的下一个序列号（确保严格按顺序）
+	group, exists := fr.sequenceGroups[fr.nextExpectedSeq]
+	if !exists {
+		// 期望的序列号还不存在，等待
+		utils.Debugf("FragmentReassembler: GetNextCompleteGroup - expected sequence %d not found, waiting", fr.nextExpectedSeq)
+		return nil, false, nil
+	}
+
+	// 检查是否已完整
+	group.mu.Lock()
+	isComplete := group.ReceivedCount == group.TotalFragments && !group.reassembled
+	receivedCount := group.ReceivedCount
+	totalFragments := group.TotalFragments
+	group.mu.Unlock()
+
+	if isComplete {
+		// 找到期望的下一个已完整的分片组，更新期望序列号
+		oldSeq := fr.nextExpectedSeq
+		fr.nextExpectedSeq++
+		utils.Infof("FragmentReassembler: GetNextCompleteGroup - found complete group, sequenceNumber=%d, groupID=%s, nextExpectedSeq=%d", oldSeq, group.GroupID, fr.nextExpectedSeq)
+		return group, true, nil
+	}
+
+	// 期望的序列号存在但还不完整，等待
+	utils.Debugf("FragmentReassembler: GetNextCompleteGroup - expected sequence %d exists but not complete yet, receivedCount=%d/%d, groupID=%s", fr.nextExpectedSeq, receivedCount, totalFragments, group.GroupID)
+	return nil, false, nil
 }
 
 // cleanupLoop 定期清理过期的分片组

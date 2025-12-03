@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/protocol/session"
+	"tunnox-core/internal/protocol/udp"
 	"tunnox-core/internal/utils"
 )
 
@@ -104,15 +105,16 @@ type UdpAdapter struct {
 
 // udpSession UDP会话，用于管理来自同一客户端的多个数据包
 type udpSession struct {
-	addr        net.Addr
-	lastActive  time.Time
-	buffer      chan []byte
-	conn        net.PacketConn
-	sessionConn *UdpSessionConn
-	isAccepted  bool
-	ctx         context.Context
-	cancel      context.CancelFunc
-	mu          sync.RWMutex
+	addr           net.Addr
+	lastActive     time.Time
+	buffer         chan []byte
+	conn           net.PacketConn
+	sessionConn    *UdpSessionConn
+	isAccepted     bool
+	ctx            context.Context
+	cancel         context.CancelFunc
+	fragmentManager *udp.UDPFragmentManager
+	mu             sync.RWMutex
 }
 
 func newUdpSession(addr net.Addr, conn net.PacketConn, parentCtx context.Context) *udpSession {
@@ -126,6 +128,8 @@ func newUdpSession(addr net.Addr, conn net.PacketConn, parentCtx context.Context
 		ctx:        ctx,
 		cancel:     cancel,
 	}
+	// 创建分片管理器
+	sess.fragmentManager = udp.NewUDPFragmentManager(ctx, conn, addr)
 	sess.sessionConn = &UdpSessionConn{
 		session:    sess,
 		addr:       addr.String(),
@@ -256,6 +260,17 @@ func (u *UdpAdapter) receivePackets() {
 			session, isNew := u.getOrCreateSession(addr)
 			session.updateActivity()
 
+			// 检查是否为分片包或ACK包
+			if udp.IsFragmentPacket(data) || udp.IsACKPacket(data) {
+				// 交给分片管理器处理
+				if err := session.fragmentManager.HandlePacket(data); err != nil {
+					utils.Debugf("UDP: failed to handle fragment packet: %v", err)
+				}
+				// 分片包处理后会通过 ReadReassembledData 读取，不需要放入 buffer
+				continue
+			}
+
+			// 普通数据包，直接放入 buffer
 			select {
 			case session.buffer <- data:
 				if isNew {
@@ -450,6 +465,10 @@ func (u *UdpAdapter) onClose() error {
 		if session.cancel != nil {
 			session.cancel()
 		}
+		// 关闭分片管理器
+		if session.fragmentManager != nil {
+			session.fragmentManager.Close()
+		}
 		// 关闭会话连接
 		if session.sessionConn != nil {
 			session.sessionConn.Close()
@@ -589,6 +608,22 @@ func (u *UdpSessionConn) Read(p []byte) (n int, err error) {
 		timeout = udpControlReadTimeout
 	}
 
+	// 先尝试从分片管理器读取重组后的数据（优先级更高）
+	if u.session.fragmentManager != nil {
+		reassembledData, err := u.session.fragmentManager.ReadReassembledData(timeout)
+		if err == nil && len(reassembledData) > 0 {
+			u.mu.Lock()
+			n = copy(p, reassembledData)
+			if n < len(reassembledData) {
+				u.readBuffer = reassembledData
+				u.readPos = n
+			}
+			u.mu.Unlock()
+			return n, nil
+		}
+		// 如果超时，继续尝试从 buffer 读取普通数据包
+	}
+
 	select {
 	case data, ok := <-u.session.buffer:
 		if !ok {
@@ -622,6 +657,40 @@ func (u *UdpSessionConn) Write(p []byte) (n int, err error) {
 	}
 
 	u.session.updateActivity()
+
+	// 如果数据包较大，使用分片发送
+	if len(p) > udp.UDPFragmentThreshold && u.session.fragmentManager != nil {
+		writeComplete := make(chan error, 1)
+		writeErr := make(chan error, 1)
+
+		err := u.session.fragmentManager.SendFragmented(p,
+			func([]byte) {
+				writeComplete <- nil
+			},
+			func(err error) {
+				writeErr <- err
+			},
+		)
+
+		if err != nil {
+			return 0, err
+		}
+
+		// 等待发送完成或错误
+		select {
+		case err := <-writeComplete:
+			if err != nil {
+				return 0, err
+			}
+			return len(p), nil
+		case err := <-writeErr:
+			return 0, err
+		case <-time.After(30 * time.Second):
+			return 0, fmt.Errorf("timeout waiting for fragment send completion")
+		}
+	}
+
+	// 小包直接发送
 	return u.session.conn.WriteTo(p, u.session.addr)
 }
 

@@ -2,6 +2,7 @@ package httppoll
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"time"
@@ -44,8 +45,111 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 
 	// 处理数据流
 	if pushReq != nil && pushReq.Data != "" {
+		utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - received push data, len=%d, connID=%s", sp.connectionID, len(pushReq.Data), sp.connectionID)
+		// 尝试解析为分片数据（FragmentResponse JSON）
+		fragmentResp, err := UnmarshalFragmentResponse([]byte(pushReq.Data))
+		if err == nil && fragmentResp != nil && fragmentResp.TotalFragments > 1 {
+			// 这是分片数据（TotalFragments > 1），使用 FragmentReassembler 重组
+			utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - received fragment, groupID=%s, index=%d/%d, size=%d, originalSize=%d, connID=%s",
+				sp.connectionID, fragmentResp.FragmentGroupID, fragmentResp.FragmentIndex, fragmentResp.TotalFragments, fragmentResp.FragmentSize, fragmentResp.OriginalSize, sp.connectionID)
+			// 这是分片数据，使用 FragmentReassembler 重组
+			// 解码分片数据
+			fragmentData, err := base64.StdEncoding.DecodeString(fragmentResp.Data)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode fragment data: %w", err)
+			}
+
+			// 验证解码后的数据长度是否与 FragmentSize 匹配
+			if len(fragmentData) != fragmentResp.FragmentSize {
+				utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - fragment size mismatch: expected %d, got %d, groupID=%s, index=%d",
+					sp.connectionID, fragmentResp.FragmentSize, len(fragmentData), fragmentResp.FragmentGroupID, fragmentResp.FragmentIndex)
+				return nil, fmt.Errorf("fragment size mismatch: expected %d, got %d", fragmentResp.FragmentSize, len(fragmentData))
+			}
+
+			// 添加到重组器
+			// 注意：使用 FragmentSize 字段（这是实际数据长度，CreateFragmentResponse 中设置的）
+			utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - adding fragment to reassembler, groupID=%s, index=%d/%d, size=%d, originalSize=%d, sequenceNumber=%d, connID=%s",
+				sp.connectionID, fragmentResp.FragmentGroupID, fragmentResp.FragmentIndex, fragmentResp.TotalFragments, fragmentResp.FragmentSize, fragmentResp.OriginalSize, fragmentResp.SequenceNumber, sp.connectionID)
+			group, err := sp.fragmentReassembler.AddFragment(
+				fragmentResp.FragmentGroupID,
+				fragmentResp.OriginalSize,
+				fragmentResp.FragmentSize,
+				fragmentResp.FragmentIndex,
+				fragmentResp.TotalFragments,
+				fragmentResp.SequenceNumber,
+				fragmentData,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to add fragment: %w", err)
+			}
+
+			// 检查是否完整，如果完整则重组并推送
+			if group.IsComplete() {
+				utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - fragment group complete, reassembling, groupID=%s, receivedCount=%d/%d, connID=%s",
+					sp.connectionID, fragmentResp.FragmentGroupID, group.ReceivedCount, fragmentResp.TotalFragments, sp.connectionID)
+				reassembledData, err := group.Reassemble()
+				if err != nil {
+					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to reassemble fragments: %v, groupID=%s, connID=%s",
+						sp.connectionID, err, fragmentResp.FragmentGroupID, sp.connectionID)
+					return nil, fmt.Errorf("failed to reassemble fragments: %w", err)
+				}
+
+				// 验证重组后的数据大小
+				if len(reassembledData) != fragmentResp.OriginalSize {
+					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - reassembled size mismatch: expected %d, got %d, groupID=%s, connID=%s",
+						sp.connectionID, fragmentResp.OriginalSize, len(reassembledData), fragmentResp.FragmentGroupID, sp.connectionID)
+					sp.fragmentReassembler.RemoveGroup(fragmentResp.FragmentGroupID)
+					return nil, fmt.Errorf("reassembled size mismatch: expected %d, got %d", fragmentResp.OriginalSize, len(reassembledData))
+				}
+
+				// 将重组后的数据 Base64 编码并推送
+				base64Data := base64.StdEncoding.EncodeToString(reassembledData)
+				utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - pushing reassembled data, size=%d, base64Len=%d, groupID=%s, connID=%s",
+					sp.connectionID, len(reassembledData), len(base64Data), fragmentResp.FragmentGroupID, sp.connectionID)
+				if err := sp.PushData(base64Data); err != nil {
+					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to push reassembled data: %v, groupID=%s, connID=%s",
+						sp.connectionID, err, fragmentResp.FragmentGroupID, sp.connectionID)
+					return nil, fmt.Errorf("failed to push reassembled data: %w", err)
+				}
+
+				// 清理分片组
+				sp.fragmentReassembler.RemoveGroup(fragmentResp.FragmentGroupID)
+				utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - reassembled and pushed %d bytes successfully, groupID=%s, originalSize=%d, connID=%s",
+					sp.connectionID, len(reassembledData), fragmentResp.FragmentGroupID, fragmentResp.OriginalSize, sp.connectionID)
+			} else {
+				utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - fragment %d/%d received, waiting for more, groupID=%s, receivedCount=%d, connID=%s",
+					sp.connectionID, fragmentResp.FragmentIndex, fragmentResp.TotalFragments, fragmentResp.FragmentGroupID, group.ReceivedCount, sp.connectionID)
+			}
+		} else {
+			// 这是完整数据（Base64 字符串或单分片数据），直接推送
+			// 注意：如果 UnmarshalFragmentResponse 成功但 TotalFragments == 1，这也是完整数据
+			if fragmentResp != nil && fragmentResp.TotalFragments == 1 {
+				// 单分片数据，直接解码并推送
+				utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - received single fragment (complete data), size=%d, groupID=%s, connID=%s",
+					sp.connectionID, fragmentResp.FragmentSize, fragmentResp.FragmentGroupID, sp.connectionID)
+				fragmentData, err := base64.StdEncoding.DecodeString(fragmentResp.Data)
+				if err != nil {
+					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to decode single fragment data: %v, connID=%s", sp.connectionID, err, sp.connectionID)
+					return nil, fmt.Errorf("failed to decode single fragment data: %w", err)
+				}
+				base64Data := base64.StdEncoding.EncodeToString(fragmentData)
+				if err := sp.PushData(base64Data); err != nil {
+					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to push single fragment data: %v, connID=%s", sp.connectionID, err, sp.connectionID)
+					return nil, fmt.Errorf("failed to push single fragment data: %w", err)
+				}
+				utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - pushed single fragment data, size=%d, connID=%s",
+					sp.connectionID, len(fragmentData), sp.connectionID)
+			} else {
+				// 这是完整数据（Base64 字符串），直接推送
+				utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - received complete data (not fragment), len=%d, connID=%s",
+					sp.connectionID, len(pushReq.Data), sp.connectionID)
 		if err := sp.PushData(pushReq.Data); err != nil {
+					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to push data: %v, connID=%s", sp.connectionID, err, sp.connectionID)
 			return nil, fmt.Errorf("failed to push data: %w", err)
+				}
+				utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - pushed complete data, len=%d, connID=%s",
+					sp.connectionID, len(pushReq.Data), sp.connectionID)
+			}
 		}
 	}
 
@@ -65,8 +169,11 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 
 	// keepalive 请求不应该注册到等待队列，因为它们不应该接收控制包
 	// 但是它们应该能够接收数据流（从 pollDataQueue）
+	// 注意：keepalive 请求和 data 类型的 Poll 请求都会接收数据流，但它们使用不同的分片重组器
+	// 这可能导致同一个分片组的分片被不同的连接接收，无法正确重组
+	// 解决方案：优先让 data 类型的 Poll 请求接收数据流，keepalive 请求只在没有 data 类型请求时接收
 	if tunnelType == "keepalive" {
-		utils.Debugf("ServerStreamProcessor: HandlePollRequest - keepalive request, not registering for control packets, but checking for data stream, requestID=%s, connID=%s", actualRequestID, sp.connectionID)
+		utils.Debugf("ServerStreamProcessor: HandlePollRequest - keepalive request, checking for data stream, requestID=%s, connID=%s", actualRequestID, sp.connectionID)
 		// keepalive 请求只等待数据流，不等待控制包
 		// 先检查队列中是否有数据（非阻塞）
 		if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {

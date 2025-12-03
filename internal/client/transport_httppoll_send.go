@@ -14,7 +14,8 @@ import (
 
 func (c *HTTPLongPollingConn) sendData(data []byte) error {
 	// 分片数据
-	fragments, err := httppoll.SplitDataIntoFragments(data)
+	// 注意：客户端发送时，序列号使用0作为占位符，服务器端会重新分配序列号
+	fragments, err := httppoll.SplitDataIntoFragments(data, 0)
 	if err != nil {
 		return fmt.Errorf("failed to split data into fragments: %w", err)
 	}

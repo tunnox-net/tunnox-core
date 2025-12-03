@@ -1,18 +1,20 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
 	"time"
 
+	"tunnox-core/internal/protocol/udp"
 	"tunnox-core/internal/utils"
 )
 
 const udpControlMaxPacketSize = 65535
 
 // dialUDPControlConnection 建立到服务器的UDP控制连接
-func dialUDPControlConnection(address string) (net.Conn, error) {
+func dialUDPControlConnection(ctx context.Context, address string) (net.Conn, error) {
 	serverAddr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve UDP address %s: %w", address, err)
@@ -30,7 +32,7 @@ func dialUDPControlConnection(address string) (net.Conn, error) {
 		utils.Warnf("Client: failed to set UDP write buffer: %v", err)
 	}
 
-	return newUDPStreamConn(conn), nil
+	return newUDPStreamConn(ctx, conn, serverAddr), nil
 }
 
 // udpStreamConn 将UDP连接包装成面向字节流的net.Conn
@@ -39,79 +41,149 @@ func dialUDPControlConnection(address string) (net.Conn, error) {
 // 关键设计：
 // - UDP是面向数据包的，每次Read/Write操作对应一个完整的UDP数据包
 // - StreamProcessor期望字节流语义，所以需要缓冲区来桥接两者
-// - 一个StreamProcessor packet可能跨越多个UDP数据包（如果packet > MTU）
+// - 支持大数据包分片传输，保证可靠性
 type udpStreamConn struct {
 	conn *net.UDPConn
+	addr net.Addr
 
-	readBuf []byte // 当前正在读取的UDP数据包缓冲区
+	// 分片管理器
+	fragmentManager *udp.UDPFragmentManager
+
+	// 读取缓冲区
+	readBuf []byte // 当前正在读取的完整数据包缓冲区
 	readPos int    // 读取位置
 
-	writeBuf []byte // 写入缓冲区，累积数据直到达到合理大小再发送
+	// 写入缓冲区（用于小包累积）
+	writeBuf []byte
 
 	mu sync.Mutex
 }
 
-func newUDPStreamConn(conn *net.UDPConn) net.Conn {
-	return &udpStreamConn{
+func newUDPStreamConn(ctx context.Context, conn *net.UDPConn, addr net.Addr) net.Conn {
+	streamConn := &udpStreamConn{
 		conn:     conn,
+		addr:     addr,
 		writeBuf: make([]byte, 0, udpControlMaxPacketSize),
+	}
+
+	// 创建分片管理器
+	streamConn.fragmentManager = udp.NewUDPFragmentManager(ctx, conn, addr)
+
+	// 启动数据包接收协程
+	go streamConn.receiveLoop(ctx)
+
+	return streamConn
+}
+
+// receiveLoop 接收数据包循环（处理分片和 ACK）
+func (c *udpStreamConn) receiveLoop(ctx context.Context) {
+	buffer := make([]byte, udpControlMaxPacketSize)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		// 设置读取超时
+		c.conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+
+		n, _, err := c.conn.ReadFrom(buffer)
+		if err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				continue // 超时是正常的，继续循环
+			}
+			utils.Debugf("UDP: read error: %v", err)
+			return
+		}
+
+		if n == 0 {
+			continue
+		}
+
+		// 复制数据（因为 buffer 会被重用）
+		data := make([]byte, n)
+		copy(data, buffer[:n])
+
+		// 交给分片管理器处理
+		if err := c.fragmentManager.HandlePacket(data); err != nil {
+			utils.Debugf("UDP: failed to handle packet: %v", err)
+			// 继续处理下一个包
+		}
 	}
 }
 
 func (c *udpStreamConn) Read(p []byte) (int, error) {
-	for {
-		c.mu.Lock()
-		// 如果有缓冲数据，先返回缓冲数据
-		if c.readBuf != nil && c.readPos < len(c.readBuf) {
-			n := copy(p, c.readBuf[c.readPos:])
-			c.readPos += n
-			if c.readPos >= len(c.readBuf) {
-				// 缓冲区读完，清空
-				c.readBuf = nil
-				c.readPos = 0
-			}
-			c.mu.Unlock()
-			return n, nil
+	c.mu.Lock()
+	// 如果有缓冲数据，先返回缓冲数据
+	if c.readBuf != nil && c.readPos < len(c.readBuf) {
+		n := copy(p, c.readBuf[c.readPos:])
+		c.readPos += n
+		if c.readPos >= len(c.readBuf) {
+			// 缓冲区读完，清空
+			c.readBuf = nil
+			c.readPos = 0
 		}
 		c.mu.Unlock()
-
-		// 设置合理的读取超时（30秒）
-		c.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-
-		buf := make([]byte, udpControlMaxPacketSize)
-		n, err := c.conn.Read(buf)
-		if err != nil {
-			return 0, err
-		}
-
-		if n == 0 {
-			continue // 空数据包，继续读取
-		}
-
-		c.mu.Lock()
-		c.readBuf = buf[:n]
-		c.readPos = 0
-		c.mu.Unlock()
+		return n, nil
 	}
-}
+	c.mu.Unlock()
 
-func (c *udpStreamConn) Write(p []byte) (int, error) {
-	// 直接发送，不分片
-	// StreamProcessor的每个packet都应该能放入一个UDP数据包
-	// 如果packet太大，这里会失败，调用者需要处理
-	if len(p) > udpControlMaxPacketSize {
-		return 0, fmt.Errorf("data too large for UDP packet: %d > %d", len(p), udpControlMaxPacketSize)
-	}
-
-	n, err := c.conn.Write(p)
+	// 从分片管理器读取重组后的数据（阻塞等待）
+	reassembledData, err := c.fragmentManager.ReadReassembledData(30 * time.Second)
 	if err != nil {
 		return 0, err
 	}
 
-	return n, nil
+	// 将重组后的数据放入读取缓冲区
+	c.mu.Lock()
+	c.readBuf = reassembledData
+	c.readPos = 0
+	c.mu.Unlock()
+
+	// 返回数据
+	return c.Read(p)
+}
+
+func (c *udpStreamConn) Write(p []byte) (int, error) {
+	// 使用分片管理器发送（自动处理分片）
+	writeComplete := make(chan error, 1)
+	writeErr := make(chan error, 1)
+
+	err := c.fragmentManager.SendFragmented(p,
+		func([]byte) {
+			// 发送完成回调
+			writeComplete <- nil
+		},
+		func(err error) {
+			// 错误回调
+			writeErr <- err
+		},
+	)
+
+	if err != nil {
+		return 0, err
+	}
+
+	// 等待发送完成或错误
+	select {
+	case err := <-writeComplete:
+		if err != nil {
+			return 0, err
+		}
+		return len(p), nil
+	case err := <-writeErr:
+		return 0, err
+	case <-time.After(30 * time.Second):
+		return 0, fmt.Errorf("timeout waiting for fragment send completion")
+	}
 }
 
 func (c *udpStreamConn) Close() error {
+	if c.fragmentManager != nil {
+		c.fragmentManager.Close()
+	}
 	return c.conn.Close()
 }
 

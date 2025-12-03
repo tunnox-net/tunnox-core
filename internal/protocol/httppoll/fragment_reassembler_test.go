@@ -236,7 +236,7 @@ func TestFragmentReassembler_AddFragment(t *testing.T) {
 	totalFragments := 3
 
 	// 添加第一个分片
-	group, err := reassembler.AddFragment(groupID, originalSize, fragmentSize, 0, totalFragments, make([]byte, fragmentSize))
+	group, err := reassembler.AddFragment(groupID, originalSize, fragmentSize, 0, totalFragments, 0, make([]byte, fragmentSize))
 	if err != nil {
 		t.Fatalf("AddFragment failed: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestFragmentReassembler_AddFragment(t *testing.T) {
 	}
 
 	// 添加第二个分片
-	group2, err := reassembler.AddFragment(groupID, originalSize, fragmentSize, 1, totalFragments, make([]byte, fragmentSize))
+	group2, err := reassembler.AddFragment(groupID, originalSize, fragmentSize, 1, totalFragments, 0, make([]byte, fragmentSize))
 	if err != nil {
 		t.Fatalf("AddFragment failed: %v", err)
 	}
@@ -269,10 +269,10 @@ func TestFragmentReassembler_AddFragment_SizeMismatch(t *testing.T) {
 	totalFragments := 3
 
 	// 添加第一个分片
-	reassembler.AddFragment(groupID, originalSize, fragmentSize, 0, totalFragments, make([]byte, fragmentSize))
+	reassembler.AddFragment(groupID, originalSize, fragmentSize, 0, totalFragments, 0, make([]byte, fragmentSize))
 
 	// 尝试添加大小不匹配的分片
-	_, err := reassembler.AddFragment(groupID, originalSize+10, fragmentSize, 1, totalFragments, make([]byte, fragmentSize))
+	_, err := reassembler.AddFragment(groupID, originalSize+10, fragmentSize, 1, totalFragments, 0, make([]byte, fragmentSize))
 	if err == nil {
 		t.Error("Expected error for size mismatch")
 	}
@@ -290,7 +290,7 @@ func TestFragmentReassembler_GetGroup(t *testing.T) {
 	}
 
 	// 添加分片创建组
-	reassembler.AddFragment(groupID, 100, 33, 0, 3, make([]byte, 33))
+	reassembler.AddFragment(groupID, 100, 33, 0, 3, 0, make([]byte, 33))
 
 	// 获取存在的组
 	group, exists := reassembler.GetGroup(groupID)
@@ -308,7 +308,7 @@ func TestFragmentReassembler_RemoveGroup(t *testing.T) {
 	groupID := "test-group"
 
 	// 添加分片创建组
-	reassembler.AddFragment(groupID, 100, 33, 0, 3, make([]byte, 33))
+	reassembler.AddFragment(groupID, 100, 33, 0, 3, 0, make([]byte, 33))
 
 	// 验证组存在
 	_, exists := reassembler.GetGroup(groupID)
@@ -406,7 +406,7 @@ func TestFragmentReassembler_ConcurrentAccess(t *testing.T) {
 	done := make(chan bool, totalFragments)
 	for i := 0; i < totalFragments; i++ {
 		go func(index int) {
-			_, err := reassembler.AddFragment(groupID, originalSize, fragmentSize, index, totalFragments, make([]byte, fragmentSize))
+			_, err := reassembler.AddFragment(groupID, originalSize, fragmentSize, index, totalFragments, 0, make([]byte, fragmentSize))
 			if err != nil {
 				t.Errorf("AddFragment failed for index %d: %v", index, err)
 			}
@@ -435,14 +435,14 @@ func TestFragmentReassembler_MaxGroups(t *testing.T) {
 	// 创建最大数量的组
 	for i := 0; i < MaxFragmentGroups; i++ {
 		groupID := fmt.Sprintf("group-%d", i)
-		_, err := reassembler.AddFragment(groupID, 100, 33, 0, 3, make([]byte, 33))
+		_, err := reassembler.AddFragment(groupID, 100, 33, 0, 3, int64(i), make([]byte, 33))
 		if err != nil {
 			t.Fatalf("AddFragment failed for group %d: %v", i, err)
 		}
 	}
 
 	// 尝试添加超出限制的组（应该失败或触发清理）
-	_, err := reassembler.AddFragment("overflow-group", 100, 33, 0, 3, make([]byte, 33))
+	_, err := reassembler.AddFragment("overflow-group", 100, 33, 0, 3, int64(MaxFragmentGroups), make([]byte, 33))
 	// 注意：如果清理了过期组，可能会成功；否则应该失败
 	// 这里只验证不会 panic
 	if err != nil {

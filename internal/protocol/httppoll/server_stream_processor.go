@@ -51,6 +51,13 @@ type ServerStreamProcessor struct {
 	// 分片重组器（用于接收端重组分片）
 	fragmentReassembler *FragmentReassembler
 
+	// 写入互斥锁（确保同一 WriteExact 调用的所有分片连续推送）
+	writeMu sync.Mutex
+
+	// 序列号生成器（用于保证数据包顺序）
+	sequenceNumber int64
+	sequenceMu     sync.Mutex
+
 	// 控制
 	closed  bool
 	closeMu sync.RWMutex

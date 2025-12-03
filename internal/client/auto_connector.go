@@ -28,7 +28,7 @@ var DefaultServerEndpoints = []ServerEndpoint{
 	{Protocol: "tcp", Address: "gw.tunnox.net:8000"},
 	{Protocol: "websocket", Address: "https://gw.tunnox.net/_tunnox"},
 	{Protocol: "udp", Address: "gw.tunnox.net:8000"},
-	{Protocol: "httppoll", Address: "https://gw.tunnox.net/tunnox"},
+	{Protocol: "httppoll", Address: "https://gw.tunnox.net"},
 }
 
 // ConnectionAttempt 连接尝试结果
@@ -306,7 +306,11 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 
 	switch endpoint.Protocol {
 	case "tcp":
-		conn, err = net.DialTimeout("tcp", endpoint.Address, 20*time.Second)
+		// TCP 连接使用 DialContext 以支持 context 取消
+		dialer := &net.Dialer{
+			Timeout: 20 * time.Second,
+		}
+		conn, err = dialer.DialContext(timeoutCtx, "tcp", endpoint.Address)
 		if err == nil {
 			// 配置 TCP 连接选项
 			// 使用接口而不是具体类型
@@ -319,7 +323,7 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 			err  error
 		}, 1)
 		go func() {
-			conn, err := dialUDPControlConnection(endpoint.Address)
+			conn, err := dialUDPControlConnection(ctx, endpoint.Address)
 			udpDone <- struct {
 				conn net.Conn
 				err  error

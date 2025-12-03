@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,9 +17,15 @@ import (
 
 // Connect 连接到服务器并建立指令连接
 func (c *TunnoxClient) Connect() error {
-	// 如果配置中没有地址，使用自动连接
-	if c.config.Server.Address == "" {
+	// 如果配置中没有地址且没有协议，使用自动连接
+	// 注意：如果指定了协议但没有地址，应该报错而不是自动连接
+	if c.config.Server.Address == "" && c.config.Server.Protocol == "" {
 		return c.connectWithAutoDetection()
+	}
+
+	// 如果指定了协议但没有地址，报错
+	if c.config.Server.Protocol != "" && c.config.Server.Address == "" {
+		return fmt.Errorf("server address is required when protocol is specified (%s)", c.config.Server.Protocol)
 	}
 
 	utils.Infof("Client: connecting to server %s", c.config.Server.Address)
@@ -30,37 +37,95 @@ func (c *TunnoxClient) Connect() error {
 	utils.Infof("Client: using %s transport for control connection", strings.ToUpper(protocol))
 
 	// 1. 根据协议建立控制连接
+	// 检查 context 是否已被取消
+	select {
+	case <-c.Ctx().Done():
+		return fmt.Errorf("connection cancelled: %w", c.Ctx().Err())
+	default:
+	}
+
 	var (
 		conn  net.Conn
 		err   error
 		token string // HTTP 长轮询使用的 token
 	)
-	switch strings.ToLower(protocol) {
-	case "tcp":
-		conn, err = net.DialTimeout("tcp", c.config.Server.Address, 10*time.Second)
-	case "udp":
-		conn, err = dialUDPControlConnection(c.config.Server.Address)
-	case "websocket":
-		conn, err = dialWebSocket(c.Ctx(), c.config.Server.Address)
-	case "quic":
-		conn, err = dialQUIC(c.Ctx(), c.config.Server.Address)
-	case "httppoll", "http-long-polling", "httplp":
-		// HTTP 长轮询使用 AuthToken 或 SecretKey
-		token = c.config.AuthToken
-		if token == "" && c.config.Anonymous {
-			token = c.config.SecretKey
+	
+	// 为所有连接设置超时 context（20秒），并支持取消
+	connectCtx, cancel := context.WithTimeout(c.Ctx(), 20*time.Second)
+	defer cancel()
+	
+	// 启动 goroutine 监听 context 取消
+	connectDone := make(chan struct {
+		conn net.Conn
+		err  error
+	}, 1)
+	
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				utils.Errorf("Client: panic in connection goroutine: %v", r)
+			}
+		}()
+		
+		var resultConn net.Conn
+		var resultErr error
+		
+		switch strings.ToLower(protocol) {
+		case "tcp":
+			// TCP 连接使用 DialTimeout，但需要支持 context 取消
+			dialer := &net.Dialer{
+				Timeout: 20 * time.Second,
+			}
+			resultConn, resultErr = dialer.DialContext(connectCtx, "tcp", c.config.Server.Address)
+			if resultErr == nil {
+				// 配置 TCP 连接选项
+				SetKeepAliveIfSupported(resultConn, true)
+			}
+		case "udp":
+			resultConn, resultErr = dialUDPControlConnection(connectCtx, c.config.Server.Address)
+		case "websocket":
+			resultConn, resultErr = dialWebSocket(connectCtx, c.config.Server.Address)
+		case "quic":
+			resultConn, resultErr = dialQUIC(connectCtx, c.config.Server.Address)
+		case "httppoll", "http-long-polling", "httplp":
+			// HTTP 长轮询使用 AuthToken 或 SecretKey
+			token = c.config.AuthToken
+			if token == "" && c.config.Anonymous {
+				token = c.config.SecretKey
+			}
+			// 首次握手时，对于匿名客户端，必须使用 clientID=0
+			// 对于已注册客户端，使用配置的 clientID
+			clientID := c.config.ClientID
+			if c.config.Anonymous {
+				// 匿名客户端首次握手，强制使用 0（不管配置文件中是否有保存的 ClientID）
+				clientID = 0
+			}
+			resultConn, resultErr = dialHTTPLongPolling(connectCtx, c.config.Server.Address, clientID, token, c.GetInstanceID(), "")
+		default:
+			resultErr = fmt.Errorf("unsupported server protocol: %s", protocol)
 		}
-		// 首次握手时，对于匿名客户端，必须使用 clientID=0
-		// 对于已注册客户端，使用配置的 clientID
-		clientID := c.config.ClientID
-		if c.config.Anonymous {
-			// 匿名客户端首次握手，强制使用 0（不管配置文件中是否有保存的 ClientID）
-			clientID = 0
+		
+		select {
+		case connectDone <- struct {
+			conn net.Conn
+			err  error
+		}{resultConn, resultErr}:
+		case <-connectCtx.Done():
+			// Context 已取消，关闭连接（如果已建立）
+			if resultConn != nil {
+				resultConn.Close()
+			}
 		}
-		conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, clientID, token, c.GetInstanceID(), "")
-	default:
-		return fmt.Errorf("unsupported server protocol: %s", protocol)
+	}()
+	
+	// 等待连接完成或 context 取消
+	select {
+	case result := <-connectDone:
+		conn, err = result.conn, result.err
+	case <-connectCtx.Done():
+		err = fmt.Errorf("connection cancelled: %w", connectCtx.Err())
 	}
+	
 	if err != nil {
 		return fmt.Errorf("failed to dial server (%s): %w", protocol, err)
 	}
@@ -208,14 +273,19 @@ func (c *TunnoxClient) sendHandshake() error {
 }
 
 // saveAnonymousCredentials 保存匿名客户端凭据到配置文件
+// 注意：只保存 ClientID 和 SecretKey，不保存 Server.Address 和 Server.Protocol
+// 这些字段应该由配置文件或命令行参数指定，不应该被自动连接覆盖
+// 只有在命令行参数中指定了服务器地址或协议且连接成功时，才允许更新服务器配置
 func (c *TunnoxClient) saveAnonymousCredentials() error {
 	if !c.config.Anonymous || c.config.ClientID == 0 {
 		return nil // 非匿名客户端或无ClientID，无需保存
 	}
 
 	// 使用ConfigManager保存配置
+	// 只有在命令行参数中指定了服务器地址或协议时，才允许更新服务器配置
 	configMgr := NewConfigManager()
-	if err := configMgr.SaveConfig(c.config); err != nil {
+	allowUpdateServerConfig := c.serverAddressFromCLI || c.serverProtocolFromCLI
+	if err := configMgr.SaveConfigWithOptions(c.config, allowUpdateServerConfig); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -563,7 +633,8 @@ func (c *TunnoxClient) connectWithAutoDetection() error {
 		return fmt.Errorf("auto connection failed: %w", err)
 	}
 
-	// 更新配置
+	// 更新配置（仅更新内存中的配置，不保存到文件）
+	// 注意：自动连接检测到的地址和协议不应该保存到配置文件
 	c.config.Server.Protocol = attempt.Endpoint.Protocol
 	c.config.Server.Address = attempt.Endpoint.Address
 
@@ -627,7 +698,7 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 			SetKeepAliveIfSupported(conn, true)
 		}
 	case "udp":
-		conn, err = dialUDPControlConnection(address)
+		conn, err = dialUDPControlConnection(c.Ctx(), address)
 	case "websocket":
 		conn, err = dialWebSocket(c.Ctx(), address)
 	case "quic":

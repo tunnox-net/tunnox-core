@@ -21,6 +21,10 @@ type TunnoxClient struct {
 
 	config *ClientConfig
 
+	// 记录命令行参数中是否指定了服务器地址和协议（用于判断是否允许保存到配置文件）
+	serverAddressFromCLI bool
+	serverProtocolFromCLI bool
+
 	// 客户端实例标识（进程级别的唯一标识）
 	instanceID string
 
@@ -82,12 +86,19 @@ type localMappingStats struct {
 
 // NewClient 创建客户端
 func NewClient(ctx context.Context, config *ClientConfig) *TunnoxClient {
+	return NewClientWithCLIFlags(ctx, config, false, false)
+}
+
+// NewClientWithCLIFlags 创建客户端（带命令行参数标志）
+func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddressFromCLI, serverProtocolFromCLI bool) *TunnoxClient {
 	// 生成客户端实例标识（进程级别的唯一UUID）
 	instanceID := uuid.New().String()
 
 	client := &TunnoxClient{
 		ManagerBase:            dispose.NewManager("TunnoxClient", ctx),
 		config:                 config,
+		serverAddressFromCLI:   serverAddressFromCLI,
+		serverProtocolFromCLI:  serverProtocolFromCLI,
 		instanceID:             instanceID,
 		mappingHandlers:        make(map[string]MappingHandler),
 		localTrafficStats:      make(map[string]*localMappingStats),

@@ -20,25 +20,40 @@ func (sp *ServerStreamProcessor) WriteExact(data []byte) error {
 		return io.ErrClosedPipe
 	}
 
-	// 分片数据
-	fragments, err := SplitDataIntoFragments(data)
+	// 获取序列号（确保数据包顺序）
+	sp.sequenceMu.Lock()
+	sequenceNumber := sp.sequenceNumber
+	sp.sequenceNumber++
+	sp.sequenceMu.Unlock()
+
+	// 分片数据（传入序列号，确保同一WriteExact调用的所有分片共享相同序列号）
+	fragments, err := SplitDataIntoFragments(data, sequenceNumber)
 	if err != nil {
 		utils.Errorf("ServerStreamProcessor[%s]: WriteExact failed to split data into fragments: %v", sp.connectionID, err)
 		return err
 	}
 
+	utils.Infof("ServerStreamProcessor[%s]: WriteExact - split %d bytes into %d fragments, sequenceNumber=%d, connID=%s", sp.connectionID, len(data), len(fragments), sequenceNumber, sp.connectionID)
+
 	// 序列化每个分片并推送到队列
-	for _, fragment := range fragments {
+	// 注意：必须按顺序推送同一分片组的所有分片，确保它们按顺序被接收
+	// 使用互斥锁确保同一 WriteExact 调用的所有分片连续推送，避免与其他 WriteExact 调用的分片交错
+	sp.writeMu.Lock()
+	defer sp.writeMu.Unlock()
+
+	for i, fragment := range fragments {
 		fragmentJSON, err := MarshalFragmentResponse(fragment)
 		if err != nil {
 			utils.Errorf("ServerStreamProcessor[%s]: WriteExact failed to marshal fragment: %v", sp.connectionID, err)
 			return err
 		}
 
+		utils.Infof("ServerStreamProcessor[%s]: WriteExact - pushing fragment %d/%d, groupID=%s, size=%d, totalFragments=%d, connID=%s",
+			sp.connectionID, i, len(fragments), fragment.FragmentGroupID, fragment.FragmentSize, fragment.TotalFragments, sp.connectionID)
 		sp.pollDataQueue.Push(fragmentJSON)
 	}
 
-	// 通知等待的 Poll 请求
+	// 通知等待的 Poll 请求（在释放锁之前通知，确保分片已全部推送）
 	select {
 	case sp.pollWaitChan <- struct{}{}:
 		utils.Debugf("ServerStreamProcessor[%s]: WriteExact notified pollWaitChan", sp.connectionID)
@@ -114,13 +129,20 @@ func (sp *ServerStreamProcessor) ReadAvailable(maxLength int) ([]byte, error) {
 
 // ReadExact 从 Push 请求读取数据流
 func (sp *ServerStreamProcessor) ReadExact(length int) ([]byte, error) {
+	utils.Debugf("ServerStreamProcessor[%s]: ReadExact - requested %d bytes, current buffer size=%d, connID=%s",
+		sp.connectionID, length, len(sp.readBuffer), sp.connectionID)
+
 	sp.readBufMu.Lock()
 	defer sp.readBufMu.Unlock()
 
 	// 从缓冲读取，如果不够则等待更多数据
 	// ReadExact 应该等待完整数据，而不是返回部分数据（对于MySQL等协议，数据包必须完整）
 	for len(sp.readBuffer) < length {
+		currentBufferLen := len(sp.readBuffer)
 		sp.readBufMu.Unlock()
+
+		utils.Debugf("ServerStreamProcessor[%s]: ReadExact - buffer has %d bytes, need %d, waiting for more data, connID=%s",
+			sp.connectionID, currentBufferLen, length, sp.connectionID)
 
 		// 使用合理的超时时间，平衡响应速度和数据完整性
 		// 对于MySQL等协议，数据包通常较小，但需要等待完整数据包
@@ -128,11 +150,14 @@ func (sp *ServerStreamProcessor) ReadExact(length int) ([]byte, error) {
 		select {
 		case <-sp.Ctx().Done():
 			timeout.Stop()
+			utils.Errorf("ServerStreamProcessor[%s]: ReadExact - context cancelled, connID=%s", sp.connectionID, sp.connectionID)
 			return nil, sp.Ctx().Err()
 		case base64Data, ok := <-sp.pushDataChan:
 			timeout.Stop()
 			if !ok {
 				sp.readBufMu.Lock()
+				utils.Warnf("ServerStreamProcessor[%s]: ReadExact - pushDataChan closed, buffer has %d bytes, need %d, connID=%s",
+					sp.connectionID, len(sp.readBuffer), length, sp.connectionID)
 				// 如果缓冲区有数据但不够，返回部分数据（连接已关闭）
 				if len(sp.readBuffer) > 0 {
 					readLen := len(sp.readBuffer)
@@ -144,13 +169,19 @@ func (sp *ServerStreamProcessor) ReadExact(length int) ([]byte, error) {
 				return nil, io.EOF
 			}
 			// Base64 解码
+			utils.Debugf("ServerStreamProcessor[%s]: ReadExact - received data from pushDataChan, base64Len=%d, connID=%s",
+				sp.connectionID, len(base64Data), sp.connectionID)
 			data, err := base64.StdEncoding.DecodeString(base64Data)
 			if err != nil {
 				sp.readBufMu.Lock()
+				utils.Errorf("ServerStreamProcessor[%s]: ReadExact - failed to decode base64: %v, connID=%s", sp.connectionID, err, sp.connectionID)
 				return nil, fmt.Errorf("failed to decode base64: %w", err)
 			}
 			sp.readBufMu.Lock()
+			oldBufferLen := len(sp.readBuffer)
 			sp.readBuffer = append(sp.readBuffer, data...)
+			utils.Debugf("ServerStreamProcessor[%s]: ReadExact - decoded and appended %d bytes to buffer, buffer size: %d -> %d, need %d, connID=%s",
+				sp.connectionID, len(data), oldBufferLen, len(sp.readBuffer), length, sp.connectionID)
 		case <-timeout.C:
 			// 超时，检查缓冲区状态
 			sp.readBufMu.Lock()
@@ -171,13 +202,18 @@ func (sp *ServerStreamProcessor) ReadExact(length int) ([]byte, error) {
 	// 读取指定长度（现在缓冲区应该有足够的数据）
 	data := make([]byte, length)
 	n := copy(data, sp.readBuffer)
+	oldBufferLen := len(sp.readBuffer)
 	sp.readBuffer = sp.readBuffer[n:]
 
 	if n < length {
 		// 不应该发生，因为我们已经等待了足够的数据
+		utils.Errorf("ServerStreamProcessor[%s]: ReadExact - read %d bytes, expected %d, buffer had %d bytes, connID=%s",
+			sp.connectionID, n, length, oldBufferLen, sp.connectionID)
 		return nil, io.ErrUnexpectedEOF
 	}
 
+	utils.Debugf("ServerStreamProcessor[%s]: ReadExact - read %d bytes successfully, remaining buffer size=%d, connID=%s",
+		sp.connectionID, n, len(sp.readBuffer), sp.connectionID)
 	return data, nil
 }
 
@@ -188,15 +224,24 @@ func (sp *ServerStreamProcessor) PushData(base64Data string) error {
 	sp.closeMu.RUnlock()
 
 	if closed {
+		utils.Warnf("ServerStreamProcessor[%s]: PushData - connection closed, dropping %d bytes, connID=%s",
+			sp.connectionID, len(base64Data), sp.connectionID)
 		return io.ErrClosedPipe
 	}
 
+	utils.Debugf("ServerStreamProcessor[%s]: PushData - pushing %d bytes to pushDataChan, connID=%s",
+		sp.connectionID, len(base64Data), sp.connectionID)
 	select {
 	case sp.pushDataChan <- base64Data:
+		utils.Debugf("ServerStreamProcessor[%s]: PushData - pushed %d bytes successfully, connID=%s",
+			sp.connectionID, len(base64Data), sp.connectionID)
 		return nil
 	case <-sp.Ctx().Done():
+		utils.Errorf("ServerStreamProcessor[%s]: PushData - context cancelled, connID=%s", sp.connectionID, sp.connectionID)
 		return sp.Ctx().Err()
 	default:
+		utils.Errorf("ServerStreamProcessor[%s]: PushData - pushDataChan full, dropping %d bytes, connID=%s",
+			sp.connectionID, len(base64Data), sp.connectionID)
 		return fmt.Errorf("push data channel full")
 	}
 }
@@ -205,6 +250,8 @@ func (sp *ServerStreamProcessor) PushData(base64Data string) error {
 func (sp *ServerStreamProcessor) PollData(ctx context.Context) (string, error) {
 	// 先检查队列中是否有数据（非阻塞）
 	if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
+		utils.Debugf("ServerStreamProcessor[%s]: PollData - got fragment from queue, len=%d, connID=%s",
+			sp.connectionID, len(fragmentJSON), sp.connectionID)
 		// 返回分片响应的JSON字符串
 		return string(fragmentJSON), nil
 	}

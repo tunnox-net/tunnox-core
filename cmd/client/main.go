@@ -105,8 +105,10 @@ func main() {
 		}
 	}()
 
-	// 创建客户端
-	tunnoxClient := client.NewClient(ctx, config)
+	// 创建客户端（传递命令行参数信息）
+	serverAddressFromCLI := *serverAddr != ""
+	serverProtocolFromCLI := *protocol != ""
+	tunnoxClient := client.NewClientWithCLIFlags(ctx, config, serverAddressFromCLI, serverProtocolFromCLI)
 
 	// 启动调试 API 服务器（如果启用）
 	if *debugAPI {
@@ -127,8 +129,10 @@ func main() {
 
 		// 尝试连接（如果有配置地址或需要自动连接）
 		// 自动连接会在 Connect() 内部处理
-		if config.Server.Address == "" {
-			// 没有配置地址，会触发自动连接，显示提示信息
+		// 检查是否需要自动连接（配置文件和命令行都没有指定地址和协议）
+		needsAutoConnect := config.Server.Address == "" && config.Server.Protocol == ""
+		if needsAutoConnect {
+			// 没有配置地址和协议，会触发自动连接，显示提示信息
 			fmt.Fprintf(os.Stderr, "🔍 No server address configured, attempting auto-connection...\n")
 			fmt.Fprintf(os.Stderr, "💡 Press Ctrl+C to cancel\n")
 		}
@@ -275,6 +279,10 @@ func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64,
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// 保存配置文件中的原始值（在命令行参数覆盖之前）
+	configFileHasAddress := config.Server.Address != ""
+	configFileHasProtocol := config.Server.Protocol != ""
+
 	// 命令行参数覆盖配置文件
 	if protocol != "" {
 		config.Server.Protocol = normalizeProtocol(protocol)
@@ -297,11 +305,18 @@ func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64,
 		config.Anonymous = true
 	}
 
-	// 检测是否需要自动连接（符合设计文档的三个条件）：
-	// 1. 配置文件中没有指定服务器地址
-	// 2. 命令行参数中没有指定服务器地址（-s 参数）
-	// 3. 以cli的方式启动（runInteractive == true）
-	needsAutoConnect := isCLIMode && config.Server.Address == "" && serverAddr == ""
+	// 检测是否需要自动连接（符合设计文档的条件）：
+	// 1. 以cli的方式启动（runInteractive == true）
+	// 2. 配置文件中没有指定服务器地址（检查原始值，而不是被命令行覆盖后的值）
+	// 3. 配置文件中没有指定协议（检查原始值，而不是被命令行覆盖后的值）
+	// 4. 命令行参数中没有指定服务器地址（-s 参数）
+	// 5. 命令行参数中没有指定协议（-p 参数）
+	// 注意：如果配置文件中指定了地址或协议，或者命令行中指定了地址或协议，都不能启用自动连接
+	needsAutoConnect := isCLIMode &&
+		!configFileHasAddress &&
+		!configFileHasProtocol &&
+		serverAddr == "" &&
+		protocol == ""
 
 	// 验证配置（如果不需要自动连接，则设置默认值）
 	if err := validateConfig(config, !needsAutoConnect); err != nil {

@@ -1,0 +1,13 @@
+client_id: 79094279
+auth_token: ""
+anonymous: true
+device_id: anonymous-device
+secret_key: OHjGUz3h7srHw1xf0AjzuVHHFMOP1Fk8
+server:
+    address: 127.0.0.1:8000
+    protocol: tcp
+log:
+    level: ""
+    format: ""
+    output: ""
+    file: /tmp/tunnox-target-client.log"

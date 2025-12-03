@@ -96,6 +96,7 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 							pushReq.FragmentSize,
 							pushReq.FragmentIndex,
 							pushReq.TotalFragments,
+							pushReq.SequenceNumber,
 							fragmentData,
 						)
 						if err != nil {
