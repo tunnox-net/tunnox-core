@@ -88,9 +88,10 @@ func (s *ManagementAPIServer) handleCloseConnection(w http.ResponseWriter, r *ht
 		return
 	}
 	
-	s.respondJSON(w, http.StatusOK, map[string]string{
-		"message": "Connection closed successfully",
-		"conn_id": connID,
-	})
+	response := ConnectionCloseResponse{
+		Message: "Connection closed successfully",
+		ConnID:  connID,
+	}
+	s.respondJSON(w, http.StatusOK, response)
 }
 

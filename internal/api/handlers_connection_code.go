@@ -237,18 +237,6 @@ func (h *ConnectionCodeHandlers) HandleRevokeConnectionCode(w http.ResponseWrite
 	})
 }
 
-// ConnectionCodeListItem 连接码列表项
-type ConnectionCodeListItem struct {
-	Code                string  `json:"code"`
-	TargetClientID      int64   `json:"target_client_id"`
-	TargetAddress       string  `json:"target_address"`
-	ActivationExpiresAt string  `json:"activation_expires_at"`
-	IsActivated         bool    `json:"is_activated"`
-	MappingID           *string `json:"mapping_id,omitempty"`
-	CreatedAt           string  `json:"created_at"`
-	Description         string  `json:"description,omitempty"`
-}
-
 // HandleListConnectionCodes 处理列出连接码请求
 //
 // GET /tunnox/v1/connection-codes?target_client_id=xxx
@@ -295,10 +283,11 @@ func (h *ConnectionCodeHandlers) HandleListConnectionCodes(w http.ResponseWriter
 		items = append(items, item)
 	}
 
-	respondSuccess(w, http.StatusOK, map[string]interface{}{
-		"total": len(items),
-		"codes": items,
-	})
+	response := ConnectionCodeListResponse{
+		Total: len(items),
+		Codes: items,
+	}
+	respondSuccess(w, http.StatusOK, response)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -384,11 +373,12 @@ func (h *ConnectionCodeHandlers) HandleListMappings(w http.ResponseWriter, r *ht
 		items = append(items, item)
 	}
 
-	respondSuccess(w, http.StatusOK, map[string]interface{}{
-		"total":     len(items),
-		"direction": direction,
-		"mappings":  items,
-	})
+	response := MappingListWithDirectionResponse{
+		Total:     len(items),
+		Direction: direction,
+		Mappings:  items,
+	}
+	respondSuccess(w, http.StatusOK, response)
 }
 
 // HandleRevokeMapping 处理撤销映射请求

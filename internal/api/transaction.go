@@ -86,7 +86,7 @@ func (s *ManagementAPIServer) createMappingWithTransaction(mapping *models.PortM
 }
 
 // claimClientWithTransaction 认领客户端（带事务）
-func (s *ManagementAPIServer) claimClientWithTransaction(anonClientID int64, userID, newClientName string) (map[string]interface{}, error) {
+func (s *ManagementAPIServer) claimClientWithTransaction(anonClientID int64, userID, newClientName string) (*ClaimClientResponse, error) {
 	tx := NewTransaction()
 
 	// 1. 获取匿名客户端
@@ -142,10 +142,8 @@ func (s *ManagementAPIServer) claimClientWithTransaction(anonClientID int64, use
 	}
 
 	// 成功完成，不需要回滚
-	return map[string]interface{}{
-		"client_id":  newClient.ID,
-		"auth_token": tokenInfo.Token,
-		"expires_at": tokenInfo.ExpiresAt,
-		"message":    "Client claimed successfully. Please save your credentials.",
+	return &ClaimClientResponse{
+		ClientID:  newClient.ID,
+		AuthToken: tokenInfo.Token,
 	}, nil
 }

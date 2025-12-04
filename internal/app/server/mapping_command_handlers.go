@@ -147,7 +147,7 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 		return h.errorResponse(ctx, fmt.Sprintf("failed to list mappings: %v", err))
 	}
 
-	mappingItems := make([]map[string]interface{}, 0, len(mappings))
+	mappingItems := make([]MappingItem, 0, len(mappings))
 	for _, m := range mappings {
 		if req.Status != "" && string(m.Status) != req.Status {
 			continue
@@ -166,24 +166,24 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 			expiresAtStr = m.ExpiresAt.Format(time.RFC3339)
 		}
 
-		item := map[string]interface{}{
-			"mapping_id":     m.ID,
-			"type":           mappingType,
-			"target_address": m.TargetAddress,
-			"listen_address": m.ListenAddress,
-			"status":         string(m.Status),
-			"expires_at":     expiresAtStr,
-			"created_at":     m.CreatedAt.Format(time.RFC3339),
-			"bytes_sent":     m.TrafficStats.BytesSent,
-			"bytes_received": m.TrafficStats.BytesReceived,
+		item := MappingItem{
+			MappingID:     m.ID,
+			Type:          mappingType,
+			TargetAddress: m.TargetAddress,
+			ListenAddress: m.ListenAddress,
+			Status:        string(m.Status),
+			ExpiresAt:     expiresAtStr,
+			CreatedAt:     m.CreatedAt.Format(time.RFC3339),
+			BytesSent:     m.TrafficStats.BytesSent,
+			BytesReceived: m.TrafficStats.BytesReceived,
 		}
 
 		mappingItems = append(mappingItems, item)
 	}
 
-	resp := map[string]interface{}{
-		"mappings": mappingItems,
-		"total":    len(mappingItems),
+	resp := MappingListResponse{
+		Mappings: mappingItems,
+		Total:    len(mappingItems),
 	}
 
 	respBody, _ := json.Marshal(resp)
@@ -264,19 +264,20 @@ func (h *GetMappingHandler) Handle(ctx *command.CommandContext) (*command.Comman
 		expiresAtStr = mapping.ExpiresAt.Format(time.RFC3339)
 	}
 
-	item := map[string]interface{}{
-		"mapping_id":     mapping.ID,
-		"type":           mappingType,
-		"target_address": mapping.TargetAddress,
-		"listen_address": mapping.ListenAddress,
-		"status":         string(mapping.Status),
-		"expires_at":     expiresAtStr,
-		"created_at":     mapping.CreatedAt.Format(time.RFC3339),
-		"bytes_sent":     mapping.TrafficStats.BytesSent,
-		"bytes_received": mapping.TrafficStats.BytesReceived,
+	item := MappingItem{
+		MappingID:     mapping.ID,
+		Type:          mappingType,
+		TargetAddress: mapping.TargetAddress,
+		ListenAddress: mapping.ListenAddress,
+		Status:        string(mapping.Status),
+		ExpiresAt:     expiresAtStr,
+		CreatedAt:     mapping.CreatedAt.Format(time.RFC3339),
+		BytesSent:     mapping.TrafficStats.BytesSent,
+		BytesReceived: mapping.TrafficStats.BytesReceived,
 	}
 
-	respBody, _ := json.Marshal(map[string]interface{}{"mapping": item})
+	resp := MappingDetailResponse{Mapping: item}
+	respBody, _ := json.Marshal(resp)
 	return &command.CommandResponse{
 		Success:   true,
 		Data:      string(respBody),

@@ -30,10 +30,10 @@ type UserListResponse struct {
 
 // ConnectionListResponse 连接列表响应
 type ConnectionListResponse struct {
-	Connections interface{} `json:"connections"` // 实际类型依赖于CloudControl返回值
-	Total       int         `json:"total"`
-	MappingID   string      `json:"mapping_id,omitempty"`
-	ClientID    int64       `json:"client_id,omitempty"`
+	Connections []*models.ConnectionInfo `json:"connections"`
+	Total       int                       `json:"total"`
+	MappingID   string                    `json:"mapping_id,omitempty"`
+	ClientID    int64                     `json:"client_id,omitempty"`
 }
 
 // NodeListResponse 节点列表响应
@@ -72,7 +72,7 @@ type ValidateTokenResponse struct {
 }
 
 // ClaimClientResponse 认领客户端响应
-type ClaimClientResponse struct{
+type ClaimClientResponse struct {
 	ClientID  int64  `json:"client_id"`
 	AuthToken string `json:"auth_token"`
 }
@@ -87,3 +87,48 @@ type StatsResponse struct {
 	Data      interface{} `json:"data"` // 保留interface{}因为统计数据结构多样
 }
 
+// ====================
+// 操作响应类型
+// ====================
+
+// MessageResponse 消息响应
+type MessageResponse struct {
+	Message string `json:"message"`
+}
+
+// ConnectionCloseResponse 连接关闭响应
+type ConnectionCloseResponse struct {
+	Message string `json:"message"`
+	ConnID  string `json:"conn_id"`
+}
+
+// ConnectionCodeListResponse 连接码列表响应
+type ConnectionCodeListResponse struct {
+	Total int                      `json:"total"`
+	Codes []ConnectionCodeListItem `json:"codes"`
+}
+
+// MappingListWithDirectionResponse 映射列表响应（带方向）
+type MappingListWithDirectionResponse struct {
+	Total     int              `json:"total"`
+	Direction string           `json:"direction"`
+	Mappings  []MappingListItem `json:"mappings"`
+}
+
+// HealthResponse 健康检查响应
+type HealthResponse struct {
+	Ready  bool   `json:"ready"`
+	Status string `json:"status"`
+}
+
+// ConnectionCodeListItem 连接码列表项
+type ConnectionCodeListItem struct {
+	Code                string  `json:"code"`
+	TargetClientID      int64   `json:"target_client_id"`
+	TargetAddress       string  `json:"target_address"`
+	ActivationExpiresAt string  `json:"activation_expires_at"`
+	IsActivated         bool    `json:"is_activated"`
+	MappingID           *string `json:"mapping_id,omitempty"`
+	CreatedAt           string  `json:"created_at"`
+	Description         string  `json:"description,omitempty"`
+}

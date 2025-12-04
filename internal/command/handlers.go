@@ -64,7 +64,8 @@ func (h *TcpMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 	// 3. 创建端口映射
 	// 4. 返回映射结果
 
-	data, _ := json.Marshal(map[string]interface{}{"message": "TCP mapping created"})
+	resp := MessageResponse{Message: "TCP mapping created"}
+	data, _ := json.Marshal(resp)
 	return &CommandResponse{
 		Success:   true,
 		Data:      string(data),
@@ -95,7 +96,8 @@ func (h *HttpMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 
 	// HTTP端口映射逻辑尚未实现
 
-	data, _ := json.Marshal(map[string]interface{}{"message": "HTTP mapping created"})
+	resp := MessageResponse{Message: "HTTP mapping created"}
+	data, _ := json.Marshal(resp)
 	return &CommandResponse{
 		Success:   true,
 		Data:      string(data),
@@ -126,7 +128,8 @@ func (h *SocksMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) 
 
 	// SOCKS代理映射逻辑尚未实现
 
-	data, _ := json.Marshal(map[string]interface{}{"message": "SOCKS mapping created"})
+	resp := MessageResponse{Message: "SOCKS mapping created"}
+	data, _ := json.Marshal(resp)
 	return &CommandResponse{
 		Success:   true,
 		Data:      string(data),
@@ -160,7 +163,8 @@ func (h *DataInHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 	// 2. 准备数据传输通道
 	// 3. 通知相关组件
 
-	data, _ := json.Marshal(map[string]interface{}{"message": "Data input ready"})
+	resp := MessageResponse{Message: "Data input ready"}
+	data, _ := json.Marshal(resp)
 	return &CommandResponse{
 		Success:   true,
 		Data:      string(data),
@@ -191,7 +195,8 @@ func (h *DataOutHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 
 	// 数据输出处理逻辑尚未实现
 
-	data, _ := json.Marshal(map[string]interface{}{"message": "Data output ready"})
+	resp := MessageResponse{Message: "Data output ready"}
+	data, _ := json.Marshal(resp)
 	return &CommandResponse{
 		Success:   true,
 		Data:      string(data),
@@ -222,7 +227,8 @@ func (h *ForwardHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
 
 	// 服务端间转发逻辑尚未实现
 
-	data, _ := json.Marshal(map[string]interface{}{"message": "Forward setup complete"})
+	resp := MessageResponse{Message: "Forward setup complete"}
+	data, _ := json.Marshal(resp)
 	return &CommandResponse{
 		Success:   true,
 		Data:      string(data),
@@ -255,7 +261,8 @@ func (h *DisconnectHandler) Handle(ctx *CommandContext) (*CommandResponse, error
 	// Session会监听命令完成事件，然后执行实际的连接关闭操作
 	// 这里我们只返回成功响应，实际的关闭操作由Session处理
 
-	data, _ := json.Marshal(map[string]interface{}{"message": "Connection disconnect command received"})
+	resp := MessageResponse{Message: "Connection disconnect command received"}
+	data, _ := json.Marshal(resp)
 	return &CommandResponse{
 		Success:   true,
 		Data:      string(data),
@@ -290,7 +297,7 @@ func (h *RpcInvokeHandler) Handle(ctx *CommandContext) (*CommandResponse, error)
 	// 3. 执行RPC调用
 	// 4. 返回结果
 
-	var rpcRequest map[string]interface{}
+	var rpcRequest RPCRequest
 	if err := json.Unmarshal([]byte(ctx.RequestBody), &rpcRequest); err != nil {
 		return &CommandResponse{
 			Success:   false,
@@ -301,9 +308,9 @@ func (h *RpcInvokeHandler) Handle(ctx *CommandContext) (*CommandResponse, error)
 	}
 
 	// 模拟RPC调用结果
-	result := map[string]interface{}{
-		"method": rpcRequest["method"],
-		"result": "RPC call successful",
+	result := RPCResponse{
+		Method: rpcRequest.Method,
+		Result: "RPC call successful",
 	}
 
 	data, _ := json.Marshal(result)

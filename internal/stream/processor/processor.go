@@ -48,7 +48,6 @@ func NewDefaultStreamProcessor(
 	compressionReader *compression.GzipReader,
 	compressionWriter *compression.GzipWriter,
 	rateLimiter interface{}, // 改为interface{}以兼容旧代码
-	encryption interface{}, // 已废弃：加密功能已移至 internal/stream/transform 模块
 ) *DefaultStreamProcessor {
 	var streamRateLimiter *stream.RateLimiter
 	if rateLimiter != nil {

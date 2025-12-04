@@ -138,11 +138,11 @@ func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 	}
 
 	// 构造响应
-	resp := map[string]interface{}{
-		"code":           connCode.Code,
-		"target_address": connCode.TargetAddress,
-		"expires_at":     connCode.ActivationExpiresAt.Format(time.RFC3339),
-		"description":    connCode.Description,
+	resp := ConnectionCodeResponse{
+		Code:          connCode.Code,
+		TargetAddress: connCode.TargetAddress,
+		ExpiresAt:     connCode.ActivationExpiresAt.Format(time.RFC3339),
+		Description:   connCode.Description,
 	}
 
 	respBody, _ := json.Marshal(resp)
@@ -180,7 +180,7 @@ func (h *ListConnectionCodesHandler) Handle(ctx *command.CommandContext) (*comma
 	}
 
 	// 构造响应（过滤掉已过期的连接码）
-	codeInfos := make([]map[string]interface{}, 0, len(codes))
+	codeInfos := make([]ConnectionCodeInfo, 0, len(codes))
 	for _, code := range codes {
 		// 跳过已过期的连接码（不显示）
 		if code.IsExpired() && !code.IsActivated {
@@ -195,22 +195,26 @@ func (h *ListConnectionCodesHandler) Handle(ctx *command.CommandContext) (*comma
 			status = "activated"
 		}
 
-		codeInfo := map[string]interface{}{
-			"code":           code.Code,
-			"target_address": code.TargetAddress,
-			"status":         status,
-			"created_at":     code.CreatedAt.Format(time.RFC3339),
-			"expires_at":     code.ActivationExpiresAt.Format(time.RFC3339),
-			"activated":      code.IsActivated,
-			"activated_by":   code.ActivatedBy,
-			"description":    code.Description,
+		activatedByStr := ""
+		if code.ActivatedBy != nil {
+			activatedByStr = fmt.Sprintf("%d", *code.ActivatedBy)
+		}
+		codeInfo := ConnectionCodeInfo{
+			Code:          code.Code,
+			TargetAddress: code.TargetAddress,
+			Status:        status,
+			CreatedAt:     code.CreatedAt.Format(time.RFC3339),
+			ExpiresAt:     code.ActivationExpiresAt.Format(time.RFC3339),
+			Activated:     code.IsActivated,
+			ActivatedBy:   activatedByStr,
+			Description:   code.Description,
 		}
 		codeInfos = append(codeInfos, codeInfo)
 	}
 
-	resp := map[string]interface{}{
-		"codes": codeInfos,
-		"total": len(codeInfos),
+	resp := ConnectionCodeListResponse{
+		Codes: codeInfos,
+		Total: len(codeInfos),
 	}
 
 	respBody, _ := json.Marshal(resp)
@@ -268,11 +272,11 @@ func (h *ActivateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 		expiresAtStr = mapping.ExpiresAt.Format(time.RFC3339)
 	}
 
-	resp := map[string]interface{}{
-		"mapping_id":     mapping.ID,
-		"target_address": mapping.TargetAddress,
-		"listen_address": mapping.ListenAddress,
-		"expires_at":     expiresAtStr,
+	resp := MappingActivateResponse{
+		MappingID:     mapping.ID,
+		TargetAddress: mapping.TargetAddress,
+		ListenAddress: mapping.ListenAddress,
+		ExpiresAt:     expiresAtStr,
 	}
 
 	respBody, _ := json.Marshal(resp)

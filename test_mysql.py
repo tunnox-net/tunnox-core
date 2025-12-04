@@ -70,4 +70,3 @@ def test_mysql():
 if __name__ == "__main__":
     success = test_mysql()
     sys.exit(0 if success else 1)
-

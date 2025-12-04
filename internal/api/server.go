@@ -641,18 +641,20 @@ func (s *ManagementAPIServer) authMiddleware(next http.Handler) http.Handler {
 // 用于Kubernetes等容器编排系统的readiness probe
 func (s *ManagementAPIServer) handleReady(w http.ResponseWriter, r *http.Request) {
 	if s.healthManager == nil || s.healthManager.IsAcceptingConnections() {
-		s.respondJSON(w, http.StatusOK, map[string]interface{}{
-			"ready":  true,
-			"status": "accepting_connections",
-		})
+		response := HealthResponse{
+			Ready:  true,
+			Status: "accepting_connections",
+		}
+		s.respondJSON(w, http.StatusOK, response)
 		return
 	}
 
 	// 不接受新连接
+	response := HealthResponse{
+		Ready:  false,
+		Status: string(s.healthManager.GetStatus()),
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ready":  false,
-		"status": s.healthManager.GetStatus(),
-	})
+	json.NewEncoder(w).Encode(response)
 }
