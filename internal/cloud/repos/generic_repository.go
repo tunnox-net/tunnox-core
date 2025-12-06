@@ -125,7 +125,11 @@ func (r *GenericRepositoryImpl[T]) Delete(id string, keyPrefix string) error {
 
 // List 列出实体
 func (r *GenericRepositoryImpl[T]) List(listKey string) ([]T, error) {
-	data, err := r.storage.GetList(listKey)
+	listStore, ok := r.storage.(storage.ListStore)
+	if !ok {
+		return nil, fmt.Errorf("storage does not support list operations")
+	}
+	data, err := listStore.GetList(listKey)
 	if err != nil {
 		return []T{}, nil
 	}
@@ -146,22 +150,30 @@ func (r *GenericRepositoryImpl[T]) List(listKey string) ([]T, error) {
 
 // AddToList 添加实体到列表
 func (r *GenericRepositoryImpl[T]) AddToList(entity T, listKey string) error {
+	listStore, ok := r.storage.(storage.ListStore)
+	if !ok {
+		return fmt.Errorf("storage does not support list operations")
+	}
 	data, err := json.Marshal(entity)
 	if err != nil {
 		return err
 	}
 
-	return r.storage.AppendToList(listKey, string(data))
+	return listStore.AppendToList(listKey, string(data))
 }
 
 // RemoveFromList 从列表移除实体
 func (r *GenericRepositoryImpl[T]) RemoveFromList(entity T, listKey string) error {
+	listStore, ok := r.storage.(storage.ListStore)
+	if !ok {
+		return fmt.Errorf("storage does not support list operations")
+	}
 	data, err := json.Marshal(entity)
 	if err != nil {
 		return err
 	}
 
-	return r.storage.RemoveFromList(listKey, string(data))
+	return listStore.RemoveFromList(listKey, string(data))
 }
 
 // getEntityID 获取实体ID

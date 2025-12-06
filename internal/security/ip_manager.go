@@ -399,7 +399,11 @@ func (m *IPManager) loadListFromStorage(ipType IPType) error {
 	}
 	
 	// 获取IP列表
-	ips, err := m.storage.GetList(indexKey)
+	listStore, ok := m.storage.(storage.ListStore)
+	if !ok {
+		return fmt.Errorf("storage does not support list operations")
+	}
+	ips, err := listStore.GetList(indexKey)
 	if err != nil {
 		if err == storage.ErrKeyNotFound {
 			return nil // 没有数据，不是错误
@@ -479,7 +483,11 @@ func (m *IPManager) saveToStorage(ipType IPType, ip string, record *IPRecord) er
 	}
 	
 	// 添加到索引
-	if err := m.storage.AppendToList(indexKey, ip); err != nil {
+	listStore, ok := m.storage.(storage.ListStore)
+	if !ok {
+		return fmt.Errorf("storage does not support list operations")
+	}
+	if err := listStore.AppendToList(indexKey, ip); err != nil {
 		return fmt.Errorf("failed to add to index: %w", err)
 	}
 	
@@ -513,7 +521,11 @@ func (m *IPManager) removeFromStorage(ipType IPType, ip string) error {
 	}
 	
 	// 从索引移除
-	if err := m.storage.RemoveFromList(indexKey, ip); err != nil {
+	listStore, ok := m.storage.(storage.ListStore)
+	if !ok {
+		return fmt.Errorf("storage does not support list operations")
+	}
+	if err := listStore.RemoveFromList(indexKey, ip); err != nil {
 		return fmt.Errorf("failed to remove from index: %w", err)
 	}
 	

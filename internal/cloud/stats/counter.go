@@ -27,8 +27,41 @@ type StatsCounter struct {
 	cacheTTL     time.Duration
 }
 
+// getHashStore 获取 HashStore 接口（如果支持）
+func (sc *StatsCounter) getHashStore() (interface {
+	SetHash(key string, field string, value interface{}) error
+	GetHash(key string, field string) (interface{}, error)
+	GetAllHash(key string) (map[string]interface{}, error)
+	DeleteHash(key string, field string) error
+}, error) {
+	// 优先使用 FullStorage
+	if fullStorage, ok := sc.storage.(storage.FullStorage); ok {
+		return fullStorage, nil
+	}
+	// 尝试直接类型断言
+	if hs, ok := sc.storage.(interface {
+		SetHash(key string, field string, value interface{}) error
+		GetHash(key string, field string) (interface{}, error)
+		GetAllHash(key string) (map[string]interface{}, error)
+		DeleteHash(key string, field string) error
+	}); ok {
+		return hs, nil
+	}
+	return nil, fmt.Errorf("storage does not support hash operations")
+}
+
 // NewStatsCounter 创建统计计数器
 func NewStatsCounter(storage storage.Storage, ctx context.Context) *StatsCounter {
+	// 验证存储支持 HashStore 接口（通过方法检查）
+	if _, ok := storage.(interface {
+		SetHash(key string, field string, value interface{}) error
+		GetHash(key string, field string) (interface{}, error)
+		GetAllHash(key string) (map[string]interface{}, error)
+		DeleteHash(key string, field string) error
+	}); !ok {
+		panic("storage does not support hash operations (required for StatsCounter)")
+	}
+
 	counter := &StatsCounter{
 		storage:      storage,
 		ctx:          ctx,
@@ -92,7 +125,11 @@ func (sc *StatsCounter) IncrNode(delta int64) error {
 
 // SetOnlineClients 设置在线客户端数 (运行时，非持久化)
 func (sc *StatsCounter) SetOnlineClients(count int64) error {
-	return sc.storage.SetHash(RuntimeStatsKey, "online_clients", count)
+	hs, err := sc.getHashStore()
+	if err != nil {
+		return err
+	}
+	return hs.SetHash(RuntimeStatsKey, "online_clients", count)
 }
 
 // IncrOnlineClients 增加/减少在线客户端数 (运行时)
@@ -107,7 +144,11 @@ func (sc *StatsCounter) IncrOnlineClients(delta int64) error {
 
 // SetActiveMappings 设置活跃映射数 (运行时)
 func (sc *StatsCounter) SetActiveMappings(count int64) error {
-	return sc.storage.SetHash(RuntimeStatsKey, "active_mappings", count)
+	hs, err := sc.getHashStore()
+	if err != nil {
+		return err
+	}
+	return hs.SetHash(RuntimeStatsKey, "active_mappings", count)
 }
 
 // IncrActiveMappings 增加/减少活跃映射数 (运行时)
@@ -122,7 +163,11 @@ func (sc *StatsCounter) IncrActiveMappings(delta int64) error {
 
 // SetOnlineNodes 设置在线节点数 (运行时)
 func (sc *StatsCounter) SetOnlineNodes(count int64) error {
-	return sc.storage.SetHash(RuntimeStatsKey, "online_nodes", count)
+	hs, err := sc.getHashStore()
+	if err != nil {
+		return err
+	}
+	return hs.SetHash(RuntimeStatsKey, "online_nodes", count)
 }
 
 // IncrAnonymousUsers 增加/减少匿名用户数 (运行时)
@@ -165,13 +210,17 @@ func (sc *StatsCounter) GetGlobalStats() (*SystemStats, error) {
 // getStatsFromStorage 从存储获取统计数据
 func (sc *StatsCounter) getStatsFromStorage() (*SystemStats, error) {
 	// 获取持久化统计
-	persistent, err := sc.storage.GetAllHash(PersistentStatsKey)
+	hs, err := sc.getHashStore()
+	if err != nil {
+		return nil, err
+	}
+	persistent, err := hs.GetAllHash(PersistentStatsKey)
 	if err != nil && err != storage.ErrKeyNotFound {
 		return nil, fmt.Errorf("failed to get persistent stats: %w", err)
 	}
 
 	// 获取运行时统计
-	runtime, err := sc.storage.GetAllHash(RuntimeStatsKey)
+	runtime, err := hs.GetAllHash(RuntimeStatsKey)
 	if err != nil && err != storage.ErrKeyNotFound {
 		return nil, fmt.Errorf("failed to get runtime stats: %w", err)
 	}
@@ -244,7 +293,11 @@ func (sc *StatsCounter) Initialize() error {
 		}
 
 		for field, value := range persistentCounters {
-			if err := sc.storage.SetHash(PersistentStatsKey, field, value); err != nil {
+			hs, err := sc.getHashStore()
+			if err != nil {
+				return err
+			}
+			if err := hs.SetHash(PersistentStatsKey, field, value); err != nil {
 				return fmt.Errorf("failed to initialize persistent counter %s: %w", field, err)
 			}
 		}
@@ -261,7 +314,11 @@ func (sc *StatsCounter) Initialize() error {
 	}
 
 	for field, value := range runtimeCounters {
-		if err := sc.storage.SetHash(RuntimeStatsKey, field, value); err != nil {
+		hs, err := sc.getHashStore()
+		if err != nil {
+			return err
+		}
+		if err := hs.SetHash(RuntimeStatsKey, field, value); err != nil {
 			return fmt.Errorf("failed to initialize runtime counter %s: %w", field, err)
 		}
 	}
@@ -280,7 +337,11 @@ func (sc *StatsCounter) Rebuild(stats *SystemStats) error {
 	}
 
 	for field, value := range persistentCounters {
-		if err := sc.storage.SetHash(PersistentStatsKey, field, value); err != nil {
+		hs, err := sc.getHashStore()
+		if err != nil {
+			return err
+		}
+		if err := hs.SetHash(PersistentStatsKey, field, value); err != nil {
 			return fmt.Errorf("failed to rebuild persistent counter %s: %w", field, err)
 		}
 	}
@@ -296,7 +357,11 @@ func (sc *StatsCounter) Rebuild(stats *SystemStats) error {
 	}
 
 	for field, value := range runtimeCounters {
-		if err := sc.storage.SetHash(RuntimeStatsKey, field, value); err != nil {
+		hs, err := sc.getHashStore()
+		if err != nil {
+			return err
+		}
+		if err := hs.SetHash(RuntimeStatsKey, field, value); err != nil {
 			return fmt.Errorf("failed to rebuild runtime counter %s: %w", field, err)
 		}
 	}
@@ -333,7 +398,11 @@ func (sc *StatsCounter) EnableCache() {
 // incrHashField 增加Hash字段的值
 func (sc *StatsCounter) incrHashField(key, field string, delta int64) error {
 	// 获取当前值
-	val, err := sc.storage.GetHash(key, field)
+	hs, err := sc.getHashStore()
+	if err != nil {
+		return err
+	}
+	val, err := hs.GetHash(key, field)
 	if err != nil && err != storage.ErrKeyNotFound {
 		return err
 	}
@@ -351,6 +420,6 @@ func (sc *StatsCounter) incrHashField(key, field string, delta int64) error {
 	newVal := currentVal + delta
 
 	// 设置新值
-	return sc.storage.SetHash(key, field, newVal)
+	return hs.SetHash(key, field, newVal)
 }
 

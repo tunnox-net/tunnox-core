@@ -8,6 +8,7 @@ import (
 	constants2 "tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/storage"
 )
 
 // ClientRepository 客户端数据访问
@@ -116,7 +117,11 @@ func (r *ClientRepository) saveUserClients(userID string, clients []*models.Clie
 		data = append(data, string(clientData))
 	}
 
-	return r.storage.SetList(key, data, constants2.DefaultUserDataTTL)
+	listStore, ok := r.storage.(storage.ListStore)
+	if !ok {
+		return fmt.Errorf("storage does not support list operations")
+	}
+	return listStore.SetList(key, data, constants2.DefaultUserDataTTL)
 }
 
 // TouchClient 刷新客户端的LastSeen和延长过期时间

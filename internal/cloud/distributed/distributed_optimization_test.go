@@ -98,8 +98,15 @@ func TestStorageAtomicOperations(t *testing.T) {
 	defer storage.Close()
 
 	t.Run("SetNX Operations", func(t *testing.T) {
+		casStore, ok := storage.(interface {
+			SetNX(key string, value interface{}, ttl time.Duration) (bool, error)
+			CompareAndSwap(key string, oldValue, newValue interface{}, ttl time.Duration) (bool, error)
+		})
+		if !ok {
+			t.Skip("storage does not support CAS operations")
+		}
 		// 测试SetNX成功
-		success, err := storage.SetNX("test_key", "test_value", 5*time.Second)
+		success, err := casStore.SetNX("test_key", "test_value", 5*time.Second)
 		if err != nil {
 			t.Fatalf("Failed to SetNX: %v", err)
 		}
@@ -108,7 +115,7 @@ func TestStorageAtomicOperations(t *testing.T) {
 		}
 
 		// 测试SetNX失败（键已存在）
-		success, err = storage.SetNX("test_key", "another_value", 5*time.Second)
+		success, err = casStore.SetNX("test_key", "another_value", 5*time.Second)
 		if err != nil {
 			t.Fatalf("Failed to SetNX: %v", err)
 		}
@@ -134,7 +141,14 @@ func TestStorageAtomicOperations(t *testing.T) {
 		}
 
 		// 测试CompareAndSwap成功
-		success, err := storage.CompareAndSwap("cas_key", "old_value", "new_value", 5*time.Second)
+		casStore, ok := storage.(interface {
+			SetNX(key string, value interface{}, ttl time.Duration) (bool, error)
+			CompareAndSwap(key string, oldValue, newValue interface{}, ttl time.Duration) (bool, error)
+		})
+		if !ok {
+			t.Skip("storage does not support CAS operations")
+		}
+		success, err := casStore.CompareAndSwap("cas_key", "old_value", "new_value", 5*time.Second)
 		if err != nil {
 			t.Fatalf("Failed to CompareAndSwap: %v", err)
 		}

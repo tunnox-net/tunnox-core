@@ -65,8 +65,12 @@ func (r *ConnectionCodeRepository) Create(code *models.TunnelConnectionCode) err
 	}
 	
 	// 4. 添加到TargetClient的索引列表
+	listStore, ok := r.storage.(storage.ListStore)
+	if !ok {
+		return fmt.Errorf("storage does not support list operations")
+	}
 	indexKey := constants.KeyPrefixIndexConnectionCodeByTarget + fmt.Sprintf("%d", code.TargetClientID)
-	if err := r.storage.AppendToList(indexKey, code.ID); err != nil {
+	if err := listStore.AppendToList(indexKey, code.ID); err != nil {
 		// 回滚
 		_ = r.storage.Delete(keyByCode)
 		_ = r.storage.Delete(keyByID)
@@ -139,7 +143,11 @@ func (r *ConnectionCodeRepository) ListByTargetClient(targetClientID int64) ([]*
 	indexKey := constants.KeyPrefixIndexConnectionCodeByTarget + fmt.Sprintf("%d", targetClientID)
 	
 	// 1. 获取ID列表
-	ids, err := r.storage.GetList(indexKey)
+	listStore, ok := r.storage.(storage.ListStore)
+	if !ok {
+		return nil, fmt.Errorf("storage does not support list operations")
+	}
+	ids, err := listStore.GetList(indexKey)
 	if err != nil {
 		if errors.Is(err, storage.ErrKeyNotFound) {
 			return []*models.TunnelConnectionCode{}, nil
@@ -159,7 +167,7 @@ func (r *ConnectionCodeRepository) ListByTargetClient(targetClientID int64) ([]*
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
 				// 连接码可能已过期自动删除，从索引中移除
-				_ = r.storage.RemoveFromList(indexKey, idStr)
+				_ = listStore.RemoveFromList(indexKey, idStr)
 				continue
 			}
 			return nil, fmt.Errorf("failed to get connection code %s: %w", idStr, err)
@@ -232,8 +240,12 @@ func (r *ConnectionCodeRepository) Delete(id string) error {
 	}
 	
 	// 4. 从TargetClient的索引列表中移除
+	listStore, ok := r.storage.(storage.ListStore)
+	if !ok {
+		return fmt.Errorf("storage does not support list operations")
+	}
 	indexKey := constants.KeyPrefixIndexConnectionCodeByTarget + fmt.Sprintf("%d", code.TargetClientID)
-	if err := r.storage.RemoveFromList(indexKey, code.ID); err != nil && !errors.Is(err, storage.ErrKeyNotFound) {
+	if err := listStore.RemoveFromList(indexKey, code.ID); err != nil && !errors.Is(err, storage.ErrKeyNotFound) {
 		return fmt.Errorf("failed to remove from target client index: %w", err)
 	}
 	

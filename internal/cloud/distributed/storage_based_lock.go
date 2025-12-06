@@ -27,7 +27,11 @@ func (s *StorageBasedLock) Acquire(key string, ttl time.Duration) (bool, error) 
 	lockValue := fmt.Sprintf("%s:%d", s.owner, time.Now().UnixNano())
 
 	// 使用存储层的原子操作尝试获取锁
-	acquired, err := s.storage.SetNX(lockKey, lockValue, ttl)
+	casStore, ok := s.storage.(storage.CASStore)
+	if !ok {
+		return false, fmt.Errorf("storage does not support CAS operations")
+	}
+	acquired, err := casStore.SetNX(lockKey, lockValue, ttl)
 	if err != nil {
 		utils.Errorf("Failed to acquire lock %s: %v", key, err)
 		return false, fmt.Errorf("acquire lock failed: %w", err)
@@ -133,7 +137,11 @@ func (s *StorageBasedLock) RenewLock(key string, ttl time.Duration) (bool, error
 	if lockValue, ok := currentValue.(string); ok {
 		if s.isOwner(lockValue) {
 			// 使用原子操作续期锁
-			success, err := s.storage.CompareAndSwap(lockKey, lockValue, lockValue, ttl)
+			casStore, ok := s.storage.(storage.CASStore)
+			if !ok {
+				return false, fmt.Errorf("storage does not support CAS operations")
+			}
+			success, err := casStore.CompareAndSwap(lockKey, lockValue, lockValue, ttl)
 			if err != nil {
 				return false, fmt.Errorf("renew lock failed: %w", err)
 			}

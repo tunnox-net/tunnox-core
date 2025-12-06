@@ -36,13 +36,13 @@ type TypedStorage[T any] interface {
 	CompareAndSwap(key string, oldValue, newValue T, ttl time.Duration) (bool, error)
 
 	// 底层存储
-	Underlying() Storage
+	Underlying() FullStorage
 }
 
 // typedStorageAdapter 泛型存储适配器
 // 将 Storage 接口适配为类型安全的 TypedStorage
 type typedStorageAdapter[T any] struct {
-	storage Storage
+	storage FullStorage // 使用 FullStorage 以支持所有功能
 }
 
 // NewTypedStorage 创建泛型类型安全存储
@@ -52,8 +52,15 @@ type typedStorageAdapter[T any] struct {
 //	int64Storage := NewTypedStorage[int64](storage)
 //	userStorage := NewTypedStorage[*models.User](storage)
 func NewTypedStorage[T any](storage Storage) TypedStorage[T] {
+	// 将 Storage 转换为 FullStorage（所有现有实现都实现了 FullStorage）
+	fullStorage, ok := storage.(FullStorage)
+	if !ok {
+		// 如果存储不支持 FullStorage，创建一个适配器
+		// 注意：这需要存储实现所有扩展接口
+		panic("storage does not implement FullStorage interface")
+	}
 	return &typedStorageAdapter[T]{
-		storage: storage,
+		storage: fullStorage,
 	}
 }
 
@@ -201,7 +208,7 @@ func (t *typedStorageAdapter[T]) CompareAndSwap(key string, oldValue, newValue T
 }
 
 // Underlying 返回底层存储
-func (t *typedStorageAdapter[T]) Underlying() Storage {
+func (t *typedStorageAdapter[T]) Underlying() FullStorage {
 	return t.storage
 }
 

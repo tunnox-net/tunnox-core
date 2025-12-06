@@ -86,8 +86,12 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 	lockKey := fmt.Sprintf("lock:cleanup_task:%s", taskID)
 
 	// 使用存储层的原子操作获取锁
+	casStore, ok := cm.storage.(storage.CASStore)
+	if !ok {
+		return nil, false, fmt.Errorf("storage does not support CAS operations")
+	}
 	lockValue := fmt.Sprintf("cleanup_manager:%d", time.Now().UnixNano())
-	acquired, err := cm.storage.SetNX(lockKey, lockValue, 5*time.Minute) // 5分钟锁超时
+	acquired, err := casStore.SetNX(lockKey, lockValue, 5*time.Minute) // 5分钟锁超时
 	if err != nil {
 		return nil, false, fmt.Errorf("acquire lock failed: %w", err)
 	}
@@ -132,8 +136,8 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 		return nil, false, fmt.Errorf("marshal updated task failed: %w", err)
 	}
 
-	// 使用原子操作更新任务状态
-	success, err := cm.storage.CompareAndSwap(key, taskData, string(dataBytes), 0)
+	// 使用原子操作更新任务状态（casStore 已在上面定义）
+	success, err := casStore.CompareAndSwap(key, taskData, string(dataBytes), 0)
 	if err != nil {
 		cm.storage.Delete(lockKey) // 释放锁
 		return nil, false, fmt.Errorf("update task failed: %w", err)
@@ -185,7 +189,12 @@ func (cm *CleanupManager) CompleteCleanupTask(ctx context.Context, taskType stri
 	}
 
 	// 使用原子操作更新任务状态
-	success, err := cm.storage.CompareAndSwap(key, taskData, string(dataBytes), 0)
+	casStore, ok := cm.storage.(storage.CASStore)
+	if !ok {
+		cm.storage.Delete(lockKey) // 释放锁
+		return fmt.Errorf("storage does not support CAS operations")
+	}
+	success, err := casStore.CompareAndSwap(key, taskData, string(dataBytes), 0)
 	if err != nil {
 		return fmt.Errorf("update completed task failed: %w", err)
 	}
