@@ -84,6 +84,8 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 			// 使用接口而不是具体类型
 			SetKeepAliveIfSupported(conn, true)
 		}
+	case "udp":
+		conn, err = dialUDP(c.Ctx(), address)
 	case "websocket":
 		conn, err = dialWebSocket(c.Ctx(), address)
 	case "quic":
@@ -129,7 +131,9 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 		strings.ToUpper(protocol), localAddr, remoteAddr)
 
 	// 发送握手请求
+	utils.Infof("Client: calling sendHandshake() for %s connection", strings.ToUpper(protocol))
 	if err := c.sendHandshake(); err != nil {
+		utils.Errorf("Client: sendHandshake() failed for %s connection: %v", strings.ToUpper(protocol), err)
 		c.mu.Lock()
 		if c.controlStream != nil {
 			c.controlStream.Close()

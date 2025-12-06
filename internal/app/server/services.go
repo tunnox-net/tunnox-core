@@ -143,6 +143,8 @@ func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Contex
 	switch protocolName {
 	case "tcp":
 		return adapter.NewTcpAdapter(ctx, pf.session), nil
+	case "udp":
+		return adapter.NewUdpAdapter(ctx, pf.session), nil
 	case "websocket":
 		return adapter.NewWebSocketAdapter(ctx, pf.session), nil
 	case "quic":

@@ -83,9 +83,13 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		Payload:    reqData,
 	}
 
-	if _, err := stream.WritePacket(handshakePkt, true, 0); err != nil {
+	utils.Infof("Client: sending handshake request, stream type=%T", stream)
+	bytesWritten, err := stream.WritePacket(handshakePkt, true, 0)
+	if err != nil {
+		utils.Errorf("Client: failed to send handshake: %v", err)
 		return fmt.Errorf("failed to send handshake: %w", err)
 	}
+	utils.Infof("Client: handshake request sent successfully, bytes=%d", bytesWritten)
 
 	// 等待握手响应（忽略心跳包）
 	var respPkt *packet.TransferPacket

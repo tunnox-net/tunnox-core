@@ -78,6 +78,8 @@ func (c *TunnoxClient) Connect() error {
 				// 配置 TCP 连接选项
 				SetKeepAliveIfSupported(resultConn, true)
 			}
+		case "udp":
+			resultConn, resultErr = dialUDP(connectCtx, c.config.Server.Address)
 		case "websocket":
 			resultConn, resultErr = dialWebSocket(connectCtx, c.config.Server.Address)
 		case "quic":
@@ -172,7 +174,9 @@ func (c *TunnoxClient) Connect() error {
 		strings.ToUpper(protocol), localAddr, remoteAddr, c.controlStream)
 
 	// 3. 发送握手请求
+	utils.Infof("Client: calling sendHandshake() for %s connection in control_connection.go", strings.ToUpper(protocol))
 	if err := c.sendHandshake(); err != nil {
+		utils.Errorf("Client: sendHandshake() failed for %s connection in control_connection.go: %v", strings.ToUpper(protocol), err)
 		// 握手失败，清理连接资源
 		c.mu.Lock()
 		if c.controlStream != nil {
