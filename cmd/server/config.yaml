@@ -102,4 +102,8 @@ management_api:
     enabled: true              # 是否启用 pprof（默认启用，需要密钥访问）
     data_dir: "logs/pprof"     # pprof 数据保存目录
     retention: 10              # 保留分钟数（默认10分钟，最多保留10份文件）
-    auto_capture: true         # 是否自动抓取（每分钟抓取一次） 
+    auto_capture: true         # 是否自动抓取（每分钟抓取一次）
+
+# Metrics 配置
+metrics:
+  type: memory  # memory | prometheus（单文件运行使用 memory） 

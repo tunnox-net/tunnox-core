@@ -12,7 +12,9 @@ import (
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
+	"tunnox-core/internal/core/metrics"
 	"tunnox-core/internal/core/node"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/health"
@@ -75,6 +77,23 @@ func New(config *Config, parentCtx context.Context) *Server {
 	if err != nil {
 		utils.Fatalf("Failed to create storage: %v", err)
 	}
+
+	// ✅ 初始化 Metrics（在 Storage 之后）
+	metricsFactory := metrics.NewMetricsFactory(parentCtx)
+	metricsType := metrics.MetricsType(config.Metrics.Type)
+	if metricsType == "" {
+		metricsType = metrics.MetricsTypeMemory // 默认使用 memory
+	}
+	serverMetrics, err := metricsFactory.CreateMetrics(metricsType)
+	if err != nil {
+		utils.Fatalf("Failed to create metrics: %v", err)
+	}
+	metrics.SetGlobalMetrics(serverMetrics)
+	// 注册到 dispose 包，用于记录释放计数（避免循环依赖）
+	metrics.RegisterDisposeCounter(func(fn func()) {
+		dispose.SetIncrementDisposeCountFunc(fn)
+	})
+	utils.Infof("Metrics initialized: type=%s", metricsType)
 
 	// ✅ 使用BuiltinCloudControl并传入HybridStorage（替代旧的nil storage）
 	cloudControlConfig := managers.DefaultConfig()          // 使用默认配置

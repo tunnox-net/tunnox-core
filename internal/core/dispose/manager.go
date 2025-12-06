@@ -190,10 +190,28 @@ func DisposeAllGlobalResourcesWithTimeout(timeout time.Duration) *DisposeResult 
 	return globalResourceManager.DisposeWithTimeout(timeout)
 }
 
-// 全局释放计数器
-var disposeCount int64
+// IncrementDisposeCountFunc 释放计数函数类型（用于依赖注入，避免循环依赖）
+type IncrementDisposeCountFunc func()
+
+var (
+	// incrementDisposeCountFunc 全局释放计数函数（由 metrics 包在初始化时设置）
+	incrementDisposeCountFunc IncrementDisposeCountFunc
+	disposeCounterMu          sync.RWMutex
+)
+
+// SetIncrementDisposeCountFunc 设置全局释放计数函数（由 metrics 包在初始化时调用）
+func SetIncrementDisposeCountFunc(fn IncrementDisposeCountFunc) {
+	disposeCounterMu.Lock()
+	defer disposeCounterMu.Unlock()
+	incrementDisposeCountFunc = fn
+}
 
 // IncrementDisposeCount 增加释放计数（用于监控）
 func IncrementDisposeCount() {
-	disposeCount++
+	disposeCounterMu.RLock()
+	fn := incrementDisposeCountFunc
+	disposeCounterMu.RUnlock()
+	if fn != nil {
+		fn()
+	}
 }

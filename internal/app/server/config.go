@@ -161,6 +161,11 @@ type UDPIngressConfig struct {
 	Listeners []UDPIngressListenerConfig `yaml:"listeners"`
 }
 
+// MetricsConfig Metrics 配置
+type MetricsConfig struct {
+	Type string `yaml:"type"` // memory | prometheus
+}
+
 // StorageConfig 存储配置
 type StorageConfig struct {
 	Type   string                  `yaml:"type"`   // memory | redis | hybrid
@@ -242,6 +247,7 @@ type Config struct {
 	BridgePool    BridgePoolConfig    `yaml:"bridge_pool"`
 	ManagementAPI ManagementAPIConfig `yaml:"management_api"`
 	UDPIngress    UDPIngressConfig    `yaml:"udp_ingress"`
+	Metrics       MetricsConfig       `yaml:"metrics"`
 }
 
 // LoadConfig 加载配置文件
@@ -635,6 +641,9 @@ func GetDefaultConfig() *Config {
 		UDPIngress: UDPIngressConfig{
 			Enabled:   false,
 			Listeners: []UDPIngressListenerConfig{},
+		},
+		Metrics: MetricsConfig{
+			Type: "memory", // 默认使用 memory
 		},
 	}
 }

@@ -22,12 +22,11 @@ type ServerEndpoint struct {
 }
 
 // DefaultServerEndpoints 默认服务器端点列表（按优先级排序）
-// 优先级从高到低：quic > tcp > websocket > udp > httppoll
+// 优先级从高到低：quic > tcp > websocket > httppoll
 var DefaultServerEndpoints = []ServerEndpoint{
 	{Protocol: "quic", Address: "gw.tunnox.net:443"},
 	{Protocol: "tcp", Address: "gw.tunnox.net:8000"},
 	{Protocol: "websocket", Address: "https://gw.tunnox.net/_tunnox"},
-	{Protocol: "udp", Address: "gw.tunnox.net:8000"},
 	{Protocol: "httppoll", Address: "https://gw.tunnox.net"},
 }
 
@@ -73,7 +72,7 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 
 	// 为每个端点启动连接尝试
 	// 高优先级（前3个：quic, tcp, websocket）立即启动
-	// 低优先级（后2个：udp, httppoll）延迟2秒启动
+	// 低优先级（httppoll）延迟2秒启动
 	highPriorityCount := 3
 	for i, endpoint := range DefaultServerEndpoints {
 		wg.Add(1)

@@ -192,7 +192,9 @@ func (m *SessionTokenManager) DecodeToken(tokenStr string) (*SessionToken, error
 // generateSessionTokenID 生成Session Token ID
 func generateSessionTokenID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("crypto/rand failed in generateSessionTokenID: %v", err))
+	}
 	return hex.EncodeToString(b)
 }
 

@@ -57,6 +57,11 @@ func ApplyEnvOverrides(config *Config) {
 	if v := os.Getenv("MESSAGE_BROKER_NODE_ID"); v != "" {
 		config.MessageBroker.NodeID = v
 	}
+
+	// Metrics 配置
+	if v := os.Getenv("METRICS_TYPE"); v != "" {
+		config.Metrics.Type = v
+	}
 	if v := os.Getenv("MESSAGE_BROKER_REDIS_ADDR"); v != "" {
 		config.MessageBroker.Redis.Addr = v
 	}

@@ -198,14 +198,18 @@ func (m *ReconnectTokenManager) DecodeToken(tokenStr string) (*ReconnectToken, e
 // generateTokenID 生成Token ID
 func generateTokenID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("crypto/rand failed in generateTokenID: %v", err))
+	}
 	return hex.EncodeToString(b)
 }
 
 // generateNonce 生成随机Nonce
 func generateNonce() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		panic(fmt.Sprintf("crypto/rand failed in generateNonce: %v", err))
+	}
 	return hex.EncodeToString(b)
 }
 
