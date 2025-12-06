@@ -122,6 +122,18 @@ func (m *MemoryBroker) Unsubscribe(ctx context.Context, topic string) error {
 	return nil
 }
 
+// Ping 检查内存消息代理状态（内存 broker 总是健康的）
+func (m *MemoryBroker) Ping(ctx context.Context) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.closed {
+		return fmt.Errorf("broker is closed")
+	}
+
+	return nil
+}
+
 // Close 关闭消息代理
 func (m *MemoryBroker) Close() error {
 	m.mu.Lock()

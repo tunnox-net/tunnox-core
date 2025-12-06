@@ -9,6 +9,7 @@ import (
 	"tunnox-core/internal/api"
 	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
+	"tunnox-core/internal/health"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -238,5 +239,45 @@ func (s *Server) createManagementAPI(ctx context.Context) *api.ManagementAPIServ
 	}
 
 	apiServer := api.NewManagementAPIServer(ctx, apiConfig, s.cloudControl, s.connCodeService, s.healthManager)
+
+	// 注册健康检查器（检查各子系统状态）
+	var storageChecker health.StorageChecker
+	var brokerChecker health.BrokerChecker
+	var sessionManagerChecker health.SessionManagerChecker
+
+	// 注册存储检查器
+	if s.storage != nil {
+		storageChecker = health.NewStorageAdapter(s.storage)
+	}
+
+	// 注册消息代理检查器
+	if s.messageBroker != nil {
+		// 检查是否实现了 Ping 方法
+		if pingBroker, ok := s.messageBroker.(interface {
+			Ping(ctx context.Context) error
+		}); ok {
+			brokerChecker = &brokerPingAdapter{broker: pingBroker}
+		}
+	}
+
+	// 注册协议子系统检查器（使用 SessionManager）
+	if s.session != nil {
+		sessionManagerChecker = s.session
+	}
+
+	// 注册所有检查器
+	apiServer.SetHealthCheckers(storageChecker, brokerChecker, sessionManagerChecker)
+
 	return apiServer
+}
+
+// brokerPingAdapter 消息代理 Ping 适配器
+type brokerPingAdapter struct {
+	broker interface {
+		Ping(ctx context.Context) error
+	}
+}
+
+func (a *brokerPingAdapter) Ping(ctx context.Context) error {
+	return a.broker.Ping(ctx)
 }

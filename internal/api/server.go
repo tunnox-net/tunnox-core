@@ -170,6 +170,7 @@ type ManagementAPIServer struct {
 
 	// 健康检查
 	healthManager *health.HealthManager
+	healthHandler *HealthHandler
 
 	// pprof 自动抓取器
 	pprofCapture *PProfCapture
@@ -239,6 +240,7 @@ func NewManagementAPIServer(
 		cloudControl:  cloudControl,
 		router:        mux.NewRouter(),
 		healthManager: healthManager,
+		healthHandler: NewHealthHandler(healthManager),
 	}
 
 	// 初始化连接码handlers（如果提供了service）
@@ -316,6 +318,7 @@ func (s *ManagementAPIServer) registerRoutes() {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	healthRouter := s.router.PathPrefix("/tunnox/v1").Subrouter()
 	healthRouter.HandleFunc("/health", s.handleHealth).Methods("GET")
+	healthRouter.HandleFunc("/healthz", s.handleHealthz).Methods("GET") // 增强的健康检查（检查各子系统）
 	healthRouter.HandleFunc("/ready", s.handleReady).Methods("GET")
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -433,18 +436,20 @@ func (s *ManagementAPIServer) registerPProfRoutes() {
 		return
 	}
 
-	// pprof 路由需要认证（如果配置了认证），统一到 /tunnox/v1/debug/pprof
-	pprofRouter := s.router.PathPrefix("/tunnox/v1/debug/pprof").Subrouter()
+	// 创建标准化 pprof 处理器
+	pprofHandler := NewPProfHandler(true)
 
-	// 应用认证中间件（如果需要）
+	// 确定是否应用认证中间件
+	var authMiddleware mux.MiddlewareFunc
 	if s.config.Auth.Type != "none" {
-		pprofRouter.Use(s.authMiddleware)
+		authMiddleware = s.authMiddleware
 	}
 
-	// 注册 pprof 路由（使用 http.DefaultServeMux，它已经注册了所有 pprof 路由）
-	pprofRouter.PathPrefix("/").Handler(http.DefaultServeMux)
+	// 注册路由（标准化接口，带权限保护）
+	pprofHandler.RegisterRoutes(s.router, authMiddleware)
 
 	utils.Infof("ManagementAPIServer: pprof enabled at http://%s/tunnox/v1/debug/pprof/", s.config.ListenAddr)
+	utils.Infof("ManagementAPIServer: pprof routes require authentication: %v", s.config.Auth.Type != "none")
 }
 
 // ResponseData 统一响应结构
@@ -505,6 +510,31 @@ func (s *ManagementAPIServer) handleHealth(w http.ResponseWriter, r *http.Reques
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(info)
+}
+
+// handleHealthz 增强的健康检查（检查各子系统）
+func (s *ManagementAPIServer) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if s.healthHandler == nil {
+		// 如果没有配置 HealthHandler，返回简单的 OK
+		s.respondJSON(w, http.StatusOK, map[string]string{
+			"status": "ok",
+			"time":   time.Now().Format(time.RFC3339),
+		})
+		return
+	}
+
+	s.healthHandler.HandleHealthz(w, r)
+}
+
+// SetHealthCheckers 设置健康检查器（用于注册各子系统）
+func (s *ManagementAPIServer) SetHealthCheckers(
+	storageChecker health.StorageChecker,
+	brokerChecker health.BrokerChecker,
+	sessionManagerChecker health.SessionManagerChecker,
+) {
+	if s.healthHandler != nil {
+		s.healthHandler.RegisterCheckers(storageChecker, brokerChecker, sessionManagerChecker)
+	}
 }
 
 // getInt64PathVar 获取路径参数（int64）

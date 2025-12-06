@@ -236,6 +236,22 @@ func (r *RedisBroker) Unsubscribe(ctx context.Context, topic string) error {
 	return nil
 }
 
+// Ping 检查 Redis 连接
+func (r *RedisBroker) Ping(ctx context.Context) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if r.closed {
+		return fmt.Errorf("broker is closed")
+	}
+
+	if r.client == nil {
+		return fmt.Errorf("redis client is nil")
+	}
+
+	return r.client.Ping(ctx).Err()
+}
+
 // Close 关闭消息代理
 func (r *RedisBroker) Close() error {
 	r.mu.Lock()
