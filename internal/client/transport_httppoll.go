@@ -22,11 +22,6 @@ const (
 	httppollMaxRetries         = 3
 	httppollRetryInterval      = 1 * time.Second
 	httppollMaxRequestSize     = 1024 * 1024 // 1MB
-	// 流模式下的最大分片大小（原始数据，Base64编码后约44KB）
-	// 设置为64KB，避免HTTP请求体过大，同时保持合理的传输效率
-	// 注意：MySQL等协议需要保持数据包完整性，不能随意分片
-	// 64KB足够大，可以容纳大多数MySQL协议包（MySQL max_allowed_packet默认64KB）
-	httppollStreamChunkSize = 64 * 1024 // 64KB
 )
 
 // HTTPLongPollingConn HTTP 长轮询连接
@@ -50,7 +45,6 @@ type HTTPLongPollingConn struct {
 	// 下行连接（接收数据）
 	pollURL    string
 	pollClient *http.Client
-	pollMu     sync.Mutex
 
 	// Base64 数据通道（接收 Base64 编码的数据）
 	base64DataChan chan string

@@ -44,7 +44,6 @@ type ConnectionAttempt struct {
 type AutoConnector struct {
 	*dispose.ServiceBase
 	client *TunnoxClient
-	mu     sync.RWMutex
 }
 
 // NewAutoConnector 创建自动连接器
