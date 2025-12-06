@@ -17,7 +17,7 @@ server:
       port: 8443
       host: "0.0.0.0"
     udp:
-      enabled: true
+      enabled: false
       port: 8000
       host: "0.0.0.0"
     quic:

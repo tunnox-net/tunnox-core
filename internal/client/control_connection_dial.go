@@ -84,8 +84,6 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 			// 使用接口而不是具体类型
 			SetKeepAliveIfSupported(conn, true)
 		}
-	case "udp":
-		conn, err = dialUDPControlConnection(c.Ctx(), address)
 	case "websocket":
 		conn, err = dialWebSocket(c.Ctx(), address)
 	case "quic":

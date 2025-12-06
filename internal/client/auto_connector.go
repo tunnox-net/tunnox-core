@@ -316,25 +316,6 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 			// 使用接口而不是具体类型
 			SetKeepAliveIfSupported(conn, true)
 		}
-	case "udp":
-		// UDP 连接需要超时控制，使用 goroutine + channel 实现
-		udpDone := make(chan struct {
-			conn net.Conn
-			err  error
-		}, 1)
-		go func() {
-			conn, err := dialUDPControlConnection(ctx, endpoint.Address)
-			udpDone <- struct {
-				conn net.Conn
-				err  error
-			}{conn, err}
-		}()
-		select {
-		case result := <-udpDone:
-			conn, err = result.conn, result.err
-		case <-timeoutCtx.Done():
-			err = timeoutCtx.Err()
-		}
 	case "websocket":
 		conn, err = dialWebSocket(timeoutCtx, endpoint.Address)
 	case "quic":

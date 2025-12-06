@@ -31,8 +31,6 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 			Timeout: 10 * time.Second,
 		}
 		conn, err = dialer.DialContext(c.Ctx(), "tcp", c.config.Server.Address)
-	case "udp":
-		conn, err = dialUDPControlConnection(c.Ctx(), c.config.Server.Address)
 	case "websocket":
 		conn, err = dialWebSocket(c.Ctx(), c.config.Server.Address)
 	case "quic":

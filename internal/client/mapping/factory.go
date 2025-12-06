@@ -14,13 +14,6 @@ func CreateAdapter(protocol string, config config.MappingConfig, parentCtx conte
 	case "tcp":
 		return NewTCPMappingAdapter(), nil
 
-	case "udp":
-		// ✅ 使用传入的 parentCtx，确保正确的生命周期管理
-		if parentCtx == nil {
-			parentCtx = context.Background()
-		}
-		return NewUDPMappingAdapter(parentCtx), nil
-
 	case "socks5":
 		// SOCKS5凭据从配置读取（如果需要）
 		credentials := make(map[string]string)

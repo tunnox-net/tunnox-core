@@ -78,8 +78,6 @@ func (c *TunnoxClient) Connect() error {
 				// 配置 TCP 连接选项
 				SetKeepAliveIfSupported(resultConn, true)
 			}
-		case "udp":
-			resultConn, resultErr = dialUDPControlConnection(connectCtx, c.config.Server.Address)
 		case "websocket":
 			resultConn, resultErr = dialWebSocket(connectCtx, c.config.Server.Address)
 		case "quic":

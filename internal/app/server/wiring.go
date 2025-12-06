@@ -10,8 +10,6 @@ import (
 	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/protocol"
-	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/server/udp"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
@@ -56,31 +54,6 @@ func (s *Server) registerServices() {
 		s.serviceManager.RegisterService(apiService)
 	}
 
-	// 注册 UDP Ingress 服务
-	if s.config.UDPIngress.Enabled {
-		ingressConfig := udp.Config{
-			Enabled: s.config.UDPIngress.Enabled,
-		}
-		for _, listener := range s.config.UDPIngress.Listeners {
-			ingressConfig.Listeners = append(ingressConfig.Listeners, udp.ListenerConfig{
-				Name:         listener.Name,
-				Address:      listener.Address,
-				MappingID:    listener.MappingID,
-				IdleTimeout:  listener.IdleTimeout,
-				MaxSessions:  listener.MaxSessions,
-				FrameBacklog: listener.FrameBacklog,
-			})
-		}
-
-		if s.cloudBuiltin == nil {
-			utils.Warn("UDP ingress requires built-in cloud control")
-			return
-		}
-		cloudAdapter := session.NewCloudControlAdapter(s.cloudBuiltin)
-		ingressMgr := udp.NewManager(ingressConfig, s.session, cloudAdapter)
-		udpService := NewUDPIngressService("UDP-Ingress", ingressMgr)
-		s.serviceManager.RegisterService(udpService)
-	}
 }
 
 // createMessageBroker 创建消息代理

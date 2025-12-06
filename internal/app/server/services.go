@@ -11,7 +11,6 @@ import (
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/server/udp"
 	"tunnox-core/internal/utils"
 )
 
@@ -127,13 +126,6 @@ func NewManagementAPIService(name string, apiServer *api.ManagementAPIServer) *B
 	})
 }
 
-// NewUDPIngressService 创建 UDP Ingress 服务
-func NewUDPIngressService(name string, mgr *udp.Manager) *BaseService {
-	return NewBaseService(name, mgr).WithOnStart(func(ctx context.Context) error {
-		return mgr.Start(ctx)
-	})
-}
-
 // ProtocolFactory 协议工厂
 type ProtocolFactory struct {
 	session *session.SessionManager
@@ -153,8 +145,6 @@ func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Contex
 		return adapter.NewTcpAdapter(ctx, pf.session), nil
 	case "websocket":
 		return adapter.NewWebSocketAdapter(ctx, pf.session), nil
-	case "udp":
-		return adapter.NewUdpAdapter(ctx, pf.session), nil
 	case "quic":
 		return adapter.NewQuicAdapter(ctx, pf.session), nil
 	default:
