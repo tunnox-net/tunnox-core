@@ -115,10 +115,13 @@ func TestRefreshTokenResponse_Marshal(t *testing.T) {
 // TestConnectionListResponse_Marshal 测试连接列表响应序列化
 func TestConnectionListResponse_Marshal(t *testing.T) {
 	response := ConnectionListResponse{
-		Connections: []string{"conn-1", "conn-2"}, // 简化示例
-		Total:       2,
-		MappingID:   "mapping-123",
-		ClientID:    456,
+		Connections: []*models.ConnectionInfo{
+			{ConnID: "conn-1"},
+			{ConnID: "conn-2"},
+		},
+		Total:     2,
+		MappingID: "mapping-123",
+		ClientID:  456,
 	}
 
 	data, err := json.Marshal(response)

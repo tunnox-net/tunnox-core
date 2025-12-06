@@ -73,20 +73,31 @@ func (m *MemoryStorage) Set(key string, value interface{}, ttl time.Duration) er
 // Get 获取值
 func (m *MemoryStorage) Get(key string) (interface{}, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	if m.data == nil {
+		m.mu.RUnlock()
 		return nil, ErrKeyNotFound
 	}
 
 	item, exists := m.data[key]
 	if !exists {
+		m.mu.RUnlock()
 		return nil, ErrKeyNotFound
 	}
 
-	// 只有 expiration 非零且已过期才删除
-	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		delete(m.data, key)
+	// 检查是否过期（在 RLock 下检查，不执行删除）
+	expired := !item.expiration.IsZero() && time.Now().After(item.expiration)
+	m.mu.RUnlock()
+
+	// 如果过期，需要升级为写锁来删除
+	if expired {
+		m.mu.Lock()
+		// 再次检查（可能已被其他 goroutine 删除）
+		if item, exists := m.data[key]; exists {
+			if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+				delete(m.data, key)
+			}
+		}
+		m.mu.Unlock()
 		return nil, ErrKeyNotFound
 	}
 	return item.value, nil
@@ -104,20 +115,31 @@ func (m *MemoryStorage) Delete(key string) error {
 // Exists 检查键是否存在
 func (m *MemoryStorage) Exists(key string) (bool, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	if m.data == nil {
+		m.mu.RUnlock()
 		return false, nil
 	}
 
 	item, exists := m.data[key]
 	if !exists {
+		m.mu.RUnlock()
 		return false, nil
 	}
 
-	// 修复：零值时间表示永不过期
-	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		delete(m.data, key)
+	// 检查是否过期（在 RLock 下检查，不执行删除）
+	expired := !item.expiration.IsZero() && time.Now().After(item.expiration)
+	m.mu.RUnlock()
+
+	// 如果过期，需要升级为写锁来删除
+	if expired {
+		m.mu.Lock()
+		// 再次检查（可能已被其他 goroutine 删除）
+		if item, exists := m.data[key]; exists {
+			if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+				delete(m.data, key)
+			}
+		}
+		m.mu.Unlock()
 		return false, nil
 	}
 	return true, nil
@@ -244,16 +266,26 @@ func (m *MemoryStorage) SetHash(key string, field string, value interface{}) err
 // GetHash 获取哈希字段
 func (m *MemoryStorage) GetHash(key string, field string) (interface{}, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	item, exists := m.data[key]
 	if !exists {
+		m.mu.RUnlock()
 		return nil, ErrKeyNotFound
 	}
 
-	// 修复：零值时间表示永不过期
-	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		delete(m.data, key)
+	// 检查是否过期（在 RLock 下检查，不执行删除）
+	expired := !item.expiration.IsZero() && time.Now().After(item.expiration)
+	m.mu.RUnlock()
+
+	// 如果过期，需要升级为写锁来删除
+	if expired {
+		m.mu.Lock()
+		// 再次检查（可能已被其他 goroutine 删除）
+		if item, exists := m.data[key]; exists {
+			if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+				delete(m.data, key)
+			}
+		}
+		m.mu.Unlock()
 		return nil, ErrKeyNotFound
 	}
 
@@ -270,16 +302,26 @@ func (m *MemoryStorage) GetHash(key string, field string) (interface{}, error) {
 // GetAllHash 获取所有哈希字段
 func (m *MemoryStorage) GetAllHash(key string) (map[string]interface{}, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	item, exists := m.data[key]
 	if !exists {
+		m.mu.RUnlock()
 		return nil, ErrKeyNotFound
 	}
 
-	// 修复：零值时间表示永不过期
-	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		delete(m.data, key)
+	// 检查是否过期（在 RLock 下检查，不执行删除）
+	expired := !item.expiration.IsZero() && time.Now().After(item.expiration)
+	m.mu.RUnlock()
+
+	// 如果过期，需要升级为写锁来删除
+	if expired {
+		m.mu.Lock()
+		// 再次检查（可能已被其他 goroutine 删除）
+		if item, exists := m.data[key]; exists {
+			if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+				delete(m.data, key)
+			}
+		}
+		m.mu.Unlock()
 		return nil, ErrKeyNotFound
 	}
 
@@ -369,20 +411,31 @@ func (m *MemoryStorage) SetExpiration(key string, ttl time.Duration) error {
 // GetExpiration 获取过期时间
 func (m *MemoryStorage) GetExpiration(key string) (time.Duration, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	item, exists := m.data[key]
 	if !exists {
+		m.mu.RUnlock()
 		return 0, ErrKeyNotFound
 	}
 
-	// 修复：零值时间表示永不过期
-	if !item.expiration.IsZero() && time.Now().After(item.expiration) {
-		delete(m.data, key)
+	// 检查是否过期（在 RLock 下检查，不执行删除）
+	expired := !item.expiration.IsZero() && time.Now().After(item.expiration)
+	expiration := item.expiration
+	m.mu.RUnlock()
+
+	// 如果过期，需要升级为写锁来删除
+	if expired {
+		m.mu.Lock()
+		// 再次检查（可能已被其他 goroutine 删除）
+		if item, exists := m.data[key]; exists {
+			if !item.expiration.IsZero() && time.Now().After(item.expiration) {
+				delete(m.data, key)
+			}
+		}
+		m.mu.Unlock()
 		return 0, ErrKeyNotFound
 	}
 
-	return time.Until(item.expiration), nil
+	return time.Until(expiration), nil
 }
 
 // CleanupExpired 清理过期数据

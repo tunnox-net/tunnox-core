@@ -154,7 +154,8 @@ func (s *Server) startGRPCServer() *grpc.Server {
 	}
 
 	grpcServer := grpc.NewServer()
-	bridgeServer := internalbridge.NewGRPCBridgeServer(context.Background(), s.config.MessageBroker.NodeID, s.bridgeManager)
+	// 使用 serviceManager 的 context 作为父 context，确保能接收退出信号
+	bridgeServer := internalbridge.NewGRPCBridgeServer(s.serviceManager.GetContext(), s.config.MessageBroker.NodeID, s.bridgeManager)
 	bridge.RegisterBridgeServiceServer(grpcServer, bridgeServer)
 
 	// 在后台启动 gRPC 服务器

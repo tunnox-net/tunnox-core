@@ -15,16 +15,18 @@ import (
 type BridgeAdapter struct {
 	messageBroker broker.MessageBroker
 	nodeID        string
+	ctx           context.Context // context 用于接收退出信号
 }
 
 // NewBridgeAdapter 创建BridgeAdapter（不依赖BridgeManager，直接使用MessageBroker）
-func NewBridgeAdapter(messageBroker broker.MessageBroker, nodeID string) *BridgeAdapter {
+func NewBridgeAdapter(ctx context.Context, messageBroker broker.MessageBroker, nodeID string) *BridgeAdapter {
 	if messageBroker == nil {
 		utils.Warn("MessageBroker is nil in BridgeAdapter")
 	}
 	return &BridgeAdapter{
 		messageBroker: messageBroker,
 		nodeID:        nodeID,
+		ctx:           ctx,
 	}
 }
 
@@ -49,7 +51,8 @@ func (a *BridgeAdapter) BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targe
 	}
 
 	// ✅ 通过MessageBroker广播到所有节点
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// 使用 BridgeAdapter 的 context 作为父 context，确保能接收退出信号
+	ctx, cancel := context.WithTimeout(a.ctx, 5*time.Second)
 	defer cancel()
 
 	if err := a.messageBroker.Publish(ctx, broker.TopicTunnelOpen, messageJSON); err != nil {

@@ -1,7 +1,6 @@
 package repos
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -191,11 +190,15 @@ type Repository struct {
 }
 
 // NewRepository 创建新的数据访问层
+// 注意：Repository 不管理自己的 context，它依赖于 storage 的 context
+// 如果 storage 实现了 Disposable 接口，Repository 会自动继承其 context
 func NewRepository(storage storage.Storage) *Repository {
 	repo := &Repository{
 		storage: storage,
 	}
-	repo.Dispose.SetCtx(context.Background(), nil)
+	// Repository 不需要独立的 context，它只是 storage 的包装器
+	// 如果 storage 实现了 Disposable，可以通过 storage 获取 context
+	// 这里不设置 context，避免创建独立的 dispose 子树
 	return repo
 }
 

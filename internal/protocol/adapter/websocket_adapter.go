@@ -166,7 +166,8 @@ func (a *WebSocketAdapter) onClose() error {
 
 	// Shutdown HTTP server
 	if a.server != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// 使用 WebSocketAdapter 的 context 作为父 context，确保能接收退出信号
+		ctx, cancel := context.WithTimeout(a.Ctx(), 5*time.Second)
 		defer cancel()
 
 		if err := a.server.Shutdown(ctx); err != nil {

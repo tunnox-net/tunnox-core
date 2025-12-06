@@ -195,7 +195,8 @@ func New(config *Config, parentCtx context.Context) *Server {
 
 	// 注入 BridgeAdapter 到 SessionManager，用于跨服务器隧道转发
 	if server.messageBroker != nil {
-		bridgeAdapter := NewBridgeAdapter(server.messageBroker, config.MessageBroker.NodeID)
+		// 使用 serviceManager 的 context 作为父 context，确保能接收退出信号
+		bridgeAdapter := NewBridgeAdapter(server.serviceManager.GetContext(), server.messageBroker, config.MessageBroker.NodeID)
 		server.session.SetBridgeManager(bridgeAdapter)
 	}
 

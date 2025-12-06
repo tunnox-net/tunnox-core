@@ -129,7 +129,8 @@ func (s *SessionManager) BroadcastConfigPush(clientID int64, configBody string) 
 	}
 
 	// 通过BridgeManager发布到集群
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// 使用 SessionManager 的 context 作为父 context，确保能接收退出信号
+	ctx, cancel := context.WithTimeout(s.Ctx(), 3*time.Second)
 	defer cancel()
 
 	utils.Infof("🌐 SessionManager[%s]: Publishing to topic %s...", s.nodeID, broker.TopicConfigPush)

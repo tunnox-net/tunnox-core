@@ -1,6 +1,7 @@
 package distributed
 
 import (
+	"sync"
 	"time"
 )
 
@@ -16,6 +17,7 @@ type DistributedLock interface {
 
 // MemoryLock 内存锁实现（用于单机开发/测试）
 type MemoryLock struct {
+	mu    sync.RWMutex
 	locks map[string]*lockInfo
 }
 
@@ -33,6 +35,9 @@ func NewMemoryLock() *MemoryLock {
 
 // Acquire 获取内存锁
 func (m *MemoryLock) Acquire(key string, ttl time.Duration) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	now := time.Now()
 
 	// 检查锁是否存在且未过期
@@ -55,12 +60,17 @@ func (m *MemoryLock) Acquire(key string, ttl time.Duration) (bool, error) {
 
 // Release 释放内存锁
 func (m *MemoryLock) Release(key string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	delete(m.locks, key)
 	return nil
 }
 
 // IsLocked 检查内存锁是否被持有
 func (m *MemoryLock) IsLocked(key string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	now := time.Now()
 
 	if info, exists := m.locks[key]; exists {

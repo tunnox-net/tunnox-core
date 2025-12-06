@@ -183,7 +183,7 @@ func (ce *CommandExecutor) createCommandContext(streamPacket *types.StreamPacket
 		SenderID:        streamPacket.Packet.CommandPacket.SenderId,
 		ReceiverID:      streamPacket.Packet.CommandPacket.ReceiverId,
 		RequestBody:     streamPacket.Packet.CommandPacket.CommandBody,
-		Context:         context.Background(),
+		Context:         ce.Ctx(), // 使用 CommandExecutor 的 context，确保能接收退出信号
 		IsAuthenticated: false,
 		UserID:          "",
 		StartTime:       time.Now(),

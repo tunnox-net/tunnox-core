@@ -277,8 +277,8 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	// 4. 发送请求（带重试）
 	var resp *http.Response
 	for retry := 0; retry < maxRetries; retry++ {
-		// 使用独立的 context，避免被主 context 取消影响
-		reqCtx, reqCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// 使用 StreamProcessor 的 context 作为父 context，确保能接收退出信号
+		reqCtx, reqCancel := context.WithTimeout(sp.Ctx(), 10*time.Second)
 		reqWithCtx := req.WithContext(reqCtx)
 
 		resp, err = sp.httpClient.Do(reqWithCtx)

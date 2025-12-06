@@ -279,6 +279,7 @@ func (h *BaseMappingHandler) wrapConnectionForControl(
 		rateLimiter:     h.rateLimiter,
 		stats:           h.trafficStats,
 		direction:       direction,
+		ctx:             h.Ctx(), // 使用 handler 的 context，确保能接收退出信号
 	}
 }
 
@@ -371,12 +372,13 @@ type controlledConn struct {
 	rateLimiter *rate.Limiter
 	stats       *TrafficStats
 	direction   string // "local" or "tunnel"
+	ctx         context.Context // context 用于接收退出信号
 }
 
 func (c *controlledConn) Read(p []byte) (n int, err error) {
 	// 速率限制（如果启用）
 	if c.rateLimiter != nil {
-		if err := c.rateLimiter.WaitN(context.Background(), len(p)); err != nil {
+		if err := c.rateLimiter.WaitN(c.ctx, len(p)); err != nil {
 			return 0, err
 		}
 	}
@@ -399,7 +401,7 @@ func (c *controlledConn) Read(p []byte) (n int, err error) {
 func (c *controlledConn) Write(p []byte) (n int, err error) {
 	// 速率限制（如果启用）
 	if c.rateLimiter != nil {
-		if err := c.rateLimiter.WaitN(context.Background(), len(p)); err != nil {
+		if err := c.rateLimiter.WaitN(c.ctx, len(p)); err != nil {
 			return 0, err
 		}
 	}
