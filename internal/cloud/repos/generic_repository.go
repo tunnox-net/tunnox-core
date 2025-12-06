@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -48,13 +49,13 @@ func NewGenericRepository[T any](repo *Repository, getIDFunc func(T) (string, er
 func (r *GenericRepositoryImpl[T]) Save(entity T, keyPrefix string, ttl time.Duration) error {
 	data, err := json.Marshal(entity)
 	if err != nil {
-		return fmt.Errorf("marshal entity failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.ErrorTypeStorage, "marshal entity failed")
 	}
 
 	// 使用反射获取ID字段
 	id, err := r.getEntityID(entity)
 	if err != nil {
-		return fmt.Errorf("get entity ID failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.ErrorTypeStorage, "get entity ID failed")
 	}
 
 	key := fmt.Sprintf("%s:%s", keyPrefix, id)
@@ -65,14 +66,14 @@ func (r *GenericRepositoryImpl[T]) Save(entity T, keyPrefix string, ttl time.Dur
 func (r *GenericRepositoryImpl[T]) Create(entity T, keyPrefix string, ttl time.Duration) error {
 	id, err := r.getEntityID(entity)
 	if err != nil {
-		return fmt.Errorf("get entity ID failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.ErrorTypeStorage, "get entity ID failed")
 	}
 
 	// 检查实体是否已存在
 	_, err = r.Get(id, keyPrefix)
 	if err == nil {
 		// 如果获取成功，说明实体已存在
-		return fmt.Errorf("entity with ID %s already exists", id)
+		return coreerrors.Newf(coreerrors.ErrorTypePermanent, "entity with ID %s already exists", id)
 	}
 
 	return r.Save(entity, keyPrefix, ttl)
@@ -82,13 +83,13 @@ func (r *GenericRepositoryImpl[T]) Create(entity T, keyPrefix string, ttl time.D
 func (r *GenericRepositoryImpl[T]) Update(entity T, keyPrefix string, ttl time.Duration) error {
 	id, err := r.getEntityID(entity)
 	if err != nil {
-		return fmt.Errorf("get entity ID failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.ErrorTypeStorage, "get entity ID failed")
 	}
 
 	// 检查实体是否存在
 	_, err = r.Get(id, keyPrefix)
 	if err != nil {
-		return fmt.Errorf("entity with ID %s does not exist", id)
+		return coreerrors.Newf(coreerrors.ErrorTypePermanent, "entity with ID %s does not exist", id)
 	}
 
 	return r.Save(entity, keyPrefix, ttl)
@@ -106,11 +107,11 @@ func (r *GenericRepositoryImpl[T]) Get(id string, keyPrefix string) (T, error) {
 
 	entityData, ok := data.(string)
 	if !ok {
-		return entity, fmt.Errorf("invalid entity data type")
+		return entity, coreerrors.New(coreerrors.ErrorTypeStorage, "invalid entity data type")
 	}
 
 	if err := json.Unmarshal([]byte(entityData), &entity); err != nil {
-		return entity, fmt.Errorf("unmarshal entity failed: %w", err)
+		return entity, coreerrors.Wrap(err, coreerrors.ErrorTypeStorage, "unmarshal entity failed")
 	}
 
 	return entity, nil
@@ -126,7 +127,7 @@ func (r *GenericRepositoryImpl[T]) Delete(id string, keyPrefix string) error {
 func (r *GenericRepositoryImpl[T]) List(listKey string) ([]T, error) {
 	listStore, ok := r.storage.(storage.ListStore)
 	if !ok {
-		return nil, fmt.Errorf("storage does not support list operations")
+		return nil, coreerrors.New(coreerrors.ErrorTypeStorage, "storage does not support list operations")
 	}
 	data, err := listStore.GetList(listKey)
 	if err != nil {
@@ -151,7 +152,7 @@ func (r *GenericRepositoryImpl[T]) List(listKey string) ([]T, error) {
 func (r *GenericRepositoryImpl[T]) AddToList(entity T, listKey string) error {
 	listStore, ok := r.storage.(storage.ListStore)
 	if !ok {
-		return fmt.Errorf("storage does not support list operations")
+		return coreerrors.New(coreerrors.ErrorTypeStorage, "storage does not support list operations")
 	}
 	data, err := json.Marshal(entity)
 	if err != nil {
@@ -165,7 +166,7 @@ func (r *GenericRepositoryImpl[T]) AddToList(entity T, listKey string) error {
 func (r *GenericRepositoryImpl[T]) RemoveFromList(entity T, listKey string) error {
 	listStore, ok := r.storage.(storage.ListStore)
 	if !ok {
-		return fmt.Errorf("storage does not support list operations")
+		return coreerrors.New(coreerrors.ErrorTypeStorage, "storage does not support list operations")
 	}
 	data, err := json.Marshal(entity)
 	if err != nil {
@@ -178,7 +179,7 @@ func (r *GenericRepositoryImpl[T]) RemoveFromList(entity T, listKey string) erro
 // getEntityID 获取实体ID
 func (r *GenericRepositoryImpl[T]) getEntityID(entity T) (string, error) {
 	if r.getIDFunc == nil {
-		return "", fmt.Errorf("getIDFunc not set")
+		return "", coreerrors.New(coreerrors.ErrorTypeFatal, "getIDFunc not set")
 	}
 	return r.getIDFunc(entity)
 }

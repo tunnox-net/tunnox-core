@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/constants"
+	coreerrors "tunnox-core/internal/core/errors"
 
 	"github.com/sirupsen/logrus"
 )
@@ -170,8 +171,17 @@ func (l *LogEntry) WithMapping(mappingID string) *LogEntry {
 }
 
 // WithError 添加错误信息到日志条目
+// 自动提取错误类型、可重试、需告警等信息
 func (l *LogEntry) WithError(err error) *LogEntry {
-	return l.WithField(constants.LogFieldError, err)
+	entry := l.WithField(constants.LogFieldError, err)
+	if err != nil {
+		// 提取错误类型信息
+		errorType := coreerrors.GetErrorType(err)
+		entry = entry.WithField(constants.LogFieldErrorType, string(errorType))
+		entry = entry.WithField(constants.LogFieldRetryable, coreerrors.IsRetryable(err))
+		entry = entry.WithField(constants.LogFieldAlertable, coreerrors.IsAlertable(err))
+	}
+	return entry
 }
 
 // WithDuration 添加耗时信息到日志条目
@@ -294,7 +304,8 @@ func LogOperation(operation, entityType, entityID string, success bool, err erro
 	})
 
 	if err != nil {
-		entry.WithError(err).Errorf("Operation %s failed for %s %s", operation, entityType, entityID)
+		// 使用新的错误日志函数，自动根据错误类型选择日志级别
+		logErrorWithLevel(entry.WithError(err), err, fmt.Sprintf("Operation %s failed for %s %s", operation, entityType, entityID))
 	} else {
 		entry.Infof("Operation %s completed successfully for %s %s", operation, entityType, entityID)
 	}
@@ -310,7 +321,8 @@ func LogAuthentication(userID, clientID string, success bool, err error) {
 	})
 
 	if err != nil {
-		entry.WithError(err).Errorf("Authentication failed for user %s, client %s", userID, clientID)
+		// 使用新的错误日志函数，自动根据错误类型选择日志级别
+		logErrorWithLevel(entry.WithError(err), err, fmt.Sprintf("Authentication failed for user %s, client %s", userID, clientID))
 	} else {
 		entry.Infof("Authentication successful for user %s, client %s", userID, clientID)
 	}
@@ -326,7 +338,8 @@ func LogStorageOperation(operation, key string, success bool, err error) {
 	})
 
 	if err != nil {
-		entry.WithError(err).Errorf("Storage operation %s failed for key %s", operation, key)
+		// 使用新的错误日志函数，自动根据错误类型选择日志级别
+		logErrorWithLevel(entry.WithError(err), err, fmt.Sprintf("Storage operation %s failed for key %s", operation, key))
 	} else {
 		entry.Debugf("Storage operation %s completed for key %s", operation, key)
 	}
@@ -346,6 +359,71 @@ func LogSystemEvent(event, component string, details map[string]interface{}) {
 	Logger.WithFields(fields).Infof("System event: %s in component %s", event, component)
 }
 
+// logErrorWithLevel 根据错误类型选择日志级别
+// - Fatal: 致命错误 -> Fatal
+// - Auth/Protocol/Storage: 需告警 -> Error
+// - Network/Temporary: 可重试 -> Warn
+// - Permanent: 永久错误 -> Error
+// - 其他: Error
+func logErrorWithLevel(entry *logrus.Entry, err error, messages ...string) {
+	if err == nil {
+		return
+	}
+
+	errorType := coreerrors.GetErrorType(err)
+	isAlertable := coreerrors.IsAlertable(err)
+	isRetryable := coreerrors.IsRetryable(err)
+
+	message := ""
+	if len(messages) > 0 {
+		message = messages[0]
+	} else {
+		message = err.Error()
+	}
+
+	// 根据错误类型和属性选择日志级别
+	switch errorType {
+	case coreerrors.ErrorTypeFatal:
+		entry.Fatal(message)
+	case coreerrors.ErrorTypeAuth, coreerrors.ErrorTypeProtocol, coreerrors.ErrorTypeStorage:
+		// 需告警的错误使用 Error 级别
+		entry.Error(message)
+	case coreerrors.ErrorTypeNetwork, coreerrors.ErrorTypeTemporary:
+		// 可重试的错误使用 Warn 级别
+		entry.Warn(message)
+	case coreerrors.ErrorTypePermanent:
+		// 永久错误使用 Error 级别
+		entry.Error(message)
+	default:
+		// 默认根据告警属性选择级别
+		if isAlertable {
+			entry.Error(message)
+		} else if isRetryable {
+			entry.Warn(message)
+		} else {
+			entry.Error(message)
+		}
+	}
+}
+
+// LogError 记录错误日志，根据错误类型自动选择日志级别
+func LogError(err error, message string, fields map[string]interface{}) {
+	entry := Logger.WithError(err)
+	if message != "" {
+		entry = entry.WithField("message", message)
+	}
+	if fields != nil {
+		entry = entry.WithFields(logrus.Fields(fields))
+	}
+	logErrorWithLevel(entry, err)
+}
+
+// LogErrorf 格式化记录错误日志，根据错误类型自动选择日志级别
+func LogErrorf(err error, format string, args ...interface{}) {
+	entry := Logger.WithError(err)
+	logErrorWithLevel(entry, err, fmt.Sprintf(format, args...))
+}
+
 // LogErrorWithContext 记录带上下文的错误日志
 func LogErrorWithContext(err error, context string, fields map[string]interface{}) {
 	entry := Logger.WithError(err).WithField("context", context)
@@ -354,7 +432,8 @@ func LogErrorWithContext(err error, context string, fields map[string]interface{
 		entry = entry.WithFields(logrus.Fields(fields))
 	}
 
-	entry.Error("Error occurred")
+	// 使用新的错误日志函数，自动根据错误类型选择日志级别
+	logErrorWithLevel(entry, err)
 }
 
 // LogPanic 记录panic日志

@@ -72,7 +72,7 @@
 
 ### P1: 重要改进（1-2周内）
 
-#### 3. 错误处理分层体系
+#### 3. 错误处理分层体系 ✅ 已完成
 
 **问题描述：**
 - 有些地方用 `fmt.Errorf("xxx: %w", err)` 自己处理
@@ -81,104 +81,60 @@
 
 **修复方案：**
 
-**创建错误分层方案：**
+**已创建错误分层方案：**
 
-```go
-// internal/core/errors/errors.go
-package errors
+✅ `internal/core/errors/typed_error.go`: 实现了 TypedError 和错误分层体系
+- 定义了 7 种错误类型：Temporary, Permanent, Protocol, Network, Storage, Auth, Fatal
+- 实现了 `Wrap`, `Wrapf`, `New`, `Newf` 函数
+- 实现了 `IsRetryable`, `IsAlertable`, `GetErrorType` 判断函数
+- 提供了 Sentinel errors（预定义错误实例）
 
-import "fmt"
+✅ `internal/utils/logger.go`: 集成错误类型到日志系统
+- `WithError` 方法自动提取错误类型、可重试、需告警信息
+- `logErrorWithLevel` 函数根据错误类型自动选择日志级别：
+  - Fatal -> Fatal 级别
+  - Auth/Protocol/Storage -> Error 级别（需告警）
+  - Network/Temporary -> Warn 级别（可重试）
+  - Permanent -> Error 级别
+- 新增 `LogError` 和 `LogErrorf` 函数，自动根据错误类型选择日志级别
+- 更新了 `LogOperation`, `LogAuthentication`, `LogStorageOperation` 使用新的错误日志函数
 
-// 错误类型
-type ErrorType string
+✅ `internal/constants/log.go`: 添加错误类型相关日志字段
+- `LogFieldErrorType`: 错误类型字段
+- `LogFieldRetryable`: 是否可重试字段
+- `LogFieldAlertable`: 是否需要告警字段
 
-const (
-	ErrorTypeTemporary ErrorType = "temporary" // 可重试
-	ErrorTypePermanent ErrorType = "permanent" // 永久错误
-	ErrorTypeProtocol ErrorType = "protocol"   // 协议错误
-	ErrorTypeNetwork  ErrorType = "network"   // 网络错误
-	ErrorTypeStorage  ErrorType = "storage"   // 存储错误
-	ErrorTypeAuth     ErrorType = "auth"       // 认证错误
-	ErrorTypeFatal    ErrorType = "fatal"      // 致命错误
-)
-
-// TypedError 带类型的错误
-type TypedError struct {
-	Type    ErrorType
-	Message string
-	Err     error
-	Retryable bool
-	Alertable bool
-}
-
-func (e *TypedError) Error() string {
-	if e.Err != nil {
-		return fmt.Sprintf("[%s] %s: %v", e.Type, e.Message, e.Err)
-	}
-	return fmt.Sprintf("[%s] %s", e.Type, e.Message)
-}
-
-func (e *TypedError) Unwrap() error {
-	return e.Err
-}
-
-// Sentinel errors
-var (
-	ErrTemporary = &TypedError{Type: ErrorTypeTemporary, Retryable: true}
-	ErrPermanent = &TypedError{Type: ErrorTypePermanent, Retryable: false}
-	ErrProtocol  = &TypedError{Type: ErrorTypeProtocol, Retryable: false, Alertable: true}
-	ErrNetwork   = &TypedError{Type: ErrorTypeNetwork, Retryable: true}
-	ErrStorage   = &TypedError{Type: ErrorTypeStorage, Retryable: true, Alertable: true}
-	ErrAuth      = &TypedError{Type: ErrorTypeAuth, Retryable: false, Alertable: true}
-	ErrFatal     = &TypedError{Type: ErrorTypeFatal, Retryable: false, Alertable: true}
-)
-
-// Wrap 包装错误
-func Wrap(err error, errType ErrorType, message string) error {
-	if err == nil {
-		return nil
-	}
-	return &TypedError{
-		Type:      errType,
-		Message:   message,
-		Err:       err,
-		Retryable: isRetryable(errType),
-		Alertable: isAlertable(errType),
-	}
-}
-
-// IsRetryable 判断是否可重试
-func IsRetryable(err error) bool {
-	if typedErr, ok := err.(*TypedError); ok {
-		return typedErr.Retryable
-	}
-	return false
-}
-
-// IsAlertable 判断是否需要告警
-func IsAlertable(err error) bool {
-	if typedErr, ok := err.(*TypedError); ok {
-		return typedErr.Alertable
-	}
-	return false
-}
-
-// GetErrorType 获取错误类型
-func GetErrorType(err error) ErrorType {
-	if typedErr, ok := err.(*TypedError); ok {
-		return typedErr.Type
-	}
-	return ErrorTypePermanent
-}
-```
+✅ `internal/core/errors/typed_error_test.go`: 完整的单元测试覆盖
 
 **日志集成：**
-- 根据错误类型打不同级别
-- 添加错误类型字段，方便统计分析
+- ✅ 根据错误类型自动选择日志级别（Fatal/Error/Warn）
+- ✅ 自动添加错误类型、可重试、需告警字段到日志
+- ✅ 方便后续统计分析和告警系统集成
 
 **影响范围：**
-- 所有错误处理代码
-- 日志系统
+- ✅ 错误处理体系已创建，可供业务代码使用
+- ✅ 日志系统已集成错误类型，自动提取和记录错误属性
+
+**业务代码迁移：**
+- ✅ `internal/cloud/services/base_service.go`: 已迁移所有错误处理函数到 TypedError 系统
+  - `HandleErrorWithIDRelease` / `HandleErrorWithIDReleaseInt64` / `HandleErrorWithIDReleaseString`
+  - `WrapError` / `WrapErrorWithID` / `WrapErrorWithInt64ID`
+  - `LogWarning` 使用新的 `utils.LogErrorf` 函数
+  - 所有使用 `baseService.WrapError` 的 service 实现文件已自动使用 TypedError 系统
+
+**迁移策略：**
+- ✅ 通过迁移 `base_service.go`，所有 service 层的错误处理已自动使用 TypedError 系统
+- ✅ 通过迁移 `generic_repository.go`，所有 repository 层的错误处理已统一使用 TypedError 系统
+- ✅ 其他业务代码中的 `fmt.Errorf` 可以逐步迁移，或在使用 service/repository 层时自动获得 TypedError 支持
+- ✅ 关键路径（service 层和 repository 层）的错误处理已统一使用 TypedError 系统
+
+**已迁移的关键文件：**
+- ✅ `internal/cloud/services/base_service.go`: Service 层基础错误处理
+- ✅ `internal/cloud/repos/generic_repository.go`: Repository 层基础错误处理
+  - 所有 marshal/unmarshal 错误使用 `ErrorTypeStorage`
+  - 实体不存在/已存在错误使用 `ErrorTypePermanent`
+  - 存储不支持操作错误使用 `ErrorTypeStorage`
+  - getIDFunc 未设置错误使用 `ErrorTypeFatal`
 
 ---
 
