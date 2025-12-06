@@ -43,10 +43,38 @@ func (sp *StreamProcessor) getCachedResponse(requestID string) (*packet.Transfer
 	return cached.pkt, true
 }
 
-// setCachedResponse 缓存响应
+// setCachedResponse 缓存响应（带容量限制）
 func (sp *StreamProcessor) setCachedResponse(requestID string, pkt *packet.TransferPacket) {
 	sp.responseCacheMu.Lock()
 	defer sp.responseCacheMu.Unlock()
+
+	// 如果缓存已满，先清理过期项
+	if len(sp.responseCache) >= responseCacheMaxSize {
+		now := time.Now()
+		for id, cached := range sp.responseCache {
+			if now.After(cached.expiresAt) {
+				delete(sp.responseCache, id)
+			}
+		}
+	}
+
+	// 如果清理后仍然满，删除最旧的项（FIFO策略）
+	if len(sp.responseCache) >= responseCacheMaxSize {
+		// 找到最旧的项（expiresAt 最早的）
+		var oldestID string
+		var oldestTime time.Time
+		first := true
+		for id, cached := range sp.responseCache {
+			if first || cached.expiresAt.Before(oldestTime) {
+				oldestID = id
+				oldestTime = cached.expiresAt
+				first = false
+			}
+		}
+		if oldestID != "" {
+			delete(sp.responseCache, oldestID)
+		}
+	}
 
 	sp.responseCache[requestID] = &cachedResponse{
 		pkt:       pkt,

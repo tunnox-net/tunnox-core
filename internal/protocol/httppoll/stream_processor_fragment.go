@@ -11,8 +11,6 @@ import (
 func (sp *StreamProcessor) handleFragmentData(pollResp FragmentResponse, requestID string) error {
 	// 判断是否为分片：total_fragments > 1
 	isFragment := pollResp.TotalFragments > 1
-	utils.Infof("HTTPStreamProcessor[%s]: handleFragmentData - received data, groupID=%s, index=%d/%d, size=%d, originalSize=%d, isFragment=%v, requestID=%s, connID=%s",
-		sp.connectionID, pollResp.FragmentGroupID, pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentSize, pollResp.OriginalSize, isFragment, requestID, sp.connectionID)
 
 	// 解码Base64数据
 	fragmentData, err := base64.StdEncoding.DecodeString(pollResp.Data)
@@ -39,8 +37,6 @@ func (sp *StreamProcessor) handleFragmentData(pollResp FragmentResponse, request
 // handleMultiFragment 处理多分片数据
 func (sp *StreamProcessor) handleMultiFragment(pollResp FragmentResponse, fragmentData []byte, requestID string) error {
 	// 添加到分片重组器
-	utils.Debugf("HTTPStreamProcessor: handleMultiFragment - adding fragment, groupID=%s, index=%d/%d, size=%d, originalSize=%d, requestID=%s",
-		pollResp.FragmentGroupID, pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentSize, pollResp.OriginalSize, requestID)
 	group, err := sp.fragmentReassembler.AddFragment(
 		pollResp.FragmentGroupID,
 		pollResp.OriginalSize,
@@ -59,14 +55,10 @@ func (sp *StreamProcessor) handleMultiFragment(pollResp FragmentResponse, fragme
 	isComplete := group.IsComplete()
 	if !isComplete {
 		// 分片组不完整，继续等待更多分片
-		utils.Debugf("HTTPStreamProcessor: handleMultiFragment - fragment %d/%d received, waiting for more, groupID=%s, receivedCount=%d, requestID=%s",
-			pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentGroupID, group.ReceivedCount, requestID)
 		return nil
 	}
 
 	// 分片组完整，检查是否可以按序列号顺序发送
-	utils.Infof("HTTPStreamProcessor: handleMultiFragment - fragment group complete, checking sequence order, groupID=%s, sequenceNumber=%d, requestID=%s",
-		pollResp.FragmentGroupID, pollResp.SequenceNumber, requestID)
 
 	return sp.processCompleteGroups(requestID)
 }
@@ -75,8 +67,6 @@ func (sp *StreamProcessor) handleMultiFragment(pollResp FragmentResponse, fragme
 func (sp *StreamProcessor) handleSingleFragment(pollResp FragmentResponse, fragmentData []byte, requestID string) error {
 	// 单分片数据（TotalFragments=1），也需要按序列号顺序发送
 	// 添加到分片重组器，以便按序列号顺序处理
-	utils.Infof("HTTPStreamProcessor[%s]: handleSingleFragment - received single fragment (TotalFragments=1), adding to reassembler for sequence ordering, groupID=%s, sequenceNumber=%d, requestID=%s, connID=%s",
-		sp.connectionID, pollResp.FragmentGroupID, pollResp.SequenceNumber, requestID, sp.connectionID)
 	_, err := sp.fragmentReassembler.AddFragment(
 		pollResp.FragmentGroupID,
 		pollResp.OriginalSize,
@@ -92,8 +82,6 @@ func (sp *StreamProcessor) handleSingleFragment(pollResp FragmentResponse, fragm
 	}
 
 	// 单分片数据应该立即完整，检查是否可以按序列号顺序发送
-	utils.Infof("HTTPStreamProcessor[%s]: handleSingleFragment - single fragment complete, checking sequence order, groupID=%s, sequenceNumber=%d, requestID=%s, connID=%s",
-		sp.connectionID, pollResp.FragmentGroupID, pollResp.SequenceNumber, requestID, sp.connectionID)
 
 	return sp.processCompleteGroups(requestID)
 }
@@ -131,8 +119,6 @@ func (sp *StreamProcessor) writeReassembledGroup(nextGroup *FragmentGroup, reque
 		return fmt.Errorf("failed to reassemble: %w", err)
 	}
 
-	utils.Infof("HTTPStreamProcessor: writeReassembledGroup - reassembled %d bytes from %d fragments, groupID=%s, sequenceNumber=%d, originalSize=%d, requestID=%s",
-		len(reassembledData), nextGroup.TotalFragments, nextGroup.GroupID, nextGroup.SequenceNumber, nextGroup.OriginalSize, requestID)
 
 	// 验证重组后的数据大小
 	if len(reassembledData) != nextGroup.OriginalSize {
@@ -144,16 +130,13 @@ func (sp *StreamProcessor) writeReassembledGroup(nextGroup *FragmentGroup, reque
 
 	// 写入数据缓冲区
 	sp.dataBufMu.Lock()
-	oldBufferLen := sp.dataBuffer.Len()
 	if sp.dataBuffer.Len()+len(reassembledData) <= maxBufferSize {
-		n, err := sp.dataBuffer.Write(reassembledData)
+		_, err := sp.dataBuffer.Write(reassembledData)
 		if err != nil {
 			utils.Errorf("HTTPStreamProcessor: writeReassembledGroup - failed to write to data buffer: %v, requestID=%s", err, requestID)
 			sp.dataBufMu.Unlock()
 			return fmt.Errorf("failed to write to data buffer: %w", err)
 		}
-		utils.Infof("HTTPStreamProcessor: writeReassembledGroup - wrote %d bytes to data buffer, buffer size: %d -> %d, sequenceNumber=%d, requestID=%s",
-			n, oldBufferLen, sp.dataBuffer.Len(), nextGroup.SequenceNumber, requestID)
 	} else {
 		utils.Errorf("HTTPStreamProcessor: writeReassembledGroup - data buffer full, dropping %d bytes, buffer size=%d, requestID=%s", len(reassembledData), sp.dataBuffer.Len(), requestID)
 	}

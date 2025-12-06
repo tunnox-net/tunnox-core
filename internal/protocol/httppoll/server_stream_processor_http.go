@@ -7,7 +7,6 @@ import (
 	"io"
 	"time"
 
-	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
 
@@ -244,10 +243,6 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 		sp.pendingPollMu.Unlock()
 	}()
 
-	// [CMD_TRACE] 服务端 Poll 请求开始
-	pollStartTime := time.Now()
-	utils.Infof("[CMD_TRACE] [SERVER] [POLL_START] ConnID=%s, RequestID=%s, TunnelType=%s, Time=%s",
-		sp.connectionID, actualRequestID, tunnelType, pollStartTime.Format("15:04:05.000"))
 
 	// 尝试匹配待分配的控制包（从 pendingControlPackets）
 	// 由于 Poll 请求已注册，tryMatchControlPacket 应该能够匹配到
@@ -257,27 +252,11 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 	select {
 	case responsePkg := <-responseChan:
 		// 从等待队列收到控制包（已匹配 requestID）
-		pollDuration := time.Since(pollStartTime)
-		var responseType string
-		var responseCommandID string
-		if responsePkg != nil {
-			responseType = responsePkg.Type
-			if responsePkg.Data != nil {
-				if cmdPkg, ok := responsePkg.Data.(*packet.CommandPacket); ok {
-					responseCommandID = cmdPkg.CommandId
-				}
-			}
-		}
-		utils.Infof("[CMD_TRACE] [SERVER] [POLL_MATCHED_IMMEDIATE] ConnID=%s, RequestID=%s, ResponseType=%s, CommandID=%s, PollDuration=%v, Time=%s",
-			sp.connectionID, actualRequestID, responseType, responseCommandID, pollDuration, time.Now().Format("15:04:05.000"))
 		utils.Debugf("ServerStreamProcessor: HandlePollRequest - control packet received immediately from waiting queue (type=%s), connID=%s, requestID=%s",
 			responsePkg.Type, sp.connectionID, actualRequestID)
 		return "", responsePkg, nil
 	default:
 		// 没有控制包，继续等待
-		utils.Infof("[CMD_TRACE] [SERVER] [POLL_WAIT] ConnID=%s, RequestID=%s, Reason=no_immediate_control_packet, Time=%s",
-			sp.connectionID, actualRequestID, time.Now().Format("15:04:05.000"))
-		utils.Debugf("ServerStreamProcessor: HandlePollRequest - no control packet immediately, waiting, connID=%s, requestID=%s", sp.connectionID, actualRequestID)
 	}
 
 	// 从队列获取数据流（非阻塞检查）
@@ -289,38 +268,13 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 	}
 
 	// 队列为空，阻塞等待（控制包或数据流）
-	waitStartTime := time.Now()
-	utils.Infof("[CMD_TRACE] [SERVER] [POLL_WAIT_START] ConnID=%s, RequestID=%s, Time=%s",
-		sp.connectionID, actualRequestID, waitStartTime.Format("15:04:05.000"))
 	select {
 	case <-ctx.Done():
-		waitDuration := time.Since(waitStartTime)
-		pollDuration := time.Since(pollStartTime)
-		utils.Infof("[CMD_TRACE] [SERVER] [POLL_TIMEOUT] ConnID=%s, RequestID=%s, WaitDuration=%v, PollDuration=%v, Reason=context_done, Time=%s",
-			sp.connectionID, actualRequestID, waitDuration, pollDuration, time.Now().Format("15:04:05.000"))
 		return "", nil, ctx.Err()
 	case <-sp.Ctx().Done():
-		waitDuration := time.Since(waitStartTime)
-		pollDuration := time.Since(pollStartTime)
-		utils.Infof("[CMD_TRACE] [SERVER] [POLL_TIMEOUT] ConnID=%s, RequestID=%s, WaitDuration=%v, PollDuration=%v, Reason=connection_closed, Time=%s",
-			sp.connectionID, actualRequestID, waitDuration, pollDuration, time.Now().Format("15:04:05.000"))
 		return "", nil, sp.Ctx().Err()
 	case responsePkg := <-responseChan:
 		// 从等待队列收到控制包（已匹配 requestID）
-		waitDuration := time.Since(waitStartTime)
-		pollDuration := time.Since(pollStartTime)
-		var responseType string
-		var responseCommandID string
-		if responsePkg != nil {
-			responseType = responsePkg.Type
-			if responsePkg.Data != nil {
-				if cmdPkg, ok := responsePkg.Data.(*packet.CommandPacket); ok {
-					responseCommandID = cmdPkg.CommandId
-				}
-			}
-		}
-		utils.Infof("[CMD_TRACE] [SERVER] [POLL_MATCHED] ConnID=%s, RequestID=%s, ResponseType=%s, CommandID=%s, WaitDuration=%v, PollDuration=%v, Time=%s",
-			sp.connectionID, actualRequestID, responseType, responseCommandID, waitDuration, pollDuration, time.Now().Format("15:04:05.000"))
 		utils.Debugf("ServerStreamProcessor: HandlePollRequest - control packet received from waiting queue (type=%s), connID=%s, requestID=%s",
 			responsePkg.Type, sp.connectionID, actualRequestID)
 		return "", responsePkg, nil
@@ -338,20 +292,6 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 		select {
 		case responsePkg := <-responseChan:
 			// 从等待队列收到控制包（已匹配 requestID）
-			waitDuration := time.Since(waitStartTime)
-			pollDuration := time.Since(pollStartTime)
-			var responseType string
-			var responseCommandID string
-			if responsePkg != nil {
-				responseType = responsePkg.Type
-				if responsePkg.Data != nil {
-					if cmdPkg, ok := responsePkg.Data.(*packet.CommandPacket); ok {
-						responseCommandID = cmdPkg.CommandId
-					}
-				}
-			}
-			utils.Infof("[CMD_TRACE] [SERVER] [POLL_MATCHED] ConnID=%s, RequestID=%s, ResponseType=%s, CommandID=%s, WaitDuration=%v, PollDuration=%v, Time=%s",
-				sp.connectionID, actualRequestID, responseType, responseCommandID, waitDuration, pollDuration, time.Now().Format("15:04:05.000"))
 			utils.Infof("ServerStreamProcessor: HandlePollRequest - control packet received from waiting queue (type=%s), connID=%s, requestID=%s",
 				responsePkg.Type, sp.connectionID, actualRequestID)
 			return "", responsePkg, nil
@@ -371,33 +311,11 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 		for {
 			select {
 			case <-ctx.Done():
-				waitDuration := time.Since(waitStartTime)
-				pollDuration := time.Since(pollStartTime)
-				utils.Infof("[CMD_TRACE] [SERVER] [POLL_TIMEOUT] ConnID=%s, RequestID=%s, WaitDuration=%v, PollDuration=%v, Reason=context_done, Time=%s",
-					sp.connectionID, actualRequestID, waitDuration, pollDuration, time.Now().Format("15:04:05.000"))
 				return "", nil, ctx.Err()
 			case <-sp.Ctx().Done():
-				waitDuration := time.Since(waitStartTime)
-				pollDuration := time.Since(pollStartTime)
-				utils.Infof("[CMD_TRACE] [SERVER] [POLL_TIMEOUT] ConnID=%s, RequestID=%s, WaitDuration=%v, PollDuration=%v, Reason=connection_closed, Time=%s",
-					sp.connectionID, actualRequestID, waitDuration, pollDuration, time.Now().Format("15:04:05.000"))
 				return "", nil, sp.Ctx().Err()
 			case responsePkg := <-responseChan:
 				// 从等待队列收到控制包（已匹配 requestID）
-				waitDuration := time.Since(waitStartTime)
-				pollDuration := time.Since(pollStartTime)
-				var responseType string
-				var responseCommandID string
-				if responsePkg != nil {
-					responseType = responsePkg.Type
-					if responsePkg.Data != nil {
-						if cmdPkg, ok := responsePkg.Data.(*packet.CommandPacket); ok {
-							responseCommandID = cmdPkg.CommandId
-						}
-					}
-				}
-				utils.Infof("[CMD_TRACE] [SERVER] [POLL_MATCHED] ConnID=%s, RequestID=%s, ResponseType=%s, CommandID=%s, WaitDuration=%v, PollDuration=%v, Time=%s",
-					sp.connectionID, actualRequestID, responseType, responseCommandID, waitDuration, pollDuration, time.Now().Format("15:04:05.000"))
 				utils.Infof("ServerStreamProcessor: HandlePollRequest - control packet received from waiting queue (type=%s), connID=%s, requestID=%s",
 					responsePkg.Type, sp.connectionID, actualRequestID)
 				return "", responsePkg, nil

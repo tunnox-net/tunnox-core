@@ -3,7 +3,6 @@ package httppoll
 import (
 	"encoding/json"
 	"strings"
-	"time"
 
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -25,15 +24,6 @@ func (sp *ServerStreamProcessor) tryMatchControlPacket() {
 		sp.pendingControlMu.Unlock()
 
 		responsePkg := sp.transferPacketToTunnelPackage(controlPkt)
-
-		// [CMD_TRACE] 尝试匹配控制包
-		var controlCommandID string
-		if controlPkt.CommandPacket != nil {
-			controlCommandID = controlPkt.CommandPacket.CommandId
-		}
-		baseType := byte(controlPkt.PacketType) & 0x3F
-		utils.Infof("[CMD_TRACE] [SERVER] [MATCH_START] ConnID=%s, CommandID=%s, PacketType=0x%02x, PendingCount=%d, Time=%s",
-			sp.connectionID, controlCommandID, baseType, pendingCount, time.Now().Format("15:04:05.000"))
 
 		// 检查是否有等待的 Poll 请求（优先匹配有 requestID 的，且不是 keepalive 类型）
 		sp.pendingPollMu.Lock()
@@ -74,9 +64,6 @@ func (sp *ServerStreamProcessor) tryMatchControlPacket() {
 		}
 		sp.pendingPollMu.Unlock()
 
-		utils.Infof("[CMD_TRACE] [SERVER] [MATCH_CHECK] ConnID=%s, CommandID=%s, AvailablePollCount=%d, KeepaliveCount=%d, MatchedRequestID=%s, Time=%s",
-			sp.connectionID, controlCommandID, availablePollCount, keepaliveCount, targetRequestID, time.Now().Format("15:04:05.000"))
-
 		if targetChan != nil {
 			// 有等待的请求，直接发送（使用该请求的 requestID）
 			select {
@@ -99,8 +86,6 @@ func (sp *ServerStreamProcessor) tryMatchControlPacket() {
 			sp.pendingControlPackets = append([]*packet.TransferPacket{controlPkt}, sp.pendingControlPackets...)
 			pendingCount = len(sp.pendingControlPackets)
 			sp.pendingControlMu.Unlock()
-			utils.Infof("[CMD_TRACE] [SERVER] [MATCH_FAILED] ConnID=%s, CommandID=%s, Reason=no_waiting_poll_request, AvailablePollCount=%d, KeepaliveCount=%d, Action=requeued_to_pendingControlPackets, PendingCount=%d, Time=%s",
-				sp.connectionID, controlCommandID, availablePollCount, keepaliveCount, pendingCount, time.Now().Format("15:04:05.000"))
 			utils.Debugf("ServerStreamProcessor: tryMatchControlPacket - control packet requeued (no waiting requests), connID=%s, remainingPackets=%d", sp.connectionID, pendingCount)
 			return // 没有等待的请求，停止匹配
 		}

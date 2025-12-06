@@ -3,7 +3,6 @@ package httppoll
 import (
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"tunnox-core/internal/utils"
 
@@ -37,8 +36,6 @@ func (sp *StreamProcessor) TriggerImmediatePoll() string {
 
 	select {
 	case sp.pollRequestChan <- requestID:
-		utils.Infof("[CMD_TRACE] [CLIENT] [TRIGGER_POLL_IMMEDIATE] RequestID=%s, ConnID=%s, Time=%s",
-			requestID, sp.connectionID, time.Now().Format("15:04:05.000"))
 		return requestID
 	case <-sp.Ctx().Done():
 		sp.pendingPollRequestMu.Lock()
@@ -50,8 +47,6 @@ func (sp *StreamProcessor) TriggerImmediatePoll() string {
 		sp.pendingPollRequestMu.Lock()
 		sp.pendingPollRequestID = ""
 		sp.pendingPollRequestMu.Unlock()
-		utils.Warnf("[CMD_TRACE] [CLIENT] [TRIGGER_POLL_IMMEDIATE_WARN] RequestID=%s, Reason=pollRequestChan_full, Time=%s",
-			requestID, time.Now().Format("15:04:05.000"))
 		return ""
 	}
 }
@@ -67,10 +62,6 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 		utils.Debugf("HTTPStreamProcessor: sendPollRequest - connection closed, requestID=%s", requestID)
 		return
 	}
-
-	pollStartTime := time.Now()
-	utils.Infof("[CMD_TRACE] [CLIENT] [POLL_START] RequestID=%s, ConnID=%s, Time=%s",
-		requestID, connID, pollStartTime.Format("15:04:05.000"))
 
 	// 构建 Poll 请求的 TunnelPackage
 	pollPkg := &TunnelPackage{
@@ -98,15 +89,12 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 		req.Header.Set("Authorization", "Bearer "+sp.token)
 	}
 
-	utils.Infof("HTTPStreamProcessor: sendPollRequest - Poll request sent, requestID=%s, encodedLen=%d", requestID, len(encoded))
 	resp, err := sp.httpClient.Do(req)
 	if err != nil {
 		utils.Errorf("HTTPStreamProcessor: sendPollRequest - Poll request failed: %v, requestID=%s", err, requestID)
 		return
 	}
 	defer resp.Body.Close()
-
-	utils.Infof("HTTPStreamProcessor: sendPollRequest - Poll response received, status=%d, requestID=%s", resp.StatusCode, requestID)
 
 	// 处理控制包响应（X-Tunnel-Package 中）
 	sp.handleControlPacketResponse(resp, requestID)
@@ -126,8 +114,6 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 func (sp *StreamProcessor) handleControlPacketResponse(resp *http.Response, requestID string) {
 	// 检查是否有控制包（X-Tunnel-Package 中）
 	xTunnelPackage := resp.Header.Get("X-Tunnel-Package")
-	utils.Infof("HTTPStreamProcessor: handleControlPacketResponse - checking X-Tunnel-Package header, present=%v, len=%d, requestID=%s",
-		xTunnelPackage != "", len(xTunnelPackage), requestID)
 	if xTunnelPackage == "" {
 		return
 	}
@@ -138,9 +124,6 @@ func (sp *StreamProcessor) handleControlPacketResponse(resp *http.Response, requ
 		utils.Errorf("HTTPStreamProcessor: handleControlPacketResponse - failed to decode tunnel package: %v, requestID=%s", err, requestID)
 		return
 	}
-
-	utils.Infof("HTTPStreamProcessor: handleControlPacketResponse - decoded tunnel package, requestID in response=%s, expected=%s",
-		pkg.RequestID, requestID)
 
 	// 检查 RequestId 是否匹配
 	if pkg.RequestID != requestID {
@@ -163,8 +146,4 @@ func (sp *StreamProcessor) handleControlPacketResponse(resp *http.Response, requ
 
 	// 缓存响应
 	sp.setCachedResponse(requestID, pkt)
-
-	utils.Infof("HTTPStreamProcessor: handleControlPacketResponse - cached response, requestID=%s, type=0x%02x",
-		requestID, byte(pkt.PacketType)&0x3F)
 }
-

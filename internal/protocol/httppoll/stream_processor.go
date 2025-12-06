@@ -20,11 +20,12 @@ import (
 )
 
 const (
-	defaultPollTimeout = 30 * time.Second
-	maxRetries         = 3
-	retryInterval      = 1 * time.Second
-	maxBufferSize      = 1024 * 1024      // 1MB
-	responseCacheTTL   = 60 * time.Second // 响应缓存过期时间
+	defaultPollTimeout      = 30 * time.Second
+	maxRetries              = 3
+	retryInterval           = 1 * time.Second
+	maxBufferSize           = 1024 * 1024      // 1MB
+	responseCacheTTL        = 60 * time.Second // 响应缓存过期时间
+	responseCacheMaxSize    = 1000             // 响应缓存最大容量
 )
 
 // StreamProcessor HTTP 长轮询流处理器
@@ -174,32 +175,21 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 		// 使用已触发的 Poll 请求 ID，并清除
 		sp.pendingPollRequestID = ""
 		sp.pendingPollRequestMu.Unlock()
-		utils.Infof("[CMD_TRACE] [CLIENT] [READ_START] RequestID=%s (from TriggerImmediatePoll), ConnID=%s, Time=%s",
-			requestID, connID, time.Now().Format("15:04:05.000"))
 	} else {
 		// 生成新的 RequestId
 		requestID = uuid.New().String()
 		sp.pendingPollRequestMu.Unlock()
 
-		readStartTime := time.Now()
-		utils.Infof("[CMD_TRACE] [CLIENT] [READ_START] RequestID=%s (new), ConnID=%s, Time=%s",
-			requestID, connID, readStartTime.Format("15:04:05.000"))
 
 		// 通知 pollLoop 发送 Poll 请求
 		select {
 		case sp.pollRequestChan <- requestID:
-			utils.Infof("[CMD_TRACE] [CLIENT] [POLL_TRIGGER] RequestID=%s, ConnID=%s, Time=%s",
-				requestID, connID, time.Now().Format("15:04:05.000"))
 		case <-sp.Ctx().Done():
 			return nil, 0, sp.Ctx().Err()
 		default:
 			// 通道满，直接返回（pollLoop 会继续处理）
-			utils.Warnf("[CMD_TRACE] [CLIENT] [POLL_TRIGGER_FAILED] RequestID=%s, ConnID=%s, Reason=channel_full, Time=%s",
-				requestID, connID, time.Now().Format("15:04:05.000"))
 		}
 	}
-
-	readStartTime := time.Now()
 
 	// 从缓存中查找响应（带超时）
 	timeout := time.NewTimer(35 * time.Second) // 比 Poll 超时稍长
@@ -209,13 +199,6 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 	if pkt, exists := sp.getCachedResponse(requestID); exists {
 		sp.removeCachedResponse(requestID)
 
-		baseType := byte(pkt.PacketType) & 0x3F
-		var commandID string
-		if pkt.CommandPacket != nil {
-			commandID = pkt.CommandPacket.CommandId
-		}
-		utils.Infof("[CMD_TRACE] [CLIENT] [READ_IMMEDIATE] RequestID=%s, CommandID=%s, PacketType=0x%02x, Time=%s",
-			requestID, commandID, baseType, time.Now().Format("15:04:05.000"))
 		return pkt, 0, nil
 	}
 
@@ -241,14 +224,6 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 			if pkt, exists := sp.getCachedResponse(requestID); exists {
 				sp.removeCachedResponse(requestID)
 
-				readDuration := time.Since(readStartTime)
-				baseType := byte(pkt.PacketType) & 0x3F
-				var commandID string
-				if pkt.CommandPacket != nil {
-					commandID = pkt.CommandPacket.CommandId
-				}
-				utils.Infof("[CMD_TRACE] [CLIENT] [READ_COMPLETE] RequestID=%s, CommandID=%s, PacketType=0x%02x, ReadDuration=%v, Time=%s",
-					requestID, commandID, baseType, readDuration, time.Now().Format("15:04:05.000"))
 				return pkt, 0, nil
 			}
 
@@ -265,7 +240,6 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompression bool, rateLimitBytesPerSecond int64) (int, error) {
 	sp.closeMu.RLock()
 	closed := sp.closed
-	connID := sp.connectionID
 	sp.closeMu.RUnlock()
 
 	if closed {
@@ -274,16 +248,6 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 
 	// 1. 生成 RequestId（用于匹配请求和响应）
 	requestID := uuid.New().String()
-
-	// [CMD_TRACE] 记录 Push 请求开始
-	writeStartTime := time.Now()
-	baseType := byte(pkt.PacketType) & 0x3F
-	var commandID string
-	if pkt.CommandPacket != nil {
-		commandID = pkt.CommandPacket.CommandId
-	}
-	utils.Infof("[CMD_TRACE] [CLIENT] [PUSH_START] RequestID=%s, CommandID=%s, PacketType=0x%02x, ConnID=%s, Time=%s",
-		requestID, commandID, baseType, connID, writeStartTime.Format("15:04:05.000"))
 
 	// 2. 更新转换器的连接状态
 	sp.converter.SetConnectionInfo(sp.connectionID, sp.clientID, sp.mappingID, sp.tunnelType)
@@ -309,7 +273,6 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	default:
 	}
 
-	utils.Infof("HTTPStreamProcessor: WritePacket - sending Push request, requestID=%s, connID=%s, type=0x%02x", requestID, sp.connectionID, byte(pkt.PacketType)&0x3F)
 
 	// 4. 发送请求（带重试）
 	var resp *http.Response
@@ -322,7 +285,6 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 		reqCancel() // 立即取消 context，释放资源
 
 		if err == nil {
-			utils.Infof("HTTPStreamProcessor: WritePacket - Push request sent successfully, requestID=%s, connID=%s", requestID, sp.connectionID)
 			break
 		}
 		utils.Warnf("HTTPStreamProcessor: WritePacket - Push request failed (retry %d/%d), requestID=%s, connID=%s, err=%v", retry+1, maxRetries, requestID, sp.connectionID, err)
@@ -389,18 +351,11 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	// 读取并丢弃响应 body（确保连接正确关闭）
 	// 注意：即使 body 为空，也要读取，否则连接可能不会正确关闭
 	if resp.Body != nil {
-		body, readErr := io.ReadAll(resp.Body)
+		_, readErr := io.ReadAll(resp.Body)
 		if readErr != nil && readErr != io.EOF {
 			utils.Warnf("HTTPStreamProcessor: WritePacket - failed to read response body: %v, requestID=%s, connID=%s", readErr, requestID, sp.connectionID)
-		} else {
-			utils.Infof("HTTPStreamProcessor: WritePacket - Push request completed successfully, requestID=%s, connID=%s, bodyLen=%d", requestID, sp.connectionID, len(body))
 		}
 	}
-
-	// [CMD_TRACE] 记录 Push 请求完成
-	writeDuration := time.Since(writeStartTime)
-	utils.Infof("[CMD_TRACE] [CLIENT] [PUSH_COMPLETE] RequestID=%s, CommandID=%s, Duration=%v, Time=%s",
-		requestID, commandID, writeDuration, time.Now().Format("15:04:05.000"))
 
 	return 0, nil
 }
@@ -421,19 +376,14 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 	sequenceNumber := int64(0)
 
 	// 对大数据包进行分片处理（类似服务器端的 WriteExact）
-	utils.Infof("HTTPStreamProcessor[%s]: WriteExact - splitting %d bytes, connID=%s", sp.connectionID, len(data), sp.connectionID)
 	fragments, err := SplitDataIntoFragments(data, sequenceNumber)
 	if err != nil {
 		utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - failed to split data into fragments: %v, connID=%s", sp.connectionID, err, sp.connectionID)
 		return fmt.Errorf("failed to split data into fragments: %w", err)
 	}
 
-	utils.Infof("HTTPStreamProcessor[%s]: WriteExact - split into %d fragments, connID=%s", sp.connectionID, len(fragments), sp.connectionID)
-
 	// 发送每个分片
 	for i, fragment := range fragments {
-		utils.Infof("HTTPStreamProcessor[%s]: WriteExact - sending fragment %d/%d, groupID=%s, size=%d, originalSize=%d, connID=%s",
-			sp.connectionID, i+1, len(fragments), fragment.FragmentGroupID, fragment.FragmentSize, fragment.OriginalSize, sp.connectionID)
 		// 序列化分片响应为 JSON
 		fragmentJSON, err := MarshalFragmentResponse(fragment)
 		if err != nil {
@@ -480,8 +430,6 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 		}
 
 		// 发送请求
-		utils.Debugf("HTTPStreamProcessor[%s]: WriteExact - sending fragment %d/%d push request, groupID=%s, requestID=%s, connID=%s",
-			sp.connectionID, i+1, len(fragments), fragment.FragmentGroupID, requestID, sp.connectionID)
 		resp, err := sp.httpClient.Do(req)
 		if err != nil {
 			utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - push request failed for fragment %d/%d: %v, groupID=%s, requestID=%s, connID=%s",
@@ -496,30 +444,20 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 				sp.connectionID, i+1, len(fragments), resp.StatusCode, string(body), fragment.FragmentGroupID, requestID, sp.connectionID)
 			return fmt.Errorf("push data request failed: status %d, body: %s", resp.StatusCode, string(body))
 		}
-		utils.Debugf("HTTPStreamProcessor[%s]: WriteExact - fragment %d/%d sent successfully, groupID=%s, requestID=%s, connID=%s",
-			sp.connectionID, i+1, len(fragments), fragment.FragmentGroupID, requestID, sp.connectionID)
 	}
-
-	utils.Infof("HTTPStreamProcessor[%s]: WriteExact - all %d fragments sent successfully, originalSize=%d, connID=%s",
-		sp.connectionID, len(fragments), len(data), sp.connectionID)
 
 	return nil
 }
 
 // ReadExact 从数据流缓冲读取指定长度
 func (sp *StreamProcessor) ReadExact(length int) ([]byte, error) {
-	utils.Debugf("HTTPStreamProcessor[%s]: ReadExact - requested %d bytes, current buffer size=%d, connID=%s",
-		sp.connectionID, length, sp.dataBuffer.Len(), sp.connectionID)
 
 	sp.dataBufMu.Lock()
 	defer sp.dataBufMu.Unlock()
 
 	// 从缓冲读取，如果不够则触发 Poll 请求获取更多数据
 	for sp.dataBuffer.Len() < length {
-		currentBufferLen := sp.dataBuffer.Len()
 		sp.dataBufMu.Unlock()
-		utils.Debugf("HTTPStreamProcessor[%s]: ReadExact - buffer has %d bytes, need %d, triggering Poll request, connID=%s",
-			sp.connectionID, currentBufferLen, length, sp.connectionID)
 		// 触发 Poll 获取更多数据
 		_, _, err := sp.ReadPacket()
 		if err != nil {
@@ -527,8 +465,6 @@ func (sp *StreamProcessor) ReadExact(length int) ([]byte, error) {
 			return nil, err
 		}
 		sp.dataBufMu.Lock()
-		utils.Debugf("HTTPStreamProcessor[%s]: ReadExact - after Poll, buffer size=%d, need %d, connID=%s",
-			sp.connectionID, sp.dataBuffer.Len(), length, sp.connectionID)
 	}
 
 	data := make([]byte, length)
@@ -542,8 +478,6 @@ func (sp *StreamProcessor) ReadExact(length int) ([]byte, error) {
 		return nil, io.ErrUnexpectedEOF
 	}
 
-	utils.Debugf("HTTPStreamProcessor[%s]: ReadExact - read %d bytes successfully, remaining buffer size=%d, connID=%s",
-		sp.connectionID, n, sp.dataBuffer.Len(), sp.connectionID)
 	return data[:n], nil
 }
 

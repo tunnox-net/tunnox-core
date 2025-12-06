@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"time"
 
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/packet"
@@ -217,18 +216,8 @@ func (sp *ServerStreamProcessor) WritePacket(pkt *packet.TransferPacket, useComp
 		utils.Errorf("ServerStreamProcessor: WritePacket called but connection is closed, connID=%s", connID)
 		return 0, io.ErrClosedPipe
 	}
-
-	// [CMD_TRACE] 服务端发送响应开始
-	writeStartTime := time.Now()
-	baseType := byte(pkt.PacketType) & 0x3F
-	var commandID string
-	if pkt.CommandPacket != nil {
-		commandID = pkt.CommandPacket.CommandId
-	}
-	utils.Infof("[CMD_TRACE] [SERVER] [SEND_START] ConnID=%s, CommandID=%s, PacketType=0x%02x, PayloadLen=%d, Time=%s",
-		connID, commandID, baseType, len(pkt.Payload), writeStartTime.Format("15:04:05.000"))
-
 	// 检查是否是控制包（应该通过 X-Tunnel-Package header 返回）
+	baseType := byte(pkt.PacketType) & 0x3F
 	isControlPacket := baseType == byte(packet.HandshakeResp) ||
 		baseType == byte(packet.TunnelOpenAck) ||
 		pkt.PacketType.IsCommandResp() ||
@@ -240,16 +229,9 @@ func (sp *ServerStreamProcessor) WritePacket(pkt *packet.TransferPacket, useComp
 	if isControlPacket {
 		// 控制包：放入待分配队列，等待匹配的 Poll 请求
 		// 每个 requestId 只能用一次，如果有多个控制包需要推送，需要等待多个 Poll 请求
-		utils.Infof("[CMD_TRACE] [SERVER] [SEND_QUEUE] ConnID=%s, CommandID=%s, PacketType=0x%02x, Action=queued_for_poll, Time=%s",
-			connID, commandID, baseType, time.Now().Format("15:04:05.000"))
-
 		sp.pendingControlMu.Lock()
 		sp.pendingControlPackets = append(sp.pendingControlPackets, pkt)
-		pendingCount := len(sp.pendingControlPackets)
 		sp.pendingControlMu.Unlock()
-
-		utils.Infof("[CMD_TRACE] [SERVER] [SEND_QUEUE] ConnID=%s, CommandID=%s, PendingCount=%d, Time=%s",
-			connID, commandID, pendingCount, time.Now().Format("15:04:05.000"))
 
 		// 尝试立即匹配等待的 Poll 请求
 		sp.tryMatchControlPacket()
@@ -257,14 +239,8 @@ func (sp *ServerStreamProcessor) WritePacket(pkt *packet.TransferPacket, useComp
 		// 通知等待的 Poll 请求
 		select {
 		case sp.pollWaitChan <- struct{}{}:
-			utils.Infof("[CMD_TRACE] [SERVER] [SEND_NOTIFY] ConnID=%s, CommandID=%s, Action=notified_poll_waiters, Time=%s",
-				connID, commandID, time.Now().Format("15:04:05.000"))
 		default:
-			utils.Warnf("[CMD_TRACE] [SERVER] [SEND_NOTIFY_FAILED] ConnID=%s, CommandID=%s, Reason=pollWaitChan_full, Time=%s",
-				connID, commandID, time.Now().Format("15:04:05.000"))
 		}
-		utils.Infof("[CMD_TRACE] [SERVER] [SEND_COMPLETE] ConnID=%s, CommandID=%s, Duration=%v, Time=%s",
-			connID, commandID, time.Since(writeStartTime), time.Now().Format("15:04:05.000"))
 		return len(pkt.Payload), nil
 	}
 
