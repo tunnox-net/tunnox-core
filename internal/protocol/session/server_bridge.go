@@ -138,7 +138,7 @@ func (s *SessionManager) runBridgeLifecycle(tunnelID string, bridge *TunnelBridg
 
 // GetTunnelBridgeByConnectionID 通过 ConnectionID 查找 tunnel bridge
 // 统一基于 ConnectionID 寻址
-func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) TunnelBridgeAccessor {
+func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) ITunnelBridgeAccessor {
 	if connID == "" {
 		return nil
 	}
@@ -187,7 +187,7 @@ func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) TunnelBrid
 
 // GetTunnelBridgeByMappingID 通过 mappingID 查找 tunnel bridge（向后兼容）
 // 优先使用 GetTunnelBridgeByConnectionID
-func (s *SessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID int64) TunnelBridgeAccessor {
+func (s *SessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID int64) ITunnelBridgeAccessor {
 	if mappingID == "" {
 		return nil
 	}

@@ -57,7 +57,7 @@ func (s *ManagementAPIServer) HandleHTTPPoll(w http.ResponseWriter, r *http.Requ
 		return s.createHTTPLongPollingConnection(connID, pkg, r.Context())
 	})
 	if streamProcessor == nil {
-		utils.Warnf("HTTP long polling: [HANDLE_POLL] failed to create connection, connID=%s", connID)
+		utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to create connection, connID=%s", connID)
 		s.respondError(w, http.StatusServiceUnavailable, "Failed to create connection")
 		return
 	}

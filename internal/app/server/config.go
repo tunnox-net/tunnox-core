@@ -266,13 +266,13 @@ func LoadConfig(configPath string) (*Config, error) {
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, constants.MsgFailedToReadConfigFile, configPath)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, constants.MsgFailedToReadConfigFile, configPath, err)
 	}
 
 	// 解析YAML
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, constants.MsgFailedToParseConfigFile, configPath)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, constants.MsgFailedToParseConfigFile, configPath, err)
 	}
 
 	// ✅ 应用环境变量覆盖（环境变量优先级高于配置文件）
@@ -302,7 +302,7 @@ func LoadConfig(configPath string) (*Config, error) {
 
 	// 验证配置
 	if err := ValidateConfig(&config); err != nil {
-		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, constants.MsgInvalidConfiguration)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, constants.MsgInvalidConfiguration, err)
 	}
 
 	utils.Infof(constants.MsgConfigLoadedFrom, configPath)

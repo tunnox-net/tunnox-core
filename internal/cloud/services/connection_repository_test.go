@@ -17,7 +17,8 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("CreateConnection_and_GetConnection", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo, context.Background())
+		connRepo, err := repos.NewConnectionRepo(repo, context.Background())
+		require.NoError(t, err)
 
 		connInfo := &models.ConnectionInfo{
 			ConnID:    "test-conn-1",
@@ -45,7 +46,8 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("UpdateConnection", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo, context.Background())
+		connRepo, err := repos.NewConnectionRepo(repo, context.Background())
+		require.NoError(t, err)
 
 		connInfo := &models.ConnectionInfo{
 			ConnID:    "test-conn-2",
@@ -77,7 +79,8 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("DeleteConnection", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo, context.Background())
+		connRepo, err := repos.NewConnectionRepo(repo, context.Background())
+		require.NoError(t, err)
 
 		connInfo := &models.ConnectionInfo{
 			ConnID:    "test-conn-3",
@@ -102,7 +105,8 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("ListConnections", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo, context.Background())
+		connRepo, err := repos.NewConnectionRepo(repo, context.Background())
+		require.NoError(t, err)
 
 		// 创建映射ID
 		mappingID := "test-mapping-4"
@@ -143,7 +147,8 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("ListClientConns", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo, context.Background())
+		connRepo, err := repos.NewConnectionRepo(repo, context.Background())
+		require.NoError(t, err)
 
 		// 创建客户端ID
 		clientID := int64(1)
@@ -183,7 +188,8 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("UpdateStats", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo, context.Background())
+		connRepo, err := repos.NewConnectionRepo(repo, context.Background())
+		require.NoError(t, err)
 
 		// 创建连接信息
 		connInfo := &models.ConnectionInfo{
@@ -215,7 +221,8 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
 		}
-		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage)
+		ctx := context.Background()
+		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage, ctx)
 
 		// 先创建一个映射
 		mapping := &models.PortMapping{
@@ -255,7 +262,8 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
 		}
-		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage)
+		ctx := context.Background()
+		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage, ctx)
 
 		// 先创建一个映射
 		mapping := &models.PortMapping{
@@ -308,7 +316,8 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
 		}
-		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage)
+		ctx := context.Background()
+		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage, ctx)
 
 		// 先创建一个映射
 		mapping := &models.PortMapping{
@@ -350,7 +359,8 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 			JWTSecretKey:  "test-secret",
 			JWTExpiration: 24 * time.Hour,
 		}
-		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage)
+		ctx := context.Background()
+		cloudControl := managers.NewBuiltinCloudControlWithStorage(config, storage, ctx)
 
 		// 先创建一个映射
 		mapping := &models.PortMapping{
@@ -390,7 +400,8 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 func TestConnectionRepository_Dispose(t *testing.T) {
 	ctx := context.Background()
 	repo := repos.NewRepository(storage.NewMemoryStorage(ctx))
-	connRepo := repos.NewConnectionRepo(repo, ctx)
+	connRepo, err := repos.NewConnectionRepo(repo, ctx)
+	require.NoError(t, err)
 	require.NotNil(t, connRepo)
 
 	// 验证初始状态
@@ -411,7 +422,8 @@ func TestConnectionRepository_Dispose(t *testing.T) {
 func TestConnectionRepository_Dispose_Concurrent(t *testing.T) {
 	ctx := context.Background()
 	repo := repos.NewRepository(storage.NewMemoryStorage(ctx))
-	connRepo := repos.NewConnectionRepo(repo, ctx)
+	connRepo, err := repos.NewConnectionRepo(repo, ctx)
+	require.NoError(t, err)
 	require.NotNil(t, connRepo)
 
 	done := make(chan struct{})

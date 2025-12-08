@@ -4,7 +4,6 @@ import (
 	"context"
 
 	coreErrors "tunnox-core/internal/core/errors"
-	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/utils"
 )
 
@@ -62,12 +61,9 @@ func (ps *ProtocolService) GetManager() *ProtocolManager {
 	return ps.manager
 }
 
-// RegisterAdapter 注册协议适配器
-func (ps *ProtocolService) RegisterAdapter(adapter adapter.Adapter) {
-	ps.manager.Register(adapter)
-}
-
-// GetAdapterCount 获取适配器数量
+// GetAdapterCount 获取适配器数量（用于监控和调试）
 func (ps *ProtocolService) GetAdapterCount() int {
+	// 注意：此方法访问了 ProtocolManager 的内部字段，但这是合理的，
+	// 因为 ProtocolService 是 ProtocolManager 的包装器
 	return len(ps.manager.adapters)
 }

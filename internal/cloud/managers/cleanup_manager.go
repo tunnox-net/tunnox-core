@@ -42,7 +42,24 @@ func NewCleanupManager(storage storage.Storage, lock distributed.DistributedLock
 		ticker:      time.NewTicker(5 * time.Minute), // 每5分钟清理一次
 		done:        make(chan bool),
 	}
+	// 添加清理处理器，确保 ticker 和 done channel 正确清理
+	manager.AddCleanHandler(manager.onClose)
 	return manager
+}
+
+// onClose 资源清理回调
+func (cm *CleanupManager) onClose() error {
+	if cm.ticker != nil {
+		cm.ticker.Stop()
+	}
+	// 安全关闭 done 通道
+	select {
+	case <-cm.done:
+		// 通道已经关闭，不需要再次关闭
+	default:
+		close(cm.done)
+	}
+	return nil
 }
 
 // RegisterCleanupTask 注册清理任务

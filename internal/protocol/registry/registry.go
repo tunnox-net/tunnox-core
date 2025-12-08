@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"tunnox-core/internal/core/validation"
 	"tunnox-core/internal/protocol/adapter"
 	coreErrors "tunnox-core/internal/core/errors"
 )
@@ -35,10 +36,43 @@ type Config struct {
 	Options map[string]interface{} // 协议特定选项
 }
 
+// Validate 验证协议配置（使用统一的验证接口）
+func (c *Config) Validate() error {
+	result := &validation.ValidationResult{}
+
+	// 验证协议名称
+	if c.Name == "" {
+		result.AddError(coreErrors.New(coreErrors.ErrorTypePermanent, "protocol name is required"))
+	}
+
+	// 验证主机地址（如果提供）
+	if c.Host != "" {
+		if err := validation.ValidateHost(c.Host, "host"); err != nil {
+			result.AddError(err)
+		}
+	}
+
+	// 验证端口（如果提供且大于0）
+	if c.Port > 0 {
+		if err := validation.ValidatePort(c.Port, "port"); err != nil {
+			result.AddError(err)
+		}
+	}
+
+	if !result.IsValid() {
+		return result
+	}
+	return nil
+}
+
 // Registry 协议注册表
+// 职责：
+// 1. 协议的注册和查询
+// 2. 协议名称的唯一性保证
+// 3. 线程安全的协议访问
 type Registry struct {
-	protocols map[string]Protocol
-	mu        sync.RWMutex
+	protocols map[string]Protocol // 协议映射（key: 协议名称, value: 协议实现）
+	mu        sync.RWMutex        // 保护 protocols 的并发访问
 }
 
 // NewRegistry 创建协议注册表

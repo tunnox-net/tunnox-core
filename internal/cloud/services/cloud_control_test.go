@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"testing"
 	"time"
 	"tunnox-core/internal/cloud/managers"
@@ -20,7 +21,8 @@ func TestBuiltInCloudControl_Dispose(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := managers.NewBuiltinCloudControl(config)
+	ctx := context.Background()
+	cloudControl := managers.NewBuiltinCloudControl(config, ctx)
 	require.NotNil(t, cloudControl)
 
 	// 验证初始状态
@@ -56,7 +58,8 @@ func TestBuiltInCloudControl_ContextCancellation(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := managers.NewBuiltinCloudControl(config)
+	ctx := context.Background()
+	cloudControl := managers.NewBuiltinCloudControl(config, ctx)
 	require.NotNil(t, cloudControl)
 
 	// 启动云控
@@ -88,7 +91,8 @@ func TestBuiltInCloudControl_StartAfterClose(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := managers.NewBuiltinCloudControl(config)
+	ctx := context.Background()
+	cloudControl := managers.NewBuiltinCloudControl(config, ctx)
 	require.NotNil(t, cloudControl)
 
 	// 关闭云控
@@ -115,7 +119,8 @@ func TestBuiltInCloudControl_StopAfterClose(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := managers.NewBuiltinCloudControl(config)
+	ctx := context.Background()
+	cloudControl := managers.NewBuiltinCloudControl(config, ctx)
 	require.NotNil(t, cloudControl)
 
 	// 关闭云控
@@ -137,7 +142,8 @@ func TestBuiltInCloudControl_CloseMultipleTimes(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := managers.NewBuiltinCloudControl(config)
+	ctx := context.Background()
+	cloudControl := managers.NewBuiltinCloudControl(config, ctx)
 	require.NotNil(t, cloudControl)
 
 	// 启动云控
@@ -164,7 +170,8 @@ func TestBuiltInCloudControl_NodeRegistration(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := managers.NewBuiltinCloudControl(config)
+	ctx := context.Background()
+	cloudControl := managers.NewBuiltinCloudControl(config, ctx)
 	require.NotNil(t, cloudControl)
 	defer cloudControl.Close()
 
@@ -201,7 +208,8 @@ func TestBuiltInCloudControl_ClientCreation(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := managers.NewBuiltinCloudControl(config)
+	ctx := context.Background()
+	cloudControl := managers.NewBuiltinCloudControl(config, ctx)
 	require.NotNil(t, cloudControl)
 	defer cloudControl.Close()
 
@@ -232,7 +240,8 @@ func TestBuiltInCloudControl_JWTTokenGeneration(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := managers.NewBuiltinCloudControl(config)
+	ctx := context.Background()
+	cloudControl := managers.NewBuiltinCloudControl(config, ctx)
 	require.NotNil(t, cloudControl)
 	defer cloudControl.Close()
 
@@ -271,7 +280,8 @@ func TestBuiltInCloudControl_AnonymousCredentials(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := managers.NewBuiltinCloudControl(config)
+	ctx := context.Background()
+	cloudControl := managers.NewBuiltinCloudControl(config, ctx)
 	require.NotNil(t, cloudControl)
 	defer cloudControl.Close()
 
@@ -302,7 +312,8 @@ func TestBuiltInCloudControl_SystemStats(t *testing.T) {
 	}
 
 	// 创建云控实例
-	cloudControl := managers.NewBuiltinCloudControl(config)
+	ctx := context.Background()
+	cloudControl := managers.NewBuiltinCloudControl(config, ctx)
 	require.NotNil(t, cloudControl)
 	defer cloudControl.Close()
 

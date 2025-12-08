@@ -112,7 +112,7 @@ func (sp *ServerStreamProcessor) onClose() error {
 	if sp.closed {
 		return nil
 	}
-	utils.Debugf("ServerStreamProcessor: onClose called, connID=%s", sp.connectionID)
+	// 关闭连接
 	sp.closed = true
 
 	close(sp.pollDataChan)
@@ -222,8 +222,7 @@ func (sp *ServerStreamProcessor) WritePacket(pkt *packet.TransferPacket, useComp
 		pkt.PacketType.IsCommandResp() ||
 		pkt.PacketType.IsJsonCommand()
 
-	utils.Debugf("ServerStreamProcessor: WritePacket - isControlPacket=%v, HandshakeResp=0x%02x, baseType=0x%02x, connID=%s",
-		isControlPacket, byte(packet.HandshakeResp), baseType, sp.connectionID)
+	// 判断是否为控制包
 
 	if isControlPacket {
 		// 控制包：放入待分配队列，等待匹配的 Poll 请求

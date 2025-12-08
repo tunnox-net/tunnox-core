@@ -154,8 +154,8 @@ func TestCloseConnection_ReleasesAllResources(t *testing.T) {
 	require.NoError(t, err)
 
 	// 验证连接已被移除
-	_, err := sessionMgr.GetConnection(conn.ID)
-	assert.Error(t, err)
+	_, err2 := sessionMgr.GetConnection(conn.ID)
+	assert.Error(t, err2)
 
 	// 验证控制连接已被移除
 	controlConn2 := sessionMgr.GetControlConnection(conn.ID)

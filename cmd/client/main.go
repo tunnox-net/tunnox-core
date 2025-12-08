@@ -326,7 +326,7 @@ func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64,
 	return config, nil
 }
 
-// validateConfig 验证配置
+// validateConfig 验证配置（使用统一的验证接口）
 func validateConfig(config *client.ClientConfig, setDefaults bool) error {
 	// 如果需要设置默认值（非自动连接模式）
 	if setDefaults {
@@ -345,34 +345,16 @@ func validateConfig(config *client.ClientConfig, setDefaults bool) error {
 	// 规范化协议名称（如果有协议）
 	if config.Server.Protocol != "" {
 		config.Server.Protocol = normalizeProtocol(config.Server.Protocol)
-
-		// 验证协议
-		validProtocols := []string{"tcp", "websocket", "udp", "quic", "httppoll", "http-long-polling", "httplp"}
-		valid := false
-		for _, p := range validProtocols {
-			if config.Server.Protocol == p {
-				valid = true
-				break
-			}
-		}
-		if !valid {
-			return fmt.Errorf("invalid protocol: %s (must be one of: tcp, websocket, udp, quic, httppoll)", config.Server.Protocol)
-		}
 	}
+
 	// 如果协议为空且地址也为空，说明是自动连接模式，协议会在自动连接时确定
-
-	// 验证认证配置
-	if !config.Anonymous {
-		if config.ClientID == 0 {
-			return fmt.Errorf("client_id is required for authenticated mode")
-		}
-	} else {
-		if config.DeviceID == "" {
-			config.DeviceID = "anonymous-device"
-		}
+	// 匿名模式下，如果没有 device_id，设置默认值
+	if config.Anonymous && config.DeviceID == "" {
+		config.DeviceID = "anonymous-device"
 	}
 
-	return nil
+	// 使用统一的验证接口
+	return config.Validate()
 }
 
 // normalizeProtocol 规范化协议名称

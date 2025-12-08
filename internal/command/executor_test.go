@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 	"tunnox-core/internal/core/types"
@@ -337,8 +338,8 @@ func TestCommandExecutor_DuplexTimeout(t *testing.T) {
 		return
 	}
 
-	// 验证错误信息
-	if err.Error() != "command timeout" {
+	// 验证错误信息（TypedError 格式包含错误类型前缀）
+	if !strings.Contains(err.Error(), "command timeout") {
 		t.Errorf("Expected timeout error, got %v", err)
 	}
 }

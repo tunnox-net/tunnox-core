@@ -183,9 +183,7 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 				continue
 			}
 
-			// 调试：打印前5字节的十六进制值
-			utils.Debugf("HTTP long polling: writeFlushLoop buffer first 5 bytes: %02x %02x %02x %02x %02x",
-				bufData[0], bufData[1], bufData[2], bufData[3], bufData[4])
+			// 解析包类型和大小
 
 			// 检查包类型是否有效（应该是 0x00-0xFF 范围内的值，但通常不会超过 0x3F + 标志位）
 			packetType := bufData[0]
@@ -250,7 +248,7 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 				}
 			}
 
-			utils.Debugf("HTTP long polling: writeFlushLoop checking buffer, bufLen=%d, bodySize=%d, packetSize=%d", bufLen, bodySize, packetSize)
+			// 检查是否有完整包
 
 			if bufLen >= packetSize {
 				// 有完整包，提取并发送

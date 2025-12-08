@@ -86,20 +86,18 @@ func (c *ServerHTTPLongPollingConn) Write(p []byte) (int, error) {
 
 // writeFlushLoop 写入刷新循环（检查完整包并发送）
 func (c *ServerHTTPLongPollingConn) writeFlushLoop() {
-	utils.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] started, clientID=%d", c.clientID)
+	utils.Infof("HTTP long polling: [WRITE_FLUSH_LOOP] started, clientID=%d", c.clientID)
 	ticker := time.NewTicker(50 * time.Millisecond) // 每50ms检查一次
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-c.Ctx().Done():
-			utils.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] context canceled, clientID=%d", c.clientID)
 			return
 		case <-ticker.C:
 			// 定期检查缓冲区
 		case <-c.writeFlush:
 			// 收到刷新信号，立即检查
-			utils.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] received flush signal, clientID=%d", c.clientID)
 		}
 
 		// 检查是否已切换到流模式
@@ -118,8 +116,7 @@ func (c *ServerHTTPLongPollingConn) writeFlushLoop() {
 			c.writeBuffer.Reset()
 			c.writeBufMu.Unlock()
 
-			utils.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] stream mode: pushing %d bytes directly to priority queue, clientID=%d, mappingID=%s",
-				len(data), c.clientID, c.mappingID)
+			// 流模式：直接推送原始数据
 			c.pollDataQueue.Push(data)
 
 			// 立即通知 pollDataScheduler 有数据可用（非阻塞）
@@ -174,8 +171,7 @@ func (c *ServerHTTPLongPollingConn) writeFlushLoop() {
 				continue
 			}
 
-			utils.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] checking buffer, bufLen=%d, bodySize=%d, packetSize=%d, clientID=%d",
-				bufLen, bodySize, packetSize, c.clientID)
+			// 检查缓冲区是否有完整包
 
 			if bufLen >= packetSize {
 				// 有完整包，提取并发送

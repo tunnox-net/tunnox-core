@@ -145,7 +145,7 @@ func (s *ManagementAPIServer) handleHandshakePackage(streamProcessor *httppoll.S
 
 // getControlConnectionByConnID 通过 ConnectionID 获取控制连接
 // 注意：此方法目前未使用，保留用于未来扩展
-func (s *ManagementAPIServer) getControlConnectionByConnID(connID string) ControlConnectionAccessor {
+func (s *ManagementAPIServer) getControlConnectionByConnID(connID string) IControlConnectionAccessor {
 	// 通过 SessionManager 获取控制连接
 	// 注意：SessionManager 接口目前没有按 ConnID 查找的方法
 	// 需要通过 clientID 查找，这里暂时返回 nil

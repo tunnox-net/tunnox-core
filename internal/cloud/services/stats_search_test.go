@@ -21,7 +21,7 @@ func TestGetSystemStats(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建一些数据
 	_, err := cloudControl.CreateUser("user1", "user1@example.com")
@@ -49,7 +49,7 @@ func TestGetTrafficStats(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 获取流量统计（即使没有数据也应该返回空列表）
 	trafficStats, err := cloudControl.GetTrafficStats("1h")
@@ -67,7 +67,7 @@ func TestGetConnectionStats(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 获取连接统计（即使没有数据也应该返回空列表）
 	connStats, err := cloudControl.GetConnectionStats("1h")
@@ -85,7 +85,7 @@ func TestGetUserStats(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建用户
 	user, err := cloudControl.CreateUser("testuser", "test@example.com")
@@ -108,7 +108,7 @@ func TestGetClientStats(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建客户端
 	client, err := cloudControl.CreateClient("user-1", "client1")
@@ -131,7 +131,7 @@ func TestSearchUsers(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建测试用户
 	_, err := cloudControl.CreateUser("alice", "alice@example.com")
@@ -168,7 +168,7 @@ func TestSearchClients(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建测试客户端
 	client1, err := cloudControl.CreateClient("user-1", "client-alpha")
@@ -205,7 +205,7 @@ func TestSearchPortMappings(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建测试映射
 	mapping1 := &models.PortMapping{
@@ -234,7 +234,7 @@ func TestSearchUsers_EmptyResult(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 搜索不存在的用户
 	users, err := cloudControl.SearchUsers("nonexistent-user-xyz")
@@ -254,7 +254,7 @@ func TestSearchClients_CaseInsensitive(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建客户端
 	_, err := cloudControl.CreateClient("user-1", "TestClient")
@@ -287,7 +287,7 @@ func TestStats_MultipleDataPoints(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建多个用户和客户端
 	for i := 0; i < 5; i++ {

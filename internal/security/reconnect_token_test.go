@@ -68,10 +68,10 @@ func TestValidateReconnectToken_Expired(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
 	
-	// 使用1秒TTL
+	// 使用500毫秒TTL（减少等待时间以加快测试）
 	config := &ReconnectTokenConfig{
 		SecretKey: "test-secret",
-		TTL:       1 * time.Second,
+		TTL:       500 * time.Millisecond,
 	}
 	manager := NewReconnectTokenManager(config, memStorage)
 
@@ -80,7 +80,7 @@ func TestValidateReconnectToken_Expired(t *testing.T) {
 	require.NoError(t, err)
 
 	// 等待过期
-	time.Sleep(1100 * time.Millisecond)
+	time.Sleep(600 * time.Millisecond)
 
 	// 验证失败（已过期）
 	err = manager.ValidateReconnectToken(token)
@@ -203,10 +203,10 @@ func TestReconnectToken_TTLExpiration(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
 
-	// 使用2秒TTL
+	// 使用1秒TTL（减少等待时间以加快测试）
 	config := &ReconnectTokenConfig{
 		SecretKey: "test-secret",
-		TTL:       2 * time.Second,
+		TTL:       1 * time.Second,
 	}
 	manager := NewReconnectTokenManager(config, memStorage)
 
@@ -218,8 +218,8 @@ func TestReconnectToken_TTLExpiration(t *testing.T) {
 	err = manager.MarkTokenAsUsed(token)
 	require.NoError(t, err)
 
-	// 等待TTL过期
-	time.Sleep(2100 * time.Millisecond)
+	// 等待TTL过期（减少等待时间以加快测试）
+	time.Sleep(1100 * time.Millisecond)
 
 	// 存储中的标记应该已过期
 	usedKey := "reconnect:token:used:" + token.TokenID

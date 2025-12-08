@@ -6,8 +6,9 @@ import (
 	"tunnox-core/internal/utils"
 )
 
-// StreamProcessorAccessor 类型别名，用于在接口定义中使用
-type StreamProcessorAccessor = stream.StreamProcessorAccessor
+// StreamProcessorAccessor 类型别名，用于在接口定义中使用（向后兼容）
+// 注意：新代码应使用 stream.IStreamProcessorAccessor
+type StreamProcessorAccessor = stream.IStreamProcessorAccessor
 
 // CreateTunnelConnection 从现有连接创建统一接口的隧道连接
 // 根据协议类型自动选择合适的实现

@@ -14,19 +14,17 @@ import (
 )
 
 func (c *HTTPLongPollingConn) pollLoop() {
-	utils.Debugf("HTTP long polling: pollLoop started, clientID=%d, pollURL=%s", c.clientID, c.pollURL)
-	defer utils.Debugf("HTTP long polling: pollLoop exiting, clientID=%d", c.clientID)
+	utils.Infof("HTTP long polling: pollLoop started, clientID=%d, pollURL=%s", c.clientID, c.pollURL)
+	defer utils.Infof("HTTP long polling: pollLoop exiting, clientID=%d", c.clientID)
 
 	// 检查 context 是否已取消
 	if c.Ctx().Err() != nil {
-		utils.Debugf("HTTP long polling: pollLoop context already cancelled: %v", c.Ctx().Err())
 		return
 	}
 
 	for {
 		select {
 		case <-c.Ctx().Done():
-			utils.Debugf("HTTP long polling: pollLoop exiting due to context cancellation: %v", c.Ctx().Err())
 			return
 		default:
 		}
@@ -75,21 +73,17 @@ func (c *HTTPLongPollingConn) pollLoop() {
 		}
 		req.Header.Set("X-Tunnel-Package", encodedPkg)
 
-		utils.Debugf("HTTP long polling: sending poll request, clientID=%d, mappingID=%s, url=%s", c.clientID, c.mappingID, u.String())
 		// 发送长轮询请求
 		resp, err := c.pollClient.Do(req)
 		if err != nil {
 			// 如果是 context 取消，直接退出
 			if err == context.Canceled || c.Ctx().Err() != nil {
-				utils.Debugf("HTTP long polling: poll request cancelled, exiting")
 				return
 			}
-			utils.Debugf("HTTP long polling: poll request failed: %v, retrying...", err)
+			utils.Warnf("HTTP long polling: poll request failed: %v, retrying..., clientID=%d", err, c.clientID)
 			time.Sleep(httppollRetryInterval)
 			continue
 		}
-
-		utils.Debugf("HTTP long polling: poll request succeeded, status=%d", resp.StatusCode)
 
 		// 注意：keepalive 请求仅用于维持连接，不应该包含指令
 		// 指令应该通过 HTTPStreamProcessor 的 Poll 请求（TunnelType="control" 或 "data"）接收
@@ -112,8 +106,6 @@ func (c *HTTPLongPollingConn) pollLoop() {
 
 		// 处理数据：使用统一的分片处理接口
 		if pollResp.Data != "" {
-			utils.Debugf("HTTP long polling: received fragment response, groupID=%s, index=%d/%d, size=%d, mappingID=%s",
-				pollResp.FragmentGroupID, pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentSize, c.mappingID)
 
 			// 使用统一的分片处理器（按序列号顺序处理）
 			isComplete, reassembledData, err := httppoll.ProcessFragmentFromResponse(c.fragmentProcessor, pollResp)
@@ -133,8 +125,6 @@ func (c *HTTPLongPollingConn) pollLoop() {
 				case <-c.Ctx().Done():
 					return
 				case c.base64DataChan <- base64Data:
-					utils.Debugf("HTTP long polling: sent processed fragment to base64DataChan, size=%d, mappingID=%s",
-						len(base64Data), c.mappingID)
 				default:
 					utils.Warnf("HTTP long polling: base64DataChan full, dropping processed fragment, size=%d, mappingID=%s",
 						len(base64Data), c.mappingID)
@@ -167,8 +157,7 @@ func (c *HTTPLongPollingConn) pollLoop() {
 			case <-c.Ctx().Done():
 				return
 			case c.base64DataChan <- base64Data:
-				utils.Debugf("HTTP long polling: sent reassembled data to base64DataChan, size=%d, mappingID=%s",
-					len(base64Data), c.mappingID)
+				// 成功发送
 			default:
 				// 如果 channel 满了，使用带超时的发送，避免无限阻塞
 				// 但继续处理下一个分片组，而不是直接返回（避免分片组积压）
@@ -178,8 +167,7 @@ func (c *HTTPLongPollingConn) pollLoop() {
 				case <-c.Ctx().Done():
 					return
 				case c.base64DataChan <- base64Data:
-					utils.Debugf("HTTP long polling: sent reassembled data to base64DataChan after wait, size=%d, mappingID=%s",
-						len(base64Data), c.mappingID)
+					// 成功发送
 				case <-time.After(5 * time.Second):
 					// 超时，跳过这个数据包，继续处理下一个（避免死锁）
 					utils.Errorf("HTTP long polling: timeout sending to base64DataChan, dropping data, size=%d, mappingID=%s",
@@ -189,9 +177,7 @@ func (c *HTTPLongPollingConn) pollLoop() {
 			}
 		}
 
-		if pollResp.Timeout {
-			utils.Debugf("HTTP long polling: poll request timeout, retrying...")
-		}
+		// 超时是正常情况，继续循环
 
 		// 继续循环，立即发起下一个请求（无论是否超时）
 		continue

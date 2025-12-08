@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -54,7 +55,8 @@ func TestStorageAdapter(t *testing.T) {
 		if err == nil {
 			t.Error("expected error for nil storage, got nil")
 		}
-		if err.Error() != "storage is nil" {
+		// TypedError 格式包含错误类型前缀
+		if !strings.Contains(err.Error(), "storage is nil") {
 			t.Errorf("expected 'storage is nil', got %s", err.Error())
 		}
 	})

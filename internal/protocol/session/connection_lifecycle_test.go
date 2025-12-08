@@ -24,8 +24,8 @@ func TestConnectionCleanup_RemovesStaleConnections(t *testing.T) {
 
 	// 创建配置：短超时时间便于测试
 	config := &SessionConfig{
-		HeartbeatTimeout: 2 * time.Second,
-		CleanupInterval:  1 * time.Second,
+		HeartbeatTimeout: 800 * time.Millisecond,
+		CleanupInterval:  400 * time.Millisecond,
 	}
 
 	// 创建SessionManager
@@ -51,16 +51,16 @@ func TestConnectionCleanup_RemovesStaleConnections(t *testing.T) {
 	// 验证初始状态
 	assert.Equal(t, 3, len(sessionMgr.controlConnMap), "Should have 3 connections")
 
-	// 等待1.5秒
-	time.Sleep(1500 * time.Millisecond)
+	// 等待600毫秒（让conn1和conn2接近超时）
+	time.Sleep(600 * time.Millisecond)
 
 	// 更新conn3的活跃时间（模拟接收心跳）
 	sessionMgr.controlConnLock.Lock()
 	conn3.UpdateActivity()
 	sessionMgr.controlConnLock.Unlock()
 
-	// 再等待1秒让conn1和conn2超时，并触发清理
-	time.Sleep(1000 * time.Millisecond)
+	// 再等待600毫秒让conn1和conn2超时，并触发清理（需要超过HeartbeatTimeout）
+	time.Sleep(600 * time.Millisecond)
 
 	// 验证：conn1和conn2应该被清理，conn3应该保留
 	sessionMgr.controlConnLock.RLock()
@@ -85,8 +85,8 @@ func TestConnectionCleanup_PreservesActiveConnections(t *testing.T) {
 	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	config := &SessionConfig{
-		HeartbeatTimeout: 3 * time.Second,
-		CleanupInterval:  1 * time.Second,
+		HeartbeatTimeout: 1 * time.Second,
+		CleanupInterval:  500 * time.Millisecond,
 	}
 
 	sessionMgr := NewSessionManagerWithConfig(idManager, ctx, config)
@@ -117,8 +117,8 @@ func TestConnectionCleanup_PreservesActiveConnections(t *testing.T) {
 		}
 	}()
 
-	// 等待5秒（超过超时时间，但因为持续心跳，连接应该保留）
-	time.Sleep(5 * time.Second)
+	// 等待2秒（超过超时时间，但因为持续心跳，连接应该保留）
+	time.Sleep(2 * time.Second)
 	close(done)
 
 	// 验证连接仍然存在

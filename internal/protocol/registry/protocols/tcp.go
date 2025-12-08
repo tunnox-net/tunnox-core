@@ -28,10 +28,15 @@ func (p *TCPProtocol) Dependencies() []string {
 	return []string{"session_manager"}
 }
 
-// ValidateConfig 验证配置
+// ValidateConfig 验证配置（使用统一的验证接口）
 func (p *TCPProtocol) ValidateConfig(config *registry.Config) error {
-	if config.Port <= 0 || config.Port > 65535 {
-		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "TCP port must be in range [1, 65535], got %d", config.Port)
+	// 先调用基础验证
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	// TCP 协议需要端口
+	if config.Port <= 0 {
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "TCP port is required")
 	}
 	return nil
 }

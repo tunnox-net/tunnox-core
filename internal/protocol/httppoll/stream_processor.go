@@ -288,7 +288,13 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 		if err == nil {
 			break
 		}
-		utils.Warnf("HTTPStreamProcessor: WritePacket - Push request failed (retry %d/%d), requestID=%s, connID=%s, err=%v", retry+1, maxRetries, requestID, sp.connectionID, err)
+		// 重试中的失败，记录为Warn（可恢复）
+		if retry < maxRetries-1 {
+			utils.Warnf("HTTPStreamProcessor: WritePacket - Push request failed (retry %d/%d), requestID=%s, connID=%s, err=%v", retry+1, maxRetries, requestID, sp.connectionID, err)
+		} else {
+			// 最后一次重试失败，记录为Error
+			utils.Errorf("HTTPStreamProcessor: WritePacket - Push request failed after %d retries, requestID=%s, connID=%s, err=%v", maxRetries, requestID, sp.connectionID, err)
+		}
 		if retry < maxRetries-1 {
 			time.Sleep(retryInterval * time.Duration(retry+1))
 			// 重新创建请求（使用相同的 RequestId）
@@ -321,7 +327,7 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 					func() {
 						defer func() {
 							if r := recover(); r != nil {
-								utils.Warnf("HTTPStreamProcessor: WritePacket - panic when writing to packetQueue (likely closed), requestID=%s, connID=%s, error=%v", requestID, sp.connectionID, r)
+								utils.Errorf("HTTPStreamProcessor: WritePacket - panic when writing to packetQueue (likely closed), requestID=%s, connID=%s, error=%v", requestID, sp.connectionID, r)
 							}
 						}()
 						select {
@@ -353,6 +359,7 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	if resp.Body != nil {
 		_, readErr := io.ReadAll(resp.Body)
 		if readErr != nil && readErr != io.EOF {
+			// 读取响应body失败，但不影响主要功能，记录为Warn
 			utils.Warnf("HTTPStreamProcessor: WritePacket - failed to read response body: %v, requestID=%s, connID=%s", readErr, requestID, sp.connectionID)
 		}
 	}

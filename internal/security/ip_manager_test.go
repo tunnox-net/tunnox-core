@@ -94,16 +94,16 @@ func TestIPManager_TemporaryBlacklist(t *testing.T) {
 	
 	ip := "192.168.1.100"
 	
-	// 添加到黑名单，1秒后过期
-	err := manager.AddToBlacklist(ip, 1*time.Second, "temp ban", "admin")
+	// 添加到黑名单，500毫秒后过期（减少等待时间以加快测试）
+	err := manager.AddToBlacklist(ip, 500*time.Millisecond, "temp ban", "admin")
 	require.NoError(t, err, "Failed to add to blacklist")
 	
 	// 应该被封禁
 	allowed, _ := manager.IsAllowed(ip)
 	assert.False(t, allowed, "IP should be blocked")
 	
-	// 等待过期
-	time.Sleep(1500 * time.Millisecond)
+	// 等待过期（减少等待时间以加快测试）
+	time.Sleep(600 * time.Millisecond)
 	
 	// 应该自动解封
 	allowed, _ = manager.IsAllowed(ip)

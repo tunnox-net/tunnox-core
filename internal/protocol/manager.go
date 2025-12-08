@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/protocol/adapter"
@@ -11,27 +12,22 @@ import (
 )
 
 // ProtocolManager 协议管理器
+// 职责：
+// 1. 管理协议的注册（通过 Registry）
+// 2. 管理协议的初始化（依赖验证、拓扑排序、初始化）
+// 3. 管理适配器的生命周期（启动、关闭）
 type ProtocolManager struct {
 	*dispose.ManagerBase
-	registry  *registry.Registry
-	container registry.Container
-	adapters  map[string]adapter.Adapter
-	mu        sync.RWMutex
+	registry  *registry.Registry  // 协议注册表（职责：协议注册和查询）
+	container registry.Container   // 依赖注入容器（职责：服务解析）
+	adapters  map[string]adapter.Adapter // 适配器映射（职责：适配器生命周期管理）
+	mu        sync.RWMutex        // 保护 adapters 的并发访问
 }
 
-// NewProtocolManager 创建协议管理器（兼容旧版本）
-func NewProtocolManager(parentCtx context.Context) *ProtocolManager {
-	manager := &ProtocolManager{
-		ManagerBase: dispose.NewManager("ProtocolManager", parentCtx),
-		registry:    registry.NewRegistry(),
-		adapters:    make(map[string]adapter.Adapter),
-	}
-	manager.AddCleanHandler(manager.onClose)
-	return manager
-}
-
-// NewProtocolManagerWithContainer 创建协议管理器（新版本，支持依赖注入）
-func NewProtocolManagerWithContainer(parentCtx context.Context, container registry.Container) *ProtocolManager {
+// NewProtocolManager 创建协议管理器（支持依赖注入）
+// parentCtx: 从 dispose 体系分配的上下文
+// container: 依赖注入容器（可选，如果为 nil 则跳过依赖验证）
+func NewProtocolManager(parentCtx context.Context, container registry.Container) *ProtocolManager {
 	manager := &ProtocolManager{
 		ManagerBase: dispose.NewManager("ProtocolManager", parentCtx),
 		registry:    registry.NewRegistry(),
@@ -47,27 +43,49 @@ func (pm *ProtocolManager) RegisterProtocol(protocol registry.Protocol) error {
 	return pm.registry.Register(protocol)
 }
 
-// Register 注册适配器（向后兼容方法）
-func (pm *ProtocolManager) Register(adapter adapter.Adapter) {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-	pm.adapters[adapter.Name()] = adapter
-}
-
+// StartAll 启动所有适配器
+// 注意：此方法会启动所有通过 InitializeProtocols 初始化的适配器
+// 对于通过 InitializeProtocols 初始化的适配器，如果协议实现已经在 Initialize 时启动，
+// 则 ListenFrom 可能会返回错误，这是正常的（适配器已经启动）
 func (pm *ProtocolManager) StartAll() error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
+	
 	for name, a := range pm.adapters {
-		// 保留关键的适配器启动信息
+		// 检查适配器是否已经启动（通过检查地址是否已设置）
+		if a.GetAddr() == "" {
+			utils.Warnf("Adapter %s has no address configured, skipping", name)
+			continue
+		}
+		
+		// 尝试启动适配器
+		// 注意：如果适配器已经在 Initialize 时启动，ListenFrom 可能会返回错误
+		// 这里忽略"already listening"类型的错误
 		utils.Infof("Starting %s adapter on %s", name, a.GetAddr())
 		if err := a.ListenFrom(a.GetAddr()); err != nil {
+			// 检查是否是"already listening"错误
+			if isAlreadyListeningError(err) {
+				utils.Infof("Adapter %s already started, skipping", name)
+				continue
+			}
 			utils.Errorf("Failed to start adapter %s: %v", name, err)
-			return err
+			return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to start adapter %s", name)
 		}
-		// 保留关键的适配器启动完成信息
 		utils.Infof("Successfully started %s adapter on %s", name, a.GetAddr())
 	}
 	return nil
+}
+
+// isAlreadyListeningError 检查是否是"already listening"错误
+func isAlreadyListeningError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := strings.ToLower(err.Error())
+	// 检查常见的"already listening"错误消息
+	return strings.Contains(errStr, "already listening") ||
+		strings.Contains(errStr, "address already in use") ||
+		strings.Contains(errStr, "bind: address already in use")
 }
 
 // InitializeProtocols 初始化所有启用的协议

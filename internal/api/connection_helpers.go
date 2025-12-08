@@ -11,7 +11,7 @@ import (
 
 // getStreamFromConnection 从控制连接获取Stream
 // 返回stream, connID, remoteAddr, error
-func getStreamFromConnection(accessor ControlConnectionAccessor, clientID int64) (stream.PackageStreamer, string, string, error) {
+func getStreamFromConnection(accessor IControlConnectionAccessor, clientID int64) (stream.PackageStreamer, string, string, error) {
 	if accessor == nil {
 		return nil, "", "", coreErrors.New(coreErrors.ErrorTypePermanent, "connection accessor is nil")
 	}

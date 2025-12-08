@@ -29,6 +29,7 @@ func TestTCPProtocol_ValidateConfig(t *testing.T) {
 
 	// 测试有效配置
 	config := &registry.Config{
+		Name: "tcp",
 		Port: 8080,
 	}
 	err := protocol.ValidateConfig(config)

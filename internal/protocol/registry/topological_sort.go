@@ -5,20 +5,31 @@ import (
 )
 
 // TopologicalSort 拓扑排序（解析初始化顺序）
-// 返回按依赖顺序排序的协议名称列表
+// graph[node] 表示 node 依赖的节点列表
+// 返回按依赖顺序排序的协议名称列表（依赖的节点在前）
 func TopologicalSort(graph map[string][]string) ([]string, error) {
-	// 计算入度
+	// 计算入度：每个节点被多少个其他节点依赖
 	inDegree := make(map[string]int)
+	// 初始化所有节点的入度为0
 	for node := range graph {
 		inDegree[node] = 0
 	}
-	for _, deps := range graph {
+	// 计算每个节点的入度：如果 b 依赖 a，则 a 的入度+1（被 b 依赖）
+	for node, deps := range graph {
 		for _, dep := range deps {
+			// dep 被 node 依赖，所以 dep 的入度+1
+			if _, exists := inDegree[dep]; !exists {
+				inDegree[dep] = 0
+			}
 			inDegree[dep]++
+		}
+		// 确保 node 本身也在 inDegree 中
+		if _, exists := inDegree[node]; !exists {
+			inDegree[node] = 0
 		}
 	}
 
-	// 找到所有入度为 0 的节点
+	// 找到所有入度为 0 的节点（没有被其他节点依赖的节点）
 	queue := make([]string, 0)
 	for node, degree := range inDegree {
 		if degree == 0 {
@@ -32,17 +43,23 @@ func TopologicalSort(graph map[string][]string) ([]string, error) {
 		queue = queue[1:]
 		result = append(result, node)
 
-		// 减少依赖节点的入度
-		for _, dep := range graph[node] {
-			inDegree[dep]--
-			if inDegree[dep] == 0 {
-				queue = append(queue, dep)
+		// 找到所有依赖当前节点的节点，减少它们的入度
+		// 如果 otherNode 依赖 node，那么 node 被 otherNode 依赖，所以 otherNode 的入度应该减少
+		for otherNode, deps := range graph {
+			for _, dep := range deps {
+				if dep == node {
+					// otherNode 依赖 node，所以 otherNode 的入度应该减少
+					inDegree[otherNode]--
+					if inDegree[otherNode] == 0 {
+						queue = append(queue, otherNode)
+					}
+				}
 			}
 		}
 	}
 
 	// 检查是否有循环依赖
-	if len(result) != len(graph) {
+	if len(result) != len(inDegree) {
 		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "circular dependency detected in protocol initialization")
 	}
 

@@ -70,32 +70,36 @@ func TestMemoryStorage_ListOperations(t *testing.T) {
 	store := storage.NewMemoryStorage(ctx)
 	defer store.Close()
 
+	// 转换为 ListStore 接口
+	listStore, ok := store.(storage.ListStore)
+	require.True(t, ok, "MemoryStorage should implement ListStore")
+
 	listKey := "test_list"
 
 	// 设置列表
 	values := []interface{}{"item1", "item2", "item3"}
-	err := store.SetList(listKey, values, 0)
+	err := listStore.SetList(listKey, values, 0)
 	require.NoError(t, err)
 
 	// 获取列表
-	retrieved, err := store.GetList(listKey)
+	retrieved, err := listStore.GetList(listKey)
 	require.NoError(t, err)
 	assert.Len(t, retrieved, 3)
 
 	// 追加元素
-	err = store.AppendToList(listKey, "item4")
+	err = listStore.AppendToList(listKey, "item4")
 	require.NoError(t, err)
 
 	// 验证列表长度
-	retrieved, err = store.GetList(listKey)
+	retrieved, err = listStore.GetList(listKey)
 	require.NoError(t, err)
 	assert.Len(t, retrieved, 4)
 
 	// 删除元素
-	err = store.RemoveFromList(listKey, "item2")
+	err = listStore.RemoveFromList(listKey, "item2")
 	require.NoError(t, err)
 
-	retrieved, err = store.GetList(listKey)
+	retrieved, err = listStore.GetList(listKey)
 	require.NoError(t, err)
 	assert.Len(t, retrieved, 3)
 }
@@ -106,33 +110,37 @@ func TestMemoryStorage_HashOperations(t *testing.T) {
 	store := storage.NewMemoryStorage(ctx)
 	defer store.Close()
 
+	// 转换为 HashStore 接口
+	hashStore, ok := store.(storage.HashStore)
+	require.True(t, ok, "MemoryStorage should implement HashStore")
+
 	hashKey := "test_hash"
 
 	// 设置哈希字段
-	err := store.SetHash(hashKey, "field1", "value1")
+	err := hashStore.SetHash(hashKey, "field1", "value1")
 	require.NoError(t, err)
 
-	err = store.SetHash(hashKey, "field2", "value2")
+	err = hashStore.SetHash(hashKey, "field2", "value2")
 	require.NoError(t, err)
 
 	// 获取单个字段
-	value, err := store.GetHash(hashKey, "field1")
+	value, err := hashStore.GetHash(hashKey, "field1")
 	require.NoError(t, err)
 	assert.Equal(t, "value1", value)
 
 	// 获取所有字段
-	allFields, err := store.GetAllHash(hashKey)
+	allFields, err := hashStore.GetAllHash(hashKey)
 	require.NoError(t, err)
 	assert.Len(t, allFields, 2)
 	assert.Equal(t, "value1", allFields["field1"])
 	assert.Equal(t, "value2", allFields["field2"])
 
 	// 删除字段
-	err = store.DeleteHash(hashKey, "field1")
+	err = hashStore.DeleteHash(hashKey, "field1")
 	require.NoError(t, err)
 
 	// 验证字段已删除
-	_, err = store.GetHash(hashKey, "field1")
+	_, err = hashStore.GetHash(hashKey, "field1")
 	assert.Error(t, err)
 }
 
@@ -142,20 +150,24 @@ func TestMemoryStorage_Counter(t *testing.T) {
 	store := storage.NewMemoryStorage(ctx)
 	defer store.Close()
 
+	// 转换为 CounterStore 接口
+	counterStore, ok := store.(storage.CounterStore)
+	require.True(t, ok, "MemoryStorage should implement CounterStore")
+
 	counterKey := "test_counter"
 
 	// 递增
-	val, err := store.Incr(counterKey)
+	val, err := counterStore.Incr(counterKey)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), val)
 
 	// 再次递增
-	val, err = store.Incr(counterKey)
+	val, err = counterStore.Incr(counterKey)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), val)
 
 	// 递增指定值
-	val, err = store.IncrBy(counterKey, 10)
+	val, err = counterStore.IncrBy(counterKey, 10)
 	require.NoError(t, err)
 	assert.Equal(t, int64(12), val)
 }
@@ -166,15 +178,19 @@ func TestMemoryStorage_SetNX(t *testing.T) {
 	store := storage.NewMemoryStorage(ctx)
 	defer store.Close()
 
+	// 转换为 CASStore 接口
+	casStore, ok := store.(storage.CASStore)
+	require.True(t, ok, "MemoryStorage should implement CASStore")
+
 	key := "setnx_key"
 
 	// 第一次设置应该成功
-	success, err := store.SetNX(key, "value1", 0)
+	success, err := casStore.SetNX(key, "value1", 0)
 	require.NoError(t, err)
 	assert.True(t, success)
 
 	// 第二次设置应该失败（键已存在）
-	success, err = store.SetNX(key, "value2", 0)
+	success, err = casStore.SetNX(key, "value2", 0)
 	require.NoError(t, err)
 	assert.False(t, success)
 
@@ -196,8 +212,12 @@ func TestMemoryStorage_CompareAndSwap(t *testing.T) {
 	err := store.Set(key, "old_value", 0)
 	require.NoError(t, err)
 
+	// 转换为 CASStore 接口
+	casStore, ok := store.(storage.CASStore)
+	require.True(t, ok, "MemoryStorage should implement CASStore")
+
 	// CAS更新 - 如果实现不完整，跳过此测试
-	success, err := store.CompareAndSwap(key, "old_value", "new_value", 0)
+	success, err := casStore.CompareAndSwap(key, "old_value", "new_value", 0)
 	if err != nil {
 		t.Skip("CompareAndSwap not fully implemented")
 		return

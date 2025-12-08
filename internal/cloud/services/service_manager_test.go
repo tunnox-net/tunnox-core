@@ -150,9 +150,10 @@ func TestServiceManagerBasic(t *testing.T) {
 
 // TestServiceManagerStartStop 测试服务启动和停止
 func TestServiceManagerStartStop(t *testing.T) {
+	ctx := context.Background()
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false
-	manager := utils.NewServiceManager(config)
+	manager := utils.NewServiceManager(ctx, config)
 
 	// 创建测试服务
 	service1 := NewMockService("service-1")
@@ -190,9 +191,10 @@ func TestServiceManagerStartStop(t *testing.T) {
 
 // TestServiceManagerWithHTTPService 测试HTTP服务集成
 func TestServiceManagerWithHTTPService(t *testing.T) {
+	ctx := context.Background()
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false
-	manager := utils.NewServiceManager(config)
+	manager := utils.NewServiceManager(ctx, config)
 
 	// 创建HTTP服务
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -220,11 +222,11 @@ func TestServiceManagerWithHTTPService(t *testing.T) {
 func TestServiceManagerWithProtocolService(t *testing.T) {
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false
-	manager := utils.NewServiceManager(config)
+	ctx := context.Background()
+	manager := utils.NewServiceManager(ctx, config)
 
 	// 创建协议服务
-	ctx := context.Background()
-	protocolManager := protocol.NewProtocolManager(ctx)
+	protocolManager := protocol.NewProtocolManager(ctx, nil)
 	protocolService := protocol.NewProtocolService("test-protocol", protocolManager)
 
 	manager.RegisterService(protocolService)
@@ -244,10 +246,10 @@ func TestServiceManagerWithProtocolService(t *testing.T) {
 func TestServiceManagerWithStreamService(t *testing.T) {
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false
-	manager := utils.NewServiceManager(config)
+	ctx := context.Background()
+	manager := utils.NewServiceManager(ctx, config)
 
 	// 创建流服务
-	ctx := context.Background()
 	streamFactory := stream.NewDefaultStreamFactory(ctx)
 	streamManager := stream.NewStreamManager(streamFactory, ctx)
 	streamService := stream.NewStreamService("test-stream", streamManager)
@@ -269,7 +271,8 @@ func TestServiceManagerWithStreamService(t *testing.T) {
 func TestServiceManagerResourceManagement(t *testing.T) {
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false
-	manager := utils.NewServiceManager(config)
+	ctx := context.Background()
+	manager := utils.NewServiceManager(ctx, config)
 
 	// 注册资源
 	resource1 := &MockResource{name: "resource-1"}
@@ -315,7 +318,8 @@ func TestServiceManagerGracefulShutdown(t *testing.T) {
 	config.GracefulShutdownTimeout = 5 * time.Second
 	config.ResourceDisposeTimeout = 2 * time.Second
 
-	manager := utils.NewServiceManager(config)
+	ctx := context.Background()
+	manager := utils.NewServiceManager(ctx, config)
 
 	// 注册服务和资源
 	service := NewMockService("test-service")
@@ -356,7 +360,8 @@ func TestServiceManagerGracefulShutdown(t *testing.T) {
 func TestServiceManagerConcurrent(t *testing.T) {
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false
-	manager := utils.NewServiceManager(config)
+	ctx := context.Background()
+	manager := utils.NewServiceManager(ctx, config)
 
 	var wg sync.WaitGroup
 	serviceCount := 10

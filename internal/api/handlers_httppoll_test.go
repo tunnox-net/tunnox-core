@@ -21,9 +21,9 @@ import (
 	"tunnox-core/internal/protocol/session"
 )
 
-// mockSessionManager 模拟 SessionManager
+// mockSessionManager 模拟 ISessionManager
 type mockSessionManager struct {
-	SessionManager
+	ISessionManager
 	connections map[string]*types.Connection
 }
 
@@ -33,7 +33,7 @@ func newMockSessionManager() *mockSessionManager {
 	}
 }
 
-func (m *mockSessionManager) GetControlConnectionInterface(clientID int64) ControlConnectionAccessor {
+func (m *mockSessionManager) GetControlConnectionInterface(clientID int64) IControlConnectionAccessor {
 	return nil
 }
 
@@ -45,11 +45,11 @@ func (m *mockSessionManager) GetNodeID() string {
 	return "test-node"
 }
 
-func (m *mockSessionManager) GetTunnelBridgeByConnectionID(connID string) session.TunnelBridgeAccessor {
+func (m *mockSessionManager) GetTunnelBridgeByConnectionID(connID string) session.ITunnelBridgeAccessor {
 	return nil
 }
 
-func (m *mockSessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID int64) session.TunnelBridgeAccessor {
+func (m *mockSessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID int64) session.ITunnelBridgeAccessor {
 	return nil
 }
 

@@ -31,11 +31,14 @@ func (p *HTTPPollProtocol) Dependencies() []string {
 	return []string{"session_manager", "http_server"}
 }
 
-// ValidateConfig 验证配置
+// ValidateConfig 验证配置（使用统一的验证接口）
 // HTTP Poll 协议不需要端口配置，因为它使用 HTTP 服务器的路由
 func (p *HTTPPollProtocol) ValidateConfig(config *registry.Config) error {
+	// 先调用基础验证（HTTP Poll 不需要端口，所以只验证名称和主机）
+	if err := config.Validate(); err != nil {
+		return err
+	}
 	// HTTP Poll 协议不需要端口验证，因为它使用 HTTP 服务器的路由
-	// 但可以验证其他配置项（如果有）
 	return nil
 }
 

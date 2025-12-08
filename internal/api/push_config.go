@@ -248,7 +248,7 @@ func (s *ManagementAPIServer) kickClient(clientID int64, reason, code string) {
 }
 
 // SetSessionManager 设置SessionManager（由Server启动时调用）
-func (s *ManagementAPIServer) SetSessionManager(sessionMgr SessionManager) {
+func (s *ManagementAPIServer) SetSessionManager(sessionMgr ISessionManager) {
 	s.sessionMgr = sessionMgr
 	utils.Infof("API: SessionManager configured")
 }

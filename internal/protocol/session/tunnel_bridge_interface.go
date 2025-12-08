@@ -1,8 +1,9 @@
 package session
 
-// TunnelBridgeAccessor 隧道桥接访问器接口（用于API层和跨包访问）
+// ITunnelBridgeAccessor 隧道桥接访问器接口（用于API层和跨包访问）
 // 避免循环依赖，提供最小化的访问接口
-type TunnelBridgeAccessor interface {
+// 遵循编码规范：接口使用 I 前缀，访问器接口使用 Accessor 后缀
+type ITunnelBridgeAccessor interface {
 	// GetTunnelID 获取隧道ID
 	GetTunnelID() string
 

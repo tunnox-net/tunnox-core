@@ -194,7 +194,7 @@ func New(config *Config, parentCtx context.Context) *Server {
 	
 	// 创建协议管理器（使用容器）
 	containerAdapter := registry.NewContainerAdapter(server.container)
-	server.protocolMgr = protocol.NewProtocolManagerWithContainer(parentCtx, containerAdapter)
+	server.protocolMgr = protocol.NewProtocolManager(parentCtx, containerAdapter)
 
 	server.serverID, _ = server.idManager.GenerateConnectionID()
 

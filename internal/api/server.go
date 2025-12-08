@@ -24,14 +24,15 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// ControlConnectionAccessor 控制连接访问器接口（用于API层）
-type ControlConnectionAccessor interface {
+// IControlConnectionAccessor 控制连接访问器接口（用于API层）
+// 遵循编码规范：接口使用 I 前缀，访问器接口使用 Accessor 后缀
+type IControlConnectionAccessor interface {
 	GetConnID() string
 	GetRemoteAddr() string
 	GetStream() stream.PackageStreamer
 }
 
-// controlConnectionAdapter 适配器，将 session.ControlConnectionInterface 转换为 api.ControlConnectionAccessor
+// controlConnectionAdapter 适配器，将 session.ControlConnectionInterface 转换为 api.IControlConnectionAccessor
 type controlConnectionAdapter struct {
 	conn session.ControlConnectionInterface
 }
@@ -61,23 +62,24 @@ func (a *controlConnectionAdapter) GetStream() stream.PackageStreamer {
 	return a.conn.GetStream()
 }
 
-// adaptControlConnection 将 session.ControlConnectionInterface 适配为 api.ControlConnectionAccessor
-func adaptControlConnection(conn session.ControlConnectionInterface) ControlConnectionAccessor {
+// adaptControlConnection 将 session.ControlConnectionInterface 适配为 api.IControlConnectionAccessor
+func adaptControlConnection(conn session.ControlConnectionInterface) IControlConnectionAccessor {
 	if conn == nil {
 		return nil
 	}
 	return &controlConnectionAdapter{conn: conn}
 }
 
-// SessionManager 接口（避免循环依赖）
-type SessionManager interface {
-	GetControlConnectionInterface(clientID int64) ControlConnectionAccessor
+// ISessionManager 会话管理器接口（避免循环依赖）
+// 遵循编码规范：接口使用 I 前缀
+type ISessionManager interface {
+	GetControlConnectionInterface(clientID int64) IControlConnectionAccessor
 	BroadcastConfigPush(clientID int64, configBody string) error
 	GetNodeID() string // 获取当前节点ID
 	// GetTunnelBridgeByConnectionID 通过 ConnectionID 查找 tunnel bridge（优先使用）
-	GetTunnelBridgeByConnectionID(connID string) session.TunnelBridgeAccessor
+	GetTunnelBridgeByConnectionID(connID string) session.ITunnelBridgeAccessor
 	// GetTunnelBridgeByMappingID 通过 mappingID 查找 tunnel bridge（向后兼容）
-	GetTunnelBridgeByMappingID(mappingID string, clientID int64) session.TunnelBridgeAccessor
+	GetTunnelBridgeByMappingID(mappingID string, clientID int64) session.ITunnelBridgeAccessor
 }
 
 // apiSessionManagerAdapter 适配器，将 session.SessionManager 适配为 api.SessionManager
@@ -85,7 +87,7 @@ type apiSessionManagerAdapter struct {
 	sessionMgr *session.SessionManager
 }
 
-func (a *apiSessionManagerAdapter) GetControlConnectionInterface(clientID int64) ControlConnectionAccessor {
+func (a *apiSessionManagerAdapter) GetControlConnectionInterface(clientID int64) IControlConnectionAccessor {
 	if a.sessionMgr == nil {
 		return nil
 	}
@@ -107,14 +109,14 @@ func (a *apiSessionManagerAdapter) GetNodeID() string {
 	return a.sessionMgr.GetNodeID()
 }
 
-func (a *apiSessionManagerAdapter) GetTunnelBridgeByConnectionID(connID string) session.TunnelBridgeAccessor {
+func (a *apiSessionManagerAdapter) GetTunnelBridgeByConnectionID(connID string) session.ITunnelBridgeAccessor {
 	if a.sessionMgr == nil {
 		return nil
 	}
 	return a.sessionMgr.GetTunnelBridgeByConnectionID(connID)
 }
 
-func (a *apiSessionManagerAdapter) GetTunnelBridgeByMappingID(mappingID string, clientID int64) session.TunnelBridgeAccessor {
+func (a *apiSessionManagerAdapter) GetTunnelBridgeByMappingID(mappingID string, clientID int64) session.ITunnelBridgeAccessor {
 	if a.sessionMgr == nil {
 		return nil
 	}
@@ -148,8 +150,8 @@ func (a *apiSessionManagerAdapter) HandlePacket(connPacket *types.StreamPacket) 
 	return a.sessionMgr.HandlePacket(connPacket)
 }
 
-// AdaptSessionManager 将 session.SessionManager 适配为 api.SessionManager
-func AdaptSessionManager(sessionMgr *session.SessionManager) SessionManager {
+// AdaptSessionManager 将 session.SessionManager 适配为 api.ISessionManager
+func AdaptSessionManager(sessionMgr *session.SessionManager) ISessionManager {
 	if sessionMgr == nil {
 		return nil
 	}
@@ -164,7 +166,7 @@ type ManagementAPIServer struct {
 	cloudControl managers.CloudControlAPI
 	router       *mux.Router
 	server       *http.Server
-	sessionMgr   SessionManager // 用于推送配置给客户端
+	sessionMgr   ISessionManager // 用于推送配置给客户端
 
 	// 新的连接码系统
 	connCodeHandlers *ConnectionCodeHandlers

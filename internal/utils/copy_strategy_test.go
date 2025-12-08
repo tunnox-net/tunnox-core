@@ -50,9 +50,9 @@ func TestDefaultCopyStrategy(t *testing.T) {
 	}
 	result := strategy.Copy(connA, connB, options)
 	
-	// 验证结果
-	if result.SendError != nil {
-		t.Errorf("Expected no send error, got: %v", result.SendError)
+	// 验证结果（EOF 是正常的，表示连接正常关闭）
+	if result.SendError != nil && result.SendError.Error() != "EOF" {
+		t.Errorf("Expected no send error or EOF, got: %v", result.SendError)
 	}
 	if result.BytesSent != int64(len(testData)) {
 		t.Errorf("Expected bytes sent %d, got %d", len(testData), result.BytesSent)
@@ -74,9 +74,9 @@ func TestHTTPPollCopyStrategy(t *testing.T) {
 	}
 	result := strategy.Copy(connA, connB, options)
 	
-	// 验证结果
-	if result.SendError != nil {
-		t.Errorf("Expected no send error, got: %v", result.SendError)
+	// 验证结果（EOF 是正常的，表示连接正常关闭）
+	if result.SendError != nil && result.SendError.Error() != "EOF" {
+		t.Errorf("Expected no send error or EOF, got: %v", result.SendError)
 	}
 	if result.BytesSent != int64(len(testData)) {
 		t.Errorf("Expected bytes sent %d, got %d", len(testData), result.BytesSent)

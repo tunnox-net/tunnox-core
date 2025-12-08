@@ -41,11 +41,10 @@ func TestDefaultServerEndpoints(t *testing.T) {
 	}
 
 	expectedProtocols := map[string]bool{
-		"tcp":        false,
-		"udp":        false,
-		"quic":       false,
-		"websocket":  false,
-		"httppoll":   false,
+		"tcp":       false,
+		"quic":      false,
+		"websocket": false,
+		"httppoll":  false,
 	}
 
 	for _, endpoint := range DefaultServerEndpoints {
@@ -96,24 +95,20 @@ func TestAutoConnector_ConnectWithAutoDetection_AllFailures(t *testing.T) {
 	connector := NewAutoConnector(ctx, client)
 	defer connector.Close()
 
-	endpoint, err := connector.ConnectWithAutoDetection(ctx)
+	attempt, err := connector.ConnectWithAutoDetection(ctx)
 	if err == nil {
 		t.Error("Expected error when all connections fail")
 	}
-	if endpoint != nil {
-		t.Error("Expected nil endpoint when all connections fail")
+	if attempt != nil {
+		t.Error("Expected nil attempt when all connections fail")
 	}
 }
 
 // TestAutoConnector_ContextCancellation 测试 Context 取消
 func TestAutoConnector_ContextCancellation(t *testing.T) {
-	// 在 race detector 下，这个测试可能因为并发访问而失败
-	// 跳过 race detector 模式下的测试，因为测试的是并发场景
-	if testing.Short() {
-		t.Skip("Skipping context cancellation test in short mode (race detector issues)")
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
+	// 使用带超时的 context，确保测试不会阻塞超过 2 秒
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 
 	config := &ClientConfig{
 		Anonymous: true,
@@ -125,27 +120,28 @@ func TestAutoConnector_ContextCancellation(t *testing.T) {
 	connector := NewAutoConnector(ctx, client)
 	defer connector.Close()
 
-	// 启动连接尝试，然后立即取消 context
+	// 立即取消 context（在启动连接前）
+	cancelCtx, cancelFunc := context.WithCancel(ctx)
+	cancelFunc() // 立即取消
+
+	// 启动连接尝试，使用已取消的 context
 	done := make(chan struct{})
-	var endpoint *ServerEndpoint
+	var attempt *ConnectionAttempt
 	var err error
-	
+
 	go func() {
 		defer close(done)
-		endpoint, err = connector.ConnectWithAutoDetection(ctx)
+		attempt, err = connector.ConnectWithAutoDetection(cancelCtx)
 	}()
 
-	// 立即取消 context
-	cancel()
-
-	// 等待连接尝试完成（带超时）
+	// 等待连接尝试完成（带超时，最多 2 秒）
 	select {
 	case <-done:
 		// 连接尝试完成
-	case <-time.After(5 * time.Second):
+	case <-time.After(2 * time.Second):
 		t.Fatal("Test timed out waiting for connection attempt to complete")
 	}
-	
+
 	// 当 context 被取消时，应该返回错误
 	if err == nil {
 		t.Error("Expected error when context is cancelled")
@@ -155,8 +151,8 @@ func TestAutoConnector_ContextCancellation(t *testing.T) {
 			t.Logf("Got error (may be acceptable): %v", err)
 		}
 	}
-	if endpoint != nil {
-		t.Error("Expected nil endpoint when context is cancelled")
+	if attempt != nil {
+		t.Error("Expected nil attempt when context is cancelled")
 	}
 }
 
@@ -233,4 +229,3 @@ func TestConnectionAttempt(t *testing.T) {
 		t.Error("Expected nil error")
 	}
 }
-

@@ -21,7 +21,7 @@ func TestBatchUpdateClientStatus(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建多个客户端
 	client1, err := cloudControl.CreateClient("user-1", "client1")
@@ -75,7 +75,7 @@ func TestBatchUpdateClientStatus_PartialFailure(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建一个客户端
 	client1, err := cloudControl.CreateClient("user-1", "client1")
@@ -115,7 +115,7 @@ func TestBatchDeleteMappings(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建多个映射
 	mapping1 := &models.PortMapping{
@@ -187,7 +187,7 @@ func TestBatchUpdateMappingStatus(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建多个映射
 	mapping1 := &models.PortMapping{
@@ -250,7 +250,7 @@ func TestBatchOperations_Concurrent(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 创建10个客户端
 	clientIDs := make([]int64, 10)
@@ -294,7 +294,7 @@ func TestBatchOperations_EmptyList(t *testing.T) {
 		JWTSecretKey:  "test-secret",
 		JWTExpiration: 24 * 3600,
 	}
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(config, store, ctx)
 
 	// 空列表批量更新
 	clientIDs := []int64{}
