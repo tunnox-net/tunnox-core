@@ -13,8 +13,9 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+// HandleHTTPPoll 处理 HTTP Poll Poll 请求（公开方法，供协议层调用）
 // GET /tunnox/v1/poll?timeout=30
-func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Request) {
+func (s *ManagementAPIServer) HandleHTTPPoll(w http.ResponseWriter, r *http.Request) {
 	// 1. 获取并解码 X-Tunnel-Package（必须）
 	packageHeader := r.Header.Get("X-Tunnel-Package")
 	if packageHeader == "" {

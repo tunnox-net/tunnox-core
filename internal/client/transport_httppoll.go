@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/utils"
 )
@@ -72,6 +72,8 @@ type HTTPLongPollingConn struct {
 
 	// 分片重组器（用于接收端重组分片）
 	fragmentReassembler *httppoll.FragmentReassembler
+	// 分片处理器（统一的分片处理接口，按序列号顺序处理）
+	fragmentProcessor httppoll.FragmentProcessor
 
 	// 地址信息（用于实现 net.Conn 接口）
 	localAddr  net.Addr
@@ -126,12 +128,19 @@ func NewHTTPLongPollingConn(ctx context.Context, baseURL string, clientID int64,
 		pollClient: &http.Client{
 			Timeout: httppollDefaultPollTimeout + 5*time.Second, // 轮询超时 + 缓冲
 		},
-		base64DataChan:      make(chan string, 100),
+		// base64DataChan 容量计算：
+		// - 单个分片：10KB → Base64 后约 13.3KB
+		// - 基于 300MB 内存限制：300MB / 13.3KB ≈ 22556
+		// - 设置为 20000，内存占用约 260MB，可容纳约 20 个大型查询（10MB）的数据
+		base64DataChan:      make(chan string, 20000),
 		writeFlush:          make(chan struct{}, 1),
 		fragmentReassembler: httppoll.NewFragmentReassembler(), // 创建分片重组器
 		localAddr:           &httppollAddr{network: "httppoll", addr: "local"},
 		remoteAddr:          &httppollAddr{network: "httppoll", addr: baseURL},
 	}
+
+	// 创建分片处理器（使用同一个 reassembler 实例，确保数据一致性）
+	conn.fragmentProcessor = httppoll.NewOrderedFragmentProcessor(conn.fragmentReassembler)
 
 	// 注册清理处理器
 	conn.AddCleanHandler(conn.onClose)

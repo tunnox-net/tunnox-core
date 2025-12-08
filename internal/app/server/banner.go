@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -30,9 +31,9 @@ func (s *Server) DisplayStartupBanner(configPath string) {
 	reset := color.New(color.Reset).SprintFunc()
 
 	displayLogo(reset)
-	displayServerInfo(s, configPath, reset)
-	displayProtocolListeners(s, reset)
-	displayManagementAPI(s, reset)
+	displayServerInfo(s, configPath)
+	displayProtocolListeners(s)
+	displayManagementAPI(s)
 	displayFooter(reset)
 }
 
@@ -55,7 +56,7 @@ func displayLogo(reset func(...interface{}) string) {
 }
 
 // displayServerInfo 显示服务器信息
-func displayServerInfo(s *Server, configPath string, reset func(...interface{}) string) {
+func displayServerInfo(s *Server, configPath string) {
 	fmt.Println(bannerBold("  Server Information"))
 	fmt.Println(bannerFaint("  " + strings.Repeat("─", bannerWidth)))
 
@@ -82,27 +83,23 @@ func displayServerInfo(s *Server, configPath string, reset func(...interface{}) 
 }
 
 // displayProtocolListeners 显示协议监听状态
-func displayProtocolListeners(s *Server, reset func(...interface{}) string) {
+func displayProtocolListeners(s *Server) {
 	fmt.Println(bannerBold("  Protocol Listeners"))
 	fmt.Println(bannerFaint("  " + strings.Repeat("─", bannerWidth)))
 
-	protocolNames := []string{"tcp", "websocket", "udp", "quic", "httppoll"}
-	for _, name := range protocolNames {
-		cfg, exists := s.config.Server.Protocols[name]
-		if !exists {
-			continue
-		}
+	// 从配置中动态获取协议列表，而不是硬编码（符合可插拔原则）
+	// 按字母顺序排序，确保显示一致
+	protocolNames := make([]string, 0, len(s.config.Server.Protocols))
+	for name := range s.config.Server.Protocols {
+		protocolNames = append(protocolNames, name)
+	}
+	sort.Strings(protocolNames)
 
-		displayName := strings.ToUpper(name[:1]) + name[1:]
-		if name == "websocket" {
-			displayName = "WebSocket"
-		} else if name == "tcp" {
-			displayName = "TCP"
-		} else if name == "udp" {
-			displayName = "UDP"
-		} else if name == "quic" {
-			displayName = "QUIC"
-		}
+	for _, name := range protocolNames {
+		cfg := s.config.Server.Protocols[name]
+
+		// 动态生成显示名称（首字母大写，特殊处理）
+		displayName := formatProtocolDisplayName(name)
 
 		status := bannerFaint("✗ Disabled")
 		addr := ""
@@ -115,8 +112,31 @@ func displayProtocolListeners(s *Server, reset func(...interface{}) string) {
 	fmt.Println()
 }
 
+// formatProtocolDisplayName 格式化协议显示名称（可插拔，不硬编码）
+func formatProtocolDisplayName(name string) string {
+	// 特殊处理常见的协议名称
+	switch name {
+	case "websocket":
+		return "WebSocket"
+	case "httppoll":
+		return "HTTP Poll"
+	case "tcp":
+		return "TCP"
+	case "udp":
+		return "UDP"
+	case "quic":
+		return "QUIC"
+	default:
+		// 默认：首字母大写
+		if len(name) == 0 {
+			return name
+		}
+		return strings.ToUpper(name[:1]) + name[1:]
+	}
+}
+
 // displayManagementAPI 显示管理 API 信息
-func displayManagementAPI(s *Server, reset func(...interface{}) string) {
+func displayManagementAPI(s *Server) {
 	if !s.config.ManagementAPI.Enabled {
 		return
 	}
@@ -133,7 +153,12 @@ func displayManagementAPI(s *Server, reset func(...interface{}) string) {
 	fmt.Printf("  %-18s %s\n", bannerBold("Address:"), fmt.Sprintf("http://%s", s.config.ManagementAPI.ListenAddr))
 	fmt.Printf("  %-18s %s\n", bannerBold("Authentication:"), authType)
 	fmt.Printf("  %-18s %s\n", bannerBold("Base Path:"), bannerFaint("/tunnox/v1"))
-	fmt.Printf("  %-18s %s\n", bannerBold("HTTP Long Poll:"), bannerFaint("POST /tunnox/v1/push, GET /tunnox/v1/poll"))
+
+	// 动态检查是否启用了 HTTP Poll 协议（符合可插拔原则）
+	if httppollCfg, exists := s.config.Server.Protocols["httppoll"]; exists && httppollCfg.Enabled {
+		fmt.Printf("  %-18s %s\n", bannerBold("HTTP Long Poll:"), bannerFaint("POST /tunnox/v1/push, GET /tunnox/v1/poll"))
+	}
+
 	if s.config.ManagementAPI.PProf.Enabled {
 		fmt.Printf("  %-18s %s\n", bannerBold("PProf:"), bannerFaint("/tunnox/v1/debug/pprof/"))
 	}
@@ -187,4 +212,3 @@ func formatBrokerInfo(broker MessageBrokerConfig) string {
 	}
 	return broker.Type
 }
-

@@ -24,6 +24,10 @@ server:
       enabled: true
       port: 443
       host: "0.0.0.0"
+    httppoll:
+      enabled: true
+      # HTTP Poll 协议不需要端口配置，因为它使用 HTTP 服务器的路由
+      # 但为了配置一致性，保留这些字段（会被忽略）
 
 log:
   # 日志级别: debug, info, warn, error, fatal, panic

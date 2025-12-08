@@ -252,8 +252,8 @@ func NewManagementAPIServer(
 	// 注册路由
 	s.registerRoutes()
 
-	// 注册 HTTP 长轮询路由（独立路径）
-	s.registerHTTPLongPollingRoutes()
+	// 注意：HTTP 长轮询路由不再在这里注册
+	// HTTP Poll 协议会通过 HTTPRouter 接口自己注册路由（依赖倒置原则）
 
 	// 注册 pprof 性能分析路由
 	s.registerPProfRoutes()
@@ -416,19 +416,27 @@ func (s *ManagementAPIServer) registerRoutes() {
 	// 注意：健康检查端点已在 registerRoutes() 开头单独注册为免认证，不在此处重复注册
 }
 
-// registerHTTPLongPollingRoutes 注册 HTTP 长轮询路由（统一到 /tunnox/v1）
-// 注意：HTTP Long Polling 端点不需要 HTTP 层面的认证，认证在握手阶段进行（与其他传输协议一致）
-func (s *ManagementAPIServer) registerHTTPLongPollingRoutes() {
-	// HTTP 长轮询端点（用于客户端连接，统一到 /tunnox/v1）
-	longPollRouter := s.router.PathPrefix("/tunnox/v1").Subrouter()
+// RegisterRoute 实现 HTTPRouter 接口（依赖倒置原则）
+// 允许协议层通过接口注册路由，而不依赖具体的 HTTP 服务器实现
+func (s *ManagementAPIServer) RegisterRoute(method, path string, handler http.HandlerFunc) error {
+	// 默认使用 /tunnox/v1 前缀的子路由，应用 CORS 中间件
+	subRouter := s.router.PathPrefix("/tunnox/v1").Subrouter()
+	subRouter.Use(s.corsMiddleware)
+	subRouter.HandleFunc(path, handler).Methods(method)
+	return nil
+}
 
-	// 不应用认证中间件，认证在握手阶段进行
-	// 应用 CORS 中间件
-	longPollRouter.Use(s.corsMiddleware)
-
-	// 注册长轮询端点
-	longPollRouter.HandleFunc("/push", s.handleHTTPPush).Methods("POST")
-	longPollRouter.HandleFunc("/poll", s.handleHTTPPoll).Methods("GET")
+// RegisterRouteWithMiddleware 实现 HTTPRouter 接口（带中间件）
+func (s *ManagementAPIServer) RegisterRouteWithMiddleware(method, path string, handler http.HandlerFunc, middlewares ...func(http.Handler) http.Handler) error {
+	subRouter := s.router.PathPrefix("/tunnox/v1").Subrouter()
+	// 先应用传入的中间件
+	for _, mw := range middlewares {
+		subRouter.Use(mw)
+	}
+	// 然后应用 CORS 中间件
+	subRouter.Use(s.corsMiddleware)
+	subRouter.HandleFunc(path, handler).Methods(method)
+	return nil
 }
 
 // registerPProfRoutes 注册 pprof 性能分析路由（统一到 /tunnox/v1）

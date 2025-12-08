@@ -12,8 +12,9 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+// HandleHTTPPush 处理 HTTP Poll Push 请求（公开方法，供协议层调用）
 // POST /tunnox/v1/push
-func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Request) {
+func (s *ManagementAPIServer) HandleHTTPPush(w http.ResponseWriter, r *http.Request) {
 	utils.Debugf("HTTP long polling: [HANDLE_PUSH] received Push request, method=%s, contentLength=%d", r.Method, r.ContentLength)
 
 	// 1. 获取并解码 X-Tunnel-Package（必须）
@@ -79,46 +80,18 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 					// 判断是否为分片：total_fragments > 1
 					isFragment := pushReq.TotalFragments > 1
 
-					// 如果是分片，需要重组
 					if isFragment {
-						// 解码Base64数据
-						fragmentData, err := base64.StdEncoding.DecodeString(pushReq.Data)
+						// 使用统一的分片处理器（立即处理，不需要序列号顺序）
+						processor := httppoll.NewImmediateFragmentProcessor(streamProcessor.GetFragmentReassembler())
+						isComplete, reassembledData, err := httppoll.ProcessFragmentFromResponse(processor, pushReq)
 						if err != nil {
-							utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to decode fragment data: %v, connID=%s", err, connID)
-							s.respondError(w, http.StatusBadRequest, "Failed to decode fragment data")
+							utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to process fragment: %v, connID=%s", err, connID)
+							s.respondError(w, http.StatusBadRequest, "Failed to process fragment")
 							return
 						}
 
-						// 添加到分片重组器
-						group, err := streamProcessor.GetFragmentReassembler().AddFragment(
-							pushReq.FragmentGroupID,
-							pushReq.OriginalSize,
-							pushReq.FragmentSize,
-							pushReq.FragmentIndex,
-							pushReq.TotalFragments,
-							pushReq.SequenceNumber,
-							fragmentData,
-						)
-						if err != nil {
-							utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to add fragment: %v, connID=%s", err, connID)
-							s.respondError(w, http.StatusBadRequest, "Failed to add fragment")
-							return
-						}
-
-						utils.Debugf("HTTP long polling: [HANDLE_PUSH] added fragment %d/%d, groupID=%s, connID=%s",
-							pushReq.FragmentIndex, pushReq.TotalFragments, pushReq.FragmentGroupID, connID)
-
-						// 原子操作：检查是否完整，如果完整则重组（避免竞态条件）
-						// 注意：只有第一个检测到完整的 goroutine 会执行重组，其他 goroutine 会返回 isComplete=false
-						reassembledData, isComplete, err := group.IsCompleteAndReassemble()
-						if err != nil {
-							utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to reassemble fragments: %v, connID=%s", err, connID)
-							streamProcessor.GetFragmentReassembler().RemoveGroup(pushReq.FragmentGroupID)
-							s.respondError(w, http.StatusInternalServerError, "Failed to reassemble fragments")
-							return
-						}
 						if isComplete {
-							// 只有第一个检测到完整的 goroutine 会执行到这里
+							// 分片组已完整并重组
 							// Base64编码重组后的数据
 							base64Data := base64.StdEncoding.EncodeToString(reassembledData)
 							utils.Debugf("HTTP long polling: [HANDLE_PUSH] reassembled %d bytes from %d fragments, groupID=%s, connID=%s",
@@ -127,23 +100,16 @@ func (s *ManagementAPIServer) handleHTTPPush(w http.ResponseWriter, r *http.Requ
 							// 推送到流处理器
 							if err := streamProcessor.PushData(base64Data); err != nil {
 								utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to push reassembled data: %v, connID=%s", err, connID)
-								streamProcessor.GetFragmentReassembler().RemoveGroup(pushReq.FragmentGroupID)
 								s.respondError(w, http.StatusServiceUnavailable, "Connection closed")
 								return
 							}
-
-							// 移除分片组（延迟移除，确保其他 goroutine 不会重复处理）
-							// 注意：即使 PushData 失败，也应该移除，因为数据已经重组，不能再次重组
-							streamProcessor.GetFragmentReassembler().RemoveGroup(pushReq.FragmentGroupID)
 						} else {
-							// 两种情况：
-							// 1. 分片组不完整，等待更多分片
-							// 2. 分片组已完整但已被其他 goroutine 重组（reassembled=true）
+							// 分片组不完整或已被其他 goroutine 重组，等待更多分片
 							utils.Debugf("HTTP long polling: [HANDLE_PUSH] fragment %d/%d received, waiting for more fragments or already reassembled, groupID=%s, connID=%s",
 								pushReq.FragmentIndex, pushReq.TotalFragments, pushReq.FragmentGroupID, connID)
 						}
 					} else {
-						// 完整数据，直接推送
+						// 完整数据（TotalFragments=1 或非分片格式），直接推送
 						if err := streamProcessor.PushData(pushReq.Data); err != nil {
 							utils.Errorf("HTTP long polling: [HANDLE_PUSH] failed to push data: %v, connID=%s", err, connID)
 							s.respondError(w, http.StatusServiceUnavailable, "Connection closed")

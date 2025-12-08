@@ -50,6 +50,8 @@ type StreamProcessor struct {
 
 	// 分片重组器（用于处理服务器端发送的分片数据）
 	fragmentReassembler *FragmentReassembler
+	// 分片处理器（统一的分片处理接口，按序列号顺序处理）
+	fragmentProcessor FragmentProcessor
 
 	// 控制
 	closed  bool

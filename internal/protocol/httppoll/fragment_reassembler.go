@@ -21,10 +21,13 @@ const (
 	FragmentGroupTimeout = 30 * time.Second
 
 	// MaxFragmentGroups 最大分片组数量
-	MaxFragmentGroups = 100
+	MaxFragmentGroups = 1000
 
 	// MaxFragmentGroupSize 单个分片组最大大小
 	MaxFragmentGroupSize = 10 * 1024 * 1024 // 10MB
+
+	// MaxFragmentsPerGroup 单个分片组最大片数
+	MaxFragmentsPerGroup = 1000
 )
 
 // Fragment 单个分片
@@ -94,9 +97,16 @@ func (fg *FragmentGroup) AddFragment(index int, size int, data []byte) error {
 }
 
 // Reassemble 重组数据（原子操作：检查完整性并重组）
+// 注意：此方法不检查 reassembled 标志，主要用于按序列号顺序重组时使用
+// 如果需要在并发环境下防止重复重组，请使用 IsCompleteAndReassemble()
 func (fg *FragmentGroup) Reassemble() ([]byte, error) {
 	fg.mu.Lock()
 	defer fg.mu.Unlock()
+
+	// 检查是否已重组（防止重复重组）
+	if fg.reassembled {
+		return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "fragment group already reassembled: %s", fg.GroupID)
+	}
 
 	if fg.ReceivedCount != fg.TotalFragments {
 		return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "fragment group incomplete: %d/%d", fg.ReceivedCount, fg.TotalFragments)
@@ -116,7 +126,10 @@ func (fg *FragmentGroup) Reassemble() ([]byte, error) {
 		return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "reassembled size mismatch: expected %d, got %d", fg.OriginalSize, len(result))
 	}
 
-	// Fragment reassembly completed successfully
+	// 标记为已重组（防止重复重组）
+	fg.reassembled = true
+
+	utils.Infof("FragmentGroup[%s]: Reassemble - reassembled %d bytes from %d fragments, originalSize=%d", fg.GroupID, len(result), fg.TotalFragments, fg.OriginalSize)
 	return result, nil
 }
 
@@ -180,6 +193,17 @@ func NewFragmentReassembler() *FragmentReassembler {
 	return reassembler
 }
 
+// Reset 重置分片重组器状态（连接建立时调用）
+func (fr *FragmentReassembler) Reset() {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+
+	fr.groups = make(map[string]*FragmentGroup)
+	fr.sequenceGroups = make(map[int64]*FragmentGroup)
+	fr.nextExpectedSeq = 0
+	utils.Infof("FragmentReassembler: reset state, nextExpectedSeq=0")
+}
+
 // AddFragment 添加分片
 func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fragmentSize int, fragmentIndex int, totalFragments int, sequenceNumber int64, data []byte) (*FragmentGroup, error) {
 	fr.mu.Lock()
@@ -202,6 +226,10 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 			fr.mu.Unlock()
 			return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "fragment group size too large: %d (max: %d)", originalSize, MaxFragmentGroupSize)
 		}
+		if totalFragments > MaxFragmentsPerGroup {
+			fr.mu.Unlock()
+			return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "total fragments exceeds limit: %d (max: %d)", totalFragments, MaxFragmentsPerGroup)
+		}
 
 		group = &FragmentGroup{
 			GroupID:        groupID,
@@ -213,6 +241,13 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 		}
 		fr.groups[groupID] = group
 		fr.sequenceGroups[sequenceNumber] = group
+
+		// 如果这是第一个分片组，且序列号不是 0，将 nextExpectedSeq 设置为该序列号
+		// 这样可以处理序列号不从 0 开始的情况（比如连接重连后序列号继续）
+		if len(fr.groups) == 1 && fr.nextExpectedSeq == 0 && sequenceNumber != 0 {
+			fr.nextExpectedSeq = sequenceNumber
+			utils.Infof("FragmentReassembler: initialized nextExpectedSeq to %d (first fragment sequence number)", sequenceNumber)
+		}
 		// Created new fragment group for reassembly
 	} else {
 		// 验证一致性
@@ -272,14 +307,65 @@ func (fr *FragmentReassembler) RemoveGroup(groupID string) {
 // cleanupExpiredLocked 清理过期的分片组（需要持有锁）
 func (fr *FragmentReassembler) cleanupExpiredLocked() {
 	now := time.Now()
+	removedSeqs := make([]int64, 0)
 	for groupID, group := range fr.groups {
 		if now.Sub(group.CreatedTime) > FragmentGroupTimeout {
 			delete(fr.groups, groupID)
 			// 同时从序列号映射中删除
 			if group.SequenceNumber >= 0 {
 				delete(fr.sequenceGroups, group.SequenceNumber)
+				removedSeqs = append(removedSeqs, group.SequenceNumber)
 			}
 			utils.Warnf("FragmentReassembler: removed expired fragment group, groupID=%s, sequenceNumber=%d, age=%v", groupID, group.SequenceNumber, now.Sub(group.CreatedTime))
+		}
+	}
+
+	// 如果清理了序列号等于或小于 nextExpectedSeq 的分片组，需要更新 nextExpectedSeq
+	// 找到下一个存在的序列号，或者如果没有，保持当前值
+	if len(removedSeqs) > 0 {
+		// 检查是否有被清理的序列号等于或小于 nextExpectedSeq
+		needsUpdate := false
+		for _, seq := range removedSeqs {
+			if seq <= fr.nextExpectedSeq {
+				needsUpdate = true
+				break
+			}
+		}
+
+		if needsUpdate {
+			// 找到下一个存在的序列号（从 nextExpectedSeq 开始）
+			// 如果找不到，说明所有后续序列号都被清理了，保持当前值
+			oldSeq := fr.nextExpectedSeq
+			for {
+				if _, exists := fr.sequenceGroups[fr.nextExpectedSeq]; exists {
+					// 找到了下一个存在的序列号
+					if oldSeq != fr.nextExpectedSeq {
+						utils.Infof("FragmentReassembler: updated nextExpectedSeq from %d to %d after cleanup", oldSeq, fr.nextExpectedSeq)
+					}
+					break
+				}
+				// 检查是否有更大的序列号存在
+				found := false
+				minSeq := int64(-1)
+				for seq := range fr.sequenceGroups {
+					if seq > fr.nextExpectedSeq {
+						if minSeq == -1 || seq < minSeq {
+							minSeq = seq
+						}
+						found = true
+					}
+				}
+				if !found {
+					// 没有更大的序列号了，保持当前值
+					break
+				}
+				// 直接跳到最小的下一个序列号（优化：避免逐个递增）
+				if minSeq > fr.nextExpectedSeq {
+					fr.nextExpectedSeq = minSeq
+				} else {
+					fr.nextExpectedSeq++
+				}
+			}
 		}
 	}
 }
@@ -300,15 +386,38 @@ func (fr *FragmentReassembler) GetNextCompleteGroup() (*FragmentGroup, bool, err
 		return nil, false, nil
 	}
 
-	// 检查是否已完整
+	// 检查是否超时（只有在分片组存在但未完整时才检查超时）
 	group.mu.Lock()
 	isComplete := group.ReceivedCount == group.TotalFragments && !group.reassembled
+	receivedCount := group.ReceivedCount
+	totalFragments := group.TotalFragments
 	group.mu.Unlock()
 
+	// 只有在分片组未完整时才检查超时
+	if !isComplete && time.Since(group.CreatedTime) > FragmentGroupTimeout {
+		// 分片组超时，说明连接断过，数据丢失
+		utils.Errorf("FragmentReassembler: fragment group timeout, sequenceNumber=%d, groupID=%s, age=%v, received=%d/%d. Connection may be broken.",
+			fr.nextExpectedSeq, group.GroupID, time.Since(group.CreatedTime), receivedCount, totalFragments)
+
+		// 清理超时的分片组
+		delete(fr.groups, group.GroupID)
+		delete(fr.sequenceGroups, fr.nextExpectedSeq)
+
+		// 返回连接断开错误
+		return nil, false, coreErrors.Newf(coreErrors.ErrorTypePermanent,
+			"fragment group timeout: sequenceNumber=%d, connection broken", fr.nextExpectedSeq)
+	}
+
+	// 如果已经检查过完整性，直接使用之前的结果
 	if isComplete {
 		// 找到期望的下一个已完整的分片组，更新期望序列号
 		oldSeq := fr.nextExpectedSeq
 		fr.nextExpectedSeq++
+
+		// 立即从映射中移除，但保留对象引用供调用者使用（避免积压）
+		// 注意：不从 groups 中删除，因为 RemoveGroup 会统一处理
+		delete(fr.sequenceGroups, oldSeq)
+
 		utils.Infof("FragmentReassembler: GetNextCompleteGroup - found complete group, sequenceNumber=%d, groupID=%s, nextExpectedSeq=%d", oldSeq, group.GroupID, fr.nextExpectedSeq)
 		return group, true, nil
 	}
@@ -348,6 +457,14 @@ func CalculateFragments(dataSize int) (fragmentSize int, totalFragments int) {
 		// 注意：合并后，倒数第二片的大小会是 MaxFragmentSize + lastFragmentSize
 		// 这可能会超过 MaxFragmentSize，但不会超过太多（最多 MaxFragmentSize + MinFragmentSize - 1）
 		// 对于大数据包，这种轻微的超出是可以接受的
+	}
+
+	// 验证分片数不超过最大限制
+	if totalFragments > MaxFragmentsPerGroup {
+		// 调整分片大小，确保不超过最大片数
+		fragmentSize = (dataSize + MaxFragmentsPerGroup - 1) / MaxFragmentsPerGroup
+		totalFragments = MaxFragmentsPerGroup
+		return fragmentSize, totalFragments
 	}
 
 	return MaxFragmentSize, totalFragments

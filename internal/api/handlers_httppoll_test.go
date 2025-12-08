@@ -128,7 +128,7 @@ func TestHTTPPushRequest_Handle(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// 处理请求
-	server.handleHTTPPush(w, req)
+	server.HandleHTTPPush(w, req)
 
 	// 验证响应
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -155,7 +155,7 @@ func TestHTTPLongPollingConnection_UpdateClientID(t *testing.T) {
 	if server.httppollRegistry == nil {
 		server.httppollRegistry = httppoll.NewConnectionRegistry()
 	}
-	
+
 	// 创建连接（clientID=0）
 	connID := "conn_test456"
 	streamProcessor := httppoll.NewServerStreamProcessor(ctx, connID, 0, "")
@@ -216,15 +216,15 @@ func TestHTTPPollRequest_Timeout(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// 处理请求
-	server.handleHTTPPoll(w, req)
+	server.HandleHTTPPoll(w, req)
 
 	// 验证响应（应该超时）
 	assert.Equal(t, http.StatusOK, w.Code)
-	
+
 	// 检查响应体
 	bodyBytes := w.Body.Bytes()
 	require.NotEmpty(t, bodyBytes, "Response body should not be empty")
-	
+
 	var resp HTTPPollResponse
 	err := json.Unmarshal(bodyBytes, &resp)
 	require.NoError(t, err, "Failed to unmarshal response: %s", string(bodyBytes))
@@ -263,7 +263,7 @@ func TestHTTPPushRequest_InvalidClientID(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// 处理请求
-	server.handleHTTPPush(w, req)
+	server.HandleHTTPPush(w, req)
 
 	// 验证响应（应该返回错误）
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -318,7 +318,7 @@ func TestHTTPLongPollingConnection_MultipleConnections(t *testing.T) {
 	assert.Equal(t, conn1, foundConn1, "Should find connection 1 by connID1")
 	assert.Equal(t, conn2, foundConn2, "Should find connection 2 by connID2")
 	assert.Equal(t, conn3, foundConn3, "Should find connection 3 by connID3")
-	}
+}
 
 // TestConnectionRegistry 测试 ConnectionRegistry
 func TestConnectionRegistry(t *testing.T) {
@@ -351,4 +351,3 @@ func TestConnectionRegistry(t *testing.T) {
 	assert.Nil(t, registry.Get("conn_test1"))
 	assert.Equal(t, conn2, registry.Get("conn_test2"))
 }
-

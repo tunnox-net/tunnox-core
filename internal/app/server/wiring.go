@@ -12,6 +12,8 @@ import (
 	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/health"
 	"tunnox-core/internal/protocol"
+	"tunnox-core/internal/protocol/registry"
+	"tunnox-core/internal/protocol/registry/protocols"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
@@ -172,7 +174,7 @@ func (s *Server) startGRPCServer() *grpc.Server {
 	return grpcServer
 }
 
-// setupProtocolAdapters 设置协议适配器
+// setupProtocolAdapters 设置协议适配器（重构版，使用协议注册框架）
 func (s *Server) setupProtocolAdapters() error {
 	// 获取启用的协议配置
 	enabledProtocols := s.getEnabledProtocols()
@@ -181,23 +183,37 @@ func (s *Server) setupProtocolAdapters() error {
 		return nil
 	}
 
-	// 创建并注册所有启用的协议适配器
-	registeredProtocols := make([]string, 0, len(enabledProtocols))
-
-	for protocolName, config := range enabledProtocols {
-		// 创建适配器
-		adapter, err := s.protocolFactory.CreateAdapter(protocolName, s.serviceManager.GetContext())
+	// 1. 从全局注册表注册协议（只注册启用的协议，优化性能）
+	globalRegistry := protocols.GetGlobalRegistry()
+	for protocolName := range enabledProtocols {
+		proto, err := globalRegistry.Get(protocolName)
 		if err != nil {
-			return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to create %s adapter", protocolName)
+			// 如果协议未在全局注册表中，跳过（可能是未实现的协议）
+			utils.Debugf("Protocol %s not found in global registry, skipping", protocolName)
+			continue
 		}
+		if err := s.protocolMgr.RegisterProtocol(proto); err != nil {
+			return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to register protocol %s", protocolName)
+		}
+	}
 
-		// 配置监听地址
-		addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
-		adapter.SetAddr(addr)
+	// 2. 转换配置格式
+	configs := make(map[string]*registry.Config)
+	for name, cfg := range enabledProtocols {
+		configs[name] = &registry.Config{
+			Name:    name,
+			Enabled: cfg.Enabled,
+			Host:    cfg.Host,
+			Port:    cfg.Port,
+			Options: make(map[string]interface{}),
+		}
+	}
 
-		// 注册到管理器
-		s.protocolMgr.Register(adapter)
-		registeredProtocols = append(registeredProtocols, protocolName)
+	// 3. 初始化所有协议（自动处理依赖和初始化顺序）
+	// 注意：不在这里启动适配器，而是通过 ProtocolService 统一启动
+	// 这样可以确保协议服务作为服务管理器的一部分，统一管理生命周期
+	if err := s.protocolMgr.InitializeProtocols(configs); err != nil {
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to initialize protocols")
 	}
 
 	return nil

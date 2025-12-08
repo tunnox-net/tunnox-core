@@ -110,264 +110,86 @@ func (c *HTTPLongPollingConn) pollLoop() {
 		}
 		resp.Body.Close()
 
-		// 处理数据：如果是分片，需要重组；如果是完整数据，直接处理
+		// 处理数据：使用统一的分片处理接口
 		if pollResp.Data != "" {
-			// 判断是否为分片：total_fragments > 1
-			isFragment := pollResp.TotalFragments > 1
-			utils.Infof("HTTP long polling: received fragment response, groupID=%s, index=%d/%d, size=%d, isFragment=%v, mappingID=%s",
-				pollResp.FragmentGroupID, pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentSize, isFragment, c.mappingID)
+			utils.Debugf("HTTP long polling: received fragment response, groupID=%s, index=%d/%d, size=%d, mappingID=%s",
+				pollResp.FragmentGroupID, pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentSize, c.mappingID)
 
-			// 解码Base64数据
-			previewLen := 50
-			if len(pollResp.Data) < previewLen {
-				previewLen = len(pollResp.Data)
-			}
-			utils.Debugf("HTTP long polling: decoding fragment data, Data field len=%d, mappingID=%s",
-				len(pollResp.Data), c.mappingID)
-			fragmentData, err := base64.StdEncoding.DecodeString(pollResp.Data)
+			// 使用统一的分片处理器（按序列号顺序处理）
+			isComplete, reassembledData, err := httppoll.ProcessFragmentFromResponse(c.fragmentProcessor, pollResp)
 			if err != nil {
-				previewLen2 := 100
-				if len(pollResp.Data) < previewLen2 {
-					previewLen2 = len(pollResp.Data)
-				}
-				utils.Errorf("HTTP long polling: failed to decode fragment data: %v, Data preview=%s", err, pollResp.Data[:previewLen2])
+				utils.Errorf("HTTP long polling: failed to process fragment: %v, groupID=%s, mappingID=%s",
+					err, pollResp.FragmentGroupID, c.mappingID)
 				time.Sleep(httppollRetryInterval)
 				continue
 			}
-			utils.Debugf("HTTP long polling: decoded fragment data, len=%d, mappingID=%s",
-				len(fragmentData), c.mappingID)
 
-			// 如果是分片，需要重组
-			if isFragment {
-				utils.Infof("HTTP long polling: adding fragment to reassembler, groupID=%s, index=%d/%d, size=%d, originalSize=%d, mappingID=%s",
-					pollResp.FragmentGroupID, pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentSize, pollResp.OriginalSize, c.mappingID)
-				// 添加到分片重组器
-				group, err := c.fragmentReassembler.AddFragment(
-					pollResp.FragmentGroupID,
-					pollResp.OriginalSize,
-					pollResp.FragmentSize,
-					pollResp.FragmentIndex,
-					pollResp.TotalFragments,
-					pollResp.SequenceNumber,
-					fragmentData,
-				)
-				if err != nil {
-					utils.Errorf("HTTP long polling: failed to add fragment: %v, groupID=%s, index=%d, mappingID=%s",
-						err, pollResp.FragmentGroupID, pollResp.FragmentIndex, c.mappingID)
-					time.Sleep(httppollRetryInterval)
-					continue
-				}
-
-				// 使用原子操作检查是否完整（避免竞态条件）
-				// 注意：不在这里重组，而是通过 GetNextCompleteGroup 按序列号顺序重组
-				utils.Debugf("HTTP long polling: checking if fragment group complete, groupID=%s, receivedCount=%d/%d, mappingID=%s",
-					pollResp.FragmentGroupID, group.ReceivedCount, pollResp.TotalFragments, c.mappingID)
-				isComplete := group.IsComplete()
-				if !isComplete {
-					// 分片组不完整，继续等待更多分片
-					utils.Infof("HTTP long polling: fragment %d/%d received, waiting for more fragments, groupID=%s, receivedCount=%d, mappingID=%s",
-						pollResp.FragmentIndex, pollResp.TotalFragments, pollResp.FragmentGroupID, group.ReceivedCount, c.mappingID)
-					continue
-				}
-
-				// 分片组完整，检查是否可以按序列号顺序发送
-				// 使用 GetNextCompleteGroup 确保按序列号顺序发送
-				utils.Infof("HTTP long polling: fragment group complete, checking sequence order, groupID=%s, sequenceNumber=%d, mappingID=%s",
-					pollResp.FragmentGroupID, pollResp.SequenceNumber, c.mappingID)
-				
-				// 尝试获取下一个按序列号顺序的完整分片组
-				nextGroup, found, err := c.fragmentReassembler.GetNextCompleteGroup()
-				if err != nil {
-					utils.Errorf("HTTP long polling: failed to get next complete group: %v, groupID=%s, mappingID=%s",
-						err, pollResp.FragmentGroupID, c.mappingID)
-					c.fragmentReassembler.RemoveGroup(pollResp.FragmentGroupID)
-					time.Sleep(httppollRetryInterval)
-					continue
-				}
-
-				if found {
-					utils.Infof("HTTP long polling: GetNextCompleteGroup found next group, groupID=%s, sequenceNumber=%d, mappingID=%s",
-						nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
-					// 这是下一个应该发送的分片组，重组并发送
-					reassembledData, err := nextGroup.Reassemble()
-					if err != nil {
-						utils.Errorf("HTTP long polling: failed to reassemble: %v, groupID=%s, mappingID=%s",
-							err, nextGroup.GroupID, c.mappingID)
-						c.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
-						time.Sleep(httppollRetryInterval)
-						continue
-					}
-
-						// Base64编码重组后的数据
-						base64Data := base64.StdEncoding.EncodeToString(reassembledData)
-						utils.Infof("HTTP long polling: reassembled %d bytes from %d fragments, groupID=%s, sequenceNumber=%d, originalSize=%d, base64Len=%d, mappingID=%s",
-							len(reassembledData), nextGroup.TotalFragments, nextGroup.GroupID, nextGroup.SequenceNumber, nextGroup.OriginalSize, len(base64Data), c.mappingID)
-
-						// 验证重组后的数据大小
-						if len(reassembledData) != nextGroup.OriginalSize {
-							utils.Errorf("HTTP long polling: reassembled size mismatch: expected %d, got %d, groupID=%s, mappingID=%s",
-								nextGroup.OriginalSize, len(reassembledData), nextGroup.GroupID, c.mappingID)
-							c.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
-							time.Sleep(httppollRetryInterval)
-							continue
-						}
-
-						// 发送到 base64DataChan（确保只有完整的数据才会被发送）
-						utils.Debugf("HTTP long polling: sending reassembled data to base64DataChan, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
-							len(base64Data), nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
-						select {
-						case <-c.Ctx().Done():
-							return
-						case c.base64DataChan <- base64Data:
-							utils.Infof("HTTP long polling: sent reassembled data to base64DataChan successfully, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
-								len(base64Data), nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
-							// 成功发送重组后的完整数据
-						default:
-							utils.Warnf("HTTP long polling: base64DataChan full, dropping reassembled data, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
-								len(base64Data), nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
-						}
-
-						// 移除分片组
-						c.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
-
-						// 继续检查是否有更多按序列号顺序的完整分片组
-						for {
-							nextGroup2, found2, err2 := c.fragmentReassembler.GetNextCompleteGroup()
-							if err2 != nil || !found2 {
-								break
-							}
-							reassembledData2, err2 := nextGroup2.Reassemble()
-							if err2 != nil {
-								utils.Errorf("HTTP long polling: failed to reassemble next group: %v, groupID=%s, mappingID=%s",
-									err2, nextGroup2.GroupID, c.mappingID)
-								c.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
-								break
-							}
-							base64Data2 := base64.StdEncoding.EncodeToString(reassembledData2)
-							utils.Infof("HTTP long polling: sending next complete group, groupID=%s, sequenceNumber=%d, size=%d, mappingID=%s",
-								nextGroup2.GroupID, nextGroup2.SequenceNumber, len(reassembledData2), c.mappingID)
-							select {
-							case <-c.Ctx().Done():
-								return
-							case c.base64DataChan <- base64Data2:
-								utils.Infof("HTTP long polling: sent next group to base64DataChan, size=%d, sequenceNumber=%d, mappingID=%s",
-									len(base64Data2), nextGroup2.SequenceNumber, c.mappingID)
-							default:
-								utils.Warnf("HTTP long polling: base64DataChan full, dropping next group, size=%d, sequenceNumber=%d, mappingID=%s",
-									len(base64Data2), nextGroup2.SequenceNumber, c.mappingID)
-								break
-							}
-							c.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
-						}
-				} else {
-					// 这不是下一个应该发送的分片组，等待序列号更小的分片组完成
-					utils.Infof("HTTP long polling: fragment group complete but GetNextCompleteGroup returned not found, groupID=%s, sequenceNumber=%d, waiting for expected sequence, mappingID=%s",
-						pollResp.FragmentGroupID, pollResp.SequenceNumber, c.mappingID)
-				}
-			} else {
-				// 单分片数据（TotalFragments=1），也需要按序列号顺序发送
-				// 添加到分片重组器，以便按序列号顺序处理
-				utils.Infof("HTTP long polling: received single fragment (TotalFragments=1), adding to reassembler for sequence ordering, groupID=%s, sequenceNumber=%d, mappingID=%s",
-					pollResp.FragmentGroupID, pollResp.SequenceNumber, c.mappingID)
-				_, err := c.fragmentReassembler.AddFragment(
-					pollResp.FragmentGroupID,
-					pollResp.OriginalSize,
-					pollResp.FragmentSize,
-					pollResp.FragmentIndex,
-					pollResp.TotalFragments,
-					pollResp.SequenceNumber,
-					fragmentData,
-				)
-				if err != nil {
-					utils.Errorf("HTTP long polling: failed to add single fragment: %v, groupID=%s, mappingID=%s",
-						err, pollResp.FragmentGroupID, c.mappingID)
-					time.Sleep(httppollRetryInterval)
-					continue
-				}
-
-				// 单分片数据应该立即完整，检查是否可以按序列号顺序发送
-				utils.Infof("HTTP long polling: single fragment complete, checking sequence order, groupID=%s, sequenceNumber=%d, mappingID=%s",
-					pollResp.FragmentGroupID, pollResp.SequenceNumber, c.mappingID)
-				
-				// 尝试获取下一个按序列号顺序的完整分片组
-				nextGroup, found, err := c.fragmentReassembler.GetNextCompleteGroup()
-				if err != nil {
-					utils.Errorf("HTTP long polling: failed to get next complete group for single fragment: %v, groupID=%s, mappingID=%s",
-						err, pollResp.FragmentGroupID, c.mappingID)
-					c.fragmentReassembler.RemoveGroup(pollResp.FragmentGroupID)
-					time.Sleep(httppollRetryInterval)
-					continue
-				}
-
-				if found {
-					utils.Infof("HTTP long polling: GetNextCompleteGroup found next group for single fragment, groupID=%s, sequenceNumber=%d, mappingID=%s",
-						nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
-					// 这是下一个应该发送的分片组，重组并发送
-					reassembledData, err := nextGroup.Reassemble()
-					if err != nil {
-						utils.Errorf("HTTP long polling: failed to reassemble single fragment: %v, groupID=%s, mappingID=%s",
-							err, nextGroup.GroupID, c.mappingID)
-						c.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
-						time.Sleep(httppollRetryInterval)
-						continue
-					}
-
-					// Base64编码重组后的数据
-					base64Data := base64.StdEncoding.EncodeToString(reassembledData)
-					utils.Infof("HTTP long polling: reassembled single fragment, groupID=%s, sequenceNumber=%d, originalSize=%d, base64Len=%d, mappingID=%s",
-						nextGroup.GroupID, nextGroup.SequenceNumber, nextGroup.OriginalSize, len(base64Data), c.mappingID)
-
-					// 发送到 base64DataChan
-					select {
-					case <-c.Ctx().Done():
-						return
-					case c.base64DataChan <- base64Data:
-						utils.Infof("HTTP long polling: sent single fragment to base64DataChan successfully, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
-							len(base64Data), nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
-					default:
-						utils.Warnf("HTTP long polling: base64DataChan full, dropping single fragment, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
-							len(base64Data), nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
-					}
-
-					// 移除分片组
-					c.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
-
-					// 继续检查是否有更多按序列号顺序的完整分片组
-					for {
-						nextGroup2, found2, err2 := c.fragmentReassembler.GetNextCompleteGroup()
-						if err2 != nil || !found2 {
-							break
-						}
-						reassembledData2, err2 := nextGroup2.Reassemble()
-						if err2 != nil {
-							utils.Errorf("HTTP long polling: failed to reassemble next group: %v, groupID=%s, mappingID=%s",
-								err2, nextGroup2.GroupID, c.mappingID)
-							c.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
-							break
-						}
-						base64Data2 := base64.StdEncoding.EncodeToString(reassembledData2)
-						utils.Infof("HTTP long polling: sending next complete group, groupID=%s, sequenceNumber=%d, size=%d, mappingID=%s",
-							nextGroup2.GroupID, nextGroup2.SequenceNumber, len(reassembledData2), c.mappingID)
+			// 如果分片组完整且可以立即返回（单分片情况），直接发送
+			if isComplete && reassembledData != nil {
+				base64Data := base64.StdEncoding.EncodeToString(reassembledData)
+				utils.Infof("HTTP long polling: processed fragment immediately, groupID=%s, size=%d, mappingID=%s",
+					pollResp.FragmentGroupID, len(reassembledData), c.mappingID)
 				select {
 				case <-c.Ctx().Done():
 					return
-						case c.base64DataChan <- base64Data2:
-							utils.Infof("HTTP long polling: sent next group to base64DataChan, size=%d, sequenceNumber=%d, mappingID=%s",
-								len(base64Data2), nextGroup2.SequenceNumber, c.mappingID)
+				case c.base64DataChan <- base64Data:
+					utils.Debugf("HTTP long polling: sent processed fragment to base64DataChan, size=%d, mappingID=%s",
+						len(base64Data), c.mappingID)
 				default:
-							utils.Warnf("HTTP long polling: base64DataChan full, dropping next group, size=%d, sequenceNumber=%d, mappingID=%s",
-								len(base64Data2), nextGroup2.SequenceNumber, c.mappingID)
-							break
-						}
-						c.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
-					}
-				} else {
-					// 这不是下一个应该发送的分片组，等待序列号更小的分片组完成
-					utils.Infof("HTTP long polling: single fragment complete but GetNextCompleteGroup returned not found, groupID=%s, sequenceNumber=%d, waiting for expected sequence, mappingID=%s",
-						pollResp.FragmentGroupID, pollResp.SequenceNumber, c.mappingID)
+					utils.Warnf("HTTP long polling: base64DataChan full, dropping processed fragment, size=%d, mappingID=%s",
+						len(base64Data), c.mappingID)
 				}
 			}
-		} else if pollResp.Timeout {
+		}
+
+		// 无论是否收到新分片，都尝试处理已完整的分片组（避免分片组积压）
+		// 这很重要：即使没有收到新分片，也要处理之前已完整但未处理的分片组
+		for {
+			reassembledData, found, err := c.fragmentProcessor.GetNextReassembledData()
+			if err != nil {
+				// 连接断开错误，关闭连接
+				utils.Errorf("HTTP long polling: connection broken: %v, mappingID=%s", err, c.mappingID)
+				c.Close() // 关闭连接，向上层报告
+				return
+			}
+			if !found {
+				// 没有更多按序列号顺序的完整分片组
+				break
+			}
+
+			// Base64编码重组后的数据
+			base64Data := base64.StdEncoding.EncodeToString(reassembledData)
+			utils.Infof("HTTP long polling: sending reassembled data (sequence ordered), size=%d, base64Len=%d, mappingID=%s",
+				len(reassembledData), len(base64Data), c.mappingID)
+
+			// 发送到 base64DataChan
+			select {
+			case <-c.Ctx().Done():
+				return
+			case c.base64DataChan <- base64Data:
+				utils.Debugf("HTTP long polling: sent reassembled data to base64DataChan, size=%d, mappingID=%s",
+					len(base64Data), c.mappingID)
+			default:
+				// 如果 channel 满了，使用带超时的发送，避免无限阻塞
+				// 但继续处理下一个分片组，而不是直接返回（避免分片组积压）
+				utils.Warnf("HTTP long polling: base64DataChan full, waiting to send, size=%d, mappingID=%s",
+					len(base64Data), c.mappingID)
+				select {
+				case <-c.Ctx().Done():
+					return
+				case c.base64DataChan <- base64Data:
+					utils.Debugf("HTTP long polling: sent reassembled data to base64DataChan after wait, size=%d, mappingID=%s",
+						len(base64Data), c.mappingID)
+				case <-time.After(5 * time.Second):
+					// 超时，跳过这个数据包，继续处理下一个（避免死锁）
+					utils.Errorf("HTTP long polling: timeout sending to base64DataChan, dropping data, size=%d, mappingID=%s",
+						len(base64Data), c.mappingID)
+					// 继续处理下一个分片组，不返回
+				}
+			}
+		}
+
+		if pollResp.Timeout {
 			utils.Debugf("HTTP long polling: poll request timeout, retrying...")
 		}
 

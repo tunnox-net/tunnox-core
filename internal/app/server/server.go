@@ -17,9 +17,11 @@ import (
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/metrics"
 	"tunnox-core/internal/core/node"
+	"tunnox-core/internal/cloud/container"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/health"
 	"tunnox-core/internal/protocol"
+	"tunnox-core/internal/protocol/registry"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/security"
 	"tunnox-core/internal/utils"
@@ -32,13 +34,14 @@ type Server struct {
 	config          *Config
 	serviceManager  *utils.ServiceManager
 	protocolMgr     *protocol.ProtocolManager
+	container       *container.Container // 依赖注入容器
 	serverID        string
 	nodeID          string // ✅ 动态分配的节点ID
 	storage         storage.Storage
 	idManager       *idgen.IDManager
 	nodeAllocator   *node.NodeIDAllocator // ✅ 节点ID分配器
 	session         *session.SessionManager
-	protocolFactory *ProtocolFactory
+	protocolFactory *ProtocolFactory // 保留用于向后兼容
 	cloudControl    managers.CloudControlAPI
 	cloudBuiltin    *managers.BuiltinCloudControl
 	authHandler     *ServerAuthHandler
@@ -182,9 +185,16 @@ func New(config *Config, parentCtx context.Context) *Server {
 		utils.LogErrorf(err, "Server: failed to setup connection code commands")
 	}
 
-	// 创建协议工厂和适配器管理器
+	// 创建依赖注入容器
+	server.container = container.NewContainer(parentCtx)
+	server.setupContainer()
+
+	// 创建协议工厂和适配器管理器（保留向后兼容）
 	server.protocolFactory = NewProtocolFactory(server.session)
-	server.protocolMgr = protocol.NewProtocolManager(parentCtx)
+	
+	// 创建协议管理器（使用容器）
+	containerAdapter := registry.NewContainerAdapter(server.container)
+	server.protocolMgr = protocol.NewProtocolManagerWithContainer(parentCtx, containerAdapter)
 
 	server.serverID, _ = server.idManager.GenerateConnectionID()
 
@@ -214,6 +224,14 @@ func New(config *Config, parentCtx context.Context) *Server {
 	if config.ManagementAPI.Enabled {
 		server.apiServer = server.createManagementAPI(parentCtx)
 		server.apiServer.SetSessionManager(api.AdaptSessionManager(server.session))
+		// 在 apiServer 创建后，更新容器中的 http_server 和 http_router 服务
+		// 因为 setupContainer() 在 apiServer 创建之前调用，此时 apiServer 为 nil
+		server.container.RegisterSingleton("http_server", func() (interface{}, error) {
+			return server.apiServer, nil
+		})
+		server.container.RegisterSingleton("http_router", func() (interface{}, error) {
+			return server.apiServer, nil // ManagementAPIServer 实现了 HTTPRouter 接口
+		})
 	}
 
 	// 注册服务到服务管理器
