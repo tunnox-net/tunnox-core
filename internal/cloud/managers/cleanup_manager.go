@@ -82,6 +82,11 @@ func (cm *CleanupManager) RegisterCleanupTask(ctx context.Context, taskType stri
 	return nil
 }
 
+// releaseLock 释放锁（辅助函数）
+func (cm *CleanupManager) releaseLock(lockKey string) {
+	_ = cm.storage.Delete(lockKey)
+}
+
 // AcquireCleanupTask 获取清理任务执行权
 func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType string) (*CleanupTask, bool, error) {
 	taskID := fmt.Sprintf("cleanup_%s", taskType)
@@ -101,30 +106,35 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 		return nil, false, nil // 任务正在被其他实例执行
 	}
 
+	// 在错误情况下释放锁
+	releaseLockOnError := func(err error) (*CleanupTask, bool, error) {
+		if err != nil {
+			cm.releaseLock(lockKey)
+		}
+		return nil, false, err
+	}
+
 	// 获取任务信息
 	key := fmt.Sprintf("%s:cleanup_task:%s", constants.KeyPrefixCleanup, taskID)
 	data, err := cm.storage.Get(key)
 	if err != nil {
-		cm.storage.Delete(lockKey) // 释放锁
-		return nil, false, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "get task failed")
+		return releaseLockOnError(coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "get task failed"))
 	}
 
 	taskData, ok := data.(string)
 	if !ok {
-		cm.storage.Delete(lockKey) // 释放锁
-		return nil, false, coreErrors.New(coreErrors.ErrorTypePermanent, "invalid task data type")
+		return releaseLockOnError(coreErrors.New(coreErrors.ErrorTypePermanent, "invalid task data type"))
 	}
 
 	var task CleanupTask
 	if err := json.Unmarshal([]byte(taskData), &task); err != nil {
-		cm.storage.Delete(lockKey) // 释放锁
-		return nil, false, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "unmarshal task failed")
+		return releaseLockOnError(coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "unmarshal task failed"))
 	}
 
 	// 检查是否需要执行
 	if time.Now().Before(task.NextRun) {
-		cm.storage.Delete(lockKey) // 释放锁
-		return nil, false, nil     // 还未到执行时间
+		cm.releaseLock(lockKey)
+		return nil, false, nil // 还未到执行时间
 	}
 
 	// 更新任务状态为运行中
@@ -134,20 +144,17 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 
 	dataBytes, err := json.Marshal(task)
 	if err != nil {
-		cm.storage.Delete(lockKey) // 释放锁
-		return nil, false, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "marshal updated task failed")
+		return releaseLockOnError(coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "marshal updated task failed"))
 	}
 
 	// 使用原子操作更新任务状态（casStore 已在上面定义）
 	success, err := casStore.CompareAndSwap(key, taskData, string(dataBytes), 0)
 	if err != nil {
-		cm.storage.Delete(lockKey) // 释放锁
-		return nil, false, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "update task failed")
+		return releaseLockOnError(coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "update task failed"))
 	}
 
 	if !success {
-		cm.storage.Delete(lockKey) // 释放锁
-		return nil, false, coreErrors.New(coreErrors.ErrorTypeTemporary, "task was modified by another process")
+		return releaseLockOnError(coreErrors.New(coreErrors.ErrorTypeTemporary, "task was modified by another process"))
 	}
 
 	return &task, true, nil
@@ -193,7 +200,6 @@ func (cm *CleanupManager) CompleteCleanupTask(ctx context.Context, taskType stri
 	// 使用原子操作更新任务状态
 	casStore, ok := cm.storage.(storage.CASStore)
 	if !ok {
-		cm.storage.Delete(lockKey) // 释放锁
 		return coreErrors.New(coreErrors.ErrorTypePermanent, "storage does not support CAS operations")
 	}
 	success, err := casStore.CompareAndSwap(key, taskData, string(dataBytes), 0)
