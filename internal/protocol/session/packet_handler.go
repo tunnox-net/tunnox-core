@@ -1,8 +1,7 @@
 package session
 
 import (
-	"fmt"
-
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -26,7 +25,7 @@ func (s *SessionManager) ProcessPacket(connID string, pkt *packet.TransferPacket
 // HandlePacket 处理数据包（统一入口）
 func (s *SessionManager) HandlePacket(connPacket *types.StreamPacket) error {
 	if connPacket == nil || connPacket.Packet == nil {
-		return fmt.Errorf("invalid packet: nil")
+		return errors.New(errors.ErrorTypeProtocol, "invalid packet: nil")
 	}
 
 	packetType := connPacket.Packet.PacketType
@@ -47,6 +46,6 @@ func (s *SessionManager) HandlePacket(connPacket *types.StreamPacket) error {
 
 	default:
 		utils.Warnf("Unhandled packet type: %v", packetType)
-		return fmt.Errorf("unhandled packet type: %v", packetType)
+		return errors.Newf(errors.ErrorTypeProtocol, "unhandled packet type: %v", packetType)
 	}
 }

@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"time"
+
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
@@ -81,12 +83,12 @@ func (s *anonymousService) GenerateAnonymousCredentials() (*models.Client, error
 func (s *anonymousService) GetAnonymousClient(clientID int64) (*models.Client, error) {
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
-		return nil, fmt.Errorf("anonymous client %d not found: %w", clientID, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "anonymous client %d not found", clientID)
 	}
 
 	// 验证是否为匿名客户端
 	if client.Type != models.ClientTypeAnonymous {
-		return nil, fmt.Errorf("client %d is not anonymous", clientID)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "client %d is not anonymous", clientID)
 	}
 
 	return client, nil
@@ -102,7 +104,7 @@ func (s *anonymousService) DeleteAnonymousClient(clientID int64) error {
 
 	// 验证是否为匿名客户端
 	if client.Type != models.ClientTypeAnonymous {
-		return fmt.Errorf("client %d is not anonymous", clientID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "client %d is not anonymous", clientID)
 	}
 
 	// 删除客户端
@@ -142,19 +144,19 @@ func (s *anonymousService) CreateAnonymousMapping(listenClientID, targetClientID
 	// 验证监听客户端
 	_, err := s.clientRepo.GetClient(utils.Int64ToString(listenClientID))
 	if err != nil {
-		return nil, fmt.Errorf("listen client %d not found: %w", listenClientID, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "listen client %d not found", listenClientID)
 	}
 
 	// 验证目标客户端
 	_, err = s.clientRepo.GetClient(utils.Int64ToString(targetClientID))
 	if err != nil {
-		return nil, fmt.Errorf("target client %d not found: %w", targetClientID, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "target client %d not found", targetClientID)
 	}
 
 	// 生成映射ID
 	mappingID, err := s.idManager.GeneratePortMappingID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate mapping ID: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate mapping ID")
 	}
 
 	// 创建映射
@@ -179,7 +181,7 @@ func (s *anonymousService) CreateAnonymousMapping(listenClientID, targetClientID
 
 	if err := s.mappingRepo.CreatePortMapping(mapping); err != nil {
 		_ = s.idManager.ReleasePortMappingID(mappingID)
-		return nil, fmt.Errorf("failed to create anonymous mapping: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to create anonymous mapping")
 	}
 
 	utils.Infof("Created anonymous mapping: %s between clients %d and %d", mappingID, listenClientID, targetClientID)
@@ -199,7 +201,7 @@ func (s *anonymousService) CleanupExpiredAnonymous() error {
 	// 获取所有匿名客户端
 	anonymousClients, err := s.ListAnonymousClients()
 	if err != nil {
-		return fmt.Errorf("failed to list anonymous clients: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to list anonymous clients")
 	}
 
 	now := time.Now()

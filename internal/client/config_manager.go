@@ -1,10 +1,10 @@
 package client
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"gopkg.in/yaml.v3"
 	"tunnox-core/internal/utils"
 )
@@ -41,7 +41,7 @@ func (cm *ConfigManager) LoadConfig(cmdConfigPath string) (*ClientConfig, error)
 	if cmdConfigPath != "" {
 		config, err := cm.loadConfigFromFile(cmdConfigPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load config from %s: %w", cmdConfigPath, err)
+			return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to load config from %s", cmdConfigPath)
 		}
 		utils.Infof("ConfigManager: loaded config from %s (command line)", cmdConfigPath)
 		return config, nil
@@ -121,9 +121,9 @@ func (cm *ConfigManager) SaveConfigWithOptions(config *ClientConfig, allowUpdate
 	
 	// 所有路径都失败
 	if lastErr != nil {
-		return fmt.Errorf("failed to save config to any location: %w", lastErr)
+		return coreErrors.Wrapf(lastErr, coreErrors.ErrorTypeStorage, "failed to save config to any location")
 	}
-	return fmt.Errorf("failed to save config to any location")
+	return coreErrors.New(coreErrors.ErrorTypeStorage, "failed to save config to any location")
 }
 
 // loadConfigFromFile 从文件加载配置
@@ -135,7 +135,7 @@ func (cm *ConfigManager) loadConfigFromFile(path string) (*ClientConfig, error) 
 	
 	var config ClientConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to parse config: %s", path)
 	}
 	
 	return &config, nil
@@ -146,19 +146,19 @@ func (cm *ConfigManager) saveConfigToFile(path string, config *ClientConfig) err
 	// 序列化为 YAML
 	data, err := yaml.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal config")
 	}
 	
 	// 写入临时文件
 	tempFile := path + ".tmp"
 	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to write temp file: %s", tempFile)
 	}
 	
 	// 原子替换
 	if err := os.Rename(tempFile, path); err != nil {
 		os.Remove(tempFile) // 清理临时文件
-		return fmt.Errorf("failed to rename temp file: %w", err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to rename temp file: %s", tempFile)
 	}
 	
 	return nil

@@ -287,8 +287,13 @@ func HandleErrorWithCleanup(err error, cleanup func() error, message string) err
 		}
 	}
 
-	// 返回包装后的错误
-	return fmt.Errorf("%s: %w", message, err)
+	// 返回包装后的错误（使用 TypedError）
+	// 尝试从原始错误中获取错误类型，默认为 ErrorTypePermanent
+	errType := ErrorTypePermanent
+	if typedErr, ok := err.(*TypedError); ok {
+		errType = typedErr.Type
+	}
+	return Wrap(err, errType, message)
 }
 
 // HandleErrorWithCleanupFunc 返回一个带清理操作的错误处理函数

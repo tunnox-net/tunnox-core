@@ -1,7 +1,7 @@
 package session
 
 import (
-	"fmt"
+	coreErrors "tunnox-core/internal/core/errors"
 
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
@@ -28,7 +28,7 @@ func (a *CloudControlAdapter) GetPortMapping(mappingID string) (*models.PortMapp
 func (a *CloudControlAdapter) UpdatePortMappingStats(mappingID string, stats interface{}) error {
 	trafficStats, ok := stats.(*cloudstats.TrafficStats)
 	if !ok {
-		return fmt.Errorf("invalid stats type: expected *cloudstats.TrafficStats, got %T", stats)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid stats type: expected *cloudstats.TrafficStats, got %T", stats)
 	}
 	return a.cc.UpdatePortMappingStats(mappingID, trafficStats)
 }

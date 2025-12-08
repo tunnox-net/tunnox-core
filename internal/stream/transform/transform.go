@@ -2,10 +2,10 @@ package transform
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"golang.org/x/time/rate"
 )
 
@@ -49,10 +49,16 @@ func (w *nopWriteCloser) Close() error {
 type RateLimitedTransformer struct {
 	config      TransformConfig
 	rateLimiter *rate.Limiter
+	ctx         context.Context // 保存 context 用于超时控制
 }
 
 // NewTransformer 创建转换器
 func NewTransformer(config *TransformConfig) (StreamTransformer, error) {
+	return NewTransformerWithContext(config, nil)
+}
+
+// NewTransformerWithContext 创建转换器（带 context）
+func NewTransformerWithContext(config *TransformConfig, ctx context.Context) (StreamTransformer, error) {
 	if config == nil || config.BandwidthLimit <= 0 {
 		return &NoOpTransformer{}, nil
 	}
@@ -63,6 +69,7 @@ func NewTransformer(config *TransformConfig) (StreamTransformer, error) {
 	return &RateLimitedTransformer{
 		config:      *config,
 		rateLimiter: limiter,
+		ctx:         ctx,
 	}, nil
 }
 
@@ -71,6 +78,7 @@ func (t *RateLimitedTransformer) WrapReader(r io.Reader) (io.Reader, error) {
 	return &rateLimitedReader{
 		source:  r,
 		limiter: t.rateLimiter,
+		ctx:     t.ctx,
 	}, nil
 }
 
@@ -79,6 +87,7 @@ func (t *RateLimitedTransformer) WrapWriter(w io.Writer) (io.WriteCloser, error)
 	return &rateLimitedWriter{
 		target:  w,
 		limiter: t.rateLimiter,
+		ctx:     t.ctx,
 	}, nil
 }
 
@@ -86,16 +95,22 @@ func (t *RateLimitedTransformer) WrapWriter(w io.Writer) (io.WriteCloser, error)
 type rateLimitedReader struct {
 	source  io.Reader
 	limiter *rate.Limiter
+	ctx     context.Context // 保存 context 用于超时控制
 }
 
 func (r *rateLimitedReader) Read(p []byte) (n int, err error) {
 	n, err = r.source.Read(p)
 	if n > 0 {
 		// 等待令牌（5秒超时）
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// 如果提供了 context，使用它作为父 context；否则使用 Background（仅用于超时控制）
+		baseCtx := r.ctx
+		if baseCtx == nil {
+			baseCtx = context.Background()
+		}
+		ctx, cancel := context.WithTimeout(baseCtx, 5*time.Second)
 		if waitErr := r.limiter.WaitN(ctx, n); waitErr != nil {
 			cancel()
-			return n, fmt.Errorf("rate limit wait failed: %w", waitErr)
+			return n, coreErrors.Wrap(waitErr, coreErrors.ErrorTypeTemporary, "rate limit wait failed")
 		}
 		cancel()
 	}
@@ -106,14 +121,20 @@ func (r *rateLimitedReader) Read(p []byte) (n int, err error) {
 type rateLimitedWriter struct {
 	target  io.Writer
 	limiter *rate.Limiter
+	ctx     context.Context // 保存 context 用于超时控制
 }
 
 func (w *rateLimitedWriter) Write(p []byte) (n int, err error) {
 	// 等待令牌（5秒超时）
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// 如果提供了 context，使用它作为父 context；否则使用 Background（仅用于超时控制）
+	baseCtx := w.ctx
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(baseCtx, 5*time.Second)
 	if waitErr := w.limiter.WaitN(ctx, len(p)); waitErr != nil {
 		cancel()
-		return 0, fmt.Errorf("rate limit wait failed: %w", waitErr)
+		return 0, coreErrors.Wrap(waitErr, coreErrors.ErrorTypeTemporary, "rate limit wait failed")
 	}
 	cancel()
 

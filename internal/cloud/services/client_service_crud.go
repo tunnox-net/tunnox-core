@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
 	"tunnox-core/internal/cloud/models"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -124,10 +126,10 @@ func (s *clientService) GetClient(clientID int64) (*models.Client, error) {
 
 	// 配置是必需的
 	if configErr != nil {
-		return nil, fmt.Errorf("failed to get client config: %w", configErr)
+		return nil, coreErrors.Wrap(configErr, coreErrors.ErrorTypeStorage, "failed to get client config")
 	}
 	if config == nil {
-		return nil, fmt.Errorf("client %d not found", clientID)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "client %d not found", clientID)
 	}
 
 	// 聚合返回
@@ -148,7 +150,7 @@ func (s *clientService) TouchClient(clientID int64) {
 // 如需更新状态，使用UpdateClientStatus或ConnectClient
 func (s *clientService) UpdateClient(client *models.Client) error {
 	if client == nil {
-		return fmt.Errorf("client is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "client is nil")
 	}
 
 	// 构建配置对象
@@ -230,4 +232,3 @@ func (s *clientService) DeleteClient(clientID int64) error {
 	s.baseService.LogDeleted("client", fmt.Sprintf("%d", clientID))
 	return nil
 }
-

@@ -8,6 +8,8 @@ import (
 	"net"
 	"sync"
 	"time"
+	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/utils"
 )
@@ -85,10 +87,13 @@ func NewSocksAdapter(parentCtx context.Context, session session.Session, config 
 		utils.Infof("SOCKS5 adapter: authentication disabled")
 	}
 
-	adapter.BaseAdapter = BaseAdapter{}
+	adapter.BaseAdapter = BaseAdapter{
+		ResourceBase: dispose.NewResourceBase("SocksAdapter"),
+	}
+	adapter.Initialize(parentCtx)
+	adapter.AddCleanHandler(adapter.onClose)
 	adapter.SetName("socks5")
 	adapter.SetSession(session)
-	adapter.SetCtx(parentCtx, adapter.onClose)
 	adapter.SetProtocolAdapter(adapter)
 
 	return adapter
@@ -96,14 +101,14 @@ func NewSocksAdapter(parentCtx context.Context, session session.Session, config 
 
 // Dial SOCKS5 不需要主动连接（客户端模式），返回错误
 func (s *SocksAdapter) Dial(addr string) (io.ReadWriteCloser, error) {
-	return nil, fmt.Errorf("SOCKS5 adapter does not support Dial (server mode only)")
+	return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "SOCKS5 adapter does not support Dial (server mode only)")
 }
 
 // Listen 启动 SOCKS5 代理服务器
 func (s *SocksAdapter) Listen(addr string) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on SOCKS5: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to listen on SOCKS5")
 	}
 
 	s.listener = listener
@@ -115,7 +120,7 @@ func (s *SocksAdapter) Listen(addr string) error {
 // Accept 接受 SOCKS5 客户端连接
 func (s *SocksAdapter) Accept() (io.ReadWriteCloser, error) {
 	if s.listener == nil {
-		return nil, fmt.Errorf("SOCKS5 listener not initialized")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "SOCKS5 listener not initialized")
 	}
 
 	// 设置接受超时
@@ -127,7 +132,7 @@ func (s *SocksAdapter) Accept() (io.ReadWriteCloser, error) {
 	if err != nil {
 		// 检查是否是超时错误
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return nil, fmt.Errorf("accept timeout")
+			return nil, coreErrors.New(coreErrors.ErrorTypeTemporary, "accept timeout")
 		}
 		return nil, err
 	}
@@ -136,7 +141,7 @@ func (s *SocksAdapter) Accept() (io.ReadWriteCloser, error) {
 	go s.handleSocksConnection(conn)
 
 	// 返回超时错误，让 acceptLoop 继续
-	return nil, fmt.Errorf("socks connection handled")
+	return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "socks connection handled")
 }
 
 func (s *SocksAdapter) getConnectionType() string {
@@ -211,18 +216,18 @@ func (s *SocksAdapter) handleHandshake(conn net.Conn) error {
 	buf := make([]byte, 257)
 	n, err := io.ReadAtLeast(conn, buf, 2)
 	if err != nil {
-		return fmt.Errorf("read handshake failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read handshake failed")
 	}
 
 	version := buf[0]
 	if version != socks5Version {
-		return fmt.Errorf("unsupported SOCKS version: %d", version)
+		return coreErrors.Newf(coreErrors.ErrorTypeProtocol, "unsupported SOCKS version: %d", version)
 	}
 
 	nMethods := int(buf[1])
 	if n < 2+nMethods {
 		if _, err := io.ReadFull(conn, buf[n:2+nMethods]); err != nil {
-			return fmt.Errorf("read methods failed: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read methods failed")
 		}
 	}
 
@@ -255,17 +260,17 @@ func (s *SocksAdapter) handleHandshake(conn net.Conn) error {
 	// | 1  |   1    |
 	// +----+--------+
 	if _, err := conn.Write([]byte{socks5Version, byte(selectedMethod)}); err != nil {
-		return fmt.Errorf("write method selection failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "write method selection failed")
 	}
 
 	if selectedMethod == socksAuthNoMatch {
-		return fmt.Errorf("no acceptable authentication method")
+		return coreErrors.New(coreErrors.ErrorTypeAuth, "no acceptable authentication method")
 	}
 
 	// 如果需要认证，执行认证流程
 	if selectedMethod == socksAuthPassword {
 		if err := s.handlePasswordAuth(conn); err != nil {
-			return fmt.Errorf("authentication failed: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeAuth, "authentication failed")
 		}
 	}
 
@@ -283,12 +288,12 @@ func (s *SocksAdapter) handlePasswordAuth(conn net.Conn) error {
 	// 读取版本和用户名长度
 	buf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return fmt.Errorf("read auth header failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read auth header failed")
 	}
 
 	version := buf[0]
 	if version != 0x01 {
-		return fmt.Errorf("unsupported auth version: %d", version)
+		return coreErrors.Newf(coreErrors.ErrorTypeProtocol, "unsupported auth version: %d", version)
 	}
 
 	usernameLen := int(buf[1])
@@ -296,21 +301,21 @@ func (s *SocksAdapter) handlePasswordAuth(conn net.Conn) error {
 	// 读取用户名
 	usernameBuf := make([]byte, usernameLen)
 	if _, err := io.ReadFull(conn, usernameBuf); err != nil {
-		return fmt.Errorf("read username failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read username failed")
 	}
 	username := string(usernameBuf)
 
 	// 读取密码长度
 	passwordLenBuf := make([]byte, 1)
 	if _, err := io.ReadFull(conn, passwordLenBuf); err != nil {
-		return fmt.Errorf("read password length failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read password length failed")
 	}
 	passwordLen := int(passwordLenBuf[0])
 
 	// 读取密码
 	passwordBuf := make([]byte, passwordLen)
 	if _, err := io.ReadFull(conn, passwordBuf); err != nil {
-		return fmt.Errorf("read password failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read password failed")
 	}
 	password := string(passwordBuf)
 
@@ -332,11 +337,11 @@ func (s *SocksAdapter) handlePasswordAuth(conn net.Conn) error {
 	}
 
 	if _, err := conn.Write([]byte{0x01, status}); err != nil {
-		return fmt.Errorf("write auth response failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "write auth response failed")
 	}
 
 	if !success {
-		return fmt.Errorf("invalid credentials")
+		return coreErrors.New(coreErrors.ErrorTypeAuth, "invalid credentials")
 	}
 
 	return nil
@@ -352,12 +357,12 @@ func (s *SocksAdapter) handleRequest(conn net.Conn) (string, error) {
 
 	buf := make([]byte, 4)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return "", fmt.Errorf("read request header failed: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read request header failed")
 	}
 
 	version := buf[0]
 	if version != socks5Version {
-		return "", fmt.Errorf("unsupported SOCKS version: %d", version)
+		return "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported SOCKS version: %d", version)
 	}
 
 	cmd := buf[1]
@@ -367,7 +372,7 @@ func (s *SocksAdapter) handleRequest(conn net.Conn) (string, error) {
 	// 目前只支持 CONNECT 命令
 	if cmd != socksCmdConnect {
 		s.sendReply(conn, socksRepCommandNotSupported, "0.0.0.0", 0)
-		return "", fmt.Errorf("unsupported command: %d", cmd)
+		return "", coreErrors.Newf(coreErrors.ErrorTypeProtocol, "unsupported command: %d", cmd)
 	}
 
 	// 解析目标地址
@@ -377,7 +382,7 @@ func (s *SocksAdapter) handleRequest(conn net.Conn) (string, error) {
 		// IPv4 地址 (4 字节)
 		addr := make([]byte, 4)
 		if _, err := io.ReadFull(conn, addr); err != nil {
-			return "", fmt.Errorf("read IPv4 address failed: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read IPv4 address failed")
 		}
 		targetAddr = net.IP(addr).String()
 
@@ -385,12 +390,12 @@ func (s *SocksAdapter) handleRequest(conn net.Conn) (string, error) {
 		// 域名 (1 字节长度 + 域名)
 		lenBuf := make([]byte, 1)
 		if _, err := io.ReadFull(conn, lenBuf); err != nil {
-			return "", fmt.Errorf("read domain length failed: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read domain length failed")
 		}
 		domainLen := int(lenBuf[0])
 		domain := make([]byte, domainLen)
 		if _, err := io.ReadFull(conn, domain); err != nil {
-			return "", fmt.Errorf("read domain failed: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read domain failed")
 		}
 		targetAddr = string(domain)
 
@@ -398,19 +403,19 @@ func (s *SocksAdapter) handleRequest(conn net.Conn) (string, error) {
 		// IPv6 地址 (16 字节)
 		addr := make([]byte, 16)
 		if _, err := io.ReadFull(conn, addr); err != nil {
-			return "", fmt.Errorf("read IPv6 address failed: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read IPv6 address failed")
 		}
 		targetAddr = net.IP(addr).String()
 
 	default:
 		s.sendReply(conn, socksRepAddrTypeNotSupported, "0.0.0.0", 0)
-		return "", fmt.Errorf("unsupported address type: %d", addrType)
+		return "", coreErrors.Newf(coreErrors.ErrorTypeProtocol, "unsupported address type: %d", addrType)
 	}
 
 	// 读取端口 (2 字节，大端序)
 	portBuf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, portBuf); err != nil {
-		return "", fmt.Errorf("read port failed: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read port failed")
 	}
 	port := binary.BigEndian.Uint16(portBuf)
 
@@ -459,7 +464,7 @@ func (s *SocksAdapter) dialThroughTunnel(targetAddr string) (net.Conn, error) {
 		// 直接连接目标（不通过隧道）
 		conn, err := net.DialTimeout("tcp", targetAddr, socksDialTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("direct dial failed: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "direct dial failed")
 		}
 		return conn, nil
 	}
@@ -469,7 +474,7 @@ func (s *SocksAdapter) dialThroughTunnel(targetAddr string) (net.Conn, error) {
 	// 当前先使用直接连接作为备用方案
 	conn, err := net.DialTimeout("tcp", targetAddr, socksDialTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("tunnel dial failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "tunnel dial failed")
 	}
 	return conn, nil
 }

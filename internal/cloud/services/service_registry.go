@@ -6,6 +6,7 @@ import (
 	"tunnox-core/internal/cloud/container"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	storageCore "tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
@@ -35,7 +36,7 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	// 注册存储服务
 	container.RegisterSingleton("storage", func() (interface{}, error) {
 		if storage == nil {
-			return nil, fmt.Errorf("storage is required")
+			return nil, errors.New(errors.ErrorTypePermanent, "storage is required")
 		}
 		return storage, nil
 	})
@@ -43,7 +44,7 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	// 注册配置服务
 	container.RegisterSingleton("config", func() (interface{}, error) {
 		if config == nil {
-			return nil, fmt.Errorf("config is required")
+			return nil, errors.New(errors.ErrorTypePermanent, "config is required")
 		}
 		return config, nil
 	})
@@ -52,12 +53,12 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("id_manager", func() (interface{}, error) {
 		storageInstance, err := container.Resolve("storage")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve storage: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve storage")
 		}
 
 		storageImpl, ok := storageInstance.(storageCore.Storage)
 		if !ok {
-			return nil, fmt.Errorf("storage does not implement storage.Storage interface")
+			return nil, errors.New(errors.ErrorTypePermanent, "storage does not implement storage.Storage interface")
 		}
 
 		idManager := idgen.NewIDManager(storageImpl, parentCtx)
@@ -68,12 +69,12 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("repository", func() (interface{}, error) {
 		storageInstance, err := container.Resolve("storage")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve storage: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve storage")
 		}
 
 		storageImpl, ok := storageInstance.(storageCore.Storage)
 		if !ok {
-			return nil, fmt.Errorf("storage does not implement storage.Storage interface")
+			return nil, errors.New(errors.ErrorTypePermanent, "storage does not implement storage.Storage interface")
 		}
 
 		repo := repos.NewRepository(storageImpl)
@@ -84,12 +85,12 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("user_repository", func() (interface{}, error) {
 		repoInstance, err := container.Resolve("repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve repository")
 		}
 
 		repo, ok := repoInstance.(*repos.Repository)
 		if !ok {
-			return nil, fmt.Errorf("repository is not of type *repos.Repository")
+			return nil, errors.New(errors.ErrorTypePermanent, "repository is not of type *repos.Repository")
 		}
 
 		userRepo := repos.NewUserRepository(repo)
@@ -99,12 +100,12 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("client_repository", func() (interface{}, error) {
 		repoInstance, err := container.Resolve("repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve repository")
 		}
 
 		repo, ok := repoInstance.(*repos.Repository)
 		if !ok {
-			return nil, fmt.Errorf("repository is not of type *repos.Repository")
+			return nil, errors.New(errors.ErrorTypePermanent, "repository is not of type *repos.Repository")
 		}
 
 		clientRepo := repos.NewClientRepository(repo)
@@ -114,12 +115,12 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("mapping_repository", func() (interface{}, error) {
 		repoInstance, err := container.Resolve("repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve repository")
 		}
 
 		repo, ok := repoInstance.(*repos.Repository)
 		if !ok {
-			return nil, fmt.Errorf("repository is not of type *repos.Repository")
+			return nil, errors.New(errors.ErrorTypePermanent, "repository is not of type *repos.Repository")
 		}
 
 		mappingRepo := repos.NewPortMappingRepo(repo)
@@ -129,12 +130,12 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("node_repository", func() (interface{}, error) {
 		repoInstance, err := container.Resolve("repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve repository")
 		}
 
 		repo, ok := repoInstance.(*repos.Repository)
 		if !ok {
-			return nil, fmt.Errorf("repository is not of type *repos.Repository")
+			return nil, errors.New(errors.ErrorTypePermanent, "repository is not of type *repos.Repository")
 		}
 
 		nodeRepo := repos.NewNodeRepository(repo)
@@ -144,15 +145,19 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("connection_repository", func() (interface{}, error) {
 		repoInstance, err := container.Resolve("repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve repository")
 		}
 
 		repo, ok := repoInstance.(*repos.Repository)
 		if !ok {
-			return nil, fmt.Errorf("repository is not of type *repos.Repository")
+			return nil, errors.New(errors.ErrorTypePermanent, "repository is not of type *repos.Repository")
 		}
 
-		connRepo := repos.NewConnectionRepo(repo)
+		// 使用传入的 parentCtx（从 registerInfrastructureServices 参数传入）
+		connRepo, err := repos.NewConnectionRepo(repo, parentCtx)
+		if err != nil {
+			return nil, err
+		}
 		return connRepo, nil
 	})
 
@@ -160,12 +165,12 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("client_config_repository", func() (interface{}, error) {
 		repoInstance, err := container.Resolve("repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve repository")
 		}
 
 		repo, ok := repoInstance.(*repos.Repository)
 		if !ok {
-			return nil, fmt.Errorf("repository is not of type *repos.Repository")
+			return nil, errors.New(errors.ErrorTypePermanent, "repository is not of type *repos.Repository")
 		}
 
 		configRepo := repos.NewClientConfigRepository(repo)
@@ -175,12 +180,12 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("client_state_repository", func() (interface{}, error) {
 		storageInstance, err := container.Resolve("storage")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve storage: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve storage")
 		}
 
 		stor, ok := storageInstance.(storageCore.Storage)
 		if !ok {
-			return nil, fmt.Errorf("storage is not of type storage.Storage")
+			return nil, errors.New(errors.ErrorTypePermanent, "storage is not of type storage.Storage")
 		}
 
 		stateRepo := repos.NewClientStateRepository(parentCtx, stor)
@@ -190,12 +195,12 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("client_token_repository", func() (interface{}, error) {
 		storageInstance, err := container.Resolve("storage")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve storage: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve storage")
 		}
 
 		stor, ok := storageInstance.(storageCore.Storage)
 		if !ok {
-			return nil, fmt.Errorf("storage is not of type storage.Storage")
+			return nil, errors.New(errors.ErrorTypePermanent, "storage is not of type storage.Storage")
 		}
 
 		tokenRepo := repos.NewClientTokenRepository(parentCtx, stor)
@@ -206,22 +211,22 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("jwt_manager", func() (interface{}, error) {
 		configInstance, err := container.Resolve("config")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve config: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve config")
 		}
 
 		repoInstance, err := container.Resolve("repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve repository")
 		}
 
 		configImpl, ok := configInstance.(*managers.ControlConfig)
 		if !ok {
-			return nil, fmt.Errorf("config is not of type *managers.ControlConfig")
+			return nil, errors.New(errors.ErrorTypePermanent, "config is not of type *managers.ControlConfig")
 		}
 
 		repo, ok := repoInstance.(*repos.Repository)
 		if !ok {
-			return nil, fmt.Errorf("repository is not of type *repos.Repository")
+			return nil, errors.New(errors.ErrorTypePermanent, "repository is not of type *repos.Repository")
 		}
 
 		jwtManager := managers.NewJWTManager(configImpl, repo, parentCtx)
@@ -232,52 +237,52 @@ func registerInfrastructureServices(container *container.Container, config *mana
 	container.RegisterSingleton("stats_manager", func() (interface{}, error) {
 		userRepoInstance, err := container.Resolve("user_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve user repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve user repository")
 		}
 
 		clientRepoInstance, err := container.Resolve("client_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve client repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve client repository")
 		}
 
 		mappingRepoInstance, err := container.Resolve("mapping_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve mapping repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve mapping repository")
 		}
 
 		nodeRepoInstance, err := container.Resolve("node_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve node repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve node repository")
 		}
 
 		userRepo, ok := userRepoInstance.(*repos.UserRepository)
 		if !ok {
-			return nil, fmt.Errorf("user repository is not of type *repos.UserRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "user repository is not of type *repos.UserRepository")
 		}
 
 		clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
 		if !ok {
-			return nil, fmt.Errorf("client repository is not of type *repos.ClientRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "client repository is not of type *repos.ClientRepository")
 		}
 
 		mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
 		if !ok {
-			return nil, fmt.Errorf("mapping repository is not of type *repos.PortMappingRepo")
+			return nil, errors.New(errors.ErrorTypePermanent, "mapping repository is not of type *repos.PortMappingRepo")
 		}
 
 		nodeRepo, ok := nodeRepoInstance.(*repos.NodeRepository)
 		if !ok {
-			return nil, fmt.Errorf("node repository is not of type *repos.NodeRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "node repository is not of type *repos.NodeRepository")
 		}
 
 		storageInstance, err := container.Resolve("storage")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve storage: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve storage")
 		}
 
 		stor, ok := storageInstance.(storageCore.Storage)
 		if !ok {
-			return nil, fmt.Errorf("storage is not of type storage.Storage")
+			return nil, errors.New(errors.ErrorTypePermanent, "storage is not of type storage.Storage")
 		}
 
 		statsManager := managers.NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo, stor, parentCtx)
@@ -294,32 +299,32 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 	container.RegisterSingleton("user_service", func() (interface{}, error) {
 		userRepoInstance, err := container.Resolve("user_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve user repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve user repository")
 		}
 
 		idManagerInstance, err := container.Resolve("id_manager")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve id manager: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve id manager")
 		}
 
 		userRepo, ok := userRepoInstance.(*repos.UserRepository)
 		if !ok {
-			return nil, fmt.Errorf("user repository is not of type *repos.UserRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "user repository is not of type *repos.UserRepository")
 		}
 
 		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
+			return nil, errors.New(errors.ErrorTypePermanent, "id manager is not of type *idgen.IDManager")
 		}
 
 		statsManagerInstance, err := container.Resolve("stats_manager")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve stats manager: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve stats manager")
 		}
 
 		statsManager, ok := statsManagerInstance.(*managers.StatsManager)
 		if !ok {
-			return nil, fmt.Errorf("stats manager is not of type *managers.StatsManager")
+			return nil, errors.New(errors.ErrorTypePermanent, "stats manager is not of type *managers.StatsManager")
 		}
 
 		userService := NewUserService(userRepo, idManager, statsManager.GetCounter(), parentCtx)
@@ -331,74 +336,74 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 		// 新Repository
 		configRepoInstance, err := container.Resolve("client_config_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve client config repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve client config repository")
 		}
 
 		stateRepoInstance, err := container.Resolve("client_state_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve client state repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve client state repository")
 		}
 
 		tokenRepoInstance, err := container.Resolve("client_token_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve client token repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve client token repository")
 		}
 
 		// 旧Repository（兼容性）
 		clientRepoInstance, err := container.Resolve("client_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve client repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve client repository")
 		}
 
 		mappingRepoInstance, err := container.Resolve("mapping_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve mapping repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve mapping repository")
 		}
 
 		idManagerInstance, err := container.Resolve("id_manager")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve id manager: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve id manager")
 		}
 
 		statsManagerInstance, err := container.Resolve("stats_manager")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve stats manager: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve stats manager")
 		}
 
 		// 类型断言
 		configRepo, ok := configRepoInstance.(*repos.ClientConfigRepository)
 		if !ok {
-			return nil, fmt.Errorf("client config repository is not of type *repos.ClientConfigRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "client config repository is not of type *repos.ClientConfigRepository")
 		}
 
 		stateRepo, ok := stateRepoInstance.(*repos.ClientStateRepository)
 		if !ok {
-			return nil, fmt.Errorf("client state repository is not of type *repos.ClientStateRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "client state repository is not of type *repos.ClientStateRepository")
 		}
 
 		tokenRepo, ok := tokenRepoInstance.(*repos.ClientTokenRepository)
 		if !ok {
-			return nil, fmt.Errorf("client token repository is not of type *repos.ClientTokenRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "client token repository is not of type *repos.ClientTokenRepository")
 		}
 
 		clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
 		if !ok {
-			return nil, fmt.Errorf("client repository is not of type *repos.ClientRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "client repository is not of type *repos.ClientRepository")
 		}
 
 		mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
 		if !ok {
-			return nil, fmt.Errorf("mapping repository is not of type *repos.PortMappingRepo")
+			return nil, errors.New(errors.ErrorTypePermanent, "mapping repository is not of type *repos.PortMappingRepo")
 		}
 
 		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
+			return nil, errors.New(errors.ErrorTypePermanent, "id manager is not of type *idgen.IDManager")
 		}
 
 		statsManager, ok := statsManagerInstance.(*managers.StatsManager)
 		if !ok {
-			return nil, fmt.Errorf("stats manager is not of type *managers.StatsManager")
+			return nil, errors.New(errors.ErrorTypePermanent, "stats manager is not of type *managers.StatsManager")
 		}
 
 		// ✅ 使用新的构造函数
@@ -414,32 +419,32 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 	container.RegisterSingleton("mapping_service", func() (interface{}, error) {
 		mappingRepoInstance, err := container.Resolve("mapping_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve mapping repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve mapping repository")
 		}
 
 		idManagerInstance, err := container.Resolve("id_manager")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve id manager: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve id manager")
 		}
 
 		mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
 		if !ok {
-			return nil, fmt.Errorf("mapping repository is not of type *repos.PortMappingRepo")
+			return nil, errors.New(errors.ErrorTypePermanent, "mapping repository is not of type *repos.PortMappingRepo")
 		}
 
 		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
+			return nil, errors.New(errors.ErrorTypePermanent, "id manager is not of type *idgen.IDManager")
 		}
 
 		statsManagerInstance, err := container.Resolve("stats_manager")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve stats manager: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve stats manager")
 		}
 
 		statsManager, ok := statsManagerInstance.(*managers.StatsManager)
 		if !ok {
-			return nil, fmt.Errorf("stats manager is not of type *managers.StatsManager")
+			return nil, errors.New(errors.ErrorTypePermanent, "stats manager is not of type *managers.StatsManager")
 		}
 
 		mappingService := NewPortMappingService(mappingRepo, idManager, statsManager.GetCounter(), parentCtx)
@@ -450,22 +455,22 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 	container.RegisterSingleton("node_service", func() (interface{}, error) {
 		nodeRepoInstance, err := container.Resolve("node_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve node repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve node repository")
 		}
 
 		idManagerInstance, err := container.Resolve("id_manager")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve id manager: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve id manager")
 		}
 
 		nodeRepo, ok := nodeRepoInstance.(*repos.NodeRepository)
 		if !ok {
-			return nil, fmt.Errorf("node repository is not of type *repos.NodeRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "node repository is not of type *repos.NodeRepository")
 		}
 
 		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
+			return nil, errors.New(errors.ErrorTypePermanent, "id manager is not of type *idgen.IDManager")
 		}
 
 		nodeService := NewNodeService(nodeRepo, idManager, parentCtx)
@@ -476,32 +481,32 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 	container.RegisterSingleton("auth_service", func() (interface{}, error) {
 		clientRepoInstance, err := container.Resolve("client_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve client repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve client repository")
 		}
 
 		nodeRepoInstance, err := container.Resolve("node_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve node repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve node repository")
 		}
 
 		jwtManagerInstance, err := container.Resolve("jwt_manager")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve jwt manager: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve jwt manager")
 		}
 
 		clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
 		if !ok {
-			return nil, fmt.Errorf("client repository is not of type *repos.ClientRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "client repository is not of type *repos.ClientRepository")
 		}
 
 		nodeRepo, ok := nodeRepoInstance.(*repos.NodeRepository)
 		if !ok {
-			return nil, fmt.Errorf("node repository is not of type *repos.NodeRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "node repository is not of type *repos.NodeRepository")
 		}
 
 		jwtManager, ok := jwtManagerInstance.(*managers.JWTManager)
 		if !ok {
-			return nil, fmt.Errorf("jwt manager is not of type *managers.JWTManager")
+			return nil, errors.New(errors.ErrorTypePermanent, "jwt manager is not of type *managers.JWTManager")
 		}
 
 		authService := NewauthService(clientRepo, nodeRepo, jwtManager, parentCtx)
@@ -512,32 +517,32 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 	container.RegisterSingleton("anonymous_service", func() (interface{}, error) {
 		clientRepoInstance, err := container.Resolve("client_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve client repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve client repository")
 		}
 
 		mappingRepoInstance, err := container.Resolve("mapping_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve mapping repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve mapping repository")
 		}
 
 		idManagerInstance, err := container.Resolve("id_manager")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve id manager: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve id manager")
 		}
 
 		clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
 		if !ok {
-			return nil, fmt.Errorf("client repository is not of type *repos.ClientRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "client repository is not of type *repos.ClientRepository")
 		}
 
 		mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
 		if !ok {
-			return nil, fmt.Errorf("mapping repository is not of type *repos.PortMappingRepo")
+			return nil, errors.New(errors.ErrorTypePermanent, "mapping repository is not of type *repos.PortMappingRepo")
 		}
 
 		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
+			return nil, errors.New(errors.ErrorTypePermanent, "id manager is not of type *idgen.IDManager")
 		}
 
 		anonymousService := NewAnonymousService(clientRepo, mappingRepo, idManager, parentCtx)
@@ -548,22 +553,22 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 	container.RegisterSingleton("connection_service", func() (interface{}, error) {
 		connRepoInstance, err := container.Resolve("connection_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve connection repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve connection repository")
 		}
 
 		idManagerInstance, err := container.Resolve("id_manager")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve id manager: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve id manager")
 		}
 
 		connRepo, ok := connRepoInstance.(*repos.ConnectionRepo)
 		if !ok {
-			return nil, fmt.Errorf("connection repository is not of type *repos.ConnectionRepo")
+			return nil, errors.New(errors.ErrorTypePermanent, "connection repository is not of type *repos.ConnectionRepo")
 		}
 
 		idManager, ok := idManagerInstance.(*idgen.IDManager)
 		if !ok {
-			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
+			return nil, errors.New(errors.ErrorTypePermanent, "id manager is not of type *idgen.IDManager")
 		}
 
 		connectionService := NewConnectionService(connRepo, idManager, parentCtx)
@@ -574,42 +579,42 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 	container.RegisterSingleton("stats_service", func() (interface{}, error) {
 		userRepoInstance, err := container.Resolve("user_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve user repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve user repository")
 		}
 
 		clientRepoInstance, err := container.Resolve("client_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve client repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve client repository")
 		}
 
 		mappingRepoInstance, err := container.Resolve("mapping_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve mapping repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve mapping repository")
 		}
 
 		nodeRepoInstance, err := container.Resolve("node_repository")
 		if err != nil {
-			return nil, fmt.Errorf("failed to resolve node repository: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to resolve node repository")
 		}
 
 		userRepo, ok := userRepoInstance.(*repos.UserRepository)
 		if !ok {
-			return nil, fmt.Errorf("user repository is not of type *repos.UserRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "user repository is not of type *repos.UserRepository")
 		}
 
 		clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
 		if !ok {
-			return nil, fmt.Errorf("client repository is not of type *repos.ClientRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "client repository is not of type *repos.ClientRepository")
 		}
 
 		mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
 		if !ok {
-			return nil, fmt.Errorf("mapping repository is not of type *repos.PortMappingRepo")
+			return nil, errors.New(errors.ErrorTypePermanent, "mapping repository is not of type *repos.PortMappingRepo")
 		}
 
 		nodeRepo, ok := nodeRepoInstance.(*repos.NodeRepository)
 		if !ok {
-			return nil, fmt.Errorf("node repository is not of type *repos.NodeRepository")
+			return nil, errors.New(errors.ErrorTypePermanent, "node repository is not of type *repos.NodeRepository")
 		}
 
 		statsService := NewstatsService(userRepo, clientRepo, mappingRepo, nodeRepo, parentCtx)

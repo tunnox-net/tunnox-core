@@ -3,11 +3,11 @@ package client
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/utils"
 )
@@ -17,7 +17,7 @@ func (c *HTTPLongPollingConn) sendData(data []byte) error {
 	// 注意：客户端发送时，序列号使用0作为占位符，服务器端会重新分配序列号
 	fragments, err := httppoll.SplitDataIntoFragments(data, 0)
 	if err != nil {
-		return fmt.Errorf("failed to split data into fragments: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to split data into fragments")
 	}
 
 	utils.Infof("HTTP long polling: sendData splitting %d bytes into %d fragments, connectionID=%s", len(data), len(fragments), c.connectionID)
@@ -25,7 +25,7 @@ func (c *HTTPLongPollingConn) sendData(data []byte) error {
 	// 发送每个分片
 	for _, fragment := range fragments {
 		if err := c.sendFragment(fragment); err != nil {
-			return fmt.Errorf("failed to send fragment %d/%d: %w", fragment.FragmentIndex, fragment.TotalFragments, err)
+			return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to send fragment %d/%d", fragment.FragmentIndex, fragment.TotalFragments)
 		}
 		utils.Infof("HTTP long polling: sendData sent fragment %d/%d (size=%d, groupID=%s), connectionID=%s",
 			fragment.FragmentIndex, fragment.TotalFragments, fragment.FragmentSize, fragment.FragmentGroupID, c.connectionID)
@@ -48,13 +48,13 @@ func (c *HTTPLongPollingConn) sendFragment(fragment *httppoll.FragmentResponse) 
 	}
 	reqJSON, err := json.Marshal(reqBody)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal request")
 	}
 
 	// 发送 POST 请求
 	req, err := http.NewRequestWithContext(c.Ctx(), "POST", c.pushURL, bytes.NewReader(reqJSON))
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to create request")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -73,7 +73,7 @@ func (c *HTTPLongPollingConn) sendFragment(fragment *httppoll.FragmentResponse) 
 	// 编码并设置 X-Tunnel-Package header
 	encodedPkg, err := httppoll.EncodeTunnelPackage(tunnelPkg)
 	if err != nil {
-		return fmt.Errorf("failed to encode tunnel package: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to encode tunnel package")
 	}
 	req.Header.Set("X-Tunnel-Package", encodedPkg)
 
@@ -112,7 +112,7 @@ func (c *HTTPLongPollingConn) sendFragment(fragment *httppoll.FragmentResponse) 
 
 	if err != nil {
 		utils.Errorf("HTTP long polling: push request failed after %d retries: %v", retryCount, err)
-		return fmt.Errorf("push request failed after %d retries: %w", retryCount, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "push request failed after %d retries", retryCount)
 	}
 	defer resp.Body.Close()
 
@@ -120,7 +120,7 @@ func (c *HTTPLongPollingConn) sendFragment(fragment *httppoll.FragmentResponse) 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		utils.Errorf("HTTP long polling: push request failed: status %d, body: %s", resp.StatusCode, string(body))
-		return fmt.Errorf("push request failed: status %d, body: %s", resp.StatusCode, string(body))
+		return coreErrors.Newf(coreErrors.ErrorTypeNetwork, "push request failed: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	utils.Infof("HTTP long polling: push request succeeded, status=%d", resp.StatusCode)

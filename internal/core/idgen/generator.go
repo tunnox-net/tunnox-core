@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
@@ -52,21 +53,22 @@ type IDGenerator[T any] interface {
 
 // StorageIDGenerator 基于Storage的泛型ID生成器 (Renamed from StorageBasedIDGenerator)
 type StorageIDGenerator[T any] struct {
+	*dispose.ResourceBase
 	storage   storage.Storage
 	prefix    string
 	keyPrefix string
 	mu        sync.RWMutex
-	dispose.Dispose
 }
 
 // NewStorageIDGenerator 创建基于Storage的ID生成器 (Renamed from NewStorageBasedIDGenerator)
 func NewStorageIDGenerator[T any](storage storage.Storage, prefix, keyPrefix string, parentCtx context.Context) *StorageIDGenerator[T] {
 	generator := &StorageIDGenerator[T]{
-		storage:   storage,
-		prefix:    prefix,
-		keyPrefix: keyPrefix,
+		ResourceBase: dispose.NewResourceBase(fmt.Sprintf("StorageIDGenerator[%s]", keyPrefix)),
+		storage:      storage,
+		prefix:       prefix,
+		keyPrefix:    keyPrefix,
 	}
-	generator.SetCtxWithNoOpOnClose(parentCtx)
+	generator.Initialize(parentCtx)
 	return generator
 }
 
@@ -106,7 +108,7 @@ func (g *StorageIDGenerator[T]) Generate() (T, error) {
 			candidate = any(randomID).(T)
 
 		default:
-			return zero, fmt.Errorf("unsupported ID type: %T", zero)
+			return zero, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported ID type: %T", zero)
 		}
 
 		// 检查ID是否已被使用
@@ -165,8 +167,7 @@ func (g *StorageIDGenerator[T]) GetUsedCount() int {
 
 // Close 关闭生成器
 func (g *StorageIDGenerator[T]) Close() error {
-	g.Dispose.Close()
-	return nil
+	return g.ResourceBase.Close()
 }
 
 // ClientIDGenerator 已废弃，现在使用 StorageIDGenerator[int64]
@@ -186,6 +187,7 @@ func NewClientIDGenerator(storage storage.Storage, parentCtx context.Context) *C
 
 // IDManager 统一ID管理器
 type IDManager struct {
+	*dispose.ManagerBase
 	storage storage.Storage
 
 	// 不同类型的专门生成器实例
@@ -196,14 +198,13 @@ type IDManager struct {
 	portMappingInstanceIDGen IDGenerator[string]
 	userIDGen                IDGenerator[string]
 	tunnelIDGen              IDGenerator[string]
-
-	dispose.Dispose
 }
 
 // NewIDManager 创建ID管理器
 func NewIDManager(storage storage.Storage, parentCtx context.Context) *IDManager {
 	manager := &IDManager{
-		storage: storage,
+		ManagerBase: dispose.NewManager("IDManager", parentCtx),
+		storage:     storage,
 	}
 
 	// 初始化各种ID生成器
@@ -218,7 +219,8 @@ func NewIDManager(storage storage.Storage, parentCtx context.Context) *IDManager
 	manager.userIDGen = NewStorageIDGenerator[string](storage, PrefixUserID, "tunnox:id:used:user", parentCtx)
 	manager.tunnelIDGen = NewStorageIDGenerator[string](storage, PrefixTunnelID, "tunnox:id:used:tunnel", parentCtx)
 
-	manager.SetCtx(parentCtx, manager.onClose)
+	// 添加清理回调
+	manager.AddCleanHandler(manager.onClose)
 	return manager
 }
 
@@ -392,8 +394,7 @@ type IDUsageInfo struct {
 
 // Close 关闭ID管理器
 func (m *IDManager) Close() error {
-	m.Dispose.Close()
-	return nil
+	return m.ManagerBase.Close()
 }
 
 // GenerateUniqueID 通用ID生成重试函数
@@ -407,7 +408,7 @@ func (m *IDManager) GenerateUniqueID(
 	for attempts := 0; attempts < MaxAttempts; attempts++ {
 		generatedID, err := generateFunc()
 		if err != nil {
-			return 0, fmt.Errorf("generate %s ID failed: %w", idType, err)
+			return 0, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "generate %s ID failed", idType)
 		}
 
 		// 检查是否已存在
@@ -427,7 +428,7 @@ func (m *IDManager) GenerateUniqueID(
 		continue
 	}
 
-	return 0, fmt.Errorf("failed to generate unique %s ID after %d attempts", idType, MaxAttempts)
+	return 0, coreErrors.Newf(coreErrors.ErrorTypePermanent, "failed to generate unique %s ID after %d attempts", idType, MaxAttempts)
 }
 
 // GenerateUniqueClientID 生成唯一客户端ID
@@ -445,7 +446,7 @@ func (m *IDManager) GenerateUniquePortMappingID(checkFunc func(string) (bool, er
 	for attempts := 0; attempts < MaxAttempts; attempts++ {
 		generatedID, err := m.GeneratePortMappingID()
 		if err != nil {
-			return "", fmt.Errorf("generate port mapping ID failed: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate port mapping ID failed")
 		}
 
 		// 检查是否已存在
@@ -465,7 +466,7 @@ func (m *IDManager) GenerateUniquePortMappingID(checkFunc func(string) (bool, er
 		continue
 	}
 
-	return "", fmt.Errorf("failed to generate unique port mapping ID after %d attempts", MaxAttempts)
+	return "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "failed to generate unique port mapping ID after %d attempts", MaxAttempts)
 }
 
 // GenerateUniqueNodeID 生成唯一节点ID
@@ -473,7 +474,7 @@ func (m *IDManager) GenerateUniqueNodeID(checkFunc func(string) (bool, error)) (
 	for attempts := 0; attempts < MaxAttempts; attempts++ {
 		generatedID, err := m.GenerateNodeID()
 		if err != nil {
-			return "", fmt.Errorf("generate node ID failed: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate node ID failed")
 		}
 
 		// 检查是否已存在
@@ -493,5 +494,5 @@ func (m *IDManager) GenerateUniqueNodeID(checkFunc func(string) (bool, error)) (
 		continue
 	}
 
-	return "", fmt.Errorf("failed to generate unique node ID after %d attempts", MaxAttempts)
+	return "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "failed to generate unique node ID after %d attempts", MaxAttempts)
 }

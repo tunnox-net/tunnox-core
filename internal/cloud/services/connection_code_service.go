@@ -3,14 +3,13 @@ package services
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
-
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	cloudutils "tunnox-core/internal/cloud/utils"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -112,10 +111,10 @@ type CreateConnectionCodeRequest struct {
 func (s *ConnectionCodeService) CreateConnectionCode(req *CreateConnectionCodeRequest) (*models.TunnelConnectionCode, error) {
 	// 1. 参数验证
 	if req.TargetClientID == 0 {
-		return nil, fmt.Errorf("target client ID is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "target client ID is required")
 	}
 	if req.TargetAddress == "" {
-		return nil, fmt.Errorf("target address is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "target address is required")
 	}
 
 	// 设置默认值
@@ -129,10 +128,11 @@ func (s *ConnectionCodeService) CreateConnectionCode(req *CreateConnectionCodeRe
 	// 2. 配额检查
 	activeCount, err := s.connCodeRepo.CountActiveByTargetClient(req.TargetClientID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to count active codes: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to count active codes")
 	}
 	if activeCount >= s.maxActiveCodesPerClient {
-		return nil, fmt.Errorf("quota exceeded: max %d active connection codes allowed",
+		// 使用 Sentinel Error 作为基础，添加详细信息
+		return nil, coreErrors.Wrapf(coreErrors.ErrConnectionCodeQuotaExceeded, coreErrors.ErrorTypePermanent, "max %d active connection codes allowed",
 			s.maxActiveCodesPerClient)
 	}
 
@@ -148,14 +148,14 @@ func (s *ConnectionCodeService) CreateConnectionCode(req *CreateConnectionCodeRe
 		return true, nil // 已存在
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate unique code: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate unique code")
 	}
 
 	// 4. 创建连接码对象
 	now := time.Now()
 	id, err := s.generateID("conncode")
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate ID: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate ID")
 	}
 
 	connCode := &models.TunnelConnectionCode{
@@ -175,7 +175,7 @@ func (s *ConnectionCodeService) CreateConnectionCode(req *CreateConnectionCodeRe
 
 	// 5. 保存到Repository
 	if err := s.connCodeRepo.Create(connCode); err != nil {
-		return nil, fmt.Errorf("failed to create connection code: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to create connection code")
 	}
 
 	utils.Infof("ConnectionCodeService: created code %s for target client %d (expires in %v)",
@@ -204,47 +204,47 @@ type ActivateConnectionCodeRequest struct {
 func (s *ConnectionCodeService) ActivateConnectionCode(req *ActivateConnectionCodeRequest) (*models.PortMapping, error) {
 	// 1. 参数验证
 	if req.Code == "" {
-		return nil, fmt.Errorf("connection code is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "connection code is required")
 	}
 	if req.ListenClientID == 0 {
-		return nil, fmt.Errorf("listen client ID is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "listen client ID is required")
 	}
 	if req.ListenAddress == "" {
-		return nil, fmt.Errorf("listen address is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "listen address is required")
 	}
 
 	// 2. 获取连接码
 	connCode, err := s.connCodeRepo.GetByCode(req.Code)
 	if err != nil {
 		if errors.Is(err, repos.ErrNotFound) {
-			return nil, fmt.Errorf("connection code not found or expired")
+			return nil, coreErrors.ErrConnectionCodeNotFound
 		}
-		return nil, fmt.Errorf("failed to get connection code: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get connection code")
 	}
 
 	// 3. 验证连接码有效性
 	if !connCode.CanBeActivatedBy(req.ListenClientID) {
 		if connCode.IsRevoked {
-			return nil, fmt.Errorf("connection code has been revoked")
+			return nil, coreErrors.ErrConnectionCodeRevoked
 		}
 		if connCode.IsActivated {
-			return nil, fmt.Errorf("connection code has already been used")
+			return nil, coreErrors.ErrConnectionCodeAlreadyUsed
 		}
 		if connCode.IsExpired() {
-			return nil, fmt.Errorf("connection code has expired")
+			return nil, coreErrors.ErrConnectionCodeExpired
 		}
-		return nil, fmt.Errorf("connection code cannot be activated")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "connection code cannot be activated")
 	}
 
 	// 4. 解析地址
 	_, listenPort, err := cloudutils.ParseListenAddress(req.ListenAddress)
 	if err != nil {
-		return nil, fmt.Errorf("invalid listen address %q: %w", req.ListenAddress, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid listen address %q", req.ListenAddress)
 	}
 
 	targetHost, targetPort, protocol, err := cloudutils.ParseTargetAddress(connCode.TargetAddress)
 	if err != nil {
-		return nil, fmt.Errorf("invalid target address %q: %w", connCode.TargetAddress, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid target address %q", connCode.TargetAddress)
 	}
 
 	// 5. 检查映射配额（TODO: 需要实现 GetClientPortMappings 并统计）
@@ -295,20 +295,20 @@ func (s *ConnectionCodeService) ActivateConnectionCode(req *ActivateConnectionCo
 	// 7. 通过 PortMappingService 创建映射（会自动生成ID和SecretKey，并更新索引）
 	createdMapping, err := s.portMappingService.CreatePortMapping(mapping)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create port mapping: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to create port mapping")
 	}
 
 	// 8. ✅ 连接码记录 MappingID（反向关系）
 	if err := connCode.Activate(req.ListenClientID, createdMapping.ID); err != nil {
 		// 回滚：删除已创建的映射
 		_ = s.portMappingService.DeletePortMapping(createdMapping.ID)
-		return nil, fmt.Errorf("failed to activate connection code: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to activate connection code")
 	}
 
 	if err := s.connCodeRepo.Update(connCode); err != nil {
 		// 回滚：删除已创建的映射
 		_ = s.portMappingService.DeletePortMapping(createdMapping.ID)
-		return nil, fmt.Errorf("failed to update connection code: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to update connection code")
 	}
 
 	utils.Infof("ConnectionCodeService: activated code %s, created mapping %s (%d → %d)",
@@ -325,19 +325,19 @@ func (s *ConnectionCodeService) RevokeConnectionCode(code string, revokedBy stri
 	connCode, err := s.connCodeRepo.GetByCode(code)
 	if err != nil {
 		if errors.Is(err, repos.ErrNotFound) {
-			return fmt.Errorf("connection code not found or expired")
+			return coreErrors.ErrConnectionCodeNotFound
 		}
-		return fmt.Errorf("failed to get connection code: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get connection code")
 	}
 
 	// 2. 撤销
 	if err := connCode.Revoke(revokedBy); err != nil {
-		return fmt.Errorf("failed to revoke connection code: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to revoke connection code")
 	}
 
 	// 3. 更新
 	if err := s.connCodeRepo.Update(connCode); err != nil {
-		return fmt.Errorf("failed to update connection code: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to update connection code")
 	}
 
 	utils.Infof("ConnectionCodeService: revoked code %s by %s", code, revokedBy)
@@ -355,7 +355,7 @@ func (s *ConnectionCodeService) RevokeConnectionCode(code string, revokedBy stri
 func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64) (*models.PortMapping, error) {
 	mapping, err := s.portMappingService.GetPortMapping(mappingID)
 	if err != nil {
-		return nil, fmt.Errorf("mapping not found or expired: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "mapping not found or expired")
 	}
 
 	// 添加详细日志
@@ -366,10 +366,10 @@ func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64
 	if !mapping.CanBeAccessedBy(clientID) {
 		utils.Warnf("ConnectionCodeService.ValidateMapping: CanBeAccessedBy returned false for mappingID=%s, clientID=%d", mappingID, clientID)
 		if mapping.IsRevoked {
-			return nil, fmt.Errorf("mapping has been revoked")
+			return nil, coreErrors.ErrMappingRevoked
 		}
 		if mapping.IsExpired() {
-			return nil, fmt.Errorf("mapping has expired")
+			return nil, coreErrors.ErrMappingExpired
 		}
 		listenClientID := mapping.ListenClientID
 		if listenClientID == 0 {
@@ -377,12 +377,12 @@ func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64
 		}
 		if listenClientID != clientID {
 			utils.Warnf("ConnectionCodeService.ValidateMapping: clientID mismatch - expected ListenClientID=%d, got clientID=%d", listenClientID, clientID)
-			return nil, fmt.Errorf("client %d is not authorized to use this mapping", clientID)
+			return nil, coreErrors.ErrMappingNotAuthorized
 		}
 		// 如果到这里，说明 IsValid() 返回了 false，但具体原因未知
 		utils.Errorf("ConnectionCodeService.ValidateMapping: mapping cannot be accessed - Status=%s, IsRevoked=%v, IsExpired=%v",
 			mapping.Status, mapping.IsRevoked, mapping.IsExpired())
-		return nil, fmt.Errorf("mapping cannot be accessed")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "mapping cannot be accessed")
 	}
 
 	utils.Debugf("ConnectionCodeService.ValidateMapping: validation passed for mappingID=%s, clientID=%d", mappingID, clientID)
@@ -395,17 +395,17 @@ func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64
 func (s *ConnectionCodeService) RevokeMapping(mappingID string, clientID int64, revokedBy string) error {
 	mapping, err := s.portMappingService.GetPortMapping(mappingID)
 	if err != nil {
-		return fmt.Errorf("mapping not found or expired: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "mapping not found or expired")
 	}
 
 	// 撤销
 	if err := mapping.Revoke(revokedBy, clientID); err != nil {
-		return fmt.Errorf("failed to revoke mapping: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to revoke mapping")
 	}
 
 	// 更新
 	if err := s.portMappingService.UpdatePortMapping(mapping); err != nil {
-		return fmt.Errorf("failed to update mapping: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to update mapping")
 	}
 
 	utils.Infof("ConnectionCodeService: revoked mapping %s by %s (client %d)",
@@ -419,14 +419,14 @@ func (s *ConnectionCodeService) RevokeMapping(mappingID string, clientID int64, 
 func (s *ConnectionCodeService) RecordMappingUsage(mappingID string) error {
 	mapping, err := s.portMappingService.GetPortMapping(mappingID)
 	if err != nil {
-		return fmt.Errorf("mapping not found: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "mapping not found")
 	}
 
 	// 更新最后活跃时间
 	now := time.Now()
 	mapping.LastActive = &now
 	if err := s.portMappingService.UpdatePortMapping(mapping); err != nil {
-		return fmt.Errorf("failed to update mapping usage: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to update mapping usage")
 	}
 
 	return nil
@@ -438,7 +438,7 @@ func (s *ConnectionCodeService) RecordMappingUsage(mappingID string) error {
 func (s *ConnectionCodeService) RecordMappingTraffic(mappingID string, bytesSent, bytesReceived int64) error {
 	mapping, err := s.portMappingService.GetPortMapping(mappingID)
 	if err != nil {
-		return fmt.Errorf("mapping not found: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "mapping not found")
 	}
 
 	// 更新流量统计
@@ -447,7 +447,7 @@ func (s *ConnectionCodeService) RecordMappingTraffic(mappingID string, bytesSent
 	mapping.TrafficStats.LastUpdated = time.Now()
 
 	if err := s.portMappingService.UpdatePortMappingStats(mappingID, &mapping.TrafficStats); err != nil {
-		return fmt.Errorf("failed to update mapping traffic: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to update mapping traffic")
 	}
 
 	return nil
@@ -490,9 +490,9 @@ func (s *ConnectionCodeService) GetConnectionCode(code string) (*models.TunnelCo
 	connCode, err := s.connCodeRepo.GetByCode(code)
 	if err != nil {
 		if errors.Is(err, repos.ErrNotFound) {
-			return nil, fmt.Errorf("connection code not found or expired")
+			return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "connection code not found or expired")
 		}
-		return nil, fmt.Errorf("failed to get connection code: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get connection code")
 	}
 	return connCode, nil
 }
@@ -506,7 +506,7 @@ func (s *ConnectionCodeService) ListOutboundMappings(listenClientID int64) ([]*m
 
 	allMappings, err := s.portMappingRepo.GetClientPortMappings(clientKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get client port mappings: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get client port mappings")
 	}
 
 	utils.Infof("ConnectionCodeService.ListOutboundMappings: found %d mappings from index for client %d", len(allMappings), listenClientID)
@@ -535,7 +535,7 @@ func (s *ConnectionCodeService) ListInboundMappings(targetClientID int64) ([]*mo
 
 	allMappings, err := s.portMappingRepo.GetClientPortMappings(clientKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get client port mappings: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get client port mappings")
 	}
 
 	utils.Infof("ConnectionCodeService.ListInboundMappings: found %d mappings from index for client %d", len(allMappings), targetClientID)
@@ -601,7 +601,7 @@ func (s *ConnectionCodeService) cleanupExpiredEntities(ctx context.Context) {
 func (s *ConnectionCodeService) generateID(prefix string) (string, error) {
 	randomPart, err := utils.GenerateRandomStringWithCharset(8, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	if err != nil {
-		return "", fmt.Errorf("failed to generate random ID: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate random ID")
 	}
 	return prefix + "_" + randomPart, nil
 }

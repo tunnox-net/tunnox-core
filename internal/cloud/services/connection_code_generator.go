@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"tunnox-core/internal/cloud/models"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // ConnectionCodeGenerator 连接码生成器
@@ -33,7 +34,7 @@ func (g *ConnectionCodeGenerator) Generate() (string, error) {
 	for i := 0; i < g.config.SegmentCount; i++ {
 		segment, err := g.generateSegment()
 		if err != nil {
-			return "", fmt.Errorf("failed to generate segment %d: %w", i, err)
+			return "", coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to generate segment %d", i)
 		}
 		segments[i] = segment
 	}
@@ -45,7 +46,7 @@ func (g *ConnectionCodeGenerator) Generate() (string, error) {
 func (g *ConnectionCodeGenerator) generateSegment() (string, error) {
 	charsetLen := int64(len(g.config.Charset))
 	if charsetLen == 0 {
-		return "", fmt.Errorf("charset is empty")
+		return "", coreErrors.New(coreErrors.ErrorTypePermanent, "charset is empty")
 	}
 
 	segment := make([]byte, g.config.SegmentLength)
@@ -53,7 +54,7 @@ func (g *ConnectionCodeGenerator) generateSegment() (string, error) {
 		// 使用 crypto/rand 生成安全的随机数
 		randomIndex, err := rand.Int(rand.Reader, big.NewInt(charsetLen))
 		if err != nil {
-			return "", fmt.Errorf("failed to generate random number: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate random number")
 		}
 		segment[i] = g.config.Charset[randomIndex.Int64()]
 	}
@@ -69,12 +70,12 @@ func (g *ConnectionCodeGenerator) GenerateUnique(checkExists func(string) (bool,
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		code, err := g.Generate()
 		if err != nil {
-			return "", fmt.Errorf("failed to generate code (attempt %d): %w", attempt+1, err)
+			return "", coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to generate code (attempt %d)", attempt+1)
 		}
 
 		exists, err := checkExists(code)
 		if err != nil {
-			return "", fmt.Errorf("failed to check code existence (attempt %d): %w", attempt+1, err)
+			return "", coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to check code existence (attempt %d)", attempt+1)
 		}
 
 		if !exists {
@@ -84,7 +85,7 @@ func (g *ConnectionCodeGenerator) GenerateUnique(checkExists func(string) (bool,
 		// 已存在，重试
 	}
 
-	return "", fmt.Errorf("failed to generate unique code after %d attempts", maxAttempts)
+	return "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "failed to generate unique code after %d attempts", maxAttempts)
 }
 
 // Validate 验证连接码格式是否正确
@@ -92,21 +93,21 @@ func (g *ConnectionCodeGenerator) Validate(code string) error {
 	// 1. 检查分隔符数量
 	parts := strings.Split(code, g.config.Separator)
 	if len(parts) != g.config.SegmentCount {
-		return fmt.Errorf("invalid code format: expected %d segments, got %d",
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid code format: expected %d segments, got %d",
 			g.config.SegmentCount, len(parts))
 	}
 
 	// 2. 检查每段长度
 	for i, part := range parts {
 		if len(part) != g.config.SegmentLength {
-			return fmt.Errorf("invalid segment %d: expected length %d, got %d",
+			return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid segment %d: expected length %d, got %d",
 				i, g.config.SegmentLength, len(part))
 		}
 
 		// 3. 检查字符是否在字符集中
 		for _, ch := range part {
 			if !strings.ContainsRune(g.config.Charset, ch) {
-				return fmt.Errorf("invalid character '%c' in segment %d", ch, i)
+				return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid character '%c' in segment %d", ch, i)
 			}
 		}
 	}

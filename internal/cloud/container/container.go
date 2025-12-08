@@ -2,10 +2,10 @@ package container
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"sync"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -50,7 +50,7 @@ func (s *SingletonProvider) GetService() (interface{}, error) {
 
 	instance, err := s.creator()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create service instance: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to create service instance")
 	}
 
 	s.instance = instance
@@ -94,18 +94,20 @@ func (t *TransientProvider) Close() error {
 
 // Container 依赖注入容器
 type Container struct {
+	*dispose.ManagerBase
 	services map[string]ServiceProvider
 	mu       sync.RWMutex
 	ctx      context.Context
-	dispose.Dispose
 }
 
 // NewContainer 创建新的容器
 func NewContainer(parentCtx context.Context) *Container {
 	container := &Container{
-		services: make(map[string]ServiceProvider),
+		ManagerBase: dispose.NewManager("Container", parentCtx),
+		services:    make(map[string]ServiceProvider),
+		ctx:         parentCtx,
 	}
-	container.SetCtx(parentCtx, container.onClose)
+	container.AddCleanHandler(container.onClose)
 	return container
 }
 
@@ -172,7 +174,7 @@ func (c *Container) Resolve(name string) (interface{}, error) {
 	c.mu.RUnlock()
 
 	if !exists {
-		return nil, fmt.Errorf("service %s not found", name)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "service %s not found", name)
 	}
 
 	return provider.GetService()
@@ -188,12 +190,12 @@ func (c *Container) ResolveTyped(name string, target interface{}) error {
 	// 使用反射设置目标值
 	targetValue := reflect.ValueOf(target)
 	if targetValue.Kind() != reflect.Ptr {
-		return fmt.Errorf("target must be a pointer")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "target must be a pointer")
 	}
 
 	serviceValue := reflect.ValueOf(service)
 	if !serviceValue.Type().AssignableTo(targetValue.Elem().Type()) {
-		return fmt.Errorf("service type %T is not assignable to target type %T", service, target)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "service type %T is not assignable to target type %T", service, target)
 	}
 
 	targetValue.Elem().Set(serviceValue)
@@ -222,9 +224,5 @@ func (c *Container) ListServices() []string {
 
 // Close 关闭容器
 func (c *Container) Close() error {
-	result := c.Dispose.Close()
-	if result.HasErrors() {
-		return fmt.Errorf("container cleanup failed: %s", result.Error())
-	}
-	return nil
+	return c.ManagerBase.Close()
 }

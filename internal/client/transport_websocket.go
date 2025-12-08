@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 
 	"github.com/gorilla/websocket"
@@ -40,7 +41,7 @@ func newWebSocketStreamConn(wsURL string) (*websocketStreamConn, error) {
 
 	conn, _, err := dialer.Dial(wsURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("websocket dial failed: %w", err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "websocket dial failed: %s", wsURL)
 	}
 
 	utils.Infof("WebSocket: connected to %s", wsURL)
@@ -88,12 +89,12 @@ func (c *websocketStreamConn) Read(p []byte) (int, error) {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				return 0, io.EOF
 			}
-			return 0, fmt.Errorf("websocket read failed: %w", err)
+			return 0, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "websocket read failed")
 		}
 	}
 
 	if messageType != websocket.BinaryMessage {
-		return 0, fmt.Errorf("unexpected websocket message type: %d", messageType)
+		return 0, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "unexpected websocket message type: %d", messageType)
 	}
 
 	// Copy data to output buffer
@@ -121,7 +122,7 @@ func (c *websocketStreamConn) Write(p []byte) (int, error) {
 	// Send as binary message
 	err := c.conn.WriteMessage(websocket.BinaryMessage, p)
 	if err != nil {
-		return 0, fmt.Errorf("websocket write failed: %w", err)
+		return 0, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "websocket write failed")
 	}
 
 	return len(p), nil
@@ -196,7 +197,7 @@ func normalizeWebSocketURL(address string) (string, error) {
 		strings.HasPrefix(address, "http://") || strings.HasPrefix(address, "https://") {
 		parsedURL, err := url.Parse(address)
 		if err != nil {
-			return "", fmt.Errorf("invalid URL format: %w", err)
+			return "", coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid URL format: %s", address)
 		}
 
 		// 转换 HTTP/HTTPS 为 WS/WSS
@@ -242,7 +243,7 @@ func normalizeWebSocketURL(address string) (string, error) {
 func dialWebSocket(ctx context.Context, address string) (net.Conn, error) {
 	wsURL, err := normalizeWebSocketURL(address)
 	if err != nil {
-		return nil, fmt.Errorf("failed to normalize WebSocket URL: %w", err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to normalize WebSocket URL: %s", address)
 	}
 	return newWebSocketStreamConn(wsURL)
 }

@@ -2,10 +2,10 @@ package bridge
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -90,7 +90,7 @@ func (p *BridgeConnectionPool) getOrCreateNodePool(nodeID, nodeAddr string) (*No
 
 	nodePool, err := NewNodeConnectionPool(p.Ctx(), nodeID, nodeAddr, poolConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create node pool for %s: %w", nodeID, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to create node pool for %s", nodeID)
 	}
 
 	p.nodePools[nodeID] = nodePool
@@ -195,11 +195,11 @@ func (p *BridgeConnectionPool) RemoveNodePool(nodeID string) error {
 
 	pool, exists := p.nodePools[nodeID]
 	if !exists {
-		return fmt.Errorf("node pool not found: %s", nodeID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "node pool not found: %s", nodeID)
 	}
 
 	if err := pool.Close(); err != nil {
-		return fmt.Errorf("failed to close node pool: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to close node pool")
 	}
 
 	delete(p.nodePools, nodeID)

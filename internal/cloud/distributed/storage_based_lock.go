@@ -3,6 +3,8 @@ package distributed
 import (
 	"fmt"
 	"time"
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
@@ -29,12 +31,12 @@ func (s *StorageBasedLock) Acquire(key string, ttl time.Duration) (bool, error) 
 	// 使用存储层的原子操作尝试获取锁
 	casStore, ok := s.storage.(storage.CASStore)
 	if !ok {
-		return false, fmt.Errorf("storage does not support CAS operations")
+		return false, coreErrors.New(coreErrors.ErrorTypePermanent, "storage does not support CAS operations")
 	}
 	acquired, err := casStore.SetNX(lockKey, lockValue, ttl)
 	if err != nil {
 		utils.Errorf("Failed to acquire lock %s: %v", key, err)
-		return false, fmt.Errorf("acquire lock failed: %w", err)
+		return false, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "acquire lock failed")
 	}
 
 	if acquired {
@@ -63,12 +65,12 @@ func (s *StorageBasedLock) Release(key string) error {
 			err = s.storage.Delete(lockKey)
 			if err != nil {
 				utils.Errorf("Failed to release lock %s: %v", key, err)
-				return fmt.Errorf("release lock failed: %w", err)
+				return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "release lock failed")
 			}
 			utils.Infof("Successfully released lock %s by %s", key, s.owner)
 		} else {
 			utils.Warnf("Attempted to release lock %s owned by another process", key)
-			return fmt.Errorf("lock %s is not owned by current process", key)
+			return coreErrors.Newf(coreErrors.ErrorTypePermanent, "lock %s is not owned by current process", key)
 		}
 	}
 
@@ -82,7 +84,7 @@ func (s *StorageBasedLock) IsLocked(key string) (bool, error) {
 	// 直接检查键是否存在，存储层会自动处理过期
 	exists, err := s.storage.Exists(lockKey)
 	if err != nil {
-		return false, fmt.Errorf("check lock status failed: %w", err)
+		return false, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "check lock status failed")
 	}
 
 	return exists, nil
@@ -94,14 +96,14 @@ func (s *StorageBasedLock) GetLockOwner(key string) (string, error) {
 
 	value, err := s.storage.Get(lockKey)
 	if err != nil {
-		return "", fmt.Errorf("get lock owner failed: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "get lock owner failed")
 	}
 
 	if lockValue, ok := value.(string); ok {
 		return s.extractOwner(lockValue), nil
 	}
 
-	return "", fmt.Errorf("invalid lock value format")
+	return "", coreErrors.New(coreErrors.ErrorTypePermanent, "invalid lock value format")
 }
 
 // TryAcquire 尝试获取锁，带重试机制
@@ -131,7 +133,7 @@ func (s *StorageBasedLock) RenewLock(key string, ttl time.Duration) (bool, error
 	// 获取当前锁的值
 	currentValue, err := s.storage.Get(lockKey)
 	if err != nil {
-		return false, fmt.Errorf("lock not found: %w", err)
+		return false, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "lock not found")
 	}
 
 	if lockValue, ok := currentValue.(string); ok {
@@ -139,11 +141,11 @@ func (s *StorageBasedLock) RenewLock(key string, ttl time.Duration) (bool, error
 			// 使用原子操作续期锁
 			casStore, ok := s.storage.(storage.CASStore)
 			if !ok {
-				return false, fmt.Errorf("storage does not support CAS operations")
+				return false, coreErrors.New(coreErrors.ErrorTypePermanent, "storage does not support CAS operations")
 			}
 			success, err := casStore.CompareAndSwap(lockKey, lockValue, lockValue, ttl)
 			if err != nil {
-				return false, fmt.Errorf("renew lock failed: %w", err)
+				return false, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "renew lock failed")
 			}
 
 			if success {
@@ -154,7 +156,7 @@ func (s *StorageBasedLock) RenewLock(key string, ttl time.Duration) (bool, error
 		}
 	}
 
-	return false, fmt.Errorf("lock %s is not owned by current process", key)
+	return false, coreErrors.Newf(coreErrors.ErrorTypePermanent, "lock %s is not owned by current process", key)
 }
 
 // isOwner 检查锁值是否属于当前所有者

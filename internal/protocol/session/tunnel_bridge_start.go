@@ -1,9 +1,9 @@
 package session
 
 import (
-	"fmt"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -14,9 +14,9 @@ func (b *TunnelBridge) Start() error {
 	case <-b.ready:
 		utils.Infof("TunnelBridge[%s]: target connection established, starting bridge", b.tunnelID)
 	case <-time.After(30 * time.Second):
-		return fmt.Errorf("timeout waiting for target connection")
+		return coreErrors.New(coreErrors.ErrorTypeTemporary, "timeout waiting for target connection")
 	case <-b.Ctx().Done():
-		return fmt.Errorf("bridge cancelled before target connection")
+		return coreErrors.Wrap(b.Ctx().Err(), coreErrors.ErrorTypeTemporary, "bridge cancelled before target connection")
 	}
 
 	// 检查数据转发器是否可用（通过接口抽象，不依赖具体协议）

@@ -2,8 +2,7 @@ package health
 
 import (
 	"context"
-	"fmt"
-
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -20,7 +19,7 @@ func NewStorageAdapter(s storage.Storage) *StorageAdapter {
 // Ping 检查存储连接（使用 Exists 方法）
 func (a *StorageAdapter) Ping(ctx context.Context) error {
 	if a.storage == nil {
-		return fmt.Errorf("storage is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "storage is nil")
 	}
 
 	// 使用一个测试键来检查存储是否可用

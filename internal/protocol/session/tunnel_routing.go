@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
@@ -54,7 +56,7 @@ func NewTunnelRoutingTable(storage storage.Storage, ttl time.Duration) *TunnelRo
 // 当源端Server创建TunnelBridge后调用，记录路由信息到Redis
 func (t *TunnelRoutingTable) RegisterWaitingTunnel(ctx context.Context, state *TunnelWaitingState) error {
 	if state.TunnelID == "" {
-		return fmt.Errorf("tunnel_id is required")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel_id is required")
 	}
 	
 	// 设置时间戳
@@ -65,13 +67,13 @@ func (t *TunnelRoutingTable) RegisterWaitingTunnel(ctx context.Context, state *T
 	// 序列化为JSON
 	data, err := json.Marshal(state)
 	if err != nil {
-		return fmt.Errorf("failed to marshal tunnel state: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to marshal tunnel state")
 	}
 	
 	// 存储到Redis，带TTL
 	key := t.makeKey(state.TunnelID)
 	if err := t.storage.Set(key, data, t.ttl); err != nil {
-		return fmt.Errorf("failed to store tunnel state: %w", err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to store tunnel state: %s", state.TunnelID)
 	}
 	
 	utils.Infof("TunnelRouting: registered waiting tunnel %s (source_node=%s, target_client=%d, ttl=%v)",
@@ -84,7 +86,7 @@ func (t *TunnelRoutingTable) RegisterWaitingTunnel(ctx context.Context, state *T
 // 当目标端Server收到TunnelOpen连接时调用，查询源端Server位置
 func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID string) (*TunnelWaitingState, error) {
 	if tunnelID == "" {
-		return nil, fmt.Errorf("tunnel_id is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel_id is required")
 	}
 	
 	key := t.makeKey(tunnelID)
@@ -93,7 +95,7 @@ func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID s
 		if err == storage.ErrKeyNotFound {
 			return nil, ErrTunnelNotFound
 		}
-		return nil, fmt.Errorf("failed to get tunnel state: %w", err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to get tunnel state: %s", tunnelID)
 	}
 	
 	// 类型断言为[]byte
@@ -103,14 +105,14 @@ func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID s
 		if str, ok := value.(string); ok {
 			data = []byte(str)
 		} else {
-			return nil, fmt.Errorf("unexpected value type: %T, expected []byte or string", value)
+			return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unexpected value type: %T, expected []byte or string", value)
 		}
 	}
 	
 	// 反序列化
 	var state TunnelWaitingState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal tunnel state: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to unmarshal tunnel state")
 	}
 	
 	// 检查是否过期
@@ -130,7 +132,7 @@ func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID s
 // 当隧道成功建立或超时后调用，清理Redis中的记录
 func (t *TunnelRoutingTable) RemoveWaitingTunnel(ctx context.Context, tunnelID string) error {
 	if tunnelID == "" {
-		return fmt.Errorf("tunnel_id is required")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel_id is required")
 	}
 	
 	key := t.makeKey(tunnelID)
@@ -160,8 +162,8 @@ func (t *TunnelRoutingTable) makeKey(tunnelID string) string {
 }
 
 // ErrTunnelNotFound Tunnel未找到错误
-var ErrTunnelNotFound = fmt.Errorf("tunnel not found in routing table")
+var ErrTunnelNotFound = coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel not found in routing table")
 
 // ErrTunnelExpired Tunnel已过期错误
-var ErrTunnelExpired = fmt.Errorf("tunnel waiting state expired")
+var ErrTunnelExpired = coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel waiting state expired")
 

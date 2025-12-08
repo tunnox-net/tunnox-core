@@ -1,10 +1,10 @@
 package udp
 
 import (
-	"fmt"
 	"net"
 	"sync"
 	"time"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -65,7 +65,7 @@ func (s *Sender) SendLogicalPacket(payload []byte) error {
 	// 检查窗口是否已满
 	if len(s.session.inFlight) >= int(s.session.sendWindow) {
 		s.session.sendMutex.Unlock()
-		return fmt.Errorf("send window full: %d/%d", len(s.session.inFlight), s.session.sendWindow)
+		return errors.Newf(errors.ErrorTypeProtocol, "send window full: %d/%d", len(s.session.inFlight), s.session.sendWindow)
 	}
 
 	seq := s.session.nextSeq
@@ -95,7 +95,7 @@ func (s *Sender) SendLogicalPacket(payload []byte) error {
 		s.session.sendMutex.Lock()
 		delete(s.session.inFlight, seq)
 		s.session.sendMutex.Unlock()
-		return fmt.Errorf("failed to send fragments: %w", err)
+		return errors.Wrap(err, errors.ErrorTypeNetwork, "failed to send fragments")
 	}
 
 	state.LastSend = time.Now()
@@ -130,7 +130,7 @@ func (s *Sender) sendFragments(seq uint32, payload []byte, fragCount int) error 
 
 		buf := make([]byte, HeaderLength()+len(fragData))
 		if _, err := header.Encode(buf); err != nil {
-			return fmt.Errorf("failed to encode header: %w", err)
+			return errors.Wrap(err, errors.ErrorTypeProtocol, "failed to encode header")
 		}
 		copy(buf[HeaderLength():], fragData)
 
@@ -148,7 +148,7 @@ func (s *Sender) sendFragments(seq uint32, payload []byte, fragCount int) error 
 			utils.Infof("UDP sender: using WriteToUDP() for unconnected socket, sent fragment %d/%d of packet %d to %s, size=%d", fragSeq+1, fragCount, seq, s.remoteAddr, len(buf))
 		}
 		if err != nil {
-			return fmt.Errorf("failed to write UDP: %w", err)
+			return errors.Wrap(err, errors.ErrorTypeNetwork, "failed to write UDP")
 		}
 	}
 

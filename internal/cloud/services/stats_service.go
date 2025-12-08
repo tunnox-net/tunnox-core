@@ -2,11 +2,12 @@ package services
 
 import (
 	"context"
-	"fmt"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // statsService 统计服务实现
@@ -38,13 +39,13 @@ func (s *statsService) GetSystemStats() (*stats.SystemStats, error) {
 	// 获取客户端总数
 	clients, err := s.clientRepo.ListClients()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get clients: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get clients")
 	}
 
 	// 获取节点总数
 	nodes, err := s.nodeRepo.ListNodes()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get nodes: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get nodes")
 	}
 
 	return &stats.SystemStats{

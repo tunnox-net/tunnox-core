@@ -2,8 +2,8 @@ package storage
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // TypedStorage 泛型类型安全存储接口
@@ -51,17 +51,16 @@ type typedStorageAdapter[T any] struct {
 //	stringStorage := NewTypedStorage[string](storage)
 //	int64Storage := NewTypedStorage[int64](storage)
 //	userStorage := NewTypedStorage[*models.User](storage)
-func NewTypedStorage[T any](storage Storage) TypedStorage[T] {
+func NewTypedStorage[T any](storage Storage) (TypedStorage[T], error) {
 	// 将 Storage 转换为 FullStorage（所有现有实现都实现了 FullStorage）
 	fullStorage, ok := storage.(FullStorage)
 	if !ok {
-		// 如果存储不支持 FullStorage，创建一个适配器
-		// 注意：这需要存储实现所有扩展接口
-		panic("storage does not implement FullStorage interface")
+		// 如果存储不支持 FullStorage，返回错误
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "storage does not implement FullStorage interface")
 	}
 	return &typedStorageAdapter[T]{
 		storage: fullStorage,
-	}
+	}, nil
 }
 
 // Set 类型安全的设置操作
@@ -81,7 +80,7 @@ func (t *typedStorageAdapter[T]) Get(key string) (T, error) {
 	// 尝试类型断言
 	typed, ok := value.(T)
 	if !ok {
-		return zero, fmt.Errorf("%w: expected %T, got %T", ErrInvalidType, zero, value)
+		return zero, coreErrors.Wrapf(ErrInvalidType, coreErrors.ErrorTypePermanent, "expected %T, got %T", zero, value)
 	}
 
 	return typed, nil
@@ -122,7 +121,7 @@ func (t *typedStorageAdapter[T]) GetList(key string) ([]T, error) {
 		typed, ok := v.(T)
 		if !ok {
 			var zeroT T
-			return zero, fmt.Errorf("%w: list item[%d] expected %T, got %T", ErrInvalidType, i, zeroT, v)
+			return zero, coreErrors.Wrapf(ErrInvalidType, coreErrors.ErrorTypePermanent, "list item[%d] expected %T, got %T", i, zeroT, v)
 		}
 		result = append(result, typed)
 	}
@@ -156,7 +155,7 @@ func (t *typedStorageAdapter[T]) GetHash(key string, field string) (T, error) {
 
 	typed, ok := value.(T)
 	if !ok {
-		return zero, fmt.Errorf("%w: expected %T, got %T", ErrInvalidType, zero, value)
+		return zero, coreErrors.Wrapf(ErrInvalidType, coreErrors.ErrorTypePermanent, "expected %T, got %T", zero, value)
 	}
 
 	return typed, nil
@@ -174,7 +173,7 @@ func (t *typedStorageAdapter[T]) GetAllHash(key string) (map[string]T, error) {
 		typed, ok := v.(T)
 		if !ok {
 			var zero T
-			return nil, fmt.Errorf("%w: hash field[%s] expected %T, got %T", ErrInvalidType, field, zero, v)
+			return nil, coreErrors.Wrapf(ErrInvalidType, coreErrors.ErrorTypePermanent, "hash field[%s] expected %T, got %T", field, zero, v)
 		}
 		result[field] = typed
 	}
@@ -248,7 +247,7 @@ func NewTypedJSONStorage[T any](storage Storage) TypedJSONStorage[T] {
 func (j *typedJSONStorageAdapter[T]) Set(key string, value T, ttl time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("failed to marshal value: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal value")
 	}
 	return j.storage.Set(key, data, ttl)
 }
@@ -269,13 +268,13 @@ func (j *typedJSONStorageAdapter[T]) Get(key string) (T, error) {
 		if str, ok := value.(string); ok {
 			data = []byte(str)
 		} else {
-			return zero, fmt.Errorf("%w: expected []byte or string, got %T", ErrInvalidType, value)
+			return zero, coreErrors.Wrapf(ErrInvalidType, coreErrors.ErrorTypePermanent, "expected []byte or string, got %T", value)
 		}
 	}
 
 	var result T
 	if err := json.Unmarshal(data, &result); err != nil {
-		return zero, fmt.Errorf("failed to unmarshal value: %w", err)
+		return zero, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to unmarshal value")
 	}
 
 	return result, nil
@@ -328,31 +327,31 @@ type Float64Storage = TypedStorage[float64]
 // ============================================================================
 
 // NewStringStorage 创建字符串存储
-func NewStringStorage(storage Storage) StringStorage {
+func NewStringStorage(storage Storage) (StringStorage, error) {
 	return NewTypedStorage[string](storage)
 }
 
 // NewInt64Storage 创建 Int64 存储
-func NewInt64Storage(storage Storage) Int64Storage {
+func NewInt64Storage(storage Storage) (Int64Storage, error) {
 	return NewTypedStorage[int64](storage)
 }
 
 // NewIntStorage 创建 Int 存储
-func NewIntStorage(storage Storage) IntStorage {
+func NewIntStorage(storage Storage) (IntStorage, error) {
 	return NewTypedStorage[int](storage)
 }
 
 // NewBoolStorage 创建布尔值存储
-func NewBoolStorage(storage Storage) BoolStorage {
+func NewBoolStorage(storage Storage) (BoolStorage, error) {
 	return NewTypedStorage[bool](storage)
 }
 
 // NewBytesStorage 创建字节数组存储
-func NewBytesStorage(storage Storage) BytesStorage {
+func NewBytesStorage(storage Storage) (BytesStorage, error) {
 	return NewTypedStorage[[]byte](storage)
 }
 
 // NewFloat64Storage 创建 Float64 存储
-func NewFloat64Storage(storage Storage) Float64Storage {
+func NewFloat64Storage(storage Storage) (Float64Storage, error) {
 	return NewTypedStorage[float64](storage)
 }

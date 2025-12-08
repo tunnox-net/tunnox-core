@@ -9,6 +9,7 @@ import (
 	"tunnox-core/internal/api"
 	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/health"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/stream"
@@ -185,7 +186,7 @@ func (s *Server) setupProtocolAdapters() error {
 		// 创建适配器
 		adapter, err := s.protocolFactory.CreateAdapter(protocolName, s.serviceManager.GetContext())
 		if err != nil {
-			return fmt.Errorf("failed to create %s adapter: %v", protocolName, err)
+			return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to create %s adapter", protocolName)
 		}
 
 		// 配置监听地址

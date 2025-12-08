@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"time"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -22,7 +23,7 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 		currentCount := len(s.connMap)
 		s.connLock.RUnlock()
 		if currentCount >= s.config.MaxConnections {
-			return nil, fmt.Errorf("connection limit reached: %d/%d", currentCount, s.config.MaxConnections)
+			return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "connection limit reached: %d/%d", currentCount, s.config.MaxConnections)
 		}
 	}
 
@@ -46,7 +47,7 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 	if connID == "" {
 		connID, err = s.idManager.GenerateConnectionID()
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate connection ID: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate connection ID")
 		}
 	}
 
@@ -61,7 +62,7 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 	// 创建流处理器
 	streamProcessor, err := s.streamMgr.CreateStream(connID, reader, writer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create stream: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to create stream")
 	}
 
 	// 创建连接对象
@@ -77,6 +78,12 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 
 	// 注册连接
 	s.connLock.Lock()
+	// 检查连接是否已存在
+	if _, exists := s.connMap[connID]; exists {
+		s.connLock.Unlock()
+		// 如果连接已存在，返回 Sentinel Error
+		return nil, coreErrors.ErrConnectionAlreadyExists
+	}
 	s.connMap[connID] = conn
 	s.connLock.Unlock()
 
@@ -141,7 +148,7 @@ func (s *SessionManager) UpdateConnectionState(connID string, state types.Connec
 
 	conn, exists := s.connMap[connID]
 	if !exists {
-		return fmt.Errorf("connection not found: %s", connID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "connection not found: %s", connID)
 	}
 
 	conn.State = state
@@ -310,7 +317,7 @@ func (s *SessionManager) UpdateControlConnectionAuth(connID string, clientID int
 
 	conn, exists := s.controlConnMap[connID]
 	if !exists {
-		return fmt.Errorf("control connection not found: %s", connID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "control connection not found: %s", connID)
 	}
 
 	conn.ClientID = clientID
@@ -358,9 +365,16 @@ func (s *SessionManager) KickOldControlConnection(clientID int64, newConnID stri
 		// 发送 Kick 命令
 		s.sendKickCommand(oldConn, "Another client logged in with the same ID", "DUPLICATE_LOGIN")
 
-		// 关闭旧连接
+		// 关闭旧连接（在 goroutine 中执行，避免阻塞）
+		// 使用 context 确保可以取消
 		go func() {
-			_ = s.CloseConnection(oldConn.ConnID)
+			select {
+			case <-s.Ctx().Done():
+				// SessionManager 已关闭，不需要关闭连接
+				return
+			default:
+				_ = s.CloseConnection(oldConn.ConnID)
+			}
 		}()
 
 		// 从映射中移除（必须同时清理controlConnMap和clientIDIndexMap）
@@ -446,7 +460,7 @@ func (s *SessionManager) UpdateTunnelConnectionAuth(connID string, tunnelID stri
 
 	conn, exists := s.tunnelConnMap[connID]
 	if !exists {
-		return fmt.Errorf("tunnel connection not found: %s", connID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "tunnel connection not found: %s", connID)
 	}
 
 	conn.TunnelID = tunnelID

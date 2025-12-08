@@ -2,8 +2,8 @@ package stream
 
 import (
 	"context"
-	"fmt"
 	"io"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -35,7 +35,7 @@ func (ss *StreamService) Start(ctx context.Context) error {
 
 	// 流管理器在创建时就已经初始化，这里主要是验证状态
 	if ss.manager == nil {
-		return fmt.Errorf("stream manager is nil for service %s", ss.name)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "stream manager is nil for service %s", ss.name)
 	}
 
 	// 精简日志：只在调试模式下输出服务启动完成信息
@@ -49,7 +49,7 @@ func (ss *StreamService) Stop(ctx context.Context) error {
 
 	// 关闭所有流
 	if err := ss.manager.CloseAllStreams(); err != nil {
-		return fmt.Errorf("failed to stop stream service %s: %v", ss.name, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to stop stream service %s", ss.name)
 	}
 
 	utils.Infof("Stream service stopped: %s", ss.name)

@@ -3,10 +3,10 @@ package storage
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -21,15 +21,15 @@ type RedisConfig struct {
 
 // RedisStorage Redis存储实现
 type RedisStorage struct {
+	*dispose.ServiceBase
 	client *redis.Client
 	ctx    context.Context
-	dispose.Dispose
 }
 
 // NewRedisStorage 创建新的Redis存储
 func NewRedisStorage(parentCtx context.Context, config *RedisConfig) (*RedisStorage, error) {
 	if config == nil {
-		return nil, fmt.Errorf("redis config is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "redis config is required")
 	}
 
 	// 设置默认值
@@ -50,14 +50,17 @@ func NewRedisStorage(parentCtx context.Context, config *RedisConfig) (*RedisStor
 
 	if err := client.Ping(ctx).Err(); err != nil {
 		client.Close()
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to connect to Redis")
 	}
 
 	storage := &RedisStorage{
-		client: client,
-		ctx:    parentCtx,
+		ServiceBase: dispose.NewService("RedisStorage", parentCtx),
+		client:      client,
+		ctx:         parentCtx,
 	}
-	storage.SetCtx(parentCtx, storage.onClose)
+
+	// 添加清理回调
+	storage.AddCleanHandler(storage.onClose)
 
 	dispose.Infof("RedisStorage: connected to Redis at %s, DB: %d", config.Addr, config.DB)
 	return storage, nil
@@ -76,7 +79,7 @@ func (r *RedisStorage) Set(key string, value interface{}, ttl time.Duration) err
 	// 序列化值
 	data, err := json.Marshal(value)
 	if err != nil {
-		return fmt.Errorf("failed to marshal value: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal value")
 	}
 
 	// 设置到Redis
@@ -88,8 +91,8 @@ func (r *RedisStorage) Set(key string, value interface{}, ttl time.Duration) err
 	}
 
 	if result.Err() != nil {
-		dispose.Errorf("RedisStorage.Set: failed to set key %s: %v", key, err)
-		return fmt.Errorf("failed to set key %s: %w", key, result.Err())
+		dispose.Errorf("RedisStorage.Set: failed to set key %s: %v", key, result.Err())
+		return coreErrors.Wrapf(result.Err(), coreErrors.ErrorTypeStorage, "failed to set key %s", key)
 	}
 
 	return nil
@@ -104,21 +107,21 @@ func (r *RedisStorage) Get(key string) (interface{}, error) {
 			return nil, ErrKeyNotFound
 		}
 		dispose.Errorf("RedisStorage.Get: failed to get key %s: %v", key, result.Err())
-		return nil, fmt.Errorf("failed to get key %s: %w", key, result.Err())
+		return nil, coreErrors.Wrapf(result.Err(), coreErrors.ErrorTypeStorage, "failed to get key %s", key)
 	}
 
 	// 获取字节数据
 	data, err := result.Bytes()
 	if err != nil {
 		dispose.Errorf("RedisStorage.Get: failed to get bytes for key %s: %v", key, err)
-		return nil, fmt.Errorf("failed to get bytes for key %s: %w", key, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to get bytes for key %s", key)
 	}
 
 	// 反序列化值
 	var value interface{}
 	if err := json.Unmarshal(data, &value); err != nil {
 		dispose.Errorf("RedisStorage.Get: failed to unmarshal value for key %s: %v", key, err)
-		return nil, fmt.Errorf("failed to unmarshal value for key %s: %w", key, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to unmarshal value for key %s", key)
 	}
 
 	return value, nil
@@ -129,7 +132,7 @@ func (r *RedisStorage) Delete(key string) error {
 	result := r.client.Del(r.ctx, key)
 	if result.Err() != nil {
 		dispose.Errorf("RedisStorage.Delete: failed to delete key %s: %v", key, result.Err())
-		return fmt.Errorf("failed to delete key %s: %w", key, result.Err())
+		return coreErrors.Wrapf(result.Err(), coreErrors.ErrorTypeStorage, "failed to delete key %s", key)
 	}
 
 	return nil
@@ -141,7 +144,7 @@ func (r *RedisStorage) Exists(key string) (bool, error) {
 	result := r.client.Exists(r.ctx, key)
 	if result.Err() != nil {
 		dispose.Errorf("RedisStorage.Exists: failed to check key %s: %v", key, result.Err())
-		return false, fmt.Errorf("failed to check key %s: %w", key, result.Err())
+		return false, coreErrors.Wrapf(result.Err(), coreErrors.ErrorTypeStorage, "failed to check key %s", key)
 	}
 
 	exists := result.Val() > 0
@@ -516,7 +519,7 @@ func (r *RedisStorage) Unwatch(key string) error {
 
 // Close 关闭存储
 func (r *RedisStorage) Close() error {
-	return r.Dispose.Close()
+	return r.ServiceBase.Close()
 }
 
 // GetClient 获取Redis客户端（用于高级操作）

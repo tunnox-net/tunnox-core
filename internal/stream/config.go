@@ -2,7 +2,7 @@ package stream
 
 import (
 	"context"
-	"fmt"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // StreamType 流类型枚举
@@ -82,7 +82,7 @@ var PredefinedProfiles = map[string]StreamProfile{
 func GetProfile(name string) (StreamProfile, error) {
 	profile, exists := PredefinedProfiles[name]
 	if !exists {
-		return StreamProfile{}, fmt.Errorf("profile %s not found", name)
+		return StreamProfile{}, coreErrors.Newf(coreErrors.ErrorTypePermanent, "profile %s not found", name)
 	}
 	return profile, nil
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"time"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -29,7 +30,7 @@ func (s *SessionManager) handleCrossServerTargetConnection(
 			Success:  false,
 			Error:    "mapping_id mismatch",
 		})
-		return fmt.Errorf("mapping_id mismatch")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "mapping_id mismatch")
 	}
 
 	// 检查BridgeManager是否可用
@@ -41,7 +42,7 @@ func (s *SessionManager) handleCrossServerTargetConnection(
 			Success:  false,
 			Error:    "cross-server forwarding not available",
 		})
-		return fmt.Errorf("BridgeManager not configured")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "BridgeManager not configured")
 	}
 
 	// 发送成功响应给目标端客户端
@@ -55,7 +56,7 @@ func (s *SessionManager) handleCrossServerTargetConnection(
 	if netConn == nil {
 		utils.Errorf("Tunnel[%s]: failed to extract net.Conn from target connection %s",
 			req.TunnelID, conn.ID)
-		return fmt.Errorf("failed to extract net.Conn from connection")
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "failed to extract net.Conn from connection: %s", conn.ID)
 	}
 
 	utils.Infof("Tunnel[%s]: extracted targetConn=%v (LocalAddr=%v, RemoteAddr=%v), forwarding to %s",
@@ -65,7 +66,7 @@ func (s *SessionManager) handleCrossServerTargetConnection(
 	if err := s.forwardConnectionToSourceNode(netConn, req, routingState); err != nil {
 		utils.Errorf("Tunnel[%s]: failed to forward connection to source node: %v", req.TunnelID, err)
 		netConn.Close()
-		return fmt.Errorf("failed to forward connection: %w", err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to forward connection to source node: %s", routingState.SourceNodeID)
 	}
 
 	utils.Infof("Tunnel[%s]: ✅ successfully forwarded target connection to source node %s",
@@ -89,7 +90,7 @@ func (s *SessionManager) handleCrossServerTargetConnection(
 	}
 
 	// ✅ 返回特殊错误，让ProcessPacketLoop停止处理（连接已被BridgeManager接管）
-	return fmt.Errorf("tunnel target connected via cross-server bridge, switching to stream mode")
+	return coreErrors.ErrStreamModeSwitchCrossServer
 }
 
 // forwardConnectionToSourceNode 将目标端连接转发到源端Server
@@ -151,13 +152,13 @@ func (s *SessionManager) registerCrossServerConnection(
 
 	data, err := json.Marshal(connInfo)
 	if err != nil {
-		return fmt.Errorf("failed to marshal connection info: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal connection info")
 	}
 
 	if s.tunnelRouting != nil && s.tunnelRouting.storage != nil {
 		key := fmt.Sprintf("tunnox:cross_server_conn:%s", tunnelID)
 		if err := s.tunnelRouting.storage.Set(key, data, 30*time.Second); err != nil {
-			return fmt.Errorf("failed to store connection info: %w", err)
+			return coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to store connection info: %s", tunnelID)
 		}
 	}
 

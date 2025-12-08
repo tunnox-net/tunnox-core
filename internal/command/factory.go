@@ -7,7 +7,11 @@ import (
 )
 
 // CreateDefaultRegistry 创建默认的命令注册表
+// 注意：建议使用 CreateDefaultService 或 NewCommandRegistry，它们接受 context 参数
 func CreateDefaultRegistry() types.CommandRegistry {
+	// 使用 Background 作为 fallback，但应该避免这种情况
+	// 建议调用方使用 CreateDefaultService 或 NewCommandRegistry 并提供合适的 context
+	utils.Warnf("CreateDefaultRegistry: using context.Background(), consider using CreateDefaultService or NewCommandRegistry with proper context")
 	registry := NewCommandRegistry(context.Background())
 	RegisterDefaultHandlers(registry)
 	return registry

@@ -2,12 +2,13 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/utils"
@@ -91,7 +92,7 @@ func (h *ConnectionCodeHandlers) HandleCreateConnectionCode(w http.ResponseWrite
 	})
 	if err != nil {
 		utils.Errorf("ConnectionCodeAPI: failed to create connection code: %v", err)
-		if strings.Contains(err.Error(), "quota exceeded") {
+		if errors.Is(err, coreErrors.ErrConnectionCodeQuotaExceeded) {
 			respondError(w, http.StatusTooManyRequests, err.Error())
 		} else {
 			respondError(w, http.StatusInternalServerError, "failed to create connection code")
@@ -171,11 +172,11 @@ func (h *ConnectionCodeHandlers) HandleActivateConnectionCode(w http.ResponseWri
 	})
 	if err != nil {
 		utils.Errorf("ConnectionCodeAPI: failed to activate connection code %s: %v", req.Code, err)
-		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "expired") {
+		if errors.Is(err, coreErrors.ErrConnectionCodeNotFound) || errors.Is(err, coreErrors.ErrConnectionCodeExpired) {
 			respondError(w, http.StatusNotFound, err.Error())
-		} else if strings.Contains(err.Error(), "quota exceeded") {
+		} else if errors.Is(err, coreErrors.ErrConnectionCodeQuotaExceeded) {
 			respondError(w, http.StatusTooManyRequests, err.Error())
-		} else if strings.Contains(err.Error(), "already been used") || strings.Contains(err.Error(), "revoked") {
+		} else if errors.Is(err, coreErrors.ErrConnectionCodeAlreadyUsed) || errors.Is(err, coreErrors.ErrConnectionCodeRevoked) {
 			respondError(w, http.StatusConflict, err.Error())
 		} else {
 			respondError(w, http.StatusInternalServerError, "failed to activate connection code")
@@ -220,9 +221,9 @@ func (h *ConnectionCodeHandlers) HandleRevokeConnectionCode(w http.ResponseWrite
 	// 撤销连接码
 	if err := h.connCodeService.RevokeConnectionCode(code, "api-admin"); err != nil {
 		utils.Errorf("ConnectionCodeAPI: failed to revoke connection code %s: %v", code, err)
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, coreErrors.ErrConnectionCodeNotFound) {
 			respondError(w, http.StatusNotFound, "connection code not found")
-		} else if strings.Contains(err.Error(), "already been used") {
+		} else if errors.Is(err, coreErrors.ErrConnectionCodeAlreadyUsed) {
 			respondError(w, http.StatusConflict, err.Error())
 		} else {
 			respondError(w, http.StatusInternalServerError, "failed to revoke connection code")
@@ -409,9 +410,9 @@ func (h *ConnectionCodeHandlers) HandleRevokeMapping(w http.ResponseWriter, r *h
 	// 撤销映射
 	if err := h.connCodeService.RevokeMapping(mappingID, clientID, "api-admin"); err != nil {
 		utils.Errorf("ConnectionCodeAPI: failed to revoke mapping %s: %v", mappingID, err)
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, coreErrors.ErrMappingNotFound) || errors.Is(err, coreErrors.ErrMappingExpired) {
 			respondError(w, http.StatusNotFound, "mapping not found")
-		} else if strings.Contains(err.Error(), "not authorized") {
+		} else if errors.Is(err, coreErrors.ErrMappingNotAuthorized) {
 			respondError(w, http.StatusForbidden, err.Error())
 		} else {
 			respondError(w, http.StatusInternalServerError, "failed to revoke mapping")

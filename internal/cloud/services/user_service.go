@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 )
 
@@ -129,5 +131,5 @@ func (s *userService) SearchUsers(keyword string) ([]*models.User, error) {
 func (s *userService) GetUserStats(userID string) (*stats.UserStats, error) {
 	// 这里需要根据实际的repository方法来实现
 	// 暂时返回nil，实际项目中需要实现具体的统计逻辑
-	return nil, fmt.Errorf("user stats not implemented")
+	return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "user stats not implemented")
 }

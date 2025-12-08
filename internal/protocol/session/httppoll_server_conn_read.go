@@ -2,9 +2,9 @@ package session
 
 import (
 	"encoding/base64"
-	"fmt"
 	"io"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -68,7 +68,7 @@ func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
 				data, err := base64.StdEncoding.DecodeString(base64Data)
 				if err != nil {
 					utils.Errorf("HTTP long polling: [READ] failed to decode Base64 data: %v, clientID=%d", err, c.clientID)
-					return 0, fmt.Errorf("failed to decode Base64 data: %w", err)
+					return 0, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to decode Base64 data")
 				}
 				// 追加到 readBuffer
 				c.readBuffer = append(c.readBuffer, data...)
@@ -148,7 +148,7 @@ func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
 		data, err := base64.StdEncoding.DecodeString(base64Data)
 		if err != nil {
 			utils.Errorf("HTTP long polling: [READ] failed to decode Base64 data: %v, clientID=%d", err, c.clientID)
-			return 0, fmt.Errorf("failed to decode Base64 data: %w", err)
+			return 0, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to decode Base64 data")
 		}
 
 		utils.Infof("HTTP long polling: [READ] decoded %d bytes from Base64 data, clientID=%d, connID=%s",

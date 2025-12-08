@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"sync"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 var (
@@ -10,13 +11,14 @@ var (
 )
 
 // SetGlobalMetrics 设置全局 Metrics 实例
-func SetGlobalMetrics(m Metrics) {
+func SetGlobalMetrics(m Metrics) error {
 	if m == nil {
-		panic("metrics: SetGlobalMetrics called with nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "metrics: SetGlobalMetrics called with nil")
 	}
 	globalMu.Lock()
 	defer globalMu.Unlock()
 	globalMetrics = m
+	return nil
 }
 
 // RegisterDisposeCounter 注册释放计数器到 dispose 包（由应用层调用，避免循环依赖）
@@ -44,37 +46,57 @@ func GetGlobalMetrics() Metrics {
 	return globalMetrics
 }
 
-// MustGetGlobalMetrics 获取全局 Metrics 实例，未初始化时 panic
-func MustGetGlobalMetrics() Metrics {
+// MustGetGlobalMetrics 获取全局 Metrics 实例，未初始化时返回错误
+func MustGetGlobalMetrics() (Metrics, error) {
 	m := GetGlobalMetrics()
 	if m == nil {
-		panic("metrics: global metrics not initialized, call SetGlobalMetrics first")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "metrics: global metrics not initialized, call SetGlobalMetrics first")
 	}
-	return m
+	return m, nil
 }
 
 // IncrementCounter 全局便捷方法：增加计数器
 func IncrementCounter(name string, labels map[string]string) error {
-	return MustGetGlobalMetrics().IncrementCounter(name, labels)
+	m, err := MustGetGlobalMetrics()
+	if err != nil {
+		return err
+	}
+	return m.IncrementCounter(name, labels)
 }
 
 // AddCounter 全局便捷方法：增加计数器指定值
 func AddCounter(name string, value float64, labels map[string]string) error {
-	return MustGetGlobalMetrics().AddCounter(name, value, labels)
+	m, err := MustGetGlobalMetrics()
+	if err != nil {
+		return err
+	}
+	return m.AddCounter(name, value, labels)
 }
 
 // SetGauge 全局便捷方法：设置 Gauge 值
 func SetGauge(name string, value float64, labels map[string]string) error {
-	return MustGetGlobalMetrics().SetGauge(name, value, labels)
+	m, err := MustGetGlobalMetrics()
+	if err != nil {
+		return err
+	}
+	return m.SetGauge(name, value, labels)
 }
 
 // GetCounter 全局便捷方法：获取计数器值
 func GetCounter(name string, labels map[string]string) (float64, error) {
-	return MustGetGlobalMetrics().GetCounter(name, labels)
+	m, err := MustGetGlobalMetrics()
+	if err != nil {
+		return 0, err
+	}
+	return m.GetCounter(name, labels)
 }
 
 // GetGauge 全局便捷方法：获取 Gauge 值
 func GetGauge(name string, labels map[string]string) (float64, error) {
-	return MustGetGlobalMetrics().GetGauge(name, labels)
+	m, err := MustGetGlobalMetrics()
+	if err != nil {
+		return 0, err
+	}
+	return m.GetGauge(name, labels)
 }
 

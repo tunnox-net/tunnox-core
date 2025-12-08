@@ -52,21 +52,19 @@ def test_mysql():
             
         except TimeoutError as e:
             print(f"❌ Round {i+1} Error: {e}")
-            return False
+            sys.exit(1)
         except pymysql.err.OperationalError as e:
             print(f"❌ Round {i+1} Error: {e}")
-            return False
+            sys.exit(1)
         except Exception as e:
             print(f"❌ Round {i+1} An unexpected error occurred: {e}")
             import traceback
             traceback.print_exc()
-            return False
+            sys.exit(1)
     
     signal.alarm(0)
-    print(f"\n=== All Tests Completed ===")
-    print(f"Success: {success_count}/3 rounds")
-    return success_count == 3
+    # 所有测试完成，正常退出
+    sys.exit(0)
 
 if __name__ == "__main__":
-    success = test_mysql()
-    sys.exit(0 if success else 1)
+    test_mysql()

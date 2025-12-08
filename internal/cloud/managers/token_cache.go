@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -30,13 +32,13 @@ func (m *TokenCacheManager) StoreAccessToken(ctx context.Context, token string, 
 	key := fmt.Sprintf("%s:access_token:%s", constants.KeyPrefixToken, token)
 	data, err := json.Marshal(info)
 	if err != nil {
-		return fmt.Errorf("marshal token info failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "marshal token info failed")
 	}
 
 	// 设置过期时间与Token过期时间一致
 	ttl := time.Until(info.ExpiresAt)
 	if ttl <= 0 {
-		return fmt.Errorf("token already expired")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "token already expired")
 	}
 
 	return m.storage.Set(key, string(data), ttl)
@@ -48,17 +50,17 @@ func (m *TokenCacheManager) GetAccessTokenInfo(ctx context.Context, token string
 
 	value, err := m.storage.Get(key)
 	if err != nil {
-		return nil, fmt.Errorf("token not found: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "token not found")
 	}
 
 	data, ok := value.(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid token data type")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "invalid token data type")
 	}
 
 	var info TokenInfo
 	if err := json.Unmarshal([]byte(data), &info); err != nil {
-		return nil, fmt.Errorf("unmarshal token info failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "unmarshal token info failed")
 	}
 
 	return &info, nil
@@ -69,13 +71,13 @@ func (m *TokenCacheManager) StoreRefreshToken(ctx context.Context, refreshToken 
 	key := fmt.Sprintf("%s:refresh_token:%s", constants.KeyPrefixToken, refreshToken)
 	data, err := json.Marshal(info)
 	if err != nil {
-		return fmt.Errorf("marshal refresh token info failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "marshal refresh token info failed")
 	}
 
 	// 设置过期时间与刷新Token过期时间一致
 	ttl := time.Until(info.ExpiresAt)
 	if ttl <= 0 {
-		return fmt.Errorf("refresh token already expired")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "refresh token already expired")
 	}
 
 	return m.storage.Set(key, string(data), ttl)
@@ -87,17 +89,17 @@ func (m *TokenCacheManager) GetRefreshTokenInfo(ctx context.Context, refreshToke
 
 	value, err := m.storage.Get(key)
 	if err != nil {
-		return nil, fmt.Errorf("refresh token not found: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "refresh token not found")
 	}
 
 	data, ok := value.(string)
 	if !ok {
-		return nil, fmt.Errorf("invalid refresh token data type")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "invalid refresh token data type")
 	}
 
 	var info RefreshTokenInfo
 	if err := json.Unmarshal([]byte(data), &info); err != nil {
-		return nil, fmt.Errorf("unmarshal refresh token info failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "unmarshal refresh token info failed")
 	}
 
 	return &info, nil
@@ -129,7 +131,7 @@ func (m *TokenCacheManager) RevokeTokenByID(ctx context.Context, tokenID string)
 
 	data, err := json.Marshal(blacklistInfo)
 	if err != nil {
-		return fmt.Errorf("marshal blacklist info failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "marshal blacklist info failed")
 	}
 
 	// 设置24小时过期时间

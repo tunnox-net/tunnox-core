@@ -1,10 +1,10 @@
 package server
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"tunnox-core/internal/constants"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 
 	"gopkg.in/yaml.v3"
@@ -264,13 +264,13 @@ func LoadConfig(configPath string) (*Config, error) {
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf(constants.MsgFailedToReadConfigFile, configPath, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, constants.MsgFailedToReadConfigFile, configPath)
 	}
 
 	// 解析YAML
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf(constants.MsgFailedToParseConfigFile, configPath, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, constants.MsgFailedToParseConfigFile, configPath)
 	}
 
 	// ✅ 应用环境变量覆盖（环境变量优先级高于配置文件）
@@ -286,7 +286,7 @@ func LoadConfig(configPath string) (*Config, error) {
 			// 展开路径（支持 ~ 和相对路径）
 			expandedPath, err := utils.ExpandPath(config.Log.File)
 			if err != nil {
-				return nil, fmt.Errorf("failed to expand log file path %q: %w", config.Log.File, err)
+				return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to expand log file path %q", config.Log.File)
 			}
 			config.Log.File = expandedPath
 		}
@@ -294,13 +294,13 @@ func LoadConfig(configPath string) (*Config, error) {
 		// 确保日志目录存在
 		logDir := filepath.Dir(config.Log.File)
 		if err := os.MkdirAll(logDir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create log directory %q: %w", logDir, err)
+			return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to create log directory %q", logDir)
 		}
 	}
 
 	// 验证配置
 	if err := ValidateConfig(&config); err != nil {
-		return nil, fmt.Errorf(constants.MsgInvalidConfiguration, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, constants.MsgInvalidConfiguration)
 	}
 
 	utils.Infof(constants.MsgConfigLoadedFrom, configPath)
@@ -311,7 +311,7 @@ func LoadConfig(configPath string) (*Config, error) {
 func ValidateConfig(config *Config) error {
 	// 验证存储配置
 	if err := validateStorageConfig(&config.Storage); err != nil {
-		return fmt.Errorf("invalid storage config: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "invalid storage config")
 	}
 
 	// 验证服务器配置
@@ -464,13 +464,13 @@ func validateStorageConfig(config *StorageConfig) error {
 	// 验证存储类型
 	validTypes := []string{"memory", "redis", "hybrid"}
 	if !containsString(validTypes, config.Type) {
-		return fmt.Errorf("invalid storage type: %s, must be one of: %v", config.Type, validTypes)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid storage type: %s, must be one of: %v", config.Type, validTypes)
 	}
 
 	// 如果是 Redis，验证 Redis 配置
 	if config.Type == "redis" {
 		if config.Redis.Addr == "" {
-			return fmt.Errorf("redis.addr is required when storage type is redis")
+			return coreErrors.New(coreErrors.ErrorTypePermanent, "redis.addr is required when storage type is redis")
 		}
 		// 设置默认值
 		if config.Redis.PoolSize <= 0 {
@@ -506,11 +506,11 @@ func validateStorageConfig(config *StorageConfig) error {
 		}
 
 		if config.Hybrid.CacheType != "memory" && config.Hybrid.CacheType != "redis" {
-			return fmt.Errorf("invalid hybrid.cache_type: %s, must be 'memory' or 'redis'", config.Hybrid.CacheType)
+			return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid hybrid.cache_type: %s, must be 'memory' or 'redis'", config.Hybrid.CacheType)
 		}
 
 		if config.Hybrid.CacheType == "redis" && config.Redis.Addr == "" {
-			return fmt.Errorf("redis.addr is required when hybrid.cache_type is redis")
+			return coreErrors.New(coreErrors.ErrorTypePermanent, "redis.addr is required when hybrid.cache_type is redis")
 		}
 
 		// 前缀和 TTL 使用 storage.DefaultHybridConfig() 中的默认值，不需要用户配置
@@ -530,11 +530,11 @@ func validateStorageConfig(config *StorageConfig) error {
 			// 如果配置了 Remote 存储，验证配置
 			if config.Hybrid.Remote.Type != "" {
 				if config.Hybrid.Remote.Type != "grpc" && config.Hybrid.Remote.Type != "http" {
-					return fmt.Errorf("invalid hybrid.remote.type: %s, must be 'grpc' or 'http'", config.Hybrid.Remote.Type)
+					return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid hybrid.remote.type: %s, must be 'grpc' or 'http'", config.Hybrid.Remote.Type)
 				}
 
 				if config.Hybrid.Remote.Type == "grpc" && config.Hybrid.Remote.GRPC.Address == "" {
-					return fmt.Errorf("hybrid.remote.grpc.address is required when remote.type is grpc")
+					return coreErrors.New(coreErrors.ErrorTypePermanent, "hybrid.remote.grpc.address is required when remote.type is grpc")
 				}
 
 				// 设置默认超时

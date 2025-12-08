@@ -7,6 +7,7 @@ import (
 
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/command"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/utils"
@@ -36,7 +37,7 @@ func NewConnectionCodeCommandHandlers(
 // RegisterHandlers 注册所有连接码命令处理器
 func (h *ConnectionCodeCommandHandlers) RegisterHandlers(registry *command.CommandRegistry) error {
 	if registry == nil {
-		return fmt.Errorf("command registry is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "command registry is nil")
 	}
 
 	// 注册生成连接码命令
@@ -52,7 +53,7 @@ func (h *ConnectionCodeCommandHandlers) RegisterHandlers(registry *command.Comma
 		sessionMgr:      h.sessionMgr,
 	}
 	if err := registry.Register(generateHandler); err != nil {
-		return fmt.Errorf("failed to register generate handler: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to register generate handler")
 	}
 
 	// 注册列出连接码命令
@@ -68,7 +69,7 @@ func (h *ConnectionCodeCommandHandlers) RegisterHandlers(registry *command.Comma
 		sessionMgr:      h.sessionMgr,
 	}
 	if err := registry.Register(listHandler); err != nil {
-		return fmt.Errorf("failed to register list handler: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to register list handler")
 	}
 
 	// 注册激活连接码命令
@@ -84,7 +85,7 @@ func (h *ConnectionCodeCommandHandlers) RegisterHandlers(registry *command.Comma
 		sessionMgr:      h.sessionMgr,
 	}
 	if err := registry.Register(activateHandler); err != nil {
-		return fmt.Errorf("failed to register activate handler: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to register activate handler")
 	}
 
 	return nil

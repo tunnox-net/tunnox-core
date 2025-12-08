@@ -2,10 +2,10 @@ package stream
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"sync"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -39,7 +39,7 @@ func (m *StreamManager) CreateStream(id string, reader io.Reader, writer io.Writ
 
 	// 检查是否已存在
 	if _, exists := m.streams[id]; exists {
-		return nil, fmt.Errorf("stream with id %s already exists", id)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "stream with id %s already exists", id)
 	}
 
 	// 检查 reader 或 writer 是否已经是 PackageStreamer（如 HTTP Long Polling 的 ServerStreamProcessor）
@@ -79,7 +79,7 @@ func (m *StreamManager) RemoveStream(id string) error {
 
 	stream, exists := m.streams[id]
 	if !exists {
-		return fmt.Errorf("stream with id %s not found", id)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "stream with id %s not found", id)
 	}
 
 	// 关闭流

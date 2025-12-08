@@ -6,6 +6,7 @@ import (
 
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // NodeRegister 注册节点
@@ -15,7 +16,7 @@ func (c *CloudControl) NodeRegister(req *models.NodeRegisterRequest) (*models.No
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
 		generatedID, err := c.idManager.GenerateNodeID()
 		if err != nil {
-			return nil, fmt.Errorf("generate node ID failed: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate node ID failed")
 		}
 
 		// 检查节点是否已存在
@@ -37,7 +38,7 @@ func (c *CloudControl) NodeRegister(req *models.NodeRegisterRequest) (*models.No
 	}
 
 	if nodeID == "" {
-		return nil, fmt.Errorf("failed to generate unique node ID after %d attempts", constants.DefaultMaxAttempts)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "failed to generate unique node ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
 	now := time.Now()
@@ -53,7 +54,7 @@ func (c *CloudControl) NodeRegister(req *models.NodeRegisterRequest) (*models.No
 	if err := c.nodeRepo.CreateNode(node); err != nil {
 		// 如果保存失败，释放节点ID
 		_ = c.idManager.ReleaseNodeID(nodeID)
-		return nil, fmt.Errorf("save node failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "save node failed")
 	}
 
 	return &models.NodeRegisterResponse{
@@ -117,4 +118,3 @@ func (c *CloudControl) GetNodeServiceInfo(nodeID string) (*models.NodeServiceInf
 func (c *CloudControl) GetAllNodeServiceInfo() ([]*models.NodeServiceInfo, error) {
 	return c.nodeManager.GetAllNodeServiceInfo()
 }
-

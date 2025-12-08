@@ -2,12 +2,13 @@ package managers
 
 import (
 	"context"
-	"fmt"
 	"time"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
@@ -47,12 +48,17 @@ func NewStatsManager(
 
 	// 创建统计计数器
 	if manager.useCounter {
-		manager.counter = stats.NewStatsCounter(storage, parentCtx)
-
-		// 初始化计数器
-		if err := manager.counter.Initialize(); err != nil {
-			dispose.Warnf("StatsManager: failed to initialize counter: %v", err)
+		counter, err := stats.NewStatsCounter(storage, parentCtx)
+		if err != nil {
+			dispose.Warnf("StatsManager: failed to create counter: %v", err)
 			manager.useCounter = false // 降级到全量计算模式
+		} else {
+			manager.counter = counter
+			// 初始化计数器
+			if err := manager.counter.Initialize(); err != nil {
+				dispose.Warnf("StatsManager: failed to initialize counter: %v", err)
+				manager.useCounter = false // 降级到全量计算模式
+			}
 		}
 	}
 
@@ -248,13 +254,13 @@ func (sm *StatsManager) getSystemStatsFull() (*stats.SystemStats, error) {
 // RebuildStats 重建统计计数器（管理员手动触发）
 func (sm *StatsManager) RebuildStats() error {
 	if !sm.useCounter || sm.counter == nil {
-		return fmt.Errorf("counter mode not enabled")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "counter mode not enabled")
 	}
 
 	// 全量计算当前统计
 	systemStats, err := sm.getSystemStatsFull()
 	if err != nil {
-		return fmt.Errorf("failed to calculate full stats: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to calculate full stats")
 	}
 
 	// 重建计数器

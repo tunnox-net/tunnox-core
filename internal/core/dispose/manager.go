@@ -2,9 +2,9 @@ package dispose
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // ResourceManager 资源管理器，负责统一管理所有可释放资源
@@ -29,7 +29,7 @@ func (rm *ResourceManager) Register(name string, resource Disposable) error {
 	defer rm.mu.Unlock()
 
 	if _, exists := rm.resources[name]; exists {
-		return fmt.Errorf("resource %s already registered", name)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "resource %s already registered", name)
 	}
 
 	rm.resources[name] = resource
@@ -44,7 +44,7 @@ func (rm *ResourceManager) Unregister(name string) error {
 	defer rm.mu.Unlock()
 
 	if _, exists := rm.resources[name]; !exists {
-		return fmt.Errorf("resource %s not found", name)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "resource %s not found", name)
 	}
 
 	delete(rm.resources, name)
@@ -160,7 +160,7 @@ func (rm *ResourceManager) DisposeWithTimeout(timeout time.Duration) *DisposeRes
 				{
 					HandlerIndex: -1,
 					ResourceName: "timeout",
-					Err:          fmt.Errorf("dispose timeout after %v", timeout),
+					Err:          coreErrors.Newf(coreErrors.ErrorTypeTemporary, "dispose timeout after %v", timeout),
 				},
 			},
 		}

@@ -7,6 +7,7 @@ import (
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // CreateClient 创建客户端
@@ -16,7 +17,7 @@ func (c *CloudControl) CreateClient(userID, clientName string) (*models.Client, 
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
 		generatedID, err := c.idManager.GenerateClientID()
 		if err != nil {
-			return nil, fmt.Errorf("generate client ID failed: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate client ID failed")
 		}
 
 		// 检查客户端是否已存在
@@ -38,7 +39,7 @@ func (c *CloudControl) CreateClient(userID, clientName string) (*models.Client, 
 	}
 
 	if clientID == 0 {
-		return nil, fmt.Errorf("failed to generate unique client ID after %d attempts", constants.DefaultMaxAttempts)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "failed to generate unique client ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
 	authCode, err := c.idManager.GenerateAuthCode()
@@ -215,7 +216,7 @@ func (c *CloudControl) MigrateClientMappings(fromClientID, toClientID int64) err
 	// 获取源客户端的所有映射
 	mappings, err := c.mappingRepo.GetClientPortMappings(fmt.Sprintf("%d", fromClientID))
 	if err != nil {
-		return fmt.Errorf("failed to get mappings for client %d: %w", fromClientID, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to get mappings for client %d", fromClientID)
 	}
 
 	if len(mappings) == 0 {

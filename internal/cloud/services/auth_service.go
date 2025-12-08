@@ -2,12 +2,13 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"time"
+
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -163,7 +164,7 @@ func (s *authService) GenerateJWTToken(clientID int64) (*JWTTokenInfo, error) {
 	// 获取客户端信息
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
 	if err != nil {
-		return nil, fmt.Errorf("client not found: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "client not found")
 	}
 
 	jwtToken, err := s.jwtManager.GenerateTokenPair(s.Ctx(), client)
@@ -185,13 +186,13 @@ func (s *authService) RefreshJWTToken(refreshToken string) (*JWTTokenInfo, error
 	// 验证刷新令牌
 	refreshClaims, err := s.jwtManager.ValidateRefreshToken(s.Ctx(), refreshToken)
 	if err != nil {
-		return nil, fmt.Errorf("invalid refresh token: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeAuth, "invalid refresh token")
 	}
 
 	// 获取客户端信息
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(refreshClaims.ClientID))
 	if err != nil {
-		return nil, fmt.Errorf("client not found: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "client not found")
 	}
 
 	jwtToken, err := s.jwtManager.RefreshAccessToken(s.Ctx(), refreshToken, client)
@@ -213,13 +214,13 @@ func (s *authService) ValidateJWTToken(token string) (*JWTTokenInfo, error) {
 	// 验证访问令牌
 	claims, err := s.jwtManager.ValidateAccessToken(s.Ctx(), token)
 	if err != nil {
-		return nil, fmt.Errorf("invalid token: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeAuth, "invalid token")
 	}
 
 	// 获取客户端信息
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(claims.ClientID))
 	if err != nil {
-		return nil, fmt.Errorf("client not found: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "client not found")
 	}
 
 	return &JWTTokenInfo{
@@ -236,13 +237,13 @@ func (s *authService) RevokeJWTToken(token string) error {
 	// 验证令牌以获取TokenID
 	claims, err := s.jwtManager.ValidateAccessToken(s.Ctx(), token)
 	if err != nil {
-		return fmt.Errorf("invalid token: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeAuth, "invalid token")
 	}
 
 	// 从客户端信息中获取TokenID
 	client, err := s.clientRepo.GetClient(utils.Int64ToString(claims.ClientID))
 	if err != nil {
-		return fmt.Errorf("client not found: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "client not found")
 	}
 
 	return s.jwtManager.RevokeToken(s.Ctx(), client.TokenID)

@@ -1,11 +1,11 @@
 package client
 
 import (
-	"fmt"
 	"net"
 	"strings"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
@@ -17,7 +17,7 @@ func (c *TunnoxClient) connectWithAutoDetection() error {
 
 	attempt, err := connector.ConnectWithAutoDetection(c.Ctx())
 	if err != nil {
-		return fmt.Errorf("auto connection failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "auto connection failed")
 	}
 
 	// 更新配置（仅更新内存中的配置，不保存到文件）
@@ -103,10 +103,10 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 		}
 		conn, err = dialHTTPLongPolling(c.Ctx(), address, clientID, token, c.GetInstanceID(), "")
 	default:
-		return fmt.Errorf("unsupported server protocol: %s", protocol)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported server protocol: %s", protocol)
 	}
 	if err != nil {
-		return fmt.Errorf("failed to dial server (%s): %w", protocol, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to dial server (%s)", protocol)
 	}
 
 	c.config.Server.Protocol = strings.ToLower(protocol)
@@ -144,7 +144,7 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 			c.controlConn = nil
 		}
 		c.mu.Unlock()
-		return fmt.Errorf("handshake failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "handshake failed")
 	}
 
 	// 启动读取循环

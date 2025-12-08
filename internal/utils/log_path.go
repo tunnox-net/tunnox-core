@@ -1,9 +1,9 @@
 package utils
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // GetDefaultClientLogPath 获取客户端默认日志路径列表（按优先级排序）
@@ -86,12 +86,12 @@ func ResolveLogPath(candidates []string) (string, error) {
 	if len(candidates) > 0 {
 		lastPath, err := ExpandPath(candidates[len(candidates)-1])
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve any log path: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to resolve any log path")
 		}
 		return lastPath, nil
 	}
 
-	return "", fmt.Errorf("no log path candidates provided")
+	return "", coreErrors.New(coreErrors.ErrorTypePermanent, "no log path candidates provided")
 }
 
 // canWriteToPath 检查是否可以写入指定路径（包括目录创建）

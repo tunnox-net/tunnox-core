@@ -1,11 +1,12 @@
 package utils
 
 import (
-	"fmt"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
+
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // ParseListenAddress 解析监听地址
@@ -14,21 +15,21 @@ import (
 // 返回：主机地址、端口、错误
 func ParseListenAddress(addr string) (string, int, error) {
 	if addr == "" {
-		return "", 0, fmt.Errorf("listen address is empty")
+		return "", 0, coreErrors.New(coreErrors.ErrorTypePermanent, "listen address is empty")
 	}
 
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
-		return "", 0, fmt.Errorf("invalid listen address format %q: %w", addr, err)
+		return "", 0, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid listen address format %q", addr)
 	}
 
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return "", 0, fmt.Errorf("invalid port in listen address %q: %w", addr, err)
+		return "", 0, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid port in listen address %q", addr)
 	}
 
 	if port < 1 || port > 65535 {
-		return "", 0, fmt.Errorf("port %d out of range [1, 65535]", port)
+		return "", 0, coreErrors.Newf(coreErrors.ErrorTypePermanent, "port %d out of range [1, 65535]", port)
 	}
 
 	return host, port, nil
@@ -40,7 +41,7 @@ func ParseListenAddress(addr string) (string, int, error) {
 // 返回：主机地址、端口、协议、错误
 func ParseTargetAddress(addr string) (string, int, string, error) {
 	if addr == "" {
-		return "", 0, "", fmt.Errorf("target address is empty")
+		return "", 0, "", coreErrors.New(coreErrors.ErrorTypePermanent, "target address is empty")
 	}
 
 	// 解析 URL 格式：tcp://host:port
@@ -49,16 +50,16 @@ func ParseTargetAddress(addr string) (string, int, string, error) {
 		// 如果不是 URL 格式，尝试直接解析为 host:port（默认 tcp）
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
-			return "", 0, "", fmt.Errorf("invalid target address format %q: %w", addr, err)
+			return "", 0, "", coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid target address format %q", addr)
 		}
 
 		portNum, err := strconv.Atoi(port)
 		if err != nil {
-			return "", 0, "", fmt.Errorf("invalid port in target address %q: %w", addr, err)
+			return "", 0, "", coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid port in target address %q", addr)
 		}
 
 		if portNum < 1 || portNum > 65535 {
-			return "", 0, "", fmt.Errorf("port %d out of range [1, 65535]", portNum)
+			return "", 0, "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "port %d out of range [1, 65535]", portNum)
 		}
 
 		return host, portNum, "tcp", nil
@@ -72,21 +73,21 @@ func ParseTargetAddress(addr string) (string, int, string, error) {
 
 	host := parsedURL.Hostname()
 	if host == "" {
-		return "", 0, "", fmt.Errorf("missing host in target address %q", addr)
+		return "", 0, "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "missing host in target address %q", addr)
 	}
 
 	portStr := parsedURL.Port()
 	if portStr == "" {
-		return "", 0, "", fmt.Errorf("missing port in target address %q", addr)
+		return "", 0, "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "missing port in target address %q", addr)
 	}
 
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return "", 0, "", fmt.Errorf("invalid port in target address %q: %w", addr, err)
+		return "", 0, "", coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid port in target address %q", addr)
 	}
 
 	if port < 1 || port > 65535 {
-		return "", 0, "", fmt.Errorf("port %d out of range [1, 65535]", port)
+		return "", 0, "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "port %d out of range [1, 65535]", port)
 	}
 
 	return host, port, protocol, nil

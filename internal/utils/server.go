@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/dispose"
 )
 
@@ -141,7 +142,7 @@ func (sm *ServiceManager) RegisterService(service Service) error {
 
 	name := service.Name()
 	if _, exists := sm.services[name]; exists {
-		return fmt.Errorf("service %s already registered", name)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "service %s already registered", name)
 	}
 
 	sm.services[name] = service
@@ -155,7 +156,7 @@ func (sm *ServiceManager) UnregisterService(name string) error {
 	defer sm.mu.Unlock()
 
 	if _, exists := sm.services[name]; !exists {
-		return fmt.Errorf("service %s not found", name)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "service %s not found", name)
 	}
 
 	delete(sm.services, name)
@@ -222,7 +223,7 @@ func (sm *ServiceManager) StartAllServices() error {
 	for name, service := range sm.services {
 		if err := service.Start(sm.ctx); err != nil {
 			Errorf("Failed to start service %s: %v", name, err)
-			return fmt.Errorf("failed to start service %s: %v", name, err)
+			return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to start service %s", name)
 		}
 		Infof("Service started: %s", name)
 	}
@@ -266,7 +267,7 @@ func (sm *ServiceManager) Run() error {
 	if err := sm.StartAllServices(); err != nil {
 		// 确保错误信息输出到控制台
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to start services: %v\n", err)
-		return fmt.Errorf("failed to start services: %v", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to start services")
 	}
 
 	// 等待关闭信号
@@ -287,7 +288,7 @@ func (sm *ServiceManager) RunWithContext(ctx context.Context) error {
 	if err := sm.StartAllServices(); err != nil {
 		// 确保错误信息输出到控制台
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to start services: %v\n", err)
-		return fmt.Errorf("failed to start services: %v", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to start services")
 	}
 
 	// 等待上下文取消或关闭信号
@@ -334,7 +335,7 @@ func (sm *ServiceManager) gracefulShutdown() error {
 
 	if sm.disposeResult.HasErrors() {
 		Errorf("Resource disposal completed with errors: %v", sm.disposeResult.Error())
-		return fmt.Errorf("resource disposal failed: %v", sm.disposeResult.Error())
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "resource disposal failed: %v", sm.disposeResult.Error())
 	}
 
 	// 3. 取消上下文

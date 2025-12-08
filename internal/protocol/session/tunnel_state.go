@@ -5,9 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/packet"
 )
@@ -28,17 +29,17 @@ const (
 //
 // 用于在服务器切换时恢复隧道，包含序列号、缓冲数据等关键信息。
 type TunnelState struct {
-	TunnelID         string          `json:"tunnel_id"`
-	MappingID        string          `json:"mapping_id"`
-	ListenClientID   int64           `json:"listen_client_id"`
-	TargetClientID   int64           `json:"target_client_id"`
-	LastSeqNum       uint64          `json:"last_seq_num"`       // 发送端最后序列号
-	LastAckNum       uint64          `json:"last_ack_num"`       // 接收端最后确认号
-	NextExpectedSeq  uint64          `json:"next_expected_seq"`  // 接收端期望序列号
-	BufferedPackets  []BufferedState `json:"buffered_packets"`   // 缓冲的包
-	CreatedAt        time.Time       `json:"created_at"`
-	UpdatedAt        time.Time       `json:"updated_at"`
-	Signature        string          `json:"signature"`          // HMAC签名（防篡改）
+	TunnelID        string          `json:"tunnel_id"`
+	MappingID       string          `json:"mapping_id"`
+	ListenClientID  int64           `json:"listen_client_id"`
+	TargetClientID  int64           `json:"target_client_id"`
+	LastSeqNum      uint64          `json:"last_seq_num"`      // 发送端最后序列号
+	LastAckNum      uint64          `json:"last_ack_num"`      // 接收端最后确认号
+	NextExpectedSeq uint64          `json:"next_expected_seq"` // 接收端期望序列号
+	BufferedPackets []BufferedState `json:"buffered_packets"`  // 缓冲的包
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+	Signature       string          `json:"signature"` // HMAC签名（防篡改）
 }
 
 // BufferedState 缓冲包状态（用于序列化）
@@ -59,7 +60,7 @@ func NewTunnelStateManager(storage storage.Storage, secretKey string) *TunnelSta
 	if secretKey == "" {
 		secretKey = "tunnox-tunnel-state-secret-change-me"
 	}
-	
+
 	return &TunnelStateManager{
 		storage:   storage,
 		secretKey: secretKey,
@@ -73,7 +74,7 @@ func NewTunnelStateManager(storage storage.Storage, secretKey string) *TunnelSta
 // SaveState 保存隧道状态
 func (m *TunnelStateManager) SaveState(state *TunnelState) error {
 	if state == nil {
-		return errors.New("state is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "state is nil")
 	}
 
 	// 更新时间戳
@@ -85,20 +86,20 @@ func (m *TunnelStateManager) SaveState(state *TunnelState) error {
 	// 计算签名
 	signature, err := m.computeSignature(state)
 	if err != nil {
-		return fmt.Errorf("failed to compute signature: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to compute signature")
 	}
 	state.Signature = signature
 
 	// 序列化
 	data, err := json.Marshal(state)
 	if err != nil {
-		return fmt.Errorf("failed to marshal state: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal state")
 	}
 
 	// 存储到Redis
 	key := TunnelStateKeyPrefix + state.TunnelID
 	if err := m.storage.Set(key, string(data), TunnelStateTTL); err != nil {
-		return fmt.Errorf("failed to save state: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to save state")
 	}
 
 	return nil
@@ -107,32 +108,32 @@ func (m *TunnelStateManager) SaveState(state *TunnelState) error {
 // LoadState 加载隧道状态
 func (m *TunnelStateManager) LoadState(tunnelID string) (*TunnelState, error) {
 	key := TunnelStateKeyPrefix + tunnelID
-	
+
 	// 从Redis读取
 	data, err := m.storage.Get(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load state: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to load state")
 	}
 
 	// 类型断言
 	dataStr, ok := data.(string)
 	if !ok {
-		return nil, errors.New("invalid state data type")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "invalid state data type")
 	}
 
 	// 反序列化
 	var state TunnelState
 	if err := json.Unmarshal([]byte(dataStr), &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to unmarshal state")
 	}
 
 	// 验证签名
 	expectedSignature, err := m.computeSignature(&state)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute signature: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to compute signature")
 	}
 	if state.Signature != expectedSignature {
-		return nil, errors.New("state signature mismatch (possible tampering)")
+		return nil, coreErrors.New(coreErrors.ErrorTypeAuth, "state signature mismatch (possible tampering)")
 	}
 
 	return &state, nil
@@ -210,4 +211,3 @@ func RestoreToSendBuffer(sendBuffer *TunnelSendBuffer, bufferedStates []Buffered
 		sendBuffer.currentBufferSize += len(state.Data)
 	}
 }
-

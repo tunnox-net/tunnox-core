@@ -1,13 +1,13 @@
 package adapter
 
 import (
-	"fmt"
+	"errors"
 	"io"
 	"net"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/core/errors"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
@@ -29,7 +29,7 @@ type Adapter interface {
 
 // BaseAdapter 基础适配器，提供通用的连接管理和流处理逻辑
 type BaseAdapter struct {
-	dispose.Dispose
+	*dispose.ResourceBase
 	name        string
 	addr        string
 	session     session.Session
@@ -77,16 +77,16 @@ func (b *BaseAdapter) ConnectTo(serverAddr string) error {
 	defer b.connMutex.Unlock()
 
 	if b.stream != nil {
-		return fmt.Errorf("already connected")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "already connected")
 	}
 
 	if b.protocol == nil {
-		return fmt.Errorf("protocol adapter not set")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "protocol adapter not set")
 	}
 
 	conn, err := b.protocol.Dial(serverAddr)
 	if err != nil {
-		return fmt.Errorf("failed to connect to %s server: %w", b.protocol.getConnectionType(), err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to connect to %s server", b.protocol.getConnectionType())
 	}
 
 	b.SetAddr(serverAddr)
@@ -102,16 +102,16 @@ func (b *BaseAdapter) ConnectTo(serverAddr string) error {
 func (b *BaseAdapter) ListenFrom(listenAddr string) error {
 	b.SetAddr(listenAddr)
 	if b.Addr() == "" {
-		return fmt.Errorf("address not set")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "address not set")
 	}
 
 	if b.protocol == nil {
-		return fmt.Errorf("protocol adapter not set")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "protocol adapter not set")
 	}
 
 	// 适配器直接启动监听
 	if err := b.protocol.Listen(b.Addr()); err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", b.protocol.getConnectionType(), err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to listen on %s", b.protocol.getConnectionType())
 	}
 
 	b.active = true
@@ -146,7 +146,7 @@ func (b *BaseAdapter) acceptLoop(adapter ProtocolAdapter) {
 // isIgnorableError 检查是否为可忽略的错误
 func isIgnorableError(err error) bool {
 	// 检查是否为自定义超时错误
-	if errors.IsProtocolTimeoutError(err) {
+	if coreErrors.IsProtocolTimeoutError(err) {
 		return true
 	}
 
@@ -257,11 +257,12 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 
 		if err := b.session.HandlePacket(streamPacket); err != nil {
 			if isTunnelOpenPacket {
-				errMsg := err.Error()
-				if errMsg == "tunnel source connected, switching to stream mode" ||
-					errMsg == "tunnel target connected, switching to stream mode" ||
-					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" ||
-					errMsg == "tunnel connected to existing bridge, switching to stream mode" {
+				// 使用 errors.Is() 检查是否是流模式切换错误（类型安全，不依赖字符串）
+				if errors.Is(err, coreErrors.ErrStreamModeSwitch) ||
+					errors.Is(err, coreErrors.ErrStreamModeSwitchSource) ||
+					errors.Is(err, coreErrors.ErrStreamModeSwitchTarget) ||
+					errors.Is(err, coreErrors.ErrStreamModeSwitchCrossServer) ||
+					errors.Is(err, coreErrors.ErrStreamModeSwitchExistingBridge) {
 					// 在设置为 nil 之前保存 ID 用于日志
 					connID := streamConn.ID
 					shouldCloseConn = false
@@ -299,9 +300,8 @@ func (b *BaseAdapter) GetWriter() io.Writer {
 // Close 关闭适配器（实现Adapter接口）
 func (b *BaseAdapter) Close() error {
 	b.active = false
-	result := b.Dispose.Close()
-	if result.HasErrors() {
-		return fmt.Errorf("dispose cleanup failed: %s", result.Error())
+	if err := b.ResourceBase.Close(); err != nil {
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "dispose cleanup failed")
 	}
 	return nil
 }
@@ -317,7 +317,7 @@ func (b *BaseAdapter) onClose() error {
 			result := streamProcessor.CloseWithResult()
 			if result.HasErrors() {
 				b.streamMutex.Unlock()
-				return fmt.Errorf("stream processor cleanup failed: %v", result.Error())
+				return coreErrors.Newf(coreErrors.ErrorTypePermanent, "stream processor cleanup failed: %v", result.Error())
 			}
 		} else {
 			// 如果类型断言失败，使用普通的Close方法

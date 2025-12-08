@@ -2,13 +2,13 @@ package adapter
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"sync"
 	"time"
-
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/utils"
 
@@ -28,7 +28,9 @@ type WebSocketAdapter struct {
 // NewWebSocketAdapter creates a new WebSocket adapter
 func NewWebSocketAdapter(parentCtx context.Context, sess session.Session) *WebSocketAdapter {
 	adapter := &WebSocketAdapter{
-		BaseAdapter: BaseAdapter{},
+		BaseAdapter: BaseAdapter{
+			ResourceBase: dispose.NewResourceBase("WebSocketAdapter"),
+		},
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  64 * 1024,
 			WriteBufferSize: 64 * 1024,
@@ -38,10 +40,11 @@ func NewWebSocketAdapter(parentCtx context.Context, sess session.Session) *WebSo
 		},
 		connChan: make(chan io.ReadWriteCloser, 100),
 	}
+	adapter.Initialize(parentCtx)
+	adapter.AddCleanHandler(adapter.onClose)
 
 	adapter.SetName("websocket")
 	adapter.SetSession(sess)
-	adapter.SetCtx(parentCtx, adapter.onClose)
 
 	return adapter
 }
@@ -129,12 +132,12 @@ func (a *WebSocketAdapter) handleConnections() {
 
 // Dial is not supported for WebSocket adapter (server-side only)
 func (a *WebSocketAdapter) Dial(address string) (io.ReadWriteCloser, error) {
-	return nil, fmt.Errorf("dial not supported for WebSocket adapter")
+	return nil, errors.New(errors.ErrorTypePermanent, "dial not supported for WebSocket adapter")
 }
 
 // Listen is not used for WebSocket adapter (uses HTTP server instead)
 func (a *WebSocketAdapter) Listen(address string) error {
-	return fmt.Errorf("listen not supported for WebSocket adapter")
+	return errors.New(errors.ErrorTypePermanent, "listen not supported for WebSocket adapter")
 }
 
 // getConnectionType returns the connection type for this adapter
@@ -148,7 +151,7 @@ func (a *WebSocketAdapter) Accept() (io.ReadWriteCloser, error) {
 	case conn := <-a.connChan:
 		return conn, nil
 	case <-a.Ctx().Done():
-		return nil, fmt.Errorf("websocket adapter closed")
+		return nil, errors.New(errors.ErrorTypePermanent, "websocket adapter closed")
 	}
 }
 
@@ -219,12 +222,12 @@ func (c *WebSocketServerConn) Read(p []byte) (int, error) {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 				return 0, io.EOF
 			}
-			return 0, fmt.Errorf("websocket read failed: %w", err)
+			return 0, errors.Wrap(err, errors.ErrorTypeNetwork, "websocket read failed")
 		}
 	}
 
 	if messageType != websocket.BinaryMessage {
-		return 0, fmt.Errorf("unexpected websocket message type: %d", messageType)
+		return 0, errors.Newf(errors.ErrorTypeProtocol, "unexpected websocket message type: %d", messageType)
 	}
 
 	// Copy data to output buffer
@@ -252,7 +255,7 @@ func (c *WebSocketServerConn) Write(p []byte) (int, error) {
 	// Send as binary message
 	err := c.conn.WriteMessage(websocket.BinaryMessage, p)
 	if err != nil {
-		return 0, fmt.Errorf("websocket write failed: %w", err)
+		return 0, errors.Wrap(err, errors.ErrorTypeNetwork, "websocket write failed")
 	}
 
 	return len(p), nil

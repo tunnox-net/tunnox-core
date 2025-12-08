@@ -1,10 +1,11 @@
 package services
 
 import (
-	"fmt"
 	"sync"
 	"time"
+
 	"tunnox-core/internal/cloud/models"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -39,7 +40,7 @@ func (s *clientService) UpdateClientStatus(clientID int64, status models.ClientS
 
 	// 保存状态
 	if err := s.stateRepo.SetState(newState); err != nil {
-		return fmt.Errorf("failed to update client state: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to update client state")
 	}
 
 	// 更新节点的客户端列表
@@ -107,7 +108,7 @@ func (s *clientService) ConnectClient(clientID int64, nodeID, connID, ipAddress,
 
 	// 保存状态
 	if err := s.stateRepo.SetState(state); err != nil {
-		return fmt.Errorf("failed to set client state: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to set client state")
 	}
 
 	// 添加到节点列表
@@ -151,7 +152,7 @@ func (s *clientService) DisconnectClient(clientID int64) error {
 	// 获取当前状态
 	state, err := s.stateRepo.GetState(clientID)
 	if err != nil {
-		return fmt.Errorf("failed to get client state: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get client state")
 	}
 
 	if state == nil {
@@ -167,7 +168,7 @@ func (s *clientService) DisconnectClient(clientID int64) error {
 
 	// 删除状态（表示离线）
 	if err := s.stateRepo.DeleteState(clientID); err != nil {
-		return fmt.Errorf("failed to delete client state: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to delete client state")
 	}
 
 	// ✅ 兼容性：同步到旧Repository
@@ -205,7 +206,7 @@ func (s *clientService) DisconnectClient(clientID int64) error {
 func (s *clientService) GetClientNodeID(clientID int64) (string, error) {
 	state, err := s.stateRepo.GetState(clientID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get client state: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get client state")
 	}
 
 	if state == nil || !state.IsOnline() {
@@ -227,7 +228,7 @@ func (s *clientService) GetClientNodeID(clientID int64) (string, error) {
 func (s *clientService) IsClientOnNode(clientID int64, nodeID string) (bool, error) {
 	state, err := s.stateRepo.GetState(clientID)
 	if err != nil {
-		return false, fmt.Errorf("failed to get client state: %w", err)
+		return false, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get client state")
 	}
 
 	if state == nil {
@@ -249,7 +250,7 @@ func (s *clientService) GetNodeClients(nodeID string) ([]*models.Client, error) 
 	// 获取节点的客户端ID列表
 	clientIDs, err := s.stateRepo.GetNodeClients(nodeID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get node clients: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to get node clients")
 	}
 
 	// 并发获取每个客户端的完整信息
@@ -273,4 +274,3 @@ func (s *clientService) GetNodeClients(nodeID string) ([]*models.Client, error) 
 	wg.Wait()
 	return clients, nil
 }
-

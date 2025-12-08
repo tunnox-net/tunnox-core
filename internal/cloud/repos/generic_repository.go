@@ -186,8 +186,8 @@ func (r *GenericRepositoryImpl[T]) getEntityID(entity T) (string, error) {
 
 // Repository 数据访问层基类
 type Repository struct {
+	*dispose.ResourceBase
 	storage storage.Storage
-	dispose.Dispose
 }
 
 // NewRepository 创建新的数据访问层
@@ -195,11 +195,13 @@ type Repository struct {
 // 如果 storage 实现了 Disposable 接口，Repository 会自动继承其 context
 func NewRepository(storage storage.Storage) *Repository {
 	repo := &Repository{
-		storage: storage,
+		ResourceBase: dispose.NewResourceBase("Repository"),
+		storage:      storage,
 	}
 	// Repository 不需要独立的 context，它只是 storage 的包装器
 	// 如果 storage 实现了 Disposable，可以通过 storage 获取 context
-	// 这里不设置 context，避免创建独立的 dispose 子树
+	// 这里不初始化 context，避免创建独立的 dispose 子树
+	// 如果需要 context，可以从 storage 获取
 	return repo
 }
 

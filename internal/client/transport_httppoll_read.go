@@ -2,9 +2,9 @@ package client
 
 import (
 	"encoding/base64"
-	"fmt"
 	"io"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -71,7 +71,7 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 				preview = preview[:20]
 			}
 			utils.Errorf("HTTP long polling: Base64 data preview: %s", preview)
-			return 0, fmt.Errorf("failed to decode Base64 data: %w", err)
+			return 0, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to decode Base64 data")
 		}
 
 		// 验证解码后的数据不是 Base64 字符串（防止循环编码）

@@ -2,10 +2,9 @@ package storage
 
 import (
 	"context"
-	"fmt"
 	"time"
-
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // RemoteStorageConfig 远程存储配置
@@ -29,9 +28,9 @@ type RemoteStorageConfig struct {
 // 用于集群模式下的持久化存储
 // 注意：此实现为占位符，实际 gRPC 通信需要在生产环境中实现
 type RemoteStorage struct {
+	*dispose.ServiceBase
 	config *RemoteStorageConfig
 	ctx    context.Context
-	dispose.Dispose
 
 	// gRPC 客户端连接（预留，待实现）
 	// client storagepb.StorageServiceClient
@@ -40,7 +39,7 @@ type RemoteStorage struct {
 // NewRemoteStorage 创建远程存储
 func NewRemoteStorage(parentCtx context.Context, config *RemoteStorageConfig) (*RemoteStorage, error) {
 	if config == nil {
-		return nil, fmt.Errorf("remote storage config is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "remote storage config is required")
 	}
 
 	// 设置默认值
@@ -52,11 +51,13 @@ func NewRemoteStorage(parentCtx context.Context, config *RemoteStorageConfig) (*
 	}
 
 	storage := &RemoteStorage{
-		config: config,
-		ctx:    parentCtx,
+		ServiceBase: dispose.NewService("RemoteStorage", parentCtx),
+		config:      config,
+		ctx:         parentCtx,
 	}
 
-	storage.SetCtx(parentCtx, storage.onClose)
+	// 添加清理回调
+	storage.AddCleanHandler(storage.onClose)
 
 	// gRPC 连接建立（预留，待实现）
 	// 在生产环境中需要实现以下逻辑：
@@ -152,6 +153,5 @@ func (r *RemoteStorage) QueryByField(keyPrefix string, fieldName string, fieldVa
 
 // Close 关闭连接
 func (r *RemoteStorage) Close() error {
-	r.Dispose.Close()
-	return nil
+	return r.ServiceBase.Close()
 }

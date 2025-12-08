@@ -56,7 +56,7 @@ func InitLogger(config *LogConfig) error {
 	if config.Level != "" {
 		level, err := logrus.ParseLevel(config.Level)
 		if err != nil {
-			return fmt.Errorf("invalid log level: %s", config.Level)
+			return coreerrors.Newf(coreerrors.ErrorTypePermanent, "invalid log level: %s", config.Level)
 		}
 		Logger.SetLevel(level)
 	}
@@ -85,13 +85,13 @@ func InitLogger(config *LogConfig) error {
 		// 展开路径（支持 ~ 和相对路径）
 		expandedPath, err := ExpandPath(config.File)
 		if err != nil {
-			return fmt.Errorf("failed to expand log file path %q: %w", config.File, err)
+			return coreerrors.Wrapf(err, coreerrors.ErrorTypePermanent, "failed to expand log file path %q", config.File)
 		}
 
 		// 确保日志目录存在
 		logDir := filepath.Dir(expandedPath)
 		if err := os.MkdirAll(logDir, 0755); err != nil {
-			return fmt.Errorf("failed to create log directory %q: %w", logDir, err)
+			return coreerrors.Wrapf(err, coreerrors.ErrorTypePermanent, "failed to create log directory %q", logDir)
 		}
 
 		// 关闭之前的日志文件（如果存在）
@@ -102,7 +102,7 @@ func InitLogger(config *LogConfig) error {
 
 		file, err := os.OpenFile(expandedPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
-			return fmt.Errorf("failed to open log file %q: %w", expandedPath, err)
+			return coreerrors.Wrapf(err, coreerrors.ErrorTypePermanent, "failed to open log file %q", expandedPath)
 		}
 		currentLogFile = file
 		Logger.SetOutput(file)

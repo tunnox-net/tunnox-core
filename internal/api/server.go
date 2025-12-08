@@ -13,6 +13,7 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/health"
 	httppoll "tunnox-core/internal/protocol/httppoll"
@@ -94,7 +95,7 @@ func (a *apiSessionManagerAdapter) GetControlConnectionInterface(clientID int64)
 
 func (a *apiSessionManagerAdapter) BroadcastConfigPush(clientID int64, configBody string) error {
 	if a.sessionMgr == nil {
-		return fmt.Errorf("session manager is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "session manager is nil")
 	}
 	return a.sessionMgr.BroadcastConfigPush(clientID, configBody)
 }
@@ -123,7 +124,7 @@ func (a *apiSessionManagerAdapter) GetTunnelBridgeByMappingID(mappingID string, 
 // CreateConnection 创建连接（实现 SessionManagerWithConnection 接口）
 func (a *apiSessionManagerAdapter) CreateConnection(reader io.Reader, writer io.Writer) (*types.Connection, error) {
 	if a.sessionMgr == nil {
-		return nil, fmt.Errorf("session manager is nil")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "session manager is nil")
 	}
 	// session.SessionManager 直接实现了 CreateConnection 方法
 	return a.sessionMgr.CreateConnection(reader, writer)
@@ -141,7 +142,7 @@ func (a *apiSessionManagerAdapter) GetConnection(connID string) (*types.Connecti
 // HandlePacket 处理数据包（用于握手等流程）
 func (a *apiSessionManagerAdapter) HandlePacket(connPacket *types.StreamPacket) error {
 	if a.sessionMgr == nil {
-		return fmt.Errorf("session manager is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "session manager is nil")
 	}
 	// session.SessionManager 直接实现了 HandlePacket 方法
 	return a.sessionMgr.HandlePacket(connPacket)
@@ -542,11 +543,11 @@ func getInt64PathVar(r *http.Request, key string) (int64, error) {
 	vars := mux.Vars(r)
 	str := vars[key]
 	if str == "" {
-		return 0, fmt.Errorf("%s is required", key)
+		return 0, coreErrors.Newf(coreErrors.ErrorTypePermanent, "%s is required", key)
 	}
 	val, err := strconv.ParseInt(str, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %v", key, err)
+		return 0, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid %s", key)
 	}
 	return val, nil
 }
@@ -556,7 +557,7 @@ func getStringPathVar(r *http.Request, key string) (string, error) {
 	vars := mux.Vars(r)
 	str := vars[key]
 	if str == "" {
-		return "", fmt.Errorf("%s is required", key)
+		return "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "%s is required", key)
 	}
 	return str, nil
 }
@@ -565,7 +566,7 @@ func getStringPathVar(r *http.Request, key string) (string, error) {
 func parseJSONBody(r *http.Request, v interface{}) error {
 	defer r.Body.Close()
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		return fmt.Errorf("invalid JSON body: %v", err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid JSON body")
 	}
 	return nil
 }

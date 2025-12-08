@@ -1,8 +1,8 @@
 package udp
 
 import (
-	"fmt"
 	"time"
+	"tunnox-core/internal/core/errors"
 )
 
 // FragmentGroupKey 分片组键
@@ -43,7 +43,7 @@ func NewFragmentGroup(key FragmentGroupKey, totalFragments int, originalSize int
 // - data: 该分片数据（调用方需要自行拷贝或保证后续不修改）
 func (g *FragmentGroup) AddFragment(fragSeq int, data []byte) error {
 	if fragSeq < 0 || fragSeq >= g.TotalFragments {
-		return fmt.Errorf("invalid fragSeq: %d, expected 0..%d", fragSeq, g.TotalFragments-1)
+		return errors.Newf(errors.ErrorTypeProtocol, "invalid fragSeq: %d, expected 0..%d", fragSeq, g.TotalFragments-1)
 	}
 
 	// 重复分片忽略
@@ -70,19 +70,19 @@ func (g *FragmentGroup) IsComplete() bool {
 // 长度不符 OriginalSize 时返回 error。
 func (g *FragmentGroup) Reassemble() ([]byte, error) {
 	if !g.IsComplete() {
-		return nil, fmt.Errorf("fragment group not complete: %d/%d", g.ReceivedCount, g.TotalFragments)
+		return nil, errors.Newf(errors.ErrorTypeProtocol, "fragment group not complete: %d/%d", g.ReceivedCount, g.TotalFragments)
 	}
 
 	result := make([]byte, 0, g.OriginalSize)
 	for i := 0; i < g.TotalFragments; i++ {
 		if g.Fragments[i] == nil {
-			return nil, fmt.Errorf("missing fragment %d", i)
+			return nil, errors.Newf(errors.ErrorTypeProtocol, "missing fragment %d", i)
 		}
 		result = append(result, g.Fragments[i]...)
 	}
 
 	if len(result) != g.OriginalSize {
-		return nil, fmt.Errorf("reassembled size mismatch: expected %d, got %d", g.OriginalSize, len(result))
+		return nil, errors.Newf(errors.ErrorTypeProtocol, "reassembled size mismatch: expected %d, got %d", g.OriginalSize, len(result))
 	}
 
 	return result, nil

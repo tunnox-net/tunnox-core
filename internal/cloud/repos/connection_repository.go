@@ -5,28 +5,35 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-
 	constants2 "tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
 // ConnectionRepo 连接数据访问
 type ConnectionRepo struct {
 	*GenericRepositoryImpl[*models.ConnectionInfo]
-	dispose.Dispose
+	*dispose.ResourceBase
 }
 
 // NewConnectionRepo 创建连接数据访问层
-func NewConnectionRepo(repo *Repository) *ConnectionRepo {
+func NewConnectionRepo(repo *Repository, parentCtx context.Context) (*ConnectionRepo, error) {
+	if parentCtx == nil {
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "parent context is required for ConnectionRepo")
+	}
 	genericRepo := NewGenericRepository[*models.ConnectionInfo](repo, func(connInfo *models.ConnectionInfo) (string, error) {
 		return connInfo.ConnID, nil
 	})
-	cr := &ConnectionRepo{GenericRepositoryImpl: genericRepo}
-	cr.Dispose.SetCtx(context.Background(), cr.onClose)
-	return cr
+	cr := &ConnectionRepo{
+		GenericRepositoryImpl: genericRepo,
+		ResourceBase:          dispose.NewResourceBase("ConnectionRepo"),
+	}
+	cr.Initialize(parentCtx)
+	cr.AddCleanHandler(cr.onClose)
+	return cr, nil
 }
 
 // getEntityID 获取连接ID
@@ -36,7 +43,7 @@ func (r *ConnectionRepo) getEntityID(connInfo *models.ConnectionInfo) (string, e
 
 func (cr *ConnectionRepo) onClose() error {
 	if cr.GenericRepositoryImpl != nil {
-		return cr.GenericRepositoryImpl.Repository.Dispose.Close()
+		return cr.GenericRepositoryImpl.Repository.Close()
 	}
 	return nil
 }
@@ -44,14 +51,14 @@ func (cr *ConnectionRepo) onClose() error {
 // SaveConnection 保存连接信息（创建或更新）
 func (r *ConnectionRepo) SaveConnection(connInfo *models.ConnectionInfo) error {
 	if err := r.Save(connInfo, constants.KeyPrefixConnection, constants2.DefaultConnectionTTL); err != nil {
-		return fmt.Errorf("save connection failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "save connection failed")
 	}
 	// 添加到映射和客户端的连接列表
 	if err := r.AddConnectionToMapping(connInfo.MappingID, connInfo); err != nil {
-		return fmt.Errorf("add connection to mapping failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "add connection to mapping failed")
 	}
 	if err := r.AddConnectionToClient(connInfo.ClientID, connInfo); err != nil {
-		return fmt.Errorf("add connection to client failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "add connection to client failed")
 	}
 	return nil
 }
@@ -63,10 +70,10 @@ func (r *ConnectionRepo) CreateConnection(connInfo *models.ConnectionInfo) error
 	}
 	// 添加到映射和客户端的连接列表
 	if err := r.AddConnectionToMapping(connInfo.MappingID, connInfo); err != nil {
-		return fmt.Errorf("add connection to mapping failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "add connection to mapping failed")
 	}
 	if err := r.AddConnectionToClient(connInfo.ClientID, connInfo); err != nil {
-		return fmt.Errorf("add connection to client failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "add connection to client failed")
 	}
 	return nil
 }
@@ -76,18 +83,18 @@ func (r *ConnectionRepo) UpdateConnection(connInfo *models.ConnectionInfo) error
 	// 检查连接是否存在
 	_, err := r.GetConnection(connInfo.ConnID)
 	if err != nil {
-		return fmt.Errorf("connection with ID %s does not exist", connInfo.ConnID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "connection with ID %s does not exist", connInfo.ConnID)
 	}
 
 	// 只更新主连接记录，不重新添加到列表中
 	data, err := json.Marshal(connInfo)
 	if err != nil {
-		return fmt.Errorf("marshal connection failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "marshal connection failed")
 	}
 
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixConnection, connInfo.ConnID)
 	if err := r.storage.Set(key, string(data), constants2.DefaultConnectionTTL); err != nil {
-		return fmt.Errorf("update connection failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "update connection failed")
 	}
 
 	return nil

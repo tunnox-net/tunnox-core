@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -69,8 +70,14 @@ func NewReconnectTokenManager(config *ReconnectTokenConfig, storage storage.Stor
 // GenerateReconnectToken 生成重连Token
 func (m *ReconnectTokenManager) GenerateReconnectToken(clientID int64, nodeID string) (*ReconnectToken, error) {
 	now := time.Now()
-	tokenID := generateTokenID()
-	nonce := generateNonce()
+	tokenID, err := generateTokenID()
+	if err != nil {
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate token ID")
+	}
+	nonce, err := generateNonce()
+	if err != nil {
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate nonce")
+	}
 
 	token := &ReconnectToken{
 		TokenID:   tokenID,
@@ -84,7 +91,7 @@ func (m *ReconnectTokenManager) GenerateReconnectToken(clientID int64, nodeID st
 	// 计算签名
 	signature, err := m.computeSignature(token)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute signature: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to compute signature")
 	}
 	token.Signature = signature
 
@@ -125,7 +132,7 @@ func (m *ReconnectTokenManager) ValidateReconnectToken(token *ReconnectToken) er
 	// 1. 签名验证
 	expectedSignature, err := m.computeSignature(token)
 	if err != nil {
-		return fmt.Errorf("failed to compute signature: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to compute signature")
 	}
 	if token.Signature != expectedSignature {
 		return errors.New("invalid signature")
@@ -140,7 +147,7 @@ func (m *ReconnectTokenManager) ValidateReconnectToken(token *ReconnectToken) er
 	usedKey := fmt.Sprintf("reconnect:token:used:%s", token.TokenID)
 	exists, err := m.storage.Exists(usedKey)
 	if err != nil {
-		return fmt.Errorf("failed to check token usage: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to check token usage")
 	}
 	if exists {
 		return errors.New("token already used")
@@ -163,7 +170,7 @@ func (m *ReconnectTokenManager) MarkTokenAsUsed(token *ReconnectToken) error {
 
 	// 存储一个标记（值不重要，只要存在即可）
 	if err := m.storage.Set(usedKey, "1", ttl); err != nil {
-		return fmt.Errorf("failed to mark token as used: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to mark token as used")
 	}
 
 	return nil
@@ -177,7 +184,7 @@ func (m *ReconnectTokenManager) MarkTokenAsUsed(token *ReconnectToken) error {
 func (m *ReconnectTokenManager) EncodeToken(token *ReconnectToken) (string, error) {
 	data, err := json.Marshal(token)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal token: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal token")
 	}
 	return string(data), nil
 }
@@ -186,7 +193,7 @@ func (m *ReconnectTokenManager) EncodeToken(token *ReconnectToken) (string, erro
 func (m *ReconnectTokenManager) DecodeToken(tokenStr string) (*ReconnectToken, error) {
 	var token ReconnectToken
 	if err := json.Unmarshal([]byte(tokenStr), &token); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal token: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to unmarshal token")
 	}
 	return &token, nil
 }
@@ -196,20 +203,20 @@ func (m *ReconnectTokenManager) DecodeToken(tokenStr string) (*ReconnectToken, e
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // generateTokenID 生成Token ID
-func generateTokenID() string {
+func generateTokenID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("crypto/rand failed in generateTokenID: %v", err))
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "crypto/rand failed in generateTokenID")
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 // generateNonce 生成随机Nonce
-func generateNonce() string {
+func generateNonce() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("crypto/rand failed in generateNonce: %v", err))
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "crypto/rand failed in generateNonce")
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 

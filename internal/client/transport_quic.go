@@ -3,13 +3,14 @@ package client
 import (
 	"context"
 	"crypto/tls"
-	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
 
 	"github.com/quic-go/quic-go"
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -40,7 +41,7 @@ func newQUICStreamConn(ctx context.Context, address string) (*quicStreamConn, er
 	// Dial QUIC connection
 	conn, err := quic.DialAddr(ctx, address, tlsConf, quicConf)
 	if err != nil {
-		return nil, fmt.Errorf("quic dial failed: %w", err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "quic dial failed: %s", address)
 	}
 	
 	utils.Infof("QUIC: connection established to %s", address)
@@ -49,7 +50,7 @@ func newQUICStreamConn(ctx context.Context, address string) (*quicStreamConn, er
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
 		conn.CloseWithError(0, "failed to open stream")
-		return nil, fmt.Errorf("quic open stream failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "quic open stream failed")
 	}
 	
 	utils.Infof("QUIC: stream opened")

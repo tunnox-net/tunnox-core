@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 )
 
@@ -35,7 +35,7 @@ func (c *PacketConverter) SetConnectionInfo(connID string, clientID int64, mappi
 // requestID 是可选的，如果提供则设置到 TunnelPackage 中
 func (c *PacketConverter) WritePacket(pkt *packet.TransferPacket, requestID ...string) (*http.Request, error) {
 	if pkt == nil {
-		return nil, fmt.Errorf("packet is nil")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "packet is nil")
 	}
 
 	// 1. 提取包类型和数据
@@ -103,13 +103,13 @@ func (c *PacketConverter) WritePacket(pkt *packet.TransferPacket, requestID ...s
 	// 3. 编码 TunnelPackage
 	encoded, err := EncodeTunnelPackage(tunnelPkg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to encode tunnel package: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to encode tunnel package")
 	}
 
 	// 4. 构建 HTTP Request（控制包不需要 body，但需要设置 Content-Length: 0）
 	req, err := http.NewRequest("POST", "/tunnox/v1/push", http.NoBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to create request")
 	}
 
 	req.Header.Set("X-Tunnel-Package", encoded)
@@ -123,13 +123,13 @@ func (c *PacketConverter) ReadPacket(resp *http.Response) (*packet.TransferPacke
 	// 1. 从 Header 读取 X-Tunnel-Package
 	encoded := resp.Header.Get("X-Tunnel-Package")
 	if encoded == "" {
-		return nil, fmt.Errorf("missing X-Tunnel-Package header")
+		return nil, coreErrors.New(coreErrors.ErrorTypeProtocol, "missing X-Tunnel-Package header")
 	}
 
 	// 2. 解码 TunnelPackage
 	tunnelPkg, err := DecodeTunnelPackage(encoded)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode tunnel package: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to decode tunnel package")
 	}
 
 	// 3. 更新连接状态
@@ -156,7 +156,7 @@ func (c *PacketConverter) WriteData(data []byte) ([]byte, error) {
 // ReadData 从 HTTP Response Body 读取字节流（Base64 解码）
 func (c *PacketConverter) ReadData(resp *http.Response) ([]byte, error) {
 	// Base64 解码在 HTTPStreamProcessor 中处理
-	return nil, fmt.Errorf("not implemented")
+	return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "not implemented")
 }
 
 // packetTypeToString 包类型字符串与字节的映射
@@ -216,7 +216,7 @@ func stringToPacketType(s string) packet.Type {
 func TunnelPackageToTransferPacket(pkg *TunnelPackage) (*packet.TransferPacket, error) {
 	packetType := stringToPacketType(pkg.Type)
 	if packetType == 0 {
-		return nil, fmt.Errorf("unknown packet type: %s", pkg.Type)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "unknown packet type: %s", pkg.Type)
 	}
 
 	var pkt *packet.TransferPacket
@@ -225,11 +225,11 @@ func TunnelPackageToTransferPacket(pkg *TunnelPackage) (*packet.TransferPacket, 
 		// 从 Data 中提取 CommandPacket
 		dataBytes, err := json.Marshal(pkg.Data)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal command data: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to marshal command data")
 		}
 		cmdPacket := &packet.CommandPacket{}
 		if err := json.Unmarshal(dataBytes, cmdPacket); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal command packet: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to unmarshal command packet")
 		}
 		pkt = &packet.TransferPacket{
 			PacketType:    packetType,
@@ -239,7 +239,7 @@ func TunnelPackageToTransferPacket(pkg *TunnelPackage) (*packet.TransferPacket, 
 		// 对于 Handshake, HandshakeResp, TunnelOpen 等，序列化为 Payload
 		payload, err := json.Marshal(pkg.Data)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal payload: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to marshal payload")
 		}
 		pkt = &packet.TransferPacket{
 			PacketType: packetType,

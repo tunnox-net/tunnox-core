@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/config"
 	"tunnox-core/internal/utils"
 )
@@ -48,7 +49,7 @@ func (a *SOCKS5MappingAdapter) StartListener(config config.MappingConfig) error 
 	addr := fmt.Sprintf(":%d", config.LocalPort)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", addr, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to listen on %s", addr)
 	}
 
 	a.listener = listener
@@ -59,7 +60,7 @@ func (a *SOCKS5MappingAdapter) StartListener(config config.MappingConfig) error 
 // Accept 接受SOCKS5连接
 func (a *SOCKS5MappingAdapter) Accept() (io.ReadWriteCloser, error) {
 	if a.listener == nil {
-		return nil, fmt.Errorf("SOCKS5 listener not initialized")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "SOCKS5 listener not initialized")
 	}
 
 	// 设置接受超时，允许优雅关闭
@@ -81,7 +82,7 @@ func (a *SOCKS5MappingAdapter) Accept() (io.ReadWriteCloser, error) {
 func (a *SOCKS5MappingAdapter) PrepareConnection(conn io.ReadWriteCloser) error {
 	netConn, ok := conn.(net.Conn)
 	if !ok {
-		return fmt.Errorf("SOCKS5 requires net.Conn")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "SOCKS5 requires net.Conn")
 	}
 
 	// 设置握手超时
@@ -90,13 +91,13 @@ func (a *SOCKS5MappingAdapter) PrepareConnection(conn io.ReadWriteCloser) error 
 
 	// 1. SOCKS5 握手
 	if err := a.handleHandshake(netConn); err != nil {
-		return fmt.Errorf("handshake failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "handshake failed")
 	}
 
 	// 2. 处理请求（解析目标地址）
 	targetAddr, err := a.handleRequest(netConn)
 	if err != nil {
-		return fmt.Errorf("request failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "request failed")
 	}
 
 	utils.Infof("SOCKS5MappingAdapter: client requests connection to %s", targetAddr)
@@ -112,24 +113,24 @@ func (a *SOCKS5MappingAdapter) handleHandshake(conn net.Conn) error {
 	buf := make([]byte, 257)
 	n, err := io.ReadAtLeast(conn, buf, 2)
 	if err != nil {
-		return fmt.Errorf("read handshake failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read handshake failed")
 	}
 
 	version := buf[0]
 	if version != socks5Version {
-		return fmt.Errorf("unsupported SOCKS version: %d", version)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported SOCKS version: %d", version)
 	}
 
 	nMethods := int(buf[1])
 	if n < 2+nMethods {
 		if _, err := io.ReadFull(conn, buf[n:2+nMethods]); err != nil {
-			return fmt.Errorf("read methods failed: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read methods failed")
 		}
 	}
 
 	// 选择无认证方法
 	if _, err := conn.Write([]byte{socks5Version, socksAuthNone}); err != nil {
-		return fmt.Errorf("write method selection failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "write method selection failed")
 	}
 
 	return nil
@@ -139,12 +140,12 @@ func (a *SOCKS5MappingAdapter) handleHandshake(conn net.Conn) error {
 func (a *SOCKS5MappingAdapter) handleRequest(conn net.Conn) (string, error) {
 	buf := make([]byte, 4)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return "", fmt.Errorf("read request header failed: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read request header failed")
 	}
 
 	version := buf[0]
 	if version != socks5Version {
-		return "", fmt.Errorf("unsupported SOCKS version: %d", version)
+		return "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported SOCKS version: %d", version)
 	}
 
 	cmd := buf[1]
@@ -153,7 +154,7 @@ func (a *SOCKS5MappingAdapter) handleRequest(conn net.Conn) (string, error) {
 	// 只支持 CONNECT 命令
 	if cmd != socksCmdConnect {
 		a.sendReply(conn, socksRepCommandNotSupported, "0.0.0.0", 0)
-		return "", fmt.Errorf("unsupported command: %d", cmd)
+		return "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported command: %d", cmd)
 	}
 
 	// 解析目标地址
@@ -162,38 +163,38 @@ func (a *SOCKS5MappingAdapter) handleRequest(conn net.Conn) (string, error) {
 	case socksAddrTypeIPv4:
 		addr := make([]byte, 4)
 		if _, err := io.ReadFull(conn, addr); err != nil {
-			return "", fmt.Errorf("read IPv4 address failed: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read IPv4 address failed")
 		}
 		targetAddr = net.IP(addr).String()
 
 	case socksAddrTypeDomain:
 		lenBuf := make([]byte, 1)
 		if _, err := io.ReadFull(conn, lenBuf); err != nil {
-			return "", fmt.Errorf("read domain length failed: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read domain length failed")
 		}
 		domainLen := int(lenBuf[0])
 		domain := make([]byte, domainLen)
 		if _, err := io.ReadFull(conn, domain); err != nil {
-			return "", fmt.Errorf("read domain failed: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read domain failed")
 		}
 		targetAddr = string(domain)
 
 	case socksAddrTypeIPv6:
 		addr := make([]byte, 16)
 		if _, err := io.ReadFull(conn, addr); err != nil {
-			return "", fmt.Errorf("read IPv6 address failed: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read IPv6 address failed")
 		}
 		targetAddr = net.IP(addr).String()
 
 	default:
 		a.sendReply(conn, socksRepAddrTypeNotSupported, "0.0.0.0", 0)
-		return "", fmt.Errorf("unsupported address type: %d", addrType)
+		return "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported address type: %d", addrType)
 	}
 
 	// 读取端口
 	portBuf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, portBuf); err != nil {
-		return "", fmt.Errorf("read port failed: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "read port failed")
 	}
 	port := binary.BigEndian.Uint16(portBuf)
 
@@ -202,7 +203,7 @@ func (a *SOCKS5MappingAdapter) handleRequest(conn net.Conn) (string, error) {
 	// 发送成功响应
 	localAddr := conn.LocalAddr().(*net.TCPAddr)
 	if err := a.sendReply(conn, socksRepSuccess, localAddr.IP.String(), uint16(localAddr.Port)); err != nil {
-		return "", fmt.Errorf("send reply failed: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "send reply failed")
 	}
 
 	return fullAddr, nil

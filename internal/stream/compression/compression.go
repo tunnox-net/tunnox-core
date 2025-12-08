@@ -11,11 +11,11 @@ import (
 
 // GzipReader Gzip解压缩读取器
 type GzipReader struct {
+	*dispose.ResourceBase
 	reader     io.Reader
 	gzipReader *gzip.Reader
 	initOnce   sync.Once
 	initErr    error
-	dispose.Dispose
 }
 
 func (r *GzipReader) Read(p []byte) (n int, err error) {
@@ -51,18 +51,22 @@ func (r *GzipReader) onClose() error {
 }
 
 func NewGzipReader(reader io.Reader, parentCtx context.Context) *GzipReader {
-	sReader := &GzipReader{reader: reader}
-	sReader.SetCtx(parentCtx, sReader.onClose)
+	sReader := &GzipReader{
+		ResourceBase: dispose.NewResourceBase("GzipReader"),
+		reader:       reader,
+	}
+	sReader.Initialize(parentCtx)
+	sReader.AddCleanHandler(sReader.onClose)
 	return sReader
 }
 
 // GzipWriter Gzip压缩写入器
 type GzipWriter struct {
+	*dispose.ResourceBase
 	writer     io.Writer
 	gWriter    *gzip.Writer
 	closed     bool
 	closeMutex sync.Mutex
-	dispose.Dispose
 }
 
 func (w *GzipWriter) Write(p []byte) (n int, err error) {
@@ -110,18 +114,22 @@ func (w *GzipWriter) onClose() error {
 }
 
 func NewGzipWriter(writer io.Writer, parentCtx context.Context) *GzipWriter {
-	w := &GzipWriter{writer: writer}
+	w := &GzipWriter{
+		ResourceBase: dispose.NewResourceBase("GzipWriter"),
+		writer:       writer,
+	}
 	w.gWriter = gzip.NewWriter(writer)
-	w.SetCtx(parentCtx, w.onClose)
+	w.Initialize(parentCtx)
+	w.AddCleanHandler(w.onClose)
 	return w
 }
 
 // Close 关闭Gzip读取器（兼容接口）
 func (r *GzipReader) Close() {
-	r.Dispose.Close()
+	_ = r.ResourceBase.Close()
 }
 
 // Close 关闭Gzip写入器（兼容接口）
 func (w *GzipWriter) Close() {
-	w.Dispose.Close()
+	_ = w.ResourceBase.Close()
 }

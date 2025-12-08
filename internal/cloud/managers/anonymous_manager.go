@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"time"
+
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/utils"
 )
@@ -40,7 +42,7 @@ func (am *AnonymousManager) GenerateAnonymousCredentials() (*models.Client, erro
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
 		generatedID, err := am.idManager.GenerateClientID()
 		if err != nil {
-			return nil, fmt.Errorf("generate client ID failed: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate client ID failed")
 		}
 		// 检查客户端是否已存在
 		existingClient, err := am.clientRepo.GetClient(utils.Int64ToString(generatedID))
@@ -56,18 +58,18 @@ func (am *AnonymousManager) GenerateAnonymousCredentials() (*models.Client, erro
 		break
 	}
 	if clientID == 0 {
-		return nil, fmt.Errorf("failed to generate unique client ID after %d attempts", constants.DefaultMaxAttempts)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "failed to generate unique client ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
 	authCode, err := am.idManager.GenerateAuthCode()
 	if err != nil {
 		_ = am.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("generate auth code failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate auth code failed")
 	}
 	secretKey, err := am.idManager.GenerateSecretKey()
 	if err != nil {
 		_ = am.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("generate secret key failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate secret key failed")
 	}
 	now := time.Now()
 	client := &models.Client{
@@ -92,12 +94,12 @@ func (am *AnonymousManager) GenerateAnonymousCredentials() (*models.Client, erro
 	}
 	if err := am.clientRepo.CreateClient(client); err != nil {
 		_ = am.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("save anonymous client failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "save anonymous client failed")
 	}
 	if err := am.clientRepo.AddClientToUser("", client); err != nil {
 		_ = am.clientRepo.DeleteClient(utils.Int64ToString(clientID))
 		_ = am.idManager.ReleaseClientID(clientID)
-		return nil, fmt.Errorf("add anonymous client to list failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "add anonymous client to list failed")
 	}
 	return client, nil
 }
@@ -109,7 +111,7 @@ func (am *AnonymousManager) GetAnonymousClient(clientID int64) (*models.Client, 
 		return nil, err
 	}
 	if client.Type != models.ClientTypeAnonymous {
-		return nil, fmt.Errorf("client is not anonymous")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "client is not anonymous")
 	}
 	return client, nil
 }
@@ -137,7 +139,7 @@ func (am *AnonymousManager) CreateAnonymousMapping(listenClientID, targetClientI
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
 		generatedID, err := am.idManager.GeneratePortMappingID()
 		if err != nil {
-			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate mapping ID failed")
 		}
 
 		// 检查端口映射是否已存在
@@ -159,14 +161,14 @@ func (am *AnonymousManager) CreateAnonymousMapping(listenClientID, targetClientI
 	}
 
 	if mappingID == "" {
-		return nil, fmt.Errorf("failed to generate unique mapping ID after %d attempts", constants.DefaultMaxAttempts)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "failed to generate unique mapping ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
 	// 生成 SecretKey（用于隧道打开认证）
 	secretKey, err := am.idManager.GenerateSecretKey()
 	if err != nil {
 		_ = am.idManager.ReleasePortMappingID(mappingID)
-		return nil, fmt.Errorf("generate secret key failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate secret key failed")
 	}
 
 	now := time.Now()
@@ -190,14 +192,14 @@ func (am *AnonymousManager) CreateAnonymousMapping(listenClientID, targetClientI
 	if err := am.mappingRepo.CreatePortMapping(mapping); err != nil {
 		// 如果保存失败，释放ID
 		_ = am.idManager.ReleasePortMappingID(mappingID)
-		return nil, fmt.Errorf("save anonymous mapping failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "save anonymous mapping failed")
 	}
 
 	if err := am.mappingRepo.AddMappingToUser("", mapping); err != nil {
 		// 如果添加到匿名列表失败，删除映射并释放ID
 		_ = am.mappingRepo.DeletePortMapping(mappingID)
 		_ = am.idManager.ReleasePortMappingID(mappingID)
-		return nil, fmt.Errorf("add anonymous mapping to list failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "add anonymous mapping to list failed")
 	}
 
 	return mapping, nil

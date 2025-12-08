@@ -1,9 +1,9 @@
 package models
 
 import (
-	"fmt"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -78,10 +78,10 @@ func (m *PortMapping) CanBeRevokedBy(clientID int64) bool {
 // TargetClient 或 ListenClient 都可以撤销
 func (m *PortMapping) Revoke(revokedBy string, clientID int64) error {
 	if !m.CanBeRevokedBy(clientID) {
-		return fmt.Errorf("client %d is not allowed to revoke this mapping", clientID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "client %d is not allowed to revoke this mapping", clientID)
 	}
 	if m.IsRevoked {
-		return fmt.Errorf("mapping already revoked")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "mapping already revoked")
 	}
 
 	now := time.Now()

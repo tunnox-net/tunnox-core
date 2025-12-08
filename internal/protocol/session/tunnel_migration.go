@@ -2,10 +2,10 @@ package session
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"sync"
 	"time"
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -85,7 +85,7 @@ func (m *TunnelMigrationManager) InitiateMigration(
 	// 检查是否已经在迁移中
 	if info, exists := m.migrations[tunnelID]; exists {
 		if info.Status == MigrationStatusInProgress {
-			return fmt.Errorf("tunnel already migrating: %s", tunnelID)
+			return coreErrors.Newf(coreErrors.ErrorTypePermanent, "tunnel already migrating: %s", tunnelID)
 		}
 	}
 
@@ -106,7 +106,7 @@ func (m *TunnelMigrationManager) InitiateMigration(
 	if err := m.stateManager.SaveState(tunnelState); err != nil {
 		migrationInfo.Status = MigrationStatusFailed
 		migrationInfo.Error = err.Error()
-		return fmt.Errorf("failed to save tunnel state: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to save tunnel state")
 	}
 
 	// 标记为进行中
@@ -132,12 +132,12 @@ func (m *TunnelMigrationManager) AcceptMigration(
 	// 从存储加载状态
 	state, err := m.stateManager.LoadState(cmd.TunnelID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load tunnel state: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to load tunnel state")
 	}
 
 	// 验证状态签名
 	if state.Signature != cmd.StateSignature {
-		return nil, errors.New("state signature mismatch")
+		return nil, coreErrors.New(coreErrors.ErrorTypeAuth, "state signature mismatch")
 	}
 
 	// 记录迁移信息
@@ -170,7 +170,7 @@ func (m *TunnelMigrationManager) CompleteMigration(tunnelID string) error {
 
 	info, exists := m.migrations[tunnelID]
 	if !exists {
-		return fmt.Errorf("migration info not found for tunnel %s", tunnelID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "migration info not found for tunnel %s", tunnelID)
 	}
 
 	now := time.Now()
@@ -215,7 +215,7 @@ func (m *TunnelMigrationManager) GetMigrationInfo(tunnelID string) (*TunnelMigra
 
 	info, exists := m.migrations[tunnelID]
 	if !exists {
-		return nil, fmt.Errorf("migration info not found for tunnel %s", tunnelID)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "migration info not found for tunnel %s", tunnelID)
 	}
 
 	return info, nil

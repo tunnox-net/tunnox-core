@@ -2,8 +2,8 @@ package mapping
 
 import (
 	"context"
-	"fmt"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/config"
 )
 
@@ -21,6 +21,6 @@ func CreateAdapter(protocol string, config config.MappingConfig, parentCtx conte
 		return NewSOCKS5MappingAdapter(credentials), nil
 
 	default:
-		return nil, fmt.Errorf("unsupported protocol: %s", protocol)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported protocol: %s", protocol)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/client"
 	"tunnox-core/internal/version"
 
@@ -39,8 +40,7 @@ type CLI struct {
 func NewCLI(ctx context.Context, tunnoxClient *client.TunnoxClient) (*CLI, error) {
 	// 检查stdin是否是TTY
 	if !isatty.IsTerminal(os.Stdin.Fd()) {
-		return nil, fmt.Errorf("stdin is not a terminal (TTY required for interactive CLI)\n" +
-			"Please run directly in a terminal, not through pipe/redirect")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "stdin is not a terminal (TTY required for interactive CLI)\nPlease run directly in a terminal, not through pipe/redirect")
 	}
 
 	completer := NewCommandCompleter()
@@ -58,7 +58,7 @@ func NewCLI(ctx context.Context, tunnoxClient *client.TunnoxClient) (*CLI, error
 		Stderr:          os.Stderr,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize readline: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to initialize readline")
 	}
 
 	// 创建输出工具
@@ -255,7 +255,7 @@ func (c *CLI) executeCommand(commandLine string) {
 }
 
 // ErrCancelled 表示用户取消了输入（Ctrl+C）
-var ErrCancelled = fmt.Errorf("cancelled")
+var ErrCancelled = coreErrors.New(coreErrors.ErrorTypePermanent, "cancelled")
 
 // cleanInput 清理输入字符串，移除控制字符
 func cleanInput(s string) string {

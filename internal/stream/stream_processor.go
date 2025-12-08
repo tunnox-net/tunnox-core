@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"io"
 	"sync"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream/compression"
@@ -54,7 +54,7 @@ func (ps *StreamProcessor) onClose() error {
 	if ps.bufferMgr != nil {
 		result := ps.bufferMgr.Close()
 		if result.HasErrors() {
-			errs = append(errs, fmt.Errorf("buffer manager cleanup failed: %v", result.Error()))
+			errs = append(errs, coreErrors.Newf(coreErrors.ErrorTypePermanent, "buffer manager cleanup failed: %v", result.Error()))
 		}
 	}
 
@@ -66,7 +66,7 @@ func (ps *StreamProcessor) onClose() error {
 			// 不是 Disposable，手动关闭
 			if closer, ok := ps.writer.(interface{ Close() error }); ok {
 				if err := closer.Close(); err != nil {
-					errs = append(errs, fmt.Errorf("writer close failed: %w", err))
+					errs = append(errs, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "writer close failed"))
 				}
 			} else if closer, ok := ps.writer.(interface{ Close() }); ok {
 				closer.Close()
@@ -82,7 +82,7 @@ func (ps *StreamProcessor) onClose() error {
 			// 不是 Disposable，手动关闭
 			if closer, ok := ps.reader.(interface{ Close() error }); ok {
 				if err := closer.Close(); err != nil {
-					errs = append(errs, fmt.Errorf("reader close failed: %w", err))
+					errs = append(errs, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "reader close failed"))
 				}
 			} else if closer, ok := ps.reader.(interface{ Close() }); ok {
 				closer.Close()
@@ -91,7 +91,7 @@ func (ps *StreamProcessor) onClose() error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("stream processor cleanup errors: %v", errs)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "stream processor cleanup errors: %v", errs)
 	}
 	return nil
 }
@@ -382,7 +382,7 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 	// 解密功能应通过 transform.StreamTransformer 处理
 	if packetType.IsEncrypted() {
 		// 加密功能已移至 transform 模块
-		err = fmt.Errorf("encryption not supported in StreamProcessor, use transform package")
+		err = coreErrors.New(coreErrors.ErrorTypePermanent, "encryption not supported in StreamProcessor, use transform package")
 		if err != nil {
 			return nil, totalBytes, err
 		}

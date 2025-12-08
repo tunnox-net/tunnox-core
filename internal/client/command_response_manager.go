@@ -2,10 +2,10 @@ package client
 
 import (
 	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -101,7 +101,7 @@ func (m *CommandResponseManager) HandleResponse(pkt *packet.TransferPacket) bool
 		utils.Warnf("Failed to parse command response: %v", err)
 		resp := &CommandResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to parse response: %v", err),
+			Error:   err.Error(),
 		}
 		select {
 		case responseChan <- resp:
@@ -186,7 +186,7 @@ func (m *CommandResponseManager) WaitForResponse(commandID string, responseChan 
 		if resp == nil {
 			utils.Errorf("[CMD_TRACE] [CLIENT] [WAIT_FAILED] CommandID=%s, WaitDuration=%v, Reason=channel_closed, Time=%s",
 				commandID, waitDuration, time.Now().Format("15:04:05.000"))
-			return nil, fmt.Errorf("response channel closed")
+			return nil, coreErrors.New(coreErrors.ErrorTypeTemporary, "response channel closed")
 		}
 		utils.Infof("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, Success=%v, Time=%s",
 			commandID, waitDuration, resp.Success, time.Now().Format("15:04:05.000"))
@@ -196,6 +196,6 @@ func (m *CommandResponseManager) WaitForResponse(commandID string, responseChan 
 		utils.Errorf("[CMD_TRACE] [CLIENT] [WAIT_TIMEOUT] CommandID=%s, WaitDuration=%v, Timeout=%v, Time=%s",
 			commandID, waitDuration, m.timeout, time.Now().Format("15:04:05.000"))
 		m.UnregisterRequest(commandID)
-		return nil, fmt.Errorf("command timeout after %v", m.timeout)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypeTemporary, "command timeout after %v", m.timeout)
 	}
 }

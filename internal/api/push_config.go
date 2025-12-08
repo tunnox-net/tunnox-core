@@ -2,11 +2,11 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/config"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -50,12 +50,12 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 	configJSON, err := json.Marshal(&configData)
 	if err != nil {
 		utils.Errorf("API: failed to marshal mapping config: %v", err)
-		return fmt.Errorf("failed to marshal mapping config: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal mapping config")
 	}
 
 	// 推送给源客户端
 	if err := s.pushConfigToClient(mapping.SourceClientID, string(configJSON)); err != nil {
-		return fmt.Errorf("failed to push config to source client %d: %w", mapping.SourceClientID, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to push config to source client %d", mapping.SourceClientID)
 	}
 
 	// 推送给目标客户端（如果不是同一个客户端）
@@ -71,11 +71,11 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 		targetJSON, err := json.Marshal(&targetData)
 		if err != nil {
 			utils.Errorf("API: failed to marshal target config: %v", err)
-			return fmt.Errorf("failed to marshal target config: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal target config")
 		}
 
 		if err := s.pushConfigToClient(mapping.TargetClientID, string(targetJSON)); err != nil {
-			return fmt.Errorf("failed to push config to target client %d: %w", mapping.TargetClientID, err)
+			return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to push config to target client %d", mapping.TargetClientID)
 		}
 	}
 
@@ -106,7 +106,7 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 				utils.Debugf("API: client %d is on node %s (current: %s), broadcasting via Redis",
 					clientID, clientNodeID, currentNodeID)
 				if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
-					return fmt.Errorf("failed to broadcast config push to cluster: %w", err)
+					return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to broadcast config push to cluster")
 				}
 				return nil
 			}
@@ -115,7 +115,7 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 			// clientNodeID为空 = 客户端离线或不存在
 			utils.Debugf("API: client %d is offline (no nodeID in Redis), will broadcast anyway", clientID)
 			if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
-				return fmt.Errorf("failed to broadcast config push for offline client: %w", err)
+				return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to broadcast config push for offline client")
 			}
 			return nil
 		}
@@ -127,7 +127,7 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 		// 本地未找到，尝试通过消息队列广播到其他节点
 		utils.Debugf("API: client %d NOT found locally, broadcasting to cluster", clientID)
 		if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
-			return fmt.Errorf("failed to broadcast config push to cluster: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to broadcast config push to cluster")
 		}
 		return nil // 广播成功，其他节点会处理
 	}
@@ -138,7 +138,7 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 		// 发现脏数据（有连接对象但stream为nil），清理并广播
 		utils.Warnf("API: client %d has stale local connection (stream is nil), broadcasting to cluster", clientID)
 		if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
-			return fmt.Errorf("failed to broadcast after detecting stale connection: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to broadcast after detecting stale connection")
 		}
 		return nil
 	}
@@ -166,7 +166,7 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 func (s *ManagementAPIServer) broadcastConfigPushToCluster(clientID int64, configBody string) error {
 	// 通过SessionManager广播
 	if err := s.sessionMgr.BroadcastConfigPush(clientID, configBody); err != nil {
-		return fmt.Errorf("failed to broadcast config push: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to broadcast config push")
 	}
 	return nil
 }

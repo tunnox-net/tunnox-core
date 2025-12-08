@@ -1,10 +1,10 @@
 package utils
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // ExpandPath 展开路径，支持 ~ 和相对路径
@@ -12,20 +12,20 @@ import (
 //      ./logs/app.log -> /current/dir/logs/app.log
 func ExpandPath(path string) (string, error) {
 	if path == "" {
-		return "", fmt.Errorf("path is empty")
+		return "", coreErrors.New(coreErrors.ErrorTypePermanent, "path is empty")
 	}
 
 	// 展开 ~
 	if strings.HasPrefix(path, "~/") {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to get home directory")
 		}
 		path = filepath.Join(homeDir, path[2:])
 	} else if path == "~" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("failed to get home directory: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to get home directory")
 		}
 		path = homeDir
 	}
@@ -34,7 +34,7 @@ func ExpandPath(path string) (string, error) {
 	if !filepath.IsAbs(path) {
 		absPath, err := filepath.Abs(path)
 		if err != nil {
-			return "", fmt.Errorf("failed to convert to absolute path: %w", err)
+			return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to convert to absolute path")
 		}
 		path = absPath
 	}

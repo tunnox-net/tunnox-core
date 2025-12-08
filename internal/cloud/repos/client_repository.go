@@ -8,6 +8,7 @@ import (
 	constants2 "tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -119,7 +120,7 @@ func (r *ClientRepository) saveUserClients(userID string, clients []*models.Clie
 
 	listStore, ok := r.storage.(storage.ListStore)
 	if !ok {
-		return fmt.Errorf("storage does not support list operations")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "storage does not support list operations")
 	}
 	return listStore.SetList(key, data, constants2.DefaultUserDataTTL)
 }

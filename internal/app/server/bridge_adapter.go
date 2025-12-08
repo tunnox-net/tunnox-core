@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 	"tunnox-core/internal/broker"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/utils"
@@ -33,7 +33,7 @@ func NewBridgeAdapter(ctx context.Context, messageBroker broker.MessageBroker, n
 // BroadcastTunnelOpen 广播隧道打开请求到其他节点
 func (a *BridgeAdapter) BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targetClientID int64) error {
 	if a.messageBroker == nil {
-		return fmt.Errorf("message broker not initialized")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "message broker not initialized")
 	}
 
 	// 构造广播消息
@@ -47,7 +47,7 @@ func (a *BridgeAdapter) BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targe
 
 	messageJSON, err := json.Marshal(&message)
 	if err != nil {
-		return fmt.Errorf("failed to marshal tunnel open message: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal tunnel open message")
 	}
 
 	// ✅ 通过MessageBroker广播到所有节点
@@ -56,7 +56,7 @@ func (a *BridgeAdapter) BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targe
 	defer cancel()
 
 	if err := a.messageBroker.Publish(ctx, broker.TopicTunnelOpen, messageJSON); err != nil {
-		return fmt.Errorf("failed to publish tunnel open message: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to publish tunnel open message")
 	}
 
 	return nil
@@ -65,7 +65,7 @@ func (a *BridgeAdapter) BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targe
 // Subscribe 订阅消息主题
 func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-chan *session.BroadcastMessage, error) {
 	if a.messageBroker == nil {
-		return nil, fmt.Errorf("message broker not initialized")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "message broker not initialized")
 	}
 
 	
@@ -114,11 +114,11 @@ func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-c
 // PublishMessage 发布消息到指定主题
 func (a *BridgeAdapter) PublishMessage(ctx context.Context, topic string, payload []byte) error {
 	if a.messageBroker == nil {
-		return fmt.Errorf("message broker not initialized")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "message broker not initialized")
 	}
 
 	if err := a.messageBroker.Publish(ctx, topic, payload); err != nil {
-		return fmt.Errorf("failed to publish to topic %s: %w", topic, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to publish to topic %s", topic)
 	}
 
 	return nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -17,13 +18,13 @@ import (
 // 2. 目标端客户端响应的隧道连接（连接到已有的bridge）
 func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error {
 	if s.tunnelHandler == nil {
-		return fmt.Errorf("tunnel handler not configured")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel handler not configured")
 	}
 
 	// 获取底层连接
 	conn := s.getConnectionByConnID(connPacket.ConnectionID)
 	if conn == nil {
-		return fmt.Errorf("connection not found: %s", connPacket.ConnectionID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "connection not found: %s", connPacket.ConnectionID)
 	}
 
 	// 解析隧道打开请求（从 Payload）
@@ -36,7 +37,7 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 				Success:  false,
 				Error:    fmt.Sprintf("invalid tunnel open request format: %v", err),
 			})
-			return fmt.Errorf("invalid tunnel open request format: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "invalid tunnel open request format")
 		}
 	}
 
@@ -163,7 +164,7 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			s.connLock.Unlock()
 		}
 
-		return fmt.Errorf("tunnel connected to existing bridge, switching to stream mode")
+		return coreErrors.ErrStreamModeSwitchExistingBridge
 	}
 
 	if s.tunnelRouting != nil {
@@ -258,7 +259,7 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 					Error:    "connection not found or not authenticated",
 				})
 			}
-			return fmt.Errorf("control connection not found: %s", connPacket.ConnectionID)
+			return coreErrors.Newf(coreErrors.ErrorTypePermanent, "control connection not found: %s", connPacket.ConnectionID)
 		}
 	}
 
@@ -381,7 +382,7 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 
 		if !exists {
 			utils.Errorf("Tunnel[%s]: target connection received but bridge not found, connID=%s", req.TunnelID, connPacket.ConnectionID)
-			return fmt.Errorf("bridge not found for tunnel %s", req.TunnelID)
+			return coreErrors.Newf(coreErrors.ErrorTypePermanent, "bridge not found for tunnel %s", req.TunnelID)
 		}
 
 		// 创建统一接口连接
@@ -436,7 +437,7 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		}
 	}
 
-	return fmt.Errorf("tunnel source connected, switching to stream mode")
+	return coreErrors.ErrStreamModeSwitchSource
 }
 
 // sendTunnelOpenResponse 发送隧道打开响应
@@ -444,7 +445,7 @@ func (s *SessionManager) sendTunnelOpenResponse(conn ControlConnectionInterface,
 	// 序列化响应
 	respData, err := json.Marshal(resp)
 	if err != nil {
-		return fmt.Errorf("failed to marshal tunnel open response: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal tunnel open response")
 	}
 
 	// 构造响应包
@@ -455,7 +456,7 @@ func (s *SessionManager) sendTunnelOpenResponse(conn ControlConnectionInterface,
 
 	// 发送响应
 	if _, err := conn.GetStream().WritePacket(respPacket, false, 0); err != nil {
-		return fmt.Errorf("failed to write tunnel open response: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to write tunnel open response")
 	}
 
 	return nil
@@ -466,7 +467,7 @@ func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, re
 	// 序列化响应
 	respData, err := json.Marshal(resp)
 	if err != nil {
-		return fmt.Errorf("failed to marshal tunnel open response: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal tunnel open response")
 	}
 
 	// 构造响应包
@@ -479,7 +480,7 @@ func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, re
 	// 发送响应
 	if _, err := conn.Stream.WritePacket(respPacket, true, 0); err != nil {
 		utils.Errorf("Tunnel[%s]: failed to write tunnel open response: %v", resp.TunnelID, err)
-		return fmt.Errorf("failed to write tunnel open response: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to write tunnel open response")
 	}
 	utils.Infof("Tunnel[%s]: TunnelOpenAck sent successfully", resp.TunnelID)
 

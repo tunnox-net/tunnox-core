@@ -2,8 +2,7 @@ package httppoll
 
 import (
 	"encoding/base64"
-	"fmt"
-
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -16,14 +15,14 @@ func (sp *StreamProcessor) handleFragmentData(pollResp FragmentResponse, request
 	fragmentData, err := base64.StdEncoding.DecodeString(pollResp.Data)
 	if err != nil {
 		utils.Errorf("HTTPStreamProcessor: handleFragmentData - failed to decode fragment data: %v, requestID=%s", err, requestID)
-		return fmt.Errorf("failed to decode fragment data: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to decode fragment data")
 	}
 
 	// 验证解码后的数据长度是否与 FragmentSize 匹配
 	if len(fragmentData) != pollResp.FragmentSize {
 		utils.Errorf("HTTPStreamProcessor: handleFragmentData - fragment size mismatch: expected %d, got %d, groupID=%s, index=%d, requestID=%s",
 			pollResp.FragmentSize, len(fragmentData), pollResp.FragmentGroupID, pollResp.FragmentIndex, requestID)
-		return fmt.Errorf("fragment size mismatch: expected %d, got %d", pollResp.FragmentSize, len(fragmentData))
+		return coreErrors.Newf(coreErrors.ErrorTypeProtocol, "fragment size mismatch: expected %d, got %d", pollResp.FragmentSize, len(fragmentData))
 	}
 
 	// 如果是分片，需要重组
@@ -48,7 +47,7 @@ func (sp *StreamProcessor) handleMultiFragment(pollResp FragmentResponse, fragme
 	)
 	if err != nil {
 		utils.Errorf("HTTPStreamProcessor: handleMultiFragment - failed to add fragment: %v, groupID=%s, index=%d, requestID=%s", err, pollResp.FragmentGroupID, pollResp.FragmentIndex, requestID)
-		return fmt.Errorf("failed to add fragment: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to add fragment")
 	}
 
 	// 检查是否完整
@@ -78,7 +77,7 @@ func (sp *StreamProcessor) handleSingleFragment(pollResp FragmentResponse, fragm
 	)
 	if err != nil {
 		utils.Errorf("HTTPStreamProcessor: handleSingleFragment - failed to add single fragment: %v, groupID=%s, requestID=%s", err, pollResp.FragmentGroupID, requestID)
-		return fmt.Errorf("failed to add single fragment: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to add single fragment")
 	}
 
 	// 单分片数据应该立即完整，检查是否可以按序列号顺序发送
@@ -93,7 +92,7 @@ func (sp *StreamProcessor) processCompleteGroups(requestID string) error {
 		nextGroup, found, err := sp.fragmentReassembler.GetNextCompleteGroup()
 		if err != nil {
 			utils.Errorf("HTTPStreamProcessor: processCompleteGroups - failed to get next complete group: %v, requestID=%s", err, requestID)
-			return fmt.Errorf("failed to get next complete group: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to get next complete group")
 		}
 		if !found {
 			// 没有更多完整的分片组
@@ -116,16 +115,15 @@ func (sp *StreamProcessor) writeReassembledGroup(nextGroup *FragmentGroup, reque
 	if err != nil {
 		utils.Errorf("HTTPStreamProcessor: writeReassembledGroup - failed to reassemble: %v, groupID=%s, requestID=%s", err, nextGroup.GroupID, requestID)
 		sp.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
-		return fmt.Errorf("failed to reassemble: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to reassemble")
 	}
-
 
 	// 验证重组后的数据大小
 	if len(reassembledData) != nextGroup.OriginalSize {
 		utils.Errorf("HTTPStreamProcessor: writeReassembledGroup - reassembled size mismatch: expected %d, got %d, groupID=%s, requestID=%s",
 			nextGroup.OriginalSize, len(reassembledData), nextGroup.GroupID, requestID)
 		sp.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
-		return fmt.Errorf("reassembled size mismatch: expected %d, got %d", nextGroup.OriginalSize, len(reassembledData))
+		return coreErrors.Newf(coreErrors.ErrorTypeProtocol, "reassembled size mismatch: expected %d, got %d", nextGroup.OriginalSize, len(reassembledData))
 	}
 
 	// 写入数据缓冲区
@@ -135,7 +133,7 @@ func (sp *StreamProcessor) writeReassembledGroup(nextGroup *FragmentGroup, reque
 		if err != nil {
 			utils.Errorf("HTTPStreamProcessor: writeReassembledGroup - failed to write to data buffer: %v, requestID=%s", err, requestID)
 			sp.dataBufMu.Unlock()
-			return fmt.Errorf("failed to write to data buffer: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to write to data buffer")
 		}
 	} else {
 		utils.Errorf("HTTPStreamProcessor: writeReassembledGroup - data buffer full, dropping %d bytes, buffer size=%d, requestID=%s", len(reassembledData), sp.dataBuffer.Len(), requestID)

@@ -3,9 +3,8 @@ package httppoll
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"time"
-
+	"tunnox-core/internal/core/errors"
 	"github.com/google/uuid"
 )
 
@@ -86,7 +85,7 @@ func MarshalFragmentResponse(resp *FragmentResponse) ([]byte, error) {
 func UnmarshalFragmentResponse(data []byte) (*FragmentResponse, error) {
 	var resp FragmentResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal fragment response: %w", err)
+		return nil, errors.Wrap(err, errors.ErrorTypeProtocol, "failed to unmarshal fragment response")
 	}
 	return &resp, nil
 }
@@ -109,7 +108,7 @@ func SplitDataIntoFragments(data []byte, sequenceNumber int64) ([]*FragmentRespo
 	for i := 0; i < totalFragments; i++ {
 		fragmentResp := CreateFragmentResponse(data, i, fragmentSize, totalFragments, dataSize, groupID, sequenceNumber)
 		if fragmentResp == nil {
-			return nil, fmt.Errorf("failed to create fragment %d", i)
+			return nil, errors.Newf(errors.ErrorTypePermanent, "failed to create fragment %d", i)
 		}
 		fragments = append(fragments, fragmentResp)
 	}

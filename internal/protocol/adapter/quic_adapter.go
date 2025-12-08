@@ -8,13 +8,13 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"math/big"
 	"net"
 	"sync"
 	"time"
-
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/utils"
 
@@ -34,13 +34,16 @@ type QuicAdapter struct {
 // NewQuicAdapter creates a new QUIC adapter
 func NewQuicAdapter(parentCtx context.Context, sess session.Session) *QuicAdapter {
 	adapter := &QuicAdapter{
-		BaseAdapter: BaseAdapter{},
-		connChan:    make(chan io.ReadWriteCloser, 100),
+		BaseAdapter: BaseAdapter{
+			ResourceBase: dispose.NewResourceBase("QuicAdapter"),
+		},
+		connChan: make(chan io.ReadWriteCloser, 100),
 	}
+	adapter.Initialize(parentCtx)
+	adapter.AddCleanHandler(adapter.onClose)
 
 	adapter.SetName("quic")
 	adapter.SetSession(sess)
-	adapter.SetCtx(parentCtx, adapter.onClose)
 
 	// Generate self-signed certificate
 	adapter.tlsConfig = generateTLSConfig()
@@ -97,7 +100,7 @@ func (a *QuicAdapter) ListenFrom(addr string) error {
 	a.SetAddr(addr)
 
 	if a.tlsConfig == nil {
-		return fmt.Errorf("TLS config not initialized")
+		return errors.New(errors.ErrorTypePermanent, "TLS config not initialized")
 	}
 
 	// Create QUIC config
@@ -109,19 +112,19 @@ func (a *QuicAdapter) ListenFrom(addr string) error {
 	// Create UDP listener
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to resolve UDP address: %w", err)
+		return errors.Wrap(err, errors.ErrorTypeNetwork, "failed to resolve UDP address")
 	}
 
 	udpConn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on UDP: %w", err)
+		return errors.Wrap(err, errors.ErrorTypeNetwork, "failed to listen on UDP")
 	}
 
 	// Create QUIC listener
 	listener, err := quic.Listen(udpConn, a.tlsConfig, quicConf)
 	if err != nil {
 		udpConn.Close()
-		return fmt.Errorf("failed to create QUIC listener: %w", err)
+		return errors.Wrap(err, errors.ErrorTypeNetwork, "failed to create QUIC listener")
 	}
 
 	a.listener = listener
@@ -221,7 +224,7 @@ func (a *QuicAdapter) Accept() (io.ReadWriteCloser, error) {
 	case conn := <-a.connChan:
 		return conn, nil
 	case <-a.Ctx().Done():
-		return nil, fmt.Errorf("quic adapter closed")
+		return nil, errors.New(errors.ErrorTypePermanent, "quic adapter closed")
 	}
 }
 
@@ -251,12 +254,12 @@ func (a *QuicAdapter) onClose() error {
 
 // Dial is not supported for QUIC adapter (server-side only)
 func (a *QuicAdapter) Dial(address string) (io.ReadWriteCloser, error) {
-	return nil, fmt.Errorf("dial not supported for QUIC adapter")
+	return nil, errors.New(errors.ErrorTypePermanent, "dial not supported for QUIC adapter")
 }
 
 // Listen is not used for QUIC adapter (uses QUIC listener instead)
 func (a *QuicAdapter) Listen(address string) error {
-	return fmt.Errorf("listen not supported for QUIC adapter")
+	return errors.New(errors.ErrorTypePermanent, "listen not supported for QUIC adapter")
 }
 
 // getConnectionType returns the connection type for this adapter

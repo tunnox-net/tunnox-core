@@ -9,6 +9,7 @@ import (
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -68,15 +69,15 @@ type BridgeManagerConfig struct {
 // NewBridgeManager 创建桥接管理器
 func NewBridgeManager(ctx context.Context, config *BridgeManagerConfig) (*BridgeManager, error) {
 	if config == nil {
-		return nil, fmt.Errorf("bridge manager config is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "bridge manager config is required")
 	}
 
 	if config.MessageBroker == nil {
-		return nil, fmt.Errorf("message broker is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "message broker is required")
 	}
 
 	if config.NodeRegistry == nil {
-		return nil, fmt.Errorf("node registry is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "node registry is required")
 	}
 
 	if config.RequestTimeout == 0 {
@@ -94,7 +95,7 @@ func NewBridgeManager(ctx context.Context, config *BridgeManagerConfig) (*Bridge
 
 	// 订阅桥接请求和响应主题
 	if err := manager.subscribeToTopics(); err != nil {
-		return nil, fmt.Errorf("failed to subscribe to topics: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to subscribe to topics")
 	}
 
 	utils.Infof("BridgeManager: initialized for node %s", config.NodeID)
@@ -106,13 +107,13 @@ func (m *BridgeManager) subscribeToTopics() error {
 	// 订阅桥接请求
 	requestChan, err := m.messageBroker.Subscribe(m.Ctx(), broker.TopicBridgeRequest)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to bridge requests: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to subscribe to bridge requests")
 	}
 
 	// 订阅桥接响应
 	responseChan, err := m.messageBroker.Subscribe(m.Ctx(), broker.TopicBridgeResponse)
 	if err != nil {
-		return fmt.Errorf("failed to subscribe to bridge responses: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to subscribe to bridge responses")
 	}
 
 	// 启动处理循环
@@ -330,14 +331,14 @@ func (m *BridgeManager) RequestBridge(ctx context.Context, targetNodeID string, 
 		m.requestsMu.Lock()
 		delete(m.pendingRequests, requestID)
 		m.requestsMu.Unlock()
-		return nil, fmt.Errorf("failed to marshal bridge request: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal bridge request")
 	}
 
 	if err := m.messageBroker.Publish(ctx, broker.TopicBridgeRequest, reqData); err != nil {
 		m.requestsMu.Lock()
 		delete(m.pendingRequests, requestID)
 		m.requestsMu.Unlock()
-		return nil, fmt.Errorf("failed to publish bridge request: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to publish bridge request")
 	}
 
 	utils.Infof("BridgeManager: published bridge request %s to node %s", requestID, targetNodeID)
@@ -350,7 +351,7 @@ func (m *BridgeManager) RequestBridge(ctx context.Context, targetNodeID string, 
 		m.requestsMu.Lock()
 		delete(m.pendingRequests, requestID)
 		m.requestsMu.Unlock()
-		return nil, fmt.Errorf("bridge request timeout")
+		return nil, coreErrors.New(coreErrors.ErrorTypeTemporary, "bridge request timeout")
 	case <-ctx.Done():
 		m.requestsMu.Lock()
 		delete(m.pendingRequests, requestID)
@@ -362,11 +363,11 @@ func (m *BridgeManager) RequestBridge(ctx context.Context, targetNodeID string, 
 // PublishMessage 发布消息到指定主题（实现BridgeManager接口）
 func (m *BridgeManager) PublishMessage(ctx context.Context, topic string, payload []byte) error {
 	if m.messageBroker == nil {
-		return fmt.Errorf("message broker not configured")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "message broker not configured")
 	}
 
 	if err := m.messageBroker.Publish(ctx, topic, payload); err != nil {
-		return fmt.Errorf("failed to publish to topic %s: %w", topic, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to publish to topic %s", topic)
 	}
 
 	utils.Debugf("BridgeManager: published message to topic %s (%d bytes)", topic, len(payload))

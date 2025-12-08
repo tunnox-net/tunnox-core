@@ -3,12 +3,12 @@ package managers
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"time"
 
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -19,7 +19,7 @@ func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
 		generatedID, err := c.idManager.GeneratePortMappingID()
 		if err != nil {
-			return nil, fmt.Errorf("generate mapping ID failed: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate mapping ID failed")
 		}
 
 		// 检查端口映射是否已存在
@@ -41,14 +41,14 @@ func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 	}
 
 	if mappingID == "" {
-		return nil, fmt.Errorf("failed to generate unique mapping ID after %d attempts", constants.DefaultMaxAttempts)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "failed to generate unique mapping ID after %d attempts", constants.DefaultMaxAttempts)
 	}
 
 	// 生成 SecretKey（用于隧道打开认证）
 	secretKey, err := c.idManager.GenerateSecretKey()
 	if err != nil {
 		_ = c.idManager.ReleasePortMappingID(mappingID)
-		return nil, fmt.Errorf("generate secret key failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate secret key failed")
 	}
 
 	// ✅ 生成加密密钥（如果启用了加密）
@@ -56,7 +56,7 @@ func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 		encryptionKey, err := c.generateEncryptionKey(mapping.Config.EncryptionMethod)
 		if err != nil {
 			_ = c.idManager.ReleasePortMappingID(mappingID)
-			return nil, fmt.Errorf("generate encryption key failed: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate encryption key failed")
 		}
 		mapping.Config.EncryptionKey = encryptionKey
 		utils.Infof("CloudControl: generated encryption key for mapping %s, method=%s, keyLen=%d",
@@ -71,7 +71,7 @@ func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 	if err := c.mappingRepo.CreatePortMapping(mapping); err != nil {
 		// 如果保存失败，释放ID
 		_ = c.idManager.ReleasePortMappingID(mappingID)
-		return nil, fmt.Errorf("save port mapping failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "save port mapping failed")
 	}
 
 	// 添加到用户的端口映射列表
@@ -79,7 +79,7 @@ func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 		// 如果添加到用户失败，删除端口映射并释放ID
 		_ = c.mappingRepo.DeletePortMapping(mappingID)
 		_ = c.idManager.ReleasePortMappingID(mappingID)
-		return nil, fmt.Errorf("add mapping to user failed: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "add mapping to user failed")
 	}
 
 	return mapping, nil
@@ -104,7 +104,7 @@ func (c *CloudControl) generateEncryptionKey(encryptionMethod string) (string, e
 	// 生成随机密钥
 	key := make([]byte, keySize)
 	if _, err := rand.Read(key); err != nil {
-		return "", fmt.Errorf("failed to generate random key: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate random key")
 	}
 
 	// 返回hex编码的密钥（方便存储和传输）
@@ -150,12 +150,12 @@ func (c *CloudControl) ListPortMappings(mappingType models.MappingType) ([]*mode
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 如果指定了映射类型，进行过滤
 	if mappingType == "" {
 		return mappings, nil
 	}
-	
+
 	var filtered []*models.PortMapping
 	for _, mapping := range mappings {
 		if mapping.Type == mappingType {
@@ -169,4 +169,3 @@ func (c *CloudControl) ListPortMappings(mappingType models.MappingType) ([]*mode
 func (c *CloudControl) GetUserPortMappings(userID string) ([]*models.PortMapping, error) {
 	return c.mappingRepo.GetUserPortMappings(userID)
 }
-

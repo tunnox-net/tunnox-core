@@ -8,6 +8,7 @@ import (
 	"time"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -48,12 +49,12 @@ func (cm *ConfigManager) UpdateConfig(ctx context.Context, newConfig *ControlCon
 	// 保存配置到存储
 	data, err := json.Marshal(newConfig)
 	if err != nil {
-		return fmt.Errorf("marshal config failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "marshal config failed")
 	}
 
 	key := fmt.Sprintf("%s:config", constants.KeyPrefixConfig)
 	if err := cm.storage.Set(key, string(data), 0); err != nil {
-		return fmt.Errorf("save config failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "save config failed")
 	}
 
 	// 更新内存配置
@@ -78,12 +79,12 @@ func (cm *ConfigManager) LoadConfig(ctx context.Context) error {
 
 	configData, ok := data.(string)
 	if !ok {
-		return fmt.Errorf("invalid config data type")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "invalid config data type")
 	}
 
 	var config ControlConfig
 	if err := json.Unmarshal([]byte(configData), &config); err != nil {
-		return fmt.Errorf("unmarshal config failed: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "unmarshal config failed")
 	}
 
 	cm.mu.Lock()
@@ -133,7 +134,8 @@ func (cm *ConfigManager) watchConfigChanges() {
 	for {
 		select {
 		case <-ticker.C:
-			ctx := context.Background()
+			// 使用 Manager 的 context，确保可以响应取消信号
+			ctx := cm.Ctx()
 			if err := cm.LoadConfig(ctx); err != nil {
 				// 记录错误但不中断监听
 				continue

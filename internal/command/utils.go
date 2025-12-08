@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -125,18 +126,18 @@ func (cu *CommandUtils) ThrowOn(errorHandler func(error) error) *CommandUtils {
 func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 	// 验证必要参数
 	if cu.session == nil {
-		return nil, fmt.Errorf("session is required")
+		return nil, errors.New(errors.ErrorTypePermanent, "session is required")
 	}
 	if cu.commandType == 0 {
-		return nil, fmt.Errorf("command type is required")
+		return nil, errors.New(errors.ErrorTypePermanent, "command type is required")
 	}
 	if cu.connectionID == "" {
-		return nil, fmt.Errorf("connection ID is required")
+		return nil, errors.New(errors.ErrorTypePermanent, "connection ID is required")
 	}
 
-	// 设置默认上下文
+	// 验证上下文
 	if cu.ctx == nil {
-		cu.ctx = context.Background()
+		return nil, errors.New(errors.ErrorTypePermanent, "context is required for CommandUtils.Build")
 	}
 
 	// 生成CommandId（如果未设置）
@@ -154,7 +155,7 @@ func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 	if cu.requestData != nil {
 		data, err := json.Marshal(cu.requestData)
 		if err != nil {
-			return nil, cu.errorHandler(fmt.Errorf("failed to marshal request data: %w", err))
+			return nil, cu.errorHandler(errors.Wrap(err, errors.ErrorTypePermanent, "failed to marshal request data"))
 		}
 		commandBody = string(data)
 	}
@@ -178,7 +179,7 @@ func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 	// 获取连接信息
 	connInfo, exists := cu.session.GetStreamManager().GetStream(cu.connectionID)
 	if !exists {
-		return nil, cu.errorHandler(fmt.Errorf("connection not found: %s", cu.connectionID))
+		return nil, cu.errorHandler(errors.Newf(errors.ErrorTypePermanent, "connection not found: %s", cu.connectionID))
 	}
 
 	// 记录日志
@@ -187,7 +188,7 @@ func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 	// 发送命令包
 	_, err := connInfo.WritePacket(transferPacket, false, 0)
 	if err != nil {
-		return nil, cu.errorHandler(fmt.Errorf("failed to send command: %w", err))
+		return nil, cu.errorHandler(errors.Wrap(err, errors.ErrorTypeNetwork, "failed to send command"))
 	}
 
 	// 等待响应（如果需要）
@@ -234,20 +235,20 @@ func (cu *CommandUtils) waitForResponse() (*CommandResponse, error) {
 	// 获取连接信息
 	connInfo, exists := cu.session.GetStreamManager().GetStream(cu.connectionID)
 	if !exists {
-		return nil, cu.errorHandler(fmt.Errorf("connection not found: %s", cu.connectionID))
+		return nil, cu.errorHandler(errors.Newf(errors.ErrorTypePermanent, "connection not found: %s", cu.connectionID))
 	}
 
 	// 等待响应
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, cu.errorHandler(fmt.Errorf("command timeout after %v", cu.timeout))
+			return nil, cu.errorHandler(errors.Newf(errors.ErrorTypeTemporary, "command timeout after %v", cu.timeout))
 
 		default:
 			// 读取响应包
 			responsePacket, _, err := connInfo.ReadPacket()
 			if err != nil {
-				return nil, cu.errorHandler(fmt.Errorf("failed to read response: %w", err))
+				return nil, cu.errorHandler(errors.Wrap(err, errors.ErrorTypeNetwork, "failed to read response"))
 			}
 
 			// 检查是否是命令响应
@@ -263,13 +264,13 @@ func (cu *CommandUtils) waitForResponse() (*CommandResponse, error) {
 					// 解析响应数据
 					var response CommandResponse
 					if err := json.Unmarshal([]byte(responsePacket.CommandPacket.CommandBody), &response); err != nil {
-						return nil, cu.errorHandler(fmt.Errorf("failed to unmarshal response: %w", err))
+						return nil, cu.errorHandler(errors.Wrap(err, errors.ErrorTypePermanent, "failed to unmarshal response"))
 					}
 
 					// 如果指定了响应数据结构，尝试解析
 					if cu.responseData != nil && response.Data != "" {
 						if err := json.Unmarshal([]byte(response.Data), cu.responseData); err != nil {
-							return nil, cu.errorHandler(fmt.Errorf("failed to unmarshal response data: %w", err))
+							return nil, cu.errorHandler(errors.Wrap(err, errors.ErrorTypePermanent, "failed to unmarshal response data"))
 						}
 					}
 

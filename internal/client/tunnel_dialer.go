@@ -3,11 +3,11 @@ package client
 import (
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"net"
 	"strings"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
@@ -47,11 +47,11 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		// 保存 token 供后续使用
 		_ = token
 	default:
-		return nil, nil, fmt.Errorf("unsupported server protocol: %s", protocol)
+		return nil, nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported server protocol: %s", protocol)
 	}
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to dial server (%s): %w", protocol, err)
+		return nil, nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to dial server (%s)", protocol)
 	}
 
 	// 创建 StreamProcessor
@@ -86,7 +86,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		if err := c.sendHandshakeOnStream(tunnelStream, "tunnel"); err != nil {
 			tunnelStream.Close()
 			conn.Close()
-			return nil, nil, fmt.Errorf("tunnel connection handshake failed: %w", err)
+			return nil, nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "tunnel connection handshake failed")
 		}
 	}
 
@@ -107,7 +107,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 	if _, err := tunnelStream.WritePacket(openPkt, true, 0); err != nil {
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, fmt.Errorf("failed to send tunnel open: %w", err)
+		return nil, nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to send tunnel open")
 	}
 
 	// 等待 TunnelOpenAck（忽略心跳包）
@@ -119,7 +119,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		case <-timeout:
 			tunnelStream.Close()
 			conn.Close()
-			return nil, nil, fmt.Errorf("timeout waiting for tunnel open ack (30s)")
+			return nil, nil, coreErrors.New(coreErrors.ErrorTypeTemporary, "timeout waiting for tunnel open ack (30s)")
 		default:
 		}
 
@@ -128,7 +128,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 			utils.Errorf("Client: failed to read packet while waiting for TunnelOpenAck: %v", err)
 			tunnelStream.Close()
 			conn.Close()
-			return nil, nil, fmt.Errorf("failed to read tunnel open ack: %w", err)
+			return nil, nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to read tunnel open ack")
 		}
 
 		// 忽略心跳包和TunnelOpen包（可能是其他连接的TunnelOpen）
@@ -183,20 +183,20 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		utils.Errorf("Client: unexpected packet type: %v (expected TunnelOpenAck), baseType=%d", pkt.PacketType, baseType)
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, fmt.Errorf("unexpected packet type: %v (expected TunnelOpenAck)", pkt.PacketType)
+		return nil, nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "unexpected packet type: %v (expected TunnelOpenAck)", pkt.PacketType)
 	}
 
 	var ack packet.TunnelOpenAckResponse
 	if err := json.Unmarshal(ackPkt.Payload, &ack); err != nil {
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, fmt.Errorf("failed to unmarshal ack: %w", err)
+		return nil, nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to unmarshal ack")
 	}
 
 	if !ack.Success {
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, fmt.Errorf("tunnel open failed: %s", ack.Error)
+		return nil, nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "tunnel open failed: %s", ack.Error)
 	}
 
 	// ✅ 对于 HTTP 长轮询连接，切换到流模式（不再解析数据包格式，直接转发原始数据）

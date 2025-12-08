@@ -10,24 +10,24 @@ import (
 
 // RateLimiter 实现限速传输的Reader和Writer
 type RateLimiter struct {
+	*dispose.ResourceBase
 	reader      io.Reader
 	writer      io.Writer
 	tokenBucket *TokenBucket
-	dispose.Dispose
 }
 
 // RateLimiterReader 实现io.Reader的限速读取
 type RateLimiterReader struct {
+	*dispose.ResourceBase
 	reader      io.Reader
 	tokenBucket *TokenBucket
-	dispose.Dispose
 }
 
 // RateLimiterWriter 实现io.Writer的限速写入
 type RateLimiterWriter struct {
+	*dispose.ResourceBase
 	writer      io.Writer
 	tokenBucket *TokenBucket
-	dispose.Dispose
 }
 
 // Read 实现io.Reader接口，限速读取
@@ -116,10 +116,12 @@ func NewRateLimiterReader(reader io.Reader, bytesPerSecond int64, ctx context.Co
 	}
 
 	rateLimiter := &RateLimiterReader{
-		reader:      reader,
-		tokenBucket: tokenBucket,
+		ResourceBase: dispose.NewResourceBase("RateLimiterReader"),
+		reader:       reader,
+		tokenBucket:  tokenBucket,
 	}
-	rateLimiter.SetCtx(ctx, rateLimiter.onClose)
+	rateLimiter.Initialize(ctx)
+	rateLimiter.AddCleanHandler(rateLimiter.onClose)
 	return rateLimiter, nil
 }
 
@@ -135,10 +137,12 @@ func NewRateLimiterWriter(writer io.Writer, bytesPerSecond int64, ctx context.Co
 	}
 
 	rateLimiter := &RateLimiterWriter{
-		writer:      writer,
-		tokenBucket: tokenBucket,
+		ResourceBase: dispose.NewResourceBase("RateLimiterWriter"),
+		writer:       writer,
+		tokenBucket:  tokenBucket,
 	}
-	rateLimiter.SetCtx(ctx, rateLimiter.onClose)
+	rateLimiter.Initialize(ctx)
+	rateLimiter.AddCleanHandler(rateLimiter.onClose)
 	return rateLimiter, nil
 }
 
@@ -154,9 +158,11 @@ func NewRateLimiter(bytesPerSecond int64, parentCtx context.Context) (*RateLimit
 	}
 
 	rateLimiter := &RateLimiter{
-		tokenBucket: tokenBucket,
+		ResourceBase: dispose.NewResourceBase("RateLimiter"),
+		tokenBucket:  tokenBucket,
 	}
-	rateLimiter.SetCtx(parentCtx, rateLimiter.onClose)
+	rateLimiter.Initialize(parentCtx)
+	rateLimiter.AddCleanHandler(rateLimiter.onClose)
 	return rateLimiter, nil
 }
 
@@ -241,15 +247,15 @@ func (w *RateLimiterWriter) SetRate(bytesPerSecond int64) error {
 
 // Close 关闭限速读取器（兼容接口）
 func (r *RateLimiterReader) Close() {
-	r.Dispose.Close()
+	_ = r.ResourceBase.Close()
 }
 
 // Close 关闭限速写入器（兼容接口）
 func (w *RateLimiterWriter) Close() {
-	w.Dispose.Close()
+	_ = w.ResourceBase.Close()
 }
 
 // Close 关闭限速器（兼容接口）
 func (r *RateLimiter) Close() {
-	r.Dispose.Close()
+	_ = r.ResourceBase.Close()
 }

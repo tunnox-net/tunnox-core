@@ -2,7 +2,7 @@ package metrics
 
 import (
 	"context"
-	"fmt"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // MetricsType 指标类型
@@ -33,9 +33,9 @@ func (f *MetricsFactory) CreateMetrics(metricsType MetricsType) (Metrics, error)
 	case MetricsTypeMemory:
 		return f.createMemoryMetrics()
 	case MetricsTypePrometheus:
-		return nil, fmt.Errorf("prometheus metrics not implemented yet")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "prometheus metrics not implemented yet")
 	default:
-		return nil, fmt.Errorf("unsupported metrics type: %s", metricsType)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported metrics type: %s", metricsType)
 	}
 }
 

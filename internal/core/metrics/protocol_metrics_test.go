@@ -66,7 +66,9 @@ func TestProtocolMetrics(t *testing.T) {
 	ctx := context.Background()
 	m := NewMemoryMetrics(ctx)
 	defer m.Close()
-	SetGlobalMetrics(m)
+	if err := SetGlobalMetrics(m); err != nil {
+		t.Fatalf("SetGlobalMetrics failed: %v", err)
+	}
 
 	t.Run("IncrementProtocolConnection", func(t *testing.T) {
 		err := IncrementProtocolConnection("httppoll", "control")
@@ -264,7 +266,9 @@ func TestProtocolMetrics_NilMetrics(t *testing.T) {
 		ctx := context.Background()
 		m := NewMemoryMetrics(ctx)
 		defer m.Close()
-		SetGlobalMetrics(m)
+		if err := SetGlobalMetrics(m); err != nil {
+		t.Fatalf("SetGlobalMetrics failed: %v", err)
+	}
 	}
 }
 

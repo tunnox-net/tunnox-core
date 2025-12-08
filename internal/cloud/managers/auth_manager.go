@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/cloud/models"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // GenerateJWTToken 生成JWT令牌
@@ -21,7 +22,7 @@ func (c *CloudControl) RefreshJWTToken(refreshToken string) (*JWTTokenInfo, erro
 	// 验证刷新令牌
 	claims, err := c.jwtManager.ValidateRefreshToken(c.ResourceBase.Dispose.Ctx(), refreshToken)
 	if err != nil {
-		return nil, fmt.Errorf("invalid refresh token: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeAuth, "invalid refresh token")
 	}
 
 	// 获取客户端信息
@@ -58,7 +59,7 @@ func (c *CloudControl) RevokeJWTToken(token string) error {
 	// 验证令牌以获取客户端ID
 	claims, err := c.jwtManager.ValidateAccessToken(c.ResourceBase.Dispose.Ctx(), token)
 	if err != nil {
-		return fmt.Errorf("invalid token: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeAuth, "invalid token")
 	}
 
 	// 将令牌加入黑名单
@@ -176,4 +177,3 @@ func (c *CloudControl) ValidateToken(token string) (*models.AuthResponse, error)
 		Message:   "Token validated successfully",
 	}, nil
 }
-

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 
 	"google.golang.org/grpc"
@@ -64,7 +65,7 @@ func NewNodeConnectionPool(parentCtx context.Context, targetNodeID, targetAddr s
 
 	// 初始化最小连接数
 	if err := pool.initializeMinConnections(); err != nil {
-		return nil, fmt.Errorf("failed to initialize min connections: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to initialize min connections")
 	}
 
 	// 启动清理协程
@@ -79,7 +80,7 @@ func NewNodeConnectionPool(parentCtx context.Context, targetNodeID, targetAddr s
 func (p *NodeConnectionPool) initializeMinConnections() error {
 	for i := int32(0); i < p.minConns; i++ {
 		if _, err := p.createConnection(); err != nil {
-			return fmt.Errorf("failed to create initial connection %d: %w", i, err)
+			return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to create initial connection %d", i)
 		}
 	}
 	return nil
@@ -92,13 +93,13 @@ func (p *NodeConnectionPool) createConnection() (MultiplexedConn, error) {
 
 	grpcConn, err := grpc.DialContext(dialCtx, p.targetAddr, p.dialOptions...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial node %s: %w", p.targetNodeID, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to dial node %s", p.targetNodeID)
 	}
 
 	mc, err := NewMultiplexedConn(p.Ctx(), p.targetNodeID, grpcConn, p.maxStreamsPerConn)
 	if err != nil {
 		grpcConn.Close()
-		return nil, fmt.Errorf("failed to create multiplexed connection: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to create multiplexed connection")
 	}
 
 	p.connsMu.Lock()
@@ -133,7 +134,7 @@ func (p *NodeConnectionPool) GetOrCreateSession(ctx context.Context, metadata *S
 	if currentCount < p.maxConns {
 		conn, err := p.createConnection()
 		if err != nil {
-			return nil, fmt.Errorf("failed to create new connection: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to create new connection")
 		}
 
 		session := NewForwardSession(ctx, conn, metadata)
@@ -143,7 +144,7 @@ func (p *NodeConnectionPool) GetOrCreateSession(ctx context.Context, metadata *S
 		}
 	}
 
-	return nil, fmt.Errorf("no available connection for node %s (all connections at max capacity)", p.targetNodeID)
+	return nil, coreErrors.Newf(coreErrors.ErrorTypeTemporary, "no available connection for node %s (all connections at max capacity)", p.targetNodeID)
 }
 
 // cleanupLoop 清理空闲连接

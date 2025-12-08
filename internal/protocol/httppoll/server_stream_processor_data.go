@@ -3,10 +3,9 @@ package httppoll
 import (
 	"context"
 	"encoding/base64"
-	"fmt"
 	"io"
 	"time"
-
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -105,7 +104,7 @@ func (sp *ServerStreamProcessor) ReadAvailable(maxLength int) ([]byte, error) {
 		data, err := base64.StdEncoding.DecodeString(base64Data)
 		if err != nil {
 			utils.Errorf("ServerStreamProcessor[%s]: ReadAvailable failed to decode base64: %v", sp.connectionID, err)
-			return nil, fmt.Errorf("failed to decode base64: %w", err)
+			return nil, errors.Wrap(err, errors.ErrorTypeProtocol, "failed to decode base64")
 		}
 
 		sp.readBufMu.Lock()
@@ -175,7 +174,7 @@ func (sp *ServerStreamProcessor) ReadExact(length int) ([]byte, error) {
 			if err != nil {
 				sp.readBufMu.Lock()
 				utils.Errorf("ServerStreamProcessor[%s]: ReadExact - failed to decode base64: %v, connID=%s", sp.connectionID, err, sp.connectionID)
-				return nil, fmt.Errorf("failed to decode base64: %w", err)
+				return nil, errors.Wrap(err, errors.ErrorTypeProtocol, "failed to decode base64")
 			}
 			sp.readBufMu.Lock()
 			oldBufferLen := len(sp.readBuffer)
@@ -242,7 +241,7 @@ func (sp *ServerStreamProcessor) PushData(base64Data string) error {
 	default:
 		utils.Errorf("ServerStreamProcessor[%s]: PushData - pushDataChan full, dropping %d bytes, connID=%s",
 			sp.connectionID, len(base64Data), sp.connectionID)
-		return fmt.Errorf("push data channel full")
+		return errors.New(errors.ErrorTypeTemporary, "push data channel full")
 	}
 }
 

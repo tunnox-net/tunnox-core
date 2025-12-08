@@ -9,7 +9,9 @@ func TestSessionMetrics(t *testing.T) {
 	ctx := context.Background()
 	m := NewMemoryMetrics(ctx)
 	defer m.Close()
-	SetGlobalMetrics(m)
+	if err := SetGlobalMetrics(m); err != nil {
+		t.Fatalf("SetGlobalMetrics failed: %v", err)
+	}
 
 	t.Run("IncrementActiveSession", func(t *testing.T) {
 		err := IncrementActiveSession()
@@ -175,7 +177,9 @@ func TestSessionMetrics_NilMetrics(t *testing.T) {
 		ctx := context.Background()
 		m := NewMemoryMetrics(ctx)
 		defer m.Close()
-		SetGlobalMetrics(m)
+		if err := SetGlobalMetrics(m); err != nil {
+		t.Fatalf("SetGlobalMetrics failed: %v", err)
+	}
 	}
 }
 

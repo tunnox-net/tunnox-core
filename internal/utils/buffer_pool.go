@@ -2,9 +2,9 @@ package utils
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"sync"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 const (
@@ -149,7 +149,7 @@ func (bm *BufferManager) onClose() error {
 	if bm.pool != nil {
 		result := bm.pool.Close()
 		if result.HasErrors() {
-			return fmt.Errorf("buffer pool cleanup failed: %v", result.Error())
+			return coreErrors.Newf(coreErrors.ErrorTypePermanent, "buffer pool cleanup failed: %v", result.Error())
 		}
 	}
 	return nil

@@ -3,11 +3,10 @@ package httppoll
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"sync"
-
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
@@ -202,7 +201,7 @@ func (sp *ServerStreamProcessor) GetMappingID() string {
 func (sp *ServerStreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 	// 服务端通过 handleHTTPPush 处理 Push 请求
 	// 这里返回错误，表示需要通过 HTTP handler 处理
-	return nil, 0, fmt.Errorf("server ReadPacket should be called from HTTP handler")
+	return nil, 0, errors.New(errors.ErrorTypePermanent, "server ReadPacket should be called from HTTP handler")
 }
 
 // WritePacket 通过 Poll 响应发送包

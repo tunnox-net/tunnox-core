@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/dispose"
 )
 
@@ -76,7 +77,7 @@ func (rm *ResourceMonitor) onClose() error {
 // Start 启动监控
 func (rm *ResourceMonitor) Start() error {
 	if !atomic.CompareAndSwapInt32(&rm.isRunning, 0, 1) {
-		return fmt.Errorf("monitor is already running")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "monitor is already running")
 	}
 
 	Infof("Starting resource monitor with interval: %v", rm.config.MonitorInterval)
@@ -88,7 +89,7 @@ func (rm *ResourceMonitor) Start() error {
 // Stop 停止监控
 func (rm *ResourceMonitor) Stop() error {
 	if !atomic.CompareAndSwapInt32(&rm.isRunning, 1, 0) {
-		return fmt.Errorf("monitor is not running")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "monitor is not running")
 	}
 
 	rm.cancel()

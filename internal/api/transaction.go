@@ -1,8 +1,8 @@
 package api
 
 import (
-	"fmt"
 	"tunnox-core/internal/cloud/models"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -61,7 +61,7 @@ func (s *ManagementAPIServer) createMappingWithTransaction(mapping *models.PortM
 	// 1. 创建映射
 	createdMapping, err := s.cloudControl.CreatePortMapping(mapping)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create mapping: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to create mapping")
 	}
 
 	// 记录回滚操作：删除映射
@@ -76,7 +76,7 @@ func (s *ManagementAPIServer) createMappingWithTransaction(mapping *models.PortM
 		if delErr := s.cloudControl.DeletePortMapping(createdMapping.ID); delErr != nil {
 			utils.Errorf("API: failed to rollback mapping %s: %v", createdMapping.ID, delErr)
 		}
-		return nil, fmt.Errorf("failed to push config to clients: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to push config to clients")
 	}
 
 	// 如果后续有更多操作失败，可以调用 tx.Rollback()
@@ -92,13 +92,13 @@ func (s *ManagementAPIServer) claimClientWithTransaction(anonClientID int64, use
 	// 1. 获取匿名客户端
 	anonClient, err := s.cloudControl.GetAnonymousClient(anonClientID)
 	if err != nil {
-		return nil, fmt.Errorf("anonymous client not found: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "anonymous client not found")
 	}
 
 	// 2. 创建新的注册客户端
 	newClient, err := s.cloudControl.CreateClient(userID, newClientName)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new client: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to create new client")
 	}
 
 	// 记录回滚操作：删除新创建的客户端
@@ -113,7 +113,7 @@ func (s *ManagementAPIServer) claimClientWithTransaction(anonClientID int64, use
 		if rbErr := tx.Rollback(); rbErr != nil {
 			utils.Errorf("API: failed to rollback after token generation failure: %v", rbErr)
 		}
-		return nil, fmt.Errorf("failed to generate JWT token: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeAuth, "failed to generate JWT token")
 	}
 
 	// 记录回滚操作：撤销 token（实际上token不需要回滚，因为客户端还未获取）
@@ -126,7 +126,7 @@ func (s *ManagementAPIServer) claimClientWithTransaction(anonClientID int64, use
 		if rbErr := tx.Rollback(); rbErr != nil {
 			utils.Errorf("API: failed to rollback after client update failure: %v", rbErr)
 		}
-		return nil, fmt.Errorf("failed to update anonymous client: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to update anonymous client")
 	}
 
 	// 记录回滚操作：恢复匿名客户端状态

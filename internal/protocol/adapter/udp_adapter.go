@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"net"
 	"time"
+	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
 	udpprotocol "tunnox-core/internal/protocol/udp"
 )
@@ -31,11 +32,15 @@ type UdpAdapter struct {
 
 // NewUdpAdapter 创建 UDP 适配器
 func NewUdpAdapter(parentCtx context.Context, session session.Session) *UdpAdapter {
-	u := &UdpAdapter{}
-	u.BaseAdapter = BaseAdapter{} // 初始化 BaseAdapter
+	u := &UdpAdapter{
+		BaseAdapter: BaseAdapter{
+			ResourceBase: dispose.NewResourceBase("UdpAdapter"),
+		},
+	}
+	u.Initialize(parentCtx)
+	u.AddCleanHandler(u.onClose)
 	u.SetName("udp")
 	u.SetSession(session)
-	u.SetCtx(parentCtx, u.onClose)
 	u.SetProtocolAdapter(u) // 设置协议适配器引用
 
 	return u
@@ -45,12 +50,12 @@ func NewUdpAdapter(parentCtx context.Context, session session.Session) *UdpAdapt
 func (u *UdpAdapter) Dial(addr string) (io.ReadWriteCloser, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve UDP address: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to resolve UDP address")
 	}
 
 	conn, err := net.DialUDP("udp", nil, udpAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial UDP: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to dial UDP")
 	}
 
 	// 生成 SessionID（简化实现，使用随机数）
@@ -66,12 +71,12 @@ func (u *UdpAdapter) Dial(addr string) (io.ReadWriteCloser, error) {
 func (u *UdpAdapter) Listen(addr string) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to resolve UDP address: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to resolve UDP address")
 	}
 
 	listener, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		return fmt.Errorf("failed to listen UDP: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to listen UDP")
 	}
 
 	u.listener = listener
@@ -84,29 +89,29 @@ func (u *UdpAdapter) Listen(addr string) error {
 // 简化实现：读取第一个数据报来确定远程地址和 SessionID
 func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
 	if u.listener == nil {
-		return nil, fmt.Errorf("UDP listener not initialized")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "UDP listener not initialized")
 	}
 
 	// UDP 是无连接的，需要从第一个数据报中获取源地址
 	// 设置读取超时，避免永久阻塞
 	if err := u.listener.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		return nil, fmt.Errorf("failed to set read deadline: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to set read deadline")
 	}
 
 	buf := make([]byte, udpprotocol.MaxUDPPayloadSize)
 	n, remoteAddr, err := u.listener.ReadFromUDP(buf)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read from UDP: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to read from UDP")
 	}
 
 	// 解析头部获取 SessionID
 	if n < udpprotocol.HeaderLength() {
-		return nil, fmt.Errorf("packet too small: %d bytes", n)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "packet too small: %d bytes", n)
 	}
 
 	header, _, err := udpprotocol.DecodeHeader(buf[:n])
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode header: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to decode header")
 	}
 
 	// 为这个会话创建独立的 UDPConn
@@ -114,7 +119,7 @@ func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
 	// 这里创建一个新的 UDPConn，但它会使用同一个 listener
 	// 实际实现中，Transport 的 receiver 会从 listener 读取数据
 	// 需要根据 remoteAddr 和 SessionID 来过滤数据报
-	
+
 	// 创建新的 Transport，传递第一个数据报
 	transport := udpprotocol.NewTransport(u.listener, remoteAddr, header.SessionID, u.Ctx(), buf[:n])
 
@@ -149,4 +154,3 @@ func (u *UdpAdapter) onClose() error {
 	}
 	return baseErr
 }
-

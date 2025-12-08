@@ -9,6 +9,22 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# 解析参数
+START_TARGET_CLIENT=true
+START_LISTEN_CLIENT=true
+
+if [ "$1" == "listenclient-only" ] || [ "$1" == "listen-only" ] || [ "$1" == "-l" ]; then
+    START_TARGET_CLIENT=false
+    echo -e "${YELLOW}Mode: Listen client only (no target client)${NC}"
+elif [ "$1" == "targetclient-only" ] || [ "$1" == "target-only" ] || [ "$1" == "-t" ]; then
+    START_LISTEN_CLIENT=false
+    echo -e "${YELLOW}Mode: Target client only (no listen client)${NC}"
+elif [ "$1" == "server-only" ] || [ "$1" == "-s" ]; then
+    START_TARGET_CLIENT=false
+    START_LISTEN_CLIENT=false
+    echo -e "${YELLOW}Mode: Server only${NC}"
+fi
+
 echo -e "${YELLOW}=== Starting Tunnox Test Environment ===${NC}"
 
 # 1. 清理所有 server/client 进程（精确匹配，避免误杀）
@@ -107,7 +123,8 @@ if [ ! -f bin/client ]; then
 fi
 echo -e "${GREEN}✓ Client built${NC}"
 
-# 6. Copy client 到 targetclient 目录
+# 6. Copy client 到 targetclient 目录（如果需要）
+if [ "$START_TARGET_CLIENT" = true ]; then
 echo -e "${YELLOW}Step 6: Copying client to /Users/roger.tong/GolandProjects/tunnox-core (targetclient)...${NC}"
 cp bin/client /Users/roger.tong/GolandProjects/tunnox-core/client
 echo -e "${GREEN}✓ Client copied for targetclient${NC}"
@@ -127,8 +144,13 @@ if ! ps -p $TARGET_CLIENT_PID > /dev/null 2>&1; then
     exit 1
 fi
 echo -e "${GREEN}✓ Target client started (PID: $TARGET_CLIENT_PID, Debug API: http://127.0.0.1:18081)${NC}"
+else
+    echo -e "${YELLOW}Step 6-7: Skipping target client${NC}"
+    TARGET_CLIENT_PID=""
+fi
 
-# 8. Copy client 到 listenclient 目录
+# 8. Copy client 到 listenclient 目录（如果需要）
+if [ "$START_LISTEN_CLIENT" = true ]; then
 echo -e "${YELLOW}Step 8: Copying client to /Users/roger.tong/GolandProjects/docs (listenclient)...${NC}"
 cp bin/client /Users/roger.tong/GolandProjects/docs/client
 echo -e "${GREEN}✓ Client copied for listenclient${NC}"
@@ -147,20 +169,34 @@ if ! ps -p $LISTEN_CLIENT_PID > /dev/null 2>&1; then
     exit 1
 fi
 echo -e "${GREEN}✓ Listen client started (PID: $LISTEN_CLIENT_PID)${NC}"
+else
+    echo -e "${YELLOW}Step 8-9: Skipping listen client${NC}"
+    LISTEN_CLIENT_PID=""
+fi
 
 # 启动完成
     echo -e "${GREEN}=== All services started successfully ===${NC}"
     echo ""
     echo "Server PID: $SERVER_PID"
+if [ "$START_TARGET_CLIENT" = true ]; then
     echo "Target Client PID: $TARGET_CLIENT_PID"
+fi
+if [ "$START_LISTEN_CLIENT" = true ]; then
     echo "Listen Client PID: $LISTEN_CLIENT_PID"
+fi
     echo ""
     echo "Logs:"
     echo "  Server: /Users/roger.tong/GolandProjects/tunnox-core/cmd/server/logs/server.log"
+if [ "$START_TARGET_CLIENT" = true ]; then
     echo "  Target Client: /tmp/tunnox-target-client.log"
+fi
+if [ "$START_LISTEN_CLIENT" = true ]; then
     echo "  Listen Client: /tmp/tunnox-listen-client.log"
+fi
     echo ""
+if [ "$START_TARGET_CLIENT" = true ]; then
     echo "Debug API:"
     echo "  Target Client: http://127.0.0.1:18081/api/v1/status"
+fi
     exit 0
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"time"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
@@ -78,7 +79,7 @@ func (a *NodeIDAllocator) AllocateNodeID(ctx context.Context) (string, error) {
 		utils.Debugf("NodeIDAllocator: %s already occupied, trying next...", nodeID)
 	}
 
-	return "", fmt.Errorf("no available node ID in range %d-%d (all occupied)", NodeIDMin, NodeIDMax)
+	return "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "no available node ID in range %d-%d (all occupied)", NodeIDMin, NodeIDMax)
 }
 
 // tryAcquireNodeID 尝试占用节点ID
@@ -98,7 +99,7 @@ func (a *NodeIDAllocator) tryAcquireNodeID(key, nodeID string) (bool, error) {
 	// 检查是否已存在
 	exists, err := a.storage.Exists(key)
 	if err != nil {
-		return false, fmt.Errorf("failed to check existence: %w", err)
+		return false, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to check existence")
 	}
 
 	if exists {
@@ -117,13 +118,13 @@ func (a *NodeIDAllocator) tryAcquireNodeID(key, nodeID string) (bool, error) {
 	err = a.storage.Set(key, nodeID, NodeIDLockTTL)
 	}
 	if err != nil {
-		return false, fmt.Errorf("failed to set node ID: %w", err)
+		return false, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to set node ID")
 	}
 
 	// 再次确认（防止竞态）
 	value, err := a.storage.Get(key)
 	if err != nil {
-		return false, fmt.Errorf("failed to verify node ID: %w", err)
+		return false, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to verify node ID")
 	}
 
 	if valueStr, ok := value.(string); ok && valueStr == nodeID {
@@ -188,7 +189,7 @@ func (a *NodeIDAllocator) Release() error {
 	key := NodeIDKeyPrefix + a.nodeID
 	err := a.storage.Delete(key)
 	if err != nil {
-		return fmt.Errorf("failed to release node ID %s: %w", a.nodeID, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to release node ID %s", a.nodeID)
 	}
 
 	utils.Infof("NodeIDAllocator: released node ID: %s", a.nodeID)

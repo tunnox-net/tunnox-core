@@ -2,9 +2,9 @@ package storage
 
 import (
 	"context"
-	"fmt"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // StorageType 存储类型
@@ -38,7 +38,7 @@ func (f *StorageFactory) CreateStorage(storageType StorageType, config interface
 	case StorageTypeHybrid:
 		return f.createHybridStorage(config)
 	default:
-		return nil, fmt.Errorf("unsupported storage type: %s", storageType)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported storage type: %s", storageType)
 	}
 }
 
@@ -57,13 +57,13 @@ func (f *StorageFactory) createRedisStorage(config interface{}) (Storage, error)
 		if rc, ok := config.(*RedisConfig); ok {
 			redisConfig = rc
 		} else {
-			return nil, fmt.Errorf("invalid Redis config type: %T", config)
+			return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid Redis config type: %T", config)
 		}
 	}
 
 	storage, err := NewRedisStorage(f.ctx, redisConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Redis storage: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to create Redis storage")
 	}
 
 	dispose.Infof("StorageFactory: created Redis storage")
@@ -74,10 +74,10 @@ func (f *StorageFactory) createRedisStorage(config interface{}) (Storage, error)
 func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error) {
 	// 默认配置：纯内存模式
 	hybridConfig := DefaultHybridConfig()
-	
+
 	var cache CacheStorage
 	var persistent PersistentStorage
-	
+
 	// 解析配置
 	if config != nil {
 		if hc, ok := config.(*HybridStorageConfig); ok {
@@ -85,27 +85,27 @@ func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error
 			if hc.CacheType == "redis" && hc.RedisConfig != nil {
 				redisStorage, err := NewRedisStorage(f.ctx, hc.RedisConfig)
 				if err != nil {
-					return nil, fmt.Errorf("failed to create Redis cache: %w", err)
+					return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to create Redis cache")
 				}
 				cache = redisStorage
 			} else {
 				cache = NewMemoryStorage(f.ctx)
 			}
-			
+
 			// 创建持久化存储
 			if hc.EnablePersistent {
 				// 优先使用 JSON 文件存储（如果配置了）
 				if hc.JSONConfig != nil {
 					jsonStorage, err := NewJSONStorage(hc.JSONConfig)
 					if err != nil {
-						return nil, fmt.Errorf("failed to create JSON persistent storage: %w", err)
+						return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to create JSON persistent storage")
 					}
 					persistent = jsonStorage
 				} else if hc.RemoteConfig != nil {
 					// 使用远程存储
 					remoteStorage, err := NewRemoteStorage(f.ctx, hc.RemoteConfig)
 					if err != nil {
-						return nil, fmt.Errorf("failed to create remote storage: %w", err)
+						return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to create remote storage")
 					}
 					persistent = remoteStorage
 				} else {
@@ -116,25 +116,25 @@ func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error
 						SaveInterval: 30 * time.Second,
 					})
 					if err != nil {
-						return nil, fmt.Errorf("failed to create default JSON storage: %w", err)
+						return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to create default JSON storage")
 					}
 					persistent = jsonStorage
 				}
 			}
-			
+
 			// 更新配置
 			if hc.HybridConfig != nil {
 				hybridConfig = hc.HybridConfig
 			}
 			hybridConfig.EnablePersistent = hc.EnablePersistent
 		} else {
-			return nil, fmt.Errorf("invalid HybridStorage config type: %T", config)
+			return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid HybridStorage config type: %T", config)
 		}
 	} else {
 		// 默认：纯内存模式
 		cache = NewMemoryStorage(f.ctx)
 	}
-	
+
 	storage := NewHybridStorage(f.ctx, cache, persistent, hybridConfig)
 	dispose.Infof("StorageFactory: created Hybrid storage")
 	return storage, nil
@@ -144,19 +144,19 @@ func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error
 type HybridStorageConfig struct {
 	// 缓存类型：memory 或 redis
 	CacheType string
-	
+
 	// Redis 缓存配置（如果 CacheType 为 redis）
 	RedisConfig *RedisConfig
-	
+
 	// 是否启用持久化
 	EnablePersistent bool
-	
+
 	// JSON 文件存储配置（如果 EnablePersistent 为 true，优先使用）
 	JSONConfig *JSONStorageConfig
-	
+
 	// 远程存储配置（如果 EnablePersistent 为 true 且未配置 JSON）
 	RemoteConfig *RemoteStorageConfig
-	
+
 	// 混合存储配置
 	HybridConfig *HybridConfig
 }
@@ -165,7 +165,7 @@ type HybridStorageConfig struct {
 func (f *StorageFactory) CreateStorageWithConfig(config map[string]interface{}) (Storage, error) {
 	storageTypeStr, ok := config["type"].(string)
 	if !ok {
-		return nil, fmt.Errorf("storage type not specified in config")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "storage type not specified in config")
 	}
 
 	storageType := StorageType(storageTypeStr)
@@ -197,6 +197,6 @@ func (f *StorageFactory) CreateStorageWithConfig(config map[string]interface{}) 
 
 		return f.createRedisStorage(redisConfig)
 	default:
-		return nil, fmt.Errorf("unsupported storage type: %s", storageType)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported storage type: %s", storageType)
 	}
 }

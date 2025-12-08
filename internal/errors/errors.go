@@ -3,6 +3,7 @@ package errors
 import (
 	"errors"
 	"fmt"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // 预定义错误
@@ -156,20 +157,30 @@ func NewEncryptionError(operation, message string, cause error) *EncryptionError
 	}
 }
 
-// WrapError 包装错误，添加上下文信息
+// WrapError 包装错误，添加上下文信息（使用 TypedError）
 func WrapError(err error, context string) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%s: %w", context, err)
+	// 尝试从原始错误中获取错误类型，默认为 ErrorTypePermanent
+	errType := coreErrors.ErrorTypePermanent
+	if typedErr, ok := err.(*coreErrors.TypedError); ok {
+		errType = typedErr.Type
+	}
+	return coreErrors.Wrap(err, errType, context)
 }
 
-// WrapErrorf 格式化包装错误
+// WrapErrorf 格式化包装错误（使用 TypedError）
 func WrapErrorf(err error, format string, args ...interface{}) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf(format+": %w", append(args, err)...)
+	// 尝试从原始错误中获取错误类型，默认为 ErrorTypePermanent
+	errType := coreErrors.ErrorTypePermanent
+	if typedErr, ok := err.(*coreErrors.TypedError); ok {
+		errType = typedErr.Type
+	}
+	return coreErrors.Wrapf(err, errType, format, args...)
 }
 
 // IsTemporaryError 判断是否为临时错误（可重试）

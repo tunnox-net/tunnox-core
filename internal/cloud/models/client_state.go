@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"time"
+
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // ClientRuntimeState 客户端运行时状态
@@ -36,7 +38,7 @@ func (s *ClientRuntimeState) IsOnline() bool {
 	if s.Status != ClientStatusOnline {
 		return false
 	}
-	
+
 	// 如果超过90秒没有心跳，认为已离线
 	return time.Since(s.LastSeen) < 90*time.Second
 }
@@ -54,22 +56,22 @@ func (s *ClientRuntimeState) IsBlocked() bool {
 // Validate 验证状态有效性
 func (s *ClientRuntimeState) Validate() error {
 	if s.ClientID <= 0 {
-		return fmt.Errorf("invalid client ID: %d", s.ClientID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid client ID: %d", s.ClientID)
 	}
-	
+
 	if s.Status != ClientStatusOnline && s.Status != ClientStatusOffline && s.Status != ClientStatusBlocked {
-		return fmt.Errorf("invalid status: %s", s.Status)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid status: %s", s.Status)
 	}
-	
+
 	if s.Status == ClientStatusOnline {
 		if s.NodeID == "" {
-			return fmt.Errorf("online client must have node_id")
+			return coreErrors.New(coreErrors.ErrorTypePermanent, "online client must have node_id")
 		}
 		if s.ConnID == "" {
-			return fmt.Errorf("online client must have conn_id")
+			return coreErrors.New(coreErrors.ErrorTypePermanent, "online client must have conn_id")
 		}
 	}
-	
+
 	return nil
 }
 
@@ -83,7 +85,6 @@ func (s *ClientRuntimeState) GetConnectionInfo() string {
 	if !s.IsOnline() {
 		return "offline"
 	}
-	return fmt.Sprintf("node=%s, conn=%s, ip=%s, proto=%s", 
+	return fmt.Sprintf("node=%s, conn=%s, ip=%s, proto=%s",
 		s.NodeID, s.ConnID, s.IPAddress, s.Protocol)
 }
-

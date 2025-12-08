@@ -2,11 +2,12 @@ package managers
 
 import (
 	"context"
-	"fmt"
 	"time"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 )
 
@@ -33,7 +34,7 @@ func (cm *ConnectionManager) RegisterConnection(mappingID string, connInfo *mode
 	if connInfo.ConnID == "" {
 		connID, err := cm.idManager.GenerateConnectionID()
 		if err != nil {
-			return fmt.Errorf("generate connection ID failed: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "generate connection ID failed")
 		}
 		connInfo.ConnID = connID
 	}

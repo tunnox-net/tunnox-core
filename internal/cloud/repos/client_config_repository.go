@@ -5,6 +5,7 @@ import (
 	"time"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // ClientConfigRepository 客户端配置数据访问层
@@ -34,12 +35,12 @@ func NewClientConfigRepository(repo *Repository) *ClientConfigRepository {
 		// ID提取函数：从ClientConfig提取ID字符串
 		func(config *models.ClientConfig) (string, error) {
 			if config == nil {
-				return "", fmt.Errorf("config is nil")
+				return "", coreErrors.New(coreErrors.ErrorTypePermanent, "config is nil")
 			}
 			return fmt.Sprintf("%d", config.ID), nil
 		},
 	)
-	
+
 	return &ClientConfigRepository{
 		GenericRepositoryImpl: genericRepo,
 	}
@@ -79,17 +80,17 @@ func (r *ClientConfigRepository) GetConfig(clientID int64) (*models.ClientConfig
 //   - error: 错误信息
 func (r *ClientConfigRepository) SaveConfig(config *models.ClientConfig) error {
 	if config == nil {
-		return fmt.Errorf("config is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "config is nil")
 	}
-	
+
 	// 验证配置有效性
 	if err := config.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "invalid config")
 	}
-	
+
 	// 更新时间戳
 	config.UpdatedAt = time.Now()
-	
+
 	// 保存（TTL=0表示永久）
 	return r.Save(
 		config,
@@ -107,19 +108,19 @@ func (r *ClientConfigRepository) SaveConfig(config *models.ClientConfig) error {
 //   - error: 错误信息（如果已存在则返回错误）
 func (r *ClientConfigRepository) CreateConfig(config *models.ClientConfig) error {
 	if config == nil {
-		return fmt.Errorf("config is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "config is nil")
 	}
-	
+
 	// 验证配置
 	if err := config.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "invalid config")
 	}
-	
+
 	// 设置创建时间
 	now := time.Now()
 	config.CreatedAt = now
 	config.UpdatedAt = now
-	
+
 	// 创建（不覆盖已存在的）
 	return r.Create(
 		config,
@@ -137,17 +138,17 @@ func (r *ClientConfigRepository) CreateConfig(config *models.ClientConfig) error
 //   - error: 错误信息（如果不存在则返回错误）
 func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error {
 	if config == nil {
-		return fmt.Errorf("config is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "config is nil")
 	}
-	
+
 	// 验证配置
 	if err := config.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "invalid config")
 	}
-	
+
 	// 更新时间戳
 	config.UpdatedAt = time.Now()
-	
+
 	// 更新
 	return r.Update(
 		config,
@@ -206,4 +207,3 @@ func (r *ClientConfigRepository) ExistsConfig(clientID int64) (bool, error) {
 	key := fmt.Sprintf("%s%d", constants.KeyPrefixPersistClientConfig, clientID)
 	return r.storage.Exists(key)
 }
-

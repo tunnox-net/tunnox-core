@@ -243,10 +243,15 @@ func createDataForwarder(conn net.Conn, stream stream.PackageStreamer) DataForwa
 		if reader != nil && writer != nil {
 			// 使用 Stream 的 Reader/Writer 创建适配器
 			utils.Infof("createDataForwarder: using Stream Reader/Writer adapter")
-			return utils.NewReadWriteCloser(reader, writer, func() error {
+			rwc, err := utils.NewReadWriteCloser(reader, writer, func() error {
 				stream.Close()
 				return nil
 			})
+			if err != nil {
+				utils.Errorf("createDataForwarder: failed to create ReadWriteCloser: %v", err)
+				return nil
+			}
+			return rwc
 		}
 		// 如果 GetReader/GetWriter 返回 nil，尝试使用 ReadExact/WriteExact（HTTP 长轮询）
 		// 使用接口查询，检查是否有 ReadExact 和 WriteExact 方法

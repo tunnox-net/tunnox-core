@@ -1,10 +1,9 @@
 package httppoll
 
 import (
-	"fmt"
 	"sync"
 	"time"
-
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -63,7 +62,7 @@ func (fg *FragmentGroup) AddFragment(index int, size int, data []byte) error {
 
 	// 检查索引范围
 	if index < 0 || index >= fg.TotalFragments {
-		return fmt.Errorf("fragment index out of range: %d (total: %d)", index, fg.TotalFragments)
+		return coreErrors.Newf(coreErrors.ErrorTypeProtocol, "fragment index out of range: %d (total: %d)", index, fg.TotalFragments)
 	}
 
 	// 检查是否已存在
@@ -76,7 +75,7 @@ func (fg *FragmentGroup) AddFragment(index int, size int, data []byte) error {
 	// 注意：size 参数应该是实际数据长度（从 FragmentSize 字段获取）
 	// 对于最后一片，可能小于 MaxFragmentSize，但应该等于 FragmentSize 字段的值
 	if len(data) != size {
-		return fmt.Errorf("fragment size mismatch: expected %d, got %d", size, len(data))
+		return coreErrors.Newf(coreErrors.ErrorTypeProtocol, "fragment size mismatch: expected %d, got %d", size, len(data))
 	}
 
 	// 添加分片
@@ -100,21 +99,21 @@ func (fg *FragmentGroup) Reassemble() ([]byte, error) {
 	defer fg.mu.Unlock()
 
 	if fg.ReceivedCount != fg.TotalFragments {
-		return nil, fmt.Errorf("fragment group incomplete: %d/%d", fg.ReceivedCount, fg.TotalFragments)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "fragment group incomplete: %d/%d", fg.ReceivedCount, fg.TotalFragments)
 	}
 
 	// 按索引顺序拼接
 	result := make([]byte, 0, fg.OriginalSize)
 	for i := 0; i < fg.TotalFragments; i++ {
 		if fg.Fragments[i] == nil {
-			return nil, fmt.Errorf("fragment %d is missing", i)
+			return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "fragment %d is missing", i)
 		}
 		result = append(result, fg.Fragments[i].Data...)
 	}
 
 	// 验证总大小
 	if len(result) != fg.OriginalSize {
-		return nil, fmt.Errorf("reassembled size mismatch: expected %d, got %d", fg.OriginalSize, len(result))
+		return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "reassembled size mismatch: expected %d, got %d", fg.OriginalSize, len(result))
 	}
 
 	utils.Debugf("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
@@ -142,14 +141,14 @@ func (fg *FragmentGroup) IsCompleteAndReassemble() ([]byte, bool, error) {
 	result := make([]byte, 0, fg.OriginalSize)
 	for i := 0; i < fg.TotalFragments; i++ {
 		if fg.Fragments[i] == nil {
-			return nil, false, fmt.Errorf("fragment %d is missing", i)
+			return nil, false, coreErrors.Newf(coreErrors.ErrorTypePermanent, "fragment %d is missing", i)
 		}
 		result = append(result, fg.Fragments[i].Data...)
 	}
 
 	// 验证总大小
 	if len(result) != fg.OriginalSize {
-		return nil, false, fmt.Errorf("reassembled size mismatch: expected %d, got %d", fg.OriginalSize, len(result))
+		return nil, false, coreErrors.Newf(coreErrors.ErrorTypePermanent, "reassembled size mismatch: expected %d, got %d", fg.OriginalSize, len(result))
 	}
 
 	// 标记为已重组（防止其他 goroutine 重复重组）
@@ -191,7 +190,7 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 		fr.cleanupExpiredLocked()
 		if len(fr.groups) >= MaxFragmentGroups {
 			fr.mu.Unlock()
-			return nil, fmt.Errorf("too many fragment groups: %d", len(fr.groups))
+			return nil, coreErrors.Newf(coreErrors.ErrorTypeTemporary, "too many fragment groups: %d", len(fr.groups))
 		}
 	}
 
@@ -201,7 +200,7 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 		// 验证参数
 		if originalSize > MaxFragmentGroupSize {
 			fr.mu.Unlock()
-			return nil, fmt.Errorf("fragment group size too large: %d (max: %d)", originalSize, MaxFragmentGroupSize)
+			return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "fragment group size too large: %d (max: %d)", originalSize, MaxFragmentGroupSize)
 		}
 
 		group = &FragmentGroup{
@@ -219,15 +218,15 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 		// 验证一致性
 		if group.OriginalSize != originalSize {
 			fr.mu.Unlock()
-			return nil, fmt.Errorf("fragment group size mismatch: expected %d, got %d", group.OriginalSize, originalSize)
+			return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "fragment group size mismatch: expected %d, got %d", group.OriginalSize, originalSize)
 		}
 		if group.TotalFragments != totalFragments {
 			fr.mu.Unlock()
-			return nil, fmt.Errorf("fragment group total fragments mismatch: expected %d, got %d", group.TotalFragments, totalFragments)
+			return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "fragment group total fragments mismatch: expected %d, got %d", group.TotalFragments, totalFragments)
 		}
 		if group.SequenceNumber != sequenceNumber {
 			fr.mu.Unlock()
-			return nil, fmt.Errorf("fragment group sequence number mismatch: expected %d, got %d", group.SequenceNumber, sequenceNumber)
+			return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "fragment group sequence number mismatch: expected %d, got %d", group.SequenceNumber, sequenceNumber)
 		}
 	}
 

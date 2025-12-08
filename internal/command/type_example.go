@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 )
@@ -97,10 +99,10 @@ func (h *ConnectHandler) ProcessRequest(ctx *types.CommandContext, request *Conn
 // ValidateRequest 验证连接请求
 func (h *ConnectHandler) ValidateRequest(request *ConnectRequest) error {
 	if request.ClientID <= 0 {
-		return fmt.Errorf("invalid client ID: %d", request.ClientID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid client ID: %d", request.ClientID)
 	}
 	if request.ClientName == "" {
-		return fmt.Errorf("client name is required")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "client name is required")
 	}
 	return nil
 }
@@ -188,7 +190,7 @@ func (h *DisconnectHandlerV2) Handle(ctx *types.CommandContext) (*types.CommandR
 func (h *DisconnectHandlerV2) ProcessRequest(ctx *types.CommandContext, request *DisconnectRequest) (interface{}, error) {
 	// 关闭连接逻辑
 	if err := h.GetSession().CloseConnection(ctx.ConnectionID); err != nil {
-		return nil, fmt.Errorf("failed to close connection: %w", err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to close connection: %s", ctx.ConnectionID)
 	}
 	return nil, nil
 }
@@ -229,7 +231,7 @@ func ProcessCommandBody(handler types.CommandHandler, requestBody string) (inter
 
 	// 解析JSON到请求实例
 	if err := json.Unmarshal([]byte(requestBody), request); err != nil {
-		return nil, fmt.Errorf("failed to parse request body: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to parse request body")
 	}
 
 	return request, nil
@@ -247,7 +249,7 @@ func CreateTypedResponse(handler types.CommandHandler, data interface{}) (*types
 
 	// 验证数据类型
 	if data != nil && reflect.TypeOf(data) != responseType {
-		return nil, fmt.Errorf("response data type mismatch: expected %v, got %T", responseType, data)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "response data type mismatch: expected %v, got %T", responseType, data)
 	}
 
 	// 序列化响应数据
@@ -256,7 +258,7 @@ func CreateTypedResponse(handler types.CommandHandler, data interface{}) (*types
 		if jsonData, err := json.Marshal(data); err == nil {
 			responseData = string(jsonData)
 		} else {
-			return nil, fmt.Errorf("failed to marshal response data: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal response data")
 		}
 	}
 

@@ -2,9 +2,9 @@ package api
 
 import (
 	"context"
-	"strings"
-
+	"errors"
 	httppoll "tunnox-core/internal/protocol/httppoll"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -33,7 +33,8 @@ func (s *ManagementAPIServer) createHTTPLongPollingConnection(connID string, pkg
 	// 3. 使用 server 的 context 而不是请求的 context，避免请求结束后 context 被取消
 	serverCtx := s.Ctx()
 	if serverCtx == nil {
-		serverCtx = context.Background()
+		utils.Errorf("HTTP long polling: server context is nil, cannot create connection")
+		return nil
 	}
 
 	clientID := pkg.ClientID
@@ -59,7 +60,7 @@ func (s *ManagementAPIServer) createHTTPLongPollingConnection(connID string, pkg
 			_, err := sessionMgrWithConn.CreateConnection(adapter, adapter)
 			if err != nil {
 				// 如果错误是连接已存在，忽略（可能是并发创建导致的）
-				if !strings.Contains(err.Error(), "already exists") {
+				if !errors.Is(err, coreErrors.ErrConnectionAlreadyExists) {
 					utils.Errorf("HTTP long polling: failed to create connection in SessionManager: %v", err)
 				} else {
 					utils.Debugf("HTTP long polling: connection already exists in SessionManager (concurrent creation), connID=%s", connID)

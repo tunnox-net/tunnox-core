@@ -2,11 +2,10 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 	"time"
-
+	"tunnox-core/internal/core/errors"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -22,7 +21,7 @@ func (c *TunnoxClient) Connect() error {
 
 	// 如果指定了协议但没有地址，报错
 	if c.config.Server.Protocol != "" && c.config.Server.Address == "" {
-		return fmt.Errorf("server address is required when protocol is specified (%s)", c.config.Server.Protocol)
+		return errors.Newf(errors.ErrorTypePermanent, "server address is required when protocol is specified (%s)", c.config.Server.Protocol)
 	}
 
 	utils.Infof("Client: connecting to server %s", c.config.Server.Address)
@@ -37,7 +36,7 @@ func (c *TunnoxClient) Connect() error {
 	// 检查 context 是否已被取消
 	select {
 	case <-c.Ctx().Done():
-		return fmt.Errorf("connection cancelled: %w", c.Ctx().Err())
+		return errors.Wrap(c.Ctx().Err(), errors.ErrorTypeTemporary, "connection cancelled")
 	default:
 	}
 
@@ -99,7 +98,7 @@ func (c *TunnoxClient) Connect() error {
 			}
 			resultConn, resultErr = dialHTTPLongPolling(connectCtx, c.config.Server.Address, clientID, token, c.GetInstanceID(), "")
 		default:
-			resultErr = fmt.Errorf("unsupported server protocol: %s", protocol)
+			resultErr = errors.Newf(errors.ErrorTypePermanent, "unsupported server protocol: %s", protocol)
 		}
 
 		select {
@@ -120,11 +119,11 @@ func (c *TunnoxClient) Connect() error {
 	case result := <-connectDone:
 		conn, err = result.conn, result.err
 	case <-connectCtx.Done():
-		err = fmt.Errorf("connection cancelled: %w", connectCtx.Err())
+		err = errors.Wrap(connectCtx.Err(), errors.ErrorTypeTemporary, "connection cancelled")
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to dial server (%s): %w", protocol, err)
+		return errors.Wrapf(err, errors.ErrorTypeNetwork, "failed to dial server (%s)", protocol)
 	}
 
 	c.config.Server.Protocol = strings.ToLower(protocol)
@@ -188,7 +187,7 @@ func (c *TunnoxClient) Connect() error {
 			c.controlConn = nil
 		}
 		c.mu.Unlock()
-		return fmt.Errorf("handshake failed: %w", err)
+		return errors.Wrap(err, errors.ErrorTypeProtocol, "handshake failed")
 	}
 
 	// 4. 启动读取循环（接收服务器命令）

@@ -5,8 +5,8 @@ import (
 	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
+	"tunnox-core/internal/core/errors"
 )
 
 // TunnelPackage HTTP 长轮询控制包
@@ -41,13 +41,13 @@ type TunnelPackage struct {
 // 流程：JSON 序列化 → Gzip 压缩 → Base64 编码
 func EncodeTunnelPackage(pkg *TunnelPackage) (string, error) {
 	if pkg == nil {
-		return "", fmt.Errorf("tunnel package is nil")
+		return "", errors.New(errors.ErrorTypePermanent, "tunnel package is nil")
 	}
 
 	// 1. JSON 序列化
 	jsonData, err := json.Marshal(pkg)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal tunnel package: %w", err)
+		return "", errors.Wrap(err, errors.ErrorTypePermanent, "failed to marshal tunnel package")
 	}
 
 	// 2. Gzip 压缩
@@ -55,10 +55,10 @@ func EncodeTunnelPackage(pkg *TunnelPackage) (string, error) {
 	writer := gzip.NewWriter(&buf)
 	if _, err := writer.Write(jsonData); err != nil {
 		writer.Close()
-		return "", fmt.Errorf("failed to compress tunnel package: %w", err)
+		return "", errors.Wrap(err, errors.ErrorTypePermanent, "failed to compress tunnel package")
 	}
 	if err := writer.Close(); err != nil {
-		return "", fmt.Errorf("failed to close gzip writer: %w", err)
+		return "", errors.Wrap(err, errors.ErrorTypePermanent, "failed to close gzip writer")
 	}
 
 	// 3. Base64 编码
@@ -69,31 +69,31 @@ func EncodeTunnelPackage(pkg *TunnelPackage) (string, error) {
 // 流程：Base64 解码 → Gzip 解压 → JSON 反序列化
 func DecodeTunnelPackage(encoded string) (*TunnelPackage, error) {
 	if encoded == "" {
-		return nil, fmt.Errorf("encoded tunnel package is empty")
+		return nil, errors.New(errors.ErrorTypeProtocol, "encoded tunnel package is empty")
 	}
 
 	// 1. Base64 解码
 	compressed, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode base64: %w", err)
+		return nil, errors.Wrap(err, errors.ErrorTypeProtocol, "failed to decode base64")
 	}
 
 	// 2. Gzip 解压
 	reader, err := gzip.NewReader(bytes.NewReader(compressed))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create gzip reader: %w", err)
+		return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to create gzip reader")
 	}
 	defer reader.Close()
 
 	jsonData, err := io.ReadAll(reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decompress tunnel package: %w", err)
+		return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to decompress tunnel package")
 	}
 
 	// 3. JSON 反序列化
 	var pkg TunnelPackage
 	if err := json.Unmarshal(jsonData, &pkg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal tunnel package: %w", err)
+		return nil, errors.Wrap(err, errors.ErrorTypeProtocol, "failed to unmarshal tunnel package")
 	}
 
 	return &pkg, nil

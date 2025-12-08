@@ -2,7 +2,8 @@ package services
 
 import (
 	"context"
-	"fmt"
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/cloud/container"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
@@ -35,12 +36,12 @@ func NewCloudControlAPI(config *managers.ControlConfig, storage storageCore.Stor
 
 	// 注册基础设施服务
 	if err := registerInfrastructureServices(container, config, storage, parentCtx); err != nil {
-		return nil, fmt.Errorf("failed to register infrastructure services: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to register infrastructure services")
 	}
 
 	// 注册业务服务
 	if err := registerBusinessServices(container, parentCtx); err != nil {
-		return nil, fmt.Errorf("failed to register business services: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to register business services")
 	}
 
 	// 创建API实例
@@ -51,7 +52,7 @@ func NewCloudControlAPI(config *managers.ControlConfig, storage storageCore.Stor
 
 	// 解析各个服务
 	if err := api.resolveServices(); err != nil {
-		return nil, fmt.Errorf("failed to resolve services: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to resolve services")
 	}
 
 	return api, nil
@@ -61,42 +62,42 @@ func NewCloudControlAPI(config *managers.ControlConfig, storage storageCore.Stor
 func (api *CloudControlAPI) resolveServices() error {
 	// 解析用户服务
 	if err := api.container.ResolveTyped("user_service", &api.userService); err != nil {
-		return fmt.Errorf("failed to resolve user service: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to resolve user service")
 	}
 
 	// 解析客户端服务
 	if err := api.container.ResolveTyped("client_service", &api.clientService); err != nil {
-		return fmt.Errorf("failed to resolve client service: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to resolve client service")
 	}
 
 	// 解析端口映射服务
 	if err := api.container.ResolveTyped("mapping_service", &api.mappingService); err != nil {
-		return fmt.Errorf("failed to resolve mapping service: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to resolve mapping service")
 	}
 
 	// 解析节点服务
 	if err := api.container.ResolveTyped("node_service", &api.nodeService); err != nil {
-		return fmt.Errorf("failed to resolve node service: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to resolve node service")
 	}
 
 	// 解析认证服务
 	if err := api.container.ResolveTyped("auth_service", &api.authService); err != nil {
-		return fmt.Errorf("failed to resolve auth service: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to resolve auth service")
 	}
 
 	// 解析匿名服务
 	if err := api.container.ResolveTyped("anonymous_service", &api.anonymousService); err != nil {
-		return fmt.Errorf("failed to resolve anonymous service: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to resolve anonymous service")
 	}
 
 	// 解析连接服务
 	if err := api.container.ResolveTyped("connection_service", &api.connectionService); err != nil {
-		return fmt.Errorf("failed to resolve connection service: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to resolve connection service")
 	}
 
 	// 解析统计服务
 	if err := api.container.ResolveTyped("stats_service", &api.statsService); err != nil {
-		return fmt.Errorf("failed to resolve stats service: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to resolve stats service")
 	}
 
 	utils.Infof("All services resolved successfully")

@@ -2,10 +2,11 @@ package managers
 
 import (
 	"context"
-	"fmt"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // NodeManager 节点管理器
@@ -30,7 +31,7 @@ func (nm *NodeManager) GetNodeServiceInfo(nodeID string) (*models.NodeServiceInf
 		return nil, err
 	}
 	if node == nil {
-		return nil, fmt.Errorf("node not found")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "node not found")
 	}
 
 	return &models.NodeServiceInfo{

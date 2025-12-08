@@ -2,10 +2,10 @@ package command
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -128,6 +128,7 @@ type ResponseSender interface {
 
 // commandService 命令服务实现
 type commandService struct {
+	*dispose.ServiceBase
 	registry       *CommandRegistry
 	executor       *CommandExecutor
 	middleware     []Middleware
@@ -135,8 +136,7 @@ type commandService struct {
 	responseSender ResponseSender
 	eventBus       events.EventBus
 	mu             sync.RWMutex
-
-	dispose.Dispose
+	ctx            context.Context
 }
 
 // NewCommandService 创建新的命令服务
@@ -145,14 +145,16 @@ func NewCommandService(parentCtx context.Context) CommandService {
 	executor := NewCommandExecutor(registry, parentCtx)
 
 	service := &commandService{
-		registry:   registry,
-		executor:   executor,
-		middleware: make([]Middleware, 0),
-		stats:      &CommandStats{},
+		ServiceBase: dispose.NewService("CommandService", parentCtx),
+		registry:    registry,
+		executor:    executor,
+		middleware:  make([]Middleware, 0),
+		stats:       &CommandStats{},
+		ctx:         parentCtx,
 	}
 
-	// 设置Dispose上下文和清理回调
-	service.SetCtx(parentCtx, service.onClose)
+	// 添加清理回调
+	service.AddCleanHandler(service.onClose)
 
 	return service
 }
@@ -174,12 +176,12 @@ func (cs *commandService) Start() error {
 	cs.mu.RUnlock()
 
 	if eventBus == nil {
-		return fmt.Errorf("event bus not set")
+		return errors.New(errors.ErrorTypePermanent, "event bus not set")
 	}
 
 	// 订阅命令接收事件
 	if err := eventBus.Subscribe("CommandReceived", cs.handleCommandEvent); err != nil {
-		return fmt.Errorf("failed to subscribe to CommandReceived events: %w", err)
+		return errors.Wrap(err, errors.ErrorTypePermanent, "failed to subscribe to CommandReceived events")
 	}
 
 	utils.Infof("Command service started, listening for events")
@@ -190,14 +192,14 @@ func (cs *commandService) Start() error {
 func (cs *commandService) handleCommandEvent(event events.Event) error {
 	cmdEvent, ok := event.(*events.CommandReceivedEvent)
 	if !ok {
-		return fmt.Errorf("invalid event type: expected CommandReceivedEvent")
+		return errors.New(errors.ErrorTypePermanent, "invalid event type: expected CommandReceivedEvent")
 	}
 
 	utils.Infof("Handling command event for connection: %s, command: %v",
 		cmdEvent.ConnectionID, cmdEvent.CommandType)
 
-	// 创建命令上下文
-	ctx := &CommandContext{
+	// 创建命令上下文，使用服务的 context 而不是 Background
+	cmdCtx := &CommandContext{
 		ConnectionID:    cmdEvent.ConnectionID,
 		CommandType:     cmdEvent.CommandType,
 		CommandId:       cmdEvent.CommandId,
@@ -205,7 +207,7 @@ func (cs *commandService) handleCommandEvent(event events.Event) error {
 		SenderID:        cmdEvent.SenderID,
 		ReceiverID:      cmdEvent.ReceiverID,
 		RequestBody:     cmdEvent.CommandBody,
-		Context:         context.Background(),
+		Context:         cs.Ctx(), // 使用服务的 context，确保可以响应取消信号
 		IsAuthenticated: false,
 		UserID:          "",
 		StartTime:       time.Now(),
@@ -213,7 +215,7 @@ func (cs *commandService) handleCommandEvent(event events.Event) error {
 	}
 
 	// 执行命令
-	response, err := cs.Execute(ctx)
+	response, err := cs.Execute(cmdCtx)
 
 	// 获取事件总线引用
 	cs.mu.RLock()
@@ -234,7 +236,7 @@ func (cs *commandService) handleCommandEvent(event events.Event) error {
 	}
 
 	// 发布命令完成事件
-	processingTime := time.Since(ctx.StartTime)
+	processingTime := time.Since(cmdCtx.StartTime)
 	var responseStr, errorStr string
 	if response != nil {
 		responseStr = response.Data
@@ -267,7 +269,7 @@ func (cs *commandService) Execute(ctx *CommandContext) (*CommandResponse, error)
 	cs.mu.RLock()
 	if cs.IsClosed() {
 		cs.mu.RUnlock()
-		return nil, fmt.Errorf("command service is closed")
+		return nil, errors.New(errors.ErrorTypePermanent, "command service is closed")
 	}
 	cs.mu.RUnlock()
 
@@ -389,7 +391,7 @@ func (cs *commandService) onClose() error {
 
 // Close 关闭服务
 func (cs *commandService) Close() error {
-	return cs.Dispose.CloseWithError()
+	return cs.ServiceBase.Close()
 }
 
 // buildPipeline 构建命令处理管道

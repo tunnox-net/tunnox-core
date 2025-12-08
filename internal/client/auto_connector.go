@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/dispose"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
@@ -170,7 +171,7 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 
 				if handshakeErr != nil {
 					// 握手失败，关闭连接，标记为失败
-					attempt.Err = fmt.Errorf("handshake failed: %w", handshakeErr)
+					attempt.Err = coreErrors.Wrap(handshakeErr, coreErrors.ErrorTypeProtocol, "handshake failed")
 					ac.closeAttempt(attempt)
 					allErrors = append(allErrors, attempt.Err)
 					fmt.Fprintf(os.Stderr, "❌ Handshake failed via %s://%s: %v\n", attempt.Endpoint.Protocol, attempt.Endpoint.Address, handshakeErr)
@@ -249,7 +250,7 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 				return bestAttempt, nil
 			}
 			// 如果超时且没有成功连接，返回错误
-			return nil, fmt.Errorf("auto connection timeout after 20s (received %d/%d results): %v",
+			return nil, coreErrors.Newf(coreErrors.ErrorTypeTemporary, "auto connection timeout after 20s (received %d/%d results): %v",
 				receivedCount, len(DefaultServerEndpoints), allErrors)
 		}
 	}
@@ -277,7 +278,7 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 	}
 
 	// 所有连接都失败
-	return nil, fmt.Errorf("all connection attempts failed: %v", allErrors)
+	return nil, coreErrors.Newf(coreErrors.ErrorTypeNetwork, "all connection attempts failed: %v", allErrors)
 }
 
 // tryConnect 尝试连接到指定端点
@@ -324,12 +325,12 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 		tempInstanceID := uuid.New().String()
 		conn, err = dialHTTPLongPolling(timeoutCtx, endpoint.Address, 0, "", tempInstanceID, "")
 	default:
-		attempt.Err = fmt.Errorf("unsupported protocol: %s", endpoint.Protocol)
+		attempt.Err = coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported protocol: %s", endpoint.Protocol)
 		return attempt
 	}
 
 	if err != nil {
-		attempt.Err = fmt.Errorf("failed to dial %s://%s: %w", endpoint.Protocol, endpoint.Address, err)
+		attempt.Err = coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to dial %s://%s", endpoint.Protocol, endpoint.Address)
 		return attempt
 	}
 
@@ -347,7 +348,7 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 	// HTTP Long Polling 需要特殊的 StreamProcessor
 	defer func() {
 		if r := recover(); r != nil {
-			attempt.Err = fmt.Errorf("panic while creating stream: %v", r)
+			attempt.Err = coreErrors.Newf(coreErrors.ErrorTypeFatal, "panic while creating stream: %v", r)
 			if conn != nil {
 				conn.Close()
 			}

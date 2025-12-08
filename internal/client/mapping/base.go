@@ -6,9 +6,9 @@ import (
 	"io"
 	"sync/atomic"
 	"time"
-
 	"tunnox-core/internal/config"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/stream/transform"
 	"tunnox-core/internal/utils"
 
@@ -86,12 +86,12 @@ func NewBaseMappingHandler(
 func (h *BaseMappingHandler) Start() error {
 	// 1. 创建Transformer（公共）
 	if err := h.createTransformer(); err != nil {
-		return fmt.Errorf("failed to create transformer: %w", err)
+		return errors.Wrap(err, errors.ErrorTypePermanent, "failed to create transformer")
 	}
 
 	// 2. 启动监听（委托给adapter）
 	if err := h.adapter.StartListener(h.config); err != nil {
-		return fmt.Errorf("failed to start listener: %w", err)
+		return errors.Wrap(err, errors.ErrorTypeNetwork, "failed to start listener")
 	}
 
 	utils.Infof("BaseMappingHandler: %s mapping started on port %d",
@@ -221,13 +221,17 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 		utils.Errorf("BaseMappingHandler[%s]: tunnelReader or tunnelWriter is nil after setup, reader=%v, writer=%v", h.config.MappingID, tunnelReader != nil, tunnelWriter != nil)
 		return
 	}
-	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
+	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
 		tunnelStream.Close()
 		if tunnelConn != nil {
-		tunnelConn.Close()
+			tunnelConn.Close()
 		}
 		return nil
 	})
+	if err != nil {
+		utils.Errorf("BaseMappingHandler[%s]: failed to create ReadWriteCloser: %v", h.config.MappingID, err)
+		return
+	}
 
 	// 8. 双向转发（Transformer只处理限速，压缩/加密已在StreamProcessor中）
 	// 使用策略模式选择适合协议的拷贝策略
@@ -262,7 +266,7 @@ func (h *BaseMappingHandler) checkConnectionQuota() error {
 	// 检查连接数限制
 	if maxConn > 0 {
 		if int(h.activeConnCount.Load()) >= maxConn {
-			return fmt.Errorf("max connections reached: %d/%d", h.activeConnCount.Load(), maxConn)
+			return errors.Newf(errors.ErrorTypePermanent, "max connections reached: %d/%d", h.activeConnCount.Load(), maxConn)
 		}
 	}
 
@@ -290,7 +294,7 @@ func (h *BaseMappingHandler) createTransformer() error {
 		BandwidthLimit: h.config.BandwidthLimit,
 	}
 
-	transformer, err := transform.NewTransformer(transformConfig)
+	transformer, err := transform.NewTransformerWithContext(transformConfig, h.Ctx())
 	if err != nil {
 		return err
 	}

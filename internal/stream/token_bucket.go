@@ -12,11 +12,11 @@ import (
 // TokenBucket 令牌桶限流器
 type TokenBucket struct {
 	capacity   int64
+	*dispose.ResourceBase
 	rate       int64
 	tokens     int64
 	lastRefill time.Time
 	mu         sync.Mutex
-	dispose.Dispose
 }
 
 // NewTokenBucket 创建新的令牌桶
@@ -35,14 +35,15 @@ func NewTokenBucket(rate int64, parentCtx context.Context) (*TokenBucket, error)
 	}
 
 	tokenBucket := &TokenBucket{
-		rate:       rate,
-		capacity:   int64(burstSize),
-		tokens:     0, // 初始令牌数为0，需要等待产生
-		lastRefill: time.Now(),
+		ResourceBase: dispose.NewResourceBase("TokenBucket"),
+		rate:         rate,
+		capacity:     int64(burstSize),
+		tokens:       0, // 初始令牌数为0，需要等待产生
+		lastRefill:   time.Now(),
 	}
 
-	// 使用Dispose的context管理
-	tokenBucket.SetCtxWithNoOpOnClose(parentCtx)
+	// 使用 ResourceBase 的 context 管理
+	tokenBucket.Initialize(parentCtx)
 
 	return tokenBucket, nil
 }

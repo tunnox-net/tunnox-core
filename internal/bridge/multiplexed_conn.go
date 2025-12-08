@@ -8,6 +8,7 @@ import (
 	"time"
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 
 	"google.golang.org/grpc"
@@ -35,7 +36,7 @@ func NewMultiplexedConn(parentCtx context.Context, targetNodeID string, grpcConn
 
 	stream, err := client.ForwardStream(parentCtx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create forward stream: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to create forward stream")
 	}
 
 	mc := &grpcMultiplexedConn{
@@ -67,15 +68,15 @@ func (m *grpcMultiplexedConn) RegisterSession(streamID string, session *ForwardS
 	defer m.sessionsMu.Unlock()
 
 	if m.closed {
-		return fmt.Errorf("connection is closed")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "connection is closed")
 	}
 
 	if int32(len(m.sessions)) >= m.maxStreams {
-		return fmt.Errorf("max streams reached: %d", m.maxStreams)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "max streams reached: %d", m.maxStreams)
 	}
 
 	if _, exists := m.sessions[streamID]; exists {
-		return fmt.Errorf("session already exists: %s", streamID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "session already exists: %s", streamID)
 	}
 
 	m.sessions[streamID] = session

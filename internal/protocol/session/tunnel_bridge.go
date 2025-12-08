@@ -6,8 +6,8 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
-
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 
@@ -126,12 +126,12 @@ func NewTunnelBridge(parentCtx context.Context, config *TunnelBridgeConfig) *Tun
 		// 关闭统一接口连接
 		if bridge.sourceTunnelConn != nil {
 			if err := bridge.sourceTunnelConn.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("source tunnel conn close error: %w", err))
+				errs = append(errs, errors.Wrap(err, errors.ErrorTypeNetwork, "source tunnel conn close error"))
 			}
 		}
 		if bridge.targetTunnelConn != nil {
 			if err := bridge.targetTunnelConn.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("target tunnel conn close error: %w", err))
+				errs = append(errs, errors.Wrap(err, errors.ErrorTypeNetwork, "target tunnel conn close error"))
 			}
 		}
 
@@ -144,17 +144,17 @@ func NewTunnelBridge(parentCtx context.Context, config *TunnelBridgeConfig) *Tun
 		}
 		if bridge.sourceConn != nil && bridge.sourceTunnelConn == nil {
 			if err := bridge.sourceConn.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("source conn close error: %w", err))
+				errs = append(errs, errors.Wrap(err, errors.ErrorTypeNetwork, "source conn close error"))
 			}
 		}
 		if bridge.targetConn != nil && bridge.targetTunnelConn == nil {
 			if err := bridge.targetConn.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("target conn close error: %w", err))
+				errs = append(errs, errors.Wrap(err, errors.ErrorTypeNetwork, "target conn close error"))
 			}
 		}
 
 		if len(errs) > 0 {
-			return fmt.Errorf("tunnel bridge cleanup errors: %v", errs)
+			return errors.Newf(errors.ErrorTypePermanent, "tunnel bridge cleanup errors: %v", errs)
 		}
 		return nil
 	})

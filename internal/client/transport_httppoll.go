@@ -3,7 +3,6 @@ package client
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"runtime/debug"
@@ -11,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/dispose"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/utils"
@@ -99,7 +99,7 @@ func NewHTTPLongPollingConn(ctx context.Context, baseURL string, clientID int64,
 	// 生成 ConnectionID（唯一标识，在创建时就确定，不会改变）
 	connID, err := utils.GenerateUUID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate connection ID: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate connection ID")
 	}
 	connectionID := "conn_" + connID[:8] // 使用 "conn_" 前缀 + UUID 前8位
 

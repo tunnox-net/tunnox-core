@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/config"
 	"tunnox-core/internal/utils"
 )
@@ -25,7 +26,7 @@ func (a *TCPMappingAdapter) StartListener(config config.MappingConfig) error {
 	addr := fmt.Sprintf(":%d", config.LocalPort)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", addr, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to listen on %s", addr)
 	}
 
 	a.listener = listener
@@ -36,7 +37,7 @@ func (a *TCPMappingAdapter) StartListener(config config.MappingConfig) error {
 // Accept 接受TCP连接
 func (a *TCPMappingAdapter) Accept() (io.ReadWriteCloser, error) {
 	if a.listener == nil {
-		return nil, fmt.Errorf("TCP listener not initialized")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "TCP listener not initialized")
 	}
 
 	conn, err := a.listener.Accept()

@@ -12,18 +12,34 @@ type BuiltinCloudControl struct {
 	*CloudControl
 }
 
-func NewBuiltinCloudControl(config *ControlConfig) *BuiltinCloudControl {
-	memoryStorage := storage.NewMemoryStorage(context.Background())
-	base := NewCloudControl(config, memoryStorage)
+func NewBuiltinCloudControl(config *ControlConfig, parentCtx context.Context) *BuiltinCloudControl {
+	if parentCtx == nil {
+		// 如果没有提供 context，创建一个新的（仅用于独立模式）
+		// 注意：这应该只在 main 函数或测试中使用
+		parentCtx = context.Background()
+	}
+	memoryStorage := storage.NewMemoryStorage(parentCtx)
+	base, err := NewCloudControl(config, memoryStorage, parentCtx)
+	if err != nil {
+		return nil
+	}
 	control := &BuiltinCloudControl{
 		CloudControl: base,
 	}
 	return control
 }
 
-// NewBuiltinCloudControlWithStorage 创建内置云控实例，使用指定的存储实例（主要用于测试）
-func NewBuiltinCloudControlWithStorage(config *ControlConfig, storage storage.Storage) *BuiltinCloudControl {
-	base := NewCloudControl(config, storage)
+// NewBuiltinCloudControlWithStorage 创建内置云控实例，使用指定的存储实例
+func NewBuiltinCloudControlWithStorage(config *ControlConfig, storage storage.Storage, parentCtx context.Context) *BuiltinCloudControl {
+	if parentCtx == nil {
+		// 如果没有提供 context，创建一个新的（仅用于独立模式）
+		// 注意：这应该只在 main 函数或测试中使用
+		parentCtx = context.Background()
+	}
+	base, err := NewCloudControl(config, storage, parentCtx)
+	if err != nil {
+		return nil
+	}
 	control := &BuiltinCloudControl{
 		CloudControl: base,
 	}

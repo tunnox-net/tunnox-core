@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"time"
-
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -33,7 +33,7 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 		// 转换为 TransferPacket
 		pkt, err := TunnelPackageToTransferPacket(pkg)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert tunnel package: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to convert tunnel package")
 		}
 
 		// 这里应该通过 SessionManager 处理包
@@ -55,14 +55,14 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 			// 解码分片数据
 			fragmentData, err := base64.StdEncoding.DecodeString(fragmentResp.Data)
 			if err != nil {
-				return nil, fmt.Errorf("failed to decode fragment data: %w", err)
+				return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to decode fragment data")
 			}
 
 			// 验证解码后的数据长度是否与 FragmentSize 匹配
 			if len(fragmentData) != fragmentResp.FragmentSize {
 				utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - fragment size mismatch: expected %d, got %d, groupID=%s, index=%d",
 					sp.connectionID, fragmentResp.FragmentSize, len(fragmentData), fragmentResp.FragmentGroupID, fragmentResp.FragmentIndex)
-				return nil, fmt.Errorf("fragment size mismatch: expected %d, got %d", fragmentResp.FragmentSize, len(fragmentData))
+				return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "fragment size mismatch: expected %d, got %d", fragmentResp.FragmentSize, len(fragmentData))
 			}
 
 			// 添加到重组器
@@ -79,7 +79,7 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 				fragmentData,
 			)
 			if err != nil {
-				return nil, fmt.Errorf("failed to add fragment: %w", err)
+				return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to add fragment")
 			}
 
 			// 检查是否完整，如果完整则重组并推送
@@ -90,7 +90,7 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 				if err != nil {
 					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to reassemble fragments: %v, groupID=%s, connID=%s",
 						sp.connectionID, err, fragmentResp.FragmentGroupID, sp.connectionID)
-					return nil, fmt.Errorf("failed to reassemble fragments: %w", err)
+					return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to reassemble fragments")
 				}
 
 				// 验证重组后的数据大小
@@ -98,7 +98,7 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - reassembled size mismatch: expected %d, got %d, groupID=%s, connID=%s",
 						sp.connectionID, fragmentResp.OriginalSize, len(reassembledData), fragmentResp.FragmentGroupID, sp.connectionID)
 					sp.fragmentReassembler.RemoveGroup(fragmentResp.FragmentGroupID)
-					return nil, fmt.Errorf("reassembled size mismatch: expected %d, got %d", fragmentResp.OriginalSize, len(reassembledData))
+					return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "reassembled size mismatch: expected %d, got %d", fragmentResp.OriginalSize, len(reassembledData))
 				}
 
 				// 将重组后的数据 Base64 编码并推送
@@ -108,7 +108,7 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 				if err := sp.PushData(base64Data); err != nil {
 					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to push reassembled data: %v, groupID=%s, connID=%s",
 						sp.connectionID, err, fragmentResp.FragmentGroupID, sp.connectionID)
-					return nil, fmt.Errorf("failed to push reassembled data: %w", err)
+					return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to push reassembled data")
 				}
 
 				// 清理分片组
@@ -129,12 +129,12 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 				fragmentData, err := base64.StdEncoding.DecodeString(fragmentResp.Data)
 				if err != nil {
 					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to decode single fragment data: %v, connID=%s", sp.connectionID, err, sp.connectionID)
-					return nil, fmt.Errorf("failed to decode single fragment data: %w", err)
+					return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to decode single fragment data")
 				}
 				base64Data := base64.StdEncoding.EncodeToString(fragmentData)
 				if err := sp.PushData(base64Data); err != nil {
 					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to push single fragment data: %v, connID=%s", sp.connectionID, err, sp.connectionID)
-					return nil, fmt.Errorf("failed to push single fragment data: %w", err)
+					return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to push single fragment data")
 				}
 				utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - pushed single fragment data, size=%d, connID=%s",
 					sp.connectionID, len(fragmentData), sp.connectionID)
@@ -144,7 +144,7 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 					sp.connectionID, len(pushReq.Data), sp.connectionID)
 		if err := sp.PushData(pushReq.Data); err != nil {
 					utils.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to push data: %v, connID=%s", sp.connectionID, err, sp.connectionID)
-			return nil, fmt.Errorf("failed to push data: %w", err)
+			return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to push data")
 				}
 				utils.Infof("ServerStreamProcessor[%s]: HandlePushRequest - pushed complete data, len=%d, connID=%s",
 					sp.connectionID, len(pushReq.Data), sp.connectionID)

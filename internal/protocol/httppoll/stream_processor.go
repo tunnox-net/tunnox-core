@@ -4,14 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
-
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -218,7 +217,7 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 			return nil, 0, sp.Ctx().Err()
 		case <-timeout.C:
 			utils.Debugf("HTTPStreamProcessor: ReadPacket - timeout waiting for response, requestID=%s", requestID)
-			return nil, 0, fmt.Errorf("timeout waiting for response")
+			return nil, 0, coreErrors.New(coreErrors.ErrorTypeTemporary, "timeout waiting for response")
 		case <-ticker.C:
 			// 检查缓存
 			if pkt, exists := sp.getCachedResponse(requestID); exists {
@@ -255,13 +254,13 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	// 3. 转换为 HTTP Request（携带 RequestId）
 	req, err := sp.converter.WritePacket(pkt, requestID)
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert packet: %w", err)
+		return 0, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to convert packet")
 	}
 
 	// 3. 设置请求 URL 和认证
 	reqURL, err := url.Parse(sp.pushURL)
 	if err != nil {
-		return 0, fmt.Errorf("invalid push URL: %w", err)
+		return 0, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "invalid push URL")
 	}
 	req.URL = reqURL
 
@@ -269,7 +268,7 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	select {
 	case <-sp.Ctx().Done():
 		utils.Errorf("HTTPStreamProcessor: WritePacket - context canceled before sending Push request, requestID=%s, connID=%s, err=%v", requestID, sp.connectionID, sp.Ctx().Err())
-		return 0, fmt.Errorf("push request failed: context canceled: %w", sp.Ctx().Err())
+		return 0, coreErrors.Wrap(sp.Ctx().Err(), coreErrors.ErrorTypeTemporary, "push request failed: context canceled")
 	default:
 	}
 
@@ -301,7 +300,7 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	}
 
 	if err != nil {
-		return 0, fmt.Errorf("push request failed: %w", err)
+		return 0, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "push request failed")
 	}
 	defer resp.Body.Close()
 
@@ -345,7 +344,7 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	// 6. 检查响应状态
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("push request failed: status %d, body: %s", resp.StatusCode, string(body))
+		return 0, coreErrors.Newf(coreErrors.ErrorTypeNetwork, "push request failed: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	// 读取并丢弃响应 body（确保连接正确关闭）
@@ -379,7 +378,7 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 	fragments, err := SplitDataIntoFragments(data, sequenceNumber)
 	if err != nil {
 		utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - failed to split data into fragments: %v, connID=%s", sp.connectionID, err, sp.connectionID)
-		return fmt.Errorf("failed to split data into fragments: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to split data into fragments")
 	}
 
 	// 发送每个分片
@@ -387,7 +386,7 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 		// 序列化分片响应为 JSON
 		fragmentJSON, err := MarshalFragmentResponse(fragment)
 		if err != nil {
-			return fmt.Errorf("failed to marshal fragment: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to marshal fragment")
 		}
 
 		// 生成 RequestId（用于匹配请求和响应）
@@ -405,7 +404,7 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 		}
 		encodedPkg, err := EncodeTunnelPackage(dataPkg)
 		if err != nil {
-			return fmt.Errorf("failed to encode data package: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to encode data package")
 		}
 
 		// 将分片 JSON 作为 data 字段发送（服务器端会识别并处理分片）
@@ -415,12 +414,12 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 		}
 		reqJSON, err := json.Marshal(reqBody)
 		if err != nil {
-			return fmt.Errorf("failed to marshal request: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to marshal request")
 		}
 
 		req, err := http.NewRequestWithContext(sp.Ctx(), "POST", sp.pushURL, bytes.NewReader(reqJSON))
 		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to create request")
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -434,7 +433,7 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 		if err != nil {
 			utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - push request failed for fragment %d/%d: %v, groupID=%s, requestID=%s, connID=%s",
 				sp.connectionID, i+1, len(fragments), err, fragment.FragmentGroupID, requestID, sp.connectionID)
-			return fmt.Errorf("push data request failed: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "push data request failed")
 		}
 		defer resp.Body.Close()
 
@@ -442,7 +441,7 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 			body, _ := io.ReadAll(resp.Body)
 			utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - push request failed for fragment %d/%d: status %d, body: %s, groupID=%s, requestID=%s, connID=%s",
 				sp.connectionID, i+1, len(fragments), resp.StatusCode, string(body), fragment.FragmentGroupID, requestID, sp.connectionID)
-			return fmt.Errorf("push data request failed: status %d, body: %s", resp.StatusCode, string(body))
+			return coreErrors.Newf(coreErrors.ErrorTypeNetwork, "push data request failed: status %d, body: %s", resp.StatusCode, string(body))
 		}
 	}
 

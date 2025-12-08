@@ -5,6 +5,7 @@ import (
 	"net"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -15,14 +16,14 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 	utils.Infof("Tunnel[%s]: startSourceBridge called, mappingID=%s", req.TunnelID, req.MappingID)
 	
 	if s.cloudControl == nil {
-		return fmt.Errorf("cloud control not configured")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "cloud control not configured")
 	}
 
 	// ✅ 统一使用 GetPortMapping，直接返回 PortMapping
 	mapping, err := s.cloudControl.GetPortMapping(req.MappingID)
 	if err != nil {
 		utils.Errorf("Tunnel[%s]: failed to get mapping: %v", req.TunnelID, err)
-		return fmt.Errorf("mapping not found: %w", err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "mapping not found: %s", req.MappingID)
 	}
 
 	bandwidthLimit := mapping.Config.BandwidthLimit
@@ -52,7 +53,7 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 	if _, exists := s.tunnelBridges[req.TunnelID]; exists {
 		s.bridgeLock.Unlock()
 		utils.Warnf("Tunnel[%s]: bridge already exists", req.TunnelID)
-		return fmt.Errorf("tunnel %s already exists", req.TunnelID)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "tunnel %s already exists", req.TunnelID)
 	}
 	s.tunnelBridges[req.TunnelID] = bridge
 	s.bridgeLock.Unlock()
@@ -100,13 +101,13 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 // StartServerTunnel 供服务器内部组件（如 UDP Ingress）使用，创建虚拟源端并发起隧道
 func (s *SessionManager) StartServerTunnel(mappingID string, sourceConn net.Conn) (string, error) {
 	if s.cloudControl == nil {
-		return "", fmt.Errorf("cloud control not configured")
+		return "", coreErrors.New(coreErrors.ErrorTypePermanent, "cloud control not configured")
 	}
 
 	// ✅ 统一使用 GetPortMapping，直接返回 PortMapping
 	mapping, err := s.cloudControl.GetPortMapping(mappingID)
 	if err != nil {
-		return "", fmt.Errorf("mapping not found: %w", err)
+		return "", coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "mapping not found: %s", mappingID)
 	}
 
 	tunnelID := fmt.Sprintf("server-udp-%s-%d", mappingID, time.Now().UnixNano())

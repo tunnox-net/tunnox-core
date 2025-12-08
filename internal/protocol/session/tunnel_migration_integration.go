@@ -2,8 +2,9 @@ package session
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -31,7 +32,7 @@ func (s *SessionManager) SetMigrationManager(mgr *TunnelMigrationManager) {
 // 3. 保存到Redis（通过TunnelStateManager）
 func (s *SessionManager) SaveActiveTunnelStates() error {
 	if s.tunnelStateManager == nil {
-		return fmt.Errorf("tunnel state manager not configured")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel state manager not configured")
 	}
 
 	s.tunnelConnLock.RLock()
@@ -76,7 +77,7 @@ func (s *SessionManager) SaveActiveTunnelStates() error {
 	utils.Infof("SessionManager: saved tunnel states (success=%d, failed=%d)", savedCount, failedCount)
 
 	if failedCount > 0 {
-		return fmt.Errorf("failed to save %d tunnel states", failedCount)
+		return coreErrors.Newf(coreErrors.ErrorTypeStorage, "failed to save %d tunnel states", failedCount)
 	}
 
 	return nil
@@ -103,13 +104,13 @@ type TunnelResumeToken struct {
 // 用于后续重连恢复。
 func (s *SessionManager) GenerateTunnelResumeToken(tunnelID string) (string, error) {
 	if s.tunnelStateManager == nil {
-		return "", fmt.Errorf("tunnel state manager not configured")
+		return "", coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel state manager not configured")
 	}
 
 	// 从存储加载隧道状态
 	state, err := s.tunnelStateManager.LoadState(tunnelID)
 	if err != nil {
-		return "", fmt.Errorf("failed to load tunnel state: %w", err)
+		return "", coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to load tunnel state: %s", tunnelID)
 	}
 
 	// 创建恢复Token
@@ -122,7 +123,7 @@ func (s *SessionManager) GenerateTunnelResumeToken(tunnelID string) (string, err
 	// 序列化为JSON
 	tokenJSON, err := json.Marshal(resumeToken)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal resume token: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal resume token")
 	}
 
 	return string(tokenJSON), nil
@@ -133,30 +134,30 @@ func (s *SessionManager) GenerateTunnelResumeToken(tunnelID string) (string, err
 // 在HandleTunnelOpen中调用，验证Token并返回隧道状态。
 func (s *SessionManager) ValidateTunnelResumeToken(tokenStr string) (*TunnelState, error) {
 	if s.tunnelStateManager == nil {
-		return nil, fmt.Errorf("tunnel state manager not configured")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel state manager not configured")
 	}
 
 	// 解析Token
 	var token TunnelResumeToken
 	if err := json.Unmarshal([]byte(tokenStr), &token); err != nil {
-		return nil, fmt.Errorf("invalid resume token format: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "invalid resume token format")
 	}
 
 	// 从存储加载隧道状态
 	state, err := s.tunnelStateManager.LoadState(token.TunnelID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load tunnel state: %w", err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to load tunnel state: %s", token.TunnelID)
 	}
 
 	// 验证签名
 	if state.Signature != token.Signature {
-		return nil, fmt.Errorf("resume token signature mismatch")
+		return nil, coreErrors.New(coreErrors.ErrorTypeAuth, "resume token signature mismatch")
 	}
 
 	// 检查Token是否过期（默认5分钟）
 	issuedAt := time.Unix(token.IssuedAt, 0)
 	if time.Since(issuedAt) > 5*time.Minute {
-		return nil, fmt.Errorf("resume token expired (issued at %s)", issuedAt.Format(time.RFC3339))
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "resume token expired (issued at %s)", issuedAt.Format(time.RFC3339))
 	}
 
 	utils.Infof("SessionManager: validated resume token for tunnel %s", token.TunnelID)

@@ -8,6 +8,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/command"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/utils"
@@ -33,7 +34,7 @@ func NewMappingCommandHandlers(
 // RegisterHandlers 注册所有映射命令处理器
 func (h *MappingCommandHandlers) RegisterHandlers(registry *command.CommandRegistry) error {
 	if registry == nil {
-		return fmt.Errorf("command registry is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "command registry is nil")
 	}
 
 	listHandler := &ListMappingsHandler{
@@ -48,7 +49,7 @@ func (h *MappingCommandHandlers) RegisterHandlers(registry *command.CommandRegis
 		sessionMgr:      h.sessionMgr,
 	}
 	if err := registry.Register(listHandler); err != nil {
-		return fmt.Errorf("failed to register list mappings handler: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to register list mappings handler")
 	}
 
 	getHandler := &GetMappingHandler{
@@ -63,7 +64,7 @@ func (h *MappingCommandHandlers) RegisterHandlers(registry *command.CommandRegis
 		sessionMgr:      h.sessionMgr,
 	}
 	if err := registry.Register(getHandler); err != nil {
-		return fmt.Errorf("failed to register get mapping handler: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to register get mapping handler")
 	}
 
 	deleteHandler := &DeleteMappingHandler{
@@ -78,7 +79,7 @@ func (h *MappingCommandHandlers) RegisterHandlers(registry *command.CommandRegis
 		sessionMgr:      h.sessionMgr,
 	}
 	if err := registry.Register(deleteHandler); err != nil {
-		return fmt.Errorf("failed to register delete mapping handler: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to register delete mapping handler")
 	}
 
 	return nil

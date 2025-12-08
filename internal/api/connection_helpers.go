@@ -1,9 +1,9 @@
 package api
 
 import (
-	"fmt"
 	"time"
-	
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -13,14 +13,14 @@ import (
 // 返回stream, connID, remoteAddr, error
 func getStreamFromConnection(accessor ControlConnectionAccessor, clientID int64) (stream.PackageStreamer, string, string, error) {
 	if accessor == nil {
-		return nil, "", "", fmt.Errorf("connection accessor is nil")
+		return nil, "", "", coreErrors.New(coreErrors.ErrorTypePermanent, "connection accessor is nil")
 	}
 
-		stream := accessor.GetStream()
-		if stream == nil {
-			return nil, "", "", fmt.Errorf("stream is nil")
-		}
-		return stream, accessor.GetConnID(), accessor.GetRemoteAddr(), nil
+	stream := accessor.GetStream()
+	if stream == nil {
+		return nil, "", "", coreErrors.New(coreErrors.ErrorTypePermanent, "stream is nil")
+	}
+	return stream, accessor.GetConnID(), accessor.GetRemoteAddr(), nil
 }
 
 // sendPacketAsync 异步发送数据包（带超时）

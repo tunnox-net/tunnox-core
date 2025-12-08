@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -44,7 +44,7 @@ func (p *PProfCapture) Start() error {
 	defer p.mu.Unlock()
 
 	if p.running {
-		return fmt.Errorf("pprof capture is already running")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "pprof capture is already running")
 	}
 
 	if !p.config.Enabled || !p.config.AutoCapture {
@@ -53,7 +53,7 @@ func (p *PProfCapture) Start() error {
 
 	// 确保数据目录存在
 	if err := p.ensureDataDir(); err != nil {
-		return fmt.Errorf("failed to create data directory: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to create data directory")
 	}
 
 	p.running = true
@@ -86,20 +86,20 @@ func (p *PProfCapture) onClose() error {
 // ensureDataDir 确保数据目录存在
 func (p *PProfCapture) ensureDataDir() error {
 	if p.config.DataDir == "" {
-		return fmt.Errorf("pprof data directory is not configured")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "pprof data directory is not configured")
 	}
 
 	// 展开路径（支持 ~ 和相对路径）
 	expandedPath, err := utils.ExpandPath(p.config.DataDir)
 	if err != nil {
-		return fmt.Errorf("failed to expand path %q: %w", p.config.DataDir, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to expand path %q", p.config.DataDir)
 	}
 
 	p.config.DataDir = expandedPath
 
 	// 创建目录
 	if err := os.MkdirAll(p.config.DataDir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory %q: %w", p.config.DataDir, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to create directory %q", p.config.DataDir)
 	}
 
 	return nil
@@ -179,7 +179,7 @@ func (p *PProfCapture) captureGoroutine(filePath string) error {
 
 	profile := pprof.Lookup("goroutine")
 	if profile == nil {
-		return fmt.Errorf("goroutine profile not found")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "goroutine profile not found")
 	}
 	return profile.WriteTo(f, 0)
 }
@@ -194,7 +194,7 @@ func (p *PProfCapture) captureAllocs(filePath string) error {
 
 	profile := pprof.Lookup("allocs")
 	if profile == nil {
-		return fmt.Errorf("allocs profile not found")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "allocs profile not found")
 	}
 	return profile.WriteTo(f, 0)
 }
@@ -209,7 +209,7 @@ func (p *PProfCapture) captureBlock(filePath string) error {
 
 	profile := pprof.Lookup("block")
 	if profile == nil {
-		return fmt.Errorf("block profile not found")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "block profile not found")
 	}
 	return profile.WriteTo(f, 0)
 }
@@ -224,7 +224,7 @@ func (p *PProfCapture) captureMutex(filePath string) error {
 
 	profile := pprof.Lookup("mutex")
 	if profile == nil {
-		return fmt.Errorf("mutex profile not found")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "mutex profile not found")
 	}
 	return profile.WriteTo(f, 0)
 }

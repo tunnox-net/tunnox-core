@@ -8,6 +8,7 @@ import (
 	"time"
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 
 	"github.com/google/uuid"
@@ -27,7 +28,7 @@ type SessionMetadata struct {
 // ForwardSession 表示一个逻辑转发会话（在一个物理 gRPC 连接上多路复用）
 type ForwardSession struct {
 	*dispose.ManagerBase
-	
+
 	streamID     string
 	conn         MultiplexedConn
 	sendChan     chan *pb.BridgePacket
@@ -62,7 +63,7 @@ func NewForwardSession(parentCtx context.Context, conn MultiplexedConn, metadata
 	// 注册清理处理器
 	session.AddCleanHandler(func() error {
 		utils.Infof("ForwardSession: cleaning up session %s", streamID)
-		
+
 		// 发送关闭数据包
 		closePacket := &pb.BridgePacket{
 			StreamId:  streamID,
@@ -134,9 +135,9 @@ func (s *ForwardSession) Send(data []byte) error {
 	case s.sendChan <- packet:
 		return nil
 	case <-s.Ctx().Done():
-		return fmt.Errorf("session closed")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "session closed")
 	case <-time.After(5 * time.Second):
-		return fmt.Errorf("send timeout")
+		return coreErrors.New(coreErrors.ErrorTypeTemporary, "send timeout")
 	}
 }
 
@@ -152,7 +153,7 @@ func (s *ForwardSession) Receive() ([]byte, error) {
 		s.mu.Unlock()
 		return packet.Payload, nil
 	case <-s.Ctx().Done():
-		return nil, fmt.Errorf("session closed")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "session closed")
 	}
 }
 
@@ -174,9 +175,9 @@ func (s *ForwardSession) SendPacket(packetType pb.PacketType, payload []byte) er
 	case s.sendChan <- packet:
 		return nil
 	case <-s.Ctx().Done():
-		return fmt.Errorf("session closed")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "session closed")
 	case <-time.After(5 * time.Second):
-		return fmt.Errorf("send packet timeout")
+		return coreErrors.New(coreErrors.ErrorTypeTemporary, "send packet timeout")
 	}
 }
 
@@ -192,7 +193,7 @@ func (s *ForwardSession) ReceivePacket() (*pb.BridgePacket, error) {
 		s.mu.Unlock()
 		return packet, nil
 	case <-s.Ctx().Done():
-		return nil, fmt.Errorf("session closed")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "session closed")
 	}
 }
 
@@ -202,11 +203,11 @@ func (s *ForwardSession) deliverPacket(packet *pb.BridgePacket) error {
 	case s.recvChan <- packet:
 		return nil
 	case <-s.Ctx().Done():
-		return fmt.Errorf("session closed")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "session closed")
 	default:
 		// 接收通道满，丢弃数据包
 		utils.Warnf("ForwardSession: receive channel full for session %s, dropping packet", s.streamID)
-		return fmt.Errorf("receive channel full")
+		return coreErrors.New(coreErrors.ErrorTypeTemporary, "receive channel full")
 	}
 }
 

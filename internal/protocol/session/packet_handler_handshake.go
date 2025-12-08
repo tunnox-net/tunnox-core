@@ -2,9 +2,8 @@ package session
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
-
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -13,7 +12,7 @@ import (
 // handleHandshake 处理握手请求
 func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 	if s.authHandler == nil {
-		return fmt.Errorf("auth handler not configured")
+		return errors.New(errors.ErrorTypePermanent, "auth handler not configured")
 	}
 
 	// 解析握手请求（从 Payload）
@@ -21,7 +20,7 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 	if len(connPacket.Packet.Payload) > 0 {
 		if err := json.Unmarshal(connPacket.Packet.Payload, req); err != nil {
 			utils.Errorf("Failed to parse handshake request: %v", err)
-			return fmt.Errorf("invalid handshake request format: %w", err)
+			return errors.Wrap(err, errors.ErrorTypeProtocol, "invalid handshake request format")
 		}
 	}
 
@@ -40,7 +39,7 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 			// 获取底层连接信息
 			conn := s.getConnectionByConnID(connPacket.ConnectionID)
 			if conn == nil {
-				return fmt.Errorf("connection not found: %s", connPacket.ConnectionID)
+				return errors.Newf(errors.ErrorTypePermanent, "connection not found: %s", connPacket.ConnectionID)
 			}
 
 			// 创建控制连接
@@ -60,7 +59,7 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 	} else {
 		conn := s.getConnectionByConnID(connPacket.ConnectionID)
 		if conn == nil {
-			return fmt.Errorf("connection not found: %s", connPacket.ConnectionID)
+			return errors.Newf(errors.ErrorTypePermanent, "connection not found: %s", connPacket.ConnectionID)
 		}
 		enforcedProtocol := conn.Protocol
 		if enforcedProtocol == "" {
@@ -131,7 +130,7 @@ func (s *SessionManager) sendHandshakeResponse(conn ControlConnectionInterface, 
 	// 序列化响应
 	respData, err := json.Marshal(resp)
 	if err != nil {
-		return fmt.Errorf("failed to marshal handshake response: %w", err)
+		return errors.Wrap(err, errors.ErrorTypePermanent, "failed to marshal handshake response")
 	}
 
 	// 构造响应包
@@ -146,7 +145,7 @@ func (s *SessionManager) sendHandshakeResponse(conn ControlConnectionInterface, 
 	stream := conn.GetStream()
 	if stream == nil {
 		utils.Errorf("Failed to send handshake response: stream is nil for connection %s", conn.GetConnID())
-		return fmt.Errorf("stream is nil")
+		return errors.New(errors.ErrorTypePermanent, "stream is nil")
 	}
 
 	// 调试：检查是否是 httppollStreamAdapter，如果是，检查其内部的 ServerStreamProcessor

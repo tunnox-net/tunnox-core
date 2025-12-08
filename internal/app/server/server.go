@@ -13,6 +13,7 @@ import (
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/metrics"
 	"tunnox-core/internal/core/node"
@@ -88,7 +89,9 @@ func New(config *Config, parentCtx context.Context) *Server {
 	if err != nil {
 		utils.Fatalf("Failed to create metrics: %v", err)
 	}
-	metrics.SetGlobalMetrics(serverMetrics)
+	if err := metrics.SetGlobalMetrics(serverMetrics); err != nil {
+		utils.Fatalf("Failed to set global metrics: %v", err)
+	}
 	// 注册到 dispose 包，用于记录释放计数（避免循环依赖）
 	metrics.RegisterDisposeCounter(func(fn func()) {
 		dispose.SetIncrementDisposeCountFunc(fn)
@@ -99,7 +102,7 @@ func New(config *Config, parentCtx context.Context) *Server {
 	cloudControlConfig := managers.DefaultConfig()          // 使用默认配置
 	cloudControlConfig.NodeID = config.MessageBroker.NodeID // 设置节点ID
 
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(cloudControlConfig, serverStorage)
+	cloudControl := managers.NewBuiltinCloudControlWithStorage(cloudControlConfig, serverStorage, parentCtx)
 
 	// 创建服务器
 	server := &Server{
@@ -222,12 +225,12 @@ func New(config *Config, parentCtx context.Context) *Server {
 func (s *Server) Start() error {
 	// 设置协议适配器
 	if err := s.setupProtocolAdapters(); err != nil {
-		return fmt.Errorf("failed to setup protocol adapters: %v", err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to setup protocol adapters")
 	}
 
 	// 使用服务管理器启动所有服务
 	if err := s.serviceManager.StartAllServices(); err != nil {
-		return fmt.Errorf("failed to start services: %v", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to start services")
 	}
 
 	return nil
@@ -283,7 +286,7 @@ func (s *Server) Run() error {
 	if err := s.setupProtocolAdapters(); err != nil {
 		// 确保错误信息输出到控制台
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to setup protocol adapters: %v\n", err)
-		return fmt.Errorf("failed to setup protocol adapters: %v", err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to setup protocol adapters")
 	}
 
 	// 使用服务管理器运行（包含信号处理和优雅关闭）
@@ -294,7 +297,7 @@ func (s *Server) Run() error {
 func (s *Server) RunWithContext(ctx context.Context) error {
 	// 设置协议适配器（但不启动服务）
 	if err := s.setupProtocolAdapters(); err != nil {
-		return fmt.Errorf("failed to setup protocol adapters: %v", err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to setup protocol adapters")
 	}
 
 	// 使用服务管理器运行（包含信号处理和优雅关闭）

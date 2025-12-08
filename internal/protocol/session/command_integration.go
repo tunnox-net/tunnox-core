@@ -1,7 +1,7 @@
 package session
 
 import (
-	"fmt"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
@@ -15,7 +15,7 @@ import (
 // SetEventBus 设置事件总线
 func (s *SessionManager) SetEventBus(eventBus events.EventBus) error {
 	if eventBus == nil {
-		return fmt.Errorf("event bus cannot be nil")
+		return errors.New(errors.ErrorTypePermanent, "event bus cannot be nil")
 	}
 
 	s.eventBus = eventBus
@@ -23,7 +23,7 @@ func (s *SessionManager) SetEventBus(eventBus events.EventBus) error {
 
 		// 订阅断开连接请求事件
 		if err := s.eventBus.Subscribe("DisconnectRequest", s.handleDisconnectRequestEvent); err != nil {
-			return fmt.Errorf("failed to subscribe to disconnect request events: %w", err)
+			return errors.Wrap(err, errors.ErrorTypePermanent, "failed to subscribe to disconnect request events")
 		}
 
 		utils.Debug("Event bus configured in SessionManager")
@@ -43,7 +43,7 @@ func (s *SessionManager) GetResponseManager() *ResponseManager {
 // RegisterCommandHandler 注册命令处理器
 func (s *SessionManager) RegisterCommandHandler(cmdType packet.CommandType, handler types.CommandHandler) error {
 	if s.commandRegistry == nil {
-		return fmt.Errorf("command registry not initialized")
+		return errors.New(errors.ErrorTypePermanent, "command registry not initialized")
 	}
 	return s.commandRegistry.Register(handler)
 }
@@ -51,7 +51,7 @@ func (s *SessionManager) RegisterCommandHandler(cmdType packet.CommandType, hand
 // UnregisterCommandHandler 注销命令处理器
 func (s *SessionManager) UnregisterCommandHandler(cmdType packet.CommandType) error {
 	if s.commandRegistry == nil {
-		return fmt.Errorf("command registry not initialized")
+		return errors.New(errors.ErrorTypePermanent, "command registry not initialized")
 	}
 	return s.commandRegistry.Unregister(cmdType)
 }
@@ -59,7 +59,7 @@ func (s *SessionManager) UnregisterCommandHandler(cmdType packet.CommandType) er
 // ProcessCommand 处理命令
 func (s *SessionManager) ProcessCommand(connID string, cmd *packet.CommandPacket) (*types.CommandResponse, error) {
 	if s.commandExecutor == nil {
-		return nil, fmt.Errorf("command executor not initialized")
+		return nil, errors.New(errors.ErrorTypePermanent, "command executor not initialized")
 	}
 
 	// 构建 StreamPacket
@@ -72,7 +72,7 @@ func (s *SessionManager) ProcessCommand(connID string, cmd *packet.CommandPacket
 
 	// 执行命令
 	if err := s.commandExecutor.Execute(streamPacket); err != nil {
-		return nil, fmt.Errorf("command execution failed: %w", err)
+		return nil, errors.Wrap(err, errors.ErrorTypePermanent, "command execution failed")
 	}
 
 	return &types.CommandResponse{Success: true}, nil
@@ -91,7 +91,7 @@ func (s *SessionManager) GetCommandExecutor() types.CommandExecutor {
 // SetCommandExecutor 设置命令执行器
 func (s *SessionManager) SetCommandExecutor(executor types.CommandExecutor) error {
 	if executor == nil {
-		return fmt.Errorf("command executor cannot be nil")
+		return errors.New(errors.ErrorTypePermanent, "command executor cannot be nil")
 	}
 	s.commandExecutor = executor
 	utils.Debug("Command executor configured in SessionManager")
@@ -131,7 +131,7 @@ func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) err
 // handleDefaultCommand 处理默认命令（回退）
 func (s *SessionManager) handleDefaultCommand(connPacket *types.StreamPacket) error {
 	if connPacket.Packet.CommandPacket == nil {
-		return fmt.Errorf("command packet is nil")
+		return errors.New(errors.ErrorTypeProtocol, "command packet is nil")
 	}
 
 	cmd := connPacket.Packet.CommandPacket
@@ -155,7 +155,7 @@ func (s *SessionManager) handleConfigGetCommand(connPacket *types.StreamPacket) 
 	s.controlConnLock.RUnlock()
 
 	if !exists {
-		return fmt.Errorf("control connection not found: %s", connPacket.ConnectionID)
+		return errors.Newf(errors.ErrorTypePermanent, "control connection not found: %s", connPacket.ConnectionID)
 	}
 
 	// 获取客户端ID

@@ -2,12 +2,12 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"tunnox-core/internal/api"
 	"tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/protocol/session"
@@ -82,7 +82,7 @@ func (s *BaseService) Stop(ctx context.Context) error {
 	// 关闭资源
 	if s.closeable != nil {
 		if err := s.closeable.Close(); err != nil {
-			return fmt.Errorf("failed to close %s: %w", s.name, err)
+			return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to close %s", s.name)
 		}
 	}
 
@@ -150,7 +150,7 @@ func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Contex
 	case "quic":
 		return adapter.NewQuicAdapter(ctx, pf.session), nil
 	default:
-		return nil, fmt.Errorf("unsupported protocol: %s", protocolName)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported protocol: %s", protocolName)
 	}
 }
 
@@ -174,7 +174,7 @@ func (r *SimpleNodeRegistry) GetNodeAddress(nodeID string) (string, error) {
 
 	addr, exists := r.nodes[nodeID]
 	if !exists {
-		return "", fmt.Errorf("node not found: %s", nodeID)
+		return "", coreErrors.Newf(coreErrors.ErrorTypePermanent, "node not found: %s", nodeID)
 	}
 	return addr, nil
 }

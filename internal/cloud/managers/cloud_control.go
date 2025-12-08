@@ -8,6 +8,7 @@ import (
 	"tunnox-core/internal/cloud/distributed"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/storage"
 )
@@ -39,8 +40,10 @@ type CloudControl struct {
 	done              chan bool
 }
 
-func NewCloudControl(config *ControlConfig, storage storage.Storage) *CloudControl {
-	ctx := context.Background()
+func NewCloudControl(config *ControlConfig, storage storage.Storage, parentCtx context.Context) (*CloudControl, error) {
+	if parentCtx == nil {
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "parent context is required for CloudControl")
+	}
 	repo := repos.NewRepository(storage)
 
 	// 使用锁工厂创建分布式锁
@@ -53,10 +56,13 @@ func NewCloudControl(config *ControlConfig, storage storage.Storage) *CloudContr
 	clientRepo := repos.NewClientRepository(repo)
 	mappingRepo := repos.NewPortMappingRepo(repo)
 	nodeRepo := repos.NewNodeRepository(repo)
-	connRepo := repos.NewConnectionRepo(repo)
+	connRepo, err := repos.NewConnectionRepo(repo, parentCtx)
+	if err != nil {
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to create connection repo")
+	}
 
 	// 创建ID管理器
-	idManager := idgen.NewIDManager(storage, ctx)
+	idManager := idgen.NewIDManager(storage, parentCtx)
 
 	base := &CloudControl{
 		ResourceBase:      dispose.NewResourceBase("CloudControl"),
@@ -68,20 +74,20 @@ func NewCloudControl(config *ControlConfig, storage storage.Storage) *CloudContr
 		mappingRepo:       mappingRepo,
 		nodeRepo:          nodeRepo,
 		connRepo:          connRepo,
-		jwtManager:        NewJWTManager(config, repo, ctx),
-		configManager:     NewConfigManager(storage, config, ctx),
-		cleanupManager:    NewCleanupManager(storage, lock, ctx),
-		statsManager:      NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo, storage, ctx),
-		anonymousManager:  NewAnonymousManager(clientRepo, mappingRepo, idManager, ctx),
-		nodeManager:       NewNodeManager(nodeRepo, ctx),
-		searchManager:     NewSearchManager(userRepo, clientRepo, mappingRepo, ctx),
-		connectionManager: NewConnectionManager(connRepo, idManager, ctx),
+		jwtManager:        NewJWTManager(config, repo, parentCtx),
+		configManager:     NewConfigManager(storage, config, parentCtx),
+		cleanupManager:    NewCleanupManager(storage, lock, parentCtx),
+		statsManager:      NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo, storage, parentCtx),
+		anonymousManager:  NewAnonymousManager(clientRepo, mappingRepo, idManager, parentCtx),
+		nodeManager:       NewNodeManager(nodeRepo, parentCtx),
+		searchManager:     NewSearchManager(userRepo, clientRepo, mappingRepo, parentCtx),
+		connectionManager: NewConnectionManager(connRepo, idManager, parentCtx),
 		lock:              lock,
 		cleanupTicker:     time.NewTicker(60 * time.Second), // 默认清理间隔
 		done:              make(chan bool),
 	}
-	base.Initialize(ctx)
-	return base
+	base.Initialize(parentCtx)
+	return base, nil
 }
 
 // handleErrorWithIDRelease 处理需要释放ID的错误
@@ -96,7 +102,7 @@ func (c *CloudControl) handleErrorWithIDRelease(err error, id int64, releaseFunc
 		_ = releaseFunc(id)
 	}
 
-	return fmt.Errorf("%s: %w", message, err)
+	return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "%s", message)
 }
 
 // Close 实现 CloudControlAPI 接口的 Close 方法
@@ -121,4 +127,3 @@ func (c *CloudControl) Close() error {
 	}
 	return nil
 }
-

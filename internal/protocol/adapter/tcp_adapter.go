@@ -2,9 +2,10 @@ package adapter
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net"
+	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
 )
 
@@ -26,11 +27,15 @@ type TcpAdapter struct {
 }
 
 func NewTcpAdapter(parentCtx context.Context, session session.Session) *TcpAdapter {
-	t := &TcpAdapter{}
-	t.BaseAdapter = BaseAdapter{} // 初始化 BaseAdapter
+	t := &TcpAdapter{
+		BaseAdapter: BaseAdapter{
+			ResourceBase: dispose.NewResourceBase("TcpAdapter"),
+		},
+	}
+	t.Initialize(parentCtx)
+	t.AddCleanHandler(t.onClose)
 	t.SetName("tcp")
 	t.SetSession(session)
-	t.SetCtx(parentCtx, t.onClose)
 	t.SetProtocolAdapter(t) // 设置协议适配器引用
 	return t
 }
@@ -54,7 +59,7 @@ func (t *TcpAdapter) Listen(addr string) error {
 
 func (t *TcpAdapter) Accept() (io.ReadWriteCloser, error) {
 	if t.listener == nil {
-		return nil, fmt.Errorf("TCP listener not initialized")
+		return nil, errors.New(errors.ErrorTypePermanent, "TCP listener not initialized")
 	}
 	conn, err := t.listener.Accept()
 	if err != nil {

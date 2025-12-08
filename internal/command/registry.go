@@ -2,8 +2,9 @@ package command
 
 import (
 	"context"
-	"fmt"
 	"sync"
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -32,11 +33,11 @@ func (r *CommandRegistry) Register(handler CommandHandler) error {
 
 	commandType := handler.GetCommandType()
 	if commandType == 0 {
-		return fmt.Errorf("invalid command type: 0")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "invalid command type: 0")
 	}
 
 	if _, exists := r.handlers[commandType]; exists {
-		return fmt.Errorf("handler for command type %v already registered", commandType)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "handler for command type %v already registered", commandType)
 	}
 
 	r.handlers[commandType] = handler
@@ -55,7 +56,7 @@ func (r *CommandRegistry) Unregister(commandType packet.CommandType) error {
 	defer r.mu.Unlock()
 
 	if _, exists := r.handlers[commandType]; !exists {
-		return fmt.Errorf("handler for command type %v not found", commandType)
+		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "handler for command type %v not found", commandType)
 	}
 
 	delete(r.handlers, commandType)

@@ -1,10 +1,11 @@
 package services
 
 import (
-	"fmt"
 	"sync"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/utils"
 )
 
@@ -27,7 +28,7 @@ func (s *clientService) ListClients(userID string, clientType models.ClientType)
 	// 获取所有客户端配置
 	configs, err = s.configRepo.ListConfigs()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list client configs: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to list client configs")
 	}
 
 	// 并发聚合每个客户端的完整信息
@@ -80,7 +81,7 @@ func (s *clientService) ListUserClients(userID string) ([]*models.Client, error)
 func (s *clientService) GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) {
 	mappings, err := s.mappingRepo.GetClientPortMappings(utils.Int64ToString(clientID))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get client port mappings for %d: %w", clientID, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to get client port mappings for %d", clientID)
 	}
 	return mappings, nil
 }
@@ -95,13 +96,12 @@ func (s *clientService) SearchClients(keyword string) ([]*models.Client, error) 
 // GetClientStats 获取客户端统计信息
 func (s *clientService) GetClientStats(clientID int64) (*stats.ClientStats, error) {
 	if s.statsMgr == nil {
-		return nil, fmt.Errorf("stats manager not available")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "stats manager not available")
 	}
 
 	clientStats, err := s.statsMgr.GetClientStats(clientID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get client stats for %d: %w", clientID, err)
+		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypeStorage, "failed to get client stats for %d", clientID)
 	}
 	return clientStats, nil
 }
-

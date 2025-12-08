@@ -2,8 +2,8 @@ package server
 
 import (
 	"fmt"
-
 	"tunnox-core/internal/command"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/utils"
@@ -29,7 +29,7 @@ func NewConfigCommandHandlers(
 // RegisterHandlers 注册所有配置命令处理器
 func (h *ConfigCommandHandlers) RegisterHandlers(registry *command.CommandRegistry) error {
 	if registry == nil {
-		return fmt.Errorf("command registry is nil")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "command registry is nil")
 	}
 
 	// 注册 ConfigGet 命令
@@ -45,7 +45,7 @@ func (h *ConfigCommandHandlers) RegisterHandlers(registry *command.CommandRegist
 		sessionMgr:  h.sessionMgr,
 	}
 	if err := registry.Register(configGetHandler); err != nil {
-		return fmt.Errorf("failed to register config get handler: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to register config get handler")
 	}
 
 	return nil

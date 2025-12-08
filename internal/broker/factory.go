@@ -2,7 +2,7 @@ package broker
 
 import (
 	"context"
-	"fmt"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // BrokerType 消息代理类型
@@ -29,7 +29,7 @@ type BrokerConfig struct {
 // NewMessageBroker 创建消息代理
 func NewMessageBroker(ctx context.Context, config *BrokerConfig) (MessageBroker, error) {
 	if config == nil {
-		return nil, fmt.Errorf("broker config is required")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "broker config is required")
 	}
 
 	switch config.Type {
@@ -38,16 +38,16 @@ func NewMessageBroker(ctx context.Context, config *BrokerConfig) (MessageBroker,
 
 	case BrokerTypeRedis:
 		if config.Redis == nil {
-			return nil, fmt.Errorf("redis config is required for redis broker")
+			return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "redis config is required for redis broker")
 		}
 		return NewRedisBroker(ctx, config.Redis, config.NodeID)
 
 	case BrokerTypeNATS:
 		// 预留：可在此实现 NATS Broker
-		return nil, fmt.Errorf("NATS broker not implemented yet")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "NATS broker not implemented yet")
 
 	default:
-		return nil, fmt.Errorf("unsupported broker type: %s", config.Type)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported broker type: %s", config.Type)
 	}
 }
 

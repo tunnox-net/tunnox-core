@@ -1,8 +1,9 @@
 package models
 
 import (
-	"fmt"
 	"time"
+
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // TunnelConnectionCode 隧道连接码
@@ -149,22 +150,22 @@ func (c *TunnelConnectionCode) CanBeActivatedBy(listenClientID int64) bool {
 // 在创建时调用，确保必填字段都已填写
 func (c *TunnelConnectionCode) Validate() error {
 	if c.ID == "" {
-		return fmt.Errorf("connection code ID is required")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "connection code ID is required")
 	}
 	if c.Code == "" {
-		return fmt.Errorf("connection code is required")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "connection code is required")
 	}
 	if c.TargetClientID == 0 {
-		return fmt.Errorf("target client ID is required")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "target client ID is required")
 	}
 	if c.TargetAddress == "" {
-		return fmt.Errorf("target address is required")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "target address is required")
 	}
 	if c.ActivationTTL <= 0 {
-		return fmt.Errorf("activation TTL must be positive")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "activation TTL must be positive")
 	}
 	if c.MappingDuration <= 0 {
-		return fmt.Errorf("mapping duration must be positive")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "mapping duration must be positive")
 	}
 	return nil
 }
@@ -175,7 +176,7 @@ func (c *TunnelConnectionCode) Validate() error {
 // 此方法应该在原子性操作中调用，确保一次性使用
 func (c *TunnelConnectionCode) Activate(listenClientID int64, mappingID string) error {
 	if !c.CanBeActivatedBy(listenClientID) {
-		return fmt.Errorf("connection code cannot be activated")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "connection code cannot be activated")
 	}
 
 	now := time.Now()
@@ -192,10 +193,10 @@ func (c *TunnelConnectionCode) Activate(listenClientID int64, mappingID string) 
 // 只能撤销未使用的连接码
 func (c *TunnelConnectionCode) Revoke(revokedBy string) error {
 	if c.IsActivated {
-		return fmt.Errorf("cannot revoke activated connection code")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "cannot revoke activated connection code")
 	}
 	if c.IsRevoked {
-		return fmt.Errorf("connection code already revoked")
+		return coreErrors.New(coreErrors.ErrorTypePermanent, "connection code already revoked")
 	}
 
 	now := time.Now()

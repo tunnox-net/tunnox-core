@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -25,7 +26,7 @@ func createStorage(factory *storage.StorageFactory, config *StorageConfig) (stor
 		return createHybridStorage(factory, config)
 
 	default:
-		return nil, fmt.Errorf("unsupported storage type: %s", config.Type)
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported storage type: %s", config.Type)
 	}
 }
 
@@ -40,7 +41,7 @@ func createHybridStorageWithCacheType(factory *storage.StorageFactory, config *S
 	// 如果cache使用redis，提供redis配置
 	if cacheType == "redis" {
 		if config.Redis.Addr == "" {
-			return nil, fmt.Errorf("redis storage type requires redis.addr configuration")
+			return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "redis storage type requires redis.addr configuration")
 		}
 
 		hybridConfig.RedisConfig = &storage.RedisConfig{
@@ -138,7 +139,7 @@ func createHybridStorage(factory *storage.StorageFactory, config *StorageConfig)
 	// 如果缓存类型是 Redis，提供 Redis 配置
 	if cacheType == "redis" {
 		if config.Redis.Addr == "" {
-			return nil, fmt.Errorf("redis cache enabled but redis.addr not configured")
+			return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "redis cache enabled but redis.addr not configured")
 		}
 
 		hybridConfig.RedisConfig = &storage.RedisConfig{

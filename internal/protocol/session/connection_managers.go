@@ -1,6 +1,8 @@
 package session
 
 import (
+	"context"
+	"errors"
 	"io"
 	"net"
 	"time"
@@ -401,7 +403,8 @@ func (t *HTTPPollConnectionTimeout) IsReadTimeout(err error) bool {
 	if err == nil {
 		return false
 	}
-	return err.Error() == "context deadline exceeded"
+	// 使用标准库的 context.DeadlineExceeded 进行类型安全检查
+	return err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded)
 }
 
 func (t *HTTPPollConnectionTimeout) IsWriteTimeout(err error) bool {
@@ -486,7 +489,11 @@ func (e *HTTPPollConnectionError) ClearError() {
 }
 
 func (e *HTTPPollConnectionError) isReadTimeout(err error) bool {
-	return err != nil && err.Error() == "context deadline exceeded"
+	if err == nil {
+		return false
+	}
+	// 使用标准库的 context.DeadlineExceeded 进行类型安全检查
+	return err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded)
 }
 
 func (e *HTTPPollConnectionError) isWriteTimeout(err error) bool {

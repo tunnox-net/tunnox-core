@@ -2,7 +2,6 @@ package storage
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // JSONStorage JSON 文件持久化存储
@@ -46,7 +46,7 @@ func NewJSONStorage(config *JSONStorageConfig) (*JSONStorage, error) {
 	// 确保目录存在
 	dir := filepath.Dir(config.FilePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to create directory")
 	}
 
 	storage := &JSONStorage{
@@ -85,7 +85,7 @@ func (j *JSONStorage) load() error {
 	// 读取文件
 	data, err := os.ReadFile(j.filePath)
 	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to read file")
 	}
 
 	// 解析 JSON
@@ -94,7 +94,7 @@ func (j *JSONStorage) load() error {
 	}
 
 	if err := json.Unmarshal(data, &j.data); err != nil {
-		return fmt.Errorf("failed to parse JSON: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to parse JSON")
 	}
 
 	dispose.Infof("JSONStorage: loaded %d keys from %s", len(j.data), j.filePath)
@@ -109,19 +109,19 @@ func (j *JSONStorage) save() error {
 	// 序列化为 JSON（格式化输出，便于阅读）
 	data, err := json.MarshalIndent(j.data, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to marshal JSON")
 	}
 
 	// 写入临时文件
 	tempFile := j.filePath + ".tmp"
 	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to write temp file")
 	}
 
 	// 原子替换
 	if err := os.Rename(tempFile, j.filePath); err != nil {
 		os.Remove(tempFile) // 清理临时文件
-		return fmt.Errorf("failed to rename temp file: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to rename temp file")
 	}
 
 	return nil
@@ -672,7 +672,7 @@ func (j *JSONStorage) Close() error {
 
 	if dirty {
 		if err := j.save(); err != nil {
-			return fmt.Errorf("failed to save on close: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to save on close")
 		}
 		dispose.Infof("JSONStorage: saved %d keys to %s on close", len(j.data), j.filePath)
 	}

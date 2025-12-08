@@ -2,7 +2,8 @@ package protocol
 
 import (
 	"context"
-	"fmt"
+
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/utils"
 )
@@ -35,7 +36,7 @@ func (ps *ProtocolService) Start(ctx context.Context) error {
 
 	// 启动所有协议适配器
 	if err := ps.manager.StartAll(); err != nil {
-		return fmt.Errorf("failed to start protocol service %s: %v", ps.name, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to start protocol service %s", ps.name)
 	}
 
 	// 精简日志：只在调试模式下输出服务启动完成信息
@@ -49,7 +50,7 @@ func (ps *ProtocolService) Stop(ctx context.Context) error {
 
 	// 关闭所有协议适配器
 	if err := ps.manager.CloseAll(); err != nil {
-		return fmt.Errorf("failed to stop protocol service %s: %v", ps.name, err)
+		return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to stop protocol service %s", ps.name)
 	}
 
 	utils.Infof("Protocol service stopped: %s", ps.name)

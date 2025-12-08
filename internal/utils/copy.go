@@ -3,6 +3,7 @@ package utils
 import (
 	"io"
 	"sync"
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/stream/transform"
 )
 
@@ -21,19 +22,19 @@ func (rw *readWriteCloser) Close() error {
 }
 
 // NewReadWriteCloser 创建 ReadWriteCloser 适配器
-// 如果 Reader 或 Writer 为 nil，会返回错误（通过 panic 或返回 nil）
-func NewReadWriteCloser(r io.Reader, w io.Writer, closeFunc func() error) io.ReadWriteCloser {
+// 如果 Reader 或 Writer 为 nil，会返回错误
+func NewReadWriteCloser(r io.Reader, w io.Writer, closeFunc func() error) (io.ReadWriteCloser, error) {
 	if r == nil {
-		panic("NewReadWriteCloser: Reader cannot be nil")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "NewReadWriteCloser: Reader cannot be nil")
 	}
 	if w == nil {
-		panic("NewReadWriteCloser: Writer cannot be nil")
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "NewReadWriteCloser: Writer cannot be nil")
 	}
 	return &readWriteCloser{
 		Reader:    r,
 		Writer:    w,
 		closeFunc: closeFunc,
-	}
+	}, nil
 }
 
 // BidirectionalCopyOptions 双向拷贝配置选项

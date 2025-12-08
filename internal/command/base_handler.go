@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -69,12 +70,12 @@ func (b *BaseCommandHandler[TRequest, TResponse]) GetCommunicationMode() Communi
 // ParseRequest 解析请求体为泛型类型
 func (b *BaseCommandHandler[TRequest, TResponse]) ParseRequest(ctx *CommandContext) (*TRequest, error) {
 	if ctx.RequestBody == "" {
-		return nil, fmt.Errorf("request body is empty")
+		return nil, errors.New(errors.ErrorTypePermanent, "request body is empty")
 	}
 
 	var request TRequest
 	if err := json.Unmarshal([]byte(ctx.RequestBody), &request); err != nil {
-		return nil, fmt.Errorf("failed to parse request body: %w", err)
+		return nil, errors.Wrap(err, errors.ErrorTypePermanent, "failed to parse request body")
 	}
 
 	return &request, nil
@@ -141,7 +142,7 @@ func (b *BaseCommandHandler[TRequest, TResponse]) PostProcess(ctx *CommandContex
 
 // ProcessRequest 处理请求（子类必须实现）
 func (b *BaseCommandHandler[TRequest, TResponse]) ProcessRequest(ctx *CommandContext, request *TRequest) (*TResponse, error) {
-	return nil, fmt.Errorf("ProcessRequest not implemented")
+	return nil, errors.New(errors.ErrorTypePermanent, "ProcessRequest not implemented")
 }
 
 // GetStreamProcessor 获取流处理器
@@ -179,25 +180,25 @@ func (b *BaseCommandHandler[TRequest, TResponse]) IsDuplex() bool {
 }
 
 // GetContext 获取上下文
-func (b *BaseCommandHandler[TRequest, TResponse]) GetContext() context.Context {
+func (b *BaseCommandHandler[TRequest, TResponse]) GetContext() (context.Context, error) {
 	if b.session != nil {
-		return b.session.(interface{ Ctx() context.Context }).Ctx()
+		return b.session.(interface{ Ctx() context.Context }).Ctx(), nil
 	}
-	return context.Background()
+	return nil, errors.New(errors.ErrorTypePermanent, "session is nil, cannot get context")
 }
 
 // ValidateContext 验证上下文
 func (b *BaseCommandHandler[TRequest, TResponse]) ValidateContext(ctx *CommandContext) error {
 	if ctx == nil {
-		return fmt.Errorf("command context is nil")
+		return errors.New(errors.ErrorTypePermanent, "command context is nil")
 	}
 
 	if ctx.ConnectionID == "" {
-		return fmt.Errorf("connection ID is empty")
+		return errors.New(errors.ErrorTypePermanent, "connection ID is empty")
 	}
 
 	if ctx.CommandType == 0 {
-		return fmt.Errorf("command type is invalid")
+		return errors.New(errors.ErrorTypePermanent, "command type is invalid")
 	}
 
 	return nil

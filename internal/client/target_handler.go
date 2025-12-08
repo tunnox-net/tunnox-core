@@ -121,7 +121,7 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 		utils.Errorf("Client[TCP-target][%s]: tunnelReader or tunnelWriter is nil after setup, reader=%v, writer=%v", tunnelID, tunnelReader != nil, tunnelWriter != nil)
 		return
 	}
-	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
+	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
 		utils.Debugf("Client[TCP-target][%s]: closing tunnel stream and connection", tunnelID)
 		tunnelStream.Close()
 		if tunnelConn != nil {
@@ -129,9 +129,13 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 		}
 		return nil
 	})
+	if err != nil {
+		utils.Errorf("Client[TCP-target][%s]: failed to create ReadWriteCloser: %v", tunnelID, err)
+		return
+	}
 
 	// 5. 创建转换器并启动双向转发
-	transformer, _ := transform.NewTransformer(transformConfig)
+	transformer, _ := transform.NewTransformerWithContext(transformConfig, c.GetContext())
 	utils.BidirectionalCopy(targetConn, tunnelRWC, &utils.BidirectionalCopyOptions{
 		Transformer: transformer,
 		LogPrefix:   fmt.Sprintf("Client[TCP-target][%s]", tunnelID),

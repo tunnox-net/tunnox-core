@@ -4,9 +4,8 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
-	"fmt"
 	"net"
-
+	"tunnox-core/internal/core/errors"
 	udpprotocol "tunnox-core/internal/protocol/udp"
 )
 
@@ -14,12 +13,12 @@ import (
 func dialUDP(ctx context.Context, address string) (net.Conn, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve UDP address: %w", err)
+		return nil, errors.Wrap(err, errors.ErrorTypeNetwork, "failed to resolve UDP address")
 	}
 
 	conn, err := net.DialUDP("udp", nil, udpAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to dial UDP: %w", err)
+		return nil, errors.Wrap(err, errors.ErrorTypeNetwork, "failed to dial UDP")
 	}
 
 	// 生成 SessionID（简化实现，使用随机数）

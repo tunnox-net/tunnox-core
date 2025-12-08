@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/core/dispose"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // HybridStorage 混合存储实现
@@ -61,19 +62,19 @@ func (h *HybridStorage) onClose() error {
 	// 关闭缓存
 	if h.cache != nil {
 		if err := h.cache.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("cache close error: %w", err))
+			errs = append(errs, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "cache close error"))
 		}
 	}
 
 	// 关闭持久化存储
 	if h.persistent != nil {
 		if err := h.persistent.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("persistent close error: %w", err))
+			errs = append(errs, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "persistent close error"))
 		}
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("HybridStorage close errors: %v", errs)
+		return coreErrors.Newf(coreErrors.ErrorTypeStorage, "HybridStorage close errors: %v", errs)
 	}
 
 	return nil
@@ -115,7 +116,7 @@ func (h *HybridStorage) setPersistent(key string, value interface{}, ttl time.Du
 	// 1. 写入持久化存储
 	if h.config.EnablePersistent {
 		if err := h.persistent.Set(key, value); err != nil {
-			return fmt.Errorf("persistent storage error: %w", err)
+			return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "persistent storage error")
 		}
 	}
 
@@ -180,18 +181,18 @@ func (h *HybridStorage) Delete(key string) error {
 
 	// 1. 从缓存删除
 	if err := h.cache.Delete(key); err != nil && err != ErrKeyNotFound {
-		errs = append(errs, fmt.Errorf("cache delete error: %w", err))
+		errs = append(errs, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "cache delete error"))
 	}
 
 	// 2. 如果是持久化数据，从持久化存储删除
 	if category == DataCategoryPersistent && h.config.EnablePersistent {
 		if err := h.persistent.Delete(key); err != nil && err != ErrKeyNotFound {
-			errs = append(errs, fmt.Errorf("persistent delete error: %w", err))
+			errs = append(errs, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "persistent delete error"))
 		}
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("delete errors: %v", errs)
+		return coreErrors.Newf(coreErrors.ErrorTypeStorage, "delete errors: %v", errs)
 	}
 
 	return nil
@@ -321,7 +322,7 @@ func (h *HybridStorage) GetHash(key string, field string) (interface{}, error) {
 
 func (h *HybridStorage) GetAllHash(key string) (map[string]interface{}, error) {
 	// 简化实现：不支持
-	return nil, fmt.Errorf("GetAllHash not supported in HybridStorage")
+	return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "GetAllHash not supported in HybridStorage")
 }
 
 func (h *HybridStorage) DeleteHash(key string, field string) error {
@@ -383,7 +384,7 @@ func (h *HybridStorage) SetExpiration(key string, ttl time.Duration) error {
 
 func (h *HybridStorage) GetExpiration(key string) (time.Duration, error) {
 	// 不支持
-	return 0, fmt.Errorf("GetExpiration not supported in HybridStorage")
+	return 0, coreErrors.New(coreErrors.ErrorTypePermanent, "GetExpiration not supported in HybridStorage")
 }
 
 func (h *HybridStorage) CleanupExpired() error {
@@ -415,17 +416,17 @@ func (h *HybridStorage) SetNX(key string, value interface{}, ttl time.Duration) 
 
 func (h *HybridStorage) CompareAndSwap(key string, oldValue, newValue interface{}, ttl time.Duration) (bool, error) {
 	// 不支持
-	return false, fmt.Errorf("CompareAndSwap not supported in HybridStorage")
+	return false, coreErrors.New(coreErrors.ErrorTypePermanent, "CompareAndSwap not supported in HybridStorage")
 }
 
 func (h *HybridStorage) Watch(key string, callback func(interface{})) error {
 	// 不支持
-	return fmt.Errorf("Watch not supported in HybridStorage")
+	return coreErrors.New(coreErrors.ErrorTypePermanent, "Watch not supported in HybridStorage")
 }
 
 func (h *HybridStorage) Unwatch(key string) error {
 	// 不支持
-	return fmt.Errorf("Unwatch not supported in HybridStorage")
+	return coreErrors.New(coreErrors.ErrorTypePermanent, "Unwatch not supported in HybridStorage")
 }
 
 func (h *HybridStorage) Close() error {

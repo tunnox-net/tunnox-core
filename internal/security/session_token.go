@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	coreErrors "tunnox-core/internal/core/errors"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -68,7 +69,10 @@ func NewSessionTokenManager(config *SessionTokenConfig) *SessionTokenManager {
 // GenerateSessionToken 生成会话Token
 func (m *SessionTokenManager) GenerateSessionToken(clientID int64, ip string, tlsFingerprint string) (*SessionToken, error) {
 	now := time.Now()
-	tokenID := generateSessionTokenID()
+	tokenID, err := generateSessionTokenID()
+	if err != nil {
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to generate session token ID")
+	}
 
 	token := &SessionToken{
 		TokenID:        tokenID,
@@ -83,7 +87,7 @@ func (m *SessionTokenManager) GenerateSessionToken(clientID int64, ip string, tl
 	// 计算签名
 	signature, err := m.computeSignature(token)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute signature: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to compute signature")
 	}
 	token.Signature = signature
 
@@ -124,7 +128,7 @@ func (m *SessionTokenManager) ValidateSessionToken(token *SessionToken, currentI
 	// 1. 签名验证
 	expectedSignature, err := m.computeSignature(token)
 	if err != nil {
-		return fmt.Errorf("failed to compute signature: %w", err)
+		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to compute signature")
 	}
 	if token.Signature != expectedSignature {
 		return errors.New("invalid signature")
@@ -137,7 +141,7 @@ func (m *SessionTokenManager) ValidateSessionToken(token *SessionToken, currentI
 
 	// 3. IP验证（可选）
 	if checkIP && currentIP != "" && token.IP != currentIP {
-		return fmt.Errorf("IP mismatch: expected %s, got %s", token.IP, currentIP)
+		return coreErrors.Newf(coreErrors.ErrorTypeAuth, "IP mismatch: expected %s, got %s", token.IP, currentIP)
 	}
 
 	return nil
@@ -171,7 +175,7 @@ func (m *SessionTokenManager) UpdateActivity(token *SessionToken) {
 func (m *SessionTokenManager) EncodeToken(token *SessionToken) (string, error) {
 	data, err := json.Marshal(token)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal token: %w", err)
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to marshal token")
 	}
 	return string(data), nil
 }
@@ -180,7 +184,7 @@ func (m *SessionTokenManager) EncodeToken(token *SessionToken) (string, error) {
 func (m *SessionTokenManager) DecodeToken(tokenStr string) (*SessionToken, error) {
 	var token SessionToken
 	if err := json.Unmarshal([]byte(tokenStr), &token); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal token: %w", err)
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to unmarshal token")
 	}
 	return &token, nil
 }
@@ -190,11 +194,11 @@ func (m *SessionTokenManager) DecodeToken(tokenStr string) (*SessionToken, error
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // generateSessionTokenID 生成Session Token ID
-func generateSessionTokenID() string {
+func generateSessionTokenID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("crypto/rand failed in generateSessionTokenID: %v", err))
+		return "", coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "crypto/rand failed in generateSessionTokenID")
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
