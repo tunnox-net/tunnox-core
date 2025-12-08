@@ -75,7 +75,7 @@ func (h *ConfigGetHandler) Handle(ctx *command.CommandContext) (*command.Command
 	// 调用 GetClientConfig 获取配置
 	configJSON, err := h.authHandler.GetClientConfig(controlConn)
 	if err != nil {
-		utils.Errorf("ConfigGetHandler: failed to get client config for client %d: %v", clientID, err)
+		utils.LogErrorf(err, "ConfigGetHandler: failed to get client config for client %d", clientID)
 		return h.errorResponse(ctx, fmt.Sprintf("failed to get config: %v", err))
 	}
 

@@ -55,7 +55,8 @@ func NewGRPCBridgeServer(parentCtx context.Context, nodeID string, manager *Brid
 		for streamID, bridge := range server.activeBridges {
 			bridge.cancel()
 			close(bridge.recvChan)
-			utils.Debugf("GRPCBridgeServer: closed bridge %s", streamID)
+			// Closed bridge (removed debug log)
+			_ = streamID
 		}
 		server.activeBridges = make(map[string]*BridgeContext)
 		
@@ -129,7 +130,7 @@ func (s *GRPCBridgeServer) receiveLoop(bridge *BridgeContext, errChan chan error
 		bridge.lastActiveAt = time.Now()
 		bridge.mu.Unlock()
 
-		utils.Debugf("GRPCBridgeServer: received packet (stream_id: %s, type: %v)", packet.StreamId, packet.Type)
+		// Received packet (removed debug log)
 
 		// 处理数据包
 		switch packet.Type {
@@ -160,7 +161,7 @@ func (s *GRPCBridgeServer) sendLoop(bridge *BridgeContext, errChan chan error) {
 			bridge.lastActiveAt = time.Now()
 			bridge.mu.Unlock()
 
-			utils.Debugf("GRPCBridgeServer: sent packet (stream_id: %s, type: %v)", packet.StreamId, packet.Type)
+			// Sent packet (removed debug log)
 
 		case <-bridge.ctx.Done():
 			errChan <- bridge.ctx.Err()
@@ -201,7 +202,7 @@ func (s *GRPCBridgeServer) handleStreamOpen(bridge *BridgeContext, packet *pb.Br
 
 // handleStreamData 处理数据传输
 func (s *GRPCBridgeServer) handleStreamData(bridge *BridgeContext, packet *pb.BridgePacket) {
-	utils.Debugf("GRPCBridgeServer: handling stream data for %s (size: %d bytes)", packet.StreamId, len(packet.Payload))
+	// Handling stream data (removed debug log)
 
 	// 这里应该将数据转发到目标客户端
 	// 目前只是记录日志（实际实现需要与 SessionManager 集成）
@@ -223,7 +224,7 @@ func (s *GRPCBridgeServer) handleStreamClose(bridge *BridgeContext, packet *pb.B
 
 // Ping 实现健康检查
 func (s *GRPCBridgeServer) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	utils.Debugf("GRPCBridgeServer: received ping from node %s", req.NodeId)
+	// Received ping (removed debug log)
 
 	return &pb.PingResponse{
 		Ok:              true,
@@ -233,7 +234,7 @@ func (s *GRPCBridgeServer) Ping(ctx context.Context, req *pb.PingRequest) (*pb.P
 
 // GetNodeInfo 实现获取节点信息
 func (s *GRPCBridgeServer) GetNodeInfo(ctx context.Context, req *pb.NodeInfoRequest) (*pb.NodeInfoResponse, error) {
-	utils.Debugf("GRPCBridgeServer: received node info request")
+	// Received node info request (removed debug log)
 
 	s.bridgesMu.RLock()
 	activeBridges := int32(len(s.activeBridges))

@@ -65,12 +65,13 @@ func New(config *Config, parentCtx context.Context) *Server {
 	}
 
 	// 创建服务管理器
+	// 使用 parentCtx 作为父上下文，确保从 dispose 体系下合适的子树节点分配
 	serviceConfig := utils.DefaultServiceConfig()
 	serviceConfig.EnableSignalHandling = true
 	serviceConfig.GracefulShutdownTimeout = 30 * time.Second
 	serviceConfig.ResourceDisposeTimeout = 10 * time.Second
 
-	serviceManager := utils.NewServiceManager(serviceConfig)
+	serviceManager := utils.NewServiceManager(parentCtx, serviceConfig)
 
 	// ✅ 先创建存储（因为CloudControlAPI需要storage）
 	storageFactory := storage.NewStorageFactory(parentCtx)
@@ -178,7 +179,7 @@ func New(config *Config, parentCtx context.Context) *Server {
 
 	// 创建并注册连接码命令处理器
 	if err := server.setupConnectionCodeCommands(); err != nil {
-		utils.Errorf("Server: failed to setup connection code commands: %v", err)
+		utils.LogErrorf(err, "Server: failed to setup connection code commands")
 	}
 
 	// 创建协议工厂和适配器管理器
@@ -274,7 +275,7 @@ func (s *Server) Stop() error {
 
 	// 使用服务管理器停止所有服务
 	if err := s.serviceManager.StopAllServices(); err != nil {
-		utils.Errorf("Failed to stop services: %v", err)
+		utils.LogErrorf(err, "Failed to stop services")
 	}
 
 	return nil

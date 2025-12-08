@@ -81,7 +81,7 @@ func (b *BuiltinCloudControl) cleanupRoutine() {
 		select {
 		case <-b.cleanupTicker.C:
 			// 执行清理任务
-			utils.Debugf("Performing cleanup tasks...")
+			// Performing cleanup tasks (removed debug log)
 			// 这里可以添加具体的清理逻辑
 
 		case <-b.CloudControl.ResourceBase.Dispose.Ctx().Done():

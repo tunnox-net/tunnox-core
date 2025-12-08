@@ -78,7 +78,7 @@ func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-c
 		// 🔥 FIX: 使用传入的topicPattern，而不是硬编码TopicTunnelOpen
 		brokerChan, err := a.messageBroker.Subscribe(ctx, topicPattern)
 		if err != nil {
-			utils.Errorf("BridgeAdapter: failed to subscribe to tunnel_open: %v", err)
+			utils.LogErrorf(err, "BridgeAdapter: failed to subscribe to tunnel_open")
 			return
 		}
 		

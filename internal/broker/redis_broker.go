@@ -113,7 +113,7 @@ func (r *RedisBroker) Publish(ctx context.Context, topic string, message []byte)
 		return coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to publish to Redis")
 	}
 
-	utils.Debugf("RedisBroker: published message to topic %s", topic)
+	// Published message to topic (removed debug log)
 	return nil
 }
 
@@ -196,7 +196,7 @@ func (r *RedisBroker) receiveLoop() {
 			if exists {
 				select {
 				case ch <- &message:
-					utils.Debugf("RedisBroker: delivered message to topic %s", topic)
+					// Delivered message to topic (removed debug log)
 				case <-r.Ctx().Done():
 					return
 				default:
@@ -274,7 +274,8 @@ func (r *RedisBroker) Close() error {
 	// 关闭所有订阅者通道
 	for topic, ch := range r.subscribers {
 		close(ch)
-		utils.Debugf("RedisBroker: closed subscriber for topic %s", topic)
+		// Closed subscriber for topic (removed debug log)
+		_ = topic
 	}
 	r.subscribers = make(map[string]chan *Message)
 

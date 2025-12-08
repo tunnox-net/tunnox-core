@@ -96,7 +96,7 @@ func (ms *MockService) IsStopped() bool {
 func TestServiceManagerBasic(t *testing.T) {
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false // 禁用信号处理以便测试
-	manager := utils.NewServiceManager(config)
+	manager := utils.NewServiceManager(context.Background(), config)
 
 	// 测试初始状态
 	if manager.GetServiceCount() != 0 {

@@ -107,7 +107,7 @@ func (s *clientService) GetClient(clientID int64) (*models.Client, error) {
 		defer wg.Done()
 		state, stateErr = s.stateRepo.GetState(clientID)
 		if stateErr != nil {
-			utils.Debugf("Failed to get client %d state: %v", clientID, stateErr)
+			// Failed to get client state (removed debug log)
 			stateErr = nil // 状态不存在不算错误
 		}
 	}()
@@ -117,7 +117,7 @@ func (s *clientService) GetClient(clientID int64) (*models.Client, error) {
 		defer wg.Done()
 		token, tokenErr = s.tokenRepo.GetToken(clientID)
 		if tokenErr != nil {
-			utils.Debugf("Failed to get client %d token: %v", clientID, tokenErr)
+			// Failed to get client token (removed debug log)
 			tokenErr = nil // Token不存在不算错误
 		}
 	}()

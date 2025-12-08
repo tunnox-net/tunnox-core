@@ -55,8 +55,7 @@ func NewBaseMappingHandler(
 			rate.Limit(config.BandwidthLimit), // bytes/s
 			int(config.BandwidthLimit*2),      // burst size (2x)
 		)
-		utils.Debugf("BaseMappingHandler[%s]: rate limiter enabled, limit=%d bytes/s",
-			config.MappingID, config.BandwidthLimit)
+		// Rate limiter enabled
 	}
 
 	// 启动流量统计上报（每30秒）
@@ -143,10 +142,10 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	}
 
 	// 增加活跃连接计数
-	currentCount := h.activeConnCount.Add(1)
+	h.activeConnCount.Add(1)
 	defer h.activeConnCount.Add(-1)
 
-	utils.Debugf("BaseMappingHandler[%s]: active connections: %d", h.config.MappingID, currentCount)
+	// Active connections count updated
 
 	// 2. 连接预处理（委托给adapter）
 	if err := h.adapter.PrepareConnection(localConn); err != nil {
@@ -300,8 +299,7 @@ func (h *BaseMappingHandler) createTransformer() error {
 	}
 
 	h.transformer = transformer
-	utils.Debugf("BaseMappingHandler[%s]: transformer created, bandwidth_limit=%d bytes/s",
-		h.config.MappingID, h.config.BandwidthLimit)
+	// Transformer created with bandwidth limit
 	return nil
 }
 
@@ -338,8 +336,7 @@ func (h *BaseMappingHandler) reportStats() {
 			h.trafficStats.BytesSent.Add(bytesSent)
 			h.trafficStats.BytesReceived.Add(bytesReceived)
 		} else {
-			utils.Debugf("BaseMappingHandler[%s]: reported stats - sent=%d, received=%d",
-				h.config.MappingID, bytesSent, bytesReceived)
+			// Reported stats
 		}
 	}
 }

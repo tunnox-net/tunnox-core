@@ -280,7 +280,7 @@ func (m *BridgeManager) handleBridgeResponses(responseChan <-chan *broker.Messag
 
 				select {
 				case req.ResponseChan <- bridgeResp:
-					utils.Debugf("BridgeManager: delivered bridge response for request %s", resp.RequestID)
+					// Bridge response delivered (removed debug log)
 				case <-time.After(1 * time.Second):
 					utils.Warnf("BridgeManager: timeout delivering bridge response for request %s", resp.RequestID)
 				}
@@ -370,7 +370,7 @@ func (m *BridgeManager) PublishMessage(ctx context.Context, topic string, payloa
 		return coreErrors.Wrapf(err, coreErrors.ErrorTypeNetwork, "failed to publish to topic %s", topic)
 	}
 
-	utils.Debugf("BridgeManager: published message to topic %s (%d bytes)", topic, len(payload))
+	// Published message to topic (removed debug log)
 	return nil
 }
 

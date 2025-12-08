@@ -54,12 +54,12 @@ func (m *StreamManager) CreateStream(id string, reader io.Reader, writer io.Writ
 	} else {
 	// 创建新流
 		stream = m.factory.NewStreamProcessor(reader, writer)
-		utils.Debugf("CreateStream: created new stream processor, id=%s", id)
+		// Created new stream processor (removed debug log)
 	}
 
 	m.streams[id] = stream
 
-	utils.Debugf("Created stream: %s", id)
+	utils.Infof("Created stream: %s", id)
 	return stream, nil
 }
 
@@ -86,7 +86,7 @@ func (m *StreamManager) RemoveStream(id string) error {
 	stream.Close()
 	delete(m.streams, id)
 
-	utils.Debugf("Removed stream: %s", id)
+	utils.Infof("Removed stream: %s", id)
 	return nil
 }
 
@@ -116,7 +116,7 @@ func (m *StreamManager) CloseAllStreams() error {
 
 	for id, stream := range m.streams {
 		stream.Close()
-		utils.Debugf("Closed stream: %s", id)
+		utils.Infof("Closed stream: %s", id)
 	}
 	m.streams = make(map[string]PackageStreamer)
 	return nil

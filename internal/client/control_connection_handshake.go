@@ -101,7 +101,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		}
 		if pkt == nil {
 			// ReadPacket 返回 nil 但没有错误，可能是超时或空响应，继续等待
-			utils.Debugf("Client: ReadPacket returned nil packet, continuing to wait for handshake response")
+			// ReadPacket returned nil packet, continuing to wait for handshake response
 			continue
 		}
 
@@ -109,7 +109,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		baseType := pkt.PacketType & 0x3F
 		if baseType == packet.Heartbeat {
 			// 收到心跳包，继续等待握手响应
-			utils.Debugf("Client: received heartbeat during handshake, ignoring")
+			// Received heartbeat during handshake, ignoring
 			continue
 		}
 
@@ -122,10 +122,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		return coreErrors.Newf(coreErrors.ErrorTypeProtocol, "unexpected response type: %v (expected HandshakeResp)", pkt.PacketType)
 	}
 
-	utils.Debugf("Client: received response PacketType=%d, Payload len=%d", respPkt.PacketType, len(respPkt.Payload))
-	if len(respPkt.Payload) > 0 {
-		utils.Debugf("Client: Payload=%s", string(respPkt.Payload))
-	}
+	// Received handshake response
 
 	var resp packet.HandshakeResponse
 	if err := json.Unmarshal(respPkt.Payload, &resp); err != nil {
@@ -175,7 +172,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 				// ✅ 更新 HTTPStreamProcessor 的 clientID
 				if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
 					httppollStream.UpdateClientID(assignedClientID)
-					utils.Debugf("Client: updated HTTPStreamProcessor clientID to %d", assignedClientID)
+					// Updated HTTPStreamProcessor clientID (assigned)
 				}
 			}
 		}

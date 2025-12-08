@@ -122,7 +122,7 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 		return
 	}
 	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
-		utils.Debugf("Client[TCP-target][%s]: closing tunnel stream and connection", tunnelID)
+		// Closing tunnel stream and connection
 		tunnelStream.Close()
 		if tunnelConn != nil {
 			tunnelConn.Close()

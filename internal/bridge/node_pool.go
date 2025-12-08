@@ -121,7 +121,7 @@ func (p *NodeConnectionPool) GetOrCreateSession(ctx context.Context, metadata *S
 			p.connsMu.RUnlock()
 			session := NewForwardSession(ctx, conn, metadata)
 			if session != nil {
-				utils.Debugf("NodeConnectionPool: reused connection for new session %s", session.StreamID())
+				// Reused connection for new session (removed debug log)
 				return session, nil
 			}
 		}
@@ -182,7 +182,7 @@ func (p *NodeConnectionPool) cleanupIdleConnections() {
 		if conn.IsIdle(p.maxIdleTime) {
 			conn.Close()
 			closedCount++
-			utils.Debugf("NodeConnectionPool: closed idle connection to node %s", p.targetNodeID)
+			// Closed idle connection (removed debug log)
 		} else {
 			activeConns = append(activeConns, conn)
 		}

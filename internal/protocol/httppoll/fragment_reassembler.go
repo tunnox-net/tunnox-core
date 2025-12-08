@@ -116,7 +116,7 @@ func (fg *FragmentGroup) Reassemble() ([]byte, error) {
 		return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "reassembled size mismatch: expected %d, got %d", fg.OriginalSize, len(result))
 	}
 
-	utils.Debugf("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
+	// Fragment reassembly completed successfully
 	return result, nil
 }
 
@@ -133,7 +133,7 @@ func (fg *FragmentGroup) IsCompleteAndReassemble() ([]byte, bool, error) {
 	}
 
 	if fg.ReceivedCount != fg.TotalFragments {
-		utils.Debugf("FragmentGroup[%s]: IsCompleteAndReassemble - not complete yet, received=%d/%d", fg.GroupID, fg.ReceivedCount, fg.TotalFragments)
+		// Fragment group not complete yet
 		return nil, false, nil
 	}
 
@@ -213,7 +213,7 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 		}
 		fr.groups[groupID] = group
 		fr.sequenceGroups[sequenceNumber] = group
-		utils.Debugf("FragmentReassembler: created new fragment group, groupID=%s, sequenceNumber=%d, originalSize=%d, totalFragments=%d", groupID, sequenceNumber, originalSize, totalFragments)
+		// Created new fragment group for reassembly
 	} else {
 		// 验证一致性
 		if group.OriginalSize != originalSize {
@@ -265,7 +265,7 @@ func (fr *FragmentReassembler) RemoveGroup(groupID string) {
 		if group.SequenceNumber >= 0 {
 			delete(fr.sequenceGroups, group.SequenceNumber)
 		}
-		utils.Debugf("FragmentReassembler: removed fragment group, groupID=%s, sequenceNumber=%d", groupID, group.SequenceNumber)
+		// Removed fragment group after reassembly
 	}
 }
 
@@ -296,15 +296,13 @@ func (fr *FragmentReassembler) GetNextCompleteGroup() (*FragmentGroup, bool, err
 	group, exists := fr.sequenceGroups[fr.nextExpectedSeq]
 	if !exists {
 		// 期望的序列号还不存在，等待
-		utils.Debugf("FragmentReassembler: GetNextCompleteGroup - expected sequence %d not found, waiting", fr.nextExpectedSeq)
+		// Expected sequence not found, waiting for fragments
 		return nil, false, nil
 	}
 
 	// 检查是否已完整
 	group.mu.Lock()
 	isComplete := group.ReceivedCount == group.TotalFragments && !group.reassembled
-	receivedCount := group.ReceivedCount
-	totalFragments := group.TotalFragments
 	group.mu.Unlock()
 
 	if isComplete {
@@ -316,7 +314,7 @@ func (fr *FragmentReassembler) GetNextCompleteGroup() (*FragmentGroup, bool, err
 	}
 
 	// 期望的序列号存在但还不完整，等待
-	utils.Debugf("FragmentReassembler: GetNextCompleteGroup - expected sequence %d exists but not complete yet, receivedCount=%d/%d, groupID=%s", fr.nextExpectedSeq, receivedCount, totalFragments, group.GroupID)
+	// Expected sequence exists but not complete yet, waiting for more fragments
 	return nil, false, nil
 }
 

@@ -65,7 +65,10 @@ func NewTestAPIServer(ctx context.Context, cfg *TestAPIServerConfig) (*TestAPISe
 	// 创建CloudControl实例
 	controlConfig := managers.DefaultConfig()
 	controlConfig.UseBuiltIn = true
-	cloudControl := managers.NewCloudControl(controlConfig, memStorage, context.Background())
+	cloudControl, err := managers.NewCloudControl(controlConfig, memStorage, context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cloud control: %w", err)
+	}
 
 	// 创建API配置
 	apiConfig := &api.APIConfig{

@@ -135,8 +135,7 @@ func (r *ClientTokenRepository) SetToken(token *models.ClientToken) error {
 		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to set token")
 	}
 
-	utils.Debugf("ClientTokenRepository: set token for client %d (expires_in=%s)",
-		token.ClientID, ttl)
+	// Set token for client (removed debug log)
 
 	return nil
 }
@@ -155,7 +154,7 @@ func (r *ClientTokenRepository) DeleteToken(clientID int64) error {
 		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to delete token")
 	}
 
-	utils.Debugf("ClientTokenRepository: deleted token for client %d", clientID)
+	// Deleted token for client (removed debug log)
 	return nil
 }
 

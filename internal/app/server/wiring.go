@@ -163,7 +163,9 @@ func (s *Server) startGRPCServer() *grpc.Server {
 	// 在后台启动 gRPC 服务器
 	go func() {
 		if err := grpcServer.Serve(listener); err != nil {
-			utils.Errorf("gRPC server error: %v", err)
+			// gRPC server 错误通常是网络错误，使用 LogErrorf 自动选择合适的日志级别
+			typedErr := coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "gRPC server error")
+			utils.LogErrorf(typedErr, "gRPC server error")
 		}
 	}()
 

@@ -97,20 +97,40 @@ func (h *HTTPService) Stop(ctx context.Context) error {
 }
 
 // ServiceManager 服务管理器，支持多协议服务
+//
+// 职责：
+//   - 管理多个服务的生命周期（启动、停止）
+//   - 管理资源的注册和释放
+//   - 提供优雅关闭机制
+//   - 支持信号处理和上下文取消
+//
+// 设计：
+//   - 使用 ManagerBase 作为基类，遵循 dispose 体系
+//   - Context 从 parentCtx 派生，确保正确的上下文树结构
+//   - 资源管理器独立管理，不依赖 dispose 体系
 type ServiceManager struct {
-	Dispose
+	*dispose.ManagerBase
 	config        *ServiceConfig
 	services      map[string]Service
 	resourceMgr   *dispose.ResourceManager
 	shutdownChan  chan struct{}
-	disposeResult *DisposeResult
+	disposeResult *dispose.DisposeResult
 	mu            sync.RWMutex
-	ctx           context.Context
-	cancel        context.CancelFunc
 }
 
 // NewServiceManager 创建新的服务管理器
-func NewServiceManager(config *ServiceConfig) *ServiceManager {
+//
+// 参数：
+//   - parentCtx: 父上下文，用于派生服务管理器的上下文（必须从 dispose 体系下合适的子树节点分配）
+//   - config: 服务配置，如果为 nil 则使用默认配置
+//
+// 返回：
+//   - *ServiceManager: 服务管理器实例
+//
+// 注意：
+//   - parentCtx 不应该为 nil，应该从应用的主 context 或 dispose 体系下的资源派生
+//   - 如果 parentCtx 为 nil，将使用 context.Background()（仅用于独立模式或测试）
+func NewServiceManager(parentCtx context.Context, config *ServiceConfig) *ServiceManager {
 	if config == nil {
 		config = DefaultServiceConfig()
 	}
@@ -121,17 +141,23 @@ func NewServiceManager(config *ServiceConfig) *ServiceManager {
 		resourceMgr = dispose.NewResourceManager()
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	// 如果没有提供 parentCtx，使用 Background（仅用于独立模式或测试）
+	// 注意：在生产环境中，应该始终提供有效的 parentCtx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
 
+	// 使用 ManagerBase 作为基类，遵循 dispose 体系
 	manager := &ServiceManager{
+		ManagerBase:  dispose.NewManager("ServiceManager", parentCtx),
 		config:       config,
 		services:     make(map[string]Service),
 		resourceMgr:  resourceMgr,
 		shutdownChan: make(chan struct{}),
-		ctx:          ctx,
-		cancel:       cancel,
 	}
-	manager.SetCtx(ctx, manager.onClose)
+
+	// 添加清理回调
+	manager.AddCleanHandler(manager.onClose)
 	return manager
 }
 
@@ -194,7 +220,7 @@ func (sm *ServiceManager) GetServiceCount() int {
 }
 
 // RegisterResource 注册资源到服务管理器
-func (sm *ServiceManager) RegisterResource(name string, resource Disposable) error {
+func (sm *ServiceManager) RegisterResource(name string, resource dispose.Disposable) error {
 	return sm.resourceMgr.Register(name, resource)
 }
 
@@ -220,8 +246,10 @@ func (sm *ServiceManager) StartAllServices() error {
 
 	Infof("Starting %d services...", len(sm.services))
 
+	// 使用 ManagerBase 的 Context，确保从 dispose 体系派生
+	ctx := sm.Ctx()
 	for name, service := range sm.services {
-		if err := service.Start(sm.ctx); err != nil {
+		if err := service.Start(ctx); err != nil {
 			Errorf("Failed to start service %s: %v", name, err)
 			return coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "failed to start service %s", name)
 		}
@@ -238,8 +266,9 @@ func (sm *ServiceManager) StopAllServices() error {
 
 	Infof("Stopping %d services...", len(sm.services))
 
-	// 创建超时上下文
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), sm.config.GracefulShutdownTimeout)
+	// 从 ManagerBase 的 Context 派生超时上下文，确保正确的上下文树结构
+	// 这样优雅关闭的超时控制会正确传播到所有子服务
+	shutdownCtx, cancel := context.WithTimeout(sm.Ctx(), sm.config.GracefulShutdownTimeout)
 	defer cancel()
 
 	var lastErr error
@@ -338,27 +367,45 @@ func (sm *ServiceManager) gracefulShutdown() error {
 		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "resource disposal failed: %v", sm.disposeResult.Error())
 	}
 
-	// 3. 取消上下文
-	sm.cancel()
+	// 3. 关闭 ManagerBase（会取消 Context 并执行清理回调）
+	sm.Close()
 
 	Infof("Graceful shutdown completed successfully")
 	return nil
 }
 
 // GetDisposeResult 获取资源释放结果
-func (sm *ServiceManager) GetDisposeResult() *DisposeResult {
+func (sm *ServiceManager) GetDisposeResult() *dispose.DisposeResult {
 	return sm.disposeResult
 }
 
 // ForceShutdown 强制关闭
+//
+// 注意：强制关闭会立即停止所有服务，不等待优雅关闭超时
+// 应该仅在紧急情况下使用（如 panic 恢复、资源耗尽等）
 func (sm *ServiceManager) ForceShutdown() error {
 	Infof("Force shutdown initiated")
 
 	// 强制停止所有服务
+	// 使用 ManagerBase 的 Context，但设置很短的超时（1秒）以确保快速响应
+	// 如果 Context 已取消，则使用 Background 作为最后手段
+	forceCtx := sm.Ctx()
+	if forceCtx.Err() != nil {
+		// Context 已取消，使用很短的超时作为最后手段
+		var cancel context.CancelFunc
+		forceCtx, cancel = context.WithTimeout(context.Background(), 1*time.Second)
+		defer cancel()
+	} else {
+		// 从当前 Context 派生，但使用很短的超时
+		var cancel context.CancelFunc
+		forceCtx, cancel = context.WithTimeout(forceCtx, 1*time.Second)
+		defer cancel()
+	}
+
 	sm.mu.RLock()
 	for name, service := range sm.services {
 		Infof("Force stopping service: %s", name)
-		if err := service.Stop(context.Background()); err != nil {
+		if err := service.Stop(forceCtx); err != nil {
 			Errorf("Force stop service %s error: %v", name, err)
 		}
 	}
@@ -371,8 +418,8 @@ func (sm *ServiceManager) ForceShutdown() error {
 		Errorf("Force shutdown resource disposal errors: %v", sm.disposeResult.Error())
 	}
 
-	// 取消上下文
-	sm.cancel()
+	// 关闭 ManagerBase（会取消 Context 并执行清理回调）
+	sm.Close()
 
 	return nil
 }
@@ -388,20 +435,27 @@ func (sm *ServiceManager) TriggerShutdown() {
 }
 
 // GetContext 获取服务管理器的上下文
+//
+// 返回 ManagerBase 的 Context，确保从 dispose 体系派生
 func (sm *ServiceManager) GetContext() context.Context {
-	return sm.ctx
+	return sm.Ctx()
 }
 
 // Close 关闭服务管理器，返回 error 类型以兼容测试
+//
+// 注意：此方法会调用 ManagerBase 的 Close，会取消 Context 并执行清理回调
 func (sm *ServiceManager) Close() error {
-	return sm.CloseWithError()
+	return sm.ManagerBase.Close()
 }
 
 // onClose 资源清理回调
+//
+// 当 ManagerBase 的 Context 被取消时，会自动调用此方法
 func (sm *ServiceManager) onClose() error {
 	Infof("Cleaning up service manager resources...")
 
-	// 停止所有服务
+	// 停止所有服务（使用已取消的 Context，服务应该快速响应）
+	// 注意：此时 Context 可能已取消，但 StopAllServices 会创建超时上下文
 	if err := sm.StopAllServices(); err != nil {
 		Errorf("Failed to stop all services: %v", err)
 	}
@@ -412,11 +466,6 @@ func (sm *ServiceManager) onClose() error {
 		Errorf("Resource disposal errors: %v", sm.disposeResult.Error())
 	}
 
-	// 关闭上下文
-	if sm.cancel != nil {
-		sm.cancel()
-	}
-
 	Infof("Service manager resources cleanup completed")
 	return nil
 }
@@ -424,9 +473,14 @@ func (sm *ServiceManager) onClose() error {
 // 便捷函数
 
 // StartHTTPServiceWithCleanup 便捷函数：启动带资源管理的HTTP服务
+//
+// 参数：
+//   - ctx: 父上下文，用于派生服务管理器的上下文（必须从 dispose 体系下合适的子树节点分配）
+//   - addr: HTTP 服务地址
+//   - handler: HTTP 处理器
 func StartHTTPServiceWithCleanup(ctx context.Context, addr string, handler http.Handler) error {
 	config := DefaultServiceConfig()
-	manager := NewServiceManager(config)
+	manager := NewServiceManager(ctx, config)
 
 	httpService := NewHTTPService(addr, handler)
 	if err := manager.RegisterService(httpService); err != nil {
@@ -437,8 +491,13 @@ func StartHTTPServiceWithCleanup(ctx context.Context, addr string, handler http.
 }
 
 // RunServicesWithCleanup 便捷函数：运行带资源管理的服务
+//
+// 参数：
+//   - ctx: 父上下文，用于派生服务管理器的上下文（必须从 dispose 体系下合适的子树节点分配）
+//   - config: 服务配置，如果为 nil 则使用默认配置
+//   - services: 要运行的服务列表
 func RunServicesWithCleanup(ctx context.Context, config *ServiceConfig, services ...Service) error {
-	manager := NewServiceManager(config)
+	manager := NewServiceManager(ctx, config)
 
 	for _, service := range services {
 		if err := manager.RegisterService(service); err != nil {

@@ -31,7 +31,7 @@ type websocketStreamConn struct {
 
 // newWebSocketStreamConn creates a new WebSocket stream connection
 func newWebSocketStreamConn(wsURL string) (*websocketStreamConn, error) {
-	utils.Debugf("WebSocket: connecting to %s", wsURL)
+	utils.Infof("WebSocket: connecting to %s", wsURL)
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 20 * time.Second,
@@ -139,7 +139,7 @@ func (c *websocketStreamConn) Close() error {
 		c.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
 
 		err = c.conn.Close()
-		utils.Debugf("WebSocket: connection closed")
+		utils.Infof("WebSocket: connection closed")
 	})
 	return err
 }

@@ -216,7 +216,7 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 		case <-sp.Ctx().Done():
 			return nil, 0, sp.Ctx().Err()
 		case <-timeout.C:
-			utils.Debugf("HTTPStreamProcessor: ReadPacket - timeout waiting for response, requestID=%s", requestID)
+			// Timeout waiting for response
 			return nil, 0, coreErrors.New(coreErrors.ErrorTypeTemporary, "timeout waiting for response")
 		case <-ticker.C:
 			// 检查缓存
@@ -335,8 +335,7 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 					sp.SetConnectionID(pkg.ConnectionID)
 				}
 			} else {
-				utils.Debugf("HTTPStreamProcessor: WritePacket - RequestId mismatch, expected=%s, got=%s, ignoring response",
-					requestID, pkg.RequestID)
+				// RequestId mismatch, ignoring response
 			}
 		}
 	}

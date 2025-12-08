@@ -487,11 +487,11 @@ func (s *SocksAdapter) relay(client, remote net.Conn) {
 	// 客户端 -> 远程
 	go func() {
 		defer wg.Done()
-		written, err := io.Copy(remote, client)
+		_, err := io.Copy(remote, client)
 		if err != nil {
-			utils.Debugf("Client to remote copy error: %v", err)
+			// Client to remote copy error (connection may be closed)
 		}
-		utils.Debugf("Client to remote: %d bytes", written)
+		// Client to remote: data copied
 		// 关闭远程连接的写入
 		if tcpConn, ok := remote.(*net.TCPConn); ok {
 			tcpConn.CloseWrite()
@@ -501,11 +501,11 @@ func (s *SocksAdapter) relay(client, remote net.Conn) {
 	// 远程 -> 客户端
 	go func() {
 		defer wg.Done()
-		written, err := io.Copy(client, remote)
+		_, err := io.Copy(client, remote)
 		if err != nil {
-			utils.Debugf("Remote to client copy error: %v", err)
+			// Remote to client copy error (connection may be closed)
 		}
-		utils.Debugf("Remote to client: %d bytes", written)
+		// Remote to client: data copied
 		// 关闭客户端连接的写入
 		if tcpConn, ok := client.(*net.TCPConn); ok {
 			tcpConn.CloseWrite()

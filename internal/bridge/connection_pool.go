@@ -164,8 +164,8 @@ func (p *BridgeConnectionPool) performHealthCheck() {
 
 	for _, pool := range pools {
 		stats := pool.GetStats()
-		utils.Debugf("NodePool[%s]: conns=%d, streams=%d",
-			stats.NodeID, stats.TotalConns, stats.ActiveStreams)
+		// NodePool stats (removed debug log)
+		_ = stats
 
 		p.metricsCollector.UpdatePoolStats(stats.NodeID, stats.TotalConns, stats.ActiveStreams)
 	}
@@ -180,7 +180,8 @@ func (p *BridgeConnectionPool) metricsCollectionLoop() {
 		select {
 		case <-ticker.C:
 			metrics := p.metricsCollector.GetMetrics()
-			utils.Debugf("BridgeConnectionPool metrics: %+v", metrics)
+			// BridgeConnectionPool metrics (removed debug log)
+			_ = metrics
 		case <-p.Ctx().Done():
 			utils.Infof("BridgeConnectionPool: metrics collection loop stopped")
 			return

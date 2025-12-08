@@ -66,7 +66,7 @@ func NewIPManager(storage storage.Storage, ctx context.Context) *IPManager {
 	
 	// 加载持久化的黑白名单
 	if err := manager.loadFromStorage(); err != nil {
-		utils.Warnf("IPManager: failed to load from storage: %v", err)
+		utils.LogErrorf(err, "IPManager: failed to load from storage")
 	}
 	
 	// 启动后台清理任务
@@ -137,7 +137,7 @@ func (m *IPManager) AddToBlacklist(ip string, duration time.Duration, reason str
 	
 	// 持久化到Storage
 	if err := m.saveToStorage(IPTypeBlacklist, ip, record); err != nil {
-		utils.Warnf("IPManager: failed to save blacklist to storage: %v", err)
+		utils.LogErrorf(err, "IPManager: failed to save blacklist to storage")
 	}
 	
 	if duration > 0 {
@@ -160,7 +160,7 @@ func (m *IPManager) RemoveFromBlacklist(ip string) {
 		
 		// 从Storage删除
 		if err := m.removeFromStorage(IPTypeBlacklist, ip); err != nil {
-			utils.Warnf("IPManager: failed to remove blacklist from storage: %v", err)
+			utils.LogErrorf(err, "IPManager: failed to remove blacklist from storage")
 		}
 		
 		utils.Infof("IPManager: removed %s from blacklist", ip)
@@ -188,7 +188,7 @@ func (m *IPManager) AddToWhitelist(ip string, reason string, addedBy string) err
 	
 	// 持久化到Storage
 	if err := m.saveToStorage(IPTypeWhitelist, ip, record); err != nil {
-		utils.Warnf("IPManager: failed to save whitelist to storage: %v", err)
+		utils.LogErrorf(err, "IPManager: failed to save whitelist to storage")
 	}
 	
 	utils.Infof("IPManager: added %s to whitelist (reason: %s)", ip, reason)
@@ -206,7 +206,7 @@ func (m *IPManager) RemoveFromWhitelist(ip string) {
 		
 		// 从Storage删除
 		if err := m.removeFromStorage(IPTypeWhitelist, ip); err != nil {
-			utils.Warnf("IPManager: failed to remove whitelist from storage: %v", err)
+			utils.LogErrorf(err, "IPManager: failed to remove whitelist from storage")
 		}
 		
 		utils.Infof("IPManager: removed %s from whitelist", ip)
@@ -338,7 +338,7 @@ func (m *IPManager) cleanup() {
 			
 			// 从Storage删除
 			if err := m.removeFromStorage(IPTypeBlacklist, ip); err != nil {
-				utils.Warnf("IPManager: failed to remove expired blacklist from storage: %v", err)
+				utils.LogErrorf(err, "IPManager: failed to remove expired blacklist from storage")
 			}
 			
 			utils.Debugf("IPManager: removed expired blacklist entry: %s", ip)

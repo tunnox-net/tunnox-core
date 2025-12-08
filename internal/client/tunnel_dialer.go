@@ -123,7 +123,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		default:
 		}
 
-		pkt, bytesRead, err := tunnelStream.ReadPacket()
+		pkt, _, err := tunnelStream.ReadPacket()
 		if err != nil {
 			utils.Errorf("Client: failed to read packet while waiting for TunnelOpenAck: %v", err)
 			tunnelStream.Close()
@@ -133,14 +133,14 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 
 		// 忽略心跳包和TunnelOpen包（可能是其他连接的TunnelOpen）
 		baseType := pkt.PacketType & 0x3F
-		utils.Debugf("Client: received packet while waiting for TunnelOpenAck, type=%d (base=%d), bytesRead=%d", pkt.PacketType, baseType, bytesRead)
+		// Received packet while waiting for TunnelOpenAck
 		if baseType == packet.Heartbeat {
-			utils.Debugf("Client: ignoring heartbeat packet while waiting for TunnelOpenAck")
+			// Ignoring heartbeat packet while waiting for TunnelOpenAck
 			// 对于 HTTP 长轮询连接，心跳包已经被 ReadPacket 消耗，不需要恢复
 			continue
 		}
 		if baseType == packet.TunnelOpen {
-			utils.Debugf("Client: ignoring TunnelOpen packet while waiting for TunnelOpenAck")
+			// Ignoring TunnelOpen packet while waiting for TunnelOpenAck
 			// 对于 HTTP 长轮询连接，TunnelOpen 包已经被 ReadPacket 消耗，不需要恢复
 			continue
 		}

@@ -86,7 +86,7 @@ func (m *grpcMultiplexedConn) RegisterSession(streamID string, session *ForwardS
 	// 启动发送协程（为每个会话）
 	go m.sendLoopForSession(session)
 
-	utils.Debugf("MultiplexedConn: registered session %s (active: %d/%d)", streamID, m.activeStreams, m.maxStreams)
+	// Session registered (removed debug log)
 	return nil
 }
 
@@ -98,7 +98,7 @@ func (m *grpcMultiplexedConn) UnregisterSession(streamID string) {
 	if _, exists := m.sessions[streamID]; exists {
 		delete(m.sessions, streamID)
 		m.activeStreams = int32(len(m.sessions))
-		utils.Debugf("MultiplexedConn: unregistered session %s (active: %d/%d)", streamID, m.activeStreams, m.maxStreams)
+		// Session unregistered (removed debug log)
 	}
 }
 
@@ -132,7 +132,7 @@ func (m *grpcMultiplexedConn) sendLoopForSession(session *ForwardSession) {
 			m.lastActiveAt = time.Now()
 			m.sessionsMu.Unlock()
 
-			utils.Debugf("MultiplexedConn: sent packet for stream %s (type: %v)", session.streamID, packet.Type)
+			// Sent packet for stream (removed debug log)
 
 		case <-session.Ctx().Done():
 			return
@@ -178,7 +178,7 @@ func (m *grpcMultiplexedConn) receiveLoop() {
 				utils.Warnf("MultiplexedConn: failed to deliver packet to session %s: %v", packet.StreamId, err)
 			}
 
-			utils.Debugf("MultiplexedConn: delivered packet to stream %s (type: %v)", packet.StreamId, packet.Type)
+			// Delivered packet to stream (removed debug log)
 		}
 	}
 }

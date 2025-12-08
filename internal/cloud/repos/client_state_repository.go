@@ -120,8 +120,7 @@ func (r *ClientStateRepository) SetState(state *models.ClientRuntimeState) error
 		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to set state")
 	}
 
-	utils.Debugf("ClientStateRepository: set state for client %d (node=%s, status=%s)",
-		state.ClientID, state.NodeID, state.Status)
+	// Set state for client (removed debug log)
 
 	return nil
 }
@@ -140,7 +139,7 @@ func (r *ClientStateRepository) DeleteState(clientID int64) error {
 		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to delete state")
 	}
 
-	utils.Debugf("ClientStateRepository: deleted state for client %d", clientID)
+	// Deleted state for client (removed debug log)
 	return nil
 }
 
@@ -233,7 +232,7 @@ func (r *ClientStateRepository) AddToNodeClients(nodeID string, clientID int64) 
 		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to save node clients")
 	}
 
-	utils.Debugf("ClientStateRepository: added client %d to node %s", clientID, nodeID)
+	// Added client to node (removed debug log)
 	return nil
 }
 
@@ -279,6 +278,6 @@ func (r *ClientStateRepository) RemoveFromNodeClients(nodeID string, clientID in
 		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "failed to save node clients")
 	}
 
-	utils.Debugf("ClientStateRepository: removed client %d from node %s", clientID, nodeID)
+	// Removed client from node (removed debug log)
 	return nil
 }

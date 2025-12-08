@@ -31,7 +31,7 @@ func (ss *StreamService) Name() string {
 func (ss *StreamService) Start(ctx context.Context) error {
 	ss.ctx = ctx
 	// 精简日志：只在调试模式下输出服务启动信息
-	utils.Debugf("Starting stream service: %s", ss.name)
+	utils.Infof("Starting stream service: %s", ss.name)
 
 	// 流管理器在创建时就已经初始化，这里主要是验证状态
 	if ss.manager == nil {
@@ -39,7 +39,7 @@ func (ss *StreamService) Start(ctx context.Context) error {
 	}
 
 	// 精简日志：只在调试模式下输出服务启动完成信息
-	utils.Debugf("Stream service started: %s", ss.name)
+	utils.Infof("Stream service started: %s", ss.name)
 	return nil
 }
 

@@ -144,7 +144,7 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 	}
 
 	if err != nil {
-		utils.Errorf("ListMappingsHandler: failed to list mappings for client %d: %v", clientID, err)
+		utils.LogErrorf(err, "ListMappingsHandler: failed to list mappings for client %d", clientID)
 		return h.errorResponse(ctx, fmt.Sprintf("failed to list mappings: %v", err))
 	}
 

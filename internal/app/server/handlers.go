@@ -89,7 +89,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 		anonClient, err := h.cloudControl.GenerateAnonymousCredentials()
 		if err != nil {
 			authError = err
-			utils.Errorf("ServerAuthHandler: failed to generate anonymous credentials: %v", err)
+			utils.LogErrorf(err, "ServerAuthHandler: failed to generate anonymous credentials")
 			// 记录失败
 			if h.bruteForceProtector != nil {
 				h.bruteForceProtector.RecordFailure(ip)
@@ -117,7 +117,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 				anonClient, genErr := h.cloudControl.GenerateAnonymousCredentials()
 				if genErr != nil {
 					authError = coreErrors.Wrap(genErr, coreErrors.ErrorTypePermanent, "failed to generate new anonymous client")
-					utils.Errorf("ServerAuthHandler: failed to generate anonymous credentials: %v", genErr)
+					utils.LogErrorf(authError, "ServerAuthHandler: failed to generate anonymous credentials")
 					if h.bruteForceProtector != nil {
 						h.bruteForceProtector.RecordFailure(ip)
 					}
@@ -131,7 +131,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 			} else {
 				// 注册客户端或首次匿名握手，返回错误
 				authError = coreErrors.New(coreErrors.ErrorTypeAuth, "client not found")
-				utils.Errorf("ServerAuthHandler: client %d not found: %v", req.ClientID, err)
+				utils.LogErrorf(authError, "ServerAuthHandler: client %d not found", req.ClientID)
 				if h.bruteForceProtector != nil {
 					h.bruteForceProtector.RecordFailure(ip)
 				}
@@ -172,7 +172,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 				})
 				if err != nil {
 					authError = err
-					utils.Errorf("ServerAuthHandler: authentication failed for client %d: %v", req.ClientID, err)
+					utils.LogErrorf(err, "ServerAuthHandler: authentication failed for client %d", req.ClientID)
 					if h.bruteForceProtector != nil {
 						h.bruteForceProtector.RecordFailure(ip)
 					}
@@ -232,8 +232,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 	isNewClient := clientID != req.ClientID && clientID > 0
 	isAnonymousReauth := clientID > 0 && clientID == req.ClientID && !strings.HasPrefix(req.Token, "anonymous:")
 	
-	utils.Debugf("ServerAuthHandler: handshake response check - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v, req.ClientID=%d, clientID=%d", 
-		isFirstHandshake, isNewClient, isAnonymousReauth, req.ClientID, clientID)
+	// Handshake response check
 	
 	if isFirstHandshake || isNewClient || isAnonymousReauth {
 		// 获取匿名客户端信息（包含SecretKey）
@@ -256,8 +255,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 			}
 		}
 	} else {
-		utils.Debugf("ServerAuthHandler: not returning ClientID/SecretKey - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v", 
-			isFirstHandshake, isNewClient, isAnonymousReauth)
+		// Not returning ClientID/SecretKey (not first handshake or anonymous reauth)
 	}
 
 	return response, nil
@@ -376,8 +374,9 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 
 		// 验证隧道映射权限
 		if h.connCodeService == nil {
-			utils.Errorf("ServerTunnelHandler: connection code service not available")
-			return coreErrors.New(coreErrors.ErrorTypePermanent, "connection code service not available")
+			err := coreErrors.New(coreErrors.ErrorTypePermanent, "connection code service not available")
+			utils.LogErrorf(err, "ServerTunnelHandler: connection code service not available")
+			return err
 		}
 
 		validatedMapping, err := h.connCodeService.ValidateMapping(req.MappingID, conn.GetClientID())
@@ -402,8 +401,9 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 		// 从旧的PortMapping获取（保持向后兼容）
 		portMapping, err := h.cloudControl.GetPortMapping(req.MappingID)
 		if err != nil {
-			utils.Errorf("ServerTunnelHandler: port mapping not found %s: %v", req.MappingID, err)
-			return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "mapping not found")
+			wrappedErr := coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "mapping not found")
+			utils.LogErrorf(wrappedErr, "ServerTunnelHandler: port mapping not found %s", req.MappingID)
+			return wrappedErr
 		}
 
 		// 验证SecretKey
@@ -496,8 +496,9 @@ func (h *ServerTunnelHandler) resumeTunnel(conn session.ControlConnectionInterfa
 		ValidateTunnelResumeToken(string) (*session.TunnelState, error)
 	})
 	if !ok {
-		utils.Errorf("ServerTunnelHandler: session manager does not support tunnel resumption")
-		return coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel resumption not supported")
+		err := coreErrors.New(coreErrors.ErrorTypePermanent, "tunnel resumption not supported")
+		utils.LogErrorf(err, "ServerTunnelHandler: session manager does not support tunnel resumption")
+		return err
 	}
 
 	// 1. 验证ResumeToken并加载隧道状态

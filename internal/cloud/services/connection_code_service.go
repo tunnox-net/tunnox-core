@@ -358,9 +358,7 @@ func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64
 		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "mapping not found or expired")
 	}
 
-	// 添加详细日志
-	utils.Debugf("ConnectionCodeService.ValidateMapping: mappingID=%s, clientID=%d, ListenClientID=%d, TargetClientID=%d, Status=%s, IsRevoked=%v, IsExpired=%v, IsValid=%v",
-		mappingID, clientID, mapping.ListenClientID, mapping.TargetClientID, mapping.Status, mapping.IsRevoked, mapping.IsExpired(), mapping.IsValid())
+	// ValidateMapping details (removed debug log)
 
 	// 验证权限
 	if !mapping.CanBeAccessedBy(clientID) {
@@ -385,7 +383,7 @@ func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64
 		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "mapping cannot be accessed")
 	}
 
-	utils.Debugf("ConnectionCodeService.ValidateMapping: validation passed for mappingID=%s, clientID=%d", mappingID, clientID)
+	// Validation passed (removed debug log)
 	return mapping, nil
 }
 

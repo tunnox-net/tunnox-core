@@ -14,7 +14,7 @@ func TestServiceManagerResourceRegistration(t *testing.T) {
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false                 // 禁用信号处理以便测试
 	config.ResourceManager = utils.NewResourceManager() // 使用独立的资源管理器
-	manager := utils.NewServiceManager(config)
+	manager := utils.NewServiceManager(context.Background(), config)
 
 	// 创建一些测试资源
 	resource1 := &MockResource{name: "test-resource-1"}
@@ -71,7 +71,7 @@ func TestServiceManagerResourceDisposal(t *testing.T) {
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false
 	config.ResourceDisposeTimeout = 5 * time.Second
-	manager := utils.NewServiceManager(config)
+	manager := utils.NewServiceManager(context.Background(), config)
 
 	// 创建测试资源
 	resource1 := &MockResource{name: "dispose-test-1"}
@@ -111,7 +111,7 @@ func TestServiceManagerWithContext(t *testing.T) {
 	// 创建服务管理器
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false
-	manager := utils.NewServiceManager(config)
+	manager := utils.NewServiceManager(context.Background(), config)
 
 	// 创建测试资源
 	resource := &MockResource{name: "context-test"}

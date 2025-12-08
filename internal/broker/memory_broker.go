@@ -43,7 +43,7 @@ func (m *MemoryBroker) Publish(ctx context.Context, topic string, message []byte
 	subscribers, exists := m.subscribers[topic]
 	if !exists || len(subscribers) == 0 {
 		// 没有订阅者，消息丢弃（符合 Pub/Sub 语义）
-		utils.Debugf("MemoryBroker: no subscribers for topic %s, message dropped", topic)
+		// No subscribers, message dropped (removed debug log)
 		return nil
 	}
 
@@ -68,8 +68,7 @@ func (m *MemoryBroker) Publish(ctx context.Context, topic string, message []byte
 		}
 	}
 
-	utils.Debugf("MemoryBroker: published message to topic %s, sent to %d/%d subscribers",
-		topic, sentCount, len(subscribers))
+	// Published message to topic (removed debug log)
 
 	return nil
 }
@@ -150,7 +149,8 @@ func (m *MemoryBroker) Close() error {
 		for _, ch := range subscribers {
 			close(ch)
 		}
-		utils.Debugf("MemoryBroker: closed %d subscribers for topic %s", len(subscribers), topic)
+		// Closed subscribers for topic (removed debug log)
+		_ = topic
 	}
 
 	// 清空订阅者

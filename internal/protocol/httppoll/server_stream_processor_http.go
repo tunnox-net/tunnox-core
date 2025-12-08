@@ -163,7 +163,7 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 	actualRequestID := requestID
 	if actualRequestID == "" {
 		actualRequestID = "legacy-" + fmt.Sprintf("%d", time.Now().UnixNano())
-		utils.Debugf("ServerStreamProcessor: HandlePollRequest - generated legacy requestID=%s, connID=%s", actualRequestID, sp.connectionID)
+		// Generated legacy requestID for compatibility
 	}
 
 	// keepalive 请求不应该注册到等待队列，因为它们不应该接收控制包
@@ -172,12 +172,12 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 	// 这可能导致同一个分片组的分片被不同的连接接收，无法正确重组
 	// 解决方案：优先让 data 类型的 Poll 请求接收数据流，keepalive 请求只在没有 data 类型请求时接收
 	if tunnelType == "keepalive" {
-		utils.Debugf("ServerStreamProcessor: HandlePollRequest - keepalive request, checking for data stream, requestID=%s, connID=%s", actualRequestID, sp.connectionID)
+		// Keepalive request, checking for data stream
 		// keepalive 请求只等待数据流，不等待控制包
 		// 先检查队列中是否有数据（非阻塞）
 		if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
 			// 返回分片响应的JSON字符串
-			utils.Debugf("ServerStreamProcessor: HandlePollRequest - keepalive request received fragment from queue, len=%d, connID=%s", len(fragmentJSON), sp.connectionID)
+			// Keepalive request received fragment from queue
 			return string(fragmentJSON), nil, nil
 		}
 		// 队列为空，等待数据流（带超时）
@@ -189,7 +189,7 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 		case <-sp.pollWaitChan:
 			// 收到信号，立即检查队列
 			if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
-				utils.Debugf("ServerStreamProcessor: HandlePollRequest - keepalive request received fragment after wait, len=%d, connID=%s", len(fragmentJSON), sp.connectionID)
+				// Keepalive request received fragment after wait
 				return string(fragmentJSON), nil, nil
 			}
 			// 如果队列仍为空，继续等待 pollDataChan
@@ -204,7 +204,7 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 				}
 				// pollDataChan 中的数据已经是 JSON 字节数组（由 pollDataScheduler 从 pollDataQueue Pop 出来的）
 				// 直接返回，不需要再次包装
-				utils.Debugf("ServerStreamProcessor: HandlePollRequest - keepalive request received data from pollDataChan, len=%d, connID=%s", len(data), sp.connectionID)
+				// Keepalive request received data from pollDataChan
 				return string(data), nil, nil
 			case <-time.After(28 * time.Second):
 				return "", nil, context.DeadlineExceeded
@@ -215,7 +215,7 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 			}
 			// pollDataChan 中的数据已经是 JSON 字节数组（由 pollDataScheduler 从 pollDataQueue Pop 出来的）
 			// 直接返回，不需要再次包装
-			utils.Debugf("ServerStreamProcessor: HandlePollRequest - keepalive request received data from pollDataChan (immediate), len=%d, connID=%s", len(data), sp.connectionID)
+			// Keepalive request received data from pollDataChan (immediate)
 			return string(data), nil, nil
 		case <-time.After(28 * time.Second):
 			return "", nil, context.DeadlineExceeded
@@ -252,8 +252,7 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 	select {
 	case responsePkg := <-responseChan:
 		// 从等待队列收到控制包（已匹配 requestID）
-		utils.Debugf("ServerStreamProcessor: HandlePollRequest - control packet received immediately from waiting queue (type=%s), connID=%s, requestID=%s",
-			responsePkg.Type, sp.connectionID, actualRequestID)
+		// Control packet received immediately from waiting queue
 		return "", responsePkg, nil
 	default:
 		// 没有控制包，继续等待
@@ -263,7 +262,7 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 	var fragmentJSONStr string
 	if fragmentJSON, ok := sp.pollDataQueue.Pop(); ok {
 		fragmentJSONStr = string(fragmentJSON)
-		utils.Debugf("ServerStreamProcessor: HandlePollRequest - data stream received, len=%d, connID=%s", len(fragmentJSONStr), sp.connectionID)
+		// Data stream received
 		return fragmentJSONStr, nil, nil
 	}
 
@@ -275,8 +274,7 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 		return "", nil, sp.Ctx().Err()
 	case responsePkg := <-responseChan:
 		// 从等待队列收到控制包（已匹配 requestID）
-		utils.Debugf("ServerStreamProcessor: HandlePollRequest - control packet received from waiting queue (type=%s), connID=%s, requestID=%s",
-			responsePkg.Type, sp.connectionID, actualRequestID)
+		// Control packet received from waiting queue
 		return "", responsePkg, nil
 	// 注意：不再使用 controlPacketChan，所有控制包都通过 pendingControlPackets 和 tryMatchControlPacket 匹配
 	case <-sp.pollWaitChan:

@@ -119,7 +119,8 @@ func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 	}
 
 	if err := json.Unmarshal([]byte(ctx.RequestBody), &req); err != nil {
-		utils.Errorf("GenerateConnectionCodeHandler: failed to parse request: %v", err)
+		typedErr := coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "failed to parse request")
+		utils.LogErrorf(typedErr, "GenerateConnectionCodeHandler: failed to parse request")
 		return h.errorResponse(ctx, fmt.Sprintf("invalid request: %v", err))
 	}
 
@@ -134,7 +135,7 @@ func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 	})
 
 	if err != nil {
-		utils.Errorf("GenerateConnectionCodeHandler: failed to create connection code: %v", err)
+		utils.LogErrorf(err, "GenerateConnectionCodeHandler: failed to create connection code")
 		return h.errorResponse(ctx, fmt.Sprintf("failed to create connection code: %v", err))
 	}
 

@@ -53,7 +53,7 @@ func (a *SOCKS5MappingAdapter) StartListener(config config.MappingConfig) error 
 	}
 
 	a.listener = listener
-	utils.Debugf("SOCKS5MappingAdapter: listening on %s", addr)
+	utils.Infof("SOCKS5MappingAdapter: listening on %s", addr)
 	return nil
 }
 
