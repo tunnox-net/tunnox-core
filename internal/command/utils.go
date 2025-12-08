@@ -177,16 +177,16 @@ func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 	}
 
 	// 获取连接信息
-	connInfo, exists := cu.session.GetStreamManager().GetStream(cu.connectionID)
-	if !exists {
-		return nil, cu.errorHandler(errors.Newf(errors.ErrorTypePermanent, "connection not found: %s", cu.connectionID))
+	connInfo, err := cu.session.GetStreamManager().GetStream(cu.connectionID)
+	if err != nil {
+		return nil, cu.errorHandler(errors.Wrap(err, errors.ErrorTypePermanent, "connection not found"))
 	}
 
 	// 记录日志
 	utils.Debugf("Executing command: %v, request: %+v", cu.commandType, cu.requestData)
 
 	// 发送命令包
-	_, err := connInfo.WritePacket(transferPacket, false, 0)
+	_, err = connInfo.WritePacket(transferPacket, false, 0)
 	if err != nil {
 		return nil, cu.errorHandler(errors.Wrap(err, errors.ErrorTypeNetwork, "failed to send command"))
 	}
@@ -233,9 +233,9 @@ func (cu *CommandUtils) waitForResponse() (*CommandResponse, error) {
 	defer cancel()
 
 	// 获取连接信息
-	connInfo, exists := cu.session.GetStreamManager().GetStream(cu.connectionID)
-	if !exists {
-		return nil, cu.errorHandler(errors.Newf(errors.ErrorTypePermanent, "connection not found: %s", cu.connectionID))
+	connInfo, err := cu.session.GetStreamManager().GetStream(cu.connectionID)
+	if err != nil {
+		return nil, cu.errorHandler(errors.Wrap(err, errors.ErrorTypePermanent, "connection not found"))
 	}
 
 	// 等待响应

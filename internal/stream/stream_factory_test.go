@@ -92,13 +92,13 @@ func TestStreamManager_BasicOperations(t *testing.T) {
 	require.Error(t, err)
 
 	// 测试获取流
-	retrievedStream, exists := manager.GetStream("test1")
-	require.True(t, exists)
+	retrievedStream, err := manager.GetStream("test1")
+	require.NoError(t, err)
 	require.Equal(t, stream1, retrievedStream)
 
 	// 测试获取不存在的流
-	_, exists = manager.GetStream("nonexistent")
-	require.False(t, exists)
+	_, err = manager.GetStream("nonexistent")
+	require.Error(t, err)
 
 	// 测试列出流
 	streams := manager.ListStreams()
@@ -114,8 +114,8 @@ func TestStreamManager_BasicOperations(t *testing.T) {
 	require.NoError(t, err)
 
 	// 验证流已被移除
-	_, exists = manager.GetStream("test1")
-	require.False(t, exists)
+	_, err = manager.GetStream("test1")
+	require.Error(t, err)
 
 	count = manager.GetStreamCount()
 	require.Equal(t, 0, count)

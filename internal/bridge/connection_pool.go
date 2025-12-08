@@ -118,11 +118,14 @@ func (p *BridgeConnectionPool) CreateSession(ctx context.Context, targetNodeID, 
 }
 
 // GetNodePool 获取指定节点的连接池
-func (p *BridgeConnectionPool) GetNodePool(nodeID string) (*NodeConnectionPool, bool) {
+func (p *BridgeConnectionPool) GetNodePool(nodeID string) (*NodeConnectionPool, error) {
 	p.nodePoolsMu.RLock()
 	defer p.nodePoolsMu.RUnlock()
 	pool, exists := p.nodePools[nodeID]
-	return pool, exists
+	if !exists {
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "node pool for node %s not found", nodeID)
+	}
+	return pool, nil
 }
 
 // GetAllStats 获取所有节点的统计信息

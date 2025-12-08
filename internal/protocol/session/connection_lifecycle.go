@@ -116,11 +116,14 @@ func (s *SessionManager) AcceptConnection(reader io.Reader, writer io.Writer) (*
 }
 
 // GetConnection 获取连接
-func (s *SessionManager) GetConnection(connID string) (*types.Connection, bool) {
+func (s *SessionManager) GetConnection(connID string) (*types.Connection, error) {
 	s.connLock.RLock()
 	defer s.connLock.RUnlock()
 	conn, exists := s.connMap[connID]
-	return conn, exists
+	if !exists {
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "connection %s not found", connID)
+	}
+	return conn, nil
 }
 
 // getConnectionByConnID 获取连接（内部使用，返回nil如果不存在）
@@ -187,8 +190,8 @@ func (s *SessionManager) CloseConnection(connectionId string) error {
 
 // GetStreamConnectionInfo 获取流连接信息
 func (s *SessionManager) GetStreamConnectionInfo(connectionId string) (*types.StreamConnection, bool) {
-	conn, exists := s.GetConnection(connectionId)
-	if !exists {
+	conn, err := s.GetConnection(connectionId)
+	if err != nil {
 		return nil, false
 	}
 

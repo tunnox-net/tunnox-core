@@ -182,7 +182,8 @@ func (sp *ServerStreamProcessor) ReadExact(length int) ([]byte, error) {
 			utils.Debugf("ServerStreamProcessor[%s]: ReadExact - decoded and appended %d bytes to buffer, buffer size: %d -> %d, need %d, connID=%s",
 				sp.connectionID, len(data), oldBufferLen, len(sp.readBuffer), length, sp.connectionID)
 		case <-timeout.C:
-			// 超时，检查缓冲区状态
+			// 超时，停止 Timer 并检查缓冲区状态
+			timeout.Stop()
 			sp.readBufMu.Lock()
 			if len(sp.readBuffer) >= length {
 				// 缓冲区已经有足够的数据，继续循环以读取完整数据

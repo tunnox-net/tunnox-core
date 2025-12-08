@@ -29,7 +29,7 @@ type HTTPPollResponse = httppoll.FragmentResponse
 type SessionManagerWithConnection interface {
 	SessionManager
 	CreateConnection(reader io.Reader, writer io.Writer) (*types.Connection, error)
-	GetConnection(connID string) (*types.Connection, bool)
+	GetConnection(connID string) (*types.Connection, error)
 }
 
 // getSessionManagerWithConnection 获取支持 CreateConnection 的 SessionManager
@@ -41,7 +41,7 @@ func getSessionManagerWithConnection(sm SessionManager) SessionManagerWithConnec
 	// 尝试通过接口组合获取
 	type createConn interface {
 		CreateConnection(reader io.Reader, writer io.Writer) (*types.Connection, error)
-		GetConnection(connID string) (*types.Connection, bool)
+		GetConnection(connID string) (*types.Connection, error)
 	}
 	if cc, ok := sm.(createConn); ok {
 		return &sessionManagerAdapter{
@@ -57,7 +57,7 @@ type sessionManagerAdapter struct {
 	SessionManager
 	createConn interface {
 		CreateConnection(reader io.Reader, writer io.Writer) (*types.Connection, error)
-		GetConnection(connID string) (*types.Connection, bool)
+		GetConnection(connID string) (*types.Connection, error)
 	}
 }
 
@@ -65,6 +65,6 @@ func (a *sessionManagerAdapter) CreateConnection(reader io.Reader, writer io.Wri
 	return a.createConn.CreateConnection(reader, writer)
 }
 
-func (a *sessionManagerAdapter) GetConnection(connID string) (*types.Connection, bool) {
+func (a *sessionManagerAdapter) GetConnection(connID string) (*types.Connection, error) {
 	return a.createConn.GetConnection(connID)
 }

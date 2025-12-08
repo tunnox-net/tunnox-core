@@ -82,7 +82,7 @@ type Session interface {
 	ProcessPacket(connID string, packet *packet.TransferPacket) error
 
 	// GetConnection 获取连接信息
-	GetConnection(connID string) (*Connection, bool)
+	GetConnection(connID string) (*Connection, error)
 
 	// ListConnections 列出所有连接
 	ListConnections() []*Connection

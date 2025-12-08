@@ -233,8 +233,8 @@ func (s *SessionManager) handleHeartbeat(connPacket *types.StreamPacket) error {
 	utils.Debugf("Heartbeat received from connection: %s", connPacket.ConnectionID)
 
 	// 发送心跳响应
-	conn, exists := s.GetConnection(connPacket.ConnectionID)
-	if exists && conn.Stream != nil {
+	conn, err := s.GetConnection(connPacket.ConnectionID)
+	if err == nil && conn != nil && conn.Stream != nil {
 		respPacket := &packet.TransferPacket{
 			PacketType: packet.Heartbeat, // 心跳响应也用 Heartbeat
 		}

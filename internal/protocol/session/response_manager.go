@@ -71,9 +71,9 @@ func (rm *ResponseManager) handleCommandCompletedEvent(event events.Event) error
 // SendResponse 发送响应
 func (rm *ResponseManager) SendResponse(connID string, response *command.CommandResponse) error {
 	// 获取连接信息
-	conn, exists := rm.session.GetConnection(connID)
-	if !exists {
-		return errors.Newf(errors.ErrorTypePermanent, "connection %s not found", connID)
+	conn, err := rm.session.GetConnection(connID)
+	if err != nil {
+		return err
 	}
 
 	// 检查连接状态

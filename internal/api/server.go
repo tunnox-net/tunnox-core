@@ -131,9 +131,9 @@ func (a *apiSessionManagerAdapter) CreateConnection(reader io.Reader, writer io.
 }
 
 // GetConnection 获取连接（实现 SessionManagerWithConnection 接口）
-func (a *apiSessionManagerAdapter) GetConnection(connID string) (*types.Connection, bool) {
+func (a *apiSessionManagerAdapter) GetConnection(connID string) (*types.Connection, error) {
 	if a.sessionMgr == nil {
-		return nil, false
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "session manager is nil")
 	}
 	// session.SessionManager 直接实现了 GetConnection 方法
 	return a.sessionMgr.GetConnection(connID)

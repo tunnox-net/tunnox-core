@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/protocol/session"
@@ -63,9 +64,12 @@ func (m *mockSessionManager) CreateConnection(reader io.Reader, writer io.Writer
 	return conn, nil
 }
 
-func (m *mockSessionManager) GetConnection(connID string) (*types.Connection, bool) {
+func (m *mockSessionManager) GetConnection(connID string) (*types.Connection, error) {
 	conn, exists := m.connections[connID]
-	return conn, exists
+	if !exists {
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "connection %s not found", connID)
+	}
+	return conn, nil
 }
 
 func (m *mockSessionManager) ListConnections() []*types.Connection {

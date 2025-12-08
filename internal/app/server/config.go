@@ -1,10 +1,12 @@
 package server
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"tunnox-core/internal/constants"
 	coreErrors "tunnox-core/internal/core/errors"
+	"tunnox-core/internal/core/validation"
 	"tunnox-core/internal/utils"
 
 	"gopkg.in/yaml.v3"
@@ -309,17 +311,38 @@ func LoadConfig(configPath string) (*Config, error) {
 
 // ValidateConfig 验证配置
 func ValidateConfig(config *Config) error {
+	result := &validation.ValidationResult{}
+
 	// 验证存储配置
 	if err := validateStorageConfig(&config.Storage); err != nil {
-		return coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "invalid storage config")
+		result.AddError(coreErrors.Wrap(err, coreErrors.ErrorTypePermanent, "invalid storage config"))
 	}
 
 	// 验证服务器配置
 	if config.Server.Host == "" {
 		config.Server.Host = "0.0.0.0"
+	} else {
+		if err := validation.ValidateHost(config.Server.Host, "server.host"); err != nil {
+			result.AddError(err)
+		}
 	}
 	if config.Server.Port <= 0 {
 		config.Server.Port = 8000
+	} else {
+		if err := validation.ValidatePort(config.Server.Port, "server.port"); err != nil {
+			result.AddError(err)
+		}
+	}
+
+	// 验证超时配置
+	if config.Server.ReadTimeout < 0 {
+		result.AddError(validation.ValidateTimeout(config.Server.ReadTimeout, "server.read_timeout"))
+	}
+	if config.Server.WriteTimeout < 0 {
+		result.AddError(validation.ValidateTimeout(config.Server.WriteTimeout, "server.write_timeout"))
+	}
+	if config.Server.IdleTimeout < 0 {
+		result.AddError(validation.ValidateTimeout(config.Server.IdleTimeout, "server.idle_timeout"))
 	}
 
 	// 验证协议配置
@@ -408,23 +431,114 @@ func ValidateConfig(config *Config) error {
 	// 验证 MessageBroker 配置
 	if config.MessageBroker.Type == "" {
 		config.MessageBroker.Type = "memory"
+	} else {
+		validTypes := []string{"memory", "redis", "rabbitmq", "kafka"}
+		if err := validation.ValidateStringInList(config.MessageBroker.Type, "message_broker.type", validTypes); err != nil {
+			result.AddError(err)
+		}
 	}
 	if config.MessageBroker.NodeID == "" {
 		config.MessageBroker.NodeID = "node-001"
+	} else {
+		if err := validation.ValidateNonEmptyString(config.MessageBroker.NodeID, "message_broker.node_id"); err != nil {
+			result.AddError(err)
+		}
+	}
+
+	// 验证 Redis Broker 配置
+	if config.MessageBroker.Type == "redis" && config.MessageBroker.Redis.Addr != "" {
+		if err := validation.ValidateAddress(config.MessageBroker.Redis.Addr, "message_broker.redis.addr"); err != nil {
+			result.AddError(err)
+		}
+		if config.MessageBroker.Redis.PoolSize > 0 {
+			if err := validation.ValidatePositiveInt(config.MessageBroker.Redis.PoolSize, "message_broker.redis.pool_size"); err != nil {
+				result.AddError(err)
+			}
+		}
 	}
 
 	// 验证 Cloud 配置
 	if config.Cloud.Type == "" {
 		config.Cloud.Type = "built_in"
+	} else {
+		validTypes := []string{"built_in", "external"}
+		if err := validation.ValidateStringInList(config.Cloud.Type, "cloud.type", validTypes); err != nil {
+			result.AddError(err)
+		}
+	}
+
+	// 验证 External Cloud 配置
+	if config.Cloud.Type == "external" {
+		if config.Cloud.External.Endpoint != "" {
+			if err := validation.ValidateURL(config.Cloud.External.Endpoint, "cloud.external.endpoint"); err != nil {
+				result.AddError(err)
+			}
+		}
+		if config.Cloud.External.Timeout > 0 {
+			if err := validation.ValidateTimeout(config.Cloud.External.Timeout, "cloud.external.timeout"); err != nil {
+				result.AddError(err)
+			}
+		}
 	}
 
 	// 验证 ManagementAPI 配置
 	if config.ManagementAPI.ListenAddr == "" {
 		config.ManagementAPI.ListenAddr = "0.0.0.0:9000"
+	} else {
+		if err := validation.ValidateAddress(config.ManagementAPI.ListenAddr, "management_api.listen_addr"); err != nil {
+			result.AddError(err)
+		}
 	}
 	// 默认启用 ManagementAPI
 	if !config.ManagementAPI.Enabled {
 		config.ManagementAPI.Enabled = true
+	}
+
+	// 验证 BridgePool 配置
+	if config.BridgePool.Enabled {
+		if config.BridgePool.MinConnsPerNode < 0 {
+			result.AddError(validation.ValidateNonNegativeInt(int(config.BridgePool.MinConnsPerNode), "bridge_pool.min_conns_per_node"))
+		}
+		if config.BridgePool.MaxConnsPerNode > 0 {
+			if err := validation.ValidatePositiveInt(int(config.BridgePool.MaxConnsPerNode), "bridge_pool.max_conns_per_node"); err != nil {
+				result.AddError(err)
+			}
+			// 验证 MaxConnsPerNode >= MinConnsPerNode
+			if config.BridgePool.MaxConnsPerNode < config.BridgePool.MinConnsPerNode {
+				result.AddError(coreErrors.Newf(coreErrors.ErrorTypePermanent, "bridge_pool.max_conns_per_node (%d) must be >= min_conns_per_node (%d)", config.BridgePool.MaxConnsPerNode, config.BridgePool.MinConnsPerNode))
+			}
+		}
+		if config.BridgePool.MaxIdleTime > 0 {
+			if err := validation.ValidateTimeout(config.BridgePool.MaxIdleTime, "bridge_pool.max_idle_time"); err != nil {
+				result.AddError(err)
+			}
+		}
+		if config.BridgePool.MaxStreamsPerConn > 0 {
+			if err := validation.ValidatePositiveInt(int(config.BridgePool.MaxStreamsPerConn), "bridge_pool.max_streams_per_conn"); err != nil {
+				result.AddError(err)
+			}
+		}
+		if config.BridgePool.DialTimeout > 0 {
+			if err := validation.ValidateTimeout(config.BridgePool.DialTimeout, "bridge_pool.dial_timeout"); err != nil {
+				result.AddError(err)
+			}
+		}
+		if config.BridgePool.HealthCheckInterval > 0 {
+			if err := validation.ValidateTimeout(config.BridgePool.HealthCheckInterval, "bridge_pool.health_check_interval"); err != nil {
+				result.AddError(err)
+			}
+		}
+		// 验证 gRPC Server 配置
+		if config.BridgePool.GRPCServer.Port > 0 {
+			if err := validation.ValidatePort(config.BridgePool.GRPCServer.Port, "bridge_pool.grpc_server.port"); err != nil {
+				result.AddError(err)
+			}
+		}
+		if config.BridgePool.GRPCServer.Addr != "" {
+			if err := validation.ValidateHost(config.BridgePool.GRPCServer.Addr, "bridge_pool.grpc_server.addr"); err != nil {
+				result.AddError(err)
+			}
+		}
 	}
 
 	// 验证 UDP Ingress 配置
@@ -432,30 +546,66 @@ func ValidateConfig(config *Config) error {
 		config.UDPIngress.Listeners = []UDPIngressListenerConfig{}
 	}
 	for i := range config.UDPIngress.Listeners {
-		if config.UDPIngress.Listeners[i].IdleTimeout <= 0 {
-			config.UDPIngress.Listeners[i].IdleTimeout = 60
+		listener := &config.UDPIngress.Listeners[i]
+		if listener.IdleTimeout <= 0 {
+			listener.IdleTimeout = 60
+		} else {
+			if err := validation.ValidateTimeout(listener.IdleTimeout, fmt.Sprintf("udp_ingress.listeners[%d].idle_timeout", i)); err != nil {
+				result.AddError(err)
+			}
 		}
-		if config.UDPIngress.Listeners[i].FrameBacklog <= 0 {
-			config.UDPIngress.Listeners[i].FrameBacklog = 64
+		if listener.FrameBacklog <= 0 {
+			listener.FrameBacklog = 64
+		} else {
+			if err := validation.ValidatePositiveInt(listener.FrameBacklog, fmt.Sprintf("udp_ingress.listeners[%d].frame_backlog", i)); err != nil {
+				result.AddError(err)
+			}
+		}
+		// 验证监听地址
+		if listener.Address != "" {
+			if err := validation.ValidateAddress(listener.Address, fmt.Sprintf("udp_ingress.listeners[%d].address", i)); err != nil {
+				result.AddError(err)
+			}
 		}
 	}
 
 	// 验证日志配置
 	if config.Log.Level == "" {
 		config.Log.Level = constants.LogLevelInfo
+	} else {
+		validLevels := []string{constants.LogLevelDebug, constants.LogLevelInfo, constants.LogLevelWarn, constants.LogLevelError, constants.LogLevelFatal, constants.LogLevelPanic}
+		if err := validation.ValidateStringInList(config.Log.Level, "log.level", validLevels); err != nil {
+			result.AddError(err)
+		}
 	}
 	if config.Log.Format == "" {
 		config.Log.Format = constants.LogFormatText
+	} else {
+		validFormats := []string{constants.LogFormatText, constants.LogFormatJSON}
+		if err := validation.ValidateStringInList(config.Log.Format, "log.format", validFormats); err != nil {
+			result.AddError(err)
+		}
 	}
 	if config.Log.Output == "" {
 		config.Log.Output = constants.LogOutputStdout
+	} else {
+		validOutputs := []string{constants.LogOutputStdout, constants.LogOutputStderr, constants.LogOutputFile}
+		if err := validation.ValidateStringInList(config.Log.Output, "log.output", validOutputs); err != nil {
+			result.AddError(err)
+		}
 	}
 
+	// 返回验证结果
+	if !result.IsValid() {
+		return result
+	}
 	return nil
 }
 
 // validateStorageConfig 验证存储配置
 func validateStorageConfig(config *StorageConfig) error {
+	result := &validation.ValidationResult{}
+
 	// 如果未配置，使用默认值
 	if config.Type == "" {
 		config.Type = "hybrid"
@@ -463,30 +613,55 @@ func validateStorageConfig(config *StorageConfig) error {
 
 	// 验证存储类型
 	validTypes := []string{"memory", "redis", "hybrid"}
-	if !containsString(validTypes, config.Type) {
-		return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid storage type: %s, must be one of: %v", config.Type, validTypes)
+	if err := validation.ValidateStringInList(config.Type, "storage.type", validTypes); err != nil {
+		result.AddError(err)
 	}
 
 	// 如果是 Redis，验证 Redis 配置
 	if config.Type == "redis" {
 		if config.Redis.Addr == "" {
-			return coreErrors.New(coreErrors.ErrorTypePermanent, "redis.addr is required when storage type is redis")
+			result.AddError(coreErrors.New(coreErrors.ErrorTypePermanent, "storage.redis.addr is required when storage type is redis"))
+		} else {
+			// 验证地址格式（host:port）
+			if err := validation.ValidateAddress(config.Redis.Addr, "storage.redis.addr"); err != nil {
+				result.AddError(err)
+			}
 		}
-		// 设置默认值
+		// 设置默认值并验证
 		if config.Redis.PoolSize <= 0 {
 			config.Redis.PoolSize = 10
+		} else {
+			if err := validation.ValidatePositiveInt(config.Redis.PoolSize, "storage.redis.pool_size"); err != nil {
+				result.AddError(err)
+			}
 		}
 		if config.Redis.MaxRetries <= 0 {
 			config.Redis.MaxRetries = 3
+		} else {
+			if err := validation.ValidateNonNegativeInt(config.Redis.MaxRetries, "storage.redis.max_retries"); err != nil {
+				result.AddError(err)
+			}
 		}
 		if config.Redis.DialTimeout <= 0 {
 			config.Redis.DialTimeout = 5
+		} else {
+			if err := validation.ValidateTimeout(config.Redis.DialTimeout, "storage.redis.dial_timeout"); err != nil {
+				result.AddError(err)
+			}
 		}
 		if config.Redis.ReadTimeout <= 0 {
 			config.Redis.ReadTimeout = 3
+		} else {
+			if err := validation.ValidateTimeout(config.Redis.ReadTimeout, "storage.redis.read_timeout"); err != nil {
+				result.AddError(err)
+			}
 		}
 		if config.Redis.WriteTimeout <= 0 {
 			config.Redis.WriteTimeout = 3
+		} else {
+			if err := validation.ValidateTimeout(config.Redis.WriteTimeout, "storage.redis.write_timeout"); err != nil {
+				result.AddError(err)
+			}
 		}
 	}
 
@@ -506,11 +681,11 @@ func validateStorageConfig(config *StorageConfig) error {
 		}
 
 		if config.Hybrid.CacheType != "memory" && config.Hybrid.CacheType != "redis" {
-			return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid hybrid.cache_type: %s, must be 'memory' or 'redis'", config.Hybrid.CacheType)
+			result.AddError(coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid hybrid.cache_type: %s, must be 'memory' or 'redis'", config.Hybrid.CacheType))
 		}
 
 		if config.Hybrid.CacheType == "redis" && config.Redis.Addr == "" {
-			return coreErrors.New(coreErrors.ErrorTypePermanent, "redis.addr is required when hybrid.cache_type is redis")
+			result.AddError(coreErrors.New(coreErrors.ErrorTypePermanent, "storage.redis.addr is required when hybrid.cache_type is redis"))
 		}
 
 		// 前缀和 TTL 使用 storage.DefaultHybridConfig() 中的默认值，不需要用户配置
@@ -528,26 +703,41 @@ func validateStorageConfig(config *StorageConfig) error {
 			}
 
 			// 如果配置了 Remote 存储，验证配置
-			if config.Hybrid.Remote.Type != "" {
+			if hasRemoteConfig {
 				if config.Hybrid.Remote.Type != "grpc" && config.Hybrid.Remote.Type != "http" {
-					return coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid hybrid.remote.type: %s, must be 'grpc' or 'http'", config.Hybrid.Remote.Type)
+					result.AddError(coreErrors.Newf(coreErrors.ErrorTypePermanent, "invalid hybrid.remote.type: %s, must be 'grpc' or 'http'", config.Hybrid.Remote.Type))
 				}
-
+				if config.Hybrid.Remote.Type == "grpc" && config.Hybrid.Remote.GRPC.Address != "" {
+					if err := validation.ValidateAddress(config.Hybrid.Remote.GRPC.Address, "storage.hybrid.remote.grpc.address"); err != nil {
+						result.AddError(err)
+					}
+				}
 				if config.Hybrid.Remote.Type == "grpc" && config.Hybrid.Remote.GRPC.Address == "" {
-					return coreErrors.New(coreErrors.ErrorTypePermanent, "hybrid.remote.grpc.address is required when remote.type is grpc")
+					result.AddError(coreErrors.New(coreErrors.ErrorTypePermanent, "storage.hybrid.remote.grpc.address is required when remote.type is grpc"))
 				}
-
 				// 设置默认超时
 				if config.Hybrid.Remote.GRPC.Timeout <= 0 {
 					config.Hybrid.Remote.GRPC.Timeout = 5
+				} else {
+					if err := validation.ValidateTimeout(config.Hybrid.Remote.GRPC.Timeout, "storage.hybrid.remote.grpc.timeout"); err != nil {
+						result.AddError(err)
+					}
 				}
 				if config.Hybrid.Remote.GRPC.MaxRetries <= 0 {
 					config.Hybrid.Remote.GRPC.MaxRetries = 3
+				} else {
+					if err := validation.ValidateNonNegativeInt(config.Hybrid.Remote.GRPC.MaxRetries, "storage.hybrid.remote.grpc.max_retries"); err != nil {
+						result.AddError(err)
+					}
 				}
 			}
 		}
 	}
 
+	// 返回验证结果
+	if !result.IsValid() {
+		return result
+	}
 	return nil
 }
 

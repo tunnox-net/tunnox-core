@@ -202,10 +202,13 @@ func (ce *CommandExecutor) sendResponse(connectionID string, response *types.Com
 	}
 
 	// 通过 Session 接口获取连接
-	conn, exists := ce.session.GetConnection(connectionID)
-	if !exists || conn == nil {
+	conn, err := ce.session.GetConnection(connectionID)
+	if err != nil || conn == nil {
 		utils.Errorf("CommandExecutor.sendResponse: connection not found, ConnectionID=%s", connectionID)
-		return errors.Newf(errors.ErrorTypePermanent, "connection not found: %s", connectionID)
+		if err != nil {
+			return errors.Wrap(err, errors.ErrorTypePermanent, "connection not found")
+		}
+		return errors.New(errors.ErrorTypePermanent, "connection is nil")
 	}
 
 	if conn.Stream == nil {

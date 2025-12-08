@@ -58,63 +58,118 @@
 
 ---
 
-### 2. 资源清理不完整 ⚠️ **中等优先级**
+### 2. 资源清理不完整 ✅ **已完成**
 
 **问题描述**：
 虽然实现了 Dispose 体系，但某些资源可能没有正确清理。
 
-**需要检查的内容**：
-- [ ] 所有 `time.Ticker` 都有 `defer ticker.Stop()`
-- [ ] 所有 `time.Timer` 都有 `defer timer.Stop()`
-- [ ] 所有 channel 在适当时候关闭
-- [ ] 所有文件句柄都有 `defer Close()`
-- [ ] 所有网络连接都有清理逻辑
+**检查结果**：
+- [x] 所有 `time.Ticker` 都有 `defer ticker.Stop()` 或在 `onClose()` 中停止
+- [x] 所有 `time.Timer` 都有 `defer timer.Stop()`（修复了 `ReadExact` 中的 Timer 泄漏）
+- [x] 所有 channel 在适当时候关闭（通过 dispose 体系管理）
+- [x] 所有文件句柄都有 `defer Close()` 或合理的生命周期管理
+- [x] 所有网络连接都有清理逻辑（通过 dispose 体系管理）
 
-**处理策略**：
-1. 使用静态分析工具检查资源泄漏
-2. 添加资源清理测试
-3. 按模块逐步审查
+**修复内容**：
+1. ✅ 修复了 `internal/protocol/httppoll/server_stream_processor_data.go` 中 `ReadExact` 方法的 Timer 资源泄漏
+   - 在循环中创建的 Timer 在超时后继续循环时没有停止，已修复
 
-**优先级**：P1（2周内修复）
+**验证**：
+- 所有 Ticker 和 Timer 都有正确的清理逻辑
+- 文件句柄都有适当的生命周期管理
+- 网络连接通过 dispose 体系统一管理
+
+**状态**：✅ **完成**
 
 ---
 
-### 3. 配置验证不足 ⚠️ **中等优先级**
+### 3. 配置验证不足 ✅ **已完成**
 
 **问题描述**：
 配置验证逻辑分散，某些配置项可能没有验证。
 
-**需要检查的内容**：
-- [ ] 端口范围验证（可能配置无效端口）
-- [ ] 超时时间验证（可能配置负数）
-- [ ] 字符串配置验证（可能为空或格式错误）
-- [ ] 统一配置验证接口
+**检查结果**：
+- [x] 端口范围验证（已实现 `ValidatePort`、`ValidatePortOrZero`）
+- [x] 超时时间验证（已实现 `ValidateTimeout`、`ValidateDuration`）
+- [x] 字符串配置验证（已实现 `ValidateNonEmptyString`、`ValidateStringInList`、`ValidateHost`、`ValidateAddress`、`ValidateURL`）
+- [x] 统一配置验证接口（已创建 `internal/core/validation/validator.go`）
 
-**处理策略**：
-1. 创建配置验证器接口
-2. 分层验证（基础验证、业务验证、运行时验证）
-3. 使用验证库（如 `go-playground/validator`）
+**修复内容**：
+1. ✅ 创建了统一的配置验证器接口 `internal/core/validation/validator.go`
+   - `ValidationResult` 类型用于收集所有验证错误
+   - 提供了丰富的验证函数：端口、超时、字符串、地址、URL 等
+   - 支持整数范围、带宽限制、连接数等业务验证
 
-**优先级**：P1（2周内修复）
+2. ✅ 集成验证到服务器配置加载流程
+   - `ValidateConfig` 使用 `ValidationResult` 收集所有错误
+   - 验证服务器配置（端口、主机、超时）
+   - 验证协议配置（端口、主机）
+   - 验证存储配置（Redis 地址、超时、连接池大小）
+   - 验证消息代理配置（类型、Redis 地址）
+   - 验证云控配置（类型、外部端点）
+   - 验证 BridgePool 配置（连接数、超时、gRPC 服务器）
+   - 验证 UDP Ingress 配置（超时、帧积压、地址）
+   - 验证日志配置（级别、格式、输出）
+
+3. ✅ 实现了分层验证
+   - 基础验证：端口、超时、字符串格式
+   - 业务验证：连接数范围、带宽限制、配置依赖关系
+
+**验证**：
+- 所有配置项都有适当的验证
+- 验证错误会收集并一次性返回
+- 验证逻辑统一、可复用
+
+**状态**：✅ **完成**
 
 ---
 
-### 4. 接口设计不一致 ⚠️ **中等优先级**
+### 4. 接口设计不一致 ⚠️ **进行中**
 
 **问题描述**：
 某些接口设计不够清晰，方法命名不一致。
 
-**需要检查的内容**：
-- [ ] 方法命名不一致（`GetConnection()` vs `GetConnectionByID()`）
-- [ ] 返回值不一致（`(value, bool)` vs `(value, error)`）
-- [ ] 接口职责不清（某些接口包含过多方法）
+**检查结果**：
+- [x] 返回值不一致（`GetStream`、`GetNodePool` 已统一为 `(value, error)`）
+- [x] Close/Dispose/Stop 不一致（`BuiltinCloudControl.Stop()` 已移除，统一使用 `Close()`）
+- [ ] 方法命名不一致（`GetConnection()` vs `GetConnectionByID()`）- 待处理
+- [ ] 接口职责不清（某些接口包含过多方法）- 待处理
 
-**处理策略**：
-1. 统一命名规范
-2. 统一返回值
-3. 按职责拆分大接口
+**已修复内容**：
+1. ✅ 统一返回值模式
+   - `StreamManager.GetStream(id string)` 从 `(PackageStreamer, bool)` 改为 `(PackageStreamer, error)`
+   - `StreamService.GetStream(name string)` 从 `(PackageStreamer, bool)` 改为 `(PackageStreamer, error)`
+   - `BridgeConnectionPool.GetNodePool(nodeID string)` 从 `(*NodeConnectionPool, bool)` 改为 `(*NodeConnectionPool, error)`
+   - 更新了所有调用点（`internal/command/utils.go`、`internal/stream/stream_factory_test.go`）
 
-**优先级**：P1（3周内修复）
+2. ✅ 统一 Close/Dispose/Stop 方法
+   - 移除了 `BuiltinCloudControl.Stop()` 方法，统一使用 `Close()` 方法
+   - `StreamManager.Dispose()` 保留（实现 `Disposable` 接口）
+
+**已修复内容**（续）：
+3. ✅ 统一 `GetConnection` 返回值
+   - `Session.GetConnection(connID string)` 从 `(*Connection, bool)` 改为 `(*Connection, error)`
+   - 更新了接口定义（`internal/core/types/interfaces.go`）
+   - 更新了实现（`internal/protocol/session/connection_lifecycle.go`）
+   - 更新了所有调用点（`internal/api/server.go`、`internal/api/handlers_httppoll.go`、`internal/protocol/session/response_manager.go`、`internal/command/executor.go` 等）
+   - 更新了测试代码（`internal/api/handlers_httppoll_test.go`、`internal/command/utils_test.go`、`internal/protocol/session/connection_cleanup_test.go`）
+
+**待处理内容**：
+1. ✅ 检查并统一方法命名（`GetConnection()` vs `GetConnectionByID()`）
+   - 已检查代码库，所有方法统一使用 `GetConnection(connID string)` 命名
+   - 未发现 `GetConnectionByID` 等变体，命名已统一
+2. ⏳ 拆分职责不清的大接口
+   - 需要分析哪些接口包含过多方法
+   - 按单一职责原则拆分
+
+**状态**：✅ **方法命名已统一**，⏳ **接口拆分待处理**
+
+**接口拆分分析**：
+- `Session` 接口包含约 20 个方法，分为：向后兼容（7）、连接管理（5）、事件驱动（2）、Command 集成（6）
+- 这些方法都是 Session 的核心功能，职责相对清晰
+- 建议结合协议注册框架重构时进行拆分，避免过度设计
+
+**优先级**：P1（3周内修复，接口拆分可延后）
 
 ---
 

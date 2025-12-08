@@ -31,9 +31,9 @@ func (s *ManagementAPIServer) handleControlPackage(streamProcessor *httppoll.Ser
 	}
 	utils.Infof("HTTP long polling: handleControlPackage - sessionMgrWithConn obtained, connID=%s, pkgType=%s", connID, pkg.Type)
 
-	typesConn, exists := sessionMgrWithConn.GetConnection(connID)
-	utils.Infof("HTTP long polling: handleControlPackage - GetConnection result, connID=%s, exists=%v, typesConn=%v, pkgType=%s", connID, exists, typesConn != nil, pkg.Type)
-	if !exists || typesConn == nil {
+	typesConn, err := sessionMgrWithConn.GetConnection(connID)
+	utils.Infof("HTTP long polling: handleControlPackage - GetConnection result, connID=%s, err=%v, typesConn=%v, pkgType=%s", connID, err, typesConn != nil, pkg.Type)
+	if err != nil || typesConn == nil {
 		// 对于握手包，连接可能还没有创建，这是正常的
 		// 让 HandlePacket 来处理连接的创建
 		utils.Infof("HTTP long polling: connection not found in SessionManager (may be created during handshake), connID=%s, pkgType=%s", connID, pkg.Type)

@@ -67,7 +67,7 @@ func (ss *StreamService) CreateStream(name string, reader io.Reader, writer io.W
 }
 
 // GetStream 获取流
-func (ss *StreamService) GetStream(name string) (PackageStreamer, bool) {
+func (ss *StreamService) GetStream(name string) (PackageStreamer, error) {
 	return ss.manager.GetStream(name)
 }
 

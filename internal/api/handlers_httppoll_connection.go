@@ -50,8 +50,8 @@ func (s *ManagementAPIServer) createHTTPLongPollingConnection(connID string, pkg
 	// 先检查连接是否已存在，避免重复创建
 	sessionMgrWithConn := getSessionManagerWithConnection(s.sessionMgr)
 	if sessionMgrWithConn != nil {
-		existingConn, exists := sessionMgrWithConn.GetConnection(connID)
-		if exists && existingConn != nil {
+		existingConn, err := sessionMgrWithConn.GetConnection(connID)
+		if err == nil && existingConn != nil {
 			utils.Debugf("HTTP long polling: connection already exists in SessionManager, connID=%s", connID)
 		} else {
 			// 创建适配器，让 ServerStreamProcessor 可以作为 reader/writer 传递给 CreateConnection

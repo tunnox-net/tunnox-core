@@ -2,7 +2,6 @@ package managers
 
 import (
 	"context"
-	"time"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
@@ -59,20 +58,6 @@ func (b *BuiltinCloudControl) Start() error {
 	return nil
 }
 
-// Stop 停止内置云控
-func (b *BuiltinCloudControl) Stop() error {
-	utils.Infof("Stopping builtin cloud control...")
-
-	// 停止清理例程
-	close(b.done)
-
-	// 等待清理例程完全退出
-	time.Sleep(100 * time.Millisecond)
-
-	utils.Infof("Builtin cloud control stopped successfully")
-	return nil
-}
-
 // cleanupRoutine 清理例程
 func (b *BuiltinCloudControl) cleanupRoutine() {
 	utils.Infof("Cleanup routine started")
@@ -92,7 +77,8 @@ func (b *BuiltinCloudControl) cleanupRoutine() {
 }
 
 // Close 实现 CloudControlAPI 接口的 Close 方法
+// 统一使用 Close 方法，移除 Stop 方法以保持一致性
 func (b *BuiltinCloudControl) Close() error {
-	// 调用父类的 Close 方法
+	// 调用父类的 Close 方法（父类已经处理了 cleanupTicker 和 done 通道）
 	return b.CloudControl.Close()
 }

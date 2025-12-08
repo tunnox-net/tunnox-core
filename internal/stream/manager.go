@@ -64,12 +64,15 @@ func (m *StreamManager) CreateStream(id string, reader io.Reader, writer io.Writ
 }
 
 // GetStream 获取指定ID的流
-func (m *StreamManager) GetStream(id string) (PackageStreamer, bool) {
+func (m *StreamManager) GetStream(id string) (PackageStreamer, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	stream, exists := m.streams[id]
-	return stream, exists
+	if !exists {
+		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "stream with id %s not found", id)
+	}
+	return stream, nil
 }
 
 // RemoveStream 移除指定ID的流
