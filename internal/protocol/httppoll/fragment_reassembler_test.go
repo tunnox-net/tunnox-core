@@ -406,7 +406,7 @@ func TestFragmentReassembler_ConcurrentAccess(t *testing.T) {
 
 	// 并发添加分片
 	done := make(chan bool, totalFragments)
-	for i := 0; i < totalFragments; i++ {
+	for i := range totalFragments {
 		go func(index int) {
 			_, err := reassembler.AddFragment(groupID, originalSize, fragmentSize, index, totalFragments, 0, make([]byte, fragmentSize))
 			if err != nil {
@@ -417,7 +417,7 @@ func TestFragmentReassembler_ConcurrentAccess(t *testing.T) {
 	}
 
 	// 等待所有分片添加完成
-	for i := 0; i < totalFragments; i++ {
+	for range totalFragments {
 		<-done
 	}
 
@@ -435,7 +435,7 @@ func TestFragmentReassembler_MaxGroups(t *testing.T) {
 	reassembler := NewFragmentReassembler()
 
 	// 创建最大数量的组
-	for i := 0; i < MaxFragmentGroups; i++ {
+	for i := range MaxFragmentGroups {
 		groupID := fmt.Sprintf("group-%d", i)
 		_, err := reassembler.AddFragment(groupID, 100, 33, 0, 3, int64(i), make([]byte, 33))
 		if err != nil {
