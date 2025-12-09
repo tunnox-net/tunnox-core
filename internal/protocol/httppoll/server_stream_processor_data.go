@@ -34,6 +34,30 @@ func (sp *ServerStreamProcessor) WriteExact(data []byte) error {
 
 	utils.Infof("ServerStreamProcessor[%s]: WriteExact - split %d bytes into %d fragments, sequenceNumber=%d, connID=%s", sp.connectionID, len(data), len(fragments), sequenceNumber, sp.connectionID)
 
+	// 流控：检查 pollDataChan 使用率，避免缓冲膨胀（bufferbloat）
+	// 当使用率 > 90% 时，等待 client 消费（背压机制）
+	const flowControlThreshold = 18000 // 90% of 20000
+	const flowControlCheckInterval = 5 * time.Millisecond
+
+	for {
+		currentLen := len(sp.pollDataChan)
+		if currentLen < flowControlThreshold {
+			break // 缓冲区有足够空间，继续发送
+		}
+
+		// 缓冲区接近满，等待 client 消费（流控触发）
+		select {
+		case <-sp.Ctx().Done():
+			return sp.Ctx().Err()
+		case <-time.After(flowControlCheckInterval):
+			// 继续检查
+			if currentLen%1000 == 0 { // 每 1000 个 fragments 打印一次警告
+				utils.Warnf("ServerStreamProcessor[%s]: flow control triggered, pollDataChan usage=%d/%d (%.1f%%), waiting for client to consume",
+					sp.connectionID, currentLen, cap(sp.pollDataChan), float64(currentLen)/float64(cap(sp.pollDataChan))*100)
+			}
+		}
+	}
+
 	// 序列化每个分片并推送到队列
 	// 注意：必须按顺序推送同一分片组的所有分片，确保它们按顺序被接收
 	// 使用互斥锁确保同一 WriteExact 调用的所有分片连续推送，避免与其他 WriteExact 调用的分片交错

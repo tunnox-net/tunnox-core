@@ -17,6 +17,7 @@ const (
 	ErrorTypeAuth             ErrorType = "auth"               // 认证错误
 	ErrorTypeFatal            ErrorType = "fatal"             // 致命错误
 	ErrorTypeStreamModeSwitch ErrorType = "stream_mode_switch" // 流模式切换（特殊控制流错误）
+	ErrorTypeRateLimited      ErrorType = "rate_limited"      // 限流错误（可重试）
 )
 
 // TypedError 带类型的错误
@@ -72,7 +73,7 @@ func (e *TypedError) Is(target error) bool {
 // isRetryable 判断错误类型是否可重试
 func isRetryable(errType ErrorType) bool {
 	switch errType {
-	case ErrorTypeTemporary, ErrorTypeNetwork, ErrorTypeStorage:
+	case ErrorTypeTemporary, ErrorTypeNetwork, ErrorTypeStorage, ErrorTypeRateLimited:
 		return true
 	default:
 		return false

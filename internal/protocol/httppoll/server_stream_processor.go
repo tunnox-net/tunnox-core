@@ -62,6 +62,9 @@ type ServerStreamProcessor struct {
 
 	// HTTP 请求/响应通道（用于与 HTTP handler 通信）
 	pushDataChan chan string // Base64 编码的数据
+
+	// Poll限流器（限制每个连接的并发poll数量）
+	pollRateLimiter *PollRateLimiter
 }
 
 // pollRequestInfo 等待控制包的 Poll 请求信息
@@ -85,13 +88,14 @@ func NewServerStreamProcessor(ctx context.Context, connID string, clientID int64
 		mappingID:             mappingID,
 		tunnelType:            connType,
 		pollDataQueue:         session.NewPriorityQueue(3),
-		pollDataChan:          make(chan []byte, 100),                // 增加容量，避免阻塞
+		pollDataChan:          make(chan []byte, 20000),              // 20000容量，配合32KB分片，支持多个200MB并发查询
 		pollWaitChan:          make(chan struct{}, 10),               // 增加容量，避免丢失通知
 		controlPacketChan:     make(chan *packet.TransferPacket, 10), // 控制包通道
 		pushDataChan:          make(chan string, 1000),               // 增加容量，支持大数据包分片
 		pendingPollRequests:   make(map[string]*pollRequestInfo),
 		pendingControlPackets: make([]*packet.TransferPacket, 0),
 		fragmentReassembler:   NewFragmentReassembler(), // 创建分片重组器
+		pollRateLimiter:       NewPollRateLimiter(5),    // 每个连接最多5个并发poll
 	}
 
 	sp.converter.SetConnectionInfo(connID, clientID, mappingID, connType)
@@ -100,6 +104,9 @@ func NewServerStreamProcessor(ctx context.Context, connID string, clientID int64
 
 	// 启动优先级队列调度循环
 	go sp.pollDataScheduler()
+
+	// 启动空闲清理循环（每 2 分钟检查一次）
+	go sp.idleCleanupLoop()
 
 	return sp
 }

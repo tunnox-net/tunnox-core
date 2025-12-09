@@ -159,6 +159,15 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 // requestID 是客户端请求中的 RequestId，用于在响应中携带
 // tunnelType 是请求的 TunnelType（"control" | "data" | "keepalive"），用于区分请求类型
 func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestID string, tunnelType string) (string, *TunnelPackage, error) {
+	// 尝试获取poll许可(非阻塞)
+	if !sp.pollRateLimiter.TryAcquire() {
+		// 达到并发限制,返回限流错误
+		utils.Warnf("ServerStreamProcessor[%s]: HandlePollRequest - rate limited, current=%d, max=%d, connID=%s",
+			sp.connectionID, sp.pollRateLimiter.GetCurrentCount(), sp.pollRateLimiter.GetMaxConcurrent(), sp.connectionID)
+		return "", nil, coreErrors.New(coreErrors.ErrorTypeRateLimited, "poll rate limit exceeded")
+	}
+	defer sp.pollRateLimiter.Release()
+
 	// 如果 requestID 为空，生成一个临时 ID（用于兼容旧代码）
 	actualRequestID := requestID
 	if actualRequestID == "" {

@@ -69,6 +69,9 @@ type StreamProcessor struct {
 	// 待使用的 Poll 请求 ID（由 TriggerImmediatePoll 设置，供 ReadPacket 使用）
 	pendingPollRequestID string
 	pendingPollRequestMu sync.Mutex
+
+	// 发送数据的互斥锁（确保fragments按sequenceNumber顺序发送）
+	sendDataMu sync.Mutex
 }
 
 // NewStreamProcessor 创建 HTTP 长轮询流处理器
@@ -102,8 +105,12 @@ func NewStreamProcessor(ctx context.Context, baseURL, pushURL, pollURL string, c
 
 	sp.AddCleanHandler(sp.onClose)
 
-	// 启动 Poll 循环
-	go sp.pollLoop()
+	// 启动 3 个并发 Poll 循环（提升吞吐量）
+	// 每个poll启动时错开50ms,避免同时冲击服务器
+	for i := 0; i < 3; i++ {
+		pollID := i
+		go sp.startPollLoopWithRecovery(pollID)
+	}
 
 	return sp
 }
@@ -388,6 +395,11 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 		utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - failed to split data into fragments: %v, connID=%s", sp.connectionID, err, sp.connectionID)
 		return coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to split data into fragments")
 	}
+
+	// 使用互斥锁确保fragments按sequenceNumber顺序发送
+	// 这样可以避免多个WriteExact调用的fragments交错,确保接收端能正确重组
+	sp.sendDataMu.Lock()
+	defer sp.sendDataMu.Unlock()
 
 	// 发送每个分片
 	for i, fragment := range fragments {

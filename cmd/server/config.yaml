@@ -40,7 +40,7 @@ log:
   output: "stdout"
   
   # 日志文件路径（当 output 为 file 时使用）
-  file: "logs/server.log"
+  file: "/tmp/tunnox-server.log"
   
   # 日志轮转配置
   rotation:

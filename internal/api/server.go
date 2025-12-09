@@ -269,12 +269,17 @@ func NewManagementAPIServer(
 	}
 
 	// 创建 HTTP 服务器
+	// 超时配置说明：
+	// - ReadTimeout: 90秒，适配 HTTP Long Polling 请求可能阻塞长达 60 秒
+	// - WriteTimeout: 90秒，确保大数据响应有足够时间写入（poll 响应可能包含大量分片数据）
+	// - IdleTimeout: 300秒（5分钟），避免空闲连接过早关闭导致数据传输中断
 	s.server = &http.Server{
-		Addr:         config.ListenAddr,
-		Handler:      s.router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:           config.ListenAddr,
+		Handler:        s.router,
+		ReadTimeout:    90 * time.Second,
+		WriteTimeout:   90 * time.Second,
+		IdleTimeout:    300 * time.Second,
+		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 
 	// 添加清理处理器

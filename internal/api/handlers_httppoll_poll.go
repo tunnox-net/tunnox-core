@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	coreErrors "tunnox-core/internal/core/errors"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/utils"
 )
@@ -164,7 +165,24 @@ func (s *ManagementAPIServer) HandleHTTPPoll(w http.ResponseWriter, r *http.Requ
 			responsePkg != nil, base64Data != "", connID)
 	}
 	if err == context.DeadlineExceeded {
-		// 超时，返回空响应
+		// 超时，返回心跳包以防止客户端超时重连
+		// 为控制连接返回心跳包，避免客户端 ReadPacket 超时导致重连
+		if tunnelType == "control" {
+			heartbeatPkg := &httppoll.TunnelPackage{
+				Type:         "Heartbeat",
+				ConnectionID: connID,
+				RequestID:    requestID,
+			}
+			encodedPkg, err := httppoll.EncodeTunnelPackage(heartbeatPkg)
+			if err == nil {
+				w.Header().Set("X-Tunnel-Package", encodedPkg)
+				utils.Debugf("HTTP long polling: [HANDLE_POLL] returning heartbeat packet on timeout, connID=%s", connID)
+			} else {
+				utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to encode heartbeat package: %v, connID=%s", err, connID)
+			}
+		}
+
+		// 返回超时响应
 		resp := HTTPPollResponse{
 			Success:   true,
 			Timeout:   true,
@@ -179,6 +197,23 @@ func (s *ManagementAPIServer) HandleHTTPPoll(w http.ResponseWriter, r *http.Requ
 		// 对于 context canceled 或 EOF，返回超时响应而不是错误
 		if err == context.Canceled || err == io.EOF {
 			utils.Debugf("HTTP long polling: [HANDLE_POLL] %v, returning timeout response, connID=%s", err, connID)
+
+			// 为控制连接返回心跳包，避免客户端 ReadPacket 超时导致重连
+			if tunnelType == "control" {
+				heartbeatPkg := &httppoll.TunnelPackage{
+					Type:         "Heartbeat",
+					ConnectionID: connID,
+					RequestID:    requestID,
+				}
+				encodedPkg, err := httppoll.EncodeTunnelPackage(heartbeatPkg)
+				if err == nil {
+					w.Header().Set("X-Tunnel-Package", encodedPkg)
+					utils.Debugf("HTTP long polling: [HANDLE_POLL] returning heartbeat packet on %v, connID=%s", err, connID)
+				} else {
+					utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to encode heartbeat package: %v, connID=%s", err, connID)
+				}
+			}
+
 			resp := HTTPPollResponse{
 				Success:   true,
 				Timeout:   true,
@@ -186,6 +221,19 @@ func (s *ManagementAPIServer) HandleHTTPPoll(w http.ResponseWriter, r *http.Requ
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		// 对于限流错误,返回 429 Too Many Requests
+		if coreErrors.GetErrorType(err) == coreErrors.ErrorTypeRateLimited {
+			utils.Warnf("HTTP long polling: [HANDLE_POLL] rate limited, connID=%s", connID)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			resp := map[string]interface{}{
+				"success":   false,
+				"error":     "rate limit exceeded",
+				"timestamp": time.Now().Unix(),
+			}
 			json.NewEncoder(w).Encode(resp)
 			return
 		}

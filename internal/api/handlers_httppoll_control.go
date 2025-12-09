@@ -53,6 +53,9 @@ func (s *ManagementAPIServer) handleControlPackage(streamProcessor *httppoll.Ser
 		return result
 	case "TunnelOpen":
 		return s.handleTunnelOpenPackage(streamProcessor, pkg, typesConn)
+	case "Heartbeat":
+		// Heartbeat 包不需要处理，直接返回 nil
+		return nil
 	default:
 		utils.Warnf("HTTP long polling: unknown control package type: %s", pkg.Type)
 		return nil

@@ -9,10 +9,10 @@ import (
 
 const (
 	// FragmentThreshold 分片阈值：超过此大小才分片
-	FragmentThreshold = 8 * 1024 // 8KB
+	FragmentThreshold = 24 * 1024 // 24KB (优化：减少分片数量)
 
 	// MaxFragmentSize 最大分片大小（Base64解码后）
-	MaxFragmentSize = 10 * 1024 // 10KB
+	MaxFragmentSize = 32 * 1024 // 32KB (优化：减少分片数量，减少序列化开销)
 
 	// MinFragmentSize 最小分片大小（避免过度分片）
 	MinFragmentSize = 1 * 1024 // 1KB
@@ -489,4 +489,49 @@ func GetFragmentData(data []byte, fragmentIndex int, fragmentSize int, totalFrag
 	}
 
 	return data[start:end]
+}
+
+// CleanupStaleGroups 清理超过指定时间未完成的分片组
+// maxAge: 最大允许的分片组年龄
+// 返回：清理的分片组数量
+func (fr *FragmentReassembler) CleanupStaleGroups(maxAge time.Duration) int {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+
+	now := time.Now()
+	removedCount := 0
+
+	for groupID, group := range fr.groups {
+		age := now.Sub(group.CreatedTime)
+		if age > maxAge {
+			delete(fr.groups, groupID)
+			// 同时从序列号映射中删除
+			if group.SequenceNumber >= 0 {
+				delete(fr.sequenceGroups, group.SequenceNumber)
+			}
+			utils.Warnf("FragmentReassembler: removed stale fragment group, groupID=%s, sequenceNumber=%d, age=%v, maxAge=%v",
+				groupID, group.SequenceNumber, age, maxAge)
+			removedCount++
+		}
+	}
+
+	// 如果清理了分片组，尝试更新 nextExpectedSeq
+	if removedCount > 0 {
+		// 找到下一个存在的序列号
+		if len(fr.sequenceGroups) > 0 {
+			minSeq := int64(-1)
+			for seq := range fr.sequenceGroups {
+				if minSeq == -1 || seq < minSeq {
+					minSeq = seq
+				}
+			}
+			if minSeq != -1 && minSeq < fr.nextExpectedSeq {
+				// 不应该发生，但以防万一
+				utils.Warnf("FragmentReassembler: nextExpectedSeq=%d is ahead of min sequence=%d after cleanup",
+					fr.nextExpectedSeq, minSeq)
+			}
+		}
+	}
+
+	return removedCount
 }

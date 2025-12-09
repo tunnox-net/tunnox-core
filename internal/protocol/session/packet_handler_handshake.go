@@ -100,7 +100,16 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		if exists && oldConn != nil && oldConn.GetConnID() != clientConn.GetConnID() {
 			utils.Warnf("Client %d reconnected: oldConnID=%s, newConnID=%s, cleaning up old connection",
 				clientConn.GetClientID(), oldConn.GetConnID(), clientConn.GetConnID())
-			delete(s.controlConnMap, oldConn.GetConnID())
+
+			// 迁移 tunnels 到新连接（在删除旧连接之前）
+			oldConnID := oldConn.GetConnID()
+			newConnID := clientConn.GetConnID()
+			s.controlConnLock.Unlock() // 解锁以允许迁移逻辑访问其他资源
+			s.migrateTunnelsOnReconnection(clientConn.GetClientID(), oldConnID, newConnID)
+			s.controlConnLock.Lock() // 重新加锁以完成清理
+
+			// 清理旧连接
+			delete(s.controlConnMap, oldConnID)
 		}
 		// 需要将接口转换为具体类型存储（内部实现需要）
 		if concreteConn, ok := clientConn.(*ControlConnection); ok {
