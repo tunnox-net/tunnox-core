@@ -118,3 +118,62 @@ func TestServerStreamProcessor_GetReader_GetWriter(t *testing.T) {
 	}
 }
 
+// TestServerStreamProcessor_IsClosed 测试 IsClosed 方法
+func TestServerStreamProcessor_IsClosed(t *testing.T) {
+	ctx := context.Background()
+	sp := NewServerStreamProcessor(ctx, "conn_123", 456, "mapping_789")
+
+	// 初始状态应该是未关闭
+	if sp.IsClosed() {
+		t.Error("Expected IsClosed() = false initially, got true")
+	}
+
+	// 关闭后应该返回 true
+	sp.Close()
+
+	if !sp.IsClosed() {
+		t.Error("Expected IsClosed() = true after Close(), got false")
+	}
+}
+
+// TestServerStreamProcessor_IsContextDone 测试 IsContextDone 方法
+func TestServerStreamProcessor_IsContextDone(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	sp := NewServerStreamProcessor(ctx, "conn_123", 456, "mapping_789")
+
+	// 初始状态 context 未取消
+	if sp.IsContextDone() {
+		t.Error("Expected IsContextDone() = false initially, got true")
+	}
+
+	// 取消 context
+	cancel()
+
+	// 等待一小段时间确保 context 被取消
+	time.Sleep(10 * time.Millisecond)
+
+	// 现在应该返回 true
+	if !sp.IsContextDone() {
+		t.Error("Expected IsContextDone() = true after cancel(), got false")
+	}
+}
+
+// TestServerStreamProcessor_IsContextDone_AfterClose 测试关闭后 IsContextDone
+func TestServerStreamProcessor_IsContextDone_AfterClose(t *testing.T) {
+	ctx := context.Background()
+	sp := NewServerStreamProcessor(ctx, "conn_123", 456, "mapping_789")
+
+	// 初始状态
+	if sp.IsContextDone() {
+		t.Error("Expected IsContextDone() = false initially, got true")
+	}
+
+	// 关闭 StreamProcessor
+	sp.Close()
+
+	// 关闭后 context 应该被取消
+	if !sp.IsContextDone() {
+		t.Error("Expected IsContextDone() = true after Close(), got false")
+	}
+}
+

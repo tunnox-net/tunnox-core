@@ -17,11 +17,14 @@ const (
 	// MinFragmentSize 最小分片大小（避免过度分片）
 	MinFragmentSize = 1 * 1024 // 1KB
 
-	// FragmentGroupTimeout 分片组超时时间
-	FragmentGroupTimeout = 30 * time.Second
+	// FragmentGroupTimeout 分片组超时时间（减少到5秒以快速清理过期组）
+	FragmentGroupTimeout = 5 * time.Second
 
-	// MaxFragmentGroups 最大分片组数量
-	MaxFragmentGroups = 1000
+	// MaxFragmentGroups 最大分片组数量（增加到5000以支持高吞吐量场景）
+	MaxFragmentGroups = 5000
+
+	// AggressiveCleanupThreshold 激进清理阈值（达到此阈值时触发激进清理）
+	AggressiveCleanupThreshold = MaxFragmentGroups * 80 / 100 // 80%
 
 	// MaxFragmentGroupSize 单个分片组最大大小
 	MaxFragmentGroupSize = 10 * 1024 * 1024 // 10MB
@@ -208,6 +211,13 @@ func (fr *FragmentReassembler) Reset() {
 func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fragmentSize int, fragmentIndex int, totalFragments int, sequenceNumber int64, data []byte) (*FragmentGroup, error) {
 	fr.mu.Lock()
 
+	// 激进清理：当达到 80% 阈值时，触发清理
+	if len(fr.groups) >= AggressiveCleanupThreshold {
+		fr.cleanupExpiredLocked()
+		utils.Warnf("FragmentReassembler: aggressive cleanup triggered at %d groups (threshold: %d), after cleanup: %d groups",
+			len(fr.groups), AggressiveCleanupThreshold, len(fr.groups))
+	}
+
 	// 检查分片组数量限制
 	if len(fr.groups) >= MaxFragmentGroups {
 		// 尝试清理超时的分片组
@@ -378,6 +388,16 @@ func (fr *FragmentReassembler) GetNextCompleteGroup() (*FragmentGroup, bool, err
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
 
+	// 周期性触发清理，帮助移除过期分片组（每 100 次调用触发一次）
+	if len(fr.groups) > 100 && len(fr.groups)%100 == 0 {
+		beforeCount := len(fr.groups)
+		fr.cleanupExpiredLocked()
+		if afterCount := len(fr.groups); afterCount < beforeCount {
+			utils.Infof("FragmentReassembler: periodic cleanup in GetNextCompleteGroup removed %d groups (before: %d, after: %d)",
+				beforeCount-afterCount, beforeCount, afterCount)
+		}
+	}
+
 	// 只检查期望的下一个序列号（确保严格按顺序）
 	group, exists := fr.sequenceGroups[fr.nextExpectedSeq]
 	if !exists {
@@ -399,13 +419,22 @@ func (fr *FragmentReassembler) GetNextCompleteGroup() (*FragmentGroup, bool, err
 		utils.Errorf("FragmentReassembler: fragment group timeout, sequenceNumber=%d, groupID=%s, age=%v, received=%d/%d. Connection may be broken.",
 			fr.nextExpectedSeq, group.GroupID, time.Since(group.CreatedTime), receivedCount, totalFragments)
 
-		// 清理超时的分片组
+		// 清理超时的分片组，并跳过到下一个序列号
 		delete(fr.groups, group.GroupID)
 		delete(fr.sequenceGroups, fr.nextExpectedSeq)
 
-		// 返回连接断开错误
-		return nil, false, coreErrors.Newf(coreErrors.ErrorTypePermanent,
-			"fragment group timeout: sequenceNumber=%d, connection broken", fr.nextExpectedSeq)
+		// 跳过这个超时的序列号，继续处理下一个
+		fr.nextExpectedSeq++
+
+		// 递归调用以检查下一个序列号（避免阻塞在超时的序列号上）
+		// 注意：不要返回错误，而是跳过这个序列号，尝试下一个
+		utils.Warnf("FragmentReassembler: skipping timeout sequence %d, trying next: %d", fr.nextExpectedSeq-1, fr.nextExpectedSeq)
+
+		// 释放锁后递归调用（避免死锁）
+		fr.mu.Unlock()
+		result, found, err := fr.GetNextCompleteGroup()
+		fr.mu.Lock()
+		return result, found, err
 	}
 
 	// 如果已经检查过完整性，直接使用之前的结果
@@ -429,13 +458,22 @@ func (fr *FragmentReassembler) GetNextCompleteGroup() (*FragmentGroup, bool, err
 
 // cleanupLoop 定期清理过期的分片组
 func (fr *FragmentReassembler) cleanupLoop() {
-	ticker := time.NewTicker(10 * time.Second)
+	// 降低清理间隔到2秒（因为超时时间已降至5秒）
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		fr.mu.Lock()
+		beforeCount := len(fr.groups)
 		fr.cleanupExpiredLocked()
+		afterCount := len(fr.groups)
 		fr.mu.Unlock()
+
+		// 如果清理了分片组，记录日志
+		if afterCount < beforeCount {
+			utils.Infof("FragmentReassembler: cleanupLoop removed %d expired groups (before: %d, after: %d)",
+				beforeCount-afterCount, beforeCount, afterCount)
+		}
 	}
 }
 

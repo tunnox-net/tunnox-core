@@ -64,25 +64,65 @@ echo -e "${GREEN}✓ Processes cleaned${NC}"
 
 # 1.5. 清理日志文件
 echo -e "${YELLOW}Step 1.5: Cleaning up log files...${NC}"
-# Server 日志
-SERVER_LOG="/Users/roger.tong/GolandProjects/tunnox-core/cmd/server/logs/server.log"
-if [ -f "$SERVER_LOG" ]; then
-    rm -f "$SERVER_LOG"
-    echo -e "${GREEN}  ✓ Removed server log${NC}"
+
+# 定义配置文件路径数组
+CONFIG_FILES=(
+    "/Users/roger.tong/GolandProjects/tunnox-core/cmd/server/config.yaml:Server"
+    "/Users/roger.tong/GolandProjects/tunnox-core/client-config.yaml:Target Client"
+    "/Users/roger.tong/GolandProjects/docs/client-config.yaml:Listen Client"
+)
+
+# 函数：从 YAML 配置文件中提取日志文件路径
+extract_log_path() {
+    local config_file="$1"
+    if [ ! -f "$config_file" ]; then
+        return
+    fi
+
+    # 使用 grep + awk 解析 YAML 中的 log.file 路径
+    # 查找 "file:" 开头的行，提取路径（去除引号和空格）
+    grep -A 5 "^log:" "$config_file" | grep "file:" | head -1 | awk -F: '{print $2}' | tr -d ' "' | tr -d "'"
+}
+
+# 清理从配置文件中读取的日志路径
+LOG_COUNT=0
+for entry in "${CONFIG_FILES[@]}"; do
+    # 分割配置文件路径和描述
+    IFS=':' read -r config_file description <<< "$entry"
+
+    # 提取日志路径
+    log_path=$(extract_log_path "$config_file")
+
+    if [ -n "$log_path" ]; then
+        if [ -f "$log_path" ]; then
+            rm -f "$log_path"
+            echo -e "${GREEN}  ✓ Removed $description log: $log_path${NC}"
+            LOG_COUNT=$((LOG_COUNT + 1))
+        else
+            echo -e "  ○ $description log not found: $log_path"
+        fi
+    else
+        echo -e "${YELLOW}  ! Could not extract log path from $description config${NC}"
+    fi
+done
+
+# 额外清理：删除可能存在的其他日志文件
+# 1. Server 的 logs 目录
+if [ -d "/Users/roger.tong/GolandProjects/tunnox-core/cmd/server/logs" ]; then
+    rm -rf /Users/roger.tong/GolandProjects/tunnox-core/cmd/server/logs/*.log 2>/dev/null || true
+    echo -e "${GREEN}  ✓ Cleaned server logs directory${NC}"
 fi
-# Target Client 日志
-TARGET_CLIENT_LOG="/tmp/tunnox-target-client.log"
-if [ -f "$TARGET_CLIENT_LOG" ]; then
-    rm -f "$TARGET_CLIENT_LOG"
-    echo -e "${GREEN}  ✓ Removed target client log${NC}"
-fi
-# Listen Client 日志
-LISTEN_CLIENT_LOG="/tmp/tunnox-listen-client.log"
-if [ -f "$LISTEN_CLIENT_LOG" ]; then
-    rm -f "$LISTEN_CLIENT_LOG"
-    echo -e "${GREEN}  ✓ Removed listen client log${NC}"
-fi
-echo -e "${GREEN}✓ Log files cleaned${NC}"
+
+# 2. /tmp 下的 tunnox-*.log
+for tmp_log in /tmp/tunnox-*.log; do
+    if [ -f "$tmp_log" ]; then
+        rm -f "$tmp_log"
+        echo -e "${GREEN}  ✓ Removed temporary log: $tmp_log${NC}"
+        LOG_COUNT=$((LOG_COUNT + 1))
+    fi
+done
+
+echo -e "${GREEN}✓ Log files cleaned (total: $LOG_COUNT files)${NC}"
 
 # 2. 编译 server
 echo -e "${YELLOW}Step 2: Building server...${NC}"

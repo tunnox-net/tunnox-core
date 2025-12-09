@@ -334,8 +334,10 @@ func TestCalculateFragments(t *testing.T) {
 		expectedCount  int
 	}{
 		{"small data, no fragment", 1000, 1000, 1},
-		{"medium data, fragment", 20 * 1024, MaxFragmentSize, 2},
-		{"large data, multiple fragments", 50 * 1024, MaxFragmentSize, 5},
+		// 20KB < 24KB threshold, so no fragmentation
+		{"medium data, no fragment", 20 * 1024, 20 * 1024, 1},
+		// 50KB > 24KB threshold, so fragment: ceil(50KB / 32KB) = 2 fragments
+		{"large data, multiple fragments", 50 * 1024, MaxFragmentSize, 2},
 		{"exact threshold", FragmentThreshold, FragmentThreshold, 1},
 		{"just over threshold", FragmentThreshold + 1, MaxFragmentSize, 1},
 	}

@@ -13,6 +13,17 @@ const (
 	httppollMaxTimeout     = 60          // 最大 60 秒
 )
 
+// HTTPPoll 错误类型常量（避免魔法字符串）
+const (
+	// 错误代码
+	errCodeConnectionClosed = "connection_closed"
+	errCodeRateLimited      = "rate_limit_exceeded"
+
+	// 错误消息
+	errMsgConnectionClosed = "Connection has been closed, please reconnect"
+	errMsgRateLimited      = "Rate limit exceeded, please retry later"
+)
+
 // HTTPPushRequest HTTP 推送请求（统一使用 FragmentResponse）
 type HTTPPushRequest = httppoll.FragmentResponse
 

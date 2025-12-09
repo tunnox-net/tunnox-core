@@ -258,6 +258,15 @@ func (sp *StreamProcessor) sendPollRequestReturningError(requestID string) error
 			return lastErr
 		}
 
+		// 检查 HTTP 410 Gone - 连接已失效，需要重新握手
+		if resp.StatusCode == http.StatusGone {
+			resp.Body.Close()
+			utils.Warnf("HTTPStreamProcessor: sendPollRequestReturningError - Connection closed by server (410 Gone), need to reconnect, connID=%s", connID)
+
+			// 返回永久性错误，上层会处理重连
+			return coreErrors.New(coreErrors.ErrorTypePermanent, "connection closed by server, need to reconnect")
+		}
+
 		// 检查是否是限流错误(HTTP 429或503)
 		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == http.StatusServiceUnavailable {
 			resp.Body.Close()
@@ -285,6 +294,13 @@ func (sp *StreamProcessor) sendPollRequestReturningError(requestID string) error
 				utils.Errorf("HTTPStreamProcessor: sendPollRequestReturningError - rate limited after %d retries, requestID=%s", maxRetries, requestID)
 				return lastErr
 			}
+		}
+
+		// 检查其他非 200 状态码
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			utils.Errorf("HTTPStreamProcessor: sendPollRequestReturningError - Poll request failed with status %d, requestID=%s", resp.StatusCode, requestID)
+			return coreErrors.Newf(coreErrors.ErrorTypeNetwork, "poll request failed with status %d", resp.StatusCode)
 		}
 
 		// 成功获取响应,处理并返回

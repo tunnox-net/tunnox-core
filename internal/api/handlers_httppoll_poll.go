@@ -158,90 +158,17 @@ func (s *ManagementAPIServer) HandleHTTPPoll(w http.ResponseWriter, r *http.Requ
 	}
 	utils.Debugf("HTTP long polling: [HANDLE_POLL] calling HandlePollRequest, connID=%s, pointer=%p, requestID=%s, tunnelType=%s", connID, streamProcessor, requestID, tunnelType)
 	base64Data, responsePkg, err := streamProcessor.HandlePollRequest(ctx, requestID, tunnelType)
+
+	// 处理错误（使用辅助函数，保持主函数简洁）
 	if err != nil {
-		utils.Errorf("HTTP long polling: [HANDLE_POLL] HandlePollRequest returned error: %v, connID=%s", err, connID)
-	} else {
-		utils.Debugf("HTTP long polling: [HANDLE_POLL] HandlePollRequest returned successfully, hasControlPacket=%v, hasData=%v, connID=%s",
-			responsePkg != nil, base64Data != "", connID)
-	}
-	if err == context.DeadlineExceeded {
-		// 超时，返回心跳包以防止客户端超时重连
-		// 为控制连接返回心跳包，避免客户端 ReadPacket 超时导致重连
-		if tunnelType == "control" {
-			heartbeatPkg := &httppoll.TunnelPackage{
-				Type:         "Heartbeat",
-				ConnectionID: connID,
-				RequestID:    requestID,
-			}
-			encodedPkg, err := httppoll.EncodeTunnelPackage(heartbeatPkg)
-			if err == nil {
-				w.Header().Set("X-Tunnel-Package", encodedPkg)
-				utils.Debugf("HTTP long polling: [HANDLE_POLL] returning heartbeat packet on timeout, connID=%s", connID)
-			} else {
-				utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to encode heartbeat package: %v, connID=%s", err, connID)
-			}
-		}
-
-		// 返回超时响应
-		resp := HTTPPollResponse{
-			Success:   true,
-			Timeout:   true,
-			Timestamp: time.Now().Unix(),
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(resp)
-		return
-	}
-	if err != nil {
-		// 对于 context canceled 或 EOF，返回超时响应而不是错误
-		if err == context.Canceled || err == io.EOF {
-			utils.Debugf("HTTP long polling: [HANDLE_POLL] %v, returning timeout response, connID=%s", err, connID)
-
-			// 为控制连接返回心跳包，避免客户端 ReadPacket 超时导致重连
-			if tunnelType == "control" {
-				heartbeatPkg := &httppoll.TunnelPackage{
-					Type:         "Heartbeat",
-					ConnectionID: connID,
-					RequestID:    requestID,
-				}
-				encodedPkg, err := httppoll.EncodeTunnelPackage(heartbeatPkg)
-				if err == nil {
-					w.Header().Set("X-Tunnel-Package", encodedPkg)
-					utils.Debugf("HTTP long polling: [HANDLE_POLL] returning heartbeat packet on %v, connID=%s", err, connID)
-				} else {
-					utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to encode heartbeat package: %v, connID=%s", err, connID)
-				}
-			}
-
-			resp := HTTPPollResponse{
-				Success:   true,
-				Timeout:   true,
-				Timestamp: time.Now().Unix(),
-			}
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(resp)
+		if s.handlePollError(w, err, streamProcessor, connID, requestID, tunnelType) {
 			return
 		}
-		// 对于限流错误,返回 429 Too Many Requests
-		if coreErrors.GetErrorType(err) == coreErrors.ErrorTypeRateLimited {
-			utils.Warnf("HTTP long polling: [HANDLE_POLL] rate limited, connID=%s", connID)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusTooManyRequests)
-			resp := map[string]interface{}{
-				"success":   false,
-				"error":     "rate limit exceeded",
-				"timestamp": time.Now().Unix(),
-			}
-			json.NewEncoder(w).Encode(resp)
-			return
-		}
-		// 其他错误才返回 500
-		utils.Errorf("HTTP long polling: [HANDLE_POLL] PollData failed: %v, connID=%s", err, connID)
-		s.respondError(w, http.StatusInternalServerError, err.Error())
-		return
 	}
+
+	// 成功情况：记录日志
+	utils.Debugf("HTTP long polling: [HANDLE_POLL] HandlePollRequest returned successfully, hasControlPacket=%v, hasData=%v, connID=%s",
+		responsePkg != nil, base64Data != "", connID)
 
 	// 9. 检查是否有控制包响应（如 TunnelOpenAck）
 	if responsePkg != nil {
@@ -286,5 +213,109 @@ func (s *ManagementAPIServer) HandleHTTPPoll(w http.ResponseWriter, r *http.Requ
 			utils.Debugf("HTTP long polling: [HANDLE_POLL] timeout response written successfully, connID=%s", connID)
 		}
 	}
+}
+
+// handlePollError 处理 Poll 请求的错误
+// 根据错误类型返回适当的 HTTP 响应
+func (s *ManagementAPIServer) handlePollError(
+	w http.ResponseWriter,
+	err error,
+	streamProcessor *httppoll.ServerStreamProcessor,
+	connID string,
+	requestID string,
+	tunnelType string,
+) bool {
+	// 1. 检查 StreamProcessor 状态 - 连接已失效
+	if streamProcessor.IsClosed() || streamProcessor.IsContextDone() {
+		utils.Warnf("HTTP long polling: [HANDLE_POLL] Connection closed or context done, connID=%s", connID)
+
+		// 注意：不从 registry 删除连接，因为：
+		// 1. 连接清理应该由 SessionManager 统一管理
+		// 2. Registry 只是查找缓存，删除后再创建会导致冲突
+		// 3. SessionManager 的清理机制会自动处理过期连接
+
+		// 返回 410 Gone，告诉客户端需要重新握手（使用新的 connectionID）
+		resp := HTTPPollResponse{
+			Success:   false,
+			Error:     errCodeConnectionClosed,
+			Message:   errMsgConnectionClosed,
+			Timestamp: time.Now().Unix(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusGone) // 410 Gone
+		json.NewEncoder(w).Encode(resp)
+		return true
+	}
+
+	// 2. 正常的超时（context deadline exceeded）
+	if err == context.DeadlineExceeded {
+		utils.Debugf("HTTP long polling: [HANDLE_POLL] Normal timeout, connID=%s", connID)
+		s.writeTimeoutResponse(w, connID, requestID, tunnelType)
+		return true
+	}
+
+	// 3. 正常的客户端取消（context canceled 或 EOF）
+	if err == context.Canceled || err == io.EOF {
+		utils.Debugf("HTTP long polling: [HANDLE_POLL] Client canceled or EOF (normal), connID=%s", connID)
+		s.writeTimeoutResponse(w, connID, requestID, tunnelType)
+		return true
+	}
+
+	// 4. 限流错误
+	if coreErrors.GetErrorType(err) == coreErrors.ErrorTypeRateLimited {
+		utils.Warnf("HTTP long polling: [HANDLE_POLL] Rate limited, connID=%s", connID)
+		s.writeRateLimitResponse(w)
+		return true
+	}
+
+	// 5. 其他真正的错误
+	utils.Errorf("HTTP long polling: [HANDLE_POLL] Unexpected error: %v, connID=%s", err, connID)
+	s.respondError(w, http.StatusInternalServerError, err.Error())
+	return true
+}
+
+// writeTimeoutResponse 写入超时响应（200 OK + timeout=true）
+func (s *ManagementAPIServer) writeTimeoutResponse(
+	w http.ResponseWriter,
+	connID string,
+	requestID string,
+	tunnelType string,
+) {
+	// 为控制连接返回心跳包，避免客户端 ReadPacket 超时导致重连
+	if tunnelType == "control" {
+		heartbeatPkg := &httppoll.TunnelPackage{
+			Type:         "Heartbeat",
+			ConnectionID: connID,
+			RequestID:    requestID,
+		}
+		encodedPkg, err := httppoll.EncodeTunnelPackage(heartbeatPkg)
+		if err == nil {
+			w.Header().Set("X-Tunnel-Package", encodedPkg)
+		} else {
+			utils.Errorf("HTTP long polling: [HANDLE_POLL] Failed to encode heartbeat package: %v, connID=%s", err, connID)
+		}
+	}
+
+	resp := HTTPPollResponse{
+		Success:   true,
+		Timeout:   true,
+		Timestamp: time.Now().Unix(),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(resp)
+}
+
+// writeRateLimitResponse 写入限流响应（429 Too Many Requests）
+func (s *ManagementAPIServer) writeRateLimitResponse(w http.ResponseWriter) {
+	resp := HTTPPollResponse{
+		Success:   false,
+		Error:     errCodeRateLimited,
+		Message:   errMsgRateLimited,
+		Timestamp: time.Now().Unix(),
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusTooManyRequests)
+	json.NewEncoder(w).Encode(resp)
 }
 

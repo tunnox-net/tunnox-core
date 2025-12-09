@@ -203,6 +203,25 @@ func (sp *ServerStreamProcessor) GetMappingID() string {
 	return sp.mappingID
 }
 
+// IsClosed 检查 ServerStreamProcessor 是否已关闭
+// 返回 true 表示连接已关闭，不应再接受新的请求
+func (sp *ServerStreamProcessor) IsClosed() bool {
+	sp.closeMu.RLock()
+	defer sp.closeMu.RUnlock()
+	return sp.closed
+}
+
+// IsContextDone 检查 context 是否已取消
+// 返回 true 表示 context 已取消，goroutine 应该退出
+func (sp *ServerStreamProcessor) IsContextDone() bool {
+	select {
+	case <-sp.Ctx().Done():
+		return true
+	default:
+		return false
+	}
+}
+
 // ReadPacket 从 HTTP Push 请求读取包
 // 注意：服务端不能主动读取，只能从 Push 请求中获取
 func (sp *ServerStreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {

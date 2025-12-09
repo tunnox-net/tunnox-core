@@ -21,8 +21,10 @@ type FragmentResponse struct {
 	Timestamp       int64  `json:"timestamp"`         // 时间戳
 	
 	// 仅 Response 使用
-	Success bool `json:"success,omitempty"`   // 响应是否成功
-	Timeout  bool `json:"timeout,omitempty"`  // 是否超时
+	Success bool   `json:"success,omitempty"` // 响应是否成功
+	Timeout bool   `json:"timeout,omitempty"` // 是否超时
+	Error   string `json:"error,omitempty"`   // 错误代码（如 "connection_closed", "rate_limit_exceeded"）
+	Message string `json:"message,omitempty"` // 错误消息（人类可读）
 }
 
 // CreateFragmentResponse 创建分片响应
