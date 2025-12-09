@@ -247,8 +247,8 @@ func (s *ConnectionCodeService) ActivateConnectionCode(req *ActivateConnectionCo
 		return nil, coreErrors.Wrapf(err, coreErrors.ErrorTypePermanent, "invalid target address %q", connCode.TargetAddress)
 	}
 
-	// 5. 检查映射配额（TODO: 需要实现 GetClientPortMappings 并统计）
-	// 暂时跳过配额检查，后续实现
+	// 5. 检查映射配额
+	// FEATURE-GAP: 配额检查未实现，需要添加 GetClientPortMappings 方法并统计现有映射数
 
 	// 6. 创建PortMapping
 	now := time.Now()

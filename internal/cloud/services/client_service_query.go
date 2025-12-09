@@ -20,8 +20,7 @@ func (s *clientService) ListClients(userID string, clientType models.ClientType)
 
 	if userID != "" {
 		// 获取用户的客户端配置
-		// TODO: 需要实现ConfigRepo的ListUserConfigs方法
-		// 暂时fallback到旧逻辑
+		// NOTE: ConfigRepo.ListUserConfigs 方法未实现，使用 fallback 逻辑
 		return s.ListUserClients(userID)
 	}
 
@@ -68,8 +67,7 @@ func (s *clientService) ListClients(userID string, clientType models.ClientType)
 
 // ListUserClients 列出用户的所有客户端
 func (s *clientService) ListUserClients(userID string) ([]*models.Client, error) {
-	// TODO: 实现基于ConfigRepo的查询
-	// 暂时使用旧Repository
+	// NOTE: 当前使用 Repository 实现，未来可迁移到 ConfigRepo
 	clients, err := s.clientRepo.ListUserClients(userID)
 	if err != nil {
 		return nil, err

@@ -124,6 +124,12 @@ go.work.sum
 # env file
 .env
 
+# Backup files
+*.bak
+*.old
+*.backup
+*~
+
 # Compiled binaries
 bin/
 /client

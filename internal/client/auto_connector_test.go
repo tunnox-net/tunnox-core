@@ -156,13 +156,6 @@ func TestAutoConnector_ContextCancellation(t *testing.T) {
 	}
 }
 
-// TestAutoConnector_Timeout 测试超时处理
-// 注意：此测试可能不稳定，因为超时时间很短（100ms），连接尝试可能还没开始就超时了
-// 跳过此测试，避免 CI/CD 中的不稳定
-func TestAutoConnector_Timeout(t *testing.T) {
-	t.Skip("Skipping timeout test - may be unstable in CI/CD due to timing issues")
-}
-
 // TestAutoConnector_CloseAttempt 测试关闭连接尝试
 func TestAutoConnector_CloseAttempt(t *testing.T) {
 	connector := &AutoConnector{

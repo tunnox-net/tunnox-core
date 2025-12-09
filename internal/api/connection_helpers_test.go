@@ -77,16 +77,6 @@ func TestGetStreamFromConnection_NilStream(t *testing.T) {
 	}
 }
 
-// TestSendPacketAsync 测试异步发送包（简单验证函数签名）
-func TestSendPacketAsync(t *testing.T) {
-	// 注意：sendPacketAsync需要一个完全初始化的StreamProcessor
-	// 由于StreamProcessor的初始化很复杂，这里只测试nil情况会被优雅处理
-	// 实际的发送逻辑应该通过集成测试覆盖
-	
-	// 跳过这个测试，因为它需要完整的StreamProcessor初始化
-	t.Skip("Skipping sendPacketAsync test - requires full StreamProcessor initialization")
-}
-
 // TestConfigPushData_Marshaling 测试配置数据序列化
 func TestConfigPushData_Marshaling(t *testing.T) {
 	data := ConfigPushData{

@@ -41,7 +41,6 @@ type Server struct {
 	idManager       *idgen.IDManager
 	nodeAllocator   *node.NodeIDAllocator // ✅ 节点ID分配器
 	session         *session.SessionManager
-	protocolFactory *ProtocolFactory // 保留用于向后兼容
 	cloudControl    managers.CloudControlAPI
 	cloudBuiltin    *managers.BuiltinCloudControl
 	authHandler     *ServerAuthHandler
@@ -189,9 +188,6 @@ func New(config *Config, parentCtx context.Context) *Server {
 	server.container = container.NewContainer(parentCtx)
 	server.setupContainer()
 
-	// 创建协议工厂和适配器管理器（保留向后兼容）
-	server.protocolFactory = NewProtocolFactory(server.session)
-	
 	// 创建协议管理器（使用容器）
 	containerAdapter := registry.NewContainerAdapter(server.container)
 	server.protocolMgr = protocol.NewProtocolManager(parentCtx, containerAdapter)

@@ -22,13 +22,6 @@ func TestServerHTTPLongPollingConn_Creation(t *testing.T) {
 	assert.NotNil(t, conn.RemoteAddr())
 }
 
-// TestServerHTTPLongPollingConn_ReadWrite 测试读写
-// 注意：此测试可能不稳定，因为 writeFlushLoop 需要时间处理数据
-// 跳过此测试，避免 CI/CD 中的不稳定
-func TestServerHTTPLongPollingConn_ReadWrite(t *testing.T) {
-	t.Skip("Skipping read/write test - may be unstable in CI/CD due to writeFlushLoop timing")
-}
-
 func TestServerHTTPLongPollingConn_PushData(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -84,13 +77,5 @@ func TestServerHTTPLongPollingConn_PollDataTimeout(t *testing.T) {
 
 	_, err := conn.PollData(pollCtx)
 	assert.Equal(t, context.DeadlineExceeded, err)
-}
-
-
-// TestServerHTTPLongPollingConn_ConcurrentReadWrite 测试并发读写
-// 注意：此测试可能不稳定，因为 writeFlushLoop 需要时间处理数据
-// 跳过此测试，避免 CI/CD 中的不稳定
-func TestServerHTTPLongPollingConn_ConcurrentReadWrite(t *testing.T) {
-	t.Skip("Skipping concurrent read/write test - may be unstable in CI/CD due to timing issues")
 }
 

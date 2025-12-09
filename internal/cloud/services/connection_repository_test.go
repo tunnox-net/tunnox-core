@@ -28,7 +28,7 @@ func TestConnectionRepository(t *testing.T) {
 		}
 
 		// 创建连接
-		err := connRepo.CreateConnection(connInfo)
+		err = connRepo.CreateConnection(connInfo)
 		require.NoError(t, err)
 
 		// 获取连接
@@ -57,7 +57,7 @@ func TestConnectionRepository(t *testing.T) {
 		}
 
 		// 创建连接
-		err := connRepo.CreateConnection(connInfo)
+		err = connRepo.CreateConnection(connInfo)
 		require.NoError(t, err)
 
 		// 更新连接
@@ -90,7 +90,7 @@ func TestConnectionRepository(t *testing.T) {
 		}
 
 		// 创建连接
-		err := connRepo.CreateConnection(connInfo)
+		err = connRepo.CreateConnection(connInfo)
 		require.NoError(t, err)
 
 		// 删除连接
@@ -124,7 +124,7 @@ func TestConnectionRepository(t *testing.T) {
 		}
 
 		// 保存连接（CreateConnection会自动添加到映射连接列表）
-		err := connRepo.CreateConnection(conn1)
+		err = connRepo.CreateConnection(conn1)
 		require.NoError(t, err)
 		err = connRepo.CreateConnection(conn2)
 		require.NoError(t, err)
@@ -166,7 +166,7 @@ func TestConnectionRepository(t *testing.T) {
 		}
 
 		// 保存连接（CreateConnection会自动添加到客户端连接列表）
-		err := connRepo.CreateConnection(conn1)
+		err = connRepo.CreateConnection(conn1)
 		require.NoError(t, err)
 		err = connRepo.CreateConnection(conn2)
 		require.NoError(t, err)
@@ -199,7 +199,7 @@ func TestConnectionRepository(t *testing.T) {
 		}
 
 		// 保存连接
-		err := connRepo.CreateConnection(connInfo)
+		err = connRepo.CreateConnection(connInfo)
 		require.NoError(t, err)
 
 		// 更新统计信息

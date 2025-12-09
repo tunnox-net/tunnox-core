@@ -267,7 +267,7 @@ func (s *DebugAPIServer) handleConfigList(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// TODO: 实现配置列表
+	// STUB: 配置列表功能未实现
 	s.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "config list not implemented yet",
 	})
@@ -286,7 +286,7 @@ func (s *DebugAPIServer) handleConfigGet(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO: 实现配置获取
+	// STUB: 配置获取功能未实现
 	s.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"key":   key,
 		"value": "not implemented yet",
@@ -309,7 +309,7 @@ func (s *DebugAPIServer) handleConfigSet(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO: 实现配置设置
+	// STUB: 配置设置功能未实现
 	s.writeJSON(w, http.StatusOK, map[string]string{"status": "not implemented yet"})
 }
 

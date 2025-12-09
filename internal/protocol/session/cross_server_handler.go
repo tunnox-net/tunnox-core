@@ -165,8 +165,9 @@ func (s *SessionManager) registerCrossServerConnection(
 	utils.Infof("Tunnel[%s]: ✅ cross-server connection registered (target_node=%s, source_node=%s)",
 		tunnelID, s.getNodeID(), routingState.SourceNodeID)
 
-	// TODO: 通过MessageBroker通知源端Server "连接已就绪"
-	// 源端Server收到通知后，主动建立Bridge连接来拉取数据
+	// FEATURE-GAP: 缺少通过 MessageBroker 通知源端 Server 的机制
+	// 当前实现依赖源端 Server 通过 Bridge 主动轮询，效率较低
+	// 改进方案：实现事件通知机制，源端收到"连接已就绪"消息后主动建立 Bridge 连接
 
 	return nil
 }

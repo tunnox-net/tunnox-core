@@ -214,12 +214,8 @@ func formatBytes(bytes int64) string {
 }
 
 // cmdConnect 连接到服务器
+// 注意：当前使用配置文件中的服务器地址，不支持命令行参数指定
 func (c *CLI) cmdConnect(args []string) {
-	// TODO: 支持指定服务器地址
-	// if len(args) > 0 {
-	//     c.client.SetServerAddress(args[0])
-	// }
-
 	c.output.Info("Connecting to server...")
 
 	if err := c.client.Connect(); err != nil {

@@ -9,8 +9,6 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/protocol/adapter"
-	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/utils"
 )
 
@@ -124,41 +122,6 @@ func NewManagementAPIService(name string, apiServer *api.ManagementAPIServer) *B
 	return NewBaseService(name, apiServer).WithOnStart(func(ctx context.Context) error {
 		return apiServer.Start()
 	})
-}
-
-// ProtocolFactory 协议工厂（已废弃，保留用于向后兼容）
-// 注意：新代码应该使用协议注册框架（protocol/registry）而不是这个工厂
-// 这个工厂硬编码了协议名称，违反了可插拔原则
-// Deprecated: 使用 protocol.NewProtocolManagerWithContainer 和协议注册表代替
-type ProtocolFactory struct {
-	session *session.SessionManager
-}
-
-// NewProtocolFactory 创建协议工厂（已废弃）
-// Deprecated: 使用协议注册框架代替
-func NewProtocolFactory(session *session.SessionManager) *ProtocolFactory {
-	return &ProtocolFactory{
-		session: session,
-	}
-}
-
-// CreateAdapter 创建协议适配器（已废弃，硬编码协议名称）
-// Deprecated: 使用协议注册框架代替，这个实现违反了可插拔原则
-func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Context) (adapter.Adapter, error) {
-	// 注意：这个实现硬编码了协议名称，应该使用协议注册表
-	// 保留此实现仅用于向后兼容，新代码不应使用
-	switch protocolName {
-	case "tcp":
-		return adapter.NewTcpAdapter(ctx, pf.session), nil
-	case "udp":
-		return adapter.NewUdpAdapter(ctx, pf.session), nil
-	case "websocket":
-		return adapter.NewWebSocketAdapter(ctx, pf.session), nil
-	case "quic":
-		return adapter.NewQuicAdapter(ctx, pf.session), nil
-	default:
-		return nil, coreErrors.Newf(coreErrors.ErrorTypePermanent, "unsupported protocol: %s", protocolName)
-	}
 }
 
 // SimpleNodeRegistry 简单的节点注册表实现

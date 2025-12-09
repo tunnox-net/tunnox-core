@@ -530,11 +530,8 @@ func (h *ServerTunnelHandler) resumeTunnel(conn session.ControlConnectionInterfa
 	utils.Infof("ServerTunnelHandler: tunnel resumed successfully - TunnelID=%s, MappingID=%s, Client=%d",
 		tunnelState.TunnelID, tunnelState.MappingID, conn.GetClientID())
 
-	// TODO: 如果需要恢复缓冲区状态，在这里实现
-	// if tunnelState.BufferedPackets != nil && len(tunnelState.BufferedPackets) > 0 {
-	//     // 恢复发送缓冲区
-	//     session.RestoreToSendBuffer(tunnelConn.sendBuffer, tunnelState.BufferedPackets)
-	// }
+	// 注意：缓冲区状态恢复功能暂未实现（当前版本tunnel恢复不包括缓冲数据）
+	// 如果未来需要此功能，可以通过 tunnelState.BufferedPackets 恢复发送缓冲区
 
 	return nil
 }

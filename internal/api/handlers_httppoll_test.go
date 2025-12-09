@@ -173,13 +173,6 @@ func TestHTTPLongPollingConnection_UpdateClientID(t *testing.T) {
 	assert.Equal(t, connID, streamProcessor.GetConnectionID()) // ConnectionID 不变
 }
 
-// TestHTTPPollRequest_Handle 测试 HTTP 轮询请求处理
-// 注意：此测试依赖于 writeFlushLoop 的复杂逻辑，可能不稳定
-// 跳过此测试，避免 CI/CD 中的不稳定
-func TestHTTPPollRequest_Handle(t *testing.T) {
-	t.Skip("Skipping HTTP poll request handle test - depends on writeFlushLoop timing which may be unstable in CI/CD")
-}
-
 func TestHTTPPollRequest_Timeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

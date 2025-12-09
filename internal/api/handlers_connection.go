@@ -25,8 +25,9 @@ func (s *ManagementAPIServer) handleListAllConnections(w http.ResponseWriter, r 
 		s.respondJSON(w, http.StatusOK, response)
 		return
 	}
-	
-	// TODO: 实现列出所有连接的功能（需要在CloudControl中添加方法）
+
+	// STUB: 列出所有连接功能未实现
+	// 需要在 CloudControl 接口添加 ListAllConnections() 方法
 	s.respondError(w, http.StatusNotImplemented, "list all connections not yet implemented")
 }
 
