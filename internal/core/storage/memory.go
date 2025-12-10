@@ -4,7 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
-	"tunnox-core/internal/cloud/constants"
+
+	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
 )
 

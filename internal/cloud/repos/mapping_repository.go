@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	constants2 "tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/constants"
@@ -28,7 +27,7 @@ func NewPortMappingRepo(repo *Repository) *PortMappingRepo {
 
 // SavePortMapping 保存端口映射（创建或更新）
 func (r *PortMappingRepo) SavePortMapping(mapping *models.PortMapping) error {
-	if err := r.Save(mapping, constants.KeyPrefixPortMapping, constants2.DefaultMappingDataTTL); err != nil {
+	if err := r.Save(mapping, constants.KeyPrefixPortMapping, constants.DefaultMappingDataTTL); err != nil {
 		return err
 	}
 	// 将映射添加到全局映射列表中
@@ -37,7 +36,7 @@ func (r *PortMappingRepo) SavePortMapping(mapping *models.PortMapping) error {
 
 // CreatePortMapping 创建新端口映射（仅创建，不允许覆盖）
 func (r *PortMappingRepo) CreatePortMapping(mapping *models.PortMapping) error {
-	if err := r.Create(mapping, constants.KeyPrefixPortMapping, constants2.DefaultMappingDataTTL); err != nil {
+	if err := r.Create(mapping, constants.KeyPrefixPortMapping, constants.DefaultMappingDataTTL); err != nil {
 		return err
 	}
 	// 将映射添加到全局映射列表中
@@ -46,7 +45,7 @@ func (r *PortMappingRepo) CreatePortMapping(mapping *models.PortMapping) error {
 
 // UpdatePortMapping 更新端口映射（仅更新，不允许创建）
 func (r *PortMappingRepo) UpdatePortMapping(mapping *models.PortMapping) error {
-	return r.Update(mapping, constants.KeyPrefixPortMapping, constants2.DefaultMappingDataTTL)
+	return r.Update(mapping, constants.KeyPrefixPortMapping, constants.DefaultMappingDataTTL)
 }
 
 // GetPortMapping 获取端口映射

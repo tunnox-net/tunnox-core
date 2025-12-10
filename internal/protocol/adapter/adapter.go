@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"time"
+
 	"tunnox-core/internal/core/dispose"
 	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
@@ -120,27 +121,39 @@ func (b *BaseAdapter) ListenFrom(listenAddr string) error {
 }
 
 // acceptLoop 通用接受连接循环
+// Lifecycle: Managed by adapter context
+// Cleanup: Triggered by adapter.Close() setting active=false
+// Shutdown: Exits when active=false or adapter is closed
 func (b *BaseAdapter) acceptLoop(adapter ProtocolAdapter) {
+	connType := adapter.getConnectionType()
+	utils.Debugf("%s acceptLoop started", connType)
+
 	for b.active {
 		conn, err := adapter.Accept()
+
 		if err != nil {
 			if !b.IsClosed() {
 				// 检查是否为可忽略的错误（如超时）
 				if isIgnorableError(err) {
 					continue
 				}
-				utils.Errorf("%s accept error: %v", adapter.getConnectionType(), err)
+				utils.Errorf("%s accept error: %v", connType, err)
 			}
 			return
 		}
 
 		if b.IsClosed() {
-			utils.Warnf("%s connection closed", adapter.getConnectionType())
+			utils.Warnf("%s connection closed", connType)
 			return
 		}
 
+		// Lifecycle: Managed by connection context
+		// Cleanup: Triggered by connection close or adapter shutdown
+		// Shutdown: Waits for packet processing to complete
 		go b.handleConnection(adapter, conn)
 	}
+
+	utils.Debugf("%s acceptLoop exiting", connType)
 }
 
 // isIgnorableError 检查是否为可忽略的错误
@@ -160,14 +173,20 @@ func isIgnorableError(err error) bool {
 
 // handleConnection 通用连接处理逻辑
 func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWriteCloser) {
+	connType := adapter.getConnectionType()
+	utils.Debugf("%s handleConnection started", connType)
+
 	shouldCloseConn := true // 默认关闭连接
 	var streamConn *types.StreamConnection
 
+	// 检查是否为持久连接
 	if persistentConn, ok := conn.(interface{ IsPersistent() bool }); ok && persistentConn.IsPersistent() {
 		shouldCloseConn = false
+		utils.Debugf("%s persistent connection detected", connType)
 	}
 
 	defer func() {
+		utils.Debugf("%s handleConnection exiting", connType)
 		// 清理 SessionManager 中的连接（如果已创建）
 		if streamConn != nil && b.session != nil {
 			_ = b.session.CloseConnection(streamConn.ID)
@@ -181,11 +200,11 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 		}
 	}()
 
-	utils.Infof("%s adapter handling connection", adapter.getConnectionType())
+	utils.Infof("%s adapter handling connection", connType)
 
 	// Session是系统关键组件，必须存在
 	if b.session == nil {
-		utils.Errorf("Session is required but not set for %s adapter", adapter.getConnectionType())
+		utils.Errorf("Session is required but not set for %s adapter", connType)
 		return
 	}
 
@@ -204,7 +223,7 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 		default:
 		}
 
-		// ✅ 设计改进：在每次循环开始时检查连接是否已切换到流模式
+		// 设计改进：在每次循环开始时检查连接是否已切换到流模式
 		// 如果已切换到流模式，readLoop 应该立即退出，因为：
 		// 1. 流模式下数据是原始数据（如 MySQL 协议），不再是 Tunnox 协议包
 		// 2. 流模式下的数据应该通过 net.Conn 直接转发，而不是通过 ReadPacket()

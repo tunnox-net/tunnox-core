@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	constants2 "tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
 	coreErrors "tunnox-core/internal/core/errors"
@@ -27,7 +26,7 @@ func NewClientRepository(repo *Repository) *ClientRepository {
 
 // SaveClient 保存客户端（创建或更新）
 func (r *ClientRepository) SaveClient(client *models.Client) error {
-	if err := r.Save(client, constants.KeyPrefixClient, constants2.DefaultClientDataTTL); err != nil {
+	if err := r.Save(client, constants.KeyPrefixClient, constants.DefaultClientDataTTL); err != nil {
 		return err
 	}
 	// 将客户端添加到全局客户端列表中
@@ -36,7 +35,7 @@ func (r *ClientRepository) SaveClient(client *models.Client) error {
 
 // CreateClient 创建新客户端（仅创建，不允许覆盖）
 func (r *ClientRepository) CreateClient(client *models.Client) error {
-	if err := r.Create(client, constants.KeyPrefixClient, constants2.DefaultClientDataTTL); err != nil {
+	if err := r.Create(client, constants.KeyPrefixClient, constants.DefaultClientDataTTL); err != nil{
 		return err
 	}
 	// 将客户端添加到全局客户端列表中
@@ -45,7 +44,7 @@ func (r *ClientRepository) CreateClient(client *models.Client) error {
 
 // UpdateClient 更新客户端（仅更新，不允许创建）
 func (r *ClientRepository) UpdateClient(client *models.Client) error {
-	return r.Update(client, constants.KeyPrefixClient, constants2.DefaultClientDataTTL)
+	return r.Update(client, constants.KeyPrefixClient, constants.DefaultClientDataTTL)
 }
 
 // GetClient 获取客户端
@@ -122,7 +121,7 @@ func (r *ClientRepository) saveUserClients(userID string, clients []*models.Clie
 	if !ok {
 		return coreErrors.New(coreErrors.ErrorTypePermanent, "storage does not support list operations")
 	}
-	return listStore.SetList(key, data, constants2.DefaultUserDataTTL)
+	return listStore.SetList(key, data, constants.DefaultUserDataTTL)
 }
 
 // TouchClient 刷新客户端的LastSeen和延长过期时间
@@ -138,5 +137,5 @@ func (r *ClientRepository) TouchClient(clientID string) error {
 		return err
 	}
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixClient, clientID)
-	return r.storage.SetExpiration(key, constants2.DefaultClientDataTTL)
+	return r.storage.SetExpiration(key, constants.DefaultClientDataTTL)
 }

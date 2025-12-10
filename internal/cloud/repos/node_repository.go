@@ -1,7 +1,6 @@
 package repos
 
 import (
-	constants2 "tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
 )
@@ -21,17 +20,17 @@ func NewNodeRepository(repo *Repository) *NodeRepository {
 
 // SaveNode 保存节点（创建或更新）
 func (r *NodeRepository) SaveNode(node *models.Node) error {
-	return r.Save(node, constants.KeyPrefixNode, constants2.DefaultNodeDataTTL)
+	return r.Save(node, constants.KeyPrefixNode, constants.DefaultNodeDataTTL)
 }
 
 // CreateNode 创建新节点（仅创建，不允许覆盖）
 func (r *NodeRepository) CreateNode(node *models.Node) error {
-	return r.Create(node, constants.KeyPrefixNode, constants2.DefaultNodeDataTTL)
+	return r.Create(node, constants.KeyPrefixNode, constants.DefaultNodeDataTTL)
 }
 
 // UpdateNode 更新节点（仅更新，不允许创建）
 func (r *NodeRepository) UpdateNode(node *models.Node) error {
-	return r.Update(node, constants.KeyPrefixNode, constants2.DefaultNodeDataTTL)
+	return r.Update(node, constants.KeyPrefixNode, constants.DefaultNodeDataTTL)
 }
 
 // GetNode 获取节点

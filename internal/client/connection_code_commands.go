@@ -24,10 +24,13 @@ type GenerateConnectionCodeRequest struct {
 
 // GenerateConnectionCodeResponse 生成连接码响应
 type GenerateConnectionCodeResponse struct {
-	Code          string `json:"code"`
-	TargetAddress string `json:"target_address"`
-	ExpiresAt     string `json:"expires_at"`
-	Description   string `json:"description,omitempty"`
+	Code                string `json:"code"`
+	TargetAddress       string `json:"target_address"`
+	ExpiresAt           string `json:"expires_at"`            // 连接码激活截止时间
+	MappingExpiresAt    string `json:"mapping_expires_at"`    // 激活后映射的过期时间
+	ActivationTTLMinutes int    `json:"activation_ttl_minutes"` // 激活有效期（分钟）
+	MappingTTLDays      int    `json:"mapping_ttl_days"`       // 映射有效期（天）
+	Description         string `json:"description,omitempty"`
 }
 
 // ListConnectionCodesResponseCmd 连接码列表响应（通过指令通道）

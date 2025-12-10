@@ -188,10 +188,13 @@ func (c *CLI) cmdGenerateCode(args []string) {
 	c.output.Separator()
 	c.output.KeyValue("Code", colorBold(resp.Code))
 	c.output.KeyValue("Target", resp.TargetAddress)
-	c.output.KeyValue("Expires At", resp.ExpiresAt)
+	c.output.KeyValue("Code Expires At", resp.ExpiresAt)
+	c.output.KeyValue("Mapping Expires At", resp.MappingExpiresAt)
 	c.output.Separator()
 	fmt.Println("")
 	c.output.Info("Share this code with the ListenClient to create a tunnel mapping.")
+	c.output.Info("Code must be activated within %d minutes.", resp.ActivationTTLMinutes)
+	c.output.Info("Once activated, the mapping will be valid for %d days.", resp.MappingTTLDays)
 	fmt.Println("")
 }
 

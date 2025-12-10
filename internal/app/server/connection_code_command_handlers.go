@@ -140,11 +140,18 @@ func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 	}
 
 	// 构造响应
+	// 返回两个时间：
+	// 1. ExpiresAt: 连接码激活截止时间（必须在此之前激活）
+	// 2. MappingExpiresAt: 激活后映射的过期时间（从现在开始计算）
+	mappingExpiresAt := time.Now().Add(connCode.MappingDuration)
 	resp := ConnectionCodeResponse{
-		Code:          connCode.Code,
-		TargetAddress: connCode.TargetAddress,
-		ExpiresAt:     connCode.ActivationExpiresAt.Format(time.RFC3339),
-		Description:   connCode.Description,
+		Code:                connCode.Code,
+		TargetAddress:       connCode.TargetAddress,
+		ExpiresAt:           connCode.ActivationExpiresAt.Format(time.RFC3339),
+		MappingExpiresAt:    mappingExpiresAt.Format(time.RFC3339),
+		ActivationTTLMinutes: int(connCode.ActivationTTL.Minutes()),
+		MappingTTLDays:      int(connCode.MappingDuration.Hours() / 24),
+		Description:         connCode.Description,
 	}
 
 	respBody, _ := json.Marshal(resp)

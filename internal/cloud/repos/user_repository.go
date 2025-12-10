@@ -1,7 +1,6 @@
 package repos
 
 import (
-	constants2 "tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
 )
@@ -21,7 +20,7 @@ func NewUserRepository(repo *Repository) *UserRepository {
 
 // SaveUser 保存用户（创建或更新）
 func (r *UserRepository) SaveUser(user *models.User) error {
-	if err := r.Save(user, constants.KeyPrefixUser, constants2.DefaultUserDataTTL); err != nil {
+	if err := r.Save(user, constants.KeyPrefixUser, constants.DefaultUserDataTTL); err != nil{
 		return err
 	}
 	// 将用户添加到全局用户列表中
@@ -30,7 +29,7 @@ func (r *UserRepository) SaveUser(user *models.User) error {
 
 // CreateUser 创建新用户（仅创建，不允许覆盖）
 func (r *UserRepository) CreateUser(user *models.User) error {
-	if err := r.Create(user, constants.KeyPrefixUser, constants2.DefaultUserDataTTL); err != nil {
+	if err := r.Create(user, constants.KeyPrefixUser, constants.DefaultUserDataTTL); err != nil{
 		return err
 	}
 	// 将用户添加到全局用户列表中
@@ -39,7 +38,7 @@ func (r *UserRepository) CreateUser(user *models.User) error {
 
 // UpdateUser 更新用户（仅更新，不允许创建）
 func (r *UserRepository) UpdateUser(user *models.User) error {
-	return r.Update(user, constants.KeyPrefixUser, constants2.DefaultUserDataTTL)
+	return r.Update(user, constants.KeyPrefixUser, constants.DefaultUserDataTTL)
 }
 
 // GetUser 获取用户

@@ -2,11 +2,11 @@ package client
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/binary"
 	"net"
+
+	"github.com/sirupsen/logrus"
 	"tunnox-core/internal/core/errors"
-	udpprotocol "tunnox-core/internal/protocol/udp"
+	"tunnox-core/internal/protocol/udp/reliable"
 )
 
 // dialUDP 建立 UDP 控制连接
@@ -21,23 +21,47 @@ func dialUDP(ctx context.Context, address string) (net.Conn, error) {
 		return nil, errors.Wrap(err, errors.ErrorTypeNetwork, "failed to dial UDP")
 	}
 
-	// 生成 SessionID（简化实现，使用随机数）
-	sessionID := generateSessionID()
+	// 使用全局标准 logger，确保输出到相同的日志文件
+	logger := logrus.StandardLogger()
+	logger.SetLevel(logrus.DebugLevel)
 
-	// 创建 UDP Transport（使用我们实现的 UDP 协议层）
-	transport := udpprotocol.NewTransport(conn, udpAddr, sessionID, ctx)
+	// 创建 PacketDispatcher
+	dispatcher := reliable.NewPacketDispatcher(conn, logger)
+	dispatcher.Start()
 
-	// 返回 Transport 作为 net.Conn（Transport 实现了 io.ReadWriteCloser）
-	return transport, nil
-}
+	logger.Infof("Client: using UDP transport for control connection")
 
-// generateSessionID 生成随机的 SessionID
-func generateSessionID() uint32 {
-	var buf [4]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		// 如果随机数生成失败，使用时间戳
-		return uint32(0)
+	// 创建客户端 Transport（会自动进行握手）
+	transport, err := reliable.NewClientTransport(conn, udpAddr, dispatcher, logger)
+	if err != nil {
+		dispatcher.Stop()
+		conn.Close()
+		return nil, errors.Wrap(err, errors.ErrorTypeNetwork, "failed to create UDP transport")
 	}
-	return binary.BigEndian.Uint32(buf[:])
+
+	logger.Infof("Client: UDP connection established - Local=%s, Remote=%s",
+		transport.LocalAddr(), transport.RemoteAddr())
+
+	// Transport 实现了 net.Conn 接口（通过 io.ReadWriteCloser）
+	return &udpConn{
+		Transport:  transport,
+		dispatcher: dispatcher,
+	}, nil
 }
 
+// udpConn 包装 Transport 和 dispatcher 以实现完整的 net.Conn 接口
+type udpConn struct {
+	*reliable.Transport
+	dispatcher *reliable.PacketDispatcher
+}
+
+// Close 关闭连接和 dispatcher
+func (c *udpConn) Close() error {
+	// 先关闭 transport
+	if err := c.Transport.Close(); err != nil {
+		return err
+	}
+
+	// 再停止 dispatcher
+	return c.dispatcher.Stop()
+}

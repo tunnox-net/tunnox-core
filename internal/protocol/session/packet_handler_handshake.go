@@ -3,6 +3,7 @@ package session
 import (
 	"encoding/json"
 	"net"
+	"time"
 	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
@@ -85,6 +86,23 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 			Success: false,
 			Error:   err.Error(),
 		})
+		
+		// 握手失败后立即关闭连接，防止未认证的连接继续占用资源
+		// 使用 goroutine 异步关闭，确保响应包有时间发送完成
+		go func() {
+			// 延迟100ms，确保响应包发送完成
+			// 这对所有协议都是安全的：
+			// - TCP/WebSocket/QUIC: 标准连接关闭
+			// - UDP: 会话清理
+			// - HTTP Long Polling: 响应后自然关闭
+			time.Sleep(100 * time.Millisecond)
+			if closeErr := s.CloseConnection(connPacket.ConnectionID); closeErr != nil {
+				utils.Warnf("Failed to close connection %s after handshake failure: %v", connPacket.ConnectionID, closeErr)
+			} else {
+				utils.Infof("Connection %s closed after handshake failure", connPacket.ConnectionID)
+			}
+		}()
+		
 		return err
 	}
 

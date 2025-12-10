@@ -2,40 +2,37 @@ package adapter
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/binary"
 	"io"
 	"net"
-	"time"
+
 	"tunnox-core/internal/core/dispose"
 	coreErrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
-	udpprotocol "tunnox-core/internal/protocol/udp"
+	"tunnox-core/internal/protocol/udp/reliable"
+
+	"github.com/sirupsen/logrus"
 )
 
-// UdpConn UDP连接包装器
-type UdpConn struct {
-	*udpprotocol.Transport
-}
-
-func (u *UdpConn) Close() error {
-	return u.Transport.Close()
-}
-
 // UdpAdapter UDP协议适配器
-// 只实现协议相关方法，其余继承 BaseAdapter
+// 使用新的可靠 UDP 传输协议
 type UdpAdapter struct {
 	BaseAdapter
 	listener   *net.UDPConn
-	remoteAddr *net.UDPAddr // 用于客户端连接
+	dispatcher *reliable.PacketDispatcher
+	logger     *logrus.Logger
 }
 
 // NewUdpAdapter 创建 UDP 适配器
 func NewUdpAdapter(parentCtx context.Context, session session.Session) *UdpAdapter {
+	// 使用全局标准 logger，确保输出到相同的日志文件
+	logger := logrus.StandardLogger()
+	logger.SetLevel(logrus.DebugLevel)
+
 	u := &UdpAdapter{
 		BaseAdapter: BaseAdapter{
 			ResourceBase: dispose.NewResourceBase("UdpAdapter"),
 		},
+		logger: logger,
 	}
 	u.Initialize(parentCtx)
 	u.AddCleanHandler(u.onClose)
@@ -46,28 +43,41 @@ func NewUdpAdapter(parentCtx context.Context, session session.Session) *UdpAdapt
 	return u
 }
 
-// Dial 建立 UDP 连接
+// Dial 建立 UDP 连接 (客户端)
 func (u *UdpAdapter) Dial(addr string) (io.ReadWriteCloser, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to resolve UDP address")
 	}
 
+	// Create UDP connection
 	conn, err := net.DialUDP("udp", nil, udpAddr)
 	if err != nil {
 		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to dial UDP")
 	}
 
-	// 生成 SessionID（简化实现，使用随机数）
-	sessionID := u.generateSessionID()
+	u.logger.Infof("UdpAdapter: client dialing %s", addr)
 
-	// 创建 Transport
-	transport := udpprotocol.NewTransport(conn, udpAddr, sessionID, u.Ctx())
+	// IMPORTANT: Each dial creates its own dispatcher and connection
+	// This ensures that each tunnel has its own independent UDP connection
+	// and packet dispatcher, avoiding conflicts between multiple tunnels
+	dispatcher := reliable.NewPacketDispatcher(conn, u.logger)
+	dispatcher.Start()
 
-	return &UdpConn{Transport: transport}, nil
+	// Create client transport (this will initiate handshake)
+	transport, err := reliable.NewClientTransport(conn, udpAddr, dispatcher, u.logger)
+	if err != nil {
+		dispatcher.Stop()
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to create client transport")
+	}
+
+	u.logger.Infof("UdpAdapter: client connected to %s - Local=%s, Remote=%s",
+		addr, transport.LocalAddr(), transport.RemoteAddr())
+
+	return transport, nil
 }
 
-// Listen 启动 UDP 监听
+// Listen 启动 UDP 监听 (服务端)
 func (u *UdpAdapter) Listen(addr string) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -80,50 +90,71 @@ func (u *UdpAdapter) Listen(addr string) error {
 	}
 
 	u.listener = listener
+	u.logger.Infof("UdpAdapter: listening on %s", addr)
+
+	// Create and start packet dispatcher
+	u.dispatcher = reliable.NewPacketDispatcher(listener, u.logger)
+	u.dispatcher.Start()
+	u.logger.Info("UdpAdapter: PacketDispatcher started")
+
+	// Start accept loop manually here since BaseAdapter.ListenFrom is not being called
+	go u.startAcceptLoop()
+
 	return nil
 }
 
-// Accept 接受 UDP 连接
-// 注意：UDP 是无连接的，这里每次 Accept 返回一个新的 Transport
-// 实际使用中，需要根据数据报的源地址来区分不同的会话
-// 简化实现：读取第一个数据报来确定远程地址和 SessionID
+// startAcceptLoop manually starts the accept loop for UDP adapter
+func (u *UdpAdapter) startAcceptLoop() {
+	for !u.IsClosed() {
+		conn, err := u.Accept()
+
+		if err != nil {
+			if u.IsClosed() {
+				return
+			}
+			continue
+		}
+
+		if u.IsClosed() {
+			u.logger.Warnf("UDP connection closed")
+			return
+		}
+
+		// Lifecycle: Managed by adapter context
+		// Cleanup: Triggered by adapter.Close() via context cancellation
+		// Shutdown: Waits for connection handling to complete
+		go func(conn io.ReadWriteCloser, adapter *UdpAdapter) {
+			defer func() {
+				if r := recover(); r != nil {
+					adapter.logger.Errorf("UDP handleConnection panic: %v", r)
+				}
+			}()
+			
+			adapter.BaseAdapter.handleConnection(adapter, conn)
+		}(conn, u)
+	}
+}
+
+// Accept 接受 UDP 连接 (服务端)
+// 等待 dispatcher 接收到新的连接握手
 func (u *UdpAdapter) Accept() (io.ReadWriteCloser, error) {
-	if u.listener == nil {
-		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "UDP listener not initialized")
+	if u.dispatcher == nil {
+		return nil, coreErrors.New(coreErrors.ErrorTypePermanent, "UDP dispatcher not initialized")
 	}
 
-	// UDP 是无连接的，需要从第一个数据报中获取源地址
-	// 设置读取超时，避免永久阻塞
-	if err := u.listener.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to set read deadline")
-	}
-
-	buf := make([]byte, udpprotocol.MaxUDPPayloadSize)
-	n, remoteAddr, err := u.listener.ReadFromUDP(buf)
+	// Wait for new session from dispatcher
+	session, err := u.dispatcher.Accept()
 	if err != nil {
-		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to read from UDP")
+		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeNetwork, "failed to accept connection")
 	}
 
-	// 解析头部获取 SessionID
-	if n < udpprotocol.HeaderLength() {
-		return nil, coreErrors.Newf(coreErrors.ErrorTypeProtocol, "packet too small: %d bytes", n)
-	}
+	// Wrap session in transport
+	transport := reliable.NewServerTransport(session, u.logger)
 
-	header, _, err := udpprotocol.DecodeHeader(buf[:n])
-	if err != nil {
-		return nil, coreErrors.Wrap(err, coreErrors.ErrorTypeProtocol, "failed to decode header")
-	}
+	u.logger.Infof("UdpAdapter: accepted connection from %s, session=%d",
+		transport.RemoteAddr(), session.GetSessionID())
 
-	// 为这个会话创建独立的 UDPConn
-	// 注意：每个会话需要独立的 Transport，但共享同一个 listener
-	// 这里创建一个新的 UDPConn，但它会使用同一个 listener
-	// 实际实现中，Transport 的 receiver 会从 listener 读取数据
-	// 需要根据 remoteAddr 和 SessionID 来过滤数据报
-
-	// 创建新的 Transport，传递第一个数据报
-	transport := udpprotocol.NewTransport(u.listener, remoteAddr, header.SessionID, u.Ctx(), buf[:n])
-
-	return &UdpConn{Transport: transport}, nil
+	return transport, nil
 }
 
 // getConnectionType 返回连接类型
@@ -131,26 +162,50 @@ func (u *UdpAdapter) getConnectionType() string {
 	return "UDP"
 }
 
-// generateSessionID 生成随机的 SessionID
-func (u *UdpAdapter) generateSessionID() uint32 {
-	var buf [4]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		// 如果随机数生成失败，使用时间戳
-		return uint32(time.Now().Unix())
-	}
-	return binary.BigEndian.Uint32(buf[:])
-}
-
 // onClose UDP 特定的资源清理
 func (u *UdpAdapter) onClose() error {
+	u.logger.Info("UdpAdapter: closing...")
+
 	var err error
+
+	// Stop dispatcher first (this will close all sessions)
+	if u.dispatcher != nil {
+		if dispErr := u.dispatcher.Stop(); dispErr != nil {
+			u.logger.Errorf("UdpAdapter: failed to stop dispatcher: %v", dispErr)
+			err = dispErr
+		}
+		u.dispatcher = nil
+	}
+
+	// Close listener
 	if u.listener != nil {
-		err = u.listener.Close()
+		if closeErr := u.listener.Close(); closeErr != nil {
+			u.logger.Errorf("UdpAdapter: failed to close listener: %v", closeErr)
+			if err == nil {
+				err = closeErr
+			}
+		}
 		u.listener = nil
 	}
+
+	// Call base cleanup
 	baseErr := u.BaseAdapter.onClose()
+	if err == nil {
+		err = baseErr
+	}
+
 	if err != nil {
 		return err
 	}
-	return baseErr
+
+	u.logger.Info("UdpAdapter: closed successfully")
+	return nil
+}
+
+// GetStats returns dispatcher statistics (for debugging/monitoring)
+func (u *UdpAdapter) GetStats() (packetsReceived, packetsDropped, bytesReceived uint64) {
+	if u.dispatcher != nil {
+		return u.dispatcher.GetStats()
+	}
+	return 0, 0, 0
 }

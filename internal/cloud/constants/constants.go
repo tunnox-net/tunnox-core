@@ -1,23 +1,17 @@
 package constants
 
-import "time"
+// Cloud Layer Constants
+// 云控层特有的常量定义
+// 注意：跨层共享的常量（如 TTL 值）已迁移到 internal/constants 包
 
 const (
-	// 清理间隔
-	DefaultCleanupInterval = 5 * time.Minute
-	// 数据过期时间
-	DefaultDataTTL        = 24 * time.Hour
-	DefaultUserDataTTL    = 0 // 用户数据不过期
-	DefaultClientDataTTL  = 24 * time.Hour
-	DefaultMappingDataTTL = 24 * time.Hour
-	DefaultNodeDataTTL    = 24 * time.Hour
-	DefaultConnectionTTL  = 24 * time.Hour
-
+	// 带宽和流量限制
 	MB                             = 1024 * 1024
 	GB                             = 1024 * 1024 * 1024
 	DefaultClientBandwidthLimit    = 10 * MB // 10MB/s
 	DefaultAnonymousBandwidthLimit = 5 * MB  // 5MB/s
 
+	// 连接数限制
 	DefaultClientMaxConnections    = 10
 	DefaultAnonymousMaxConnections = 5
 )

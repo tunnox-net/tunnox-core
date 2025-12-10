@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-	constants2 "tunnox-core/internal/cloud/constants"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
@@ -50,7 +50,7 @@ func (cr *ConnectionRepo) onClose() error {
 
 // SaveConnection 保存连接信息（创建或更新）
 func (r *ConnectionRepo) SaveConnection(connInfo *models.ConnectionInfo) error {
-	if err := r.Save(connInfo, constants.KeyPrefixConnection, constants2.DefaultConnectionTTL); err != nil {
+	if err := r.Save(connInfo, constants.KeyPrefixConnection, constants.DefaultConnectionTTL); err != nil {
 		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "save connection failed")
 	}
 	// 添加到映射和客户端的连接列表
@@ -65,7 +65,7 @@ func (r *ConnectionRepo) SaveConnection(connInfo *models.ConnectionInfo) error {
 
 // CreateConnection 创建新连接（仅创建，不允许覆盖）
 func (r *ConnectionRepo) CreateConnection(connInfo *models.ConnectionInfo) error {
-	if err := r.Create(connInfo, constants.KeyPrefixConnection, constants2.DefaultConnectionTTL); err != nil {
+	if err := r.Create(connInfo, constants.KeyPrefixConnection, constants.DefaultConnectionTTL); err != nil {
 		return err
 	}
 	// 添加到映射和客户端的连接列表
@@ -93,7 +93,7 @@ func (r *ConnectionRepo) UpdateConnection(connInfo *models.ConnectionInfo) error
 	}
 
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixConnection, connInfo.ConnID)
-	if err := r.storage.Set(key, string(data), constants2.DefaultConnectionTTL); err != nil {
+	if err := r.storage.Set(key, string(data), constants.DefaultConnectionTTL); err != nil {
 		return coreErrors.Wrap(err, coreErrors.ErrorTypeStorage, "update connection failed")
 	}
 
