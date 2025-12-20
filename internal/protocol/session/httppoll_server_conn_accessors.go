@@ -1,7 +1,7 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // GetClientID 获取客户端 ID
@@ -21,20 +21,23 @@ func (c *ServerHTTPLongPollingConn) GetMappingID() string {
 // SetMappingID 设置映射ID（隧道连接才有）
 func (c *ServerHTTPLongPollingConn) SetMappingID(mappingID string) {
 	c.closeMu.Lock()
-	defer c.closeMu.Unlock()
 	c.mappingID = mappingID
+	clientID := c.clientID
+	c.closeMu.Unlock()
+
 	corelog.Infof("HTTP long polling: [SetMappingID] setting mappingID=%s, clientID=%d, connID=%s",
-		mappingID, c.clientID, c.GetConnectionID())
+		mappingID, clientID, c.GetConnectionID())
 }
 
 // SetStreamMode 切换到流模式（隧道建立后调用）
 func (c *ServerHTTPLongPollingConn) SetStreamMode(streamMode bool) {
 	c.streamMu.Lock()
-	defer c.streamMu.Unlock()
 	oldMode := c.streamMode
 	c.streamMode = streamMode
+	c.streamMu.Unlock()
+
 	corelog.Infof("HTTP long polling: [SetStreamMode] switching stream mode from %v to %v, clientID=%d, mappingID=%s",
-		oldMode, streamMode, c.clientID, c.mappingID)
+		oldMode, streamMode, c.GetClientID(), c.GetMappingID())
 }
 
 // IsStreamMode 检查是否处于流模式
@@ -87,4 +90,3 @@ func (c *ServerHTTPLongPollingConn) UpdateClientID(newClientID int64) {
 	corelog.Infof("HTTP long polling: [UpdateClientID] updated clientID from %d to %d, connID=%s",
 		oldClientID, newClientID, c.GetConnectionID())
 }
-

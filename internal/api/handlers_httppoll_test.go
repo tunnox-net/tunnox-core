@@ -151,7 +151,7 @@ func TestHTTPLongPollingConnection_UpdateClientID(t *testing.T) {
 	if server.httppollRegistry == nil {
 		server.httppollRegistry = httppoll.NewConnectionRegistry()
 	}
-	
+
 	// 创建连接（clientID=0）
 	connID := "conn_test456"
 	streamProcessor := httppoll.NewServerStreamProcessor(ctx, connID, 0, "")
@@ -216,11 +216,11 @@ func TestHTTPPollRequest_Timeout(t *testing.T) {
 
 	// 验证响应（应该超时）
 	assert.Equal(t, http.StatusOK, w.Code)
-	
+
 	// 检查响应体
 	bodyBytes := w.Body.Bytes()
 	require.NotEmpty(t, bodyBytes, "Response body should not be empty")
-	
+
 	var resp HTTPPollResponse
 	err := json.Unmarshal(bodyBytes, &resp)
 	require.NoError(t, err, "Failed to unmarshal response: %s", string(bodyBytes))
@@ -301,20 +301,20 @@ func TestHTTPLongPollingConnection_MultipleConnections(t *testing.T) {
 	require.NotNil(t, conn2)
 	require.NotNil(t, conn3)
 
-	// 验证三个连接是不同的实例
-	assert.NotEqual(t, conn1, conn2, "Connections with different ConnectionIDs should be different")
-	assert.NotEqual(t, conn2, conn3, "Connections with different ConnectionIDs should be different")
-	assert.NotEqual(t, conn1, conn3, "Connections with different ConnectionIDs should be different")
+	// 验证三个连接是不同的实例（比较指针地址，避免数据竞争）
+	assert.True(t, conn1 != conn2, "Connections with different ConnectionIDs should be different")
+	assert.True(t, conn2 != conn3, "Connections with different ConnectionIDs should be different")
+	assert.True(t, conn1 != conn3, "Connections with different ConnectionIDs should be different")
 
-	// 验证每个 ConnectionID 都能找到对应的连接
+	// 验证每个 ConnectionID 都能找到对应的连接（比较指针地址）
 	foundConn1 := server.httppollRegistry.Get(connID1)
 	foundConn2 := server.httppollRegistry.Get(connID2)
 	foundConn3 := server.httppollRegistry.Get(connID3)
 
-	assert.Equal(t, conn1, foundConn1, "Should find connection 1 by connID1")
-	assert.Equal(t, conn2, foundConn2, "Should find connection 2 by connID2")
-	assert.Equal(t, conn3, foundConn3, "Should find connection 3 by connID3")
-	}
+	assert.True(t, conn1 == foundConn1, "Should find connection 1 by connID1")
+	assert.True(t, conn2 == foundConn2, "Should find connection 2 by connID2")
+	assert.True(t, conn3 == foundConn3, "Should find connection 3 by connID3")
+}
 
 // TestConnectionRegistry 测试 ConnectionRegistry
 func TestConnectionRegistry(t *testing.T) {
@@ -332,11 +332,11 @@ func TestConnectionRegistry(t *testing.T) {
 	// 验证连接数量
 	assert.Equal(t, 2, registry.Count())
 
-	// 验证可以获取连接
+	// 验证可以获取连接（比较指针地址，避免数据竞争）
 	foundConn1 := registry.Get("conn_test1")
 	foundConn2 := registry.Get("conn_test2")
-	assert.Equal(t, conn1, foundConn1)
-	assert.Equal(t, conn2, foundConn2)
+	assert.True(t, conn1 == foundConn1, "Should find conn1")
+	assert.True(t, conn2 == foundConn2, "Should find conn2")
 
 	// 验证不存在的连接返回 nil
 	assert.Nil(t, registry.Get("conn_nonexistent"))
@@ -345,6 +345,5 @@ func TestConnectionRegistry(t *testing.T) {
 	registry.Remove("conn_test1")
 	assert.Equal(t, 1, registry.Count())
 	assert.Nil(t, registry.Get("conn_test1"))
-	assert.Equal(t, conn2, registry.Get("conn_test2"))
+	assert.True(t, conn2 == registry.Get("conn_test2"), "Should still find conn2")
 }
-
