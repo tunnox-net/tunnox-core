@@ -1,12 +1,12 @@
 package mapping
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
 	"sync/atomic"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/config"
 	"tunnox-core/internal/core/dispose"
@@ -225,7 +225,7 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
 		tunnelStream.Close()
 		if tunnelConn != nil {
-		tunnelConn.Close()
+			tunnelConn.Close()
 		}
 		return nil
 	})
@@ -372,7 +372,7 @@ type controlledConn struct {
 	io.ReadWriteCloser
 	rateLimiter *rate.Limiter
 	stats       *TrafficStats
-	direction   string // "local" or "tunnel"
+	direction   string          // "local" or "tunnel"
 	ctx         context.Context // context 用于接收退出信号
 }
 

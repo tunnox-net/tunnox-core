@@ -35,4 +35,3 @@ type MappingAdapter interface {
 	// 关闭监听器、清理会话等
 	Close() error
 }
-

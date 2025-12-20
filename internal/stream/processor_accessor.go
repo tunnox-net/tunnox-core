@@ -12,4 +12,3 @@ type StreamProcessorAccessor interface {
 	// GetMappingID 获取映射ID（如果适用）
 	GetMappingID() string
 }
-

@@ -557,7 +557,7 @@ receiveLoop:
 
 	// 高吞吐量下可能有一些消息丢失，但应该收到大部分
 	assert.GreaterOrEqual(t, receivedCount, numMessages*7/10, "should receive at least 70%% of messages in high throughput test")
-	t.Logf("High throughput test: received %d out of %d messages (%.2f%%)", 
+	t.Logf("High throughput test: received %d out of %d messages (%.2f%%)",
 		receivedCount, numMessages, float64(receivedCount)/float64(numMessages)*100)
 }
 
@@ -613,4 +613,3 @@ receiveLoop:
 		assert.Equal(t, i, receivedSequences[i], "messages should be in order")
 	}
 }
-

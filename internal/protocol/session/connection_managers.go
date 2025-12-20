@@ -525,4 +525,3 @@ func (r *HTTPPollConnectionReuse) GetReuseCount(conn TunnelConnectionInterface) 
 func (r *HTTPPollConnectionReuse) GetMaxReuseCount() int {
 	return 0
 }
-

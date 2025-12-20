@@ -364,4 +364,3 @@ func BenchmarkStorageIDGenerator_String(b *testing.B) {
 		}
 	}
 }
-

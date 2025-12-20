@@ -1,16 +1,18 @@
 package server
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"net"
 	"time"
 	"tunnox-core/api/proto/bridge"
-	"tunnox-core/internal/api"
 	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
-	"tunnox-core/internal/health"
+	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/httpservice"
+	"tunnox-core/internal/httpservice/modules/domainproxy"
+	"tunnox-core/internal/httpservice/modules/httppoll"
+	"tunnox-core/internal/httpservice/modules/management"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/stream"
 
@@ -49,10 +51,10 @@ func (s *Server) registerServices() {
 		s.serviceManager.RegisterService(bridgeService)
 	}
 
-	// 注册 Management API 服务（如果已初始化）
-	if s.apiServer != nil {
-		apiService := NewManagementAPIService("Management-API", s.apiServer)
-		s.serviceManager.RegisterService(apiService)
+	// 注册 HTTP 服务（如果已初始化）
+	if s.httpService != nil {
+		httpServiceAdapter := NewHTTPServiceAdapter("HTTP-Service", s.httpService)
+		s.serviceManager.RegisterService(httpServiceAdapter)
 	}
 
 }
@@ -213,71 +215,71 @@ func (s *Server) getEnabledProtocols() map[string]ProtocolConfig {
 	return enabled
 }
 
-// createManagementAPI 创建 Management API 服务器
-func (s *Server) createManagementAPI(ctx context.Context) *api.ManagementAPIServer {
-	// 使用强类型配置
-	apiConfig := &api.APIConfig{
+// createHTTPService 创建统一 HTTP 服务
+func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService {
+	// 构建 HTTP 服务配置
+	httpConfig := &httpservice.HTTPServiceConfig{
 		Enabled:    s.config.ManagementAPI.Enabled,
 		ListenAddr: s.config.ManagementAPI.ListenAddr,
-		Auth: api.AuthConfig{
-			Type:   s.config.ManagementAPI.Auth.Type,
-			Secret: s.config.ManagementAPI.Auth.Token, // Token 映射到 Secret
-		},
-		CORS: api.CORSConfig{
+		CORS: httpservice.CORSConfig{
 			Enabled:        s.config.ManagementAPI.CORS.Enabled,
 			AllowedOrigins: s.config.ManagementAPI.CORS.AllowedOrigins,
 		},
-		RateLimit: api.RateLimitConfig{
+		RateLimit: httpservice.RateLimitConfig{
 			Enabled: s.config.ManagementAPI.RateLimit.Enabled,
 		},
-		PProf: api.PProfConfig{
-			Enabled:     s.config.ManagementAPI.PProf.Enabled,
-			DataDir:     s.config.ManagementAPI.PProf.DataDir,
-			Retention:   s.config.ManagementAPI.PProf.Retention,
-			AutoCapture: s.config.ManagementAPI.PProf.AutoCapture,
+		Modules: httpservice.ModulesConfig{
+			ManagementAPI: httpservice.ManagementAPIModuleConfig{
+				Enabled: true,
+				Auth: httpservice.AuthConfig{
+					Type:   s.config.ManagementAPI.Auth.Type,
+					Secret: s.config.ManagementAPI.Auth.Token,
+				},
+				PProf: httpservice.PProfConfig{
+					Enabled:     s.config.ManagementAPI.PProf.Enabled,
+					DataDir:     s.config.ManagementAPI.PProf.DataDir,
+					Retention:   s.config.ManagementAPI.PProf.Retention,
+					AutoCapture: s.config.ManagementAPI.PProf.AutoCapture,
+				},
+			},
+			HTTPPoll: httpservice.HTTPPollModuleConfig{
+				Enabled:        true,
+				MaxRequestSize: 1048576, // 1MB
+				DefaultTimeout: 30,
+				MaxTimeout:     60,
+			},
+			DomainProxy: httpservice.DomainProxyModuleConfig{
+				Enabled:              true,
+				BaseDomains:          []string{}, // 可从配置读取
+				DefaultScheme:        "http",
+				CommandModeThreshold: 1048576, // 1MB
+				RequestTimeout:       30 * time.Second,
+			},
 		},
 	}
 
-	apiServer := api.NewManagementAPIServer(ctx, apiConfig, s.cloudControl, s.connCodeService, s.healthManager)
+	// 创建 HTTP 服务
+	httpSvc := httpservice.NewHTTPService(ctx, httpConfig, s.cloudControl, s.storage, s.healthManager)
 
-	// 注册健康检查器（检查各子系统状态）
-	var storageChecker health.StorageChecker
-	var brokerChecker health.BrokerChecker
-	var sessionManagerChecker health.SessionManagerChecker
+	// 创建并注册 Management API 模块
+	mgmtConfig := &httpConfig.Modules.ManagementAPI
+	mgmtModule := management.NewManagementModule(ctx, mgmtConfig, s.cloudControl, s.connCodeService, s.healthManager)
+	httpSvc.RegisterModule(mgmtModule)
 
-	// 注册存储检查器
-	if s.storage != nil {
-		storageChecker = health.NewStorageAdapter(s.storage)
-	}
+	// 创建并注册 HTTPPoll 模块
+	httpPollConfig := &httpConfig.Modules.HTTPPoll
+	httpPollModule := httppoll.NewHTTPPollModule(ctx, httpPollConfig)
+	httpSvc.RegisterModule(httpPollModule)
 
-	// 注册消息代理检查器
-	if s.messageBroker != nil {
-		// 检查是否实现了 Ping 方法
-		if pingBroker, ok := s.messageBroker.(interface {
-			Ping(ctx context.Context) error
-		}); ok {
-			brokerChecker = &brokerPingAdapter{broker: pingBroker}
-		}
-	}
+	// 创建并注册 Domain Proxy 模块
+	domainProxyConfig := &httpConfig.Modules.DomainProxy
+	domainProxyModule := domainproxy.NewDomainProxyModule(ctx, domainProxyConfig)
+	httpSvc.RegisterModule(domainProxyModule)
 
-	// 注册协议子系统检查器（使用 SessionManager）
+	// 设置会话管理器（如果可用）
 	if s.session != nil {
-		sessionManagerChecker = s.session
+		httpSvc.SetSessionManager(NewSessionManagerAdapter(s.session))
 	}
 
-	// 注册所有检查器
-	apiServer.SetHealthCheckers(storageChecker, brokerChecker, sessionManagerChecker)
-
-	return apiServer
-}
-
-// brokerPingAdapter 消息代理 Ping 适配器
-type brokerPingAdapter struct {
-	broker interface {
-		Ping(ctx context.Context) error
-	}
-}
-
-func (a *brokerPingAdapter) Ping(ctx context.Context) error {
-	return a.broker.Ping(ctx)
+	return httpSvc
 }

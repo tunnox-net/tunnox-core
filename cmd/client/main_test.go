@@ -104,4 +104,3 @@ func TestValidateConfig_NonAutoConnectMode(t *testing.T) {
 		t.Error("Expected default protocol to be set in non-auto-connect mode")
 	}
 }
-

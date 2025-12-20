@@ -62,4 +62,3 @@ func GetVersion() string {
 func GetShortVersion() string {
 	return "v" + Version
 }
-

@@ -1,10 +1,10 @@
 package protocol
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"sync"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/protocol/adapter"
 )
 

@@ -44,4 +44,3 @@ func (f *MetricsFactory) createMemoryMetrics() (Metrics, error) {
 	metrics := NewMemoryMetrics(f.ctx)
 	return metrics, nil
 }
-

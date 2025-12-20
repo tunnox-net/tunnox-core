@@ -19,14 +19,14 @@ import (
 //
 // 用于认证后的会话验证，避免每次请求都重新认证。
 type SessionToken struct {
-	TokenID        string    `json:"token_id"`         // Token唯一ID
-	ClientID       int64     `json:"client_id"`        // 客户端ID
-	IP             string    `json:"ip"`               // 客户端IP
-	TLSFingerprint string    `json:"tls_fingerprint"`  // TLS指纹（可选）
-	IssuedAt       time.Time `json:"issued_at"`        // 签发时间
-	ExpiresAt      time.Time `json:"expires_at"`       // 过期时间
-	LastActivity   time.Time `json:"last_activity"`    // 最后活动时间
-	Signature      string    `json:"signature"`        // HMAC-SHA256签名
+	TokenID        string    `json:"token_id"`        // Token唯一ID
+	ClientID       int64     `json:"client_id"`       // 客户端ID
+	IP             string    `json:"ip"`              // 客户端IP
+	TLSFingerprint string    `json:"tls_fingerprint"` // TLS指纹（可选）
+	IssuedAt       time.Time `json:"issued_at"`       // 签发时间
+	ExpiresAt      time.Time `json:"expires_at"`      // 过期时间
+	LastActivity   time.Time `json:"last_activity"`   // 最后活动时间
+	Signature      string    `json:"signature"`       // HMAC-SHA256签名
 }
 
 // SessionTokenConfig 会话Token配置
@@ -197,4 +197,3 @@ func generateSessionTokenID() string {
 	}
 	return hex.EncodeToString(b)
 }
-

@@ -133,6 +133,12 @@ type PortMapping struct {
 	TargetAddress string `json:"target_address,omitempty"` // 目标地址（格式：tcp://10.51.22.69:3306）
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// HTTP 域名映射（仅 Protocol=http 时使用）
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	HTTPSubdomain  string `json:"http_subdomain,omitempty"`   // 子域名，如 "myapp"
+	HTTPBaseDomain string `json:"http_base_domain,omitempty"` // 基础域名，如 "tunnel.example.com"
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// 认证和配置
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	SecretKey string                `json:"secret_key"` // 映射连接固定秘钥（随机生成，用于 TunnelOpen 认证）
@@ -173,6 +179,7 @@ type Protocol string
 
 const (
 	ProtocolTCP   Protocol = "tcp"
+	ProtocolUDP   Protocol = "udp"
 	ProtocolHTTP  Protocol = "http"
 	ProtocolSOCKS Protocol = "socks"
 )

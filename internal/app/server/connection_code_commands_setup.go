@@ -1,8 +1,8 @@
 package server
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/command"
 	"tunnox-core/internal/core/types"

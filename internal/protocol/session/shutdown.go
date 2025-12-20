@@ -1,9 +1,9 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 
 	"github.com/google/uuid"
@@ -181,4 +181,3 @@ func (s *SessionManager) WaitForTunnelsToComplete(timeoutSeconds int) bool {
 		time.Sleep(checkInterval)
 	}
 }
-

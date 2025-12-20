@@ -13,8 +13,8 @@ import (
 	"tunnox-core/internal/version"
 
 	"github.com/chzyer/readline"
-	"golang.org/x/term"
 	"github.com/mattn/go-isatty"
+	"golang.org/x/term"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

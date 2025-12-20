@@ -1,13 +1,13 @@
 package command
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
 

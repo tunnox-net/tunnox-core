@@ -48,4 +48,3 @@ func (a *httppollServerAddr) Network() string {
 func (a *httppollServerAddr) String() string {
 	return a.addr
 }
-

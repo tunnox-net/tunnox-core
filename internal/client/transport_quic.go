@@ -1,7 +1,6 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -9,6 +8,7 @@ corelog "tunnox-core/internal/core/log"
 	"net"
 	"sync"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"github.com/quic-go/quic-go"
 )
@@ -24,42 +24,42 @@ type quicStreamConn struct {
 // newQUICStreamConn creates a new QUIC stream connection
 func newQUICStreamConn(ctx context.Context, address string) (*quicStreamConn, error) {
 	corelog.Debugf("QUIC: connecting to %s", address)
-	
+
 	// Create TLS config (skip verification for now, can be configured later)
 	tlsConf := &tls.Config{
 		InsecureSkipVerify: true,
 		NextProtos:         []string{"tunnox-quic"},
 	}
-	
+
 	// Create QUIC config
 	quicConf := &quic.Config{
 		MaxIdleTimeout:  30 * time.Second,
 		KeepAlivePeriod: 10 * time.Second,
 	}
-	
+
 	// Dial QUIC connection
 	conn, err := quic.DialAddr(ctx, address, tlsConf, quicConf)
 	if err != nil {
 		return nil, fmt.Errorf("quic dial failed: %w", err)
 	}
-	
+
 	corelog.Infof("QUIC: connection established to %s", address)
-	
+
 	// Open a stream
 	stream, err := conn.OpenStreamSync(ctx)
 	if err != nil {
 		conn.CloseWithError(0, "failed to open stream")
 		return nil, fmt.Errorf("quic open stream failed: %w", err)
 	}
-	
+
 	corelog.Infof("QUIC: stream opened")
-	
+
 	qsc := &quicStreamConn{
 		stream: stream,
 		conn:   conn,
 		closed: make(chan struct{}),
 	}
-	
+
 	return qsc, nil
 }
 
@@ -70,7 +70,7 @@ func (c *quicStreamConn) Read(p []byte) (int, error) {
 		return 0, io.EOF
 	default:
 	}
-	
+
 	n, err := c.stream.Read(p)
 	if err != nil {
 		select {
@@ -80,7 +80,7 @@ func (c *quicStreamConn) Read(p []byte) (int, error) {
 			return n, err
 		}
 	}
-	
+
 	return n, nil
 }
 
@@ -91,7 +91,7 @@ func (c *quicStreamConn) Write(p []byte) (int, error) {
 		return 0, io.ErrClosedPipe
 	default:
 	}
-	
+
 	return c.stream.Write(p)
 }
 
@@ -100,17 +100,17 @@ func (c *quicStreamConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		close(c.closed)
-		
+
 		// Close stream
 		if c.stream != nil {
 			c.stream.Close()
 		}
-		
+
 		// Close connection
 		if c.conn != nil {
 			err = c.conn.CloseWithError(0, "normal closure")
 		}
-		
+
 		corelog.Debugf("QUIC: connection closed")
 	})
 	return err
@@ -148,4 +148,3 @@ func (c *quicStreamConn) SetWriteDeadline(t time.Time) error {
 func dialQUIC(ctx context.Context, address string) (net.Conn, error) {
 	return newQUICStreamConn(ctx, address)
 }
-

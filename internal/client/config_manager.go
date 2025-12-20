@@ -1,11 +1,11 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"os"
 	"path/filepath"
-	
+	corelog "tunnox-core/internal/core/log"
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,7 +20,7 @@ func NewConfigManager() *ConfigManager {
 	execDir := getExecutableDir()
 	workDir := getWorkingDir()
 	homeDir := getUserHomeDir()
-	
+
 	return &ConfigManager{
 		searchPaths: []string{
 			filepath.Join(execDir, "client-config.yaml"),
@@ -46,7 +46,7 @@ func (cm *ConfigManager) LoadConfig(cmdConfigPath string) (*ClientConfig, error)
 		corelog.Infof("ConfigManager: loaded config from %s (command line)", cmdConfigPath)
 		return config, nil
 	}
-	
+
 	// 2. 尝试标准搜索路径
 	for _, path := range cm.searchPaths {
 		config, err := cm.loadConfigFromFile(path)
@@ -59,7 +59,7 @@ func (cm *ConfigManager) LoadConfig(cmdConfigPath string) (*ClientConfig, error)
 			corelog.Warnf("ConfigManager: failed to load config from %s: %v", path, err)
 		}
 	}
-	
+
 	// 3. 所有路径都没有配置文件，返回空配置（不设置默认地址）
 	// 这样可以在 CLI 模式下触发自动连接
 	corelog.Infof("ConfigManager: no config file found, using empty config")
@@ -89,16 +89,16 @@ func (cm *ConfigManager) SaveConfigWithOptions(config *ClientConfig, allowUpdate
 				break
 			}
 		}
-		
+
 		// 如果存在已加载的配置，保留其 Server.Address 和 Server.Protocol
 		if existingConfig != nil {
 			config.Server.Address = existingConfig.Server.Address
 			config.Server.Protocol = existingConfig.Server.Protocol
 		}
 	}
-	
+
 	var lastErr error
-	
+
 	for _, path := range cm.savePaths {
 		// 确保目录存在
 		dir := filepath.Dir(path)
@@ -107,18 +107,18 @@ func (cm *ConfigManager) SaveConfigWithOptions(config *ClientConfig, allowUpdate
 			lastErr = err
 			continue
 		}
-		
+
 		// 尝试写入配置
 		if err := cm.saveConfigToFile(path, config); err != nil {
 			corelog.Warnf("ConfigManager: failed to save config to %s: %v, trying next...", path, err)
 			lastErr = err
 			continue
 		}
-		
+
 		corelog.Infof("ConfigManager: config saved to %s", path)
 		return nil
 	}
-	
+
 	// 所有路径都失败
 	if lastErr != nil {
 		return fmt.Errorf("failed to save config to any location: %w", lastErr)
@@ -132,12 +132,12 @@ func (cm *ConfigManager) loadConfigFromFile(path string) (*ClientConfig, error) 
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var config ClientConfig
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
-	
+
 	return &config, nil
 }
 
@@ -148,19 +148,19 @@ func (cm *ConfigManager) saveConfigToFile(path string, config *ClientConfig) err
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
-	
+
 	// 写入临时文件
 	tempFile := path + ".tmp"
 	if err := os.WriteFile(tempFile, data, 0644); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
-	
+
 	// 原子替换
 	if err := os.Rename(tempFile, path); err != nil {
 		os.Remove(tempFile) // 清理临时文件
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -205,4 +205,3 @@ func getDefaultConfig() *ClientConfig {
 	config.Server.Protocol = "websocket"
 	return config
 }
-

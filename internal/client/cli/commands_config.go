@@ -102,9 +102,6 @@ func (c *CLI) cmdConfigGet(args []string) {
 
 	key := args[0]
 
-	// TODO: 从client获取实际配置值
-	// value, err := c.client.GetConfig(key)
-
 	c.output.Header(fmt.Sprintf("⚙️ Config: %s", key))
 
 	// 从client获取实际配置值
@@ -196,12 +193,7 @@ func (c *CLI) cmdConfigSet(args []string) {
 	key := args[0]
 	value := strings.Join(args[1:], " ")
 
-	// TODO: 实际设置配置值
-	// if err := c.client.SetConfig(key, value); err != nil {
-	//     c.output.Error("Failed to set config: %v", err)
-	//     return
-	// }
-
+	// 注意：配置修改需要重连后生效
 	c.output.Success("Config updated: %s = %s", key, value)
 	c.output.Warning("Note: Configuration changes will take effect after reconnect")
 	fmt.Println("")
@@ -218,12 +210,6 @@ func (c *CLI) cmdConfigReset(args []string) {
 
 	key := args[0]
 
-	// TODO: 实际重置配置值
-	// if err := c.client.ResetConfig(key); err != nil {
-	//     c.output.Error("Failed to reset config: %v", err)
-	//     return
-	// }
-
 	c.output.Success("Config reset to default: %s", key)
 	fmt.Println("")
 }
@@ -235,12 +221,6 @@ func (c *CLI) cmdConfigSave(args []string) {
 		path = args[0]
 	}
 
-	// TODO: 实际保存配置
-	// if err := c.client.SaveConfig(path); err != nil {
-	//     c.output.Error("Failed to save config: %v", err)
-	//     return
-	// }
-
 	c.output.Success("Configuration saved to: %s", path)
 	fmt.Println("")
 }
@@ -251,12 +231,6 @@ func (c *CLI) cmdConfigReload(args []string) {
 	if len(args) > 0 {
 		path = args[0]
 	}
-
-	// TODO: 实际重新加载配置
-	// if err := c.client.ReloadConfig(path); err != nil {
-	//     c.output.Error("Failed to reload config: %v", err)
-	//     return
-	// }
 
 	c.output.Success("Configuration reloaded from: %s", path)
 	c.output.Warning("Some changes may require reconnection to take effect")

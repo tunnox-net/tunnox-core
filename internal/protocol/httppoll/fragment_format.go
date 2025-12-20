@@ -15,15 +15,15 @@ type FragmentResponse struct {
 	FragmentGroupID string `json:"fragment_group_id"` // 分片组ID（UUID）
 	OriginalSize    int    `json:"original_size"`     // 原始字节流大小
 	FragmentSize    int    `json:"fragment_size"`     // 当前分片字节流大小
-	FragmentIndex   int    `json:"fragment_index"`   // 当前是第几片（从0开始）
+	FragmentIndex   int    `json:"fragment_index"`    // 当前是第几片（从0开始）
 	TotalFragments  int    `json:"total_fragments"`   // 总共有多少片
 	SequenceNumber  int64  `json:"sequence_number"`   // 序列号（用于保证数据包顺序，同一WriteExact调用的所有分片共享相同序列号）
 	Data            string `json:"data"`              // Base64编码的分片数据
 	Timestamp       int64  `json:"timestamp"`         // 时间戳
-	
+
 	// 仅 Response 使用
-	Success bool `json:"success,omitempty"`   // 响应是否成功
-	Timeout  bool `json:"timeout,omitempty"`  // 是否超时
+	Success bool `json:"success,omitempty"` // 响应是否成功
+	Timeout bool `json:"timeout,omitempty"` // 是否超时
 }
 
 // CreateFragmentResponse 创建分片响应
@@ -116,4 +116,3 @@ func SplitDataIntoFragments(data []byte, sequenceNumber int64) ([]*FragmentRespo
 
 	return fragments, nil
 }
-

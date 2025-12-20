@@ -1,13 +1,12 @@
 package server
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"os"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
-	"tunnox-core/internal/api"
 	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
@@ -18,6 +17,7 @@ corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/node"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/health"
+	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/security"
@@ -44,7 +44,7 @@ type Server struct {
 	messageBroker   broker.MessageBroker
 	bridgeManager   *internalbridge.BridgeManager
 	grpcServer      *grpc.Server
-	apiServer       *api.ManagementAPIServer
+	httpService     *httpservice.HTTPService
 
 	// 服务
 	connCodeService       *services.ConnectionCodeService

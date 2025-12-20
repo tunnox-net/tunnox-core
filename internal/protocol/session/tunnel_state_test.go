@@ -70,7 +70,7 @@ func TestLoadState_NotFound(t *testing.T) {
 func TestLoadState_SignatureMismatch(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
-	
+
 	// 使用不同的密钥
 	manager1 := NewTunnelStateManager(memStorage, "secret-1")
 	manager2 := NewTunnelStateManager(memStorage, "secret-2")
@@ -214,4 +214,3 @@ func TestTunnelState_FullCycle(t *testing.T) {
 
 	assert.Equal(t, sendBuffer.GetBufferedCount(), newSendBuffer.GetBufferedCount())
 }
-

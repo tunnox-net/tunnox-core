@@ -266,4 +266,3 @@ func TestRedisAutoSharing_NoOverrideAdvancedMQ(t *testing.T) {
 		t.Errorf("Expected MessageBroker.Type to remain 'rabbitmq', got '%s'", config.MessageBroker.Type)
 	}
 }
-

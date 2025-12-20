@@ -20,8 +20,8 @@ const (
 	LogFieldUserAgent = "user_agent"
 	LogFieldError     = "error"
 	LogFieldErrorType = "error_type" // 错误类型（temporary/permanent/protocol/network/storage/auth/fatal）
-	LogFieldRetryable = "retryable"   // 是否可重试
-	LogFieldAlertable = "alertable"   // 是否需要告警
+	LogFieldRetryable = "retryable"  // 是否可重试
+	LogFieldAlertable = "alertable"  // 是否需要告警
 	LogFieldDuration  = "duration"
 	LogFieldSize      = "size"
 	LogFieldMethod    = "method"

@@ -1,11 +1,11 @@
 package services
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/cloud/models"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 )
 
@@ -274,4 +274,3 @@ func (s *clientService) GetNodeClients(nodeID string) ([]*models.Client, error) 
 	wg.Wait()
 	return clients, nil
 }
-

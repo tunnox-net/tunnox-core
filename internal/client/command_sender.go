@@ -1,11 +1,11 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/httppoll"
@@ -168,4 +168,3 @@ func (c *TunnoxClient) cleanupControlConnection() {
 		c.controlConn = nil
 	}
 }
-

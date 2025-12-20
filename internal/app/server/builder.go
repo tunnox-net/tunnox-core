@@ -1,9 +1,9 @@
 package server
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/utils"
 )
@@ -51,7 +51,7 @@ func (b *ServerBuilder) WithDefaults() *ServerBuilder {
 		With(&ProtocolComponent{}).
 		With(&MessageBrokerComponent{}).
 		With(&BridgeComponent{}).
-		With(&ManagementAPIComponent{})
+		With(&HTTPServiceComponent{})
 }
 
 // Build 构建服务器
@@ -97,7 +97,7 @@ func (b *ServerBuilder) Build(parentCtx context.Context) (*Server, error) {
 		messageBroker:         b.deps.MessageBroker,
 		bridgeManager:         b.deps.BridgeManager,
 		grpcServer:            b.deps.GRPCServer,
-		apiServer:             b.deps.APIServer,
+		httpService:           b.deps.HTTPService,
 		authHandler:           b.deps.AuthHandler,
 	}
 

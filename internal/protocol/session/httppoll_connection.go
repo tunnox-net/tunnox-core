@@ -15,10 +15,10 @@ type HTTPPollTunnelConnection struct {
 	tunnelID     string
 	stream       stream.PackageStreamer
 
-	state    ConnectionStateManager
-	timeout  ConnectionTimeoutManager
-	error    ConnectionErrorHandler
-	reuse    ConnectionReuseStrategy
+	state   ConnectionStateManager
+	timeout ConnectionTimeoutManager
+	error   ConnectionErrorHandler
+	reuse   ConnectionReuseStrategy
 }
 
 // NewHTTPPollTunnelConnection 创建 HTTP 长轮询隧道连接
@@ -102,4 +102,3 @@ func (c *HTTPPollTunnelConnection) Close() error {
 func (c *HTTPPollTunnelConnection) IsClosed() bool {
 	return c.state.IsClosed()
 }
-

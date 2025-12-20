@@ -30,16 +30,15 @@ type Message struct {
 
 // Topic 常量定义
 const (
-	TopicClientOnline   = "client.online"    // 客户端上线
-	TopicClientOffline  = "client.offline"   // 客户端下线
-	TopicConfigUpdate   = "config.update"    // 配置更新（通用）
-	TopicConfigPush     = "config.push"      // 配置推送（定向推送到特定客户端）
-	TopicMappingCreated = "mapping.created"  // 映射创建
-	TopicMappingDeleted = "mapping.deleted"  // 映射删除
-	TopicBridgeRequest  = "bridge.request"   // 桥接请求
-	TopicBridgeResponse = "bridge.response"  // 桥接响应
+	TopicClientOnline   = "client.online"      // 客户端上线
+	TopicClientOffline  = "client.offline"     // 客户端下线
+	TopicConfigUpdate   = "config.update"      // 配置更新（通用）
+	TopicConfigPush     = "config.push"        // 配置推送（定向推送到特定客户端）
+	TopicMappingCreated = "mapping.created"    // 映射创建
+	TopicMappingDeleted = "mapping.deleted"    // 映射删除
+	TopicBridgeRequest  = "bridge.request"     // 桥接请求
+	TopicBridgeResponse = "bridge.response"    // 桥接响应
 	TopicTunnelOpen     = "tunnox.tunnel_open" // 跨节点隧道打开请求
-	TopicNodeHeartbeat  = "node.heartbeat"   // 节点心跳
-	TopicNodeShutdown   = "node.shutdown"    // 节点下线
+	TopicNodeHeartbeat  = "node.heartbeat"     // 节点心跳
+	TopicNodeShutdown   = "node.shutdown"      // 节点下线
 )
-

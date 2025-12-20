@@ -77,4 +77,3 @@ func GetCounter(name string, labels map[string]string) (float64, error) {
 func GetGauge(name string, labels map[string]string) (float64, error) {
 	return MustGetGlobalMetrics().GetGauge(name, labels)
 }
-

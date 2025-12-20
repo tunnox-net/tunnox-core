@@ -1,13 +1,12 @@
 package httppoll
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"time"
-
+	corelog "tunnox-core/internal/core/log"
 )
 
 // HTTPPushRequest HTTP 推送请求结构（用于服务端）
@@ -142,9 +141,9 @@ func (sp *ServerStreamProcessor) HandlePushRequest(pkg *TunnelPackage, pushReq *
 				// 这是完整数据（Base64 字符串），直接推送
 				corelog.Infof("ServerStreamProcessor[%s]: HandlePushRequest - received complete data (not fragment), len=%d, connID=%s",
 					sp.connectionID, len(pushReq.Data), sp.connectionID)
-		if err := sp.PushData(pushReq.Data); err != nil {
+				if err := sp.PushData(pushReq.Data); err != nil {
 					corelog.Errorf("ServerStreamProcessor[%s]: HandlePushRequest - failed to push data: %v, connID=%s", sp.connectionID, err, sp.connectionID)
-			return nil, fmt.Errorf("failed to push data: %w", err)
+					return nil, fmt.Errorf("failed to push data: %w", err)
 				}
 				corelog.Infof("ServerStreamProcessor[%s]: HandlePushRequest - pushed complete data, len=%d, connID=%s",
 					sp.connectionID, len(pushReq.Data), sp.connectionID)
@@ -242,7 +241,6 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 		}
 		sp.pendingPollMu.Unlock()
 	}()
-
 
 	// 尝试匹配待分配的控制包（从 pendingControlPackets）
 	// 由于 Poll 请求已注册，tryMatchControlPacket 应该能够匹配到
@@ -351,4 +349,3 @@ func (sp *ServerStreamProcessor) HandlePollRequest(ctx context.Context, requestI
 		return fragmentJSONStr, nil, nil
 	}
 }
-

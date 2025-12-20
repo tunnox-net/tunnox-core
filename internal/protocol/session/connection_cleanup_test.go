@@ -100,7 +100,7 @@ func TestConnectionStats_ReturnsCorrectCounts(t *testing.T) {
 	config := &SessionConfig{
 		MaxConnections:        10,
 		MaxControlConnections: 5,
-		CleanupInterval:      30 * time.Second,
+		CleanupInterval:       30 * time.Second,
 	}
 	sessionMgr := NewSessionManagerWithConfig(idManager, ctx, config)
 	defer sessionMgr.Close()
@@ -175,4 +175,3 @@ type mockWriter struct{}
 func (m *mockWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
-

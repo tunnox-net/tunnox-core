@@ -1,7 +1,6 @@
 package bridge
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +9,7 @@ corelog "tunnox-core/internal/core/log"
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // BridgeManager 桥接管理器（整合连接池和消息代理）

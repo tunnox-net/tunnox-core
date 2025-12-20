@@ -1,11 +1,10 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"net"
 	"time"
-
+	corelog "tunnox-core/internal/core/log"
 )
 
 func (c *HTTPLongPollingConn) Close() error {

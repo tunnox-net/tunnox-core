@@ -1,8 +1,8 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/cloud/models"
 )
@@ -117,4 +117,3 @@ func (c *TunnoxClient) GetLocalTrafficStats(mappingID string) (sent, received in
 
 	return 0, 0
 }
-

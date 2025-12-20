@@ -1,12 +1,12 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
 
@@ -27,13 +27,13 @@ const (
 
 // TunnelMigrationInfo 隧道迁移信息
 type TunnelMigrationInfo struct {
-	TunnelID       string
-	Status         MigrationStatus
-	SourceNodeID   string
-	TargetNodeID   string
-	InitiatedAt    time.Time
-	CompletedAt    *time.Time
-	Error          string
+	TunnelID     string
+	Status       MigrationStatus
+	SourceNodeID string
+	TargetNodeID string
+	InitiatedAt  time.Time
+	CompletedAt  *time.Time
+	Error        string
 }
 
 // TunnelMigrationManager 隧道迁移管理器
@@ -267,4 +267,3 @@ func (m *TunnelMigrationManager) CleanupOldMigrations() {
 		}
 	}
 }
-

@@ -134,8 +134,8 @@ func TestProtocolMetrics(t *testing.T) {
 		}
 
 		value, err := m.GetCounter("protocol_errors", map[string]string{
-			"protocol":  "httppoll",
-			"type":      "control",
+			"protocol":   "httppoll",
+			"type":       "control",
 			"error_type": "timeout",
 		})
 		if err != nil {
@@ -267,4 +267,3 @@ func TestProtocolMetrics_NilMetrics(t *testing.T) {
 		SetGlobalMetrics(m)
 	}
 }
-

@@ -1,8 +1,8 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"

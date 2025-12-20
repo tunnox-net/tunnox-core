@@ -101,4 +101,3 @@ func (c *CompositeHealthChecker) GetOverallStatus(ctx context.Context) Component
 	}
 	return ComponentStatusHealthy
 }
-

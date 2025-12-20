@@ -1,10 +1,10 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"io"
 	"net"
 	"sync"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -266,4 +266,3 @@ func createDataForwarder(conn net.Conn, stream stream.PackageStreamer) DataForwa
 	corelog.Warnf("createDataForwarder: returning nil (no suitable forwarder found)")
 	return nil
 }
-

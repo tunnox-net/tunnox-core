@@ -1,9 +1,9 @@
 package protocol
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/protocol/adapter"
 )
 

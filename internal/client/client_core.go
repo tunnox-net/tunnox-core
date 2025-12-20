@@ -1,11 +1,11 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"sync"
 	"sync/atomic"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"net"
 	"tunnox-core/internal/cloud/models"
@@ -22,7 +22,7 @@ type TunnoxClient struct {
 	config *ClientConfig
 
 	// 记录命令行参数中是否指定了服务器地址和协议（用于判断是否允许保存到配置文件）
-	serverAddressFromCLI bool
+	serverAddressFromCLI  bool
 	serverProtocolFromCLI bool
 
 	// 客户端实例标识（进程级别的唯一标识）
@@ -35,6 +35,9 @@ type TunnoxClient struct {
 	// 映射管理
 	mappingHandlers map[string]MappingHandler
 	mu              sync.RWMutex
+
+	// SOCKS5 代理管理器（运行在入口端 ClientA）
+	socks5Manager *SOCKS5Manager
 
 	// 商业化控制：配额缓存
 	cachedQuota      *models.UserQuota
@@ -108,6 +111,10 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 
 	corelog.Infof("Client: instance ID generated: %s", instanceID)
 
+	// 初始化 SOCKS5 管理器（延迟初始化隧道创建器，等待 clientID 确定）
+	tunnelCreator := NewSOCKS5TunnelCreatorImpl(client)
+	client.socks5Manager = NewSOCKS5Manager(client.Ctx(), config.ClientID, tunnelCreator)
+
 	// 初始化API客户端（用于CLI）
 	// 假设Management API在服务器地址的8080端口
 	managementAPIAddr := config.Server.Address
@@ -119,6 +126,11 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 	// 添加清理处理器
 	client.AddCleanHandler(func() error {
 		corelog.Infof("Client: cleaning up client resources")
+
+		// 关闭 SOCKS5 管理器
+		if client.socks5Manager != nil {
+			client.socks5Manager.Close()
+		}
 
 		// 关闭所有映射处理器
 		client.mu.RLock()
@@ -174,6 +186,14 @@ func (c *TunnoxClient) GetServerProtocol() string {
 // GetAPIClient 获取Management API客户端（供CLI使用）
 func (c *TunnoxClient) GetAPIClient() *ManagementAPIClient {
 	return c.apiClient
+}
+
+// GetClientID 获取客户端ID
+func (c *TunnoxClient) GetClientID() int64 {
+	if c.config == nil {
+		return 0
+	}
+	return c.config.ClientID
 }
 
 // GetStatusInfo 获取客户端状态信息（供CLI使用）

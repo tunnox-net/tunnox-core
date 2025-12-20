@@ -1,10 +1,10 @@
 package stream
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // StreamService 流服务适配器，让流管理器能够作为服务运行

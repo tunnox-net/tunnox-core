@@ -197,4 +197,3 @@ func TestCompositeHealthChecker_GetOverallStatus(t *testing.T) {
 		})
 	}
 }
-

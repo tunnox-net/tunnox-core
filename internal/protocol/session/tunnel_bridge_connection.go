@@ -1,8 +1,8 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"net"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/stream"
 )
@@ -115,4 +115,3 @@ func (b *TunnelBridge) getSourceConn() net.Conn {
 	defer b.sourceConnMu.RUnlock()
 	return b.sourceConn
 }
-

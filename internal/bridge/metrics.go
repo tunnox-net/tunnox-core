@@ -1,46 +1,46 @@
 package bridge
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"sync"
 	"time"
-	
+	corelog "tunnox-core/internal/core/log"
+
 	"tunnox-core/internal/core/dispose"
 )
 
 // MetricsCollector 连接池指标收集器
 type MetricsCollector struct {
 	*dispose.ManagerBase
-	
-	mu                sync.RWMutex
-	nodeStats         map[string]*NodeStats
-	globalStats       *GlobalStats
-	startTime         time.Time
+
+	mu          sync.RWMutex
+	nodeStats   map[string]*NodeStats
+	globalStats *GlobalStats
+	startTime   time.Time
 }
 
 // NodeStats 节点统计信息
 type NodeStats struct {
-	NodeID            string
-	TotalConnections  int32
-	ActiveStreams     int32
-	SessionsCreated   int64
-	SessionsClosed    int64
-	ErrorCount        int64
-	LastError         string
-	LastErrorTime     time.Time
-	LastUpdateTime    time.Time
+	NodeID           string
+	TotalConnections int32
+	ActiveStreams    int32
+	SessionsCreated  int64
+	SessionsClosed   int64
+	ErrorCount       int64
+	LastError        string
+	LastErrorTime    time.Time
+	LastUpdateTime   time.Time
 }
 
 // GlobalStats 全局统计信息
 type GlobalStats struct {
-	TotalNodes        int32
-	TotalConnections  int32
-	TotalActiveStreams int32
+	TotalNodes           int32
+	TotalConnections     int32
+	TotalActiveStreams   int32
 	TotalSessionsCreated int64
 	TotalSessionsClosed  int64
-	TotalErrors       int64
-	Uptime            time.Duration
+	TotalErrors          int64
+	Uptime               time.Duration
 }
 
 // PoolMetrics 连接池指标
@@ -53,39 +53,39 @@ type PoolMetrics struct {
 func NewMetricsCollector(parentCtx context.Context) *MetricsCollector {
 	collector := &MetricsCollector{
 		ManagerBase: dispose.NewManager("MetricsCollector", parentCtx),
-		nodeStats: make(map[string]*NodeStats),
+		nodeStats:   make(map[string]*NodeStats),
 		globalStats: &GlobalStats{
-			TotalNodes:        0,
-			TotalConnections:  0,
-			TotalActiveStreams: 0,
+			TotalNodes:           0,
+			TotalConnections:     0,
+			TotalActiveStreams:   0,
 			TotalSessionsCreated: 0,
 			TotalSessionsClosed:  0,
-			TotalErrors:       0,
+			TotalErrors:          0,
 		},
 		startTime: time.Now(),
 	}
-	
+
 	// 注册清理处理器
 	collector.AddCleanHandler(func() error {
 		corelog.Infof("MetricsCollector: cleaning up resources")
-		
+
 		collector.mu.Lock()
 		defer collector.mu.Unlock()
-		
+
 		// 清理所有节点统计
 		collector.nodeStats = make(map[string]*NodeStats)
 		collector.globalStats = &GlobalStats{
-			TotalNodes:        0,
-			TotalConnections:  0,
-			TotalActiveStreams: 0,
+			TotalNodes:           0,
+			TotalConnections:     0,
+			TotalActiveStreams:   0,
 			TotalSessionsCreated: 0,
 			TotalSessionsClosed:  0,
-			TotalErrors:       0,
+			TotalErrors:          0,
 		}
-		
+
 		return nil
 	})
-	
+
 	return collector
 }
 
@@ -154,13 +154,13 @@ func (m *MetricsCollector) getOrCreateNodeStats(nodeID string) *NodeStats {
 	}
 
 	stats := &NodeStats{
-		NodeID:            nodeID,
-		TotalConnections:  0,
-		ActiveStreams:     0,
-		SessionsCreated:   0,
-		SessionsClosed:    0,
-		ErrorCount:        0,
-		LastUpdateTime:    time.Now(),
+		NodeID:           nodeID,
+		TotalConnections: 0,
+		ActiveStreams:    0,
+		SessionsCreated:  0,
+		SessionsClosed:   0,
+		ErrorCount:       0,
+		LastUpdateTime:   time.Now(),
 	}
 	m.nodeStats[nodeID] = stats
 	return stats
@@ -228,4 +228,3 @@ func (m *MetricsCollector) RemoveNodeStats(nodeID string) {
 	delete(m.nodeStats, nodeID)
 	m.recalculateGlobalStats()
 }
-

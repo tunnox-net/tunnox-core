@@ -475,4 +475,3 @@ func BenchmarkJSONStorage_Get(b *testing.B) {
 		userStorage.Get("bench:user")
 	}
 }
-

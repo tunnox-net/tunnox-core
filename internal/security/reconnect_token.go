@@ -154,7 +154,7 @@ func (m *ReconnectTokenManager) ValidateReconnectToken(token *ReconnectToken) er
 // Token验证成功后，必须立即调用此方法标记为已使用，防止重放攻击。
 func (m *ReconnectTokenManager) MarkTokenAsUsed(token *ReconnectToken) error {
 	usedKey := fmt.Sprintf("reconnect:token:used:%s", token.TokenID)
-	
+
 	// 存储到Redis，TTL为Token的剩余有效期
 	ttl := time.Until(token.ExpiresAt)
 	if ttl <= 0 {
@@ -212,4 +212,3 @@ func generateNonce() string {
 	}
 	return hex.EncodeToString(b)
 }
-

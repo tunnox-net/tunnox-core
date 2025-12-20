@@ -24,11 +24,11 @@ const (
 
 // BufferedPacket 缓冲的数据包
 type BufferedPacket struct {
-	SeqNum    uint64            // 序列号
-	Data      []byte            // 数据内容
-	SentAt    time.Time         // 发送时间
-	RetryCount int              // 重传次数
-	Packet    *packet.TransferPacket // 原始包（用于重传）
+	SeqNum     uint64                 // 序列号
+	Data       []byte                 // 数据内容
+	SentAt     time.Time              // 发送时间
+	RetryCount int                    // 重传次数
+	Packet     *packet.TransferPacket // 原始包（用于重传）
 }
 
 // TunnelSendBuffer 隧道发送缓冲区
@@ -48,15 +48,15 @@ type TunnelSendBuffer struct {
 	buffer map[uint64]*BufferedPacket // seqNum -> buffered packet
 
 	// 配置
-	maxBufferSize     int           // 最大缓冲字节数
-	maxBufferedPackets int          // 最大缓冲包数
-	resendTimeout     time.Duration // 重传超时
+	maxBufferSize      int           // 最大缓冲字节数
+	maxBufferedPackets int           // 最大缓冲包数
+	resendTimeout      time.Duration // 重传超时
 
 	// 统计信息
-	totalSent     uint64 // 总发送包数
-	totalResent   uint64 // 总重传包数
-	totalConfirmed uint64 // 总确认包数
-	currentBufferSize int // 当前缓冲字节数
+	totalSent         uint64 // 总发送包数
+	totalResent       uint64 // 总重传包数
+	totalConfirmed    uint64 // 总确认包数
+	currentBufferSize int    // 当前缓冲字节数
 }
 
 // NewTunnelSendBuffer 创建发送缓冲区
@@ -164,7 +164,7 @@ func (b *TunnelSendBuffer) ConfirmPacket(seqNum uint64) {
 	// 如果是连续确认，更新 confirmedSeq
 	if seqNum == b.confirmedSeq+1 {
 		b.confirmedSeq = seqNum
-		
+
 		// 继续向前推进 confirmedSeq（如果后续包已确认）
 		for {
 			if _, exists := b.buffer[b.confirmedSeq+1]; !exists {
@@ -312,10 +312,10 @@ type TunnelReceiveBuffer struct {
 	maxOutOfOrder int // 最大乱序包数
 
 	// 统计信息
-	totalReceived    uint64 // 总接收包数
-	totalOutOfOrder  uint64 // 总乱序包数
-	totalReordered   uint64 // 总重组包数
-	currentBufferSize int   // 当前缓冲字节数
+	totalReceived     uint64 // 总接收包数
+	totalOutOfOrder   uint64 // 总乱序包数
+	totalReordered    uint64 // 总重组包数
+	currentBufferSize int    // 当前缓冲字节数
 }
 
 // NewTunnelReceiveBuffer 创建接收缓冲区
@@ -449,12 +449,12 @@ func (b *TunnelReceiveBuffer) GetStats() map[string]uint64 {
 	defer b.mu.RUnlock()
 
 	return map[string]uint64{
-		"total_received":   b.totalReceived,
+		"total_received":     b.totalReceived,
 		"total_out_of_order": b.totalOutOfOrder,
-		"total_reordered":  b.totalReordered,
-		"buffered_count":   uint64(len(b.buffer)),
-		"buffer_size":      uint64(b.currentBufferSize),
-		"next_expected":    b.nextExpected,
+		"total_reordered":    b.totalReordered,
+		"buffered_count":     uint64(len(b.buffer)),
+		"buffer_size":        uint64(b.currentBufferSize),
+		"next_expected":      b.nextExpected,
 	}
 }
 
@@ -480,5 +480,3 @@ func (b *TunnelReceiveBuffer) Clear() {
 	b.totalOutOfOrder = 0
 	b.totalReordered = 0
 }
-
-

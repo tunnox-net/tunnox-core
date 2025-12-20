@@ -142,4 +142,3 @@ func (c *ProtocolHealthChecker) Check(ctx context.Context) (*ComponentHealth, er
 		LastCheck: time.Now(),
 	}, nil
 }
-

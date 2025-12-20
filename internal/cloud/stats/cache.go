@@ -57,4 +57,3 @@ func (c *StatsCache) IsValid() bool {
 
 	return c.data != nil && time.Now().Before(c.expiresAt)
 }
-

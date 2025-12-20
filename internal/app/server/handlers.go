@@ -285,7 +285,7 @@ func (h *ServerAuthHandler) GetClientConfig(conn session.ControlConnectionInterf
 				}
 			}
 
-			configs = append(configs, config.MappingConfig{
+			cfg := config.MappingConfig{
 				MappingID:         m.ID,
 				SecretKey:         m.SecretKey,
 				LocalPort:         localPort,
@@ -297,7 +297,14 @@ func (h *ServerAuthHandler) GetClientConfig(conn session.ControlConnectionInterf
 				EnableEncryption:  m.Config.EnableEncryption,
 				EncryptionMethod:  m.Config.EncryptionMethod,
 				EncryptionKey:     m.Config.EncryptionKey,
-			})
+			}
+
+			// SOCKS5 映射需要 TargetClientID
+			if m.Protocol == models.ProtocolSOCKS {
+				cfg.TargetClientID = m.TargetClientID
+			}
+
+			configs = append(configs, cfg)
 		}
 		// ✅ 处理目标端映射：需要准备接收TunnelOpen请求
 		// 目标端不需要监听端口，所以LocalPort设为0

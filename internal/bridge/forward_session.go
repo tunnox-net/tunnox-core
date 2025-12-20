@@ -1,7 +1,6 @@
 package bridge
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +8,7 @@ corelog "tunnox-core/internal/core/log"
 	"time"
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 
 	"github.com/google/uuid"
 )
@@ -27,7 +27,7 @@ type SessionMetadata struct {
 // ForwardSession 表示一个逻辑转发会话（在一个物理 gRPC 连接上多路复用）
 type ForwardSession struct {
 	*dispose.ManagerBase
-	
+
 	streamID     string
 	conn         MultiplexedConn
 	sendChan     chan *pb.BridgePacket
@@ -62,7 +62,7 @@ func NewForwardSession(parentCtx context.Context, conn MultiplexedConn, metadata
 	// 注册清理处理器
 	session.AddCleanHandler(func() error {
 		corelog.Infof("ForwardSession: cleaning up session %s", streamID)
-		
+
 		// 发送关闭数据包
 		closePacket := &pb.BridgePacket{
 			StreamId:  streamID,

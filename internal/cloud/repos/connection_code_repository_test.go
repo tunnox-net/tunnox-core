@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 	"time"
-	
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/core/storage"
 )
@@ -16,10 +16,10 @@ import (
 func setupConnCodeRepoTest(t *testing.T) (*ConnectionCodeRepository, storage.Storage) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
-	
+
 	repo := NewRepository(memStorage)
 	connCodeRepo := NewConnectionCodeRepository(repo)
-	
+
 	return connCodeRepo, memStorage
 }
 
@@ -29,7 +29,7 @@ func setupConnCodeRepoTest(t *testing.T) (*ConnectionCodeRepository, storage.Sto
 
 func TestConnectionCodeRepository_Create(t *testing.T) {
 	repo, _ := setupConnCodeRepoTest(t)
-	
+
 	now := time.Now()
 	connCode := &models.TunnelConnectionCode{
 		ID:                  "conncode_test001",
@@ -45,10 +45,10 @@ func TestConnectionCodeRepository_Create(t *testing.T) {
 		IsRevoked:           false,
 		Description:         "Test connection code",
 	}
-	
+
 	err := repo.Create(connCode)
 	require.NoError(t, err, "Failed to create connection code")
-	
+
 	// 验证可以通过Code获取
 	retrieved, err := repo.GetByCode("abc-def-123")
 	require.NoError(t, err, "Failed to get connection code by code")
@@ -56,7 +56,7 @@ func TestConnectionCodeRepository_Create(t *testing.T) {
 	assert.Equal(t, connCode.Code, retrieved.Code)
 	assert.Equal(t, connCode.TargetClientID, retrieved.TargetClientID)
 	assert.Equal(t, connCode.TargetAddress, retrieved.TargetAddress)
-	
+
 	// 验证可以通过ID获取
 	retrieved2, err := repo.GetByID("conncode_test001")
 	require.NoError(t, err, "Failed to get connection code by ID")
@@ -65,14 +65,14 @@ func TestConnectionCodeRepository_Create(t *testing.T) {
 
 func TestConnectionCodeRepository_GetByCode_NotFound(t *testing.T) {
 	repo, _ := setupConnCodeRepoTest(t)
-	
+
 	_, err := repo.GetByCode("nonexistent-code")
 	assert.ErrorIs(t, err, ErrNotFound, "Expected ErrNotFound for nonexistent code")
 }
 
 func TestConnectionCodeRepository_GetByID_NotFound(t *testing.T) {
 	repo, _ := setupConnCodeRepoTest(t)
-	
+
 	_, err := repo.GetByID("conncode_nonexistent")
 	assert.ErrorIs(t, err, ErrNotFound, "Expected ErrNotFound for nonexistent ID")
 }
@@ -83,7 +83,7 @@ func TestConnectionCodeRepository_GetByID_NotFound(t *testing.T) {
 
 func TestConnectionCodeRepository_Update(t *testing.T) {
 	repo, _ := setupConnCodeRepoTest(t)
-	
+
 	now := time.Now()
 	connCode := &models.TunnelConnectionCode{
 		ID:                  "conncode_update001",
@@ -98,10 +98,10 @@ func TestConnectionCodeRepository_Update(t *testing.T) {
 		CreatedBy:           "test-user",
 		IsRevoked:           false,
 	}
-	
+
 	err := repo.Create(connCode)
 	require.NoError(t, err, "Failed to create connection code")
-	
+
 	// 激活连接码
 	mappingID := "mapping_test001"
 	activatedBy := int64(99999999)
@@ -109,10 +109,10 @@ func TestConnectionCodeRepository_Update(t *testing.T) {
 	connCode.ActivatedAt = &now
 	connCode.ActivatedBy = &activatedBy
 	connCode.MappingID = &mappingID
-	
+
 	err = repo.Update(connCode)
 	require.NoError(t, err, "Failed to update connection code")
-	
+
 	// 验证更新成功
 	retrieved, err := repo.GetByCode("upd-ate-001")
 	require.NoError(t, err, "Failed to get updated connection code")
@@ -126,7 +126,7 @@ func TestConnectionCodeRepository_Update(t *testing.T) {
 
 func TestConnectionCodeRepository_UpdateRevoke(t *testing.T) {
 	repo, _ := setupConnCodeRepoTest(t)
-	
+
 	now := time.Now()
 	connCode := &models.TunnelConnectionCode{
 		ID:                  "conncode_revoke001",
@@ -141,18 +141,18 @@ func TestConnectionCodeRepository_UpdateRevoke(t *testing.T) {
 		CreatedBy:           "test-user",
 		IsRevoked:           false,
 	}
-	
+
 	err := repo.Create(connCode)
 	require.NoError(t, err, "Failed to create connection code")
-	
+
 	// 撤销连接码（通过Update）
 	connCode.IsRevoked = true
 	connCode.RevokedAt = &now
 	connCode.RevokedBy = "admin"
-	
+
 	err = repo.Update(connCode)
 	require.NoError(t, err, "Failed to update connection code for revocation")
-	
+
 	// 验证撤销成功
 	retrieved, err := repo.GetByID(connCode.ID)
 	require.NoError(t, err, "Failed to get revoked connection code")
@@ -167,10 +167,10 @@ func TestConnectionCodeRepository_UpdateRevoke(t *testing.T) {
 
 func TestConnectionCodeRepository_ListByTargetClient(t *testing.T) {
 	repo, _ := setupConnCodeRepoTest(t)
-	
+
 	now := time.Now()
 	targetClientID := int64(12345678)
-	
+
 	// 创建多个连接码
 	codes := []*models.TunnelConnectionCode{
 		{
@@ -213,17 +213,17 @@ func TestConnectionCodeRepository_ListByTargetClient(t *testing.T) {
 			IsRevoked:           false,
 		},
 	}
-	
+
 	for _, code := range codes {
 		err := repo.Create(code)
 		require.NoError(t, err, "Failed to create connection code")
 	}
-	
+
 	// 列出targetClientID的连接码
 	list, err := repo.ListByTargetClient(targetClientID)
 	require.NoError(t, err, "Failed to list connection codes")
 	assert.Len(t, list, 2, "Expected 2 connection codes for target client")
-	
+
 	// 验证结果
 	codeSet := make(map[string]bool)
 	for _, code := range list {
@@ -237,10 +237,10 @@ func TestConnectionCodeRepository_ListByTargetClient(t *testing.T) {
 
 func TestConnectionCodeRepository_CountActiveByTargetClient(t *testing.T) {
 	repo, _ := setupConnCodeRepoTest(t)
-	
+
 	now := time.Now()
 	targetClientID := int64(11111111)
-	
+
 	// 创建3个连接码：2个活跃，1个已撤销
 	codes := []*models.TunnelConnectionCode{
 		{
@@ -285,12 +285,12 @@ func TestConnectionCodeRepository_CountActiveByTargetClient(t *testing.T) {
 			RevokedBy:           "admin",
 		},
 	}
-	
+
 	for _, code := range codes {
 		err := repo.Create(code)
 		require.NoError(t, err, "Failed to create connection code")
 	}
-	
+
 	// 统计活跃连接码（未撤销且未过期）
 	count, err := repo.CountActiveByTargetClient(targetClientID)
 	require.NoError(t, err, "Failed to count active connection codes")
@@ -303,7 +303,7 @@ func TestConnectionCodeRepository_CountActiveByTargetClient(t *testing.T) {
 
 func TestConnectionCodeRepository_Delete(t *testing.T) {
 	repo, _ := setupConnCodeRepoTest(t)
-	
+
 	now := time.Now()
 	connCode := &models.TunnelConnectionCode{
 		ID:                  "conncode_delete001",
@@ -318,19 +318,18 @@ func TestConnectionCodeRepository_Delete(t *testing.T) {
 		CreatedBy:           "test-user",
 		IsRevoked:           false,
 	}
-	
+
 	err := repo.Create(connCode)
 	require.NoError(t, err, "Failed to create connection code")
-	
+
 	// 删除连接码
 	err = repo.Delete(connCode.ID)
 	require.NoError(t, err, "Failed to delete connection code")
-	
+
 	// 验证删除成功
 	_, err = repo.GetByID(connCode.ID)
 	assert.ErrorIs(t, err, ErrNotFound, "Expected ErrNotFound after deletion")
-	
+
 	_, err = repo.GetByCode(connCode.Code)
 	assert.ErrorIs(t, err, ErrNotFound, "Expected ErrNotFound after deletion")
 }
-

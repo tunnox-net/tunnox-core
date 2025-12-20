@@ -1,11 +1,10 @@
 package httppoll
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"sync"
 	"time"
-
+	corelog "tunnox-core/internal/core/log"
 )
 
 const (

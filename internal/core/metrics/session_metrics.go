@@ -83,4 +83,3 @@ func SetDataConnections(count float64) error {
 	}
 	return m.SetGauge("connection_data", count, nil)
 }
-

@@ -46,19 +46,18 @@ func (t *ClientToken) Validate() error {
 	if t.ClientID <= 0 {
 		return fmt.Errorf("invalid client ID: %d", t.ClientID)
 	}
-	
+
 	if t.JWTToken == "" {
 		return fmt.Errorf("jwt_token is required")
 	}
-	
+
 	if t.TokenID == "" {
 		return fmt.Errorf("token_id is required")
 	}
-	
+
 	if t.TokenExpiresAt.IsZero() {
 		return fmt.Errorf("token_expires_at is required")
 	}
-	
+
 	return nil
 }
-

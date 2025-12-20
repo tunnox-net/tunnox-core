@@ -20,14 +20,14 @@ func createMigrationTestEnv() (*TunnelMigrationManager, *TunnelStateManager, con
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
-	
+
 	// 创建一个简单的SessionManager（只需要NodeID）
 	sessionMgr := &SessionManager{
 		nodeID: "source-node-123",
 	}
-	
+
 	migrationMgr := NewTunnelMigrationManager(stateManager, sessionMgr)
-	
+
 	return migrationMgr, stateManager, ctx
 }
 
@@ -50,7 +50,7 @@ func TestInitiateMigration(t *testing.T) {
 	// 验证迁移信息
 	info, err := migrationMgr.GetMigrationInfo("tunnel-migrate-1")
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, "tunnel-migrate-1", info.TunnelID)
 	assert.Equal(t, MigrationStatusInProgress, info.Status)
 	assert.Equal(t, "source-node-123", info.SourceNodeID)
@@ -154,7 +154,7 @@ func TestCompleteMigration(t *testing.T) {
 	// 验证状态
 	info, err := migrationMgr.GetMigrationInfo("tunnel-migrate-5")
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, MigrationStatusCompleted, info.Status)
 	assert.NotNil(t, info.CompletedAt)
 }
@@ -176,7 +176,7 @@ func TestFailMigration(t *testing.T) {
 	// 验证状态
 	info, err := migrationMgr.GetMigrationInfo("tunnel-migrate-6")
 	require.NoError(t, err)
-	
+
 	assert.Equal(t, MigrationStatusFailed, info.Status)
 	assert.NotEmpty(t, info.Error)
 }
@@ -254,4 +254,3 @@ func TestCleanupOldMigrations(t *testing.T) {
 	_, err = migrationMgr.GetMigrationInfo("recent-tunnel")
 	assert.NoError(t, err, "Recent migration should be kept")
 }
-

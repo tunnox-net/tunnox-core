@@ -1,13 +1,13 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	httppoll "tunnox-core/internal/protocol/httppoll"
 )

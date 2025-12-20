@@ -1,11 +1,11 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"testing"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 
 	"github.com/stretchr/testify/assert"
@@ -19,10 +19,10 @@ corelog "tunnox-core/internal/core/log"
 func TestSaveActiveTunnelStates(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
-	
+
 	// 创建TunnelStateManager
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
-	
+
 	// 创建SessionManager（简化版）
 	sessionMgr := &SessionManager{
 		tunnelConnMap:      make(map[string]*TunnelConnection),
@@ -72,7 +72,7 @@ func TestSaveActiveTunnelStates(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "tunnel-2", state2.TunnelID)
 	assert.Equal(t, "mapping-xyz", state2.MappingID)
-	
+
 	// tunnel2启用了序列号，应该有序列号状态
 	assert.Greater(t, state2.LastSeqNum, uint64(0), "Should have sequence number state")
 }
@@ -80,9 +80,9 @@ func TestSaveActiveTunnelStates(t *testing.T) {
 func TestGenerateTunnelResumeToken(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
-	
+
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
-	
+
 	sessionMgr := &SessionManager{
 		tunnelStateManager: stateManager,
 	}
@@ -111,9 +111,9 @@ func TestGenerateTunnelResumeToken(t *testing.T) {
 func TestValidateTunnelResumeToken(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
-	
+
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
-	
+
 	sessionMgr := &SessionManager{
 		tunnelStateManager: stateManager,
 	}
@@ -140,9 +140,9 @@ func TestValidateTunnelResumeToken(t *testing.T) {
 func TestValidateTunnelResumeToken_Invalid(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
-	
+
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
-	
+
 	sessionMgr := &SessionManager{
 		tunnelStateManager: stateManager,
 	}
@@ -156,9 +156,9 @@ func TestValidateTunnelResumeToken_Invalid(t *testing.T) {
 func TestValidateTunnelResumeToken_SignatureMismatch(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
-	
+
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
-	
+
 	sessionMgr := &SessionManager{
 		tunnelStateManager: stateManager,
 	}
@@ -188,9 +188,9 @@ func TestValidateTunnelResumeToken_SignatureMismatch(t *testing.T) {
 func TestValidateTunnelResumeToken_Expired(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
-	
+
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
-	
+
 	sessionMgr := &SessionManager{
 		tunnelStateManager: stateManager,
 	}
@@ -220,10 +220,10 @@ func TestValidateTunnelResumeToken_Expired(t *testing.T) {
 func TestTunnelResumeFlow_EndToEnd(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
-	
+
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
 	migrationManager := NewTunnelMigrationManager(stateManager, nil)
-	
+
 	sessionMgr := &SessionManager{
 		tunnelConnMap:      make(map[string]*TunnelConnection),
 		tunnelStateManager: stateManager,
@@ -277,4 +277,3 @@ func TestTunnelResumeFlow_EndToEnd(t *testing.T) {
 
 	corelog.Infof("End-to-end tunnel resume test completed successfully")
 }
-

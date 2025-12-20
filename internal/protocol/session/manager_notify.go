@@ -11,7 +11,7 @@ import (
 // NotifyClientUpdate 通知客户端更新配置
 // 实现 managers.ClientNotifier 接口
 func (s *SessionManager) NotifyClientUpdate(clientID int64) {
-	corelog.Infof("SessionManager: Notifying client %d of update...", clientID)
+	corelog.Infof("SessionManager: ⚡ NotifyClientUpdate called for client %d", clientID)
 
 	s.controlConnLock.RLock()
 	conn, ok := s.clientIDIndexMap[clientID]
@@ -35,12 +35,13 @@ func (s *SessionManager) NotifyClientUpdate(clientID int64) {
 		// 只发送当前客户端作为 ListenClient 的映射（需要启动监听的）
 		if m.ListenClientID == clientID {
 			cfg := config.MappingConfig{
-				MappingID:  m.ID,
-				SecretKey:  m.SecretKey,
-				Protocol:   string(m.Protocol), // models.Protocol is string alias? Assuming so
-				LocalPort:  m.SourcePort,
-				TargetHost: m.TargetHost, // 可能为空，对于P2P或转发可能是 server
-				TargetPort: m.TargetPort,
+				MappingID:      m.ID,
+				SecretKey:      m.SecretKey,
+				Protocol:       string(m.Protocol), // models.Protocol is string alias? Assuming so
+				LocalPort:      m.SourcePort,
+				TargetHost:     m.TargetHost, // 可能为空，对于P2P或转发可能是 server
+				TargetPort:     m.TargetPort,
+				TargetClientID: m.TargetClientID, // SOCKS5 需要
 
 				// 商业化配额
 				BandwidthLimit:    int64(m.Config.BandwidthLimit),

@@ -167,4 +167,3 @@ func (m *mockStatsProvider) GetActiveConnections() int {
 func (m *mockStatsProvider) GetActiveTunnels() int {
 	return m.activeTunnels
 }
-

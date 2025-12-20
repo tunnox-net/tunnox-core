@@ -1,12 +1,12 @@
 package server
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 	"tunnox-core/internal/broker"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 )
@@ -36,12 +36,12 @@ func (a *BridgeAdapter) BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targe
 		return fmt.Errorf("message broker not initialized")
 	}
 
-	// 构造广播消息
+	// 构造广播消息（包含 SOCKS5 动态目标地址）
 	message := broker.TunnelOpenMessage{
 		ClientID:   targetClientID,
 		TunnelID:   req.TunnelID,
-		TargetHost: "", // 这些字段在TunnelOpen请求中没有，可能需要从其他地方获取
-		TargetPort: 0,
+		TargetHost: req.TargetHost, // SOCKS5 动态目标地址
+		TargetPort: req.TargetPort, // SOCKS5 动态目标端口
 		Timestamp:  time.Now().Unix(),
 	}
 
@@ -68,46 +68,44 @@ func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-c
 		return nil, fmt.Errorf("message broker not initialized")
 	}
 
-	
 	msgChan := make(chan *session.BroadcastMessage, 100)
-	
+
 	// 启动订阅处理goroutine
 	go func() {
 		defer close(msgChan)
-		
+
 		// 🔥 FIX: 使用传入的topicPattern，而不是硬编码TopicTunnelOpen
 		brokerChan, err := a.messageBroker.Subscribe(ctx, topicPattern)
 		if err != nil {
 			corelog.Errorf("BridgeAdapter: failed to subscribe to tunnel_open: %v", err)
 			return
 		}
-		
-		
+
 		for {
 			select {
 			case msg, ok := <-brokerChan:
 				if !ok {
 					return
 				}
-				
+
 				// 转换为BroadcastMessage
 				broadcastMsg := &session.BroadcastMessage{
 					Topic:   msg.Topic,
 					Payload: msg.Payload,
 				}
-				
+
 				select {
 				case msgChan <- broadcastMsg:
 				case <-ctx.Done():
 					return
 				}
-				
+
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	
+
 	return msgChan, nil
 }
 
@@ -123,4 +121,3 @@ func (a *BridgeAdapter) PublishMessage(ctx context.Context, topic string, payloa
 
 	return nil
 }
-

@@ -289,4 +289,3 @@ func (m *mockWriteStream) Stop() {}
 
 // 确保实现 stream.PackageStreamer 接口
 var _ stream.PackageStreamer = (*mockWriteStream)(nil)
-

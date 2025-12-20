@@ -522,4 +522,3 @@ func BenchmarkAESGCMDecrypt(b *testing.B) {
 		io.Copy(io.Discard, decryptReader)
 	}
 }
-

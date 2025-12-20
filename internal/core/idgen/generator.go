@@ -1,7 +1,6 @@
 package idgen
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +8,7 @@ corelog "tunnox-core/internal/core/log"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
@@ -179,8 +179,8 @@ type ClientIDGenerator = StorageIDGenerator[int64]
 func NewClientIDGenerator(storage storage.Storage, parentCtx context.Context) *ClientIDGenerator {
 	return NewStorageIDGenerator[int64](
 		storage,
-		"",                         // 无前缀，直接生成数字
-		"tunnox:id:used:client",    // 存储键前缀
+		"",                      // 无前缀，直接生成数字
+		"tunnox:id:used:client", // 存储键前缀
 		parentCtx,
 	)
 }
@@ -210,7 +210,7 @@ func NewIDManager(storage storage.Storage, parentCtx context.Context) *IDManager
 	// 初始化各种ID生成器
 	// ClientID 使用 int64 类型，生成完全随机的 8 位数字
 	manager.clientIDGen = NewStorageIDGenerator[int64](storage, "", "tunnox:id:used:client", parentCtx)
-	
+
 	// 其他 ID 使用 string 类型，生成带前缀的随机字符串
 	manager.nodeIDGen = NewStorageIDGenerator[string](storage, PrefixNodeID, "tunnox:id:used:node", parentCtx)
 	manager.connectionIDGen = NewStorageIDGenerator[string](storage, PrefixConnectionID, "tunnox:id:used:conn", parentCtx)

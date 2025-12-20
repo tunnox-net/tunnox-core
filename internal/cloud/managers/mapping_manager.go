@@ -14,6 +14,9 @@ import (
 
 // CreatePortMapping 创建端口映射
 func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.PortMapping, error) {
+	corelog.Infof("CloudControl.CreatePortMapping: creating mapping for ListenClientID=%d, TargetClientID=%d, Protocol=%s",
+		mapping.ListenClientID, mapping.TargetClientID, mapping.Protocol)
+
 	// 生成端口映射ID，确保不重复
 	var mappingID string
 	for attempts := 0; attempts < constants.DefaultMaxAttempts; attempts++ {
@@ -86,7 +89,7 @@ func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 		if err := c.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			corelog.Warnf("CloudControl: failed to add mapping %s to listen client %s: %v", mappingID, clientKey, err)
 		} else {
-			corelog.Infof("CloudControl: added mapping %s to listen client %s index", mappingID, clientKey)
+			corelog.Infof("CloudControl: ✅ added mapping %s to listen client %s index", mappingID, clientKey)
 		}
 	}
 	if mapping.TargetClientID > 0 && mapping.TargetClientID != mapping.ListenClientID {
@@ -94,10 +97,11 @@ func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 		if err := c.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			corelog.Warnf("CloudControl: failed to add mapping %s to target client %s: %v", mappingID, clientKey, err)
 		} else {
-			corelog.Infof("CloudControl: added mapping %s to target client %s index", mappingID, clientKey)
+			corelog.Infof("CloudControl: ✅ added mapping %s to target client %s index", mappingID, clientKey)
 		}
 	}
 
+	corelog.Infof("CloudControl.CreatePortMapping: ✅ mapping %s created successfully", mappingID)
 	return mapping, nil
 }
 

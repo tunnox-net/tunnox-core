@@ -231,4 +231,3 @@ func TestHelperFunctions(t *testing.T) {
 	t.Logf("Working dir: %s", workDir)
 	t.Logf("Home dir: %s", homeDir)
 }
-

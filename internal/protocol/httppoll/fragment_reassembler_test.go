@@ -328,10 +328,10 @@ func TestFragmentReassembler_RemoveGroup(t *testing.T) {
 
 func TestCalculateFragments(t *testing.T) {
 	tests := []struct {
-		name           string
-		dataSize       int
-		expectedSize   int
-		expectedCount  int
+		name          string
+		dataSize      int
+		expectedSize  int
+		expectedCount int
 	}{
 		{"small data, no fragment", 1000, 1000, 1},
 		{"medium data, fragment", 20 * 1024, MaxFragmentSize, 2},
@@ -491,4 +491,3 @@ func TestFragmentReassembler_ExpiredCleanup(t *testing.T) {
 		t.Error("New group should still exist")
 	}
 }
-

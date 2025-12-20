@@ -11,8 +11,8 @@ import (
 // TestGetUserQuota_Cache 测试配额缓存机制
 func TestGetUserQuota_Cache(t *testing.T) {
 	client := &TunnoxClient{
-		quotaCacheMu:    sync.RWMutex{},
-		cachedQuota:     nil,
+		quotaCacheMu:     sync.RWMutex{},
+		cachedQuota:      nil,
 		quotaLastRefresh: time.Time{},
 	}
 
@@ -199,4 +199,3 @@ func TestTrackTraffic_Concurrent(t *testing.T) {
 		t.Errorf("Expected received=%d, got %d", expected, received)
 	}
 }
-

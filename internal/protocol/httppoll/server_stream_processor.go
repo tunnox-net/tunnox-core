@@ -1,12 +1,12 @@
 package httppoll
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"sync"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/packet"

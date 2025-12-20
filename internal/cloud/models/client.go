@@ -21,23 +21,23 @@ import (
 // - Token部分：从ClientToken
 type Client struct {
 	// ========== 配置部分（持久化） ==========
-	ID        int64               `json:"id"`
-	UserID    string              `json:"user_id"`
-	Name      string              `json:"name"`
-	AuthCode  string              `json:"auth_code"`
-	SecretKey string              `json:"secret_key"`
-	Type      ClientType          `json:"type"`
+	ID        int64                `json:"id"`
+	UserID    string               `json:"user_id"`
+	Name      string               `json:"name"`
+	AuthCode  string               `json:"auth_code"`
+	SecretKey string               `json:"secret_key"`
+	Type      ClientType           `json:"type"`
 	Config    configs.ClientConfig `json:"config"`
-	CreatedAt time.Time           `json:"created_at"`
-	UpdatedAt time.Time           `json:"updated_at"`
-	
+	CreatedAt time.Time            `json:"created_at"`
+	UpdatedAt time.Time            `json:"updated_at"`
+
 	// ========== 状态部分（运行时） ==========
 	NodeID    string       `json:"node_id"`
 	Status    ClientStatus `json:"status"`
 	IPAddress string       `json:"ip_address"`
 	LastSeen  *time.Time   `json:"last_seen,omitempty"`
 	Version   string       `json:"version,omitempty"`
-	
+
 	// ========== Token部分（运行时） ==========
 	JWTToken       string     `json:"jwt_token,omitempty"`
 	TokenExpiresAt *time.Time `json:"token_expires_at,omitempty"`
@@ -58,7 +58,7 @@ func FromConfigAndState(cfg *ClientConfig, state *ClientRuntimeState, token *Cli
 	if cfg == nil {
 		return nil
 	}
-	
+
 	client := &Client{
 		// 配置部分（来自ClientConfig）
 		ID:        cfg.ID,
@@ -70,11 +70,11 @@ func FromConfigAndState(cfg *ClientConfig, state *ClientRuntimeState, token *Cli
 		Config:    cfg.Config,
 		CreatedAt: cfg.CreatedAt,
 		UpdatedAt: cfg.UpdatedAt,
-		
+
 		// 默认离线状态
 		Status: ClientStatusOffline,
 	}
-	
+
 	// 填充状态（可能为空）
 	if state != nil && state.IsOnline() {
 		client.NodeID = state.NodeID
@@ -83,7 +83,7 @@ func FromConfigAndState(cfg *ClientConfig, state *ClientRuntimeState, token *Cli
 		client.LastSeen = &state.LastSeen
 		client.Version = state.Version
 	}
-	
+
 	// 填充Token（可能为空）
 	if token != nil && token.IsValid() {
 		client.JWTToken = token.JWTToken
@@ -91,7 +91,7 @@ func FromConfigAndState(cfg *ClientConfig, state *ClientRuntimeState, token *Cli
 		client.RefreshToken = token.RefreshToken
 		client.TokenID = token.TokenID
 	}
-	
+
 	return client
 }
 
@@ -114,4 +114,3 @@ func (c *Client) IsRegistered() bool {
 func (c *Client) GetID() int64 {
 	return c.ID
 }
-

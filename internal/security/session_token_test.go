@@ -112,7 +112,7 @@ func TestShouldRenew(t *testing.T) {
 
 	// 手动修改过期时间（剩余30分钟）
 	token.ExpiresAt = time.Now().Add(30 * time.Minute)
-	
+
 	// 应该续期（剩余时间<1小时）
 	assert.True(t, manager.ShouldRenew(token))
 }
@@ -216,4 +216,3 @@ func TestSessionToken_UniqueID(t *testing.T) {
 	// TokenID应该不同
 	assert.NotEqual(t, token1.TokenID, token2.TokenID)
 }
-

@@ -67,7 +67,7 @@ func TestValidateReconnectToken_InvalidSignature(t *testing.T) {
 func TestValidateReconnectToken_Expired(t *testing.T) {
 	ctx := context.Background()
 	memStorage := storage.NewMemoryStorage(ctx)
-	
+
 	// 使用1秒TTL
 	config := &ReconnectTokenConfig{
 		SecretKey: "test-secret",
@@ -227,4 +227,3 @@ func TestReconnectToken_TTLExpiration(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, exists, "Used token marker should expire after TTL")
 }
-

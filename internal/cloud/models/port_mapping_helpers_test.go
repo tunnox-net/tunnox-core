@@ -13,8 +13,8 @@ func TestPortMapping_IsExpired(t *testing.T) {
 	past := now.Add(-1 * time.Hour)
 
 	tests := []struct {
-		name      string
-		mapping   *PortMapping
+		name        string
+		mapping     *PortMapping
 		wantExpired bool
 	}{
 		{
@@ -53,8 +53,8 @@ func TestPortMapping_IsValid(t *testing.T) {
 	past := now.Add(-1 * time.Hour)
 
 	tests := []struct {
-		name     string
-		mapping  *PortMapping
+		name      string
+		mapping   *PortMapping
 		wantValid bool
 	}{
 		{
@@ -106,9 +106,9 @@ func TestPortMapping_CanBeAccessedBy(t *testing.T) {
 	future := time.Now().Add(1 * time.Hour)
 
 	tests := []struct {
-		name      string
-		mapping   *PortMapping
-		clientID  int64
+		name       string
+		mapping    *PortMapping
+		clientID   int64
 		wantAccess bool
 	}{
 		{
@@ -177,7 +177,7 @@ func TestPortMapping_CanBeRevokedBy(t *testing.T) {
 				ListenClientID: 100,
 				TargetClientID: 200,
 			},
-			clientID:     100,
+			clientID:      100,
 			wantCanRevoke: true,
 		},
 		{
@@ -186,7 +186,7 @@ func TestPortMapping_CanBeRevokedBy(t *testing.T) {
 				ListenClientID: 100,
 				TargetClientID: 200,
 			},
-			clientID:     200,
+			clientID:      200,
 			wantCanRevoke: true,
 		},
 		{
@@ -195,7 +195,7 @@ func TestPortMapping_CanBeRevokedBy(t *testing.T) {
 				ListenClientID: 100,
 				TargetClientID: 200,
 			},
-			clientID:     300,
+			clientID:      300,
 			wantCanRevoke: false,
 		},
 	}
@@ -278,4 +278,3 @@ func TestPortMapping_Revoke(t *testing.T) {
 		})
 	}
 }
-

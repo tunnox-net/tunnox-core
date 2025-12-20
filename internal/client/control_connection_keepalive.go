@@ -1,9 +1,9 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
 )
@@ -56,4 +56,3 @@ func (c *TunnoxClient) sendHeartbeat() error {
 	}
 	return err
 }
-

@@ -176,4 +176,3 @@ func (c *CloudControl) ValidateToken(token string) (*models.AuthResponse, error)
 		Message:   "Token validated successfully",
 	}, nil
 }
-

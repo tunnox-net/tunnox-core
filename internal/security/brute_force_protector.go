@@ -1,11 +1,11 @@
 package security
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/dispose"
 )

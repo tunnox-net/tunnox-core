@@ -13,7 +13,7 @@ func TestStreamProcessor_SetConnectionID(t *testing.T) {
 	sp := NewStreamProcessor(ctx, "http://test.com", "http://test.com/push", "http://test.com/poll", 123, "token", "instance", "")
 
 	sp.SetConnectionID("conn_456")
-	
+
 	// 验证 ConnectionID 已设置（通过后续的 ReadPacket 会使用）
 	// 这里只验证方法调用不报错
 	if sp == nil {
@@ -26,7 +26,7 @@ func TestStreamProcessor_UpdateClientID(t *testing.T) {
 	sp := NewStreamProcessor(ctx, "http://test.com", "http://test.com/push", "http://test.com/poll", 123, "token", "instance", "")
 
 	sp.UpdateClientID(789)
-	
+
 	// 验证 ClientID 已更新
 	if sp == nil {
 		t.Fatal("StreamProcessor is nil")
@@ -69,4 +69,3 @@ func TestStreamProcessor_GetReader_GetWriter(t *testing.T) {
 		t.Error("GetWriter should return nil for HTTP long polling")
 	}
 }
-

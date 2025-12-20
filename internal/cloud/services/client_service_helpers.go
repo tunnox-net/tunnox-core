@@ -21,4 +21,3 @@ func (s *clientService) getDefaultClientConfig() configs.ClientConfig {
 		HeartbeatInterval: constants.DefaultHeartbeatInterval,
 	}
 }
-

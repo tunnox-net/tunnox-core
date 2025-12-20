@@ -1,20 +1,20 @@
 package bridge
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"io"
 	"sync"
 	"time"
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // GRPCBridgeServer 实现 BridgeService gRPC 服务
 type GRPCBridgeServer struct {
 	*dispose.ManagerBase
 	pb.UnimplementedBridgeServiceServer
-	
+
 	nodeID        string
 	manager       *BridgeManager
 	activeBridges map[string]*BridgeContext
@@ -43,14 +43,14 @@ func NewGRPCBridgeServer(parentCtx context.Context, nodeID string, manager *Brid
 		activeBridges: make(map[string]*BridgeContext),
 		startTime:     time.Now(),
 	}
-	
+
 	// 注册清理处理器
 	server.AddCleanHandler(func() error {
 		corelog.Infof("GRPCBridgeServer: cleaning up resources")
-		
+
 		server.bridgesMu.Lock()
 		defer server.bridgesMu.Unlock()
-		
+
 		// 关闭所有活跃的桥接
 		for streamID, bridge := range server.activeBridges {
 			bridge.cancel()
@@ -58,10 +58,10 @@ func NewGRPCBridgeServer(parentCtx context.Context, nodeID string, manager *Brid
 			corelog.Debugf("GRPCBridgeServer: closed bridge %s", streamID)
 		}
 		server.activeBridges = make(map[string]*BridgeContext)
-		
+
 		return nil
 	})
-	
+
 	return server
 }
 
@@ -79,7 +79,7 @@ func (s *GRPCBridgeServer) ForwardStream(stream pb.BridgeService_ForwardStreamSe
 		return io.EOF
 	default:
 	}
-	
+
 	ctx := stream.Context()
 	corelog.Infof("GRPCBridgeServer: new forward stream connection established")
 

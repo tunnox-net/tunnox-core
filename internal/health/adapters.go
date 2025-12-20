@@ -28,4 +28,3 @@ func (a *StorageAdapter) Ping(ctx context.Context) error {
 	_, err := a.storage.Exists(testKey)
 	return err
 }
-

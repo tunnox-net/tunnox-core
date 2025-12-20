@@ -121,6 +121,13 @@ const (
 	MappingList            CommandType = 74 // 列出映射列表
 	MappingGet             CommandType = 75 // 获取映射详情
 	MappingDelete          CommandType = 76 // 删除映射
+
+	// ==================== HTTP 代理类命令 (80-89) ====================
+	HTTPProxyRequest  CommandType = 80 // HTTP 代理请求
+	HTTPProxyResponse CommandType = 81 // HTTP 代理响应
+
+	// ==================== SOCKS5 代理类命令 (90-99) ====================
+	SOCKS5TunnelRequestCmd CommandType = 90 // SOCKS5 隧道请求（ClientA -> Server）
 )
 
 // InitPacket 初始化数据包
@@ -241,6 +248,10 @@ type TunnelOpenRequest struct {
 	TunnelID    string `json:"tunnel_id"`              // 隧道ID（唯一标识本次隧道连接）
 	SecretKey   string `json:"secret_key"`             // ⚠️ 传统密钥（向后兼容，用于旧版API调用）
 	ResumeToken string `json:"resume_token,omitempty"` // ✨ Phase 2: 恢复Token（断线重连，包含TunnelID+签名）
+
+	// SOCKS5 动态目标地址（仅 SOCKS5 协议使用）
+	TargetHost string `json:"target_host,omitempty"` // 动态目标主机（由 SOCKS5 协议指定）
+	TargetPort int    `json:"target_port,omitempty"` // 动态目标端口（由 SOCKS5 协议指定）
 }
 
 // TunnelOpenAckResponse 隧道打开确认响应

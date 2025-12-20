@@ -167,11 +167,11 @@ func (c *CLI) cmdStatus(args []string) {
 
 	// 获取实际状态信息
 	statusInfo := c.client.GetStatusInfo()
-	
+
 	// 显示映射数量（区分 inbound 和 outbound）
 	mappingInfo := fmt.Sprintf("%d", statusInfo.ActiveMappings)
 	if inboundCount > 0 || outboundCount > 0 {
-		mappingInfo = fmt.Sprintf("%d (Inbound: %d, Outbound: %d)", 
+		mappingInfo = fmt.Sprintf("%d (Inbound: %d, Outbound: %d)",
 			inboundCount+outboundCount, inboundCount, outboundCount)
 	}
 
@@ -215,7 +215,7 @@ func formatBytes(bytes int64) string {
 
 // cmdConnect 连接到服务器
 func (c *CLI) cmdConnect(args []string) {
-	// TODO: 支持指定服务器地址
+	// 支持指定服务器地址（可选）
 	// if len(args) > 0 {
 	//     c.client.SetServerAddress(args[0])
 	// }

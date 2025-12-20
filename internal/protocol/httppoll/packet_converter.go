@@ -94,7 +94,7 @@ func (c *PacketConverter) WritePacket(pkt *packet.TransferPacket, requestID ...s
 		Type:         packetTypeToString(packetType),
 		Data:         packetData,
 	}
-	
+
 	// 如果提供了 requestID，设置到 TunnelPackage 中
 	if len(requestID) > 0 && requestID[0] != "" {
 		tunnelPkg.RequestID = requestID[0]
@@ -249,4 +249,3 @@ func TunnelPackageToTransferPacket(pkg *TunnelPackage) (*packet.TransferPacket, 
 
 	return pkt, nil
 }
-

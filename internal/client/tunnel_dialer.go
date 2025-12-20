@@ -16,6 +16,11 @@ import (
 
 // dialTunnel 建立隧道连接（通用方法）
 func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Conn, stream.PackageStreamer, error) {
+	return c.dialTunnelWithTarget(tunnelID, mappingID, secretKey, "", 0)
+}
+
+// dialTunnelWithTarget 建立隧道连接（支持 SOCKS5 动态目标地址）
+func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targetHost string, targetPort int) (net.Conn, stream.PackageStreamer, error) {
 	// 根据协议建立到服务器的连接
 	var (
 		conn  net.Conn
@@ -92,14 +97,18 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		}
 	}
 
-	// 发送 TunnelOpen
+	// 发送 TunnelOpen（包含 SOCKS5 动态目标地址）
 	req := &packet.TunnelOpenRequest{
-		MappingID: mappingID,
-		TunnelID:  tunnelID,
-		SecretKey: secretKey,
+		MappingID:  mappingID,
+		TunnelID:   tunnelID,
+		SecretKey:  secretKey,
+		TargetHost: targetHost, // SOCKS5 动态目标地址
+		TargetPort: targetPort, // SOCKS5 动态目标端口
 	}
 
 	reqData, _ := json.Marshal(req)
+	corelog.Infof("Client: sending TunnelOpen, tunnelID=%s, mappingID=%s, targetHost=%s, targetPort=%d, payloadLen=%d",
+		tunnelID, mappingID, targetHost, targetPort, len(reqData))
 	openPkt := &packet.TransferPacket{
 		PacketType: packet.TunnelOpen,
 		TunnelID:   tunnelID,

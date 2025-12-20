@@ -1,10 +1,9 @@
 package httppoll
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"net/http"
-
+	corelog "tunnox-core/internal/core/log"
 
 	"github.com/google/uuid"
 )

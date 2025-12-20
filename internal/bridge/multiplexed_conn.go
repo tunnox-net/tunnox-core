@@ -1,7 +1,6 @@
 package bridge
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +8,7 @@ corelog "tunnox-core/internal/core/log"
 	"time"
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 
 	"google.golang.org/grpc"
 )

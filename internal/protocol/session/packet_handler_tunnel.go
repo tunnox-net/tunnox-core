@@ -40,8 +40,8 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		}
 	}
 
-	corelog.Infof("Tunnel open request: TunnelID=%s, MappingID=%s, ConnID=%s",
-		req.TunnelID, req.MappingID, connPacket.ConnectionID)
+	corelog.Infof("Tunnel open request: TunnelID=%s, MappingID=%s, ConnID=%s, TargetHost=[%s], TargetPort=[%d], PayloadLen=%d",
+		req.TunnelID, req.MappingID, connPacket.ConnectionID, req.TargetHost, req.TargetPort, len(connPacket.Packet.Payload))
 
 	// ✅ 对于支持 mappingID 的连接，立即设置 mappingID 并注册隧道连接
 	// 这样后续的请求就能正确路由到隧道连接
@@ -547,12 +547,22 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 	}
 
 	// 3. 构造TunnelOpenRequest命令
+	// 对于 SOCKS5 协议，使用请求中的动态目标地址
+	// 对于其他协议，使用映射配置中的固定目标地址
+	targetHost := mapping.TargetHost
+	targetPort := mapping.TargetPort
+	if mapping.Protocol == "socks5" && req.TargetHost != "" {
+		targetHost = req.TargetHost
+		targetPort = req.TargetPort
+		corelog.Infof("Tunnel[%s]: using SOCKS5 dynamic target %s:%d", req.TunnelID, targetHost, targetPort)
+	}
+
 	cmdBody := map[string]interface{}{
 		"tunnel_id":          req.TunnelID,
 		"mapping_id":         req.MappingID,
 		"secret_key":         mapping.SecretKey,
-		"target_host":        mapping.TargetHost,
-		"target_port":        mapping.TargetPort,
+		"target_host":        targetHost,
+		"target_port":        targetPort,
 		"protocol":           string(mapping.Protocol),
 		"enable_compression": mapping.Config.EnableCompression,
 		"compression_level":  mapping.Config.CompressionLevel,

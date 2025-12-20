@@ -1,24 +1,28 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/packet"
 )
 
 // TunnelOpenBroadcastMessage 跨服务器TunnelOpen广播消息
+// 注意：字段名需要与 broker.TunnelOpenMessage 保持一致
 type TunnelOpenBroadcastMessage struct {
 	Type           string `json:"type"`
 	TunnelID       string `json:"tunnel_id"`
 	MappingID      string `json:"mapping_id"`
 	SecretKey      string `json:"secret_key"`
-	TargetClientID int64  `json:"target_client_id"`
+	TargetClientID int64  `json:"client_id"` // 与 broker.TunnelOpenMessage.ClientID 对应
 	SourceNodeID   string `json:"source_node_id"`
 	Timestamp      int64  `json:"timestamp"`
+	// SOCKS5 动态目标地址
+	TargetHost string `json:"target_host,omitempty"`
+	TargetPort int    `json:"target_port,omitempty"`
 }
 
 // startTunnelOpenBroadcastSubscription 启动TunnelOpen广播订阅
@@ -102,12 +106,22 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 	}
 
 	// 构造TunnelOpenRequest命令
+	// 对于 SOCKS5 协议，使用广播消息中的动态目标地址
+	targetHost := mapping.TargetHost
+	targetPort := mapping.TargetPort
+	if mapping.Protocol == "socks5" && msg.TargetHost != "" {
+		targetHost = msg.TargetHost
+		targetPort = msg.TargetPort
+		corelog.Infof("SessionManager: using SOCKS5 dynamic target %s:%d for tunnel %s",
+			targetHost, targetPort, msg.TunnelID)
+	}
+
 	cmdBody := map[string]interface{}{
 		"tunnel_id":          msg.TunnelID,
 		"mapping_id":         msg.MappingID,
 		"secret_key":         mapping.SecretKey,
-		"target_host":        mapping.TargetHost,
-		"target_port":        mapping.TargetPort,
+		"target_host":        targetHost,
+		"target_port":        targetPort,
 		"protocol":           string(mapping.Protocol),
 		"enable_compression": mapping.Config.EnableCompression,
 		"compression_level":  mapping.Config.CompressionLevel,

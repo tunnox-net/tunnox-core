@@ -16,4 +16,3 @@ type RPCResponse struct {
 	Method string      `json:"method"`
 	Result interface{} `json:"result"`
 }
-

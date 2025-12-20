@@ -13,4 +13,3 @@ type MultiplexedConn interface {
 	Close() error
 	IsClosed() bool
 }
-

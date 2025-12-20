@@ -46,4 +46,3 @@ func TestMetricsFactory_PrometheusNotImplemented(t *testing.T) {
 		t.Error("CreateMetrics should return error for Prometheus (not implemented)")
 	}
 }
-

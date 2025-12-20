@@ -82,4 +82,3 @@ func (r *UserRepository) AddUserToList(user *models.User) error {
 func (r *UserRepository) ListAllUsers() ([]*models.User, error) {
 	return r.List(constants.KeyPrefixUserList)
 }
-

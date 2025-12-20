@@ -306,4 +306,3 @@ func TestStats_MultipleDataPoints(t *testing.T) {
 	// 验证至少有一些数据
 	assert.True(t, sysStats.TotalUsers > 0 || sysStats.TotalClients > 0)
 }
-

@@ -1,9 +1,8 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"time"
-
+	corelog "tunnox-core/internal/core/log"
 )
 
 // periodicTrafficReport 定期上报流量统计
@@ -72,4 +71,3 @@ func (b *TunnelBridge) reportTrafficStats() {
 	corelog.Infof("TunnelBridge[%s]: traffic stats updated - mapping=%s, delta_sent=%d, delta_received=%d, total_sent=%d, total_received=%d",
 		b.tunnelID, b.mappingID, deltaSent, deltaReceived, trafficStats.BytesSent, trafficStats.BytesReceived)
 }
-

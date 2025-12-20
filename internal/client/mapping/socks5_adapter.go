@@ -1,12 +1,12 @@
 package mapping
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/config"
 )
@@ -249,4 +249,3 @@ func (a *SOCKS5MappingAdapter) Close() error {
 	}
 	return nil
 }
-

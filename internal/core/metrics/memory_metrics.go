@@ -120,4 +120,3 @@ func buildKey(name string, labels map[string]string) string {
 	}
 	return key
 }
-

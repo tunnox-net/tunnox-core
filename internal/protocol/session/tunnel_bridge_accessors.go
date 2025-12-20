@@ -62,4 +62,3 @@ func (b *TunnelBridge) IsActive() bool {
 	}
 	return !b.IsClosed()
 }
-

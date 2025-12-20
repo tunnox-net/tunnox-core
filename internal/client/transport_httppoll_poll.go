@@ -1,7 +1,6 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -9,6 +8,7 @@ corelog "tunnox-core/internal/core/log"
 	"net/url"
 	"strconv"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	httppoll "tunnox-core/internal/protocol/httppoll"
 )
@@ -174,7 +174,7 @@ func (c *HTTPLongPollingConn) pollLoop() {
 				// 使用 GetNextCompleteGroup 确保按序列号顺序发送
 				corelog.Infof("HTTP long polling: fragment group complete, checking sequence order, groupID=%s, sequenceNumber=%d, mappingID=%s",
 					pollResp.FragmentGroupID, pollResp.SequenceNumber, c.mappingID)
-				
+
 				// 尝试获取下一个按序列号顺序的完整分片组
 				nextGroup, found, err := c.fragmentReassembler.GetNextCompleteGroup()
 				if err != nil {
@@ -198,67 +198,67 @@ func (c *HTTPLongPollingConn) pollLoop() {
 						continue
 					}
 
-						// Base64编码重组后的数据
-						base64Data := base64.StdEncoding.EncodeToString(reassembledData)
-						corelog.Infof("HTTP long polling: reassembled %d bytes from %d fragments, groupID=%s, sequenceNumber=%d, originalSize=%d, base64Len=%d, mappingID=%s",
-							len(reassembledData), nextGroup.TotalFragments, nextGroup.GroupID, nextGroup.SequenceNumber, nextGroup.OriginalSize, len(base64Data), c.mappingID)
+					// Base64编码重组后的数据
+					base64Data := base64.StdEncoding.EncodeToString(reassembledData)
+					corelog.Infof("HTTP long polling: reassembled %d bytes from %d fragments, groupID=%s, sequenceNumber=%d, originalSize=%d, base64Len=%d, mappingID=%s",
+						len(reassembledData), nextGroup.TotalFragments, nextGroup.GroupID, nextGroup.SequenceNumber, nextGroup.OriginalSize, len(base64Data), c.mappingID)
 
-						// 验证重组后的数据大小
-						if len(reassembledData) != nextGroup.OriginalSize {
-							corelog.Errorf("HTTP long polling: reassembled size mismatch: expected %d, got %d, groupID=%s, mappingID=%s",
-								nextGroup.OriginalSize, len(reassembledData), nextGroup.GroupID, c.mappingID)
-							c.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
-							time.Sleep(httppollRetryInterval)
-							continue
-						}
+					// 验证重组后的数据大小
+					if len(reassembledData) != nextGroup.OriginalSize {
+						corelog.Errorf("HTTP long polling: reassembled size mismatch: expected %d, got %d, groupID=%s, mappingID=%s",
+							nextGroup.OriginalSize, len(reassembledData), nextGroup.GroupID, c.mappingID)
+						c.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
+						time.Sleep(httppollRetryInterval)
+						continue
+					}
 
-						// 发送到 base64DataChan（确保只有完整的数据才会被发送）
-						corelog.Debugf("HTTP long polling: sending reassembled data to base64DataChan, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
+					// 发送到 base64DataChan（确保只有完整的数据才会被发送）
+					corelog.Debugf("HTTP long polling: sending reassembled data to base64DataChan, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
+						len(base64Data), nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
+					select {
+					case <-c.Ctx().Done():
+						return
+					case c.base64DataChan <- base64Data:
+						corelog.Infof("HTTP long polling: sent reassembled data to base64DataChan successfully, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
 							len(base64Data), nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
+						// 成功发送重组后的完整数据
+					default:
+						corelog.Warnf("HTTP long polling: base64DataChan full, dropping reassembled data, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
+							len(base64Data), nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
+					}
+
+					// 移除分片组
+					c.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
+
+					// 继续检查是否有更多按序列号顺序的完整分片组
+					for {
+						nextGroup2, found2, err2 := c.fragmentReassembler.GetNextCompleteGroup()
+						if err2 != nil || !found2 {
+							break
+						}
+						reassembledData2, err2 := nextGroup2.Reassemble()
+						if err2 != nil {
+							corelog.Errorf("HTTP long polling: failed to reassemble next group: %v, groupID=%s, mappingID=%s",
+								err2, nextGroup2.GroupID, c.mappingID)
+							c.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
+							break
+						}
+						base64Data2 := base64.StdEncoding.EncodeToString(reassembledData2)
+						corelog.Infof("HTTP long polling: sending next complete group, groupID=%s, sequenceNumber=%d, size=%d, mappingID=%s",
+							nextGroup2.GroupID, nextGroup2.SequenceNumber, len(reassembledData2), c.mappingID)
 						select {
 						case <-c.Ctx().Done():
 							return
-						case c.base64DataChan <- base64Data:
-							corelog.Infof("HTTP long polling: sent reassembled data to base64DataChan successfully, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
-								len(base64Data), nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
-							// 成功发送重组后的完整数据
+						case c.base64DataChan <- base64Data2:
+							corelog.Infof("HTTP long polling: sent next group to base64DataChan, size=%d, sequenceNumber=%d, mappingID=%s",
+								len(base64Data2), nextGroup2.SequenceNumber, c.mappingID)
 						default:
-							corelog.Warnf("HTTP long polling: base64DataChan full, dropping reassembled data, size=%d, groupID=%s, sequenceNumber=%d, mappingID=%s",
-								len(base64Data), nextGroup.GroupID, nextGroup.SequenceNumber, c.mappingID)
+							corelog.Warnf("HTTP long polling: base64DataChan full, dropping next group, size=%d, sequenceNumber=%d, mappingID=%s",
+								len(base64Data2), nextGroup2.SequenceNumber, c.mappingID)
+							break
 						}
-
-						// 移除分片组
-						c.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
-
-						// 继续检查是否有更多按序列号顺序的完整分片组
-						for {
-							nextGroup2, found2, err2 := c.fragmentReassembler.GetNextCompleteGroup()
-							if err2 != nil || !found2 {
-								break
-							}
-							reassembledData2, err2 := nextGroup2.Reassemble()
-							if err2 != nil {
-								corelog.Errorf("HTTP long polling: failed to reassemble next group: %v, groupID=%s, mappingID=%s",
-									err2, nextGroup2.GroupID, c.mappingID)
-								c.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
-								break
-							}
-							base64Data2 := base64.StdEncoding.EncodeToString(reassembledData2)
-							corelog.Infof("HTTP long polling: sending next complete group, groupID=%s, sequenceNumber=%d, size=%d, mappingID=%s",
-								nextGroup2.GroupID, nextGroup2.SequenceNumber, len(reassembledData2), c.mappingID)
-							select {
-							case <-c.Ctx().Done():
-								return
-							case c.base64DataChan <- base64Data2:
-								corelog.Infof("HTTP long polling: sent next group to base64DataChan, size=%d, sequenceNumber=%d, mappingID=%s",
-									len(base64Data2), nextGroup2.SequenceNumber, c.mappingID)
-							default:
-								corelog.Warnf("HTTP long polling: base64DataChan full, dropping next group, size=%d, sequenceNumber=%d, mappingID=%s",
-									len(base64Data2), nextGroup2.SequenceNumber, c.mappingID)
-								break
-							}
-							c.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
-						}
+						c.fragmentReassembler.RemoveGroup(nextGroup2.GroupID)
+					}
 				} else {
 					// 这不是下一个应该发送的分片组，等待序列号更小的分片组完成
 					corelog.Infof("HTTP long polling: fragment group complete but GetNextCompleteGroup returned not found, groupID=%s, sequenceNumber=%d, waiting for expected sequence, mappingID=%s",
@@ -288,7 +288,7 @@ func (c *HTTPLongPollingConn) pollLoop() {
 				// 单分片数据应该立即完整，检查是否可以按序列号顺序发送
 				corelog.Infof("HTTP long polling: single fragment complete, checking sequence order, groupID=%s, sequenceNumber=%d, mappingID=%s",
 					pollResp.FragmentGroupID, pollResp.SequenceNumber, c.mappingID)
-				
+
 				// 尝试获取下一个按序列号顺序的完整分片组
 				nextGroup, found, err := c.fragmentReassembler.GetNextCompleteGroup()
 				if err != nil {
@@ -348,13 +348,13 @@ func (c *HTTPLongPollingConn) pollLoop() {
 						base64Data2 := base64.StdEncoding.EncodeToString(reassembledData2)
 						corelog.Infof("HTTP long polling: sending next complete group, groupID=%s, sequenceNumber=%d, size=%d, mappingID=%s",
 							nextGroup2.GroupID, nextGroup2.SequenceNumber, len(reassembledData2), c.mappingID)
-				select {
-				case <-c.Ctx().Done():
-					return
+						select {
+						case <-c.Ctx().Done():
+							return
 						case c.base64DataChan <- base64Data2:
 							corelog.Infof("HTTP long polling: sent next group to base64DataChan, size=%d, sequenceNumber=%d, mappingID=%s",
 								len(base64Data2), nextGroup2.SequenceNumber, c.mappingID)
-				default:
+						default:
 							corelog.Warnf("HTTP long polling: base64DataChan full, dropping next group, size=%d, sequenceNumber=%d, mappingID=%s",
 								len(base64Data2), nextGroup2.SequenceNumber, c.mappingID)
 							break

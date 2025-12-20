@@ -126,4 +126,3 @@ func GetProtocolFragmentHitRate(protocol string) (float64, error) {
 	}
 	return hits / total, nil
 }
-

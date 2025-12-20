@@ -110,12 +110,12 @@ func TestPacketConverter_WriteData(t *testing.T) {
 func TestPacketConverter_ReadData(t *testing.T) {
 	// Base64 编码的测试数据
 	base64Data := "dGVzdCBkYXRh"
-	
+
 	// 创建模拟 HTTP Response
 	resp := &http.Response{
 		Body: http.NoBody,
 	}
-	
+
 	// 注意：ReadData 需要从 Response Body 读取，这里简化测试
 	// 实际使用中，Response Body 应该包含 Base64 编码的数据
 	_ = base64Data
@@ -159,4 +159,3 @@ func TestTunnelPackageToTransferPacket(t *testing.T) {
 		t.Errorf("Expected ClientID=456, got %d", handshakeReq.ClientID)
 	}
 }
-

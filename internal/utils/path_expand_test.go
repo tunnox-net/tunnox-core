@@ -13,10 +13,10 @@ func TestExpandPath(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		input    string
-		wantErr  bool
-		checkFn  func(string) bool
+		name    string
+		input   string
+		wantErr bool
+		checkFn func(string) bool
 	}{
 		{
 			name:    "expand ~/path",
@@ -74,4 +74,3 @@ func TestExpandPath(t *testing.T) {
 		})
 	}
 }
-

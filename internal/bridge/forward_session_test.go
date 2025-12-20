@@ -250,4 +250,3 @@ func TestForwardSession_IsActive(t *testing.T) {
 	session.Send([]byte("test"))
 	assert.True(t, session.IsActive())
 }
-

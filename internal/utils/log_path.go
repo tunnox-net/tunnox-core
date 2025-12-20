@@ -111,4 +111,3 @@ func canWriteToPath(path string) bool {
 
 	return true
 }
-

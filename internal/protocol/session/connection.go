@@ -217,7 +217,7 @@ func NewTunnelConnection(connID string, stream stream.PackageStreamer, remoteAdd
 		Authenticated: false,
 		CreatedAt:     time.Now(),
 		LastActiveAt:  time.Now(),
-		
+
 		// ✨ Phase 2: 初始化缓冲区（默认不启用）
 		sendBuffer:    NewTunnelSendBuffer(),
 		receiveBuffer: NewTunnelReceiveBuffer(),

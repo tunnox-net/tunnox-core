@@ -1,7 +1,6 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"bytes"
 	"context"
 	"fmt"
@@ -11,6 +10,7 @@ corelog "tunnox-core/internal/core/log"
 	"strings"
 	"sync"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/dispose"
 	httppoll "tunnox-core/internal/protocol/httppoll"

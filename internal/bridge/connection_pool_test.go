@@ -64,7 +64,7 @@ func TestMetricsCollector_RecordSessionCreated(t *testing.T) {
 
 	metrics := collector.GetMetrics()
 	require.NotNil(t, metrics)
-	
+
 	nodeStats, exists := metrics.NodeStats[nodeID]
 	require.True(t, exists)
 	assert.Equal(t, int64(2), nodeStats.SessionsCreated)
@@ -82,7 +82,7 @@ func TestMetricsCollector_RecordSessionClosed(t *testing.T) {
 
 	metrics := collector.GetMetrics()
 	require.NotNil(t, metrics)
-	
+
 	nodeStats, exists := metrics.NodeStats[nodeID]
 	require.True(t, exists)
 	assert.Equal(t, int64(3), nodeStats.SessionsClosed)
@@ -95,12 +95,12 @@ func TestMetricsCollector_RecordError(t *testing.T) {
 
 	nodeID := "test-node-3"
 	errorMsg := "connection failed"
-	
+
 	collector.RecordError(nodeID, errorMsg)
 
 	metrics := collector.GetMetrics()
 	require.NotNil(t, metrics)
-	
+
 	nodeStats, exists := metrics.NodeStats[nodeID]
 	require.True(t, exists)
 	assert.Equal(t, int64(1), nodeStats.ErrorCount)
@@ -117,7 +117,7 @@ func TestMetricsCollector_UpdatePoolStats(t *testing.T) {
 
 	metrics := collector.GetMetrics()
 	require.NotNil(t, metrics)
-	
+
 	nodeStats, exists := metrics.NodeStats[nodeID]
 	require.True(t, exists)
 	assert.Equal(t, int32(5), nodeStats.TotalConnections)
@@ -150,7 +150,7 @@ func TestMetricsCollector_MultipleNodes(t *testing.T) {
 
 	// 验证全局统计
 	assert.Equal(t, int32(3), metrics.GlobalStats.TotalNodes)
-	assert.Equal(t, int32(6), metrics.GlobalStats.TotalConnections) // 3+2+1
+	assert.Equal(t, int32(6), metrics.GlobalStats.TotalConnections)    // 3+2+1
 	assert.Equal(t, int32(17), metrics.GlobalStats.TotalActiveStreams) // 10+5+2
 	assert.Equal(t, int64(3), metrics.GlobalStats.TotalSessionsCreated)
 	assert.Equal(t, int64(1), metrics.GlobalStats.TotalSessionsClosed)
@@ -218,4 +218,3 @@ func TestMetricsCollector_Uptime(t *testing.T) {
 	assert.GreaterOrEqual(t, metrics.GlobalStats.Uptime, 100*time.Millisecond)
 	assert.Less(t, metrics.GlobalStats.Uptime, 1*time.Second)
 }
-

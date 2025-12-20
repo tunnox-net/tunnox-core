@@ -1,10 +1,10 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -49,10 +49,10 @@ func (s *SessionManager) SaveActiveTunnelStates() error {
 	for _, tunnel := range tunnels {
 		// 创建隧道状态快照
 		state := &TunnelState{
-			TunnelID:   tunnel.TunnelID,
-			MappingID:  tunnel.MappingID,
-			CreatedAt:  tunnel.CreatedAt,
-			UpdatedAt:  tunnel.LastActiveAt,
+			TunnelID:  tunnel.TunnelID,
+			MappingID: tunnel.MappingID,
+			CreatedAt: tunnel.CreatedAt,
+			UpdatedAt: tunnel.LastActiveAt,
 		}
 
 		// 如果隧道启用了序列号，保存缓冲区状态

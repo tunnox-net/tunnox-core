@@ -39,7 +39,7 @@ func NewClientConfigRepository(repo *Repository) *ClientConfigRepository {
 			return fmt.Sprintf("%d", config.ID), nil
 		},
 	)
-	
+
 	return &ClientConfigRepository{
 		GenericRepositoryImpl: genericRepo,
 	}
@@ -81,15 +81,15 @@ func (r *ClientConfigRepository) SaveConfig(config *models.ClientConfig) error {
 	if config == nil {
 		return fmt.Errorf("config is nil")
 	}
-	
+
 	// 验证配置有效性
 	if err := config.Validate(); err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}
-	
+
 	// 更新时间戳
 	config.UpdatedAt = time.Now()
-	
+
 	// 保存（TTL=0表示永久）
 	return r.Save(
 		config,
@@ -109,17 +109,17 @@ func (r *ClientConfigRepository) CreateConfig(config *models.ClientConfig) error
 	if config == nil {
 		return fmt.Errorf("config is nil")
 	}
-	
+
 	// 验证配置
 	if err := config.Validate(); err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}
-	
+
 	// 设置创建时间
 	now := time.Now()
 	config.CreatedAt = now
 	config.UpdatedAt = now
-	
+
 	// 创建（不覆盖已存在的）
 	return r.Create(
 		config,
@@ -139,15 +139,15 @@ func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error
 	if config == nil {
 		return fmt.Errorf("config is nil")
 	}
-	
+
 	// 验证配置
 	if err := config.Validate(); err != nil {
 		return fmt.Errorf("invalid config: %w", err)
 	}
-	
+
 	// 更新时间戳
 	config.UpdatedAt = time.Now()
-	
+
 	// 更新
 	return r.Update(
 		config,
@@ -206,4 +206,3 @@ func (r *ClientConfigRepository) ExistsConfig(clientID int64) (bool, error) {
 	key := fmt.Sprintf("%s%d", constants.KeyPrefixPersistClientConfig, clientID)
 	return r.storage.Exists(key)
 }
-

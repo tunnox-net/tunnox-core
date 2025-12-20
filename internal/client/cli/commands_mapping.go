@@ -37,15 +37,15 @@ func (c *CLI) cmdUseCode(args []string) {
 			// Ctrl+C 静默返回
 			return
 		}
-	if err != nil {
-		return
-	}
+		if err != nil {
+			return
+		}
 		if addr == "" {
-		c.output.Error("Listen address cannot be empty")
+			c.output.Error("Listen address cannot be empty")
 			c.output.Info("Valid format: host:port (e.g., 127.0.0.1:8888) or just port number")
 			continue
 		}
-		
+
 		// 验证地址格式（如果只输入了端口号，会在后续处理中补全）
 		// 这里先检查是否包含冒号，如果没有，假设是端口号
 		if !strings.Contains(addr, ":") {
@@ -67,7 +67,7 @@ func (c *CLI) cmdUseCode(args []string) {
 			}
 			listenAddr = addr
 		}
-		
+
 		// 地址有效，退出循环
 		break
 	}
@@ -195,12 +195,12 @@ func (c *CLI) cmdShowMapping(args []string) {
 
 	// 使用表格显示映射详情
 	table := NewTable("PROPERTY", "VALUE")
-	
+
 	typeIcon := "📤"
 	if mapping.Type == "inbound" {
 		typeIcon = "📥"
 	}
-	
+
 	table.AddRow("Mapping ID", mapping.MappingID)
 	table.AddRow("Type", typeIcon+" "+mapping.Type)
 	table.AddRow("Target Address", mapping.TargetAddress)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"tunnox-core/internal/api"
 	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
@@ -14,6 +13,7 @@ import (
 	"tunnox-core/internal/core/node"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/health"
+	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/security"
@@ -83,8 +83,8 @@ type Dependencies struct {
 	BridgeManager *internalbridge.BridgeManager
 	GRPCServer    *grpc.Server
 
-	// API
-	APIServer *api.ManagementAPIServer
+	// HTTP 服务
+	HTTPService *httpservice.HTTPService
 
 	// 处理器
 	AuthHandler   *ServerAuthHandler

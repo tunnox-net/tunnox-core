@@ -18,4 +18,3 @@ type Metrics interface {
 	// 关闭指标收集器
 	Close() error
 }
-

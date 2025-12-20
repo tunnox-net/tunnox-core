@@ -27,7 +27,7 @@ func (m *mockBrokerChecker) Ping(ctx context.Context) error {
 
 // mockSessionManagerChecker 模拟会话管理器检查器
 type mockSessionManagerChecker struct {
-	activeConns  int
+	activeConns   int
 	activeTunnels int
 }
 
@@ -142,7 +142,7 @@ func TestProtocolHealthChecker(t *testing.T) {
 
 	t.Run("healthy with active connections", func(t *testing.T) {
 		sessionMgr := &mockSessionManagerChecker{
-			activeConns:  5,
+			activeConns:   5,
 			activeTunnels: 3,
 		}
 		checker := NewProtocolHealthChecker(sessionMgr)
@@ -160,7 +160,7 @@ func TestProtocolHealthChecker(t *testing.T) {
 
 	t.Run("healthy with no active connections", func(t *testing.T) {
 		sessionMgr := &mockSessionManagerChecker{
-			activeConns:  0,
+			activeConns:   0,
 			activeTunnels: 0,
 		}
 		checker := NewProtocolHealthChecker(sessionMgr)
@@ -198,4 +198,3 @@ func TestHealthCheckers_Timeout(t *testing.T) {
 		t.Errorf("expected unhealthy status for timeout, got %s", results["slow"].Status)
 	}
 }
-

@@ -1,10 +1,10 @@
 package command
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"reflect"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
 

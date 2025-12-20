@@ -1,17 +1,19 @@
 package server
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"net"
 	"time"
 
 	"tunnox-core/api/proto/bridge"
-	"tunnox-core/internal/api"
 	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
-	"tunnox-core/internal/health"
+	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/httpservice"
+	"tunnox-core/internal/httpservice/modules/domainproxy"
+	"tunnox-core/internal/httpservice/modules/httppoll"
+	"tunnox-core/internal/httpservice/modules/management"
 	"tunnox-core/internal/protocol"
 
 	"google.golang.org/grpc"
@@ -229,94 +231,98 @@ func (c *BridgeComponent) Stop() error {
 }
 
 // ============================================================================
-// ManagementAPIComponent - 管理 API 组件
+// HTTPServiceComponent - HTTP 服务组件（替代旧的 ManagementAPIComponent）
 // ============================================================================
 
-// ManagementAPIComponent 管理 API 组件
-type ManagementAPIComponent struct {
+// HTTPServiceComponent HTTP 服务组件
+type HTTPServiceComponent struct {
 	*BaseComponent
 }
 
-func (c *ManagementAPIComponent) Name() string {
-	return "ManagementAPI"
+func (c *HTTPServiceComponent) Name() string {
+	return "HTTPService"
 }
 
-func (c *ManagementAPIComponent) Initialize(ctx context.Context, deps *Dependencies) error {
+func (c *HTTPServiceComponent) Initialize(ctx context.Context, deps *Dependencies) error {
 	if !deps.Config.ManagementAPI.Enabled {
-		corelog.Debugf("ManagementAPI not enabled, skipping")
+		corelog.Debugf("HTTPService not enabled, skipping")
 		return nil
 	}
 
-	// 使用强类型配置
-	apiConfig := &api.APIConfig{
+	// 构建 HTTP 服务配置
+	httpConfig := &httpservice.HTTPServiceConfig{
 		Enabled:    deps.Config.ManagementAPI.Enabled,
 		ListenAddr: deps.Config.ManagementAPI.ListenAddr,
-		Auth: api.AuthConfig{
-			Type:   deps.Config.ManagementAPI.Auth.Type,
-			Secret: deps.Config.ManagementAPI.Auth.Token,
-		},
-		CORS: api.CORSConfig{
+		CORS: httpservice.CORSConfig{
 			Enabled:        deps.Config.ManagementAPI.CORS.Enabled,
 			AllowedOrigins: deps.Config.ManagementAPI.CORS.AllowedOrigins,
 		},
-		RateLimit: api.RateLimitConfig{
+		RateLimit: httpservice.RateLimitConfig{
 			Enabled: deps.Config.ManagementAPI.RateLimit.Enabled,
 		},
-		PProf: api.PProfConfig{
-			Enabled:     deps.Config.ManagementAPI.PProf.Enabled,
-			DataDir:     deps.Config.ManagementAPI.PProf.DataDir,
-			Retention:   deps.Config.ManagementAPI.PProf.Retention,
-			AutoCapture: deps.Config.ManagementAPI.PProf.AutoCapture,
+		Modules: httpservice.ModulesConfig{
+			ManagementAPI: httpservice.ManagementAPIModuleConfig{
+				Enabled: true,
+				Auth: httpservice.AuthConfig{
+					Type:   deps.Config.ManagementAPI.Auth.Type,
+					Secret: deps.Config.ManagementAPI.Auth.Token,
+				},
+				PProf: httpservice.PProfConfig{
+					Enabled:     deps.Config.ManagementAPI.PProf.Enabled,
+					DataDir:     deps.Config.ManagementAPI.PProf.DataDir,
+					Retention:   deps.Config.ManagementAPI.PProf.Retention,
+					AutoCapture: deps.Config.ManagementAPI.PProf.AutoCapture,
+				},
+			},
+			HTTPPoll: httpservice.HTTPPollModuleConfig{
+				Enabled:        true,
+				MaxRequestSize: 1048576, // 1MB
+				DefaultTimeout: 30,
+				MaxTimeout:     60,
+			},
+			DomainProxy: httpservice.DomainProxyModuleConfig{
+				Enabled:              true,
+				BaseDomains:          []string{},
+				DefaultScheme:        "http",
+				CommandModeThreshold: 1048576, // 1MB
+				RequestTimeout:       30 * time.Second,
+			},
 		},
 	}
 
-	apiServer := api.NewManagementAPIServer(ctx, apiConfig, deps.CloudControl, deps.ConnCodeService, deps.HealthManager)
+	// 创建 HTTP 服务
+	httpSvc := httpservice.NewHTTPService(ctx, httpConfig, deps.CloudControl, deps.Storage, deps.HealthManager)
 
-	// 设置 SessionManager
+	// 创建并注册 Management API 模块
+	mgmtConfig := &httpConfig.Modules.ManagementAPI
+	mgmtModule := management.NewManagementModule(ctx, mgmtConfig, deps.CloudControl, deps.ConnCodeService, deps.HealthManager)
+	httpSvc.RegisterModule(mgmtModule)
+
+	// 创建并注册 HTTPPoll 模块
+	httpPollConfig := &httpConfig.Modules.HTTPPoll
+	httpPollModule := httppoll.NewHTTPPollModule(ctx, httpPollConfig)
+	httpSvc.RegisterModule(httpPollModule)
+
+	// 创建并注册 Domain Proxy 模块
+	domainProxyConfig := &httpConfig.Modules.DomainProxy
+	domainProxyModule := domainproxy.NewDomainProxyModule(ctx, domainProxyConfig)
+	httpSvc.RegisterModule(domainProxyModule)
+
+	// 设置会话管理器（如果可用）
 	if deps.SessionMgr != nil {
-		apiServer.SetSessionManager(api.AdaptSessionManager(deps.SessionMgr))
+		httpSvc.SetSessionManager(NewSessionManagerAdapter(deps.SessionMgr))
 	}
 
-	// 注册健康检查器
-	c.setupHealthCheckers(apiServer, deps)
+	deps.HTTPService = httpSvc
 
-	deps.APIServer = apiServer
-
-	corelog.Infof("ManagementAPI initialized: addr=%s", apiConfig.ListenAddr)
+	corelog.Infof("HTTPService initialized: addr=%s", httpConfig.ListenAddr)
 	return nil
 }
 
-func (c *ManagementAPIComponent) setupHealthCheckers(apiServer *api.ManagementAPIServer, deps *Dependencies) {
-	var storageChecker health.StorageChecker
-	var brokerChecker health.BrokerChecker
-	var sessionManagerChecker health.SessionManagerChecker
-
-	// 注册存储检查器
-	if deps.Storage != nil {
-		storageChecker = health.NewStorageAdapter(deps.Storage)
-	}
-
-	// 注册消息代理检查器
-	if deps.MessageBroker != nil {
-		if pingBroker, ok := deps.MessageBroker.(interface {
-			Ping(ctx context.Context) error
-		}); ok {
-			brokerChecker = &brokerPingAdapter{broker: pingBroker}
-		}
-	}
-
-	// 注册协议子系统检查器
-	if deps.SessionMgr != nil {
-		sessionManagerChecker = deps.SessionMgr
-	}
-
-	apiServer.SetHealthCheckers(storageChecker, brokerChecker, sessionManagerChecker)
-}
-
-func (c *ManagementAPIComponent) Start() error {
+func (c *HTTPServiceComponent) Start() error {
 	return nil
 }
 
-func (c *ManagementAPIComponent) Stop() error {
+func (c *HTTPServiceComponent) Stop() error {
 	return nil
 }

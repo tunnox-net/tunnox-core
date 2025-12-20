@@ -58,4 +58,3 @@ type MappingListResponse struct {
 type MappingDetailResponse struct {
 	Mapping MappingItem `json:"mapping"`
 }
-

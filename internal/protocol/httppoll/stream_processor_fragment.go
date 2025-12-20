@@ -1,10 +1,9 @@
 package httppoll
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/base64"
 	"fmt"
-
+	corelog "tunnox-core/internal/core/log"
 )
 
 // handleFragmentData 处理分片数据（从sendPollRequest中提取）
@@ -118,7 +117,6 @@ func (sp *StreamProcessor) writeReassembledGroup(nextGroup *FragmentGroup, reque
 		sp.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
 		return fmt.Errorf("failed to reassemble: %w", err)
 	}
-
 
 	// 验证重组后的数据大小
 	if len(reassembledData) != nextGroup.OriginalSize {

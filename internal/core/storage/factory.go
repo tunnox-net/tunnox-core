@@ -74,10 +74,10 @@ func (f *StorageFactory) createRedisStorage(config interface{}) (Storage, error)
 func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error) {
 	// 默认配置：纯内存模式
 	hybridConfig := DefaultHybridConfig()
-	
+
 	var cache CacheStorage
 	var persistent PersistentStorage
-	
+
 	// 解析配置
 	if config != nil {
 		if hc, ok := config.(*HybridStorageConfig); ok {
@@ -91,7 +91,7 @@ func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error
 			} else {
 				cache = NewMemoryStorage(f.ctx)
 			}
-			
+
 			// 创建持久化存储
 			if hc.EnablePersistent {
 				// 优先使用 JSON 文件存储（如果配置了）
@@ -121,7 +121,7 @@ func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error
 					persistent = jsonStorage
 				}
 			}
-			
+
 			// 更新配置
 			if hc.HybridConfig != nil {
 				hybridConfig = hc.HybridConfig
@@ -134,7 +134,7 @@ func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error
 		// 默认：纯内存模式
 		cache = NewMemoryStorage(f.ctx)
 	}
-	
+
 	storage := NewHybridStorage(f.ctx, cache, persistent, hybridConfig)
 	dispose.Infof("StorageFactory: created Hybrid storage")
 	return storage, nil
@@ -144,19 +144,19 @@ func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error
 type HybridStorageConfig struct {
 	// 缓存类型：memory 或 redis
 	CacheType string
-	
+
 	// Redis 缓存配置（如果 CacheType 为 redis）
 	RedisConfig *RedisConfig
-	
+
 	// 是否启用持久化
 	EnablePersistent bool
-	
+
 	// JSON 文件存储配置（如果 EnablePersistent 为 true，优先使用）
 	JSONConfig *JSONStorageConfig
-	
+
 	// 远程存储配置（如果 EnablePersistent 为 true 且未配置 JSON）
 	RemoteConfig *RemoteStorageConfig
-	
+
 	// 混合存储配置
 	HybridConfig *HybridConfig
 }

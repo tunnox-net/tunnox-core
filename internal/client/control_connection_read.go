@@ -1,9 +1,9 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"io"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -128,4 +128,3 @@ func (c *TunnoxClient) requestMappingConfig() {
 	case <-c.Ctx().Done():
 	}
 }
-

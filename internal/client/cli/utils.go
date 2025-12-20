@@ -125,10 +125,10 @@ func PromptSelect(prompt string, options []string) (int, error) {
 			fmt.Print("\033[2K") // 清除整行
 			fmt.Print("\r")      // 回到行首
 		}
-		
+
 		// 重新绘制提示行（单独一行，确保换行）
 		fmt.Fprintf(os.Stdout, "\r%s\n", prompt)
-		
+
 		// 重新绘制所有选项（每行独立，确保对齐，每行都从行首开始）
 		for i, opt := range options {
 			if i == selected {

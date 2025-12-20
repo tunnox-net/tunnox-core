@@ -1,11 +1,11 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"time"
-	
+	corelog "tunnox-core/internal/core/log"
+
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/packet"
 )
@@ -69,7 +69,7 @@ func (s *SessionManager) handleConfigPushBroadcast(msg *broker.ConfigPushMessage
 	targetConn := s.GetControlConnectionByClientID(msg.ClientID)
 	corelog.Infof("📨 SessionManager[%s]: Received ConfigPush broadcast for client %d", s.nodeID, msg.ClientID)
 	corelog.Infof("🔍 SessionManager[%s]: Checking if client %d is on this node...", s.nodeID, msg.ClientID)
-	
+
 	if targetConn == nil {
 		corelog.Infof("⏭️  SessionManager[%s]: client %d not on this node, ignoring broadcast", s.nodeID, msg.ClientID)
 		return
@@ -109,7 +109,7 @@ func (s *SessionManager) handleConfigPushBroadcast(msg *broker.ConfigPushMessage
 // BroadcastConfigPush 广播配置推送到集群（供API层调用）
 func (s *SessionManager) BroadcastConfigPush(clientID int64, configBody string) error {
 	corelog.Infof("🌐 SessionManager[%s]: BroadcastConfigPush CALLED for client %d", s.nodeID, clientID)
-	
+
 	if s.bridgeManager == nil {
 		corelog.Warnf("⚠️  SessionManager[%s]: BridgeManager is nil, cannot broadcast (single node mode?)", s.nodeID)
 		return nil // 单节点模式，不需要广播
@@ -142,4 +142,3 @@ func (s *SessionManager) BroadcastConfigPush(clientID int64, configBody string) 
 	corelog.Infof("✅ SessionManager[%s]: config push broadcast sent for client %d to topic %s", s.nodeID, clientID, broker.TopicConfigPush)
 	return nil
 }
-

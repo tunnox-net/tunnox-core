@@ -1,10 +1,10 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"net"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
@@ -173,4 +173,3 @@ func (s *SessionManager) sendHandshakeResponse(conn ControlConnectionInterface, 
 	corelog.Infof("Handshake response written successfully to connection %s", conn.GetConnID())
 	return nil
 }
-

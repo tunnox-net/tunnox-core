@@ -75,4 +75,3 @@ func TestSetGlobalMetrics_NilPanic(t *testing.T) {
 
 	SetGlobalMetrics(nil)
 }
-

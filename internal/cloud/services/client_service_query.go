@@ -1,11 +1,11 @@
 package services
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"sync"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 )
 
@@ -105,4 +105,3 @@ func (s *clientService) GetClientStats(clientID int64) (*stats.ClientStats, erro
 	}
 	return clientStats, nil
 }
-

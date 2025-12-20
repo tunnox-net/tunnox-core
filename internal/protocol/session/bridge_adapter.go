@@ -15,11 +15,10 @@ type BroadcastMessage struct {
 type BridgeManager interface {
 	// BroadcastTunnelOpen 广播隧道打开请求到其他节点
 	BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targetClientID int64) error
-	
+
 	// Subscribe 订阅消息主题（用于接收跨服务器广播）
 	Subscribe(ctx context.Context, topicPattern string) (<-chan *BroadcastMessage, error)
-	
+
 	// PublishMessage 发布消息到指定主题
 	PublishMessage(ctx context.Context, topic string, payload []byte) error
 }
-

@@ -1,9 +1,9 @@
 package httppoll
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"strings"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
 )
@@ -131,4 +131,3 @@ func (sp *ServerStreamProcessor) transferPacketToTunnelPackage(pkt *packet.Trans
 
 	return responsePkg
 }
-

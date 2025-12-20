@@ -1,7 +1,6 @@
 package repos
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +8,7 @@ corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -41,10 +41,10 @@ func NewClientStateRepository(ctx context.Context, storage storage.Storage) *Cli
 		ManagerBase: dispose.NewManager("ClientStateRepository", ctx),
 		storage:     storage,
 	}
-	
+
 	// 设置清理回调
 	repo.SetCtx(ctx, repo.onClose)
-	
+
 	return repo
 }
 
@@ -65,7 +65,7 @@ func (r *ClientStateRepository) onClose() error {
 //   - error: 错误信息
 func (r *ClientStateRepository) GetState(clientID int64) (*models.ClientRuntimeState, error) {
 	key := fmt.Sprintf("%s%d", constants.KeyPrefixRuntimeClientState, clientID)
-	
+
 	value, err := r.storage.Get(key)
 	if err != nil {
 		if err == storage.ErrKeyNotFound {
@@ -73,7 +73,7 @@ func (r *ClientStateRepository) GetState(clientID int64) (*models.ClientRuntimeS
 		}
 		return nil, fmt.Errorf("failed to get client state: %w", err)
 	}
-	
+
 	// 反序列化
 	var state models.ClientRuntimeState
 	if jsonStr, ok := value.(string); ok {
@@ -83,7 +83,7 @@ func (r *ClientStateRepository) GetState(clientID int64) (*models.ClientRuntimeS
 	} else {
 		return nil, fmt.Errorf("invalid state type: %T", value)
 	}
-	
+
 	return &state, nil
 }
 
@@ -98,29 +98,29 @@ func (r *ClientStateRepository) SetState(state *models.ClientRuntimeState) error
 	if state == nil {
 		return fmt.Errorf("state is nil")
 	}
-	
+
 	// 验证状态有效性
 	if err := state.Validate(); err != nil {
 		return fmt.Errorf("invalid state: %w", err)
 	}
-	
+
 	key := fmt.Sprintf("%s%d", constants.KeyPrefixRuntimeClientState, state.ClientID)
-	
+
 	// 序列化
 	jsonBytes, err := json.Marshal(state)
 	if err != nil {
 		return fmt.Errorf("failed to marshal state: %w", err)
 	}
-	
+
 	// 写入缓存，TTL = 90秒
 	ttl := time.Duration(constants.TTLClientState) * time.Second
 	if err := r.storage.Set(key, string(jsonBytes), ttl); err != nil {
 		return fmt.Errorf("failed to set state: %w", err)
 	}
-	
-	corelog.Debugf("ClientStateRepository: set state for client %d (node=%s, status=%s)", 
+
+	corelog.Debugf("ClientStateRepository: set state for client %d (node=%s, status=%s)",
 		state.ClientID, state.NodeID, state.Status)
-	
+
 	return nil
 }
 
@@ -133,11 +133,11 @@ func (r *ClientStateRepository) SetState(state *models.ClientRuntimeState) error
 //   - error: 错误信息
 func (r *ClientStateRepository) DeleteState(clientID int64) error {
 	key := fmt.Sprintf("%s%d", constants.KeyPrefixRuntimeClientState, clientID)
-	
+
 	if err := r.storage.Delete(key); err != nil && err != storage.ErrKeyNotFound {
 		return fmt.Errorf("failed to delete state: %w", err)
 	}
-	
+
 	corelog.Debugf("ClientStateRepository: deleted state for client %d", clientID)
 	return nil
 }
@@ -154,7 +154,7 @@ func (r *ClientStateRepository) TouchState(clientID int64) error {
 	if err != nil || state == nil {
 		return err
 	}
-	
+
 	state.Touch()
 	return r.SetState(state)
 }
@@ -173,7 +173,7 @@ func (r *ClientStateRepository) TouchState(clientID int64) error {
 //   - error: 错误信息
 func (r *ClientStateRepository) GetNodeClients(nodeID string) ([]int64, error) {
 	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
-	
+
 	value, err := r.storage.Get(key)
 	if err != nil {
 		if err == storage.ErrKeyNotFound {
@@ -181,14 +181,14 @@ func (r *ClientStateRepository) GetNodeClients(nodeID string) ([]int64, error) {
 		}
 		return nil, fmt.Errorf("failed to get node clients: %w", err)
 	}
-	
+
 	var clientIDs []int64
 	if jsonStr, ok := value.(string); ok {
 		if err := json.Unmarshal([]byte(jsonStr), &clientIDs); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal client IDs: %w", err)
 		}
 	}
-	
+
 	return clientIDs, nil
 }
 
@@ -204,33 +204,33 @@ func (r *ClientStateRepository) AddToNodeClients(nodeID string, clientID int64) 
 	if nodeID == "" {
 		return fmt.Errorf("node_id is empty")
 	}
-	
+
 	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
-	
+
 	// 获取当前列表
 	clientIDs, err := r.GetNodeClients(nodeID)
 	if err != nil {
 		return err
 	}
-	
+
 	// 检查是否已存在
 	for _, id := range clientIDs {
 		if id == clientID {
 			return nil // 已存在，无需重复添加
 		}
 	}
-	
+
 	// 添加到列表
 	clientIDs = append(clientIDs, clientID)
-	
+
 	// 序列化并保存
 	jsonBytes, _ := json.Marshal(clientIDs)
 	ttl := time.Duration(constants.TTLNodeClients) * time.Second
-	
+
 	if err := r.storage.Set(key, string(jsonBytes), ttl); err != nil {
 		return fmt.Errorf("failed to save node clients: %w", err)
 	}
-	
+
 	corelog.Debugf("ClientStateRepository: added client %d to node %s", clientID, nodeID)
 	return nil
 }
@@ -247,15 +247,15 @@ func (r *ClientStateRepository) RemoveFromNodeClients(nodeID string, clientID in
 	if nodeID == "" {
 		return nil // 空nodeID，忽略
 	}
-	
+
 	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
-	
+
 	// 获取当前列表
 	clientIDs, err := r.GetNodeClients(nodeID)
 	if err != nil {
 		return err
 	}
-	
+
 	// 过滤掉指定clientID
 	newIDs := make([]int64, 0, len(clientIDs))
 	for _, id := range clientIDs {
@@ -263,21 +263,20 @@ func (r *ClientStateRepository) RemoveFromNodeClients(nodeID string, clientID in
 			newIDs = append(newIDs, id)
 		}
 	}
-	
+
 	// 如果列表为空，删除key
 	if len(newIDs) == 0 {
 		return r.storage.Delete(key)
 	}
-	
+
 	// 保存新列表
 	jsonBytes, _ := json.Marshal(newIDs)
 	ttl := time.Duration(constants.TTLNodeClients) * time.Second
-	
+
 	if err := r.storage.Set(key, string(jsonBytes), ttl); err != nil {
 		return fmt.Errorf("failed to save node clients: %w", err)
 	}
-	
+
 	corelog.Debugf("ClientStateRepository: removed client %d from node %s", clientID, nodeID)
 	return nil
 }
-

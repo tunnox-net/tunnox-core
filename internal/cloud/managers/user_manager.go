@@ -20,12 +20,12 @@ func (c *CloudControl) CreateUser(username, email string) (*models.User, error) 
 	if err := c.userRepo.CreateUser(user); err != nil {
 		return nil, err
 	}
-	
+
 	// 更新统计计数器
 	if c.statsManager != nil && c.statsManager.GetCounter() != nil {
 		_ = c.statsManager.GetCounter().IncrUser(1)
 	}
-	
+
 	return user, nil
 }
 
@@ -49,4 +49,3 @@ func (c *CloudControl) DeleteUser(userID string) error {
 func (c *CloudControl) ListUsers(userType models.UserType) ([]*models.User, error) {
 	return c.userRepo.ListUsers(userType)
 }
-

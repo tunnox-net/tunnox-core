@@ -1,8 +1,8 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/events"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // ============================================================================
@@ -19,4 +19,3 @@ func (s *SessionManager) handleDisconnectRequestEvent(event events.Event) error 
 	// 实际的断开连接逻辑应该在其他地方处理
 	return nil
 }
-

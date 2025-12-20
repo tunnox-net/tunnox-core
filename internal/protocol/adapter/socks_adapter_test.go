@@ -277,4 +277,3 @@ func TestSocksAdapterAddress(t *testing.T) {
 		t.Errorf("Expected address '%s', got '%s'", testAddr, adapter.Addr())
 	}
 }
-

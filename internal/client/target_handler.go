@@ -1,12 +1,12 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/stream/transform"
 	"tunnox-core/internal/utils"

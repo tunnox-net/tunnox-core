@@ -1,11 +1,11 @@
 package services
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/cloud/models"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 )
 
@@ -231,4 +231,3 @@ func (s *clientService) DeleteClient(clientID int64) error {
 	s.baseService.LogDeleted("client", fmt.Sprintf("%d", clientID))
 	return nil
 }
-

@@ -1,10 +1,12 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
+	"encoding/json"
 	"fmt"
 	"tunnox-core/internal/core/events"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
+	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/packet"
 )
 
@@ -19,15 +21,15 @@ func (s *SessionManager) SetEventBus(eventBus events.EventBus) error {
 	}
 
 	s.eventBus = eventBus
-		s.responseManager = NewResponseManager(s, s.Ctx())
+	s.responseManager = NewResponseManager(s, s.Ctx())
 
-		// 订阅断开连接请求事件
-		if err := s.eventBus.Subscribe("DisconnectRequest", s.handleDisconnectRequestEvent); err != nil {
-			return fmt.Errorf("failed to subscribe to disconnect request events: %w", err)
-		}
+	// 订阅断开连接请求事件
+	if err := s.eventBus.Subscribe("DisconnectRequest", s.handleDisconnectRequestEvent); err != nil {
+		return fmt.Errorf("failed to subscribe to disconnect request events: %w", err)
+	}
 
-		corelog.Debug("Event bus configured in SessionManager")
-		return nil
+	corelog.Debug("Event bus configured in SessionManager")
+	return nil
 }
 
 // GetEventBus 获取事件总线
@@ -110,6 +112,17 @@ func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) err
 	if connPacket.Packet.CommandPacket != nil {
 		corelog.Debugf("SessionManager.handleCommandPacket: CommandType=%d, CommandID=%s",
 			connPacket.Packet.CommandPacket.CommandType, connPacket.Packet.CommandPacket.CommandId)
+
+		// 特殊处理 HTTP 代理响应
+		if connPacket.Packet.PacketType.IsCommandResp() &&
+			connPacket.Packet.CommandPacket.CommandType == packet.HTTPProxyResponse {
+			return s.handleHTTPProxyResponsePacket(connPacket)
+		}
+
+		// 特殊处理 SOCKS5 隧道请求
+		if connPacket.Packet.CommandPacket.CommandType == packet.SOCKS5TunnelRequestCmd {
+			return s.HandleSOCKS5TunnelRequest(connPacket)
+		}
 	}
 
 	// 优先使用 Command 执行器
@@ -126,6 +139,34 @@ func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) err
 	corelog.Warnf("SessionManager.handleCommandPacket: CommandExecutor is nil, falling back to default handler")
 	// 回退到默认处理
 	return s.handleDefaultCommand(connPacket)
+}
+
+// handleHTTPProxyResponsePacket 处理 HTTP 代理响应包
+func (s *SessionManager) handleHTTPProxyResponsePacket(connPacket *types.StreamPacket) error {
+	cmd := connPacket.Packet.CommandPacket
+	if cmd == nil {
+		return fmt.Errorf("command packet is nil")
+	}
+
+	// 解析响应
+	var resp httpservice.HTTPProxyResponse
+	if err := json.Unmarshal([]byte(cmd.CommandBody), &resp); err != nil {
+		corelog.Errorf("SessionManager: failed to parse HTTP proxy response: %v", err)
+		return err
+	}
+
+	// 如果 RequestID 为空，使用 CommandId
+	if resp.RequestID == "" {
+		resp.RequestID = cmd.CommandId
+	}
+
+	corelog.Debugf("SessionManager: received HTTP proxy response for request %s, status=%d",
+		resp.RequestID, resp.StatusCode)
+
+	// 转发到 HTTP 代理管理器
+	s.HandleHTTPProxyResponse(&resp)
+
+	return nil
 }
 
 // handleDefaultCommand 处理默认命令（回退）

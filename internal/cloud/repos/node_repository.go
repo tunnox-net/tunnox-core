@@ -53,4 +53,3 @@ func (r *NodeRepository) ListNodes() ([]*models.Node, error) {
 func (r *NodeRepository) AddNodeToList(node *models.Node) error {
 	return r.AddToList(node, constants.KeyPrefixNodeList)
 }
-

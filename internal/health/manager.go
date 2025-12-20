@@ -22,15 +22,15 @@ const (
 
 // HealthInfo 健康信息
 type HealthInfo struct {
-	Status             HealthStatus      `json:"status"`
-	ActiveConnections  int               `json:"active_connections"`
-	ActiveTunnels      int               `json:"active_tunnels"`
-	Uptime             int64             `json:"uptime_seconds"`
-	NodeID             string            `json:"node_id,omitempty"`
-	Version            string            `json:"version,omitempty"`
-	Details            map[string]string `json:"details,omitempty"`
-	LastStatusChange   time.Time         `json:"last_status_change"`
-	AcceptingNewConns  bool              `json:"accepting_new_connections"`
+	Status            HealthStatus      `json:"status"`
+	ActiveConnections int               `json:"active_connections"`
+	ActiveTunnels     int               `json:"active_tunnels"`
+	Uptime            int64             `json:"uptime_seconds"`
+	NodeID            string            `json:"node_id,omitempty"`
+	Version           string            `json:"version,omitempty"`
+	Details           map[string]string `json:"details,omitempty"`
+	LastStatusChange  time.Time         `json:"last_status_change"`
+	AcceptingNewConns bool              `json:"accepting_new_connections"`
 }
 
 // StatsProvider 提供统计信息的接口
@@ -48,12 +48,12 @@ type StatsProvider interface {
 type HealthManager struct {
 	mu sync.RWMutex
 
-	status          HealthStatus
-	startTime       time.Time
+	status           HealthStatus
+	startTime        time.Time
 	lastStatusChange time.Time
-	nodeID          string
-	version         string
-	details         map[string]string
+	nodeID           string
+	version          string
+	details          map[string]string
 
 	// 外部状态提供者
 	statsProvider StatsProvider
@@ -171,15 +171,15 @@ func (m *HealthManager) GetHealthInfo() *HealthInfo {
 	}
 
 	return &HealthInfo{
-		Status:             m.status,
-		ActiveConnections:  activeConns,
-		ActiveTunnels:      activeTunnels,
-		Uptime:             int64(time.Since(m.startTime).Seconds()),
-		NodeID:             m.nodeID,
-		Version:            m.version,
-		Details:            detailsCopy,
-		LastStatusChange:   m.lastStatusChange,
-		AcceptingNewConns:  m.status == HealthStatusHealthy,
+		Status:            m.status,
+		ActiveConnections: activeConns,
+		ActiveTunnels:     activeTunnels,
+		Uptime:            int64(time.Since(m.startTime).Seconds()),
+		NodeID:            m.nodeID,
+		Version:           m.version,
+		Details:           detailsCopy,
+		LastStatusChange:  m.lastStatusChange,
+		AcceptingNewConns: m.status == HealthStatusHealthy,
 	}
 }
 
@@ -192,4 +192,3 @@ func (m *HealthManager) onClose() error {
 	m.SetStatus(HealthStatusUnhealthy)
 	return nil
 }
-

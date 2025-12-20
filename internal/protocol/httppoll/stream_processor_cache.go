@@ -89,4 +89,3 @@ func (sp *StreamProcessor) removeCachedResponse(requestID string) {
 
 	delete(sp.responseCache, requestID)
 }
-

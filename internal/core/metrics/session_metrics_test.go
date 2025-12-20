@@ -178,4 +178,3 @@ func TestSessionMetrics_NilMetrics(t *testing.T) {
 		SetGlobalMetrics(m)
 	}
 }
-

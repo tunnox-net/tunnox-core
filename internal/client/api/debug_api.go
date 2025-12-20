@@ -1,10 +1,10 @@
 package api
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/client"
 )
@@ -80,12 +80,12 @@ func (s *DebugAPIServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	status := s.client.GetStatus()
 	response := map[string]interface{}{
-		"connected":    status.Connected,
-		"client_id":    status.ClientID,
-		"device_id":    status.DeviceID,
-		"server_addr":  status.ServerAddr,
-		"protocol":     status.Protocol,
-		"uptime":       status.Uptime.String(),
+		"connected":     status.Connected,
+		"client_id":     status.ClientID,
+		"device_id":     status.DeviceID,
+		"server_addr":   status.ServerAddr,
+		"protocol":      status.Protocol,
+		"uptime":        status.Uptime.String(),
 		"mapping_count": status.MappingCount,
 	}
 
@@ -267,7 +267,7 @@ func (s *DebugAPIServer) handleConfigList(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// TODO: 实现配置列表
+	// Debug API: 配置列表功能暂未实现
 	s.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "config list not implemented yet",
 	})
@@ -286,7 +286,7 @@ func (s *DebugAPIServer) handleConfigGet(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO: 实现配置获取
+	// Debug API: 配置获取功能暂未实现
 	s.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"key":   key,
 		"value": "not implemented yet",
@@ -309,7 +309,7 @@ func (s *DebugAPIServer) handleConfigSet(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// TODO: 实现配置设置
+	// Debug API: 配置设置功能暂未实现
 	s.writeJSON(w, http.StatusOK, map[string]string{"status": "not implemented yet"})
 }
 
@@ -328,4 +328,3 @@ func (s *DebugAPIServer) writeError(w http.ResponseWriter, status int, message s
 		"error": message,
 	})
 }
-

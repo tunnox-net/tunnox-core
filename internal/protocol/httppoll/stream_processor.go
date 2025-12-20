@@ -1,7 +1,6 @@
 package httppoll
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -11,6 +10,7 @@ corelog "tunnox-core/internal/core/log"
 	"net/url"
 	"sync"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/packet"
@@ -20,12 +20,12 @@ corelog "tunnox-core/internal/core/log"
 )
 
 const (
-	defaultPollTimeout      = 30 * time.Second
-	maxRetries              = 3
-	retryInterval           = 1 * time.Second
-	maxBufferSize           = 1024 * 1024      // 1MB
-	responseCacheTTL        = 60 * time.Second // 响应缓存过期时间
-	responseCacheMaxSize    = 1000             // 响应缓存最大容量
+	defaultPollTimeout   = 30 * time.Second
+	maxRetries           = 3
+	retryInterval        = 1 * time.Second
+	maxBufferSize        = 1024 * 1024      // 1MB
+	responseCacheTTL     = 60 * time.Second // 响应缓存过期时间
+	responseCacheMaxSize = 1000             // 响应缓存最大容量
 )
 
 // StreamProcessor HTTP 长轮询流处理器
@@ -180,7 +180,6 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 		requestID = uuid.New().String()
 		sp.pendingPollRequestMu.Unlock()
 
-
 		// 通知 pollLoop 发送 Poll 请求
 		select {
 		case sp.pollRequestChan <- requestID:
@@ -272,7 +271,6 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 		return 0, fmt.Errorf("push request failed: context canceled: %w", sp.Ctx().Err())
 	default:
 	}
-
 
 	// 4. 发送请求（带重试）
 	var resp *http.Response

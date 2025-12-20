@@ -154,4 +154,3 @@ func TestMemoryMetrics_ConcurrentAccess(t *testing.T) {
 		t.Errorf("expected counter value 1000.0, got %f", value)
 	}
 }
-

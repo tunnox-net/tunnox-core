@@ -1,11 +1,12 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 
 	"tunnox-core/internal/client/mapping"
+	"tunnox-core/internal/cloud/models"
 	clientconfig "tunnox-core/internal/config"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // handleConfigUpdate 处理配置更新
@@ -25,14 +26,23 @@ func (c *TunnoxClient) handleConfigUpdate(configBody string) {
 
 	// 构建新配置的映射ID集合
 	newMappingIDs := make(map[string]bool)
+	newSOCKS5MappingIDs := make(map[string]bool)
+
 	for i, mappingConfig := range configUpdate.Mappings {
 		corelog.Infof("Client: processing mapping[%d]: ID=%s, Protocol=%s, LocalPort=%d",
 			i, mappingConfig.MappingID, mappingConfig.Protocol, mappingConfig.LocalPort)
 		newMappingIDs[mappingConfig.MappingID] = true
-		c.addOrUpdateMapping(mappingConfig)
+
+		// SOCKS5 映射由 SOCKS5Manager 处理
+		if mappingConfig.Protocol == "socks5" && mappingConfig.LocalPort > 0 {
+			newSOCKS5MappingIDs[mappingConfig.MappingID] = true
+			c.addOrUpdateSOCKS5Mapping(mappingConfig)
+		} else {
+			c.addOrUpdateMapping(mappingConfig)
+		}
 	}
 
-	// 删除不再存在的映射
+	// 删除不再存在的普通映射
 	c.mu.Lock()
 	for mappingID, handler := range c.mappingHandlers {
 		if !newMappingIDs[mappingID] {
@@ -43,7 +53,39 @@ func (c *TunnoxClient) handleConfigUpdate(configBody string) {
 	}
 	c.mu.Unlock()
 
+	// 删除不再存在的 SOCKS5 映射
+	if c.socks5Manager != nil {
+		for _, mappingID := range c.socks5Manager.ListMappings() {
+			if !newSOCKS5MappingIDs[mappingID] {
+				corelog.Infof("Client: removing SOCKS5 mapping %s (no longer in config)", mappingID)
+				c.socks5Manager.RemoveMapping(mappingID)
+			}
+		}
+	}
+
 	corelog.Infof("Client: config updated successfully, total active mappings=%d", len(newMappingIDs))
+}
+
+// addOrUpdateSOCKS5Mapping 添加或更新 SOCKS5 映射
+func (c *TunnoxClient) addOrUpdateSOCKS5Mapping(mappingCfg clientconfig.MappingConfig) {
+	if c.socks5Manager == nil {
+		corelog.Errorf("Client: SOCKS5Manager not initialized")
+		return
+	}
+
+	// 转换为 models.PortMapping 格式
+	portMapping := &models.PortMapping{
+		ID:             mappingCfg.MappingID,
+		Protocol:       models.ProtocolSOCKS,
+		SourcePort:     mappingCfg.LocalPort,
+		TargetClientID: mappingCfg.TargetClientID,
+		ListenClientID: c.GetClientID(),
+		SecretKey:      mappingCfg.SecretKey,
+	}
+
+	if err := c.socks5Manager.AddMapping(portMapping); err != nil {
+		corelog.Errorf("Client: failed to add SOCKS5 mapping %s: %v", mappingCfg.MappingID, err)
+	}
 }
 
 // addOrUpdateMapping 添加或更新映射
@@ -68,6 +110,11 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 	protocol := mappingCfg.Protocol
 	if protocol == "" {
 		protocol = "tcp" // 默认 TCP
+	}
+
+	// SOCKS5 映射由 SOCKS5Manager 处理，不在这里创建
+	if protocol == "socks5" {
+		return
 	}
 
 	// 创建协议适配器

@@ -1,7 +1,6 @@
 package adapter
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -15,6 +14,7 @@ corelog "tunnox-core/internal/core/log"
 	"net"
 	"sync"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/protocol/session"
 

@@ -1,12 +1,12 @@
 package stream
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
 	"sync"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // StreamManager 流管理器
@@ -52,7 +52,7 @@ func (m *StreamManager) CreateStream(id string, reader io.Reader, writer io.Writ
 		stream = streamer
 		corelog.Infof("CreateStream: writer is already a PackageStreamer, using it directly, id=%s, type=%T", id, streamer)
 	} else {
-	// 创建新流
+		// 创建新流
 		stream = m.factory.NewStreamProcessor(reader, writer)
 		corelog.Debugf("CreateStream: created new stream processor, id=%s", id)
 	}

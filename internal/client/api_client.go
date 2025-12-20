@@ -43,9 +43,9 @@ func NewManagementAPIClient(serverAddr string, clientID int64, authToken string)
 
 // GenerateCodeRequest 生成连接码请求
 type GenerateCodeRequest struct {
-	TargetAddress  string `json:"target_address"`  // 目标地址（如 tcp://192.168.1.10:8080）
-	ActivationTTL  int    `json:"activation_ttl"`  // 激活有效期（秒）
-	MappingTTL     int    `json:"mapping_ttl"`     // 映射有效期（秒）
+	TargetAddress string `json:"target_address"` // 目标地址（如 tcp://192.168.1.10:8080）
+	ActivationTTL int    `json:"activation_ttl"` // 激活有效期（秒）
+	MappingTTL    int    `json:"mapping_ttl"`    // 映射有效期（秒）
 }
 
 // GenerateCodeResponse 生成连接码响应
@@ -111,8 +111,8 @@ func (c *ManagementAPIClient) ListConnectionCodes() (*ListConnectionCodesRespons
 
 // ActivateCodeRequest 激活连接码请求
 type ActivateCodeRequest struct {
-	Code           string `json:"code"`
-	ListenAddress  string `json:"listen_address"`  // 本地监听地址（如 127.0.0.1:8888）
+	Code          string `json:"code"`
+	ListenAddress string `json:"listen_address"` // 本地监听地址（如 127.0.0.1:8888）
 }
 
 // ActivateCodeResponse 激活连接码响应
@@ -149,7 +149,7 @@ type ListMappingsResponse struct {
 // MappingInfo 映射信息
 type MappingInfo struct {
 	MappingID     string `json:"mapping_id"`
-	Type          string `json:"type"`          // "inbound" or "outbound"
+	Type          string `json:"type"` // "inbound" or "outbound"
 	TargetAddress string `json:"target_address"`
 	ListenAddress string `json:"listen_address"`
 	Status        string `json:"status"`
@@ -247,4 +247,3 @@ func (c *ManagementAPIClient) doRequest(method, url string, body interface{}) ([
 
 	return respBody, nil
 }
-

@@ -4,15 +4,77 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"tunnox-core/internal/api"
 	"tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
+	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/protocol/session"
 )
+
+// ============================================================================
+// SessionManager 适配器（适配 session.SessionManager 到 httpservice.SessionManagerInterface）
+// ============================================================================
+
+// SessionManagerAdapter 会话管理器适配器
+type SessionManagerAdapter struct {
+	sessionMgr *session.SessionManager
+}
+
+// NewSessionManagerAdapter 创建会话管理器适配器
+func NewSessionManagerAdapter(sessionMgr *session.SessionManager) *SessionManagerAdapter {
+	return &SessionManagerAdapter{sessionMgr: sessionMgr}
+}
+
+// GetControlConnectionInterface 获取控制连接
+func (a *SessionManagerAdapter) GetControlConnectionInterface(clientID int64) httpservice.ControlConnectionAccessor {
+	conn := a.sessionMgr.GetControlConnectionInterface(clientID)
+	if conn == nil {
+		return nil
+	}
+	return &ControlConnectionAdapter{conn: conn}
+}
+
+// BroadcastConfigPush 广播配置推送
+func (a *SessionManagerAdapter) BroadcastConfigPush(clientID int64, configBody string) error {
+	return a.sessionMgr.BroadcastConfigPush(clientID, configBody)
+}
+
+// GetNodeID 获取当前节点ID
+func (a *SessionManagerAdapter) GetNodeID() string {
+	return a.sessionMgr.GetNodeID()
+}
+
+// SendHTTPProxyRequest 发送 HTTP 代理请求
+func (a *SessionManagerAdapter) SendHTTPProxyRequest(clientID int64, request *httpservice.HTTPProxyRequest) (*httpservice.HTTPProxyResponse, error) {
+	return a.sessionMgr.SendHTTPProxyRequest(clientID, request)
+}
+
+// NotifyClientUpdate 通知客户端更新配置
+func (a *SessionManagerAdapter) NotifyClientUpdate(clientID int64) {
+	a.sessionMgr.NotifyClientUpdate(clientID)
+}
+
+// ControlConnectionAdapter 控制连接适配器
+type ControlConnectionAdapter struct {
+	conn session.ControlConnectionInterface
+}
+
+// GetConnID 获取连接ID
+func (a *ControlConnectionAdapter) GetConnID() string {
+	return a.conn.GetConnID()
+}
+
+// GetRemoteAddr 获取远程地址
+func (a *ControlConnectionAdapter) GetRemoteAddr() string {
+	addr := a.conn.GetRemoteAddr()
+	if addr == nil {
+		return ""
+	}
+	return addr.String()
+}
 
 // ============================================================================
 // 通用服务适配器（消除重复代码）
@@ -119,10 +181,12 @@ func NewBridgeService(name string, manager *bridge.BridgeManager) *BaseService {
 	return NewBaseService(name, manager)
 }
 
-// NewManagementAPIService 创建 Management API 服务
-func NewManagementAPIService(name string, apiServer *api.ManagementAPIServer) *BaseService {
-	return NewBaseService(name, apiServer).WithOnStart(func(ctx context.Context) error {
-		return apiServer.Start()
+// NewHTTPServiceAdapter 创建 HTTP 服务适配器
+func NewHTTPServiceAdapter(name string, httpService *httpservice.HTTPService) *BaseService {
+	return NewBaseService(name, httpService).WithOnStart(func(ctx context.Context) error {
+		return httpService.Start()
+	}).WithOnStop(func(ctx context.Context) error {
+		return httpService.Stop()
 	})
 }
 

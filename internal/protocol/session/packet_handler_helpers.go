@@ -33,4 +33,3 @@ func (s *SessionManager) extractNetConn(conn *types.Connection) net.Conn {
 	}
 	return nil
 }
-

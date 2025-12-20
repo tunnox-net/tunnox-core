@@ -28,17 +28,17 @@ const (
 //
 // 用于在服务器切换时恢复隧道，包含序列号、缓冲数据等关键信息。
 type TunnelState struct {
-	TunnelID         string          `json:"tunnel_id"`
-	MappingID        string          `json:"mapping_id"`
-	ListenClientID   int64           `json:"listen_client_id"`
-	TargetClientID   int64           `json:"target_client_id"`
-	LastSeqNum       uint64          `json:"last_seq_num"`       // 发送端最后序列号
-	LastAckNum       uint64          `json:"last_ack_num"`       // 接收端最后确认号
-	NextExpectedSeq  uint64          `json:"next_expected_seq"`  // 接收端期望序列号
-	BufferedPackets  []BufferedState `json:"buffered_packets"`   // 缓冲的包
-	CreatedAt        time.Time       `json:"created_at"`
-	UpdatedAt        time.Time       `json:"updated_at"`
-	Signature        string          `json:"signature"`          // HMAC签名（防篡改）
+	TunnelID        string          `json:"tunnel_id"`
+	MappingID       string          `json:"mapping_id"`
+	ListenClientID  int64           `json:"listen_client_id"`
+	TargetClientID  int64           `json:"target_client_id"`
+	LastSeqNum      uint64          `json:"last_seq_num"`      // 发送端最后序列号
+	LastAckNum      uint64          `json:"last_ack_num"`      // 接收端最后确认号
+	NextExpectedSeq uint64          `json:"next_expected_seq"` // 接收端期望序列号
+	BufferedPackets []BufferedState `json:"buffered_packets"`  // 缓冲的包
+	CreatedAt       time.Time       `json:"created_at"`
+	UpdatedAt       time.Time       `json:"updated_at"`
+	Signature       string          `json:"signature"` // HMAC签名（防篡改）
 }
 
 // BufferedState 缓冲包状态（用于序列化）
@@ -59,7 +59,7 @@ func NewTunnelStateManager(storage storage.Storage, secretKey string) *TunnelSta
 	if secretKey == "" {
 		secretKey = "tunnox-tunnel-state-secret-change-me"
 	}
-	
+
 	return &TunnelStateManager{
 		storage:   storage,
 		secretKey: secretKey,
@@ -107,7 +107,7 @@ func (m *TunnelStateManager) SaveState(state *TunnelState) error {
 // LoadState 加载隧道状态
 func (m *TunnelStateManager) LoadState(tunnelID string) (*TunnelState, error) {
 	key := TunnelStateKeyPrefix + tunnelID
-	
+
 	// 从Redis读取
 	data, err := m.storage.Get(key)
 	if err != nil {
@@ -210,4 +210,3 @@ func RestoreToSendBuffer(sendBuffer *TunnelSendBuffer, bufferedStates []Buffered
 		sendBuffer.currentBufferSize += len(state.Data)
 	}
 }
-

@@ -422,4 +422,3 @@ func (sc *StatsCounter) incrHashField(key, field string, delta int64) error {
 	// 设置新值
 	return hs.SetHash(key, field, newVal)
 }
-

@@ -1,13 +1,13 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
 	"tunnox-core/internal/command"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 )

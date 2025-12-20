@@ -117,7 +117,7 @@ func (t *Table) Render() {
 		boldHeader := colorBold(header)
 		widths[i] = len(stripANSI(boldHeader))
 	}
-	
+
 	// 更新宽度，考虑数据行的内容
 	for _, row := range t.rows {
 		for i := 0; i < len(t.headers) && i < len(row); i++ {
@@ -127,7 +127,7 @@ func (t *Table) Render() {
 			}
 		}
 	}
-	
+
 	// 确保最小宽度
 	for i := range widths {
 		if widths[i] < 3 {

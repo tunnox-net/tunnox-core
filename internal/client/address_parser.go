@@ -81,4 +81,3 @@ func parseTargetAddress(addr string) (string, int, string, error) {
 	}
 	return host, port, protocol, nil
 }
-

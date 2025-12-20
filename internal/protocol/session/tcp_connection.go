@@ -16,10 +16,10 @@ type TCPTunnelConnection struct {
 	tunnelID  string
 	stream    stream.PackageStreamer
 
-	state    ConnectionStateManager
-	timeout  ConnectionTimeoutManager
-	error    ConnectionErrorHandler
-	reuse    ConnectionReuseStrategy
+	state   ConnectionStateManager
+	timeout ConnectionTimeoutManager
+	error   ConnectionErrorHandler
+	reuse   ConnectionReuseStrategy
 }
 
 // NewTCPTunnelConnection 创建 TCP 隧道连接
@@ -114,4 +114,3 @@ func (c *TCPTunnelConnection) Close() error {
 func (c *TCPTunnelConnection) IsClosed() bool {
 	return c.state.IsClosed()
 }
-

@@ -1,8 +1,8 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // ReconnectConfig 重连配置

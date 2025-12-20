@@ -13,7 +13,7 @@ func TestServerStreamProcessor_SetConnectionID(t *testing.T) {
 	sp := NewServerStreamProcessor(ctx, "conn_123", 456, "mapping_789")
 
 	sp.SetConnectionID("conn_456")
-	
+
 	if sp.GetConnectionID() != "conn_456" {
 		t.Errorf("Expected ConnectionID=conn_456, got %s", sp.GetConnectionID())
 	}
@@ -24,7 +24,7 @@ func TestServerStreamProcessor_UpdateClientID(t *testing.T) {
 	sp := NewServerStreamProcessor(ctx, "conn_123", 456, "mapping_789")
 
 	sp.UpdateClientID(789)
-	
+
 	if sp.GetClientID() != 789 {
 		t.Errorf("Expected ClientID=789, got %d", sp.GetClientID())
 	}
@@ -35,7 +35,7 @@ func TestServerStreamProcessor_SetMappingID(t *testing.T) {
 	sp := NewServerStreamProcessor(ctx, "conn_123", 456, "")
 
 	sp.SetMappingID("mapping_789")
-	
+
 	if sp.GetMappingID() != "mapping_789" {
 		t.Errorf("Expected MappingID=mapping_789, got %s", sp.GetMappingID())
 	}
@@ -63,7 +63,7 @@ func TestServerStreamProcessor_PushData(t *testing.T) {
 	sp := NewServerStreamProcessor(ctx, "conn_123", 456, "mapping_789")
 
 	base64Data := "dGVzdCBkYXRh" // "test data" in base64
-	
+
 	err := sp.PushData(base64Data)
 	if err != nil {
 		t.Fatalf("PushData failed: %v", err)
@@ -117,4 +117,3 @@ func TestServerStreamProcessor_GetReader_GetWriter(t *testing.T) {
 		t.Error("GetWriter should return nil for HTTP long polling")
 	}
 }
-

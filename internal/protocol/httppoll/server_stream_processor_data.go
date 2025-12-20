@@ -1,13 +1,12 @@
 package httppoll
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"time"
-
+	corelog "tunnox-core/internal/core/log"
 )
 
 // WriteExact 将数据流写入 Poll 响应（支持分片）

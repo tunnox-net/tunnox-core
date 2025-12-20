@@ -9,7 +9,8 @@ import (
 
 // ExpandPath 展开路径，支持 ~ 和相对路径
 // 例如：~/logs/app.log -> /home/user/logs/app.log
-//      ./logs/app.log -> /current/dir/logs/app.log
+//
+//	./logs/app.log -> /current/dir/logs/app.log
 func ExpandPath(path string) (string, error) {
 	if path == "" {
 		return "", fmt.Errorf("path is empty")
@@ -41,4 +42,3 @@ func ExpandPath(path string) (string, error) {
 
 	return path, nil
 }
-

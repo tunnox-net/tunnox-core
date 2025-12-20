@@ -1,12 +1,12 @@
 package events
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // eventBus 事件总线实现

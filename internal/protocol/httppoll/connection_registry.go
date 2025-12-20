@@ -24,16 +24,16 @@ func (r *ConnectionRegistry) Register(connID string, conn *ServerStreamProcessor
 	if connID == "" {
 		return
 	}
-	
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	// 如果已存在且不是同一个连接对象，关闭旧的（防止重复连接）
 	if oldConn, exists := r.connections[connID]; exists && oldConn != conn {
 		// 只有在确实不同时才关闭旧的
 		oldConn.Close()
 	}
-	
+
 	r.connections[connID] = conn
 }
 
@@ -43,7 +43,7 @@ func (r *ConnectionRegistry) Get(connID string) *ServerStreamProcessor {
 	if connID == "" {
 		return nil
 	}
-	
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.connections[connID]
@@ -54,7 +54,7 @@ func (r *ConnectionRegistry) Remove(connID string) {
 	if connID == "" {
 		return
 	}
-	
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	delete(r.connections, connID)
@@ -74,22 +74,21 @@ func (r *ConnectionRegistry) GetOrCreate(connID string, createFunc func() *Serve
 	if connID == "" {
 		return nil
 	}
-	
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	
+
 	// 先检查是否已存在
 	if existingConn, exists := r.connections[connID]; exists {
 		return existingConn
 	}
-	
+
 	// 不存在，创建新连接
 	newConn := createFunc()
 	if newConn == nil {
 		return nil
 	}
-	
+
 	r.connections[connID] = newConn
 	return newConn
 }
-

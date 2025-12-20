@@ -1,11 +1,11 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
 )

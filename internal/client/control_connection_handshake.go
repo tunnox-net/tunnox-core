@@ -1,11 +1,11 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
 	httppoll "tunnox-core/internal/protocol/httppoll"
@@ -162,6 +162,12 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 				httppollStream.UpdateClientID(resp.ClientID)
 				corelog.Debugf("Client: updated HTTPStreamProcessor clientID to %d", resp.ClientID)
 			}
+
+			// ✅ 更新 SOCKS5Manager 的 clientID
+			if c.socks5Manager != nil {
+				c.socks5Manager.SetClientID(resp.ClientID)
+				corelog.Debugf("Client: updated SOCKS5Manager clientID to %d", resp.ClientID)
+			}
 		} else if resp.Message != "" {
 			// 兼容旧版本：从Message解析ClientID
 			var assignedClientID int64
@@ -171,6 +177,11 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 				if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
 					httppollStream.UpdateClientID(assignedClientID)
 					corelog.Debugf("Client: updated HTTPStreamProcessor clientID to %d", assignedClientID)
+				}
+				// ✅ 更新 SOCKS5Manager 的 clientID
+				if c.socks5Manager != nil {
+					c.socks5Manager.SetClientID(assignedClientID)
+					corelog.Debugf("Client: updated SOCKS5Manager clientID to %d", assignedClientID)
 				}
 			}
 		}
@@ -198,4 +209,3 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 
 	return nil
 }
-

@@ -117,4 +117,3 @@ func (c *CloudControl) GetNodeServiceInfo(nodeID string) (*models.NodeServiceInf
 func (c *CloudControl) GetAllNodeServiceInfo() ([]*models.NodeServiceInfo, error) {
 	return c.nodeManager.GetAllNodeServiceInfo()
 }
-

@@ -1,11 +1,11 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"io"
 	"net"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 )
@@ -41,7 +41,7 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 			corelog.Debugf("CreateConnection: using provided connectionID=%s", connID)
 		}
 	}
-	
+
 	// 如果没有从连接获取到 connectionID，则生成新的
 	if connID == "" {
 		connID, err = s.idManager.GenerateConnectionID()
@@ -163,9 +163,9 @@ func (s *SessionManager) CloseConnection(connectionId string) error {
 		if conn.RawConn != nil {
 			conn.RawConn.Close()
 		}
-	// 关闭流处理器
+		// 关闭流处理器
 		if conn.Stream != nil {
-		conn.Stream.Close()
+			conn.Stream.Close()
 		}
 	}
 
@@ -227,20 +227,20 @@ func (s *SessionManager) GetConnectionStats() ConnectionStats {
 	s.tunnelConnLock.RUnlock()
 
 	return ConnectionStats{
-		TotalConnections:    totalConnections,
-		ControlConnections:  controlConnections,
-		TunnelConnections:   tunnelConnections,
-		MaxConnections:      s.getMaxConnections(),
+		TotalConnections:      totalConnections,
+		ControlConnections:    controlConnections,
+		TunnelConnections:     tunnelConnections,
+		MaxConnections:        s.getMaxConnections(),
 		MaxControlConnections: s.getMaxControlConnections(),
 	}
 }
 
 // ConnectionStats 连接统计信息
 type ConnectionStats struct {
-	TotalConnections     int
-	ControlConnections  int
-	TunnelConnections   int
-	MaxConnections      int
+	TotalConnections      int
+	ControlConnections    int
+	TunnelConnections     int
+	MaxConnections        int
 	MaxControlConnections int
 }
 
@@ -405,7 +405,7 @@ func (s *SessionManager) RemoveControlConnection(connID string) {
 		// 这样可以避免误删真正的控制连接（当隧道连接被错误注册为控制连接时）
 		if conn.Authenticated && conn.ClientID > 0 {
 			if existingConn, exists := s.clientIDIndexMap[conn.ClientID]; exists && existingConn.ConnID == connID {
-			delete(s.clientIDIndexMap, conn.ClientID)
+				delete(s.clientIDIndexMap, conn.ClientID)
 			} else {
 			}
 		}
@@ -421,7 +421,6 @@ func (s *SessionManager) getControlConnectionByConnID(connID string) *ControlCon
 
 	return s.controlConnMap[connID]
 }
-
 
 // ============================================================================
 // Tunnel Connection 管理

@@ -1,12 +1,12 @@
 package bridge
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // BridgeConnectionPool 跨节点桥接连接池（管理多个节点的连接）

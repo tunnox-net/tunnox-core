@@ -217,4 +217,3 @@ func TestTransferPacket_MigrationFlag(t *testing.T) {
 	assert.True(t, pkt.HasFlag(FlagBuffer), "Should have Buffer flag")
 	assert.True(t, pkt.IsV2(), "Should be V2 format")
 }
-

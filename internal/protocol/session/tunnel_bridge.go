@@ -1,12 +1,12 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/stream"
