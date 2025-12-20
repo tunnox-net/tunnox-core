@@ -1,5 +1,5 @@
 # Tunnox Client Dockerfile
-# For integration testing
+# For integration testing - supports multiple protocols
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Stage 1: Build
@@ -34,16 +34,22 @@ WORKDIR /app
 COPY --from=builder /build/tunnox-client .
 
 # Create startup script that reads environment variables
+# Supports: TUNNOX_SERVER, TUNNOX_PROTOCOL (tcp/websocket/quic/httppoll)
 RUN echo '#!/bin/sh' > /app/start.sh && \
     echo 'set -e' >> /app/start.sh && \
     echo '' >> /app/start.sh && \
-    echo '# Wait for core to be ready' >> /app/start.sh && \
-    echo 'echo "Waiting for core server..."' >> /app/start.sh && \
+    echo '# Wait for server to be ready' >> /app/start.sh && \
+    echo 'echo "Waiting for server..."' >> /app/start.sh && \
     echo 'sleep 5' >> /app/start.sh && \
     echo '' >> /app/start.sh && \
+    echo '# Get protocol from env, default to tcp' >> /app/start.sh && \
+    echo 'PROTOCOL="${TUNNOX_PROTOCOL:-tcp}"' >> /app/start.sh && \
+    echo 'SERVER="${TUNNOX_SERVER:-core:7000}"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo 'echo "Starting client with protocol=$PROTOCOL server=$SERVER"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
     echo 'touch /app/client-config.yaml' >> /app/start.sh && \
-    echo '# Start client with TCP connection to core' >> /app/start.sh && \
-    echo 'exec /app/tunnox-client -config /app/client-config.yaml -p tcp -s "${TUNNOX_SERVER:-core:7000}" -anonymous -daemon -log /tmp/tunnox-client.log' >> /app/start.sh && \
+    echo 'exec /app/tunnox-client -config /app/client-config.yaml -p "$PROTOCOL" -s "$SERVER" -anonymous -daemon -log /tmp/tunnox-client.log' >> /app/start.sh && \
     chmod +x /app/start.sh
 
 RUN adduser -D -u 1000 tunnox && \

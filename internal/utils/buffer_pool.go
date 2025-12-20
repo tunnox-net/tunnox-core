@@ -96,21 +96,17 @@ func (bp *BufferPool) Get(size int) []byte {
 }
 
 // Put(buf []byte) 归还缓冲区
+// 🚀 性能优化: 移除清空缓冲区操作（不必要的开销）
 func (bp *BufferPool) Put(buf []byte) {
 	if buf == nil {
 		return
 	}
 
-	// 获取底层数组的容量（可能大于 len(buf)）
-	// 注意：如果 buf 是通过 buf[:size] 切片的，cap(buf) 仍然是原始大小
 	actualSize := cap(buf)
-
-	// 超过最大大小，不放入池中，直接丢弃
 	if actualSize > MaxBufferSize {
 		return
 	}
 
-	// 对齐大小
 	alignedSize := alignBufferSize(actualSize)
 
 	bp.mu.RLock()
@@ -118,13 +114,8 @@ func (bp *BufferPool) Put(buf []byte) {
 	bp.mu.RUnlock()
 
 	if exists {
-		// 恢复到底层数组的完整大小
-		fullBuf := buf[:actualSize]
-		// 清空缓冲区内容
-		for i := range fullBuf {
-			fullBuf[i] = 0
-		}
-		pool.Put(fullBuf)
+		// 🚀 直接归还，不清空（调用方负责正确使用）
+		pool.Put(buf[:actualSize])
 	}
 }
 

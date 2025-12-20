@@ -1,7 +1,6 @@
 package adapter
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -9,6 +8,7 @@ corelog "tunnox-core/internal/core/log"
 	"net"
 	"sync"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/protocol/session"
 )
 
@@ -474,7 +474,8 @@ func (s *SocksAdapter) dialThroughTunnel(targetAddr string) (net.Conn, error) {
 	return conn, nil
 }
 
-// relay 在两个连接之间双向转发数据
+// relay 在两个连接之间双向转发数据（高性能版本）
+// 🚀 优化: 使用 512KB 缓冲区，移除热路径日志
 func (s *SocksAdapter) relay(client, remote net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -482,12 +483,8 @@ func (s *SocksAdapter) relay(client, remote net.Conn) {
 	// 客户端 -> 远程
 	go func() {
 		defer wg.Done()
-		written, err := io.Copy(remote, client)
-		if err != nil {
-			corelog.Debugf("Client to remote copy error: %v", err)
-		}
-		corelog.Debugf("Client to remote: %d bytes", written)
-		// 关闭远程连接的写入
+		buf := make([]byte, 512*1024) // 512KB buffer
+		io.CopyBuffer(remote, client, buf)
 		if tcpConn, ok := remote.(*net.TCPConn); ok {
 			tcpConn.CloseWrite()
 		}
@@ -496,19 +493,14 @@ func (s *SocksAdapter) relay(client, remote net.Conn) {
 	// 远程 -> 客户端
 	go func() {
 		defer wg.Done()
-		written, err := io.Copy(client, remote)
-		if err != nil {
-			corelog.Debugf("Remote to client copy error: %v", err)
-		}
-		corelog.Debugf("Remote to client: %d bytes", written)
-		// 关闭客户端连接的写入
+		buf := make([]byte, 512*1024) // 512KB buffer
+		io.CopyBuffer(client, remote, buf)
 		if tcpConn, ok := client.(*net.TCPConn); ok {
 			tcpConn.CloseWrite()
 		}
 	}()
 
 	wg.Wait()
-	corelog.Infof("SOCKS5 relay completed")
 }
 
 // onClose SOCKS5 特定的资源清理

@@ -40,6 +40,13 @@ func (t *TcpAdapter) Dial(addr string) (io.ReadWriteCloser, error) {
 	if err != nil {
 		return nil, err
 	}
+	// 🚀 性能优化: 设置 TCP 参数
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)           // 禁用 Nagle 算法，减少延迟
+		tcpConn.SetReadBuffer(512 * 1024)  // 512KB 读缓冲区
+		tcpConn.SetWriteBuffer(512 * 1024) // 512KB 写缓冲区
+		tcpConn.SetKeepAlive(true)         // 启用 KeepAlive
+	}
 	return &TcpConn{Conn: conn}, nil
 }
 
@@ -59,6 +66,13 @@ func (t *TcpAdapter) Accept() (io.ReadWriteCloser, error) {
 	conn, err := t.listener.Accept()
 	if err != nil {
 		return nil, err
+	}
+	// 🚀 性能优化: 设置 TCP 参数
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)           // 禁用 Nagle 算法，减少延迟
+		tcpConn.SetReadBuffer(512 * 1024)  // 512KB 读缓冲区
+		tcpConn.SetWriteBuffer(512 * 1024) // 512KB 写缓冲区
+		tcpConn.SetKeepAlive(true)         // 启用 KeepAlive
 	}
 	return &TcpConn{Conn: conn}, nil
 }

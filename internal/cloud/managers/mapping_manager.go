@@ -1,11 +1,11 @@
 package managers
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
@@ -76,10 +76,31 @@ func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 
 	// 添加到用户的端口映射列表
 	if err := c.mappingRepo.AddMappingToUser(mapping.UserID, mapping); err != nil {
-		// 如果添加到用户失败，删除端口映射并释放ID
-		_ = c.mappingRepo.DeletePortMapping(mappingID)
-		_ = c.idManager.ReleasePortMappingID(mappingID)
-		return nil, fmt.Errorf("add mapping to user failed: %w", err)
+		corelog.Warnf("CloudControl: failed to add mapping %s to user %s: %v", mappingID, mapping.UserID, err)
+		// 不回滚，继续执行
+	}
+
+	// ✅ 添加到客户端的映射索引（用于配置推送查询）
+	// 使用 ListenClientID（SourceClientID 已废弃）
+	listenClientID := mapping.ListenClientID
+	if listenClientID == 0 {
+		listenClientID = mapping.SourceClientID // 向后兼容
+	}
+	if listenClientID > 0 {
+		clientKey := fmt.Sprintf("%d", listenClientID)
+		if err := c.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
+			corelog.Warnf("CloudControl: failed to add mapping %s to listen client %s: %v", mappingID, clientKey, err)
+		} else {
+			corelog.Infof("CloudControl: added mapping %s to listen client %s index", mappingID, clientKey)
+		}
+	}
+	if mapping.TargetClientID > 0 && mapping.TargetClientID != listenClientID {
+		clientKey := fmt.Sprintf("%d", mapping.TargetClientID)
+		if err := c.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
+			corelog.Warnf("CloudControl: failed to add mapping %s to target client %s: %v", mappingID, clientKey, err)
+		} else {
+			corelog.Infof("CloudControl: added mapping %s to target client %s index", mappingID, clientKey)
+		}
 	}
 
 	return mapping, nil
@@ -150,12 +171,12 @@ func (c *CloudControl) ListPortMappings(mappingType models.MappingType) ([]*mode
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 如果指定了映射类型，进行过滤
 	if mappingType == "" {
 		return mappings, nil
 	}
-	
+
 	var filtered []*models.PortMapping
 	for _, mapping := range mappings {
 		if mapping.Type == mappingType {
@@ -169,4 +190,3 @@ func (c *CloudControl) ListPortMappings(mappingType models.MappingType) ([]*mode
 func (c *CloudControl) GetUserPortMappings(userID string) ([]*models.PortMapping, error) {
 	return c.mappingRepo.GetUserPortMappings(userID)
 }
-

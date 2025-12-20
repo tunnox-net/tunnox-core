@@ -1,10 +1,10 @@
 package api
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/config"
@@ -20,8 +20,14 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 		return nil
 	}
 
-	corelog.Debugf("API: pushing mapping %s to clients (source=%d, target=%d)",
-		mapping.ID, mapping.SourceClientID, mapping.TargetClientID)
+	// 使用 ListenClientID（SourceClientID 已废弃）
+	listenClientID := mapping.ListenClientID
+	if listenClientID == 0 {
+		listenClientID = mapping.SourceClientID // 向后兼容
+	}
+
+	corelog.Debugf("API: pushing mapping %s to clients (listen=%d, target=%d)",
+		mapping.ID, listenClientID, mapping.TargetClientID)
 
 	// 构造映射配置
 	mappingConfigs := []config.MappingConfig{
@@ -53,13 +59,13 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 		return fmt.Errorf("failed to marshal mapping config: %w", err)
 	}
 
-	// 推送给源客户端
-	if err := s.pushConfigToClient(mapping.SourceClientID, string(configJSON)); err != nil {
-		return fmt.Errorf("failed to push config to source client %d: %w", mapping.SourceClientID, err)
+	// 推送给监听端客户端
+	if err := s.pushConfigToClient(listenClientID, string(configJSON)); err != nil {
+		return fmt.Errorf("failed to push config to listen client %d: %w", listenClientID, err)
 	}
 
 	// 推送给目标客户端（如果不是同一个客户端）
-	if mapping.TargetClientID != mapping.SourceClientID {
+	if mapping.TargetClientID != listenClientID {
 		// 目标端配置：LocalPort设为0
 		targetConfig := mappingConfigs[0]
 		targetConfig.LocalPort = 0 // 目标端不需要监听
@@ -178,8 +184,14 @@ func (s *ManagementAPIServer) removeMappingFromClients(mapping *models.PortMappi
 		return
 	}
 
-	corelog.Infof("API: notifying clients to remove mapping %s (source=%d, target=%d)",
-		mapping.ID, mapping.SourceClientID, mapping.TargetClientID)
+	// 使用 ListenClientID（SourceClientID 已废弃）
+	listenClientID := mapping.ListenClientID
+	if listenClientID == 0 {
+		listenClientID = mapping.SourceClientID // 向后兼容
+	}
+
+	corelog.Infof("API: notifying clients to remove mapping %s (listen=%d, target=%d)",
+		mapping.ID, listenClientID, mapping.TargetClientID)
 
 	// 构造空的映射配置（表示移除）
 	configData := ConfigRemovalData{
@@ -193,11 +205,11 @@ func (s *ManagementAPIServer) removeMappingFromClients(mapping *models.PortMappi
 		return
 	}
 
-	// 通知源客户端
-	s.pushConfigToClient(mapping.SourceClientID, string(configJSON))
+	// 通知监听端客户端
+	s.pushConfigToClient(listenClientID, string(configJSON))
 
 	// 通知目标客户端（如果不是同一个客户端）
-	if mapping.TargetClientID != mapping.SourceClientID {
+	if mapping.TargetClientID != listenClientID {
 		s.pushConfigToClient(mapping.TargetClientID, string(configJSON))
 	}
 }

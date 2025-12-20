@@ -1,10 +1,10 @@
 package mapping
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"io"
 	"net"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/config"
 )
@@ -44,6 +44,14 @@ func (a *TCPMappingAdapter) Accept() (io.ReadWriteCloser, error) {
 		return nil, err
 	}
 
+	// 🚀 性能优化: 设置 TCP 参数
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetNoDelay(true)           // 禁用 Nagle 算法
+		tcpConn.SetReadBuffer(512 * 1024)  // 512KB 读缓冲区
+		tcpConn.SetWriteBuffer(512 * 1024) // 512KB 写缓冲区
+		tcpConn.SetKeepAlive(true)         // 启用 KeepAlive
+	}
+
 	return conn, nil
 }
 
@@ -65,4 +73,3 @@ func (a *TCPMappingAdapter) Close() error {
 	}
 	return nil
 }
-
