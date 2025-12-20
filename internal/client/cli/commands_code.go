@@ -21,18 +21,18 @@ func (c *CLI) cmdGenerateCode(args []string) {
 	// 1. 选择协议类型
 	// 先输出一个空行，确保与readline prompt分开
 	fmt.Println("")
-	protocolOptions := []string{"TCP", "UDP", "SOCKS5", "Back"}
+	protocolOptions := []string{"TCP", "SOCKS5", "Back"}
 	protocolIndex, err := PromptSelect("Select Protocol:", protocolOptions)
 	if err != nil || protocolIndex < 0 {
 		// 静默返回，不显示警告
 		return
 	}
-	
+
 	// If "Back" is selected
 	if protocolIndex == len(protocolOptions)-1 {
 		return
 	}
-	
+
 	fmt.Println("") // 选择后也输出空行
 
 	selectedProtocol := strings.ToLower(protocolOptions[protocolIndex])
@@ -46,7 +46,7 @@ func (c *CLI) cmdGenerateCode(args []string) {
 	} else {
 		// TCP/UDP 需要输入目标地址（只需输入 host:port，协议会自动添加）
 		prompt := fmt.Sprintf("Target Address (e.g., 192.168.1.10:8080): ")
-		
+
 		for {
 			addr, err := c.promptInput(prompt)
 			if err == ErrCancelled {
@@ -56,7 +56,7 @@ func (c *CLI) cmdGenerateCode(args []string) {
 			if err != nil {
 				return
 			}
-			
+
 			if addr == "" {
 				c.output.Error("Target address cannot be empty")
 				c.output.Info("Valid format: host:port (e.g., 192.168.1.10:8080)")
@@ -65,7 +65,7 @@ func (c *CLI) cmdGenerateCode(args []string) {
 
 			// 清理地址，移除可能的控制字符
 			addr = strings.TrimSpace(addr)
-			
+
 			// 如果用户输入了协议前缀，先移除它（因为我们已经在选择协议时确定了）
 			if strings.Contains(addr, "://") {
 				parts := strings.Split(addr, "://")

@@ -11,10 +11,14 @@ server:
       enabled: true
       port: 8000
       host: "0.0.0.0"
-    udp:
-      enabled: false
+    kcp:
+      enabled: true
+      port: 6000
+      host: "0.0.0.0"
     quic:
-      enabled: false
+      enabled: true
+      port: 443
+      host: "0.0.0.0"
 
 log:
   level: "info"

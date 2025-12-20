@@ -1,13 +1,13 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
 	httppoll "tunnox-core/internal/protocol/httppoll"
@@ -35,6 +35,8 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		conn, err = dialWebSocket(c.Ctx(), c.config.Server.Address)
 	case "quic":
 		conn, err = dialQUIC(c.Ctx(), c.config.Server.Address)
+	case "kcp":
+		conn, err = dialKCP(c.Ctx(), c.config.Server.Address)
 	case "httppoll", "http-long-polling", "httplp":
 		// HTTP 长轮询使用 AuthToken 或 SecretKey
 		token = c.config.AuthToken

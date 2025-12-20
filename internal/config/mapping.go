@@ -4,7 +4,7 @@ package config
 type MappingConfig struct {
 	MappingID  string `json:"mapping_id" yaml:"mapping_id"`
 	SecretKey  string `json:"secret_key" yaml:"secret_key"`
-	Protocol   string `json:"protocol" yaml:"protocol"` // tcp/udp/socks5
+	Protocol   string `json:"protocol" yaml:"protocol"` // tcp/socks5
 	LocalPort  int    `json:"local_port" yaml:"local_port"`
 	TargetHost string `json:"target_host" yaml:"target_host"`
 	TargetPort int    `json:"target_port" yaml:"target_port"`
@@ -15,9 +15,8 @@ type MappingConfig struct {
 
 	// 压缩和加密配置
 	EnableCompression bool   `json:"enable_compression" yaml:"enable_compression"`
-	CompressionLevel  int    `json:"compression_level" yaml:"compression_level"`   // 1-9
+	CompressionLevel  int    `json:"compression_level" yaml:"compression_level"` // 1-9
 	EnableEncryption  bool   `json:"enable_encryption" yaml:"enable_encryption"`
-	EncryptionMethod  string `json:"encryption_method" yaml:"encryption_method"`   // aes-256-gcm
-	EncryptionKey     string `json:"encryption_key" yaml:"encryption_key"`         // base64 encoded
+	EncryptionMethod  string `json:"encryption_method" yaml:"encryption_method"` // aes-256-gcm
+	EncryptionKey     string `json:"encryption_key" yaml:"encryption_key"`       // base64 encoded
 }
-

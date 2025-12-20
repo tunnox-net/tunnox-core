@@ -1,11 +1,11 @@
 package server
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"os"
 	"path/filepath"
 	"tunnox-core/internal/constants"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 
 	"gopkg.in/yaml.v3"
@@ -190,7 +190,7 @@ type RedisStorageConfig struct {
 type HybridStorageConfigYAML struct {
 	CacheType        string                  `yaml:"cache_type"`        // memory | redis
 	EnablePersistent bool                    `yaml:"enable_persistent"` // 是否启用持久化
-	JSON             JSONStorageConfigYAML   `yaml:"json"`             // JSON 文件存储配置（优先）
+	JSON             JSONStorageConfigYAML   `yaml:"json"`              // JSON 文件存储配置（优先）
 	Remote           RemoteStorageConfigYAML `yaml:"remote"`            // 远程存储配置
 }
 
@@ -340,7 +340,7 @@ func ValidateConfig(config *Config) error {
 			Port:    8443,
 			Host:    "0.0.0.0",
 		},
-		"udp": {
+		"kcp": {
 			Enabled: true,
 			Port:    8000,
 			Host:    "0.0.0.0",
@@ -585,7 +585,7 @@ func GetDefaultConfig() *Config {
 					Port:    8443,
 					Host:    "0.0.0.0",
 				},
-				"udp": {
+				"kcp": {
 					Enabled: true,
 					Port:    8000,
 					Host:    "0.0.0.0",
@@ -633,10 +633,10 @@ func GetDefaultConfig() *Config {
 				Token: "",       // 需要在配置文件中设置
 			},
 			PProf: PProfConfig{
-				Enabled:     true,                     // 默认启用 pprof（需要密钥访问）
-				DataDir:     "logs/pprof",             // 默认保存目录
-				Retention:   10,                        // 默认保留10分钟
-				AutoCapture: true,                     // 默认启用自动抓取
+				Enabled:     true,         // 默认启用 pprof（需要密钥访问）
+				DataDir:     "logs/pprof", // 默认保存目录
+				Retention:   10,           // 默认保留10分钟
+				AutoCapture: true,         // 默认启用自动抓取
 			},
 		},
 		UDPIngress: UDPIngressConfig{

@@ -1,12 +1,12 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"net"
 	"strings"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
@@ -82,6 +82,8 @@ func (c *TunnoxClient) Connect() error {
 			resultConn, resultErr = dialWebSocket(connectCtx, c.config.Server.Address)
 		case "quic":
 			resultConn, resultErr = dialQUIC(connectCtx, c.config.Server.Address)
+		case "kcp":
+			resultConn, resultErr = dialKCP(connectCtx, c.config.Server.Address)
 		case "httppoll", "http-long-polling", "httplp":
 			// HTTP 长轮询使用 AuthToken 或 SecretKey
 			token = c.config.AuthToken

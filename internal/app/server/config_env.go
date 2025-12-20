@@ -90,4 +90,62 @@ func ApplyEnvOverrides(config *Config) {
 	if v := os.Getenv("LOG_LEVEL"); v != "" {
 		config.Log.Level = v
 	}
+
+	// 协议端口配置
+	if v := os.Getenv("SERVER_TCP_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			if config.Server.Protocols == nil {
+				config.Server.Protocols = make(map[string]ProtocolConfig)
+			}
+			pc := config.Server.Protocols["tcp"]
+			pc.Port = port
+			pc.Enabled = true
+			config.Server.Protocols["tcp"] = pc
+		}
+	}
+	if v := os.Getenv("SERVER_WEBSOCKET_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			if config.Server.Protocols == nil {
+				config.Server.Protocols = make(map[string]ProtocolConfig)
+			}
+			pc := config.Server.Protocols["websocket"]
+			pc.Port = port
+			pc.Enabled = true
+			config.Server.Protocols["websocket"] = pc
+		}
+	}
+	// KCP 端口
+	if v := os.Getenv("SERVER_KCP_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			if config.Server.Protocols == nil {
+				config.Server.Protocols = make(map[string]ProtocolConfig)
+			}
+			pc := config.Server.Protocols["kcp"]
+			pc.Port = port
+			pc.Enabled = true
+			config.Server.Protocols["kcp"] = pc
+		}
+	}
+	if v := os.Getenv("SERVER_QUIC_PORT"); v != "" {
+		if port, err := strconv.Atoi(v); err == nil {
+			if config.Server.Protocols == nil {
+				config.Server.Protocols = make(map[string]ProtocolConfig)
+			}
+			pc := config.Server.Protocols["quic"]
+			pc.Port = port
+			pc.Enabled = true
+			config.Server.Protocols["quic"] = pc
+		}
+	}
+
+	// Management API 配置
+	if v := os.Getenv("MANAGEMENT_API_LISTEN"); v != "" {
+		config.ManagementAPI.ListenAddr = v
+	}
+	if v := os.Getenv("MANAGEMENT_API_AUTH_TYPE"); v != "" {
+		config.ManagementAPI.Auth.Type = v
+	}
+	if v := os.Getenv("MANAGEMENT_API_AUTH_TOKEN"); v != "" {
+		config.ManagementAPI.Auth.Token = v
+	}
 }

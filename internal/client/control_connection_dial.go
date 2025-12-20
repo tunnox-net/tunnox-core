@@ -1,11 +1,11 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"net"
 	"strings"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/stream"
 )
@@ -88,6 +88,8 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 		conn, err = dialWebSocket(c.Ctx(), address)
 	case "quic":
 		conn, err = dialQUIC(c.Ctx(), address)
+	case "kcp":
+		conn, err = dialKCP(c.Ctx(), address)
 	case "httppoll", "http-long-polling", "httplp":
 		// HTTP 长轮询使用 AuthToken 或 SecretKey
 		token := c.config.AuthToken
@@ -166,4 +168,3 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 	corelog.Infof("Client: control connection established successfully")
 	return nil
 }
-

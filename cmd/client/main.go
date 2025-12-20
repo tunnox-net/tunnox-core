@@ -21,7 +21,7 @@ import (
 func main() {
 	// 解析命令行参数
 	configFile := flag.String("config", "", "path to config file (optional)")
-	protocol := flag.String("p", "", "protocol: tcp/websocket/ws/udp/quic/httppoll (overrides config)")
+	protocol := flag.String("p", "", "protocol: tcp/websocket/ws/kcp/quic/httppoll (overrides config)")
 	serverAddr := flag.String("s", "", "server address (e.g., localhost:7001, overrides config)")
 	clientID := flag.Int64("id", 0, "client ID (overrides config)")
 	deviceID := flag.String("device", "", "device ID for anonymous mode (overrides config)")
@@ -348,7 +348,7 @@ func validateConfig(config *client.ClientConfig, setDefaults bool) error {
 		config.Server.Protocol = normalizeProtocol(config.Server.Protocol)
 
 		// 验证协议
-		validProtocols := []string{"tcp", "websocket", "udp", "quic", "httppoll", "http-long-polling", "httplp"}
+		validProtocols := []string{"tcp", "websocket", "kcp", "quic", "httppoll", "http-long-polling", "httplp"}
 		valid := false
 		for _, p := range validProtocols {
 			if config.Server.Protocol == p {
@@ -396,7 +396,7 @@ USAGE:
 OPTIONS:
     Connection:
       -config <file>     Path to config file (optional)
-      -p <protocol>      Protocol: tcp/websocket/ws/udp/quic/httppoll
+      -p <protocol>      Protocol: tcp/websocket/ws/kcp/quic/httppoll
       -s <address>       Server address (e.g., localhost:7001)
       -id <client_id>    Client ID for authenticated mode
       -token <token>     Auth token for authenticated mode

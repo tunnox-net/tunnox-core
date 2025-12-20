@@ -1,7 +1,6 @@
 package server
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
@@ -9,6 +8,7 @@ corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/protocol/session"
@@ -147,6 +147,8 @@ func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Contex
 		return adapter.NewWebSocketAdapter(ctx, pf.session), nil
 	case "quic":
 		return adapter.NewQuicAdapter(ctx, pf.session), nil
+	case "kcp":
+		return adapter.NewKcpAdapter(ctx, pf.session), nil
 	default:
 		return nil, fmt.Errorf("unsupported protocol: %s", protocolName)
 	}

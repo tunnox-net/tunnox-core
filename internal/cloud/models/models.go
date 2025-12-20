@@ -173,7 +173,6 @@ type Protocol string
 
 const (
 	ProtocolTCP   Protocol = "tcp"
-	ProtocolUDP   Protocol = "udp"
 	ProtocolHTTP  Protocol = "http"
 	ProtocolSOCKS Protocol = "socks"
 )

@@ -1,8 +1,8 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"net"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 )
 
@@ -59,8 +59,8 @@ func extractProtocol(stream stream.PackageStreamer, netConn net.Conn) string {
 			switch network {
 			case "tcp", "tcp4", "tcp6":
 				return "tcp"
-			case "udp", "udp4", "udp6":
-				return "udp"
+			case "kcp":
+				return "kcp"
 			case "ws", "wss":
 				return "websocket"
 			case "quic":
@@ -133,4 +133,3 @@ func CreateTunnelConnectionFromExisting(
 	}
 	return CreateTunnelConnection(connID, netConn, stream, clientID, mappingID, tunnelID)
 }
-

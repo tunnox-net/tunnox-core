@@ -88,7 +88,7 @@ func displayProtocolListeners(s *Server, reset func(...interface{}) string) {
 	fmt.Println(bannerBold("  Protocol Listeners"))
 	fmt.Println(bannerFaint("  " + strings.Repeat("─", bannerWidth)))
 
-	protocolNames := []string{"tcp", "websocket", "udp", "quic", "httppoll"}
+	protocolNames := []string{"tcp", "websocket", "kcp", "quic", "httppoll"}
 	for _, name := range protocolNames {
 		cfg, exists := s.config.Server.Protocols[name]
 		if !exists {
@@ -100,8 +100,8 @@ func displayProtocolListeners(s *Server, reset func(...interface{}) string) {
 			displayName = "WebSocket"
 		} else if name == "tcp" {
 			displayName = "TCP"
-		} else if name == "udp" {
-			displayName = "UDP"
+		} else if name == "kcp" {
+			displayName = "KCP"
 		} else if name == "quic" {
 			displayName = "QUIC"
 		}
