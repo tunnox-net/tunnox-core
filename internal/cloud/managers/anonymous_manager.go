@@ -1,6 +1,7 @@
 package managers
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"time"
@@ -14,12 +15,18 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+// localNotifier avoids circular dependency with managers package
+type localNotifier interface {
+	NotifyClientUpdate(clientID int64)
+}
+
 // AnonymousManager 匿名用户管理器
 type AnonymousManager struct {
 	*dispose.ManagerBase
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
 	idManager   *idgen.IDManager
+	notifier    localNotifier // 通知识别接口
 }
 
 // NewAnonymousManager 创建匿名用户管理器
@@ -200,6 +207,12 @@ func (am *AnonymousManager) CreateAnonymousMapping(listenClientID, targetClientI
 		return nil, fmt.Errorf("add anonymous mapping to list failed: %w", err)
 	}
 
+	// ✅ 通知监听客户端更新配置
+	if am.notifier != nil {
+		corelog.Infof("Notifying client %d of mapping update", listenClientID)
+		am.notifier.NotifyClientUpdate(listenClientID)
+	}
+
 	return mapping, nil
 }
 
@@ -212,4 +225,14 @@ func (am *AnonymousManager) GetAnonymousMappings() ([]*models.PortMapping, error
 func (am *AnonymousManager) CleanupExpiredAnonymous() error {
 	// 这里可以实现清理逻辑
 	return nil
+}
+
+// SetNotifier 设置通知器
+func (am *AnonymousManager) SetNotifier(notifier interface{}) {
+	if n, ok := notifier.(localNotifier); ok {
+		am.notifier = n
+		corelog.Infof("AnonymousManager: Notifier set successfully")
+	} else {
+		corelog.Warnf("AnonymousManager: Invalid notifier type passed to SetNotifier")
+	}
 }

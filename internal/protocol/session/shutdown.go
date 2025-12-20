@@ -1,10 +1,10 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"time"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 
 	"github.com/google/uuid"
 )
@@ -39,7 +39,7 @@ func (s *SessionManager) BroadcastShutdown(
 	recommendReconnect bool,
 	message string,
 ) (successCount int, failureCount int) {
-	utils.Infof("SessionManager: broadcasting server shutdown to all clients (reason=%s, gracePeriod=%ds, reconnect=%v)",
+	corelog.Infof("SessionManager: broadcasting server shutdown to all clients (reason=%s, gracePeriod=%ds, reconnect=%v)",
 		reason, gracePeriodSeconds, recommendReconnect)
 
 	// 构造 ServerShutdownCommand（基础模板，每个客户端会添加其专属的ReconnectToken）
@@ -58,7 +58,7 @@ func (s *SessionManager) BroadcastShutdown(
 	}
 	s.controlConnLock.RUnlock()
 
-	utils.Infof("SessionManager: found %d control connections to notify", len(controlConns))
+	corelog.Infof("SessionManager: found %d control connections to notify", len(controlConns))
 
 	// 遍历所有指令连接，发送关闭通知
 	for _, conn := range controlConns {
@@ -72,12 +72,12 @@ func (s *SessionManager) BroadcastShutdown(
 		if s.reconnectTokenManager != nil && conn.ClientID > 0 {
 			token, err := s.reconnectTokenManager.GenerateReconnectToken(conn.ClientID, s.nodeID)
 			if err != nil {
-				utils.Warnf("SessionManager: failed to generate reconnect token for client %d: %v", conn.ClientID, err)
+				corelog.Warnf("SessionManager: failed to generate reconnect token for client %d: %v", conn.ClientID, err)
 			} else {
 				// 编码为JSON字符串
 				reconnectTokenStr, err = s.reconnectTokenManager.EncodeToken(token)
 				if err != nil {
-					utils.Warnf("SessionManager: failed to encode reconnect token for client %d: %v", conn.ClientID, err)
+					corelog.Warnf("SessionManager: failed to encode reconnect token for client %d: %v", conn.ClientID, err)
 					reconnectTokenStr = ""
 				}
 			}
@@ -92,7 +92,7 @@ func (s *SessionManager) BroadcastShutdown(
 			// 重新序列化
 			clientCmdBody, err := json.Marshal(clientShutdownCmd)
 			if err != nil {
-				utils.Errorf("SessionManager: failed to marshal shutdown command for client %d: %v", c.ClientID, err)
+				corelog.Errorf("SessionManager: failed to marshal shutdown command for client %d: %v", c.ClientID, err)
 				return
 			}
 
@@ -110,14 +110,14 @@ func (s *SessionManager) BroadcastShutdown(
 			// 设置5秒超时
 			deadline := time.Now().Add(5 * time.Second)
 			if _, err := c.Stream.WritePacket(clientTransferPacket, true, 0); err != nil {
-				utils.Warnf("SessionManager: failed to send shutdown notification to client %d (connID=%s): %v",
+				corelog.Warnf("SessionManager: failed to send shutdown notification to client %d (connID=%s): %v",
 					c.ClientID, c.ConnID, err)
 			} else {
 				if tokenStr != "" {
-					utils.Infof("SessionManager: sent shutdown notification with reconnect token to client %d (connID=%s) by %v",
+					corelog.Infof("SessionManager: sent shutdown notification with reconnect token to client %d (connID=%s) by %v",
 						c.ClientID, c.ConnID, deadline)
 				} else {
-					utils.Infof("SessionManager: sent shutdown notification to client %d (connID=%s) by %v",
+					corelog.Infof("SessionManager: sent shutdown notification to client %d (connID=%s) by %v",
 						c.ClientID, c.ConnID, deadline)
 				}
 			}
@@ -130,7 +130,7 @@ func (s *SessionManager) BroadcastShutdown(
 	// 返回统计信息（注意：由于异步发送，这里的统计不完全准确）
 	successCount = len(controlConns) - failureCount
 
-	utils.Infof("SessionManager: shutdown broadcast completed (total=%d, estimated_success=%d, estimated_failure=%d)",
+	corelog.Infof("SessionManager: shutdown broadcast completed (total=%d, estimated_success=%d, estimated_failure=%d)",
 		len(controlConns), successCount, failureCount)
 
 	return successCount, failureCount
@@ -160,7 +160,7 @@ func (s *SessionManager) GetActiveTunnels() int {
 //   - true: 所有隧道已完成
 //   - false: 超时，仍有活跃隧道
 func (s *SessionManager) WaitForTunnelsToComplete(timeoutSeconds int) bool {
-	utils.Infof("SessionManager: waiting for active tunnels to complete (timeout=%ds)", timeoutSeconds)
+	corelog.Infof("SessionManager: waiting for active tunnels to complete (timeout=%ds)", timeoutSeconds)
 
 	deadline := time.Now().Add(time.Duration(timeoutSeconds) * time.Second)
 	checkInterval := 500 * time.Millisecond
@@ -168,16 +168,16 @@ func (s *SessionManager) WaitForTunnelsToComplete(timeoutSeconds int) bool {
 	for {
 		activeTunnels := s.GetActiveTunnelCount()
 		if activeTunnels == 0 {
-			utils.Infof("SessionManager: all tunnels completed successfully")
+			corelog.Infof("SessionManager: all tunnels completed successfully")
 			return true
 		}
 
 		if time.Now().After(deadline) {
-			utils.Warnf("SessionManager: timeout waiting for tunnels (still have %d active tunnels)", activeTunnels)
+			corelog.Warnf("SessionManager: timeout waiting for tunnels (still have %d active tunnels)", activeTunnels)
 			return false
 		}
 
-		utils.Debugf("SessionManager: waiting for %d active tunnels to complete...", activeTunnels)
+		corelog.Debugf("SessionManager: waiting for %d active tunnels to complete...", activeTunnels)
 		time.Sleep(checkInterval)
 	}
 }

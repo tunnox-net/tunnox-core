@@ -1,11 +1,11 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // ============================================================================
@@ -46,7 +46,7 @@ func (s *SessionManager) HandlePacket(connPacket *types.StreamPacket) error {
 		return s.handleHeartbeat(connPacket)
 
 	default:
-		utils.Warnf("Unhandled packet type: %v", packetType)
+		corelog.Warnf("Unhandled packet type: %v", packetType)
 		return fmt.Errorf("unhandled packet type: %v", packetType)
 	}
 }

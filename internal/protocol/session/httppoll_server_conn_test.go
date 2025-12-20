@@ -86,58 +86,22 @@ func TestServerHTTPLongPollingConn_PollDataTimeout(t *testing.T) {
 	assert.Equal(t, context.DeadlineExceeded, err)
 }
 
-func TestServerHTTPLongPollingConn_UpdateClientID_WithMigration(t *testing.T) {
+func TestServerHTTPLongPollingConn_UpdateClientID(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	conn := NewServerHTTPLongPollingConn(ctx, 0)
 	require.NotNil(t, conn)
-	
+
 	// 设置连接 ID
 	conn.SetConnectionID("test-conn-123")
-	
-	// 设置迁移回调
-	migrationCalled := false
-	var migrationConnID string
-	var migrationOldClientID, migrationNewClientID int64
-	
-	conn.SetMigrationCallback(func(connID string, oldClientID, newClientID int64) {
-		migrationCalled = true
-		migrationConnID = connID
-		migrationOldClientID = oldClientID
-		migrationNewClientID = newClientID
-	})
-	
-	// 更新 clientID（从 0 到非 0，应该触发迁移）
+
+	// 更新 clientID
 	conn.UpdateClientID(12345)
-	
-	// 验证迁移回调被调用
-	assert.True(t, migrationCalled, "Migration callback should be called")
-	assert.Equal(t, "test-conn-123", migrationConnID)
-	assert.Equal(t, int64(0), migrationOldClientID)
-	assert.Equal(t, int64(12345), migrationNewClientID)
+
+	// 验证 clientID 已更新
 	assert.Equal(t, int64(12345), conn.GetClientID())
-}
-
-func TestServerHTTPLongPollingConn_UpdateClientID_NoMigration(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	conn := NewServerHTTPLongPollingConn(ctx, 100)
-	require.NotNil(t, conn)
-	
-	// 设置迁移回调
-	migrationCalled := false
-	conn.SetMigrationCallback(func(connID string, oldClientID, newClientID int64) {
-		migrationCalled = true
-	})
-	
-	// 更新 clientID（从非 0 到非 0，不应该触发迁移）
-	conn.UpdateClientID(200)
-	
-	// 验证迁移回调没有被调用
-	assert.False(t, migrationCalled, "Migration callback should not be called when oldClientID != 0")
-	assert.Equal(t, int64(200), conn.GetClientID())
+	assert.Equal(t, "test-conn-123", conn.GetConnectionID())
 }
 
 func TestServerHTTPLongPollingConn_OnHandshakeComplete(t *testing.T) {
@@ -146,19 +110,14 @@ func TestServerHTTPLongPollingConn_OnHandshakeComplete(t *testing.T) {
 
 	conn := NewServerHTTPLongPollingConn(ctx, 0)
 	require.NotNil(t, conn)
-	
-	// 设置连接 ID 和迁移回调
+
+	// 设置连接 ID
 	conn.SetConnectionID("test-conn-456")
-	migrationCalled := false
-	conn.SetMigrationCallback(func(connID string, oldClientID, newClientID int64) {
-		migrationCalled = true
-	})
-	
-	// 调用 OnHandshakeComplete（应该触发 UpdateClientID 和迁移）
+
+	// 调用 OnHandshakeComplete（应该更新 clientID）
 	conn.OnHandshakeComplete(67890)
-	
-	// 验证迁移回调被调用
-	assert.True(t, migrationCalled, "Migration callback should be called via OnHandshakeComplete")
+
+	// 验证 clientID 已更新
 	assert.Equal(t, int64(67890), conn.GetClientID())
 }
 
@@ -168,4 +127,3 @@ func TestServerHTTPLongPollingConn_OnHandshakeComplete(t *testing.T) {
 func TestServerHTTPLongPollingConn_ConcurrentReadWrite(t *testing.T) {
 	t.Skip("Skipping concurrent read/write test - may be unstable in CI/CD due to timing issues")
 }
-

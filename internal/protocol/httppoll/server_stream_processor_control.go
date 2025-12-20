@@ -1,11 +1,11 @@
 package httppoll
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"strings"
 
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // tryMatchControlPacket 尝试将待分配的控制包匹配给等待的 Poll 请求
@@ -68,7 +68,7 @@ func (sp *ServerStreamProcessor) tryMatchControlPacket() {
 			// 有等待的请求，直接发送（使用该请求的 requestID）
 			select {
 			case targetChan <- responsePkg:
-				utils.Debugf("ServerStreamProcessor: tryMatchControlPacket - control packet matched to waiting Poll request, requestID=%s, connID=%s, remainingPackets=%d",
+				corelog.Debugf("ServerStreamProcessor: tryMatchControlPacket - control packet matched to waiting Poll request, requestID=%s, connID=%s, remainingPackets=%d",
 					targetRequestID, sp.connectionID, pendingCount)
 				// 继续循环，尝试匹配下一个控制包
 				continue
@@ -77,7 +77,7 @@ func (sp *ServerStreamProcessor) tryMatchControlPacket() {
 				sp.pendingControlMu.Lock()
 				sp.pendingControlPackets = append([]*packet.TransferPacket{controlPkt}, sp.pendingControlPackets...)
 				sp.pendingControlMu.Unlock()
-				utils.Warnf("ServerStreamProcessor: tryMatchControlPacket - response channel full, requeued, requestID=%s", targetRequestID)
+				corelog.Warnf("ServerStreamProcessor: tryMatchControlPacket - response channel full, requeued, requestID=%s", targetRequestID)
 				return // 通道满，停止匹配
 			}
 		} else {
@@ -86,7 +86,7 @@ func (sp *ServerStreamProcessor) tryMatchControlPacket() {
 			sp.pendingControlPackets = append([]*packet.TransferPacket{controlPkt}, sp.pendingControlPackets...)
 			pendingCount = len(sp.pendingControlPackets)
 			sp.pendingControlMu.Unlock()
-			utils.Debugf("ServerStreamProcessor: tryMatchControlPacket - control packet requeued (no waiting requests), connID=%s, remainingPackets=%d", sp.connectionID, pendingCount)
+			corelog.Debugf("ServerStreamProcessor: tryMatchControlPacket - control packet requeued (no waiting requests), connID=%s, remainingPackets=%d", sp.connectionID, pendingCount)
 			return // 没有等待的请求，停止匹配
 		}
 	}

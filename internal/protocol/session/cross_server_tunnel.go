@@ -1,13 +1,13 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"time"
 
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // TunnelOpenBroadcastMessage 跨服务器TunnelOpen广播消息
@@ -24,20 +24,20 @@ type TunnelOpenBroadcastMessage struct {
 // startTunnelOpenBroadcastSubscription 启动TunnelOpen广播订阅
 func (s *SessionManager) startTunnelOpenBroadcastSubscription() {
 	if s.bridgeManager == nil {
-		utils.Debugf("SessionManager: BridgeManager not configured, skipping tunnel broadcast subscription")
+		corelog.Debugf("SessionManager: BridgeManager not configured, skipping tunnel broadcast subscription")
 		return
 	}
 
-	utils.Infof("SessionManager: starting TunnelOpen broadcast subscription for cross-server forwarding")
+	corelog.Infof("SessionManager: starting TunnelOpen broadcast subscription for cross-server forwarding")
 
 	// 订阅TunnelOpen广播
 	msgChan, err := s.bridgeManager.Subscribe(s.Ctx(), broker.TopicTunnelOpen)
 	if err != nil {
-		utils.Errorf("SessionManager: failed to subscribe to %s: %v", broker.TopicTunnelOpen, err)
+		corelog.Errorf("SessionManager: failed to subscribe to %s: %v", broker.TopicTunnelOpen, err)
 		return
 	}
 
-	utils.Infof("SessionManager: ✅ subscribed to %s for cross-server tunnel forwarding", broker.TopicTunnelOpen)
+	corelog.Infof("SessionManager: ✅ subscribed to %s for cross-server tunnel forwarding", broker.TopicTunnelOpen)
 
 	// 启动消息处理循环
 	go s.processTunnelOpenBroadcasts(msgChan)
@@ -45,20 +45,20 @@ func (s *SessionManager) startTunnelOpenBroadcastSubscription() {
 
 // processTunnelOpenBroadcasts 处理TunnelOpen广播消息
 func (s *SessionManager) processTunnelOpenBroadcasts(msgChan <-chan *BroadcastMessage) {
-	utils.Infof("SessionManager: TunnelOpen broadcast processor started")
+	corelog.Infof("SessionManager: TunnelOpen broadcast processor started")
 
 	for {
 		select {
 		case msg, ok := <-msgChan:
 			if !ok {
-				utils.Infof("SessionManager: TunnelOpen broadcast channel closed")
+				corelog.Infof("SessionManager: TunnelOpen broadcast channel closed")
 				return
 			}
 
 			// 解析消息
 			var broadcastMsg TunnelOpenBroadcastMessage
 			if err := json.Unmarshal(msg.Payload, &broadcastMsg); err != nil {
-				utils.Errorf("SessionManager: failed to unmarshal TunnelOpen broadcast: %v", err)
+				corelog.Errorf("SessionManager: failed to unmarshal TunnelOpen broadcast: %v", err)
 				continue
 			}
 
@@ -66,7 +66,7 @@ func (s *SessionManager) processTunnelOpenBroadcasts(msgChan <-chan *BroadcastMe
 			s.handleTunnelOpenBroadcast(&broadcastMsg)
 
 		case <-s.Ctx().Done():
-			utils.Infof("SessionManager: TunnelOpen broadcast processor stopped")
+			corelog.Infof("SessionManager: TunnelOpen broadcast processor stopped")
 			return
 		}
 	}
@@ -74,30 +74,30 @@ func (s *SessionManager) processTunnelOpenBroadcasts(msgChan <-chan *BroadcastMe
 
 // handleTunnelOpenBroadcast 处理收到的TunnelOpen广播
 func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessage) {
-	utils.Infof("SessionManager: received TunnelOpen broadcast for client %d, tunnel %s",
+	corelog.Infof("SessionManager: received TunnelOpen broadcast for client %d, tunnel %s",
 		msg.TargetClientID, msg.TunnelID)
 
 	// 检查目标客户端是否在本地
 	targetConn := s.GetControlConnectionByClientID(msg.TargetClientID)
 	if targetConn == nil {
-		utils.Debugf("SessionManager: target client %d not on this node, ignoring broadcast",
+		corelog.Debugf("SessionManager: target client %d not on this node, ignoring broadcast",
 			msg.TargetClientID)
 		return
 	}
 
-	utils.Infof("SessionManager: ✅ target client %d found locally, sending TunnelOpenRequest",
+	corelog.Infof("SessionManager: ✅ target client %d found locally, sending TunnelOpenRequest",
 		msg.TargetClientID)
 
 	// 获取映射配置
 	if s.cloudControl == nil {
-		utils.Errorf("SessionManager: CloudControl not configured")
+		corelog.Errorf("SessionManager: CloudControl not configured")
 		return
 	}
 
 	// ✅ 统一使用 GetPortMapping，直接返回 PortMapping
 	mapping, err := s.cloudControl.GetPortMapping(msg.MappingID)
 	if err != nil {
-		utils.Errorf("SessionManager: failed to get mapping %s: %v", msg.MappingID, err)
+		corelog.Errorf("SessionManager: failed to get mapping %s: %v", msg.MappingID, err)
 		return
 	}
 
@@ -119,7 +119,7 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 
 	cmdBodyJSON, err := json.Marshal(cmdBody)
 	if err != nil {
-		utils.Errorf("SessionManager: failed to marshal TunnelOpenRequest: %v", err)
+		corelog.Errorf("SessionManager: failed to marshal TunnelOpenRequest: %v", err)
 		return
 	}
 
@@ -142,16 +142,16 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 	go func() {
 		select {
 		case <-ctx.Done():
-			utils.Errorf("SessionManager: sending TunnelOpenRequest to client %d timed out",
+			corelog.Errorf("SessionManager: sending TunnelOpenRequest to client %d timed out",
 				msg.TargetClientID)
 			return
 		default:
 			if _, err := targetConn.Stream.WritePacket(pkt, true, 0); err != nil {
-				utils.Errorf("SessionManager: failed to send TunnelOpenRequest to client %d: %v",
+				corelog.Errorf("SessionManager: failed to send TunnelOpenRequest to client %d: %v",
 					msg.TargetClientID, err)
 				return
 			}
-			utils.Infof("SessionManager: ✅ sent TunnelOpenRequest to client %d for tunnel %s (cross-server)",
+			corelog.Infof("SessionManager: ✅ sent TunnelOpenRequest to client %d for tunnel %s (cross-server)",
 				msg.TargetClientID, msg.TunnelID)
 		}
 	}()

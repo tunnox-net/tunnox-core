@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -9,7 +10,6 @@ import (
 	"tunnox-core/internal/packet"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // sendHandshake 发送握手请求（使用控制连接）
@@ -34,7 +34,7 @@ func (c *TunnoxClient) saveAnonymousCredentials() error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	utils.Infof("Client: anonymous credentials saved to config file")
+	corelog.Infof("Client: anonymous credentials saved to config file")
 	return nil
 }
 
@@ -96,7 +96,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		}
 		if pkt == nil {
 			// ReadPacket 返回 nil 但没有错误，可能是超时或空响应，继续等待
-			utils.Debugf("Client: ReadPacket returned nil packet, continuing to wait for handshake response")
+			corelog.Debugf("Client: ReadPacket returned nil packet, continuing to wait for handshake response")
 			continue
 		}
 
@@ -104,7 +104,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		baseType := pkt.PacketType & 0x3F
 		if baseType == packet.Heartbeat {
 			// 收到心跳包，继续等待握手响应
-			utils.Debugf("Client: received heartbeat during handshake, ignoring")
+			corelog.Debugf("Client: received heartbeat during handshake, ignoring")
 			continue
 		}
 
@@ -117,9 +117,9 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		return fmt.Errorf("unexpected response type: %v (expected HandshakeResp)", pkt.PacketType)
 	}
 
-	utils.Debugf("Client: received response PacketType=%d, Payload len=%d", respPkt.PacketType, len(respPkt.Payload))
+	corelog.Debugf("Client: received response PacketType=%d, Payload len=%d", respPkt.PacketType, len(respPkt.Payload))
 	if len(respPkt.Payload) > 0 {
-		utils.Debugf("Client: Payload=%s", string(respPkt.Payload))
+		corelog.Debugf("Client: Payload=%s", string(respPkt.Payload))
 	}
 
 	var resp packet.HandshakeResponse
@@ -140,7 +140,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		// 对于 HTTP 长轮询，更新 HTTPStreamProcessor 的 ConnectionID
 		if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
 			httppollStream.SetConnectionID(resp.ConnectionID)
-			utils.Infof("Client: received ConnectionID from server: %s", resp.ConnectionID)
+			corelog.Infof("Client: received ConnectionID from server: %s", resp.ConnectionID)
 		}
 	}
 
@@ -150,17 +150,17 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		if resp.ClientID > 0 && resp.SecretKey != "" {
 			c.config.ClientID = resp.ClientID
 			c.config.SecretKey = resp.SecretKey
-			utils.Infof("Client: received anonymous credentials - ClientID=%d, SecretKey=***", resp.ClientID)
+			corelog.Infof("Client: received anonymous credentials - ClientID=%d, SecretKey=***", resp.ClientID)
 
 			// 保存凭据到配置文件（供下次启动使用）
 			if err := c.saveAnonymousCredentials(); err != nil {
-				utils.Warnf("Client: failed to save anonymous credentials: %v", err)
+				corelog.Warnf("Client: failed to save anonymous credentials: %v", err)
 			}
 
 			// ✅ 更新 HTTPStreamProcessor 的 clientID
 			if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
 				httppollStream.UpdateClientID(resp.ClientID)
-				utils.Debugf("Client: updated HTTPStreamProcessor clientID to %d", resp.ClientID)
+				corelog.Debugf("Client: updated HTTPStreamProcessor clientID to %d", resp.ClientID)
 			}
 		} else if resp.Message != "" {
 			// 兼容旧版本：从Message解析ClientID
@@ -170,7 +170,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 				// ✅ 更新 HTTPStreamProcessor 的 clientID
 				if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
 					httppollStream.UpdateClientID(assignedClientID)
-					utils.Debugf("Client: updated HTTPStreamProcessor clientID to %d", assignedClientID)
+					corelog.Debugf("Client: updated HTTPStreamProcessor clientID to %d", assignedClientID)
 				}
 			}
 		}
@@ -178,10 +178,10 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 
 	// 打印认证信息
 	if c.config.Anonymous {
-		utils.Infof("Client: authenticated as anonymous client, ClientID=%d, DeviceID=%s",
+		corelog.Infof("Client: authenticated as anonymous client, ClientID=%d, DeviceID=%s",
 			c.config.ClientID, c.config.DeviceID)
 	} else {
-		utils.Infof("Client: authenticated successfully, ClientID=%d, Token=%s",
+		corelog.Infof("Client: authenticated successfully, ClientID=%d, Token=%s",
 			c.config.ClientID, c.config.AuthToken)
 	}
 

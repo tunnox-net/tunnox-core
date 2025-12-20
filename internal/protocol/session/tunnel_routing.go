@@ -1,12 +1,12 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 )
 
 // TunnelWaitingState 隧道等待状态（用于跨服务器隧道建立）
@@ -74,7 +74,7 @@ func (t *TunnelRoutingTable) RegisterWaitingTunnel(ctx context.Context, state *T
 		return fmt.Errorf("failed to store tunnel state: %w", err)
 	}
 	
-	utils.Infof("TunnelRouting: registered waiting tunnel %s (source_node=%s, target_client=%d, ttl=%v)",
+	corelog.Infof("TunnelRouting: registered waiting tunnel %s (source_node=%s, target_client=%d, ttl=%v)",
 		state.TunnelID, state.SourceNodeID, state.TargetClientID, t.ttl)
 	
 	return nil
@@ -120,7 +120,7 @@ func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID s
 		return nil, ErrTunnelExpired
 	}
 	
-	utils.Debugf("TunnelRouting: found waiting tunnel %s (source_node=%s)",
+	corelog.Debugf("TunnelRouting: found waiting tunnel %s (source_node=%s)",
 		tunnelID, state.SourceNodeID)
 	
 	return &state, nil
@@ -136,11 +136,11 @@ func (t *TunnelRoutingTable) RemoveWaitingTunnel(ctx context.Context, tunnelID s
 	key := t.makeKey(tunnelID)
 	if err := t.storage.Delete(key); err != nil {
 		// 删除失败不是致命错误，因为有TTL自动清理
-		utils.Warnf("TunnelRouting: failed to delete tunnel state for %s: %v", tunnelID, err)
+		corelog.Warnf("TunnelRouting: failed to delete tunnel state for %s: %v", tunnelID, err)
 		return nil
 	}
 	
-	utils.Debugf("TunnelRouting: removed waiting tunnel %s", tunnelID)
+	corelog.Debugf("TunnelRouting: removed waiting tunnel %s", tunnelID)
 	return nil
 }
 
@@ -150,7 +150,7 @@ func (t *TunnelRoutingTable) CleanupExpiredTunnels(ctx context.Context) (int, er
 	// Redis会自动清理过期的key，这里只是为了统计
 	// 实际生产环境中可以通过Redis的SCAN命令遍历所有tunnox:tunnel_waiting:*的key
 	// 但为了性能考虑，这里暂不实现全量扫描
-	utils.Debugf("TunnelRouting: cleanup triggered (Redis auto-expires keys)")
+	corelog.Debugf("TunnelRouting: cleanup triggered (Redis auto-expires keys)")
 	return 0, nil
 }
 

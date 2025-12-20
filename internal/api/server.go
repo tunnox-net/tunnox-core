@@ -1,6 +1,7 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,7 +19,6 @@ import (
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 
 	"github.com/gorilla/mux"
 )
@@ -276,7 +276,7 @@ func NewManagementAPIServer(
 
 	// 添加清理处理器
 	s.AddCleanHandler(func() error {
-		utils.Infof("ManagementAPIServer: shutting down...")
+		corelog.Infof("ManagementAPIServer: shutting down...")
 		// 使用 ManagementAPIServer 的 context 作为父 context，确保能接收退出信号
 		shutdownCtx, cancel := context.WithTimeout(s.Ctx(), 5*time.Second)
 		defer cancel()
@@ -288,23 +288,23 @@ func NewManagementAPIServer(
 
 // Start 启动服务器
 func (s *ManagementAPIServer) Start() error {
-	utils.Infof("ManagementAPIServer: starting on %s", s.config.ListenAddr)
-	utils.Infof("ManagementAPIServer: API base path: http://%s/tunnox/v1", s.config.ListenAddr)
-	utils.Infof("ManagementAPIServer: HTTP long polling endpoints:")
-	utils.Infof("  - POST http://%s/tunnox/v1/push (client -> server)", s.config.ListenAddr)
-	utils.Infof("  - GET  http://%s/tunnox/v1/poll (server -> client)", s.config.ListenAddr)
+	corelog.Infof("ManagementAPIServer: starting on %s", s.config.ListenAddr)
+	corelog.Infof("ManagementAPIServer: API base path: http://%s/tunnox/v1", s.config.ListenAddr)
+	corelog.Infof("ManagementAPIServer: HTTP long polling endpoints:")
+	corelog.Infof("  - POST http://%s/tunnox/v1/push (client -> server)", s.config.ListenAddr)
+	corelog.Infof("  - GET  http://%s/tunnox/v1/poll (server -> client)", s.config.ListenAddr)
 	if s.config.PProf.Enabled {
-		utils.Infof("ManagementAPIServer: pprof enabled at http://%s/tunnox/v1/debug/pprof/", s.config.ListenAddr)
+		corelog.Infof("ManagementAPIServer: pprof enabled at http://%s/tunnox/v1/debug/pprof/", s.config.ListenAddr)
 		if s.config.PProf.AutoCapture && s.pprofCapture != nil {
 			if err := s.pprofCapture.Start(); err != nil {
-				utils.Warnf("ManagementAPIServer: failed to start pprof capture: %v", err)
+				corelog.Warnf("ManagementAPIServer: failed to start pprof capture: %v", err)
 			}
 		}
 	}
 
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			utils.Errorf("ManagementAPIServer: ListenAndServe error: %v", err)
+			corelog.Errorf("ManagementAPIServer: ListenAndServe error: %v", err)
 		}
 	}()
 
@@ -448,8 +448,8 @@ func (s *ManagementAPIServer) registerPProfRoutes() {
 	// 注册路由（标准化接口，带权限保护）
 	pprofHandler.RegisterRoutes(s.router, authMiddleware)
 
-	utils.Infof("ManagementAPIServer: pprof enabled at http://%s/tunnox/v1/debug/pprof/", s.config.ListenAddr)
-	utils.Infof("ManagementAPIServer: pprof routes require authentication: %v", s.config.Auth.Type != "none")
+	corelog.Infof("ManagementAPIServer: pprof enabled at http://%s/tunnox/v1/debug/pprof/", s.config.ListenAddr)
+	corelog.Infof("ManagementAPIServer: pprof routes require authentication: %v", s.config.Auth.Type != "none")
 }
 
 // ResponseData 统一响应结构
@@ -579,7 +579,7 @@ func (s *ManagementAPIServer) loggingMiddleware(next http.Handler) http.Handler 
 		next.ServeHTTP(w, r)
 
 		// 记录日志
-		utils.Debugf("API: %s %s - %s", r.Method, r.RequestURI, time.Since(start))
+		corelog.Debugf("API: %s %s - %s", r.Method, r.RequestURI, time.Since(start))
 	})
 }
 

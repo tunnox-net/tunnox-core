@@ -1,10 +1,10 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"net"
 
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // SetTargetConnection 设置目标端连接（统一接口）
@@ -63,15 +63,15 @@ func (b *TunnelBridge) SetSourceConnection(conn TunnelConnectionInterface) {
 				connID = streamConn.GetConnectionID()
 			}
 		}
-		utils.Infof("TunnelBridge[%s]: SetSourceConnection creating forwarder, connID=%s, hasNetConn=%v, hasStream=%v", b.tunnelID, connID, b.sourceConn != nil, b.sourceStream != nil)
+		corelog.Infof("TunnelBridge[%s]: SetSourceConnection creating forwarder, connID=%s, hasNetConn=%v, hasStream=%v", b.tunnelID, connID, b.sourceConn != nil, b.sourceStream != nil)
 		b.sourceForwarder = createDataForwarder(b.sourceConn, b.sourceStream)
-		utils.Infof("TunnelBridge[%s]: SetSourceConnection forwarder created, forwarder=%v, connID=%s", b.tunnelID, b.sourceForwarder != nil, connID)
+		corelog.Infof("TunnelBridge[%s]: SetSourceConnection forwarder created, forwarder=%v, connID=%s", b.tunnelID, b.sourceForwarder != nil, connID)
 	} else {
 		b.sourceForwarder = nil
-		utils.Infof("TunnelBridge[%s]: SetSourceConnection clearing connection", b.tunnelID)
+		corelog.Infof("TunnelBridge[%s]: SetSourceConnection clearing connection", b.tunnelID)
 	}
 	b.tunnelConnMu.Unlock()
-	utils.Infof("TunnelBridge[%s]: updated sourceConn (unified), mappingID=%s, oldConn=%v, newConn=%v, oldForwarder=%v, newForwarder=%v",
+	corelog.Infof("TunnelBridge[%s]: updated sourceConn (unified), mappingID=%s, oldConn=%v, newConn=%v, oldForwarder=%v, newForwarder=%v",
 		b.tunnelID, b.mappingID, oldConn != nil, conn != nil, oldForwarder != nil, b.sourceForwarder != nil)
 }
 
@@ -105,7 +105,7 @@ func (b *TunnelBridge) SetSourceConnectionLegacy(sourceConn net.Conn, sourceStre
 		b.tunnelConnMu.Unlock()
 	}
 
-	utils.Infof("TunnelBridge[%s]: updated sourceConn (legacy), mappingID=%s, oldConn=%v, newConn=%v, hasForwarder=%v",
+	corelog.Infof("TunnelBridge[%s]: updated sourceConn (legacy), mappingID=%s, oldConn=%v, newConn=%v, hasForwarder=%v",
 		b.tunnelID, b.mappingID, oldConn, sourceConn, b.sourceForwarder != nil)
 }
 

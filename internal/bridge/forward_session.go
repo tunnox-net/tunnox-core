@@ -1,6 +1,7 @@
 package bridge
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
@@ -8,7 +9,6 @@ import (
 	"time"
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 
 	"github.com/google/uuid"
 )
@@ -55,13 +55,13 @@ func NewForwardSession(parentCtx context.Context, conn MultiplexedConn, metadata
 
 	// 注册到多路复用连接
 	if err := conn.RegisterSession(streamID, session); err != nil {
-		utils.Errorf("ForwardSession: failed to register session %s: %v", streamID, err)
+		corelog.Errorf("ForwardSession: failed to register session %s: %v", streamID, err)
 		return nil
 	}
 
 	// 注册清理处理器
 	session.AddCleanHandler(func() error {
-		utils.Infof("ForwardSession: cleaning up session %s", streamID)
+		corelog.Infof("ForwardSession: cleaning up session %s", streamID)
 		
 		// 发送关闭数据包
 		closePacket := &pb.BridgePacket{
@@ -74,7 +74,7 @@ func NewForwardSession(parentCtx context.Context, conn MultiplexedConn, metadata
 		case session.sendChan <- closePacket:
 			// Close packet sent
 		case <-time.After(1 * time.Second):
-			utils.Warnf("ForwardSession: timeout sending close packet for session %s", streamID)
+			corelog.Warnf("ForwardSession: timeout sending close packet for session %s", streamID)
 		}
 
 		// 从连接中注销
@@ -89,7 +89,7 @@ func NewForwardSession(parentCtx context.Context, conn MultiplexedConn, metadata
 		return nil
 	})
 
-	utils.Infof("ForwardSession: created session %s", streamID)
+	corelog.Infof("ForwardSession: created session %s", streamID)
 	return session
 }
 
@@ -205,7 +205,7 @@ func (s *ForwardSession) deliverPacket(packet *pb.BridgePacket) error {
 		return fmt.Errorf("session closed")
 	default:
 		// 接收通道满，丢弃数据包
-		utils.Warnf("ForwardSession: receive channel full for session %s, dropping packet", s.streamID)
+		corelog.Warnf("ForwardSession: receive channel full for session %s, dropping packet", s.streamID)
 		return fmt.Errorf("receive channel full")
 	}
 }

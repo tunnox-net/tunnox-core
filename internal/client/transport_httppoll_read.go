@@ -1,12 +1,12 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/base64"
 	"fmt"
 	"io"
 
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 func (c *HTTPLongPollingConn) Unread(data []byte) {
@@ -17,7 +17,7 @@ func (c *HTTPLongPollingConn) Unread(data []byte) {
 	defer c.readBufMu.Unlock()
 	// 将数据放回 readBuffer 的开头
 	c.readBuffer = append(data, c.readBuffer...)
-	utils.Infof("HTTP long polling: [Unread] restored %d bytes to readBuffer (total: %d), mappingID=%s",
+	corelog.Infof("HTTP long polling: [Unread] restored %d bytes to readBuffer (total: %d), mappingID=%s",
 		len(data), len(c.readBuffer), c.mappingID)
 }
 
@@ -64,13 +64,13 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 		// Base64 解码
 		data, err := base64.StdEncoding.DecodeString(base64Data)
 		if err != nil {
-			utils.Errorf("HTTP long polling: failed to decode Base64 data (len=%d): %v", len(base64Data), err)
+			corelog.Errorf("HTTP long polling: failed to decode Base64 data (len=%d): %v", len(base64Data), err)
 			// 打印前20个字符用于调试
 			preview := base64Data
 			if len(preview) > 20 {
 				preview = preview[:20]
 			}
-			utils.Errorf("HTTP long polling: Base64 data preview: %s", preview)
+			corelog.Errorf("HTTP long polling: Base64 data preview: %s", preview)
 			return 0, fmt.Errorf("failed to decode Base64 data: %w", err)
 		}
 
@@ -90,7 +90,7 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 			}
 			// 提高阈值，避免误判（MySQL等协议的数据可能包含Base64字符）
 			if base64Count >= 15 {
-				utils.Warnf("HTTP long polling: decoded data appears to be Base64 string (first %d bytes are Base64 chars), possible double encoding", base64Count)
+				corelog.Warnf("HTTP long polling: decoded data appears to be Base64 string (first %d bytes are Base64 chars), possible double encoding", base64Count)
 				// 不返回错误，只记录警告，因为可能是误判
 			}
 		}
@@ -100,7 +100,7 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 		oldBufferLen := len(c.readBuffer)
 		c.readBuffer = append(c.readBuffer, data...)
 		newBufferLen := len(c.readBuffer)
-		utils.Debugf("HTTP long polling: [Read] appended %d bytes to readBuffer (old len=%d, new len=%d), mappingID=%s",
+		corelog.Debugf("HTTP long polling: [Read] appended %d bytes to readBuffer (old len=%d, new len=%d), mappingID=%s",
 			len(data), oldBufferLen, newBufferLen, c.mappingID)
 
 		// 只有指令通道（control）才需要过滤心跳包
@@ -113,14 +113,14 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 				// 检查是否是心跳包（0x03 或 0x43）
 				packetType := packet.Type(c.readBuffer[i])
 				if packetType.IsHeartbeat() {
-					utils.Debugf("HTTP long polling: [Read] control channel: filtering heartbeat packet (0x%02x) at index %d",
+					corelog.Debugf("HTTP long polling: [Read] control channel: filtering heartbeat packet (0x%02x) at index %d",
 						c.readBuffer[i], i)
 					continue // 跳过心跳包
 				}
 				filtered = append(filtered, c.readBuffer[i])
 			}
 			if len(filtered) != len(c.readBuffer) {
-				utils.Debugf("HTTP long polling: [Read] filtered %d bytes from readBuffer (before=%d, after=%d)",
+				corelog.Debugf("HTTP long polling: [Read] filtered %d bytes from readBuffer (before=%d, after=%d)",
 					len(c.readBuffer)-len(filtered), len(c.readBuffer), len(filtered))
 			}
 			c.readBuffer = filtered
@@ -130,7 +130,7 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 		n := copy(p, c.readBuffer)
 		c.readBuffer = c.readBuffer[n:]
 		c.readBufMu.Unlock()
-		utils.Debugf("HTTP long polling: [Read] copied %d bytes from readBuffer, mappingID=%s",
+		corelog.Debugf("HTTP long polling: [Read] copied %d bytes from readBuffer, mappingID=%s",
 			n, c.mappingID)
 
 		// 流模式下，直接返回数据，不验证 Base64 格式（因为已经是原始数据）
@@ -152,8 +152,8 @@ func (c *HTTPLongPollingConn) Read(p []byte) (int, error) {
 					if n < previewLen {
 						previewLen = n
 					}
-					utils.Errorf("HTTP long polling: Read returned Base64-like data (first %d bytes are Base64 chars), possible error", base64Count)
-					utils.Errorf("HTTP long polling: Read data preview (first %d bytes): %q, hex: %x", previewLen, string(p[:previewLen]), p[:previewLen])
+					corelog.Errorf("HTTP long polling: Read returned Base64-like data (first %d bytes are Base64 chars), possible error", base64Count)
+					corelog.Errorf("HTTP long polling: Read data preview (first %d bytes): %q, hex: %x", previewLen, string(p[:previewLen]), p[:previewLen])
 				}
 			}
 		}

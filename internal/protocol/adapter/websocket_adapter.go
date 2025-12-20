@@ -1,6 +1,7 @@
 package adapter
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/utils"
 
 	"github.com/gorilla/websocket"
 )
@@ -48,16 +48,16 @@ func NewWebSocketAdapter(parentCtx context.Context, sess session.Session) *WebSo
 
 // handleWebSocket handles WebSocket upgrade and connection
 func (a *WebSocketAdapter) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	utils.Debugf("WebSocket: upgrade request from %s", r.RemoteAddr)
+	corelog.Debugf("WebSocket: upgrade request from %s", r.RemoteAddr)
 
 	// Upgrade HTTP connection to WebSocket
 	conn, err := a.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		utils.Errorf("WebSocket: upgrade failed: %v", err)
+		corelog.Errorf("WebSocket: upgrade failed: %v", err)
 		return
 	}
 
-	utils.Infof("WebSocket: connection established from %s", r.RemoteAddr)
+	corelog.Infof("WebSocket: connection established from %s", r.RemoteAddr)
 
 	// Wrap WebSocket connection
 	wsConn := &WebSocketServerConn{
@@ -69,12 +69,12 @@ func (a *WebSocketAdapter) handleWebSocket(w http.ResponseWriter, r *http.Reques
 	// Send to accept channel
 	select {
 	case a.connChan <- wsConn:
-		utils.Debugf("WebSocket: connection queued for acceptance")
+		corelog.Debugf("WebSocket: connection queued for acceptance")
 	case <-a.Ctx().Done():
 		wsConn.Close()
 		return
 	case <-time.After(5 * time.Second):
-		utils.Errorf("WebSocket: connection queue full, rejecting")
+		corelog.Errorf("WebSocket: connection queue full, rejecting")
 		wsConn.Close()
 		return
 	}
@@ -82,7 +82,7 @@ func (a *WebSocketAdapter) handleWebSocket(w http.ResponseWriter, r *http.Reques
 
 // ListenFrom starts the WebSocket server on the given address
 func (a *WebSocketAdapter) ListenFrom(addr string) error {
-	utils.Infof("WebSocket adapter starting on %s", addr)
+	corelog.Infof("WebSocket adapter starting on %s", addr)
 
 	// 设置地址到 BaseAdapter
 	a.SetAddr(addr)
@@ -98,14 +98,14 @@ func (a *WebSocketAdapter) ListenFrom(addr string) error {
 
 	go func() {
 		if err := a.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			utils.Errorf("WebSocket server error: %v", err)
+			corelog.Errorf("WebSocket server error: %v", err)
 		}
 	}()
 
 	// Start handling connections
 	go a.handleConnections()
 
-	utils.Infof("WebSocket adapter started on %s/_tunnox", addr)
+	corelog.Infof("WebSocket adapter started on %s/_tunnox", addr)
 	return nil
 }
 
@@ -118,7 +118,7 @@ func (a *WebSocketAdapter) handleConnections() {
 			case <-a.Ctx().Done():
 				return
 			default:
-				utils.Errorf("WebSocket: accept error: %v", err)
+				corelog.Errorf("WebSocket: accept error: %v", err)
 				continue
 			}
 		}
@@ -162,7 +162,7 @@ func (a *WebSocketAdapter) onClose() error {
 	a.closed = true
 	a.mu.Unlock()
 
-	utils.Infof("WebSocket adapter closing")
+	corelog.Infof("WebSocket adapter closing")
 
 	// Shutdown HTTP server
 	if a.server != nil {
@@ -171,7 +171,7 @@ func (a *WebSocketAdapter) onClose() error {
 		defer cancel()
 
 		if err := a.server.Shutdown(ctx); err != nil {
-			utils.Errorf("WebSocket server shutdown error: %v", err)
+			corelog.Errorf("WebSocket server shutdown error: %v", err)
 		}
 	}
 
@@ -269,7 +269,7 @@ func (c *WebSocketServerConn) Close() error {
 		c.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
 
 		err = c.conn.Close()
-		utils.Debugf("WebSocket: server connection closed")
+		corelog.Debugf("WebSocket: server connection closed")
 	})
 	return err
 }

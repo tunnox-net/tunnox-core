@@ -1,6 +1,7 @@
 package repos
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 )
 
 // ClientTokenRepository 客户端Token数据访问层
@@ -48,7 +48,7 @@ func NewClientTokenRepository(ctx context.Context, storage storage.Storage) *Cli
 
 // onClose 资源清理回调
 func (r *ClientTokenRepository) onClose() error {
-	utils.Infof("ClientTokenRepository: closing")
+	corelog.Infof("ClientTokenRepository: closing")
 	// Token数据存储在缓存中，会自动过期，无需手动清理
 	return nil
 }
@@ -133,7 +133,7 @@ func (r *ClientTokenRepository) SetToken(token *models.ClientToken) error {
 		return fmt.Errorf("failed to set token: %w", err)
 	}
 	
-	utils.Debugf("ClientTokenRepository: set token for client %d (expires_in=%s)", 
+	corelog.Debugf("ClientTokenRepository: set token for client %d (expires_in=%s)", 
 		token.ClientID, ttl)
 	
 	return nil
@@ -153,7 +153,7 @@ func (r *ClientTokenRepository) DeleteToken(clientID int64) error {
 		return fmt.Errorf("failed to delete token: %w", err)
 	}
 	
-	utils.Debugf("ClientTokenRepository: deleted token for client %d", clientID)
+	corelog.Debugf("ClientTokenRepository: deleted token for client %d", clientID)
 	return nil
 }
 

@@ -1,10 +1,10 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"net/http"
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/models"
-	"tunnox-core/internal/utils"
 )
 
 // CreateMappingRequest 创建端口映射请求
@@ -84,7 +84,7 @@ func (s *ManagementAPIServer) handleCreateMapping(w http.ResponseWriter, r *http
 	// 创建端口映射（带事务保护）
 	createdMapping, err := s.createMappingWithTransaction(mapping)
 	if err != nil {
-		utils.Errorf("API: failed to create mapping: %v", err)
+		corelog.Errorf("API: failed to create mapping: %v", err)
 		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

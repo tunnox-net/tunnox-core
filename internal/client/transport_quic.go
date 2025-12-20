@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
-	"tunnox-core/internal/utils"
 )
 
 // quicStreamConn wraps a QUIC stream to implement net.Conn interface
@@ -23,7 +23,7 @@ type quicStreamConn struct {
 
 // newQUICStreamConn creates a new QUIC stream connection
 func newQUICStreamConn(ctx context.Context, address string) (*quicStreamConn, error) {
-	utils.Debugf("QUIC: connecting to %s", address)
+	corelog.Debugf("QUIC: connecting to %s", address)
 	
 	// Create TLS config (skip verification for now, can be configured later)
 	tlsConf := &tls.Config{
@@ -43,7 +43,7 @@ func newQUICStreamConn(ctx context.Context, address string) (*quicStreamConn, er
 		return nil, fmt.Errorf("quic dial failed: %w", err)
 	}
 	
-	utils.Infof("QUIC: connection established to %s", address)
+	corelog.Infof("QUIC: connection established to %s", address)
 	
 	// Open a stream
 	stream, err := conn.OpenStreamSync(ctx)
@@ -52,7 +52,7 @@ func newQUICStreamConn(ctx context.Context, address string) (*quicStreamConn, er
 		return nil, fmt.Errorf("quic open stream failed: %w", err)
 	}
 	
-	utils.Infof("QUIC: stream opened")
+	corelog.Infof("QUIC: stream opened")
 	
 	qsc := &quicStreamConn{
 		stream: stream,
@@ -111,7 +111,7 @@ func (c *quicStreamConn) Close() error {
 			err = c.conn.CloseWithError(0, "normal closure")
 		}
 		
-		utils.Debugf("QUIC: connection closed")
+		corelog.Debugf("QUIC: connection closed")
 	})
 	return err
 }

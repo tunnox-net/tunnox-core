@@ -1,10 +1,10 @@
 package stream
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
-	"tunnox-core/internal/utils"
 )
 
 // StreamService 流服务适配器，让流管理器能够作为服务运行
@@ -31,7 +31,7 @@ func (ss *StreamService) Name() string {
 func (ss *StreamService) Start(ctx context.Context) error {
 	ss.ctx = ctx
 	// 精简日志：只在调试模式下输出服务启动信息
-	utils.Debugf("Starting stream service: %s", ss.name)
+	corelog.Debugf("Starting stream service: %s", ss.name)
 
 	// 流管理器在创建时就已经初始化，这里主要是验证状态
 	if ss.manager == nil {
@@ -39,20 +39,20 @@ func (ss *StreamService) Start(ctx context.Context) error {
 	}
 
 	// 精简日志：只在调试模式下输出服务启动完成信息
-	utils.Debugf("Stream service started: %s", ss.name)
+	corelog.Debugf("Stream service started: %s", ss.name)
 	return nil
 }
 
 // Stop 停止流服务
 func (ss *StreamService) Stop(ctx context.Context) error {
-	utils.Infof("Stopping stream service: %s", ss.name)
+	corelog.Infof("Stopping stream service: %s", ss.name)
 
 	// 关闭所有流
 	if err := ss.manager.CloseAllStreams(); err != nil {
 		return fmt.Errorf("failed to stop stream service %s: %v", ss.name, err)
 	}
 
-	utils.Infof("Stream service stopped: %s", ss.name)
+	corelog.Infof("Stream service stopped: %s", ss.name)
 	return nil
 }
 

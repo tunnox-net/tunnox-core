@@ -1,6 +1,7 @@
 package adapter
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -16,7 +17,6 @@ import (
 	"time"
 
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/utils"
 
 	"github.com/quic-go/quic-go"
 )
@@ -52,7 +52,7 @@ func NewQuicAdapter(parentCtx context.Context, sess session.Session) *QuicAdapte
 func generateTLSConfig() *tls.Config {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		utils.Errorf("QUIC: failed to generate RSA key: %v", err)
+		corelog.Errorf("QUIC: failed to generate RSA key: %v", err)
 		return nil
 	}
 
@@ -70,7 +70,7 @@ func generateTLSConfig() *tls.Config {
 
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
 	if err != nil {
-		utils.Errorf("QUIC: failed to create certificate: %v", err)
+		corelog.Errorf("QUIC: failed to create certificate: %v", err)
 		return nil
 	}
 
@@ -79,7 +79,7 @@ func generateTLSConfig() *tls.Config {
 
 	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
-		utils.Errorf("QUIC: failed to load key pair: %v", err)
+		corelog.Errorf("QUIC: failed to load key pair: %v", err)
 		return nil
 	}
 
@@ -91,7 +91,7 @@ func generateTLSConfig() *tls.Config {
 
 // ListenFrom starts the QUIC server on the given address
 func (a *QuicAdapter) ListenFrom(addr string) error {
-	utils.Infof("QUIC adapter starting on %s", addr)
+	corelog.Infof("QUIC adapter starting on %s", addr)
 
 	// 设置地址到 BaseAdapter
 	a.SetAddr(addr)
@@ -132,7 +132,7 @@ func (a *QuicAdapter) ListenFrom(addr string) error {
 	// Start handling connections
 	go a.handleConnections()
 
-	utils.Infof("QUIC adapter started on %s", addr)
+	corelog.Infof("QUIC adapter started on %s", addr)
 	return nil
 }
 
@@ -145,7 +145,7 @@ func (a *QuicAdapter) handleConnections() {
 			case <-a.Ctx().Done():
 				return
 			default:
-				utils.Errorf("QUIC: accept error: %v", err)
+				corelog.Errorf("QUIC: accept error: %v", err)
 				continue
 			}
 		}
@@ -169,12 +169,12 @@ func (a *QuicAdapter) acceptConnections() {
 			case <-a.Ctx().Done():
 				return
 			default:
-				utils.Errorf("QUIC: accept error: %v", err)
+				corelog.Errorf("QUIC: accept error: %v", err)
 				continue
 			}
 		}
 
-		utils.Infof("QUIC: connection accepted from %s", conn.RemoteAddr())
+		corelog.Infof("QUIC: connection accepted from %s", conn.RemoteAddr())
 
 		// Accept stream from connection
 		go a.acceptStream(conn)
@@ -186,12 +186,12 @@ func (a *QuicAdapter) acceptStream(conn *quic.Conn) {
 	ctx := a.Ctx()
 	stream, err := conn.AcceptStream(ctx)
 	if err != nil {
-		utils.Errorf("QUIC: accept stream error: %v", err)
+		corelog.Errorf("QUIC: accept stream error: %v", err)
 		conn.CloseWithError(quic.ApplicationErrorCode(0), "failed to accept stream")
 		return
 	}
 
-	utils.Debugf("QUIC: stream accepted from %s", conn.RemoteAddr())
+	corelog.Debugf("QUIC: stream accepted from %s", conn.RemoteAddr())
 
 	// Wrap stream as connection
 	streamConn := &QuicServerStreamConn{
@@ -204,12 +204,12 @@ func (a *QuicAdapter) acceptStream(conn *quic.Conn) {
 	// Send to accept channel
 	select {
 	case a.connChan <- streamConn:
-		utils.Debugf("QUIC: stream queued for acceptance")
+		corelog.Debugf("QUIC: stream queued for acceptance")
 	case <-a.Ctx().Done():
 		streamConn.Close()
 		return
 	case <-time.After(5 * time.Second):
-		utils.Errorf("QUIC: connection queue full, rejecting")
+		corelog.Errorf("QUIC: connection queue full, rejecting")
 		streamConn.Close()
 		return
 	}
@@ -235,12 +235,12 @@ func (a *QuicAdapter) onClose() error {
 	a.closed = true
 	a.mu.Unlock()
 
-	utils.Infof("QUIC adapter closing")
+	corelog.Infof("QUIC adapter closing")
 
 	// Close listener
 	if a.listener != nil {
 		if err := a.listener.Close(); err != nil {
-			utils.Errorf("QUIC listener close error: %v", err)
+			corelog.Errorf("QUIC listener close error: %v", err)
 		}
 	}
 
@@ -314,7 +314,7 @@ func (c *QuicServerStreamConn) Close() error {
 		// Close stream
 		c.stream.Close()
 
-		utils.Debugf("QUIC: server stream closed")
+		corelog.Debugf("QUIC: server stream closed")
 	})
 	return err
 }

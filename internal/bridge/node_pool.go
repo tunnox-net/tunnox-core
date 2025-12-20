@@ -1,12 +1,12 @@
 package bridge
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -70,7 +70,7 @@ func NewNodeConnectionPool(parentCtx context.Context, targetNodeID, targetAddr s
 	// 启动清理协程
 	go pool.cleanupLoop()
 
-	utils.Infof("NodeConnectionPool: created pool for node %s (min:%d, max:%d, max_streams:%d)",
+	corelog.Infof("NodeConnectionPool: created pool for node %s (min:%d, max:%d, max_streams:%d)",
 		targetNodeID, config.MinConns, config.MaxConns, config.MaxStreamsPerConn)
 	return pool, nil
 }
@@ -105,7 +105,7 @@ func (p *NodeConnectionPool) createConnection() (MultiplexedConn, error) {
 	p.connections = append(p.connections, mc)
 	p.connsMu.Unlock()
 
-	utils.Infof("NodeConnectionPool: created new connection to node %s (total: %d)",
+	corelog.Infof("NodeConnectionPool: created new connection to node %s (total: %d)",
 		p.targetNodeID, len(p.connections))
 	return mc, nil
 }
@@ -120,7 +120,7 @@ func (p *NodeConnectionPool) GetOrCreateSession(ctx context.Context, metadata *S
 			p.connsMu.RUnlock()
 			session := NewForwardSession(ctx, conn, metadata)
 			if session != nil {
-				utils.Debugf("NodeConnectionPool: reused connection for new session %s", session.StreamID())
+				corelog.Debugf("NodeConnectionPool: reused connection for new session %s", session.StreamID())
 				return session, nil
 			}
 		}
@@ -138,7 +138,7 @@ func (p *NodeConnectionPool) GetOrCreateSession(ctx context.Context, metadata *S
 
 		session := NewForwardSession(ctx, conn, metadata)
 		if session != nil {
-			utils.Infof("NodeConnectionPool: created new connection and session %s", session.StreamID())
+			corelog.Infof("NodeConnectionPool: created new connection and session %s", session.StreamID())
 			return session, nil
 		}
 	}
@@ -156,7 +156,7 @@ func (p *NodeConnectionPool) cleanupLoop() {
 		case <-ticker.C:
 			p.cleanupIdleConnections()
 		case <-p.Ctx().Done():
-			utils.Infof("NodeConnectionPool: cleanup loop stopped for node %s", p.targetNodeID)
+			corelog.Infof("NodeConnectionPool: cleanup loop stopped for node %s", p.targetNodeID)
 			return
 		}
 	}
@@ -181,7 +181,7 @@ func (p *NodeConnectionPool) cleanupIdleConnections() {
 		if conn.IsIdle(p.maxIdleTime) {
 			conn.Close()
 			closedCount++
-			utils.Debugf("NodeConnectionPool: closed idle connection to node %s", p.targetNodeID)
+			corelog.Debugf("NodeConnectionPool: closed idle connection to node %s", p.targetNodeID)
 		} else {
 			activeConns = append(activeConns, conn)
 		}
@@ -190,7 +190,7 @@ func (p *NodeConnectionPool) cleanupIdleConnections() {
 	p.connections = activeConns
 
 	if closedCount > 0 {
-		utils.Infof("NodeConnectionPool: cleaned up %d idle connections for node %s (remaining: %d)",
+		corelog.Infof("NodeConnectionPool: cleaned up %d idle connections for node %s (remaining: %d)",
 			closedCount, p.targetNodeID, len(p.connections))
 	}
 }
@@ -221,14 +221,14 @@ func (p *NodeConnectionPool) Close() error {
 	// 关闭所有连接
 	for _, conn := range p.connections {
 		if err := conn.Close(); err != nil {
-			utils.Warnf("NodeConnectionPool: failed to close connection: %v", err)
+			corelog.Warnf("NodeConnectionPool: failed to close connection: %v", err)
 		}
 	}
 
 	p.connections = nil
 	p.connsMu.Unlock()
 
-	utils.Infof("NodeConnectionPool: closed pool for node %s", p.targetNodeID)
+	corelog.Infof("NodeConnectionPool: closed pool for node %s", p.targetNodeID)
 
 	// 调用基类 Close
 	return p.ManagerBase.Close()

@@ -1,6 +1,7 @@
 package command
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
@@ -8,7 +9,6 @@ import (
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // CommandStats 命令统计信息
@@ -163,7 +163,7 @@ func (cs *commandService) SetEventBus(eventBus events.EventBus) error {
 	defer cs.mu.Unlock()
 
 	cs.eventBus = eventBus
-	utils.Infof("Event bus set for command service")
+	corelog.Infof("Event bus set for command service")
 	return nil
 }
 
@@ -182,7 +182,7 @@ func (cs *commandService) Start() error {
 		return fmt.Errorf("failed to subscribe to CommandReceived events: %w", err)
 	}
 
-	utils.Infof("Command service started, listening for events")
+	corelog.Infof("Command service started, listening for events")
 	return nil
 }
 
@@ -193,7 +193,7 @@ func (cs *commandService) handleCommandEvent(event events.Event) error {
 		return fmt.Errorf("invalid event type: expected CommandReceivedEvent")
 	}
 
-	utils.Infof("Handling command event for connection: %s, command: %v",
+	corelog.Infof("Handling command event for connection: %s, command: %v",
 		cmdEvent.ConnectionID, cmdEvent.CommandType)
 
 	// 创建命令上下文
@@ -229,7 +229,7 @@ func (cs *commandService) handleCommandEvent(event events.Event) error {
 			cmdEvent.CommandId,
 		)
 		if err := eventBus.Publish(disconnectEvent); err != nil {
-			utils.Errorf("Failed to publish disconnect request event: %v", err)
+			corelog.Errorf("Failed to publish disconnect request event: %v", err)
 		}
 	}
 
@@ -255,7 +255,7 @@ func (cs *commandService) handleCommandEvent(event events.Event) error {
 
 	if eventBus != nil {
 		if err := eventBus.Publish(completedEvent); err != nil {
-			utils.Errorf("Failed to publish command completed event: %v", err)
+			corelog.Errorf("Failed to publish command completed event: %v", err)
 		}
 	}
 
@@ -291,16 +291,16 @@ func (cs *commandService) Execute(ctx *CommandContext) (*CommandResponse, error)
 	// 更新统计信息
 	if err != nil {
 		cs.stats.IncrementFailed()
-		utils.Errorf("Command execution failed: %v", err)
+		corelog.Errorf("Command execution failed: %v", err)
 	} else {
 		cs.stats.IncrementSuccess()
-		utils.Debugf("Command executed successfully: %v", ctx.CommandType)
+		corelog.Debugf("Command executed successfully: %v", ctx.CommandType)
 	}
 
 	// 发送响应（如果需要）
 	if response != nil && cs.responseSender != nil {
 		if err := cs.responseSender.SendResponse(ctx.ConnectionID, response); err != nil {
-			utils.Errorf("Failed to send response: %v", err)
+			corelog.Errorf("Failed to send response: %v", err)
 		}
 	}
 
@@ -334,7 +334,7 @@ func (cs *commandService) Use(middleware Middleware) {
 	cs.middleware = append(cs.middleware, middleware)
 	cs.executor.AddMiddleware(middleware)
 
-	utils.Infof("Registered middleware: %T", middleware)
+	corelog.Infof("Registered middleware: %T", middleware)
 }
 
 // RegisterHandler 注册命令处理器
@@ -357,12 +357,12 @@ func (cs *commandService) SetResponseSender(sender ResponseSender) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.responseSender = sender
-	utils.Infof("Response sender set")
+	corelog.Infof("Response sender set")
 }
 
 // onClose 资源清理回调
 func (cs *commandService) onClose() error {
-	utils.Infof("Cleaning up command service resources...")
+	corelog.Infof("Cleaning up command service resources...")
 
 	// 取消事件订阅
 	cs.mu.RLock()
@@ -372,9 +372,9 @@ func (cs *commandService) onClose() error {
 	if eventBus != nil {
 		// 取消订阅命令接收事件
 		if err := eventBus.Unsubscribe("CommandReceived", cs.handleCommandEvent); err != nil {
-			utils.Warnf("Failed to unsubscribe from CommandReceived events: %v", err)
+			corelog.Warnf("Failed to unsubscribe from CommandReceived events: %v", err)
 		}
-		utils.Infof("Unsubscribed from command events")
+		corelog.Infof("Unsubscribed from command events")
 	}
 
 	// 清理响应发送器
@@ -383,7 +383,7 @@ func (cs *commandService) onClose() error {
 	cs.eventBus = nil
 	cs.mu.Unlock()
 
-	utils.Infof("Command service resources cleanup completed")
+	corelog.Infof("Command service resources cleanup completed")
 	return nil
 }
 

@@ -1,12 +1,12 @@
 package broker
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // MemoryBroker 内存消息代理（单节点，无持久化）
@@ -27,7 +27,7 @@ func NewMemoryBroker(parentCtx context.Context, nodeID string) *MemoryBroker {
 		closed:      false,
 	}
 	
-	utils.Infof("MemoryBroker initialized for node: %s", nodeID)
+	corelog.Infof("MemoryBroker initialized for node: %s", nodeID)
 	return broker
 }
 
@@ -43,7 +43,7 @@ func (m *MemoryBroker) Publish(ctx context.Context, topic string, message []byte
 	subscribers, exists := m.subscribers[topic]
 	if !exists || len(subscribers) == 0 {
 		// 没有订阅者，消息丢弃（符合 Pub/Sub 语义）
-		utils.Debugf("MemoryBroker: no subscribers for topic %s, message dropped", topic)
+		corelog.Debugf("MemoryBroker: no subscribers for topic %s, message dropped", topic)
 		return nil
 	}
 	
@@ -64,11 +64,11 @@ func (m *MemoryBroker) Publish(ctx context.Context, topic string, message []byte
 			return ctx.Err()
 		default:
 			// 订阅者通道满，跳过（避免阻塞）
-			utils.Warnf("MemoryBroker: subscriber channel full for topic %s, skipping", topic)
+			corelog.Warnf("MemoryBroker: subscriber channel full for topic %s, skipping", topic)
 		}
 	}
 	
-	utils.Debugf("MemoryBroker: published message to topic %s, sent to %d/%d subscribers", 
+	corelog.Debugf("MemoryBroker: published message to topic %s, sent to %d/%d subscribers", 
 		topic, sentCount, len(subscribers))
 	
 	return nil
@@ -89,7 +89,7 @@ func (m *MemoryBroker) Subscribe(ctx context.Context, topic string) (<-chan *Mes
 	// 添加到订阅者列表
 	m.subscribers[topic] = append(m.subscribers[topic], msgChan)
 	
-	utils.Infof("MemoryBroker: new subscriber for topic %s (total: %d)", 
+	corelog.Infof("MemoryBroker: new subscriber for topic %s (total: %d)", 
 		topic, len(m.subscribers[topic]))
 	
 	return msgChan, nil
@@ -117,7 +117,7 @@ func (m *MemoryBroker) Unsubscribe(ctx context.Context, topic string) error {
 	// 删除主题
 	delete(m.subscribers, topic)
 	
-	utils.Infof("MemoryBroker: unsubscribed from topic %s", topic)
+	corelog.Infof("MemoryBroker: unsubscribed from topic %s", topic)
 	
 	return nil
 }
@@ -150,14 +150,14 @@ func (m *MemoryBroker) Close() error {
 		for _, ch := range subscribers {
 			close(ch)
 		}
-		utils.Debugf("MemoryBroker: closed %d subscribers for topic %s", len(subscribers), topic)
+		corelog.Debugf("MemoryBroker: closed %d subscribers for topic %s", len(subscribers), topic)
 	}
 	
 	// 清空订阅者
 	m.subscribers = make(map[string][]chan *Message)
 	m.mu.Unlock()
 	
-	utils.Infof("MemoryBroker closed for node: %s", m.nodeID)
+	corelog.Infof("MemoryBroker closed for node: %s", m.nodeID)
 	
 	// 调用基类 Close
 	return m.ServiceBase.Close()

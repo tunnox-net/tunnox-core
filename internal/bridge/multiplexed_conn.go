@@ -1,6 +1,7 @@
 package bridge
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
@@ -8,7 +9,6 @@ import (
 	"time"
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 
 	"google.golang.org/grpc"
 )
@@ -57,7 +57,7 @@ func NewMultiplexedConn(parentCtx context.Context, targetNodeID string, grpcConn
 	// 启动接收和发送循环
 	go mc.receiveLoop()
 
-	utils.Infof("MultiplexedConn: created connection to node %s (max_streams: %d)", targetNodeID, maxStreams)
+	corelog.Infof("MultiplexedConn: created connection to node %s (max_streams: %d)", targetNodeID, maxStreams)
 	return mc, nil
 }
 
@@ -85,7 +85,7 @@ func (m *grpcMultiplexedConn) RegisterSession(streamID string, session *ForwardS
 	// 启动发送协程（为每个会话）
 	go m.sendLoopForSession(session)
 
-	utils.Debugf("MultiplexedConn: registered session %s (active: %d/%d)", streamID, m.activeStreams, m.maxStreams)
+	corelog.Debugf("MultiplexedConn: registered session %s (active: %d/%d)", streamID, m.activeStreams, m.maxStreams)
 	return nil
 }
 
@@ -97,7 +97,7 @@ func (m *grpcMultiplexedConn) UnregisterSession(streamID string) {
 	if _, exists := m.sessions[streamID]; exists {
 		delete(m.sessions, streamID)
 		m.activeStreams = int32(len(m.sessions))
-		utils.Debugf("MultiplexedConn: unregistered session %s (active: %d/%d)", streamID, m.activeStreams, m.maxStreams)
+		corelog.Debugf("MultiplexedConn: unregistered session %s (active: %d/%d)", streamID, m.activeStreams, m.maxStreams)
 	}
 }
 
@@ -122,7 +122,7 @@ func (m *grpcMultiplexedConn) sendLoopForSession(session *ForwardSession) {
 
 			// 发送到 gRPC 流
 			if err := m.stream.Send(packet); err != nil {
-				utils.Errorf("MultiplexedConn: failed to send packet for stream %s: %v", session.streamID, err)
+				corelog.Errorf("MultiplexedConn: failed to send packet for stream %s: %v", session.streamID, err)
 				session.Close()
 				return
 			}
@@ -131,7 +131,7 @@ func (m *grpcMultiplexedConn) sendLoopForSession(session *ForwardSession) {
 			m.lastActiveAt = time.Now()
 			m.sessionsMu.Unlock()
 
-			utils.Debugf("MultiplexedConn: sent packet for stream %s (type: %v)", session.streamID, packet.Type)
+			corelog.Debugf("MultiplexedConn: sent packet for stream %s (type: %v)", session.streamID, packet.Type)
 
 		case <-session.Ctx().Done():
 			return
@@ -143,20 +143,20 @@ func (m *grpcMultiplexedConn) sendLoopForSession(session *ForwardSession) {
 
 // receiveLoop 接收数据包并分发到对应的会话
 func (m *grpcMultiplexedConn) receiveLoop() {
-	utils.Infof("MultiplexedConn: receive loop started for node %s", m.targetNodeID)
+	corelog.Infof("MultiplexedConn: receive loop started for node %s", m.targetNodeID)
 
 	for {
 		select {
 		case <-m.Ctx().Done():
-			utils.Infof("MultiplexedConn: receive loop stopped for node %s", m.targetNodeID)
+			corelog.Infof("MultiplexedConn: receive loop stopped for node %s", m.targetNodeID)
 			return
 		default:
 			packet, err := m.stream.Recv()
 			if err != nil {
 				if err == io.EOF {
-					utils.Infof("MultiplexedConn: stream closed for node %s", m.targetNodeID)
+					corelog.Infof("MultiplexedConn: stream closed for node %s", m.targetNodeID)
 				} else {
-					utils.Errorf("MultiplexedConn: failed to receive packet: %v", err)
+					corelog.Errorf("MultiplexedConn: failed to receive packet: %v", err)
 				}
 				m.Close()
 				return
@@ -168,16 +168,16 @@ func (m *grpcMultiplexedConn) receiveLoop() {
 			m.sessionsMu.RUnlock()
 
 			if !exists {
-				utils.Warnf("MultiplexedConn: received packet for unknown stream %s", packet.StreamId)
+				corelog.Warnf("MultiplexedConn: received packet for unknown stream %s", packet.StreamId)
 				continue
 			}
 
 			// 投递到对应的会话
 			if err := session.deliverPacket(packet); err != nil {
-				utils.Warnf("MultiplexedConn: failed to deliver packet to session %s: %v", packet.StreamId, err)
+				corelog.Warnf("MultiplexedConn: failed to deliver packet to session %s: %v", packet.StreamId, err)
 			}
 
-			utils.Debugf("MultiplexedConn: delivered packet to stream %s (type: %v)", packet.StreamId, packet.Type)
+			corelog.Debugf("MultiplexedConn: delivered packet to stream %s (type: %v)", packet.StreamId, packet.Type)
 		}
 	}
 }
@@ -239,7 +239,7 @@ func (m *grpcMultiplexedConn) Close() error {
 	m.closed = true
 	m.closedMu.Unlock()
 
-	utils.Infof("MultiplexedConn: closing connection to node %s", m.targetNodeID)
+	corelog.Infof("MultiplexedConn: closing connection to node %s", m.targetNodeID)
 
 	// 关闭所有会话
 	m.sessionsMu.Lock()
@@ -256,18 +256,18 @@ func (m *grpcMultiplexedConn) Close() error {
 	// 关闭 gRPC 流
 	if m.stream != nil {
 		if err := m.stream.CloseSend(); err != nil {
-			utils.Warnf("MultiplexedConn: failed to close stream: %v", err)
+			corelog.Warnf("MultiplexedConn: failed to close stream: %v", err)
 		}
 	}
 
 	// 关闭 gRPC 连接
 	if m.grpcConn != nil {
 		if err := m.grpcConn.Close(); err != nil {
-			utils.Warnf("MultiplexedConn: failed to close grpc connection: %v", err)
+			corelog.Warnf("MultiplexedConn: failed to close grpc connection: %v", err)
 		}
 	}
 
-	utils.Infof("MultiplexedConn: closed connection to node %s", m.targetNodeID)
+	corelog.Infof("MultiplexedConn: closed connection to node %s", m.targetNodeID)
 
 	// 调用基类 Close
 	return m.ResourceBase.Close()

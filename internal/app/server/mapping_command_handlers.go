@@ -1,6 +1,7 @@
 package server
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -10,7 +11,6 @@ import (
 	"tunnox-core/internal/command"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/utils"
 )
 
 // MappingCommandHandlers 映射命令处理器集合
@@ -107,7 +107,7 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 
 	if ctx.RequestBody != "" {
 		if err := json.Unmarshal([]byte(ctx.RequestBody), &req); err != nil {
-			utils.Warnf("ListMappingsHandler: failed to parse request body: %v", err)
+			corelog.Warnf("ListMappingsHandler: failed to parse request body: %v", err)
 		}
 	}
 
@@ -143,7 +143,7 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 	}
 
 	if err != nil {
-		utils.Errorf("ListMappingsHandler: failed to list mappings for client %d: %v", clientID, err)
+		corelog.Errorf("ListMappingsHandler: failed to list mappings for client %d: %v", clientID, err)
 		return h.errorResponse(ctx, fmt.Sprintf("failed to list mappings: %v", err))
 	}
 

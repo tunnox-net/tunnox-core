@@ -1,12 +1,12 @@
 package bridge
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"sync"
 	"time"
 	
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // MetricsCollector 连接池指标收集器
@@ -67,7 +67,7 @@ func NewMetricsCollector(parentCtx context.Context) *MetricsCollector {
 	
 	// 注册清理处理器
 	collector.AddCleanHandler(func() error {
-		utils.Infof("MetricsCollector: cleaning up resources")
+		corelog.Infof("MetricsCollector: cleaning up resources")
 		
 		collector.mu.Lock()
 		defer collector.mu.Unlock()

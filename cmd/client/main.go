@@ -14,6 +14,7 @@ import (
 	"tunnox-core/internal/client"
 	clientapi "tunnox-core/internal/client/api"
 	"tunnox-core/internal/client/cli"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 )
 
@@ -114,9 +115,9 @@ func main() {
 	if *debugAPI {
 		debugAPIServer := clientapi.NewDebugAPIServer(tunnoxClient, *debugAPIPort)
 		if err := debugAPIServer.Start(); err != nil {
-			utils.Errorf("Failed to start debug API server: %v", err)
+			corelog.Errorf("Failed to start debug API server: %v", err)
 		} else {
-			utils.Infof("Debug API server started on http://127.0.0.1:%d", *debugAPIPort)
+			corelog.Infof("Debug API server started on http://127.0.0.1:%d", *debugAPIPort)
 		}
 		defer debugAPIServer.Stop()
 	}
@@ -150,10 +151,10 @@ func main() {
 		}
 
 		// 交互模式：尝试启动CLI
-		utils.Infof("Client: initializing CLI...")
+		corelog.Infof("Client: initializing CLI...")
 		tunnoxCLI, err := cli.NewCLI(ctx, tunnoxClient)
 		if err != nil {
-			utils.Errorf("Client: CLI initialization failed: %v", err)
+			corelog.Errorf("Client: CLI initialization failed: %v", err)
 			// CLI初始化失败（通常是因为没有TTY），自动降级到daemon模式
 			fmt.Fprintf(os.Stderr, "\n⚠️  CLI initialization failed: %v\n", err)
 			fmt.Fprintf(os.Stderr, "🔄 Auto-switching to daemon mode...\n")
@@ -191,13 +192,13 @@ func main() {
 
 			select {
 			case sig := <-sigChan:
-				utils.Infof("Client: received signal %v, shutting down...", sig)
+				corelog.Infof("Client: received signal %v, shutting down...", sig)
 			case <-ctx.Done():
-				utils.Infof("Client: context cancelled, shutting down...")
+				corelog.Infof("Client: context cancelled, shutting down...")
 			}
 		} else {
 			// CLI初始化成功，正常启动交互模式
-			utils.Infof("Client: CLI initialized successfully, starting...")
+			corelog.Infof("Client: CLI initialized successfully, starting...")
 			// 启动自动重连监控（交互模式也需要自动重连）
 			go monitorConnectionAndReconnect(ctx, tunnoxClient)
 
@@ -207,7 +208,7 @@ func main() {
 				signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 				select {
 				case sig := <-sigChan:
-					utils.Infof("Client: received signal %v, shutting down...", sig)
+					corelog.Infof("Client: received signal %v, shutting down...", sig)
 					cancel()
 					tunnoxCLI.Stop()
 				case <-ctx.Done():
@@ -216,9 +217,9 @@ func main() {
 			}()
 
 			// 启动CLI（阻塞）
-			utils.Infof("Client: calling CLI.Start()...")
+			corelog.Infof("Client: calling CLI.Start()...")
 			tunnoxCLI.Start()
-			utils.Infof("Client: CLI.Start() returned")
+			corelog.Infof("Client: CLI.Start() returned")
 		}
 
 	} else {
@@ -258,16 +259,16 @@ func main() {
 
 		select {
 		case sig := <-sigChan:
-			utils.Infof("Client: received signal %v, shutting down...", sig)
+			corelog.Infof("Client: received signal %v, shutting down...", sig)
 		case <-ctx.Done():
-			utils.Infof("Client: context cancelled, shutting down...")
+			corelog.Infof("Client: context cancelled, shutting down...")
 		}
 	}
 
 	// 停止客户端
 	fmt.Println("\n🛑 Shutting down client...")
 	tunnoxClient.Stop()
-	utils.Infof("Client: shutdown complete")
+	corelog.Infof("Client: shutdown complete")
 }
 
 // loadOrCreateConfig 加载或创建配置
@@ -549,19 +550,19 @@ func monitorConnectionAndReconnect(ctx context.Context, tunnoxClient *client.Tun
 			// ✅ 仅在连接断开且持续一段时间后才触发重连（给 readLoop 的重连机制时间）
 			if !tunnoxClient.IsConnected() {
 				consecutiveFailures++
-				utils.Warnf("Connection lost (failure %d/%d), attempting to reconnect via monitor...",
+				corelog.Warnf("Connection lost (failure %d/%d), attempting to reconnect via monitor...",
 					consecutiveFailures, maxFailures)
 
 				// ✅ 使用 Reconnect() 方法，它内部已经有防重复重连机制
 				if err := tunnoxClient.Reconnect(); err != nil {
-					utils.Errorf("Reconnection failed: %v", err)
+					corelog.Errorf("Reconnection failed: %v", err)
 
 					if consecutiveFailures >= maxFailures {
-						utils.Errorf("Max reconnection attempts reached, giving up")
+						corelog.Errorf("Max reconnection attempts reached, giving up")
 						return
 					}
 				} else {
-					utils.Infof("Reconnected successfully via monitor")
+					corelog.Infof("Reconnected successfully via monitor")
 					consecutiveFailures = 0
 				}
 			} else {

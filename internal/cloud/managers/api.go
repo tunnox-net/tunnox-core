@@ -93,6 +93,16 @@ type CloudControlAPI interface {
 	Close() error
 }
 
+// ClientNotifier 客户端通知接口
+type ClientNotifier interface {
+	NotifyClientUpdate(clientID int64)
+}
+
+// NotifierAware 支持注入通知器的接口
+type NotifierAware interface {
+	SetNotifier(notifier ClientNotifier)
+}
+
 // ControlConfig 云控配置
 type ControlConfig struct {
 	APIEndpoint string        `json:"api_endpoint"`

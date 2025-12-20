@@ -1,6 +1,7 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"io"
 	"net"
 	"sync"
@@ -42,18 +43,18 @@ func checkStreamDataForwarder(stream stream.PackageStreamer) StreamDataForwarder
 	}
 
 	if r, ok := stream.(readExact); ok {
-		utils.Infof("checkStreamDataForwarder: detected ReadExact method")
+		corelog.Infof("checkStreamDataForwarder: detected ReadExact method")
 		if w, ok := stream.(writeExact); ok {
-			utils.Infof("checkStreamDataForwarder: detected WriteExact method")
+			corelog.Infof("checkStreamDataForwarder: detected WriteExact method")
 			if c, ok := stream.(closer); ok {
-				utils.Infof("checkStreamDataForwarder: detected Close method")
+				corelog.Infof("checkStreamDataForwarder: detected Close method")
 				// 检查是否有 ReadAvailable 方法
 				var ra readAvailable
 				if streamRA, ok := stream.(readAvailable); ok {
 					ra = streamRA
-					utils.Infof("checkStreamDataForwarder: detected ReadAvailable method in stream")
+					corelog.Infof("checkStreamDataForwarder: detected ReadAvailable method in stream")
 				} else {
-					utils.Warnf("checkStreamDataForwarder: ReadAvailable method not found in stream, will fallback to ReadExact")
+					corelog.Warnf("checkStreamDataForwarder: ReadAvailable method not found in stream, will fallback to ReadExact")
 				}
 				// 检查是否有 GetConnectionID 方法
 				type getConnID interface {
@@ -63,12 +64,12 @@ func checkStreamDataForwarder(stream stream.PackageStreamer) StreamDataForwarder
 				if streamGCI, ok := stream.(getConnID); ok {
 					gci = streamGCI
 					connID := streamGCI.GetConnectionID()
-					utils.Infof("checkStreamDataForwarder: detected GetConnectionID method in stream, connID=%s", connID)
+					corelog.Infof("checkStreamDataForwarder: detected GetConnectionID method in stream, connID=%s", connID)
 				} else {
-					utils.Warnf("checkStreamDataForwarder: GetConnectionID method not found in stream")
+					corelog.Warnf("checkStreamDataForwarder: GetConnectionID method not found in stream")
 				}
 				// 创建一个包装器，实现 StreamDataForwarder 接口
-				utils.Infof("checkStreamDataForwarder: creating streamDataForwarderWrapper, hasReadAvailable=%v, hasGetConnID=%v", ra != nil, gci != nil)
+				corelog.Infof("checkStreamDataForwarder: creating streamDataForwarderWrapper, hasReadAvailable=%v, hasGetConnID=%v", ra != nil, gci != nil)
 				return &streamDataForwarderWrapper{
 					readExact:     r,
 					readAvailable: ra,
@@ -77,15 +78,15 @@ func checkStreamDataForwarder(stream stream.PackageStreamer) StreamDataForwarder
 					getConnID:     gci,
 				}
 			} else {
-				utils.Warnf("checkStreamDataForwarder: Close method not found")
+				corelog.Warnf("checkStreamDataForwarder: Close method not found")
 			}
 		} else {
-			utils.Warnf("checkStreamDataForwarder: WriteExact method not found")
+			corelog.Warnf("checkStreamDataForwarder: WriteExact method not found")
 		}
 	} else {
-		utils.Warnf("checkStreamDataForwarder: ReadExact method not found")
+		corelog.Warnf("checkStreamDataForwarder: ReadExact method not found")
 	}
-	utils.Warnf("checkStreamDataForwarder: returning nil (stream does not implement required methods)")
+	corelog.Warnf("checkStreamDataForwarder: returning nil (stream does not implement required methods)")
 	return nil
 }
 
@@ -112,18 +113,18 @@ func (w *streamDataForwarderWrapper) ReadAvailable(maxLength int) ([]byte, error
 		connID = w.getConnID.GetConnectionID()
 	}
 	if w.readAvailable != nil {
-		utils.Infof("streamDataForwarderWrapper[connID=%s]: ReadAvailable calling underlying ReadAvailable, maxLength=%d", connID, maxLength)
+		corelog.Infof("streamDataForwarderWrapper[connID=%s]: ReadAvailable calling underlying ReadAvailable, maxLength=%d", connID, maxLength)
 		data, err := w.readAvailable.ReadAvailable(maxLength)
-		utils.Infof("streamDataForwarderWrapper[connID=%s]: ReadAvailable returned, data len=%d, err=%v", connID, len(data), err)
+		corelog.Infof("streamDataForwarderWrapper[connID=%s]: ReadAvailable returned, data len=%d, err=%v", connID, len(data), err)
 		return data, err
 	}
 	// 如果没有 ReadAvailable，回退到 ReadExact（但只请求较小的长度）
-	utils.Warnf("streamDataForwarderWrapper[connID=%s]: ReadAvailable not available, falling back to ReadExact, maxLength=%d", connID, maxLength)
+	corelog.Warnf("streamDataForwarderWrapper[connID=%s]: ReadAvailable not available, falling back to ReadExact, maxLength=%d", connID, maxLength)
 	if maxLength > 256 {
 		maxLength = 256
 	}
 	data, err := w.readExact.ReadExact(maxLength)
-	utils.Infof("streamDataForwarderWrapper[connID=%s]: ReadExact (fallback) returned, data len=%d, err=%v", connID, len(data), err)
+	corelog.Infof("streamDataForwarderWrapper[connID=%s]: ReadExact (fallback) returned, data len=%d, err=%v", connID, len(data), err)
 	return data, err
 }
 
@@ -162,7 +163,7 @@ func (a *streamDataForwarderAdapter) Read(p []byte) (int, error) {
 	if len(a.buf) > 0 {
 		n := copy(p, a.buf)
 		a.buf = a.buf[n:]
-		utils.Debugf("streamDataForwarderAdapter: Read from buffer, n=%d, remaining=%d", n, len(a.buf))
+		corelog.Debugf("streamDataForwarderAdapter: Read from buffer, n=%d, remaining=%d", n, len(a.buf))
 		return n, nil
 	}
 
@@ -231,18 +232,18 @@ func (a *streamDataForwarderAdapter) Close() error {
 // createDataForwarder 创建数据转发器（通过接口抽象，不依赖具体协议）
 // 优先使用 net.Conn，如果没有则尝试从 Stream 创建适配器
 func createDataForwarder(conn net.Conn, stream stream.PackageStreamer) DataForwarder {
-	utils.Infof("createDataForwarder: called, conn=%v, stream=%v, stream type=%T", conn != nil, stream != nil, stream)
+	corelog.Infof("createDataForwarder: called, conn=%v, stream=%v, stream type=%T", conn != nil, stream != nil, stream)
 	if conn != nil {
-		utils.Infof("createDataForwarder: using net.Conn, remoteAddr=%s", conn.RemoteAddr())
+		corelog.Infof("createDataForwarder: using net.Conn, remoteAddr=%s", conn.RemoteAddr())
 		return conn // net.Conn 实现了 io.ReadWriteCloser
 	}
 	if stream != nil {
 		reader := stream.GetReader()
 		writer := stream.GetWriter()
-		utils.Infof("createDataForwarder: stream has GetReader=%v, GetWriter=%v", reader != nil, writer != nil)
+		corelog.Infof("createDataForwarder: stream has GetReader=%v, GetWriter=%v", reader != nil, writer != nil)
 		if reader != nil && writer != nil {
 			// 使用 Stream 的 Reader/Writer 创建适配器
-			utils.Infof("createDataForwarder: using Stream Reader/Writer adapter")
+			corelog.Infof("createDataForwarder: using Stream Reader/Writer adapter")
 			return utils.NewReadWriteCloser(reader, writer, func() error {
 				stream.Close()
 				return nil
@@ -250,19 +251,19 @@ func createDataForwarder(conn net.Conn, stream stream.PackageStreamer) DataForwa
 		}
 		// 如果 GetReader/GetWriter 返回 nil，尝试使用 ReadExact/WriteExact（HTTP 长轮询）
 		// 使用接口查询，检查是否有 ReadExact 和 WriteExact 方法
-		utils.Infof("createDataForwarder: checking stream for StreamDataForwarder, stream type=%T", stream)
+		corelog.Infof("createDataForwarder: checking stream for StreamDataForwarder, stream type=%T", stream)
 		if streamForwarder := checkStreamDataForwarder(stream); streamForwarder != nil {
 			connID := "unknown"
 			if connIDGetter, ok := streamForwarder.(interface{ GetConnectionID() string }); ok {
 				connID = connIDGetter.GetConnectionID()
 			}
-			utils.Infof("createDataForwarder: StreamDataForwarder detected, creating adapter, connID=%s", connID)
+			corelog.Infof("createDataForwarder: StreamDataForwarder detected, creating adapter, connID=%s", connID)
 			return &streamDataForwarderAdapter{stream: streamForwarder}
 		}
-		utils.Warnf("createDataForwarder: StreamDataForwarder not detected, stream type=%T", stream)
+		corelog.Warnf("createDataForwarder: StreamDataForwarder not detected, stream type=%T", stream)
 	}
 	// 如果都没有，返回 nil（表示该协议不支持桥接）
-	utils.Warnf("createDataForwarder: returning nil (no suitable forwarder found)")
+	corelog.Warnf("createDataForwarder: returning nil (no suitable forwarder found)")
 	return nil
 }
 

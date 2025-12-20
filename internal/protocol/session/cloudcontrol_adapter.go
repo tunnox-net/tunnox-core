@@ -32,3 +32,8 @@ func (a *CloudControlAdapter) UpdatePortMappingStats(mappingID string, stats int
 	}
 	return a.cc.UpdatePortMappingStats(mappingID, trafficStats)
 }
+
+// GetClientPortMappings 获取客户端的所有端口映射
+func (a *CloudControlAdapter) GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) {
+	return a.cc.GetClientPortMappings(clientID)
+}

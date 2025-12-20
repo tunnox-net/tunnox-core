@@ -1,6 +1,7 @@
 package httppoll
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,7 +15,6 @@ import (
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 
 	"github.com/google/uuid"
 )
@@ -217,7 +217,7 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 		case <-sp.Ctx().Done():
 			return nil, 0, sp.Ctx().Err()
 		case <-timeout.C:
-			utils.Debugf("HTTPStreamProcessor: ReadPacket - timeout waiting for response, requestID=%s", requestID)
+			corelog.Debugf("HTTPStreamProcessor: ReadPacket - timeout waiting for response, requestID=%s", requestID)
 			return nil, 0, fmt.Errorf("timeout waiting for response")
 		case <-ticker.C:
 			// 检查缓存
@@ -268,7 +268,7 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	// 检查 context 是否已取消
 	select {
 	case <-sp.Ctx().Done():
-		utils.Errorf("HTTPStreamProcessor: WritePacket - context canceled before sending Push request, requestID=%s, connID=%s, err=%v", requestID, sp.connectionID, sp.Ctx().Err())
+		corelog.Errorf("HTTPStreamProcessor: WritePacket - context canceled before sending Push request, requestID=%s, connID=%s, err=%v", requestID, sp.connectionID, sp.Ctx().Err())
 		return 0, fmt.Errorf("push request failed: context canceled: %w", sp.Ctx().Err())
 	default:
 	}
@@ -287,7 +287,7 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 		if err == nil {
 			break
 		}
-		utils.Warnf("HTTPStreamProcessor: WritePacket - Push request failed (retry %d/%d), requestID=%s, connID=%s, err=%v", retry+1, maxRetries, requestID, sp.connectionID, err)
+		corelog.Warnf("HTTPStreamProcessor: WritePacket - Push request failed (retry %d/%d), requestID=%s, connID=%s, err=%v", retry+1, maxRetries, requestID, sp.connectionID, err)
 		if retry < maxRetries-1 {
 			time.Sleep(retryInterval * time.Duration(retry+1))
 			// 重新创建请求（使用相同的 RequestId）
@@ -320,14 +320,14 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 					func() {
 						defer func() {
 							if r := recover(); r != nil {
-								utils.Warnf("HTTPStreamProcessor: WritePacket - panic when writing to packetQueue (likely closed), requestID=%s, connID=%s, error=%v", requestID, sp.connectionID, r)
+								corelog.Warnf("HTTPStreamProcessor: WritePacket - panic when writing to packetQueue (likely closed), requestID=%s, connID=%s, error=%v", requestID, sp.connectionID, r)
 							}
 						}()
 						select {
 						case sp.packetQueue <- respPkt:
 						default:
 							// 队列满，丢弃
-							utils.Warnf("HTTPStreamProcessor: WritePacket - packetQueue full, dropping response packet, requestID=%s, connID=%s", requestID, sp.connectionID)
+							corelog.Warnf("HTTPStreamProcessor: WritePacket - packetQueue full, dropping response packet, requestID=%s, connID=%s", requestID, sp.connectionID)
 						}
 					}()
 				}
@@ -336,7 +336,7 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 					sp.SetConnectionID(pkg.ConnectionID)
 				}
 			} else {
-				utils.Debugf("HTTPStreamProcessor: WritePacket - RequestId mismatch, expected=%s, got=%s, ignoring response",
+				corelog.Debugf("HTTPStreamProcessor: WritePacket - RequestId mismatch, expected=%s, got=%s, ignoring response",
 					requestID, pkg.RequestID)
 			}
 		}
@@ -353,7 +353,7 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	if resp.Body != nil {
 		_, readErr := io.ReadAll(resp.Body)
 		if readErr != nil && readErr != io.EOF {
-			utils.Warnf("HTTPStreamProcessor: WritePacket - failed to read response body: %v, requestID=%s, connID=%s", readErr, requestID, sp.connectionID)
+			corelog.Warnf("HTTPStreamProcessor: WritePacket - failed to read response body: %v, requestID=%s, connID=%s", readErr, requestID, sp.connectionID)
 		}
 	}
 
@@ -378,7 +378,7 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 	// 对大数据包进行分片处理（类似服务器端的 WriteExact）
 	fragments, err := SplitDataIntoFragments(data, sequenceNumber)
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - failed to split data into fragments: %v, connID=%s", sp.connectionID, err, sp.connectionID)
+		corelog.Errorf("HTTPStreamProcessor[%s]: WriteExact - failed to split data into fragments: %v, connID=%s", sp.connectionID, err, sp.connectionID)
 		return fmt.Errorf("failed to split data into fragments: %w", err)
 	}
 
@@ -432,7 +432,7 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 		// 发送请求
 		resp, err := sp.httpClient.Do(req)
 		if err != nil {
-			utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - push request failed for fragment %d/%d: %v, groupID=%s, requestID=%s, connID=%s",
+			corelog.Errorf("HTTPStreamProcessor[%s]: WriteExact - push request failed for fragment %d/%d: %v, groupID=%s, requestID=%s, connID=%s",
 				sp.connectionID, i+1, len(fragments), err, fragment.FragmentGroupID, requestID, sp.connectionID)
 			return fmt.Errorf("push data request failed: %w", err)
 		}
@@ -440,7 +440,7 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			utils.Errorf("HTTPStreamProcessor[%s]: WriteExact - push request failed for fragment %d/%d: status %d, body: %s, groupID=%s, requestID=%s, connID=%s",
+			corelog.Errorf("HTTPStreamProcessor[%s]: WriteExact - push request failed for fragment %d/%d: status %d, body: %s, groupID=%s, requestID=%s, connID=%s",
 				sp.connectionID, i+1, len(fragments), resp.StatusCode, string(body), fragment.FragmentGroupID, requestID, sp.connectionID)
 			return fmt.Errorf("push data request failed: status %d, body: %s", resp.StatusCode, string(body))
 		}
@@ -461,7 +461,7 @@ func (sp *StreamProcessor) ReadExact(length int) ([]byte, error) {
 		// 触发 Poll 获取更多数据
 		_, _, err := sp.ReadPacket()
 		if err != nil {
-			utils.Errorf("HTTPStreamProcessor[%s]: ReadExact - ReadPacket failed: %v, connID=%s", sp.connectionID, err, sp.connectionID)
+			corelog.Errorf("HTTPStreamProcessor[%s]: ReadExact - ReadPacket failed: %v, connID=%s", sp.connectionID, err, sp.connectionID)
 			return nil, err
 		}
 		sp.dataBufMu.Lock()
@@ -470,11 +470,11 @@ func (sp *StreamProcessor) ReadExact(length int) ([]byte, error) {
 	data := make([]byte, length)
 	n, err := sp.dataBuffer.Read(data)
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor[%s]: ReadExact - failed to read from buffer: %v, connID=%s", sp.connectionID, err, sp.connectionID)
+		corelog.Errorf("HTTPStreamProcessor[%s]: ReadExact - failed to read from buffer: %v, connID=%s", sp.connectionID, err, sp.connectionID)
 		return nil, err
 	}
 	if n < length {
-		utils.Errorf("HTTPStreamProcessor[%s]: ReadExact - read %d bytes, expected %d, connID=%s", sp.connectionID, n, length, sp.connectionID)
+		corelog.Errorf("HTTPStreamProcessor[%s]: ReadExact - read %d bytes, expected %d, connID=%s", sp.connectionID, n, length, sp.connectionID)
 		return nil, io.ErrUnexpectedEOF
 	}
 

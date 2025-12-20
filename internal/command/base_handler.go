@@ -1,6 +1,7 @@
 package command
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // CommunicationMode 通信模式
@@ -156,15 +156,15 @@ func (b *BaseCommandHandler[TRequest, TResponse]) GetSession() types.Session {
 
 // LogRequest 记录请求日志
 func (b *BaseCommandHandler[TRequest, TResponse]) LogRequest(ctx *CommandContext, request *TRequest) {
-	utils.Debugf("Processing request for command type: %v, connection: %s", b.commandType, ctx.ConnectionID)
+	corelog.Debugf("Processing request for command type: %v, connection: %s", b.commandType, ctx.ConnectionID)
 }
 
 // LogResponse 记录响应日志
 func (b *BaseCommandHandler[TRequest, TResponse]) LogResponse(ctx *CommandContext, response *TResponse, err error) {
 	if err != nil {
-		utils.Errorf("Command handler failed for type: %v, connection: %s, error: %v", b.commandType, ctx.ConnectionID, err)
+		corelog.Errorf("Command handler failed for type: %v, connection: %s, error: %v", b.commandType, ctx.ConnectionID, err)
 	} else {
-		utils.Debugf("Command handler succeeded for type: %v, connection: %s", b.commandType, ctx.ConnectionID)
+		corelog.Debugf("Command handler succeeded for type: %v, connection: %s", b.commandType, ctx.ConnectionID)
 	}
 }
 

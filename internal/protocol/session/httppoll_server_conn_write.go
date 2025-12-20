@@ -1,12 +1,12 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/binary"
 	"io"
 	"time"
 
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // Write 实现 io.Writer（通过 HTTP GET 响应发送数据）
@@ -18,7 +18,7 @@ func (c *ServerHTTPLongPollingConn) Write(p []byte) (int, error) {
 	c.closeMu.RUnlock()
 
 	if closed {
-		utils.Warnf("HTTP long polling: [WRITE] connection closed, clientID=%d", c.clientID)
+		corelog.Warnf("HTTP long polling: [WRITE] connection closed, clientID=%d", c.clientID)
 		return 0, io.ErrClosedPipe
 	}
 
@@ -36,12 +36,12 @@ func (c *ServerHTTPLongPollingConn) Write(p []byte) (int, error) {
 			if packetType.IsHeartbeat() {
 				// 如果是隧道连接，心跳包不应该出现在这里
 				if c.mappingID != "" {
-					utils.Errorf("HTTP long polling: [WRITE] stream mode: detected heartbeat packet in tunnel connection (mappingID=%s), dropping it, clientID=%d",
+					corelog.Errorf("HTTP long polling: [WRITE] stream mode: detected heartbeat packet in tunnel connection (mappingID=%s), dropping it, clientID=%d",
 						c.mappingID, c.clientID)
 					return len(p), nil // 丢弃心跳包，但返回成功
 				}
 				// 控制连接的心跳包，正常处理
-				utils.Debugf("HTTP long polling: [WRITE] stream mode: heartbeat packet on control connection (0x%02x), clientID=%d",
+				corelog.Debugf("HTTP long polling: [WRITE] stream mode: heartbeat packet on control connection (0x%02x), clientID=%d",
 					p[0], c.clientID)
 			}
 		}
@@ -50,7 +50,7 @@ func (c *ServerHTTPLongPollingConn) Write(p []byte) (int, error) {
 		if len(p) > 0 {
 			firstByte = p[0]
 		}
-		utils.Infof("HTTP long polling: [WRITE] stream mode: pushing %d bytes directly to priority queue, clientID=%d, mappingID=%s, firstByte=0x%02x",
+		corelog.Infof("HTTP long polling: [WRITE] stream mode: pushing %d bytes directly to priority queue, clientID=%d, mappingID=%s, firstByte=0x%02x",
 			len(p), c.clientID, c.mappingID, firstByte)
 		c.pollDataQueue.Push(p)
 
@@ -68,7 +68,7 @@ func (c *ServerHTTPLongPollingConn) Write(p []byte) (int, error) {
 	bufLen := c.writeBuffer.Len()
 	c.writeBufMu.Unlock()
 
-	utils.Debugf("HTTP long polling: [WRITE] writing %d bytes to buffer, bufferLen=%d, clientID=%d",
+	corelog.Debugf("HTTP long polling: [WRITE] writing %d bytes to buffer, bufferLen=%d, clientID=%d",
 		len(p), bufLen, c.clientID)
 
 	if err != nil {
@@ -86,20 +86,20 @@ func (c *ServerHTTPLongPollingConn) Write(p []byte) (int, error) {
 
 // writeFlushLoop 写入刷新循环（检查完整包并发送）
 func (c *ServerHTTPLongPollingConn) writeFlushLoop() {
-	utils.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] started, clientID=%d", c.clientID)
+	corelog.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] started, clientID=%d", c.clientID)
 	ticker := time.NewTicker(50 * time.Millisecond) // 每50ms检查一次
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-c.Ctx().Done():
-			utils.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] context canceled, clientID=%d", c.clientID)
+			corelog.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] context canceled, clientID=%d", c.clientID)
 			return
 		case <-ticker.C:
 			// 定期检查缓冲区
 		case <-c.writeFlush:
 			// 收到刷新信号，立即检查
-			utils.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] received flush signal, clientID=%d", c.clientID)
+			corelog.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] received flush signal, clientID=%d", c.clientID)
 		}
 
 		// 检查是否已切换到流模式
@@ -118,7 +118,7 @@ func (c *ServerHTTPLongPollingConn) writeFlushLoop() {
 			c.writeBuffer.Reset()
 			c.writeBufMu.Unlock()
 
-			utils.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] stream mode: pushing %d bytes directly to priority queue, clientID=%d, mappingID=%s",
+			corelog.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] stream mode: pushing %d bytes directly to priority queue, clientID=%d, mappingID=%s",
 				len(data), c.clientID, c.mappingID)
 			c.pollDataQueue.Push(data)
 
@@ -143,7 +143,7 @@ func (c *ServerHTTPLongPollingConn) writeFlushLoop() {
 				c.writeBuffer.Next(1)
 				c.writeBufMu.Unlock()
 
-				utils.Infof("HTTP long polling: [WRITE_FLUSH_LOOP] pushing heartbeat packet (0x%02x) to priority queue, clientID=%d", data[0], c.clientID)
+				corelog.Infof("HTTP long polling: [WRITE_FLUSH_LOOP] pushing heartbeat packet (0x%02x) to priority queue, clientID=%d", data[0], c.clientID)
 				// 心跳包推入优先级队列（会被合并/丢弃多余的心跳包）
 				c.pollDataQueue.Push(data)
 				continue
@@ -167,14 +167,14 @@ func (c *ServerHTTPLongPollingConn) writeFlushLoop() {
 
 			// 验证包体大小是否合理（防止解析错误导致无限等待）
 			if bodySize > 10*1024*1024 { // 10MB 上限
-				utils.Errorf("HTTP long polling: [WRITE_FLUSH_LOOP] invalid bodySize=%d (too large), resetting buffer, clientID=%d",
+				corelog.Errorf("HTTP long polling: [WRITE_FLUSH_LOOP] invalid bodySize=%d (too large), resetting buffer, clientID=%d",
 					bodySize, c.clientID)
 				c.writeBuffer.Reset()
 				c.writeBufMu.Unlock()
 				continue
 			}
 
-			utils.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] checking buffer, bufLen=%d, bodySize=%d, packetSize=%d, clientID=%d",
+			corelog.Debugf("HTTP long polling: [WRITE_FLUSH_LOOP] checking buffer, bufLen=%d, bodySize=%d, packetSize=%d, clientID=%d",
 				bufLen, bodySize, packetSize, c.clientID)
 
 			if bufLen >= packetSize {
@@ -185,7 +185,7 @@ func (c *ServerHTTPLongPollingConn) writeFlushLoop() {
 				c.writeBufMu.Unlock()
 
 				// 发送完整数据包到优先级队列（优先级队列会自动判断优先级）
-				utils.Infof("HTTP long polling: [WRITE_FLUSH_LOOP] pushing complete packet to priority queue, size=%d, clientID=%d, mappingID=%s",
+				corelog.Infof("HTTP long polling: [WRITE_FLUSH_LOOP] pushing complete packet to priority queue, size=%d, clientID=%d, mappingID=%s",
 					packetSize, c.clientID, c.mappingID)
 				c.pollDataQueue.Push(data)
 

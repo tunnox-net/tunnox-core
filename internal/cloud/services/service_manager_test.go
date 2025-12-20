@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"net/http"
@@ -63,7 +64,7 @@ func (ms *MockService) Start(ctx context.Context) error {
 	}
 
 	ms.started = true
-	utils.Infof("Mock service started: %s", ms.name)
+	corelog.Infof("Mock service started: %s", ms.name)
 	return ms.startErr
 }
 
@@ -76,7 +77,7 @@ func (ms *MockService) Stop(ctx context.Context) error {
 	}
 
 	ms.stopped = true
-	utils.Infof("Mock service stopped: %s", ms.name)
+	corelog.Infof("Mock service stopped: %s", ms.name)
 	return ms.stopErr
 }
 

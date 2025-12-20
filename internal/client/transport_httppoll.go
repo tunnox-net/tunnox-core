@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"bytes"
 	"context"
 	"fmt"
@@ -85,7 +86,7 @@ func (c *HTTPLongPollingConn) UpdateClientID(newClientID int64) {
 
 	oldClientID := c.clientID
 	c.clientID = newClientID
-	utils.Infof("HTTP long polling: updated clientID from %d to %d", oldClientID, newClientID)
+	corelog.Infof("HTTP long polling: updated clientID from %d to %d", oldClientID, newClientID)
 }
 
 // NewHTTPLongPollingConn 创建 HTTP 长轮询连接
@@ -137,22 +138,22 @@ func NewHTTPLongPollingConn(ctx context.Context, baseURL string, clientID int64,
 	conn.AddCleanHandler(conn.onClose)
 
 	// 启动接收循环
-	utils.Debugf("HTTP long polling: starting pollLoop goroutine, clientID=%d, pollURL=%s", conn.clientID, conn.pollURL)
+	corelog.Debugf("HTTP long polling: starting pollLoop goroutine, clientID=%d, pollURL=%s", conn.clientID, conn.pollURL)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				utils.Errorf("HTTP long polling: pollLoop panic: %v, stack: %s", r, string(debug.Stack()))
+				corelog.Errorf("HTTP long polling: pollLoop panic: %v, stack: %s", r, string(debug.Stack()))
 			}
 		}()
-		utils.Debugf("HTTP long polling: pollLoop goroutine started, about to call pollLoop(), clientID=%d", conn.clientID)
+		corelog.Debugf("HTTP long polling: pollLoop goroutine started, about to call pollLoop(), clientID=%d", conn.clientID)
 		conn.pollLoop()
-		utils.Debugf("HTTP long polling: pollLoop goroutine finished, clientID=%d", conn.clientID)
+		corelog.Debugf("HTTP long polling: pollLoop goroutine finished, clientID=%d", conn.clientID)
 	}()
 
 	// 启动写入刷新循环（定期刷新缓冲区）
 	go conn.writeFlushLoop()
 
-	utils.Infof("HTTP long polling: connection established to %s", baseURL)
+	corelog.Infof("HTTP long polling: connection established to %s", baseURL)
 	return conn, nil
 }
 

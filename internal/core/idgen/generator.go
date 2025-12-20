@@ -1,6 +1,7 @@
 package idgen
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"errors"
@@ -224,7 +225,7 @@ func NewIDManager(storage storage.Storage, parentCtx context.Context) *IDManager
 
 // onClose 资源清理回调
 func (m *IDManager) onClose() error {
-	utils.Infof("Cleaning up ID manager resources...")
+	corelog.Infof("Cleaning up ID manager resources...")
 
 	// 关闭所有生成器
 	if m.clientIDGen != nil {
@@ -232,7 +233,7 @@ func (m *IDManager) onClose() error {
 		if err != nil {
 			return err
 		}
-		utils.Infof("Closed client ID generator")
+		corelog.Infof("Closed client ID generator")
 	}
 
 	if m.nodeIDGen != nil {
@@ -240,7 +241,7 @@ func (m *IDManager) onClose() error {
 		if err != nil {
 			return err
 		}
-		utils.Infof("Closed node ID generator")
+		corelog.Infof("Closed node ID generator")
 	}
 
 	if m.connectionIDGen != nil {
@@ -248,7 +249,7 @@ func (m *IDManager) onClose() error {
 		if err != nil {
 			return err
 		}
-		utils.Infof("Closed connection ID generator")
+		corelog.Infof("Closed connection ID generator")
 	}
 
 	if m.portMappingIDGen != nil {
@@ -257,7 +258,7 @@ func (m *IDManager) onClose() error {
 		if err != nil {
 			return err
 		}
-		utils.Infof("Closed port mapping ID generator")
+		corelog.Infof("Closed port mapping ID generator")
 	}
 
 	if m.portMappingInstanceIDGen != nil {
@@ -265,7 +266,7 @@ func (m *IDManager) onClose() error {
 		if err != nil {
 			return err
 		}
-		utils.Infof("Closed port mapping instance ID generator")
+		corelog.Infof("Closed port mapping instance ID generator")
 	}
 
 	if m.userIDGen != nil {
@@ -273,7 +274,7 @@ func (m *IDManager) onClose() error {
 		if err != nil {
 			return err
 		}
-		utils.Infof("Closed user ID generator")
+		corelog.Infof("Closed user ID generator")
 	}
 
 	if m.tunnelIDGen != nil {
@@ -281,10 +282,10 @@ func (m *IDManager) onClose() error {
 		if err != nil {
 			return err
 		}
-		utils.Infof("Closed tunnel ID generator")
+		corelog.Infof("Closed tunnel ID generator")
 	}
 
-	utils.Infof("ID manager resources cleanup completed")
+	corelog.Infof("ID manager resources cleanup completed")
 	return nil
 }
 

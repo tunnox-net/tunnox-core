@@ -1,10 +1,10 @@
 package distributed
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"time"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 )
 
 // StorageBasedLock 基于存储的分布式锁实现
@@ -33,12 +33,12 @@ func (s *StorageBasedLock) Acquire(key string, ttl time.Duration) (bool, error) 
 	}
 	acquired, err := casStore.SetNX(lockKey, lockValue, ttl)
 	if err != nil {
-		utils.Errorf("Failed to acquire lock %s: %v", key, err)
+		corelog.Errorf("Failed to acquire lock %s: %v", key, err)
 		return false, fmt.Errorf("acquire lock failed: %w", err)
 	}
 
 	if acquired {
-		utils.Infof("Successfully acquired lock %s by %s", key, s.owner)
+		corelog.Infof("Successfully acquired lock %s by %s", key, s.owner)
 	}
 
 	return acquired, nil
@@ -52,7 +52,7 @@ func (s *StorageBasedLock) Release(key string) error {
 	currentValue, err := s.storage.Get(lockKey)
 	if err != nil {
 		// 锁可能已经不存在或过期
-		utils.Infof("Lock %s not found or expired, skipping release", key)
+		corelog.Infof("Lock %s not found or expired, skipping release", key)
 		return nil
 	}
 
@@ -62,12 +62,12 @@ func (s *StorageBasedLock) Release(key string) error {
 			// 使用原子操作删除锁
 			err = s.storage.Delete(lockKey)
 			if err != nil {
-				utils.Errorf("Failed to release lock %s: %v", key, err)
+				corelog.Errorf("Failed to release lock %s: %v", key, err)
 				return fmt.Errorf("release lock failed: %w", err)
 			}
-			utils.Infof("Successfully released lock %s by %s", key, s.owner)
+			corelog.Infof("Successfully released lock %s by %s", key, s.owner)
 		} else {
-			utils.Warnf("Attempted to release lock %s owned by another process", key)
+			corelog.Warnf("Attempted to release lock %s owned by another process", key)
 			return fmt.Errorf("lock %s is not owned by current process", key)
 		}
 	}
@@ -147,7 +147,7 @@ func (s *StorageBasedLock) RenewLock(key string, ttl time.Duration) (bool, error
 			}
 
 			if success {
-				utils.Infof("Successfully renewed lock %s by %s", key, s.owner)
+				corelog.Infof("Successfully renewed lock %s by %s", key, s.owner)
 			}
 
 			return success, nil

@@ -1,13 +1,13 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -99,7 +99,7 @@ func (m *TunnelMigrationManager) InitiateMigration(
 	}
 	m.migrations[tunnelID] = migrationInfo
 
-	utils.Infof("TunnelMigration: initiated migration for tunnel %s to node %s",
+	corelog.Infof("TunnelMigration: initiated migration for tunnel %s to node %s",
 		tunnelID, targetNodeID)
 
 	// 保存状态到存储（供目标节点读取）
@@ -126,7 +126,7 @@ func (m *TunnelMigrationManager) AcceptMigration(
 	ctx context.Context,
 	cmd *packet.TunnelMigrateCommand,
 ) (*TunnelState, error) {
-	utils.Infof("TunnelMigration: accepting migration for tunnel %s from node %s",
+	corelog.Infof("TunnelMigration: accepting migration for tunnel %s from node %s",
 		cmd.TunnelID, cmd.SourceNodeID)
 
 	// 从存储加载状态
@@ -152,7 +152,7 @@ func (m *TunnelMigrationManager) AcceptMigration(
 	m.migrations[cmd.TunnelID] = migrationInfo
 	m.mu.Unlock()
 
-	utils.Infof("TunnelMigration: successfully loaded state for tunnel %s", cmd.TunnelID)
+	corelog.Infof("TunnelMigration: successfully loaded state for tunnel %s", cmd.TunnelID)
 
 	return state, nil
 }
@@ -177,12 +177,12 @@ func (m *TunnelMigrationManager) CompleteMigration(tunnelID string) error {
 	info.Status = MigrationStatusCompleted
 	info.CompletedAt = &now
 
-	utils.Infof("TunnelMigration: completed migration for tunnel %s (duration: %v)",
+	corelog.Infof("TunnelMigration: completed migration for tunnel %s (duration: %v)",
 		tunnelID, now.Sub(info.InitiatedAt))
 
 	// 删除存储中的状态（已恢复，不再需要）
 	if err := m.stateManager.DeleteState(tunnelID); err != nil {
-		utils.Warnf("TunnelMigration: failed to delete state for tunnel %s: %v", tunnelID, err)
+		corelog.Warnf("TunnelMigration: failed to delete state for tunnel %s: %v", tunnelID, err)
 	}
 
 	return nil
@@ -201,7 +201,7 @@ func (m *TunnelMigrationManager) FailMigration(tunnelID string, reason error) {
 	info.Status = MigrationStatusFailed
 	info.Error = reason.Error()
 
-	utils.Warnf("TunnelMigration: migration failed for tunnel %s: %v", tunnelID, reason)
+	corelog.Warnf("TunnelMigration: migration failed for tunnel %s: %v", tunnelID, reason)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

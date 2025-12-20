@@ -1,8 +1,8 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"time"
-	"tunnox-core/internal/utils"
 )
 
 // ReconnectConfig 重连配置
@@ -27,20 +27,20 @@ var DefaultReconnectConfig = ReconnectConfig{
 func (c *TunnoxClient) shouldReconnect() bool {
 	// 被踢下线不重连
 	if c.kicked {
-		utils.Infof("Client: not reconnecting (kicked by server)")
+		corelog.Infof("Client: not reconnecting (kicked by server)")
 		return false
 	}
 
 	// 认证失败不重连
 	if c.authFailed {
-		utils.Infof("Client: not reconnecting (authentication failed)")
+		corelog.Infof("Client: not reconnecting (authentication failed)")
 		return false
 	}
 
 	// 主动关闭不重连
 	select {
 	case <-c.Ctx().Done():
-		utils.Infof("Client: not reconnecting (context cancelled)")
+		corelog.Infof("Client: not reconnecting (context cancelled)")
 		return false
 	default:
 	}
@@ -59,7 +59,7 @@ func (c *TunnoxClient) reconnect() {
 	reconnectConfig := c.getReconnectConfig()
 
 	if !reconnectConfig.Enabled {
-		utils.Infof("Client: reconnect disabled")
+		corelog.Infof("Client: reconnect disabled")
 		return
 	}
 
@@ -74,7 +74,7 @@ func (c *TunnoxClient) reconnect() {
 
 		// 检查最大尝试次数
 		if reconnectConfig.MaxAttempts > 0 && attempts >= reconnectConfig.MaxAttempts {
-			utils.Errorf("Client: max reconnect attempts (%d) reached, giving up", reconnectConfig.MaxAttempts)
+			corelog.Errorf("Client: max reconnect attempts (%d) reached, giving up", reconnectConfig.MaxAttempts)
 			return
 		}
 
@@ -90,7 +90,7 @@ func (c *TunnoxClient) reconnect() {
 
 		// 尝试重连
 		if err := c.Connect(); err != nil {
-			utils.Errorf("Client: reconnect failed: %v", err)
+			corelog.Errorf("Client: reconnect failed: %v", err)
 
 			// 增加延迟（指数退避）
 			delay = time.Duration(float64(delay) * reconnectConfig.Backoff)

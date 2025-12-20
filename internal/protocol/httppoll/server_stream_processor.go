@@ -1,6 +1,7 @@
 package httppoll
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // ServerStreamProcessor 服务端 HTTP 长轮询流处理器
@@ -113,7 +113,7 @@ func (sp *ServerStreamProcessor) onClose() error {
 	if sp.closed {
 		return nil
 	}
-	utils.Debugf("ServerStreamProcessor: onClose called, connID=%s", sp.connectionID)
+	corelog.Debugf("ServerStreamProcessor: onClose called, connID=%s", sp.connectionID)
 	sp.closed = true
 
 	close(sp.pollDataChan)
@@ -213,7 +213,7 @@ func (sp *ServerStreamProcessor) WritePacket(pkt *packet.TransferPacket, useComp
 	sp.closeMu.RUnlock()
 
 	if closed {
-		utils.Errorf("ServerStreamProcessor: WritePacket called but connection is closed, connID=%s", connID)
+		corelog.Errorf("ServerStreamProcessor: WritePacket called but connection is closed, connID=%s", connID)
 		return 0, io.ErrClosedPipe
 	}
 	// 检查是否是控制包（应该通过 X-Tunnel-Package header 返回）
@@ -223,7 +223,7 @@ func (sp *ServerStreamProcessor) WritePacket(pkt *packet.TransferPacket, useComp
 		pkt.PacketType.IsCommandResp() ||
 		pkt.PacketType.IsJsonCommand()
 
-	utils.Debugf("ServerStreamProcessor: WritePacket - isControlPacket=%v, HandshakeResp=0x%02x, baseType=0x%02x, connID=%s",
+	corelog.Debugf("ServerStreamProcessor: WritePacket - isControlPacket=%v, HandshakeResp=0x%02x, baseType=0x%02x, connID=%s",
 		isControlPacket, byte(packet.HandshakeResp), baseType, sp.connectionID)
 
 	if isControlPacket {

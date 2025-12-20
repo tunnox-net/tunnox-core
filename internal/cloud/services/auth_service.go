@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"time"
@@ -43,7 +44,15 @@ func (s *authService) Authenticate(req *models.AuthRequest) (*models.AuthRespons
 	}
 
 	// 验证认证码
-	if client.AuthCode != req.AuthCode {
+	// 对于匿名客户端，Token可能是SecretKey（因为客户端没有AuthCode）
+	isValid := false
+	if client.AuthCode == req.AuthCode {
+		isValid = true
+	} else if client.Type == models.ClientTypeAnonymous && client.SecretKey == req.AuthCode {
+		isValid = true
+	}
+
+	if !isValid {
 		return &models.AuthResponse{
 			Success: false,
 			Message: "Invalid auth code",
@@ -63,7 +72,7 @@ func (s *authService) Authenticate(req *models.AuthRequest) (*models.AuthRespons
 	if req.NodeID != "" {
 		node, err = s.nodeRepo.GetNode(req.NodeID)
 		if err != nil {
-			utils.Warnf("Failed to get node %s: %v", req.NodeID, err)
+			corelog.Warnf("Failed to get node %s: %v", req.NodeID, err)
 		}
 	}
 
@@ -77,7 +86,7 @@ func (s *authService) Authenticate(req *models.AuthRequest) (*models.AuthRespons
 	client.UpdatedAt = now
 
 	if err := s.clientRepo.UpdateClient(client); err != nil {
-		utils.Warnf("Failed to update client status: %v", err)
+		corelog.Warnf("Failed to update client status: %v", err)
 	}
 
 	// 生成JWT令牌
@@ -96,10 +105,10 @@ func (s *authService) Authenticate(req *models.AuthRequest) (*models.AuthRespons
 	client.TokenID = jwtToken.TokenID
 
 	if err := s.clientRepo.UpdateClient(client); err != nil {
-		utils.Warnf("Failed to update client JWT info: %v", err)
+		corelog.Warnf("Failed to update client JWT info: %v", err)
 	}
 
-	utils.Infof("Client %d authenticated successfully", req.ClientID)
+	corelog.Infof("Client %d authenticated successfully", req.ClientID)
 
 	return &models.AuthResponse{
 		Success:   true,
@@ -147,7 +156,7 @@ func (s *authService) ValidateToken(token string) (*models.AuthResponse, error) 
 		}, nil
 	}
 
-	utils.Debugf("Token validated successfully for client %d", client.ID)
+	corelog.Debugf("Token validated successfully for client %d", client.ID)
 
 	return &models.AuthResponse{
 		Success:   true,

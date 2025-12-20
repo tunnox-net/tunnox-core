@@ -1,0 +1,54 @@
+# Tunnox Client Dockerfile
+# For integration testing
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Stage 1: Build
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FROM golang:1.24-alpine AS builder
+
+RUN apk add --no-cache git ca-certificates tzdata
+
+WORKDIR /build
+
+COPY go.mod go.sum* ./
+RUN go mod download
+
+COPY . .
+
+# Build the client binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s" \
+    -o tunnox-client \
+    ./cmd/client
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Stage 2: Runtime
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata netcat-openbsd mysql-client python3 py3-pip && \
+    pip3 install --break-system-packages mysql-connector-python
+
+WORKDIR /app
+
+COPY --from=builder /build/tunnox-client .
+
+# Create startup script that reads environment variables
+RUN echo '#!/bin/sh' > /app/start.sh && \
+    echo 'set -e' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Wait for core to be ready' >> /app/start.sh && \
+    echo 'echo "Waiting for core server..."' >> /app/start.sh && \
+    echo 'sleep 5' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo 'touch /app/client-config.yaml' >> /app/start.sh && \
+    echo '# Start client with TCP connection to core' >> /app/start.sh && \
+    echo 'exec /app/tunnox-client -config /app/client-config.yaml -p tcp -s "${TUNNOX_SERVER:-core:7000}" -anonymous -daemon -log /tmp/tunnox-client.log' >> /app/start.sh && \
+    chmod +x /app/start.sh
+
+RUN adduser -D -u 1000 tunnox && \
+    chown -R tunnox:tunnox /app
+
+USER tunnox
+
+ENTRYPOINT ["/app/start.sh"]

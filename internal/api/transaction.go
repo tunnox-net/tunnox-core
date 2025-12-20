@@ -1,9 +1,9 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"tunnox-core/internal/cloud/models"
-	"tunnox-core/internal/utils"
 )
 
 // TransactionContext 事务上下文，用于跟踪操作和执行回滚
@@ -34,20 +34,20 @@ func (tx *TransactionContext) AddOperation(name string, rollback func() error) {
 
 // Rollback 回滚所有已执行的操作（按相反顺序）
 func (tx *TransactionContext) Rollback() error {
-	utils.Warnf("Transaction: rolling back %d operations", len(tx.operations))
+	corelog.Warnf("Transaction: rolling back %d operations", len(tx.operations))
 
 	var lastErr error
 	// 反向执行回滚操作
 	for i := len(tx.operations) - 1; i >= 0; i-- {
 		op := tx.operations[i]
-		utils.Infof("Transaction: rolling back operation '%s'", op.name)
+		corelog.Infof("Transaction: rolling back operation '%s'", op.name)
 
 		if err := op.rollback(); err != nil {
-			utils.Errorf("Transaction: failed to rollback operation '%s': %v", op.name, err)
+			corelog.Errorf("Transaction: failed to rollback operation '%s': %v", op.name, err)
 			lastErr = err
 			// 继续尝试回滚其他操作
 		} else {
-			utils.Infof("Transaction: successfully rolled back operation '%s'", op.name)
+			corelog.Infof("Transaction: successfully rolled back operation '%s'", op.name)
 		}
 	}
 
@@ -71,10 +71,10 @@ func (s *ManagementAPIServer) createMappingWithTransaction(mapping *models.PortM
 
 	// 2. 推送配置给客户端
 	if err := s.pushMappingToClients(createdMapping); err != nil {
-		utils.Errorf("API: failed to push mapping config to clients for mapping %s: %v", createdMapping.ID, err)
+		corelog.Errorf("API: failed to push mapping config to clients for mapping %s: %v", createdMapping.ID, err)
 		// 回滚：删除已创建的mapping
 		if delErr := s.cloudControl.DeletePortMapping(createdMapping.ID); delErr != nil {
-			utils.Errorf("API: failed to rollback mapping %s: %v", createdMapping.ID, delErr)
+			corelog.Errorf("API: failed to rollback mapping %s: %v", createdMapping.ID, delErr)
 		}
 		return nil, fmt.Errorf("failed to push config to clients: %w", err)
 	}
@@ -111,7 +111,7 @@ func (s *ManagementAPIServer) claimClientWithTransaction(anonClientID int64, use
 	if err != nil {
 		// 回滚：删除新创建的客户端
 		if rbErr := tx.Rollback(); rbErr != nil {
-			utils.Errorf("API: failed to rollback after token generation failure: %v", rbErr)
+			corelog.Errorf("API: failed to rollback after token generation failure: %v", rbErr)
 		}
 		return nil, fmt.Errorf("failed to generate JWT token: %w", err)
 	}
@@ -124,7 +124,7 @@ func (s *ManagementAPIServer) claimClientWithTransaction(anonClientID int64, use
 	if err := s.cloudControl.UpdateClient(anonClient); err != nil {
 		// 回滚之前的操作
 		if rbErr := tx.Rollback(); rbErr != nil {
-			utils.Errorf("API: failed to rollback after client update failure: %v", rbErr)
+			corelog.Errorf("API: failed to rollback after client update failure: %v", rbErr)
 		}
 		return nil, fmt.Errorf("failed to update anonymous client: %w", err)
 	}
@@ -138,7 +138,7 @@ func (s *ManagementAPIServer) claimClientWithTransaction(anonClientID int64, use
 	// 5. 迁移端口映射
 	if err := s.cloudControl.MigrateClientMappings(anonClient.ID, newClient.ID); err != nil {
 		// 迁移失败只记录警告，不回滚（因为映射可能部分成功）
-		utils.Warnf("API: failed to migrate mappings from client %d to %d: %v", anonClient.ID, newClient.ID, err)
+		corelog.Warnf("API: failed to migrate mappings from client %d to %d: %v", anonClient.ID, newClient.ID, err)
 	}
 
 	// 成功完成，不需要回滚

@@ -1,13 +1,13 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	clientconfig "tunnox-core/internal/config"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -79,11 +79,11 @@ func (c *TunnoxClient) GenerateConnectionCode(req *GenerateConnectionCodeRequest
 
 	var resp GenerateConnectionCodeResponse
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
-		utils.Errorf("Client.GenerateConnectionCode: failed to parse response data: %v, Data=%s", err, cmdResp.Data)
+		corelog.Errorf("Client.GenerateConnectionCode: failed to parse response data: %v, Data=%s", err, cmdResp.Data)
 		return nil, fmt.Errorf("failed to parse response data: %w", err)
 	}
 
-	utils.Infof("Client.GenerateConnectionCode: success, Code=%s", resp.Code)
+	corelog.Infof("Client.GenerateConnectionCode: success, Code=%s", resp.Code)
 	return &resp, nil
 }
 
@@ -126,7 +126,7 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 		// 解析监听地址
 		_, port, err := parseListenAddress(resp.ListenAddress)
 		if err != nil {
-			utils.Warnf("Client.ActivateConnectionCode: failed to parse listen address %q: %v", resp.ListenAddress, err)
+			corelog.Warnf("Client.ActivateConnectionCode: failed to parse listen address %q: %v", resp.ListenAddress, err)
 			// 继续返回响应，即使解析失败
 			return &resp, nil
 		}
@@ -134,7 +134,7 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 		// 解析目标地址以确定协议
 		_, _, protocol, err := parseTargetAddress(resp.TargetAddress)
 		if err != nil {
-			utils.Warnf("Client.ActivateConnectionCode: failed to parse target address %q: %v", resp.TargetAddress, err)
+			corelog.Warnf("Client.ActivateConnectionCode: failed to parse target address %q: %v", resp.TargetAddress, err)
 			protocol = "tcp" // 默认TCP
 		}
 
@@ -152,7 +152,7 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 
 		// 启动映射处理器
 		c.addOrUpdateMapping(mappingCfg)
-		utils.Infof("Client.ActivateConnectionCode: mapping handler started for %s on %s", resp.MappingID, resp.ListenAddress)
+		corelog.Infof("Client.ActivateConnectionCode: mapping handler started for %s on %s", resp.MappingID, resp.ListenAddress)
 	}
 
 	return &resp, nil

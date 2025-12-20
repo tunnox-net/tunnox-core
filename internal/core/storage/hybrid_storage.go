@@ -432,3 +432,14 @@ func (h *HybridStorage) Close() error {
 	h.ManagerBase.Close()
 	return nil
 }
+
+// GetRemoteStorage 获取 RemoteStorage 实例（如果持久化存储是 RemoteStorage）
+func (h *HybridStorage) GetRemoteStorage() *RemoteStorage {
+	if h.persistent == nil {
+		return nil
+	}
+	if remote, ok := h.persistent.(*RemoteStorage); ok {
+		return remote
+	}
+	return nil
+}

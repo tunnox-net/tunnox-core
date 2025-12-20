@@ -1,11 +1,11 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // ============================================================================
@@ -26,7 +26,7 @@ func (s *SessionManager) SetEventBus(eventBus events.EventBus) error {
 			return fmt.Errorf("failed to subscribe to disconnect request events: %w", err)
 		}
 
-		utils.Debug("Event bus configured in SessionManager")
+		corelog.Debug("Event bus configured in SessionManager")
 		return nil
 }
 
@@ -94,7 +94,7 @@ func (s *SessionManager) SetCommandExecutor(executor types.CommandExecutor) erro
 		return fmt.Errorf("command executor cannot be nil")
 	}
 	s.commandExecutor = executor
-	utils.Debug("Command executor configured in SessionManager")
+	corelog.Debug("Command executor configured in SessionManager")
 	return nil
 }
 
@@ -104,26 +104,26 @@ func (s *SessionManager) SetCommandExecutor(executor types.CommandExecutor) erro
 
 // handleCommandPacket 处理命令数据包
 func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) error {
-	utils.Debugf("SessionManager.handleCommandPacket: received command packet, ConnectionID=%s, PacketType=%d",
+	corelog.Debugf("SessionManager.handleCommandPacket: received command packet, ConnectionID=%s, PacketType=%d",
 		connPacket.ConnectionID, connPacket.Packet.PacketType)
 
 	if connPacket.Packet.CommandPacket != nil {
-		utils.Debugf("SessionManager.handleCommandPacket: CommandType=%d, CommandID=%s",
+		corelog.Debugf("SessionManager.handleCommandPacket: CommandType=%d, CommandID=%s",
 			connPacket.Packet.CommandPacket.CommandType, connPacket.Packet.CommandPacket.CommandId)
 	}
 
 	// 优先使用 Command 执行器
 	if s.commandExecutor != nil {
-		utils.Debugf("SessionManager.handleCommandPacket: executing command via CommandExecutor")
+		corelog.Debugf("SessionManager.handleCommandPacket: executing command via CommandExecutor")
 		if err := s.commandExecutor.Execute(connPacket); err != nil {
-			utils.Errorf("SessionManager.handleCommandPacket: command execution failed: %v", err)
+			corelog.Errorf("SessionManager.handleCommandPacket: command execution failed: %v", err)
 			return err
 		}
-		utils.Debugf("SessionManager.handleCommandPacket: command executed successfully")
+		corelog.Debugf("SessionManager.handleCommandPacket: command executed successfully")
 		return nil
 	}
 
-	utils.Warnf("SessionManager.handleCommandPacket: CommandExecutor is nil, falling back to default handler")
+	corelog.Warnf("SessionManager.handleCommandPacket: CommandExecutor is nil, falling back to default handler")
 	// 回退到默认处理
 	return s.handleDefaultCommand(connPacket)
 }
@@ -135,7 +135,7 @@ func (s *SessionManager) handleDefaultCommand(connPacket *types.StreamPacket) er
 	}
 
 	cmd := connPacket.Packet.CommandPacket
-	utils.Debugf("Processing command: type=%v, id=%s, conn=%s",
+	corelog.Debugf("Processing command: type=%v, id=%s, conn=%s",
 		cmd.CommandType, cmd.CommandId, connPacket.ConnectionID)
 
 	// 处理 ConfigGet 命令
@@ -161,7 +161,7 @@ func (s *SessionManager) handleConfigGetCommand(connPacket *types.StreamPacket) 
 	// 获取客户端ID
 	clientID := controlConn.ClientID
 	if clientID == 0 {
-		utils.Warnf("Client has no ID, cannot get config: conn=%s", connPacket.ConnectionID)
+		corelog.Warnf("Client has no ID, cannot get config: conn=%s", connPacket.ConnectionID)
 		return s.sendEmptyConfig(controlConn)
 	}
 
@@ -171,7 +171,7 @@ func (s *SessionManager) handleConfigGetCommand(connPacket *types.StreamPacket) 
 		// 使用认证处理器获取配置
 		config, err := s.authHandler.GetClientConfig(controlConn)
 		if err != nil {
-			utils.Errorf("Failed to get client config for client %d: %v", clientID, err)
+			corelog.Errorf("Failed to get client config for client %d: %v", clientID, err)
 			return s.sendEmptyConfig(controlConn)
 		}
 		configBody = config
@@ -180,7 +180,7 @@ func (s *SessionManager) handleConfigGetCommand(connPacket *types.StreamPacket) 
 		configBody = `{"mappings":[]}`
 	}
 
-	utils.Infof("SessionManager: sending config to client %d (%d bytes)", clientID, len(configBody))
+	corelog.Infof("SessionManager: sending config to client %d (%d bytes)", clientID, len(configBody))
 
 	// 发送配置响应
 	responseCmd := &packet.CommandPacket{
@@ -230,7 +230,7 @@ func (s *SessionManager) handleHeartbeat(connPacket *types.StreamPacket) error {
 	}
 	s.controlConnLock.Unlock()
 
-	utils.Debugf("Heartbeat received from connection: %s", connPacket.ConnectionID)
+	corelog.Debugf("Heartbeat received from connection: %s", connPacket.ConnectionID)
 
 	// 发送心跳响应
 	conn, exists := s.GetConnection(connPacket.ConnectionID)
@@ -239,7 +239,7 @@ func (s *SessionManager) handleHeartbeat(connPacket *types.StreamPacket) error {
 			PacketType: packet.Heartbeat, // 心跳响应也用 Heartbeat
 		}
 		if _, err := conn.Stream.WritePacket(respPacket, true, 0); err != nil {
-			utils.Errorf("Failed to send heartbeat response: %v", err)
+			corelog.Errorf("Failed to send heartbeat response: %v", err)
 		}
 	}
 

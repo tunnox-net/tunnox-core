@@ -60,7 +60,8 @@ func displayServerInfo(s *Server, configPath string, reset func(...interface{}) 
 	fmt.Println(bannerFaint("  " + strings.Repeat("─", bannerWidth)))
 
 	logFile := getLogFilePath(s.config.Log.File)
-	storageInfo := formatStorageInfo(s.config.Storage)
+	cacheInfo := formatCacheInfo(s.config.Storage)
+	persistentInfo := formatPersistentStorageInfo(s.config.Storage)
 	brokerInfo := formatBrokerInfo(s.config.MessageBroker)
 
 	infoRows := []struct {
@@ -70,7 +71,8 @@ func displayServerInfo(s *Server, configPath string, reset func(...interface{}) 
 		{"Node ID", s.nodeID},
 		{"Config File", configPath},
 		{"Start Time", time.Now().Format("2006-01-02 15:04:05")},
-		{"Storage", storageInfo},
+		{"Cache", cacheInfo},
+		{"Persistent", persistentInfo},
 		{"Message Broker", brokerInfo},
 		{"Log File", logFile},
 	}
@@ -160,14 +162,14 @@ func getLogFilePath(configuredPath string) string {
 	return expandedPath
 }
 
-// formatStorageInfo 格式化存储信息
-func formatStorageInfo(storage StorageConfig) string {
+// formatCacheInfo 格式化缓存信息
+func formatCacheInfo(storage StorageConfig) string {
 	switch storage.Type {
 	case "hybrid":
-		if storage.Redis.Addr != "" {
-			return fmt.Sprintf("Hybrid (Memory + Redis: %s)", storage.Redis.Addr)
+		if storage.Hybrid.CacheType == "redis" && storage.Redis.Addr != "" {
+			return fmt.Sprintf("Redis (%s)", storage.Redis.Addr)
 		}
-		return "Hybrid (Memory + JSON)"
+		return "Memory"
 	case "redis":
 		if storage.Redis.Addr != "" {
 			return fmt.Sprintf("Redis (%s)", storage.Redis.Addr)
@@ -176,7 +178,27 @@ func formatStorageInfo(storage StorageConfig) string {
 	case "memory":
 		return "Memory"
 	default:
-		return storage.Type
+		return "Memory"
+	}
+}
+
+// formatPersistentStorageInfo 格式化持久化存储信息
+func formatPersistentStorageInfo(storage StorageConfig) string {
+	switch storage.Type {
+	case "hybrid":
+		if storage.Hybrid.EnablePersistent {
+			if storage.Hybrid.Remote.Type == "grpc" && storage.Hybrid.Remote.GRPC.Address != "" {
+				return fmt.Sprintf("Remote gRPC (%s)", storage.Hybrid.Remote.GRPC.Address)
+			}
+			return "Local JSON"
+		}
+		return "None"
+	case "redis":
+		return "Redis (built-in)"
+	case "memory":
+		return "None"
+	default:
+		return "None"
 	}
 }
 
@@ -187,4 +209,3 @@ func formatBrokerInfo(broker MessageBrokerConfig) string {
 	}
 	return broker.Type
 }
-

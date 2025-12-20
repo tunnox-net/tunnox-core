@@ -1,6 +1,7 @@
 package server
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"net"
@@ -12,7 +13,6 @@ import (
 	"tunnox-core/internal/health"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 
 	"google.golang.org/grpc"
 )
@@ -89,7 +89,7 @@ func (s *Server) createMessageBroker(ctx context.Context) broker.MessageBroker {
 
 	mb, err := broker.NewMessageBroker(ctx, brokerConfig)
 	if err != nil {
-		utils.Fatalf("Failed to create message broker: %v", err)
+		corelog.Fatalf("Failed to create message broker: %v", err)
 	}
 
 	return mb
@@ -98,7 +98,7 @@ func (s *Server) createMessageBroker(ctx context.Context) broker.MessageBroker {
 // createBridgeManager 创建桥接管理器
 func (s *Server) createBridgeManager(ctx context.Context) *internalbridge.BridgeManager {
 	if s.messageBroker == nil {
-		utils.Warn("MessageBroker not initialized, BridgeManager will not be created")
+		corelog.Warn("MessageBroker not initialized, BridgeManager will not be created")
 		return nil
 	}
 
@@ -124,7 +124,7 @@ func (s *Server) createBridgeManager(ctx context.Context) *internalbridge.Bridge
 
 	manager, err := internalbridge.NewBridgeManager(ctx, managerConfig)
 	if err != nil {
-		utils.Fatalf("Failed to create bridge manager: %v", err)
+		corelog.Fatalf("Failed to create bridge manager: %v", err)
 	}
 
 	return manager
@@ -137,7 +137,7 @@ func (s *Server) startGRPCServer() *grpc.Server {
 
 	// 检查端口是否配置（如果未配置则不启动）
 	if grpcServerConfig.Port == 0 {
-		utils.Warn("gRPC server port not configured, skipping gRPC server startup")
+		corelog.Warn("gRPC server port not configured, skipping gRPC server startup")
 		return nil
 	}
 
@@ -151,7 +151,7 @@ func (s *Server) startGRPCServer() *grpc.Server {
 
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		utils.Fatalf("Failed to listen on %s: %v", addr, err)
+		corelog.Fatalf("Failed to listen on %s: %v", addr, err)
 	}
 
 	grpcServer := grpc.NewServer()
@@ -162,7 +162,7 @@ func (s *Server) startGRPCServer() *grpc.Server {
 	// 在后台启动 gRPC 服务器
 	go func() {
 		if err := grpcServer.Serve(listener); err != nil {
-			utils.Errorf("gRPC server error: %v", err)
+			corelog.Errorf("gRPC server error: %v", err)
 		}
 	}()
 
@@ -174,7 +174,7 @@ func (s *Server) setupProtocolAdapters() error {
 	// 获取启用的协议配置
 	enabledProtocols := s.getEnabledProtocols()
 	if len(enabledProtocols) == 0 {
-		utils.Warn("No protocols enabled")
+		corelog.Warn("No protocols enabled")
 		return nil
 	}
 

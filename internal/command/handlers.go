@@ -1,11 +1,11 @@
 package command
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // BaseHandler 基础处理器
@@ -56,7 +56,7 @@ func NewTcpMapHandler() *TcpMapHandler {
 }
 
 func (h *TcpMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	utils.Infof("Handling TCP mapping command for connection: %s", ctx.ConnectionID)
+	corelog.Infof("Handling TCP mapping command for connection: %s", ctx.ConnectionID)
 
 	// TCP端口映射逻辑尚未实现
 	// 1. 解析请求体中的端口映射配置
@@ -92,7 +92,7 @@ func NewHttpMapHandler() *HttpMapHandler {
 }
 
 func (h *HttpMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	utils.Infof("Handling HTTP mapping command for connection: %s", ctx.ConnectionID)
+	corelog.Infof("Handling HTTP mapping command for connection: %s", ctx.ConnectionID)
 
 	// HTTP端口映射逻辑尚未实现
 
@@ -124,7 +124,7 @@ func NewSocksMapHandler() *SocksMapHandler {
 }
 
 func (h *SocksMapHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	utils.Infof("Handling SOCKS mapping command for connection: %s", ctx.ConnectionID)
+	corelog.Infof("Handling SOCKS mapping command for connection: %s", ctx.ConnectionID)
 
 	// SOCKS代理映射逻辑尚未实现
 
@@ -156,7 +156,7 @@ func NewDataInHandler() *DataInHandler {
 }
 
 func (h *DataInHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	utils.Infof("Handling DataIn command for connection: %s", ctx.ConnectionID)
+	corelog.Infof("Handling DataIn command for connection: %s", ctx.ConnectionID)
 
 	// 数据输入处理逻辑尚未实现
 	// 1. 解析数据输入请求
@@ -191,7 +191,7 @@ func NewDataOutHandler() *DataOutHandler {
 }
 
 func (h *DataOutHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	utils.Infof("Handling DataOut command for connection: %s", ctx.ConnectionID)
+	corelog.Infof("Handling DataOut command for connection: %s", ctx.ConnectionID)
 
 	// 数据输出处理逻辑尚未实现
 
@@ -223,7 +223,7 @@ func NewForwardHandler() *ForwardHandler {
 }
 
 func (h *ForwardHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	utils.Infof("Handling Forward command for connection: %s", ctx.ConnectionID)
+	corelog.Infof("Handling Forward command for connection: %s", ctx.ConnectionID)
 
 	// 服务端间转发逻辑尚未实现
 
@@ -255,7 +255,7 @@ func NewDisconnectHandler() *DisconnectHandler {
 }
 
 func (h *DisconnectHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	utils.Infof("Handling Disconnect command for connection: %s", ctx.ConnectionID)
+	corelog.Infof("Handling Disconnect command for connection: %s", ctx.ConnectionID)
 
 	// 在事件驱动架构中，连接关闭应该通过事件总线处理
 	// Session会监听命令完成事件，然后执行实际的连接关闭操作
@@ -289,7 +289,7 @@ func NewRpcInvokeHandler() *RpcInvokeHandler {
 }
 
 func (h *RpcInvokeHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	utils.Infof("Handling RPC invoke command for connection: %s", ctx.ConnectionID)
+	corelog.Infof("Handling RPC invoke command for connection: %s", ctx.ConnectionID)
 
 	// RPC调用逻辑尚未实现
 	// 1. 解析RPC请求
@@ -340,7 +340,7 @@ func NewDefaultHandler() *DefaultHandler {
 }
 
 func (h *DefaultHandler) Handle(ctx *CommandContext) (*CommandResponse, error) {
-	utils.Warnf("Unknown command type for connection %s: %v", ctx.ConnectionID, ctx.CommandType)
+	corelog.Warnf("Unknown command type for connection %s: %v", ctx.ConnectionID, ctx.CommandType)
 
 	return &CommandResponse{
 		Success:   false,

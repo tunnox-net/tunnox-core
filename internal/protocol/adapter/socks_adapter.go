@@ -1,6 +1,7 @@
 package adapter
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/utils"
 )
 
 const (
@@ -79,10 +79,10 @@ func NewSocksAdapter(parentCtx context.Context, session session.Session, config 
 	if config != nil && config.Username != "" && config.Password != "" {
 		adapter.authEnabled = true
 		adapter.credentials[config.Username] = config.Password
-		utils.Infof("SOCKS5 adapter: authentication enabled")
+		corelog.Infof("SOCKS5 adapter: authentication enabled")
 	} else {
 		adapter.authEnabled = false
-		utils.Infof("SOCKS5 adapter: authentication disabled")
+		corelog.Infof("SOCKS5 adapter: authentication disabled")
 	}
 
 	adapter.BaseAdapter = BaseAdapter{}
@@ -107,7 +107,7 @@ func (s *SocksAdapter) Listen(addr string) error {
 	}
 
 	s.listener = listener
-	utils.Infof("SOCKS5 proxy server listening on %s", addr)
+	corelog.Infof("SOCKS5 proxy server listening on %s", addr)
 
 	return nil
 }
@@ -152,26 +152,26 @@ func (s *SocksAdapter) handleSocksConnection(clientConn net.Conn) {
 
 	// 1. 握手阶段
 	if err := s.handleHandshake(clientConn); err != nil {
-		utils.Errorf("SOCKS5 handshake failed: %v", err)
+		corelog.Errorf("SOCKS5 handshake failed: %v", err)
 		return
 	}
 
 	// 2. 处理请求
 	targetAddr, err := s.handleRequest(clientConn)
 	if err != nil {
-		utils.Errorf("SOCKS5 request failed: %v", err)
+		corelog.Errorf("SOCKS5 request failed: %v", err)
 		return
 	}
 
 	// 移除握手超时
 	clientConn.SetDeadline(time.Time{})
 
-	utils.Infof("SOCKS5 connecting to target: %s", targetAddr)
+	corelog.Infof("SOCKS5 connecting to target: %s", targetAddr)
 
 	// 3. 通过隧道连接到目标
 	// 这里需要通过 Session 转发到远端
 	if s.GetSession() == nil {
-		utils.Errorf("Session is not set for SOCKS5 adapter")
+		corelog.Errorf("Session is not set for SOCKS5 adapter")
 		s.sendReply(clientConn, socksRepServerFailure, "0.0.0.0", 0)
 		return
 	}
@@ -181,7 +181,7 @@ func (s *SocksAdapter) handleSocksConnection(clientConn net.Conn) {
 	// 这里我们使用一个虚拟连接来桥接
 	remoteConn, err := s.dialThroughTunnel(targetAddr)
 	if err != nil {
-		utils.Errorf("Failed to dial through tunnel: %v", err)
+		corelog.Errorf("Failed to dial through tunnel: %v", err)
 		s.sendReply(clientConn, socksRepHostUnreachable, "0.0.0.0", 0)
 		return
 	}
@@ -191,7 +191,7 @@ func (s *SocksAdapter) handleSocksConnection(clientConn net.Conn) {
 	// 使用本地地址作为绑定地址
 	localAddr := clientConn.LocalAddr().(*net.TCPAddr)
 	if err := s.sendReply(clientConn, socksRepSuccess, localAddr.IP.String(), uint16(localAddr.Port)); err != nil {
-		utils.Errorf("Failed to send SOCKS5 reply: %v", err)
+		corelog.Errorf("Failed to send SOCKS5 reply: %v", err)
 		return
 	}
 
@@ -484,9 +484,9 @@ func (s *SocksAdapter) relay(client, remote net.Conn) {
 		defer wg.Done()
 		written, err := io.Copy(remote, client)
 		if err != nil {
-			utils.Debugf("Client to remote copy error: %v", err)
+			corelog.Debugf("Client to remote copy error: %v", err)
 		}
-		utils.Debugf("Client to remote: %d bytes", written)
+		corelog.Debugf("Client to remote: %d bytes", written)
 		// 关闭远程连接的写入
 		if tcpConn, ok := remote.(*net.TCPConn); ok {
 			tcpConn.CloseWrite()
@@ -498,9 +498,9 @@ func (s *SocksAdapter) relay(client, remote net.Conn) {
 		defer wg.Done()
 		written, err := io.Copy(client, remote)
 		if err != nil {
-			utils.Debugf("Remote to client copy error: %v", err)
+			corelog.Debugf("Remote to client copy error: %v", err)
 		}
-		utils.Debugf("Remote to client: %d bytes", written)
+		corelog.Debugf("Remote to client: %d bytes", written)
 		// 关闭客户端连接的写入
 		if tcpConn, ok := client.(*net.TCPConn); ok {
 			tcpConn.CloseWrite()
@@ -508,7 +508,7 @@ func (s *SocksAdapter) relay(client, remote net.Conn) {
 	}()
 
 	wg.Wait()
-	utils.Infof("SOCKS5 relay completed")
+	corelog.Infof("SOCKS5 relay completed")
 }
 
 // onClose SOCKS5 特定的资源清理

@@ -53,6 +53,19 @@ type Dispose struct {
 	errors        []*DisposeError
 }
 
+// NewDispose 创建并初始化 Dispose（推荐使用）
+// 避免"先创建后初始化"的问题
+func NewDispose(parent context.Context, onClose func() error) *Dispose {
+	d := &Dispose{}
+	d.SetCtx(parent, onClose)
+	return d
+}
+
+// NewDisposeWithNoOp 创建 Dispose，使用空操作的清理回调
+func NewDisposeWithNoOp(parent context.Context) *Dispose {
+	return NewDispose(parent, func() error { return nil })
+}
+
 func (c *Dispose) Ctx() context.Context {
 	return c.ctx
 }
@@ -131,8 +144,11 @@ func (c *Dispose) GetErrors() []*DisposeError {
 }
 
 func (c *Dispose) SetCtx(parent context.Context, onClose func() error) {
+	c.currentLock.Lock()
+	defer c.currentLock.Unlock()
+
 	if c.ctx != nil {
-		Warn("ctx already set")
+		Warn("ctx already set, ignoring SetCtx call")
 		return
 	}
 
@@ -146,28 +162,24 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func() error) {
 		c.AddCleanHandler(onClose)
 	}
 
-	if curParent != nil {
-		if c.ctx != nil && !c.closed {
-			Warn("context is not nil and context is not closed")
-		}
-		c.ctx, c.cancel = context.WithCancel(curParent)
-		c.closed = false
-		go func() {
-			select {
-			case <-c.ctx.Done():
-				defer c.currentLock.Unlock()
-				c.currentLock.Lock()
+	c.ctx, c.cancel = context.WithCancel(curParent)
+	c.closed = false
 
-				if !c.closed {
-					result := c.runCleanHandlers()
-					if result.HasErrors() {
-						Errorf("Context cancellation cleanup failed: %v", result.Error())
-					}
-					c.closed = true
+	go func() {
+		select {
+		case <-c.ctx.Done():
+			c.currentLock.Lock()
+			defer c.currentLock.Unlock()
+
+			if !c.closed {
+				result := c.runCleanHandlers()
+				if result.HasErrors() {
+					Errorf("Context cancellation cleanup failed: %v", result.Error())
 				}
+				c.closed = true
 			}
-		}()
-	}
+		}
+	}()
 }
 
 // SetCtxWithNoOpOnClose 设置上下文并使用空操作的清理回调

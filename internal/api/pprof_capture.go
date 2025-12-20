@@ -1,6 +1,7 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"os"
@@ -59,7 +60,7 @@ func (p *PProfCapture) Start() error {
 	p.running = true
 	go p.captureLoop()
 
-	utils.Infof("PProfCapture: started, saving profiles to %s (retention: %d minutes)", p.config.DataDir, p.config.Retention)
+	corelog.Infof("PProfCapture: started, saving profiles to %s (retention: %d minutes)", p.config.DataDir, p.config.Retention)
 	return nil
 }
 
@@ -74,7 +75,7 @@ func (p *PProfCapture) Stop() error {
 
 	p.running = false
 	p.cancel()
-	utils.Infof("PProfCapture: stopped")
+	corelog.Infof("PProfCapture: stopped")
 	return nil
 }
 
@@ -131,30 +132,30 @@ func (p *PProfCapture) captureProfiles() {
 
 	// 抓取 heap profile
 	if err := p.captureHeap(basePath + ".heap"); err != nil {
-		utils.Warnf("PProfCapture: failed to capture heap profile: %v", err)
+		corelog.Warnf("PProfCapture: failed to capture heap profile: %v", err)
 	}
 
 	// 抓取 goroutine profile
 	if err := p.captureGoroutine(basePath + ".goroutine"); err != nil {
-		utils.Warnf("PProfCapture: failed to capture goroutine profile: %v", err)
+		corelog.Warnf("PProfCapture: failed to capture goroutine profile: %v", err)
 	}
 
 	// 抓取 allocs profile
 	if err := p.captureAllocs(basePath + ".allocs"); err != nil {
-		utils.Warnf("PProfCapture: failed to capture allocs profile: %v", err)
+		corelog.Warnf("PProfCapture: failed to capture allocs profile: %v", err)
 	}
 
 	// 抓取 block profile
 	if err := p.captureBlock(basePath + ".block"); err != nil {
-		utils.Warnf("PProfCapture: failed to capture block profile: %v", err)
+		corelog.Warnf("PProfCapture: failed to capture block profile: %v", err)
 	}
 
 	// 抓取 mutex profile
 	if err := p.captureMutex(basePath + ".mutex"); err != nil {
-		utils.Warnf("PProfCapture: failed to capture mutex profile: %v", err)
+		corelog.Warnf("PProfCapture: failed to capture mutex profile: %v", err)
 	}
 
-	utils.Debugf("PProfCapture: captured profiles at %s", timestamp)
+	corelog.Debugf("PProfCapture: captured profiles at %s", timestamp)
 }
 
 // captureHeap 抓取堆内存 profile
@@ -240,7 +241,7 @@ func (p *PProfCapture) cleanupOldFiles() {
 
 	entries, err := os.ReadDir(p.config.DataDir)
 	if err != nil {
-		utils.Warnf("PProfCapture: failed to read data directory: %v", err)
+		corelog.Warnf("PProfCapture: failed to read data directory: %v", err)
 		return
 	}
 
@@ -264,7 +265,7 @@ func (p *PProfCapture) cleanupOldFiles() {
 		if info.ModTime().Before(cutoffTime) {
 			filePath := filepath.Join(p.config.DataDir, entry.Name())
 			if err := os.Remove(filePath); err != nil {
-				utils.Warnf("PProfCapture: failed to remove old file %s: %v", filePath, err)
+				corelog.Warnf("PProfCapture: failed to remove old file %s: %v", filePath, err)
 			} else {
 				removedCount++
 			}
@@ -272,7 +273,7 @@ func (p *PProfCapture) cleanupOldFiles() {
 	}
 
 	if removedCount > 0 {
-		utils.Debugf("PProfCapture: cleaned up %d old profile files", removedCount)
+		corelog.Debugf("PProfCapture: cleaned up %d old profile files", removedCount)
 	}
 }
 

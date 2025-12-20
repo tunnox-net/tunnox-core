@@ -1,9 +1,9 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"time"
 
-	"tunnox-core/internal/utils"
 )
 
 // periodicTrafficReport 定期上报流量统计
@@ -49,7 +49,7 @@ func (b *TunnelBridge) reportTrafficStats() {
 	// 获取当前映射的统计数据
 	mapping, err := b.cloudControl.GetPortMapping(b.mappingID)
 	if err != nil {
-		utils.Errorf("TunnelBridge[%s]: failed to get mapping for traffic stats: %v", b.tunnelID, err)
+		corelog.Errorf("TunnelBridge[%s]: failed to get mapping for traffic stats: %v", b.tunnelID, err)
 		return
 	}
 
@@ -61,7 +61,7 @@ func (b *TunnelBridge) reportTrafficStats() {
 
 	// 更新映射统计
 	if err := b.cloudControl.UpdatePortMappingStats(b.mappingID, &trafficStats); err != nil {
-		utils.Errorf("TunnelBridge[%s]: failed to update traffic stats: %v", b.tunnelID, err)
+		corelog.Errorf("TunnelBridge[%s]: failed to update traffic stats: %v", b.tunnelID, err)
 		return
 	}
 
@@ -69,7 +69,7 @@ func (b *TunnelBridge) reportTrafficStats() {
 	b.lastReportedSent.Store(currentSent)
 	b.lastReportedReceived.Store(currentReceived)
 
-	utils.Infof("TunnelBridge[%s]: traffic stats updated - mapping=%s, delta_sent=%d, delta_received=%d, total_sent=%d, total_received=%d",
+	corelog.Infof("TunnelBridge[%s]: traffic stats updated - mapping=%s, delta_sent=%d, delta_received=%d, total_sent=%d, total_received=%d",
 		b.tunnelID, b.mappingID, deltaSent, deltaReceived, trafficStats.BytesSent, trafficStats.BytesReceived)
 }
 

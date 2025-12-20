@@ -3,6 +3,7 @@ package command
 import (
 	"io"
 	"testing"
+	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -59,11 +60,11 @@ func (m *UtilsMockSession) UpdateConnectionState(connID string, state types.Conn
 	return nil
 }
 
-func (m *UtilsMockSession) SetEventBus(eventBus interface{}) error {
+func (m *UtilsMockSession) SetEventBus(eventBus events.EventBus) error {
 	return nil
 }
 
-func (m *UtilsMockSession) GetEventBus() interface{} {
+func (m *UtilsMockSession) GetEventBus() events.EventBus {
 	return nil
 }
 

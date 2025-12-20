@@ -122,3 +122,9 @@ func (c *CloudControl) Close() error {
 	return nil
 }
 
+// SetNotifier 设置通知器
+func (c *CloudControl) SetNotifier(notifier interface{}) {
+	if c.anonymousManager != nil {
+		c.anonymousManager.SetNotifier(notifier)
+	}
+}

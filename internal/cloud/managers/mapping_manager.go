@@ -1,6 +1,7 @@
 package managers
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
-	"tunnox-core/internal/utils"
 )
 
 // CreatePortMapping 创建端口映射
@@ -59,7 +59,7 @@ func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 			return nil, fmt.Errorf("generate encryption key failed: %w", err)
 		}
 		mapping.Config.EncryptionKey = encryptionKey
-		utils.Infof("CloudControl: generated encryption key for mapping %s, method=%s, keyLen=%d",
+		corelog.Infof("CloudControl: generated encryption key for mapping %s, method=%s, keyLen=%d",
 			mappingID, mapping.Config.EncryptionMethod, len(encryptionKey))
 	}
 

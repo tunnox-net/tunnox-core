@@ -1,12 +1,12 @@
 package mapping
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"io"
 	"net"
 
 	"tunnox-core/internal/config"
-	"tunnox-core/internal/utils"
 )
 
 // TCPMappingAdapter TCP映射适配器
@@ -29,7 +29,7 @@ func (a *TCPMappingAdapter) StartListener(config config.MappingConfig) error {
 	}
 
 	a.listener = listener
-	utils.Debugf("TCPMappingAdapter: listening on %s", addr)
+	corelog.Debugf("TCPMappingAdapter: listening on %s", addr)
 	return nil
 }
 

@@ -1,9 +1,9 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"net"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // StreamProcessorAccessor 类型别名，用于在接口定义中使用
@@ -129,7 +129,7 @@ func CreateTunnelConnectionFromExisting(
 ) TunnelConnectionInterface {
 	clientID := extractClientID(stream, netConn)
 	if clientID == 0 {
-		utils.Warnf("CreateTunnelConnectionFromExisting: failed to extract clientID, connID=%s", connID)
+		corelog.Warnf("CreateTunnelConnectionFromExisting: failed to extract clientID, connID=%s", connID)
 	}
 	return CreateTunnelConnection(connID, netConn, stream, clientID, mappingID, tunnelID)
 }

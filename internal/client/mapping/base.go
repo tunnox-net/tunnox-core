@@ -1,6 +1,7 @@
 package mapping
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
@@ -55,7 +56,7 @@ func NewBaseMappingHandler(
 			rate.Limit(config.BandwidthLimit), // bytes/s
 			int(config.BandwidthLimit*2),      // burst size (2x)
 		)
-		utils.Debugf("BaseMappingHandler[%s]: rate limiter enabled, limit=%d bytes/s",
+		corelog.Debugf("BaseMappingHandler[%s]: rate limiter enabled, limit=%d bytes/s",
 			config.MappingID, config.BandwidthLimit)
 	}
 
@@ -65,7 +66,7 @@ func NewBaseMappingHandler(
 
 	// 注册清理处理器
 	handler.AddCleanHandler(func() error {
-		utils.Infof("BaseMappingHandler[%s]: cleaning up resources", config.MappingID)
+		corelog.Infof("BaseMappingHandler[%s]: cleaning up resources", config.MappingID)
 
 		// 停止统计上报
 		if handler.statsReportTicker != nil {
@@ -94,7 +95,7 @@ func (h *BaseMappingHandler) Start() error {
 		return fmt.Errorf("failed to start listener: %w", err)
 	}
 
-	utils.Infof("BaseMappingHandler: %s mapping started on port %d",
+	corelog.Infof("BaseMappingHandler: %s mapping started on port %d",
 		h.adapter.GetProtocol(), h.config.LocalPort)
 
 	// 3. 启动接受循环（公共）
@@ -119,12 +120,12 @@ func (h *BaseMappingHandler) acceptLoop() {
 				return
 			}
 			// 记录错误但继续接受
-			utils.Errorf("BaseMappingHandler[%s]: accept error: %v", h.config.MappingID, err)
+			corelog.Errorf("BaseMappingHandler[%s]: accept error: %v", h.config.MappingID, err)
 			time.Sleep(100 * time.Millisecond) // 避免错误循环
 			continue
 		}
 
-		utils.Infof("BaseMappingHandler[%s]: new connection accepted", h.config.MappingID)
+		corelog.Infof("BaseMappingHandler[%s]: new connection accepted", h.config.MappingID)
 		// 处理连接（公共）
 		go h.handleConnection(localConn)
 	}
@@ -134,11 +135,11 @@ func (h *BaseMappingHandler) acceptLoop() {
 func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	defer localConn.Close()
 
-	utils.Infof("BaseMappingHandler[%s]: new connection received", h.config.MappingID)
+	corelog.Infof("BaseMappingHandler[%s]: new connection received", h.config.MappingID)
 
 	// 1. 配额检查：连接数限制
 	if err := h.checkConnectionQuota(); err != nil {
-		utils.Warnf("BaseMappingHandler[%s]: quota check failed: %v", h.config.MappingID, err)
+		corelog.Warnf("BaseMappingHandler[%s]: quota check failed: %v", h.config.MappingID, err)
 		return
 	}
 
@@ -146,11 +147,11 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	currentCount := h.activeConnCount.Add(1)
 	defer h.activeConnCount.Add(-1)
 
-	utils.Debugf("BaseMappingHandler[%s]: active connections: %d", h.config.MappingID, currentCount)
+	corelog.Debugf("BaseMappingHandler[%s]: active connections: %d", h.config.MappingID, currentCount)
 
 	// 2. 连接预处理（委托给adapter）
 	if err := h.adapter.PrepareConnection(localConn); err != nil {
-		utils.Errorf("BaseMappingHandler[%s]: prepare connection failed: %v", h.config.MappingID, err)
+		corelog.Errorf("BaseMappingHandler[%s]: prepare connection failed: %v", h.config.MappingID, err)
 		return
 	}
 
@@ -159,24 +160,24 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 
 	// 4. 配额检查：流量限制
 	if err := h.client.CheckMappingQuota(h.config.MappingID); err != nil {
-		utils.Warnf("BaseMappingHandler[%s]: mapping quota exceeded: %v", h.config.MappingID, err)
+		corelog.Warnf("BaseMappingHandler[%s]: mapping quota exceeded: %v", h.config.MappingID, err)
 		return
 	}
 
 	// 5. 建立隧道连接
-	utils.Infof("BaseMappingHandler[%s]: dialing tunnel %s", h.config.MappingID, tunnelID)
+	corelog.Infof("BaseMappingHandler[%s]: dialing tunnel %s", h.config.MappingID, tunnelID)
 	tunnelConn, tunnelStream, err := h.client.DialTunnel(
 		tunnelID,
 		h.config.MappingID,
 		h.config.SecretKey,
 	)
 	if err != nil {
-		utils.Errorf("BaseMappingHandler[%s]: dial tunnel failed: %v", h.config.MappingID, err)
+		corelog.Errorf("BaseMappingHandler[%s]: dial tunnel failed: %v", h.config.MappingID, err)
 		return
 	}
 	defer tunnelConn.Close()
 
-	utils.Infof("BaseMappingHandler[%s]: tunnel %s established", h.config.MappingID, tunnelID)
+	corelog.Infof("BaseMappingHandler[%s]: tunnel %s established", h.config.MappingID, tunnelID)
 
 	// 6. ✅ 通过接口抽象获取 Reader/Writer（不依赖具体协议）
 	// StreamProcessor已经包含了压缩/加密层，不应该关闭它或绕过它
@@ -189,13 +190,13 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 			// tunnelConn 实现了 io.Reader（通过接口抽象）
 			if reader, ok := tunnelConn.(io.Reader); ok && reader != nil {
 				tunnelReader = reader
-				utils.Infof("BaseMappingHandler[%s]: using tunnelConn as Reader (via interface)", h.config.MappingID)
+				corelog.Infof("BaseMappingHandler[%s]: using tunnelConn as Reader (via interface)", h.config.MappingID)
 			} else {
-				utils.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Reader or reader is nil, GetReader() returned nil", h.config.MappingID)
+				corelog.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Reader or reader is nil, GetReader() returned nil", h.config.MappingID)
 				return
 			}
 		} else {
-			utils.Errorf("BaseMappingHandler[%s]: tunnelConn is nil and GetReader() returned nil", h.config.MappingID)
+			corelog.Errorf("BaseMappingHandler[%s]: tunnelConn is nil and GetReader() returned nil", h.config.MappingID)
 			return
 		}
 	}
@@ -204,13 +205,13 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 			// tunnelConn 实现了 io.Writer（通过接口抽象）
 			if writer, ok := tunnelConn.(io.Writer); ok && writer != nil {
 				tunnelWriter = writer
-				utils.Infof("BaseMappingHandler[%s]: using tunnelConn as Writer (via interface)", h.config.MappingID)
+				corelog.Infof("BaseMappingHandler[%s]: using tunnelConn as Writer (via interface)", h.config.MappingID)
 			} else {
-				utils.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Writer or writer is nil, GetWriter() returned nil", h.config.MappingID)
+				corelog.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Writer or writer is nil, GetWriter() returned nil", h.config.MappingID)
 				return
 			}
 		} else {
-			utils.Errorf("BaseMappingHandler[%s]: tunnelConn is nil and GetWriter() returned nil", h.config.MappingID)
+			corelog.Errorf("BaseMappingHandler[%s]: tunnelConn is nil and GetWriter() returned nil", h.config.MappingID)
 			return
 		}
 	}
@@ -218,7 +219,7 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	// 7. 包装隧道连接成ReadWriteCloser
 	// 添加额外的 nil 检查，确保不会传入 nil
 	if tunnelReader == nil || tunnelWriter == nil {
-		utils.Errorf("BaseMappingHandler[%s]: tunnelReader or tunnelWriter is nil after setup, reader=%v, writer=%v", h.config.MappingID, tunnelReader != nil, tunnelWriter != nil)
+		corelog.Errorf("BaseMappingHandler[%s]: tunnelReader or tunnelWriter is nil after setup, reader=%v, writer=%v", h.config.MappingID, tunnelReader != nil, tunnelWriter != nil)
 		return
 	}
 	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
@@ -253,7 +254,7 @@ func (h *BaseMappingHandler) checkConnectionQuota() error {
 		quota, err := h.client.GetUserQuota()
 		if err != nil {
 			// 如果获取配额失败，记录日志但不阻塞连接
-			utils.Warnf("BaseMappingHandler[%s]: failed to get quota: %v", h.config.MappingID, err)
+			corelog.Warnf("BaseMappingHandler[%s]: failed to get quota: %v", h.config.MappingID, err)
 			return nil
 		}
 		maxConn = quota.MaxConnections
@@ -296,7 +297,7 @@ func (h *BaseMappingHandler) createTransformer() error {
 	}
 
 	h.transformer = transformer
-	utils.Debugf("BaseMappingHandler[%s]: transformer created, bandwidth_limit=%d bytes/s",
+	corelog.Debugf("BaseMappingHandler[%s]: transformer created, bandwidth_limit=%d bytes/s",
 		h.config.MappingID, h.config.BandwidthLimit)
 	return nil
 }
@@ -329,12 +330,12 @@ func (h *BaseMappingHandler) reportStats() {
 
 	if bytesSent > 0 || bytesReceived > 0 {
 		if err := h.client.TrackTraffic(h.config.MappingID, bytesSent, bytesReceived); err != nil {
-			utils.Warnf("BaseMappingHandler[%s]: failed to report stats: %v", h.config.MappingID, err)
+			corelog.Warnf("BaseMappingHandler[%s]: failed to report stats: %v", h.config.MappingID, err)
 			// 回滚计数（避免丢失）
 			h.trafficStats.BytesSent.Add(bytesSent)
 			h.trafficStats.BytesReceived.Add(bytesReceived)
 		} else {
-			utils.Debugf("BaseMappingHandler[%s]: reported stats - sent=%d, received=%d",
+			corelog.Debugf("BaseMappingHandler[%s]: reported stats - sent=%d, received=%d",
 				h.config.MappingID, bytesSent, bytesReceived)
 		}
 	}
@@ -342,7 +343,7 @@ func (h *BaseMappingHandler) reportStats() {
 
 // Stop 停止映射处理器
 func (h *BaseMappingHandler) Stop() {
-	utils.Infof("BaseMappingHandler[%s]: stopping", h.config.MappingID)
+	corelog.Infof("BaseMappingHandler[%s]: stopping", h.config.MappingID)
 	h.Close()
 }
 

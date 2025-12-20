@@ -1,21 +1,21 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // handleCommand 处理命令
 func (c *TunnoxClient) handleCommand(pkt *packet.TransferPacket) {
 	if pkt.CommandPacket == nil {
-		utils.Warnf("Client: received command packet with nil CommandPacket")
+		corelog.Warnf("Client: received command packet with nil CommandPacket")
 		return
 	}
 
 	cmdType := pkt.CommandPacket.CommandType
-	utils.Infof("Client: received command, type=%v", cmdType)
+	corelog.Infof("Client: received command, type=%v", cmdType)
 
 	switch cmdType {
 	case packet.ConfigSet:
@@ -40,12 +40,12 @@ func (c *TunnoxClient) handleKickCommand(cmdBody string) {
 	}
 
 	if err := json.Unmarshal([]byte(cmdBody), &kickInfo); err != nil {
-		utils.Errorf("Client: failed to parse kick command: %v", err)
+		corelog.Errorf("Client: failed to parse kick command: %v", err)
 		kickInfo.Reason = "Unknown reason"
 		kickInfo.Code = "UNKNOWN"
 	}
 
-	utils.Errorf("Client: KICKED BY SERVER - Reason: %s, Code: %s", kickInfo.Reason, kickInfo.Code)
+	corelog.Errorf("Client: KICKED BY SERVER - Reason: %s, Code: %s", kickInfo.Reason, kickInfo.Code)
 
 	// 标记为被踢下线，禁止重连
 	c.kicked = true

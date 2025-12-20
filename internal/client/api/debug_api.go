@@ -1,12 +1,12 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"tunnox-core/internal/client"
-	"tunnox-core/internal/utils"
 )
 
 // DebugAPIServer 客户端调试 API 服务器
@@ -53,10 +53,10 @@ func (s *DebugAPIServer) Start() error {
 		Handler: mux,
 	}
 
-	utils.Infof("Client Debug API: starting on http://127.0.0.1:%d", s.port)
+	corelog.Infof("Client Debug API: starting on http://127.0.0.1:%d", s.port)
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			utils.Errorf("Client Debug API: failed to start: %v", err)
+			corelog.Errorf("Client Debug API: failed to start: %v", err)
 		}
 	}()
 
@@ -318,7 +318,7 @@ func (s *DebugAPIServer) writeJSON(w http.ResponseWriter, status int, data inter
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		utils.Errorf("Debug API: failed to encode JSON response: %v", err)
+		corelog.Errorf("Debug API: failed to encode JSON response: %v", err)
 	}
 }
 

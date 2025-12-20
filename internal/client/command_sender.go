@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -82,14 +83,14 @@ func (c *TunnoxClient) sendCommandAndWaitResponse(req *CommandRequest) (*Command
 	var cmdStartTime time.Time
 	if req.EnableTrace {
 		cmdStartTime = time.Now()
-		utils.Infof("[CMD_TRACE] [CLIENT] [SEND_START] CommandID=%s, CommandType=%d, Time=%s",
+		corelog.Infof("[CMD_TRACE] [CLIENT] [SEND_START] CommandID=%s, CommandType=%d, Time=%s",
 			cmdPkt.CommandId, cmdPkt.CommandType, cmdStartTime.Format("15:04:05.000"))
 	}
 
 	_, err = controlStream.WritePacket(transferPkt, true, 0)
 	if err != nil {
 		if req.EnableTrace {
-			utils.Errorf("[CMD_TRACE] [CLIENT] [SEND_FAILED] CommandID=%s, Error=%v, Time=%s",
+			corelog.Errorf("[CMD_TRACE] [CLIENT] [SEND_FAILED] CommandID=%s, Error=%v, Time=%s",
 				cmdPkt.CommandId, err, time.Now().Format("15:04:05.000"))
 		}
 
@@ -107,7 +108,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponse(req *CommandRequest) (*Command
 	}
 
 	if req.EnableTrace {
-		utils.Infof("[CMD_TRACE] [CLIENT] [SEND_COMPLETE] CommandID=%s, SendDuration=%v, Time=%s",
+		corelog.Infof("[CMD_TRACE] [CLIENT] [SEND_COMPLETE] CommandID=%s, SendDuration=%v, Time=%s",
 			cmdPkt.CommandId, time.Since(cmdStartTime), time.Now().Format("15:04:05.000"))
 	}
 
@@ -116,7 +117,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponse(req *CommandRequest) (*Command
 		triggerTime := time.Now()
 		pollRequestID := httppollStream.TriggerImmediatePoll()
 		if req.EnableTrace {
-			utils.Infof("[CMD_TRACE] [CLIENT] [TRIGGER_POLL] CommandID=%s, PollRequestID=%s, Time=%s",
+			corelog.Infof("[CMD_TRACE] [CLIENT] [TRIGGER_POLL] CommandID=%s, PollRequestID=%s, Time=%s",
 				cmdPkt.CommandId, pollRequestID, triggerTime.Format("15:04:05.000"))
 		}
 	}
@@ -125,21 +126,21 @@ func (c *TunnoxClient) sendCommandAndWaitResponse(req *CommandRequest) (*Command
 	var waitStartTime time.Time
 	if req.EnableTrace {
 		waitStartTime = time.Now()
-		utils.Infof("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
+		corelog.Infof("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
 			cmdPkt.CommandId, waitStartTime.Format("15:04:05.000"))
 	}
 
 	cmdResp, err := c.commandResponseManager.WaitForResponse(cmdPkt.CommandId, responseChan)
 	if err != nil {
 		if req.EnableTrace {
-			utils.Errorf("[CMD_TRACE] [CLIENT] [WAIT_FAILED] CommandID=%s, WaitDuration=%v, Error=%v, Time=%s",
+			corelog.Errorf("[CMD_TRACE] [CLIENT] [WAIT_FAILED] CommandID=%s, WaitDuration=%v, Error=%v, Time=%s",
 				cmdPkt.CommandId, time.Since(waitStartTime), err, time.Now().Format("15:04:05.000"))
 		}
 		return nil, err
 	}
 
 	if req.EnableTrace {
-		utils.Infof("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, TotalDuration=%v, Time=%s",
+		corelog.Infof("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, TotalDuration=%v, Time=%s",
 			cmdPkt.CommandId, time.Since(waitStartTime), time.Since(cmdStartTime), time.Now().Format("15:04:05.000"))
 	}
 

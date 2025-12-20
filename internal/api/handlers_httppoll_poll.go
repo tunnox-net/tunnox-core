@@ -1,6 +1,7 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"time"
 
 	httppoll "tunnox-core/internal/protocol/httppoll"
-	"tunnox-core/internal/utils"
 )
 
 // GET /tunnox/v1/poll?timeout=30
@@ -21,7 +21,7 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 		s.respondError(w, http.StatusBadRequest, "missing X-Tunnel-Package header")
 		return
 	}
-	utils.Debugf("HTTP long polling: [HANDLE_POLL] received Poll request, X-Tunnel-Package len=%d", len(packageHeader))
+	corelog.Debugf("HTTP long polling: [HANDLE_POLL] received Poll request, X-Tunnel-Package len=%d", len(packageHeader))
 
 	// 2. 解码控制包
 	pkg, err := httppoll.DecodeTunnelPackage(packageHeader)
@@ -52,11 +52,11 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 
 	// 使用 GetOrCreate 确保原子性（避免并发创建）
 	streamProcessor := s.httppollRegistry.GetOrCreate(connID, func() *httppoll.ServerStreamProcessor {
-		utils.Debugf("HTTP long polling: [HANDLE_POLL] connection not found, creating new connection, connID=%s", connID)
+		corelog.Debugf("HTTP long polling: [HANDLE_POLL] connection not found, creating new connection, connID=%s", connID)
 		return s.createHTTPLongPollingConnection(connID, pkg, r.Context())
 	})
 	if streamProcessor == nil {
-		utils.Warnf("HTTP long polling: [HANDLE_POLL] failed to create connection, connID=%s", connID)
+		corelog.Warnf("HTTP long polling: [HANDLE_POLL] failed to create connection, connID=%s", connID)
 		s.respondError(w, http.StatusServiceUnavailable, "Failed to create connection")
 		return
 	}
@@ -64,7 +64,7 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 	// 6. 检查是否是 keepalive 类型的请求
 	// keepalive 请求可以接收数据流，但不接收控制包
 	if pkg.TunnelType == "keepalive" {
-		utils.Debugf("HTTP long polling: [HANDLE_POLL] received keepalive Poll request, connID=%s, requestID=%s", connID, pkg.RequestID)
+		corelog.Debugf("HTTP long polling: [HANDLE_POLL] received keepalive Poll request, connID=%s, requestID=%s", connID, pkg.RequestID)
 
 		// 解析超时参数
 		timeout := httppollDefaultTimeout
@@ -93,18 +93,18 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 				json.NewEncoder(w).Encode(resp)
 				return
 			}
-			utils.Errorf("HTTP long polling: [HANDLE_POLL] HandlePollRequest failed for keepalive: %v, connID=%s", err, connID)
+			corelog.Errorf("HTTP long polling: [HANDLE_POLL] HandlePollRequest failed for keepalive: %v, connID=%s", err, connID)
 			s.respondError(w, http.StatusInternalServerError, fmt.Sprintf("Poll request failed: %v", err))
 			return
 		}
 
 		// 如果收到数据流，返回数据（分片格式）
 		if base64Data != "" {
-			utils.Debugf("HTTP long polling: [HANDLE_POLL] keepalive request received data, len=%d, connID=%s", len(base64Data), connID)
+			corelog.Debugf("HTTP long polling: [HANDLE_POLL] keepalive request received data, len=%d, connID=%s", len(base64Data), connID)
 			// base64Data 现在是分片响应的JSON字符串，直接解析并返回
 			var fragmentResp HTTPPollResponse
 			if err := json.Unmarshal([]byte(base64Data), &fragmentResp); err != nil {
-				utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to unmarshal fragment response: %v, connID=%s", err, connID)
+				corelog.Errorf("HTTP long polling: [HANDLE_POLL] failed to unmarshal fragment response: %v, connID=%s", err, connID)
 				s.respondError(w, http.StatusInternalServerError, "Failed to parse fragment response")
 				return
 			}
@@ -154,12 +154,12 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 	if tunnelType == "" {
 		tunnelType = "control" // 默认为 control
 	}
-	utils.Debugf("HTTP long polling: [HANDLE_POLL] calling HandlePollRequest, connID=%s, pointer=%p, requestID=%s, tunnelType=%s", connID, streamProcessor, requestID, tunnelType)
+	corelog.Debugf("HTTP long polling: [HANDLE_POLL] calling HandlePollRequest, connID=%s, pointer=%p, requestID=%s, tunnelType=%s", connID, streamProcessor, requestID, tunnelType)
 	base64Data, responsePkg, err := streamProcessor.HandlePollRequest(ctx, requestID, tunnelType)
 	if err != nil {
-		utils.Errorf("HTTP long polling: [HANDLE_POLL] HandlePollRequest returned error: %v, connID=%s", err, connID)
+		corelog.Errorf("HTTP long polling: [HANDLE_POLL] HandlePollRequest returned error: %v, connID=%s", err, connID)
 	} else {
-		utils.Debugf("HTTP long polling: [HANDLE_POLL] HandlePollRequest returned successfully, hasControlPacket=%v, hasData=%v, connID=%s",
+		corelog.Debugf("HTTP long polling: [HANDLE_POLL] HandlePollRequest returned successfully, hasControlPacket=%v, hasData=%v, connID=%s",
 			responsePkg != nil, base64Data != "", connID)
 	}
 	if err == context.DeadlineExceeded {
@@ -177,7 +177,7 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		// 对于 context canceled 或 EOF，返回超时响应而不是错误
 		if err == context.Canceled || err == io.EOF {
-			utils.Debugf("HTTP long polling: [HANDLE_POLL] %v, returning timeout response, connID=%s", err, connID)
+			corelog.Debugf("HTTP long polling: [HANDLE_POLL] %v, returning timeout response, connID=%s", err, connID)
 			resp := HTTPPollResponse{
 				Success:   true,
 				Timeout:   true,
@@ -189,7 +189,7 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		// 其他错误才返回 500
-		utils.Errorf("HTTP long polling: [HANDLE_POLL] PollData failed: %v, connID=%s", err, connID)
+		corelog.Errorf("HTTP long polling: [HANDLE_POLL] PollData failed: %v, connID=%s", err, connID)
 		s.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -199,13 +199,13 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 		encodedPkg, err := httppoll.EncodeTunnelPackage(responsePkg)
 		if err == nil {
 			w.Header().Set("X-Tunnel-Package", encodedPkg)
-			utils.Debugf("HTTP long polling: [HANDLE_POLL] returning control packet in X-Tunnel-Package header, type=%s, connID=%s, encodedLen=%d",
+			corelog.Debugf("HTTP long polling: [HANDLE_POLL] returning control packet in X-Tunnel-Package header, type=%s, connID=%s, encodedLen=%d",
 				responsePkg.Type, connID, len(encodedPkg))
 		} else {
-			utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to encode tunnel package: %v, connID=%s", err, connID)
+			corelog.Errorf("HTTP long polling: [HANDLE_POLL] failed to encode tunnel package: %v, connID=%s", err, connID)
 		}
 	} else {
-		utils.Debugf("HTTP long polling: [HANDLE_POLL] no control packet to return, connID=%s", connID)
+		corelog.Debugf("HTTP long polling: [HANDLE_POLL] no control packet to return, connID=%s", connID)
 	}
 
 	// 10. 返回响应（分片格式）
@@ -215,12 +215,12 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 
 	if base64Data != "" {
 		// 直接返回 JSON 字符串，不需要解析和重新序列化
-		utils.Debugf("HTTP long polling: [HANDLE_POLL] writing HTTP response with data, status=200, hasControlPacket=%v, dataLen=%d, connID=%s",
+		corelog.Debugf("HTTP long polling: [HANDLE_POLL] writing HTTP response with data, status=200, hasControlPacket=%v, dataLen=%d, connID=%s",
 			responsePkg != nil, len(base64Data), connID)
 		if _, err := w.Write([]byte(base64Data)); err != nil {
-			utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to write response body: %v, connID=%s", err, connID)
+			corelog.Errorf("HTTP long polling: [HANDLE_POLL] failed to write response body: %v, connID=%s", err, connID)
 		} else {
-			utils.Debugf("HTTP long polling: [HANDLE_POLL] HTTP response written successfully, connID=%s", connID)
+			corelog.Debugf("HTTP long polling: [HANDLE_POLL] HTTP response written successfully, connID=%s", connID)
 		}
 	} else {
 		// 没有数据，返回超时响应
@@ -229,12 +229,12 @@ func (s *ManagementAPIServer) handleHTTPPoll(w http.ResponseWriter, r *http.Requ
 			Timeout:   true,
 			Timestamp: time.Now().Unix(),
 		}
-		utils.Debugf("HTTP long polling: [HANDLE_POLL] writing timeout response, status=200, hasControlPacket=%v, connID=%s",
+		corelog.Debugf("HTTP long polling: [HANDLE_POLL] writing timeout response, status=200, hasControlPacket=%v, connID=%s",
 			responsePkg != nil, connID)
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
-			utils.Errorf("HTTP long polling: [HANDLE_POLL] failed to write timeout response: %v, connID=%s", err, connID)
+			corelog.Errorf("HTTP long polling: [HANDLE_POLL] failed to write timeout response: %v, connID=%s", err, connID)
 		} else {
-			utils.Debugf("HTTP long polling: [HANDLE_POLL] timeout response written successfully, connID=%s", connID)
+			corelog.Debugf("HTTP long polling: [HANDLE_POLL] timeout response written successfully, connID=%s", connID)
 		}
 	}
 }

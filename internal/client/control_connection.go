@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"net"
@@ -9,7 +10,6 @@ import (
 
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // Connect 连接到服务器并建立指令连接
@@ -25,13 +25,13 @@ func (c *TunnoxClient) Connect() error {
 		return fmt.Errorf("server address is required when protocol is specified (%s)", c.config.Server.Protocol)
 	}
 
-	utils.Infof("Client: connecting to server %s", c.config.Server.Address)
+	corelog.Infof("Client: connecting to server %s", c.config.Server.Address)
 
 	protocol := c.config.Server.Protocol
 	if protocol == "" {
 		protocol = "tcp"
 	}
-	utils.Infof("Client: using %s transport for control connection", strings.ToUpper(protocol))
+	corelog.Infof("Client: using %s transport for control connection", strings.ToUpper(protocol))
 
 	// 1. 根据协议建立控制连接
 	// 检查 context 是否已被取消
@@ -60,7 +60,7 @@ func (c *TunnoxClient) Connect() error {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				utils.Errorf("Client: panic in connection goroutine: %v", r)
+				corelog.Errorf("Client: panic in connection goroutine: %v", r)
 			}
 		}()
 
@@ -144,9 +144,9 @@ func (c *TunnoxClient) Connect() error {
 			// 服务端会在握手响应中分配正式的 ConnectionID，然后会更新这个值
 			if httppollConn.connectionID != "" {
 				c.controlStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)
-				utils.Debugf("Client: set initial ConnectionID from HTTPLongPollingConn: %s", httppollConn.connectionID)
+				corelog.Debugf("Client: set initial ConnectionID from HTTPLongPollingConn: %s", httppollConn.connectionID)
 			} else {
-				utils.Warnf("Client: HTTPLongPollingConn has empty connectionID")
+				corelog.Warnf("Client: HTTPLongPollingConn has empty connectionID")
 			}
 		} else {
 			// 回退到默认方式
@@ -168,7 +168,7 @@ func (c *TunnoxClient) Connect() error {
 	if conn.RemoteAddr() != nil {
 		remoteAddr = conn.RemoteAddr().String()
 	}
-	utils.Infof("Client: %s connection established - Local=%s, Remote=%s, controlStream=%p",
+	corelog.Infof("Client: %s connection established - Local=%s, Remote=%s, controlStream=%p",
 		strings.ToUpper(protocol), localAddr, remoteAddr, c.controlStream)
 
 	// 3. 发送握手请求
@@ -190,7 +190,7 @@ func (c *TunnoxClient) Connect() error {
 	// 4. 启动读取循环（接收服务器命令）
 	// ✅ 防止重复启动 readLoop
 	if !c.readLoopRunning.CompareAndSwap(false, true) {
-		utils.Warnf("Client: readLoop already running, skipping")
+		corelog.Warnf("Client: readLoop already running, skipping")
 	} else {
 		go func() {
 			defer c.readLoopRunning.Store(false)
@@ -201,7 +201,7 @@ func (c *TunnoxClient) Connect() error {
 	// 5. 启动心跳循环
 	// ✅ 防止重复启动 heartbeatLoop
 	if !c.heartbeatLoopRunning.CompareAndSwap(false, true) {
-		utils.Debugf("Client: heartbeatLoop already running, skipping")
+		corelog.Debugf("Client: heartbeatLoop already running, skipping")
 	} else {
 		go func() {
 			defer c.heartbeatLoopRunning.Store(false)
@@ -209,14 +209,14 @@ func (c *TunnoxClient) Connect() error {
 		}()
 	}
 
-	utils.Infof("Client: control connection established successfully")
+	corelog.Infof("Client: control connection established successfully")
 
 	return nil
 }
 
 // Disconnect 断开与服务器的连接
 func (c *TunnoxClient) Disconnect() error {
-	utils.Infof("Client: disconnecting from server")
+	corelog.Infof("Client: disconnecting from server")
 
 	// 使用锁保护连接状态
 	c.mu.Lock()
@@ -233,7 +233,7 @@ func (c *TunnoxClient) Disconnect() error {
 		c.controlConn = nil
 	}
 
-	utils.Infof("Client: disconnected successfully")
+	corelog.Infof("Client: disconnected successfully")
 	return nil
 }
 
@@ -248,12 +248,12 @@ func (c *TunnoxClient) IsConnected() bool {
 func (c *TunnoxClient) Reconnect() error {
 	// ✅ 防止重复重连：如果已有重连在进行，直接返回
 	if !c.reconnecting.CompareAndSwap(false, true) {
-		utils.Debugf("Client: reconnect already in progress, skipping Reconnect() call")
+		corelog.Debugf("Client: reconnect already in progress, skipping Reconnect() call")
 		return nil
 	}
 	defer c.reconnecting.Store(false)
 
-	utils.Infof("Client: attempting to reconnect...")
+	corelog.Infof("Client: attempting to reconnect...")
 
 	// 先断开旧连接
 	c.Disconnect()

@@ -1,13 +1,13 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"io"
 	"net"
 	"time"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // ============================================================================
@@ -33,12 +33,12 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 	if connIDProvider, ok := reader.(interface{ GetConnectionID() string }); ok {
 		connID = connIDProvider.GetConnectionID()
 		if connID != "" {
-			utils.Debugf("CreateConnection: using provided connectionID=%s", connID)
+			corelog.Debugf("CreateConnection: using provided connectionID=%s", connID)
 		}
 	} else if connIDProvider, ok := writer.(interface{ GetConnectionID() string }); ok {
 		connID = connIDProvider.GetConnectionID()
 		if connID != "" {
-			utils.Debugf("CreateConnection: using provided connectionID=%s", connID)
+			corelog.Debugf("CreateConnection: using provided connectionID=%s", connID)
 		}
 	}
 	
@@ -274,7 +274,7 @@ func (s *SessionManager) RegisterControlConnection(conn *ControlConnection) {
 			// 尝试清理最旧的连接
 			oldestConn := s.findOldestControlConnectionLocked()
 			if oldestConn != nil {
-				utils.Warnf("Control connection limit reached (%d/%d), removing oldest connection %s",
+				corelog.Warnf("Control connection limit reached (%d/%d), removing oldest connection %s",
 					currentCount, s.config.MaxControlConnections, oldestConn.ConnID)
 				if oldestConn.Stream != nil {
 					oldestConn.Stream.Close()
@@ -289,7 +289,7 @@ func (s *SessionManager) RegisterControlConnection(conn *ControlConnection) {
 
 	// 检查是否已存在
 	if existing, exists := s.controlConnMap[conn.ConnID]; exists {
-		utils.Warnf("Control connection %s already exists, replacing", conn.ConnID)
+		corelog.Warnf("Control connection %s already exists, replacing", conn.ConnID)
 		// 关闭旧连接
 		if existing.Stream != nil {
 			existing.Stream.Close()
@@ -320,7 +320,7 @@ func (s *SessionManager) UpdateControlConnectionAuth(connID string, clientID int
 	// 更新 clientIDIndexMap
 	s.clientIDIndexMap[clientID] = conn
 
-	utils.Infof("Control connection authenticated: connID=%s, clientID=%d, userID=%s", connID, clientID, userID)
+	corelog.Infof("Control connection authenticated: connID=%s, clientID=%d, userID=%s", connID, clientID, userID)
 	return nil
 }
 
@@ -352,7 +352,7 @@ func (s *SessionManager) KickOldControlConnection(clientID int64, newConnID stri
 	s.controlConnLock.Unlock()
 
 	if oldConn != nil && oldConn.ConnID != newConnID {
-		utils.Warnf("Kicking old control connection: clientID=%d, oldConnID=%s, newConnID=%s",
+		corelog.Warnf("Kicking old control connection: clientID=%d, oldConnID=%s, newConnID=%s",
 			clientID, oldConn.ConnID, newConnID)
 
 		// 发送 Kick 命令
@@ -388,9 +388,9 @@ func (s *SessionManager) sendKickCommand(conn *ControlConnection, reason, code s
 	}
 
 	if _, err := conn.Stream.WritePacket(kickPkt, true, 0); err != nil {
-		utils.Warnf("Failed to send kick command to %s: %v", conn.ConnID, err)
+		corelog.Warnf("Failed to send kick command to %s: %v", conn.ConnID, err)
 	} else {
-		utils.Infof("Sent kick command to client %d (connID=%s): %s", conn.ClientID, conn.ConnID, reason)
+		corelog.Infof("Sent kick command to client %d (connID=%s): %s", conn.ClientID, conn.ConnID, reason)
 	}
 }
 
@@ -456,7 +456,7 @@ func (s *SessionManager) UpdateTunnelConnectionAuth(connID string, tunnelID stri
 	// 更新 tunnelIDMap
 	s.tunnelIDMap[tunnelID] = conn
 
-	utils.Infof("Tunnel connection authenticated: connID=%s, tunnelID=%s, mappingID=%s", connID, tunnelID, mappingID)
+	corelog.Infof("Tunnel connection authenticated: connID=%s, tunnelID=%s, mappingID=%s", connID, tunnelID, mappingID)
 	return nil
 }
 
@@ -489,7 +489,7 @@ func (s *SessionManager) RemoveTunnelConnection(connID string) {
 		}
 		// 从 tunnelConnMap 移除
 		delete(s.tunnelConnMap, connID)
-		utils.Debugf("Removed tunnel connection: connID=%s, tunnelID=%s", connID, conn.TunnelID)
+		corelog.Debugf("Removed tunnel connection: connID=%s, tunnelID=%s", connID, conn.TunnelID)
 	}
 }
 
@@ -501,7 +501,7 @@ func (s *SessionManager) RemoveTunnelConnection(connID string) {
 // 定期检查并清理超时未发送心跳的控制连接
 func (s *SessionManager) startConnectionCleanup() {
 	if s.config == nil {
-		utils.Warnf("SessionManager: config is nil, cleanup disabled")
+		corelog.Warnf("SessionManager: config is nil, cleanup disabled")
 		return
 	}
 
@@ -509,18 +509,18 @@ func (s *SessionManager) startConnectionCleanup() {
 		ticker := time.NewTicker(s.config.CleanupInterval)
 		defer ticker.Stop()
 
-		utils.Infof("SessionManager: connection cleanup started (interval=%v, timeout=%v)",
+		corelog.Infof("SessionManager: connection cleanup started (interval=%v, timeout=%v)",
 			s.config.CleanupInterval, s.config.HeartbeatTimeout)
 
 		for {
 			select {
 			case <-ticker.C:
 				if cleaned := s.cleanupStaleConnections(); cleaned > 0 {
-					utils.Infof("SessionManager: cleaned up %d stale connections", cleaned)
+					corelog.Infof("SessionManager: cleaned up %d stale connections", cleaned)
 				}
 
 			case <-s.Ctx().Done():
-				utils.Infof("SessionManager: connection cleanup stopped")
+				corelog.Infof("SessionManager: connection cleanup stopped")
 				return
 			}
 		}
@@ -552,7 +552,7 @@ func (s *SessionManager) cleanupStaleConnections() int {
 
 	for _, conn := range staleConns {
 		idleDuration := time.Since(conn.LastActiveAt)
-		utils.Warnf("SessionManager: removing stale connection - connID=%s, clientID=%d, idle=%v",
+		corelog.Warnf("SessionManager: removing stale connection - connID=%s, clientID=%d, idle=%v",
 			conn.ConnID, conn.ClientID, idleDuration)
 
 		// 更新CloudControl状态（标记客户端离线）
@@ -562,7 +562,7 @@ func (s *SessionManager) cleanupStaleConnections() int {
 
 		// 关闭连接（会自动从映射中移除）
 		if err := s.CloseConnection(conn.ConnID); err != nil {
-			utils.Errorf("SessionManager: failed to close stale connection %s: %v", conn.ConnID, err)
+			corelog.Errorf("SessionManager: failed to close stale connection %s: %v", conn.ConnID, err)
 		}
 	}
 

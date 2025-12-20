@@ -1,11 +1,11 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"time"
 
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // heartbeatLoop 心跳循环
@@ -19,7 +19,7 @@ func (c *TunnoxClient) heartbeatLoop() {
 			return
 		case <-ticker.C:
 			if err := c.sendHeartbeat(); err != nil {
-				utils.Errorf("Client: failed to send heartbeat: %v", err)
+				corelog.Errorf("Client: failed to send heartbeat: %v", err)
 				return
 			}
 		}

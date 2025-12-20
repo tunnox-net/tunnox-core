@@ -1,11 +1,11 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"io"
 
 	"tunnox-core/internal/packet"
 	httppoll "tunnox-core/internal/protocol/httppoll"
-	"tunnox-core/internal/utils"
 )
 
 // httppollStreamAdapter HTTP 长轮询流适配器
@@ -47,7 +47,7 @@ func (a *httppollStreamAdapter) ReadPacket() (*packet.TransferPacket, int, error
 }
 
 func (a *httppollStreamAdapter) WritePacket(pkt *packet.TransferPacket, useCompression bool, rateLimitBytesPerSecond int64) (int, error) {
-	utils.Infof("httppollStreamAdapter: WritePacket called, delegating to ServerStreamProcessor, connID=%s", a.streamProcessor.GetConnectionID())
+	corelog.Infof("httppollStreamAdapter: WritePacket called, delegating to ServerStreamProcessor, connID=%s", a.streamProcessor.GetConnectionID())
 	return a.streamProcessor.WritePacket(pkt, useCompression, rateLimitBytesPerSecond)
 }
 

@@ -1,6 +1,7 @@
 package security
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 )
 
 // IPManager IP管理器
@@ -66,7 +66,7 @@ func NewIPManager(storage storage.Storage, ctx context.Context) *IPManager {
 	
 	// 加载持久化的黑白名单
 	if err := manager.loadFromStorage(); err != nil {
-		utils.Warnf("IPManager: failed to load from storage: %v", err)
+		corelog.Warnf("IPManager: failed to load from storage: %v", err)
 	}
 	
 	// 启动后台清理任务
@@ -137,14 +137,14 @@ func (m *IPManager) AddToBlacklist(ip string, duration time.Duration, reason str
 	
 	// 持久化到Storage
 	if err := m.saveToStorage(IPTypeBlacklist, ip, record); err != nil {
-		utils.Warnf("IPManager: failed to save blacklist to storage: %v", err)
+		corelog.Warnf("IPManager: failed to save blacklist to storage: %v", err)
 	}
 	
 	if duration > 0 {
-		utils.Infof("IPManager: added %s to blacklist (expires: %v, reason: %s)", 
+		corelog.Infof("IPManager: added %s to blacklist (expires: %v, reason: %s)", 
 			ip, expiresAt.Format(time.RFC3339), reason)
 	} else {
-		utils.Warnf("IPManager: PERMANENTLY added %s to blacklist (reason: %s)", ip, reason)
+		corelog.Warnf("IPManager: PERMANENTLY added %s to blacklist (reason: %s)", ip, reason)
 	}
 	
 	return nil
@@ -160,10 +160,10 @@ func (m *IPManager) RemoveFromBlacklist(ip string) {
 		
 		// 从Storage删除
 		if err := m.removeFromStorage(IPTypeBlacklist, ip); err != nil {
-			utils.Warnf("IPManager: failed to remove blacklist from storage: %v", err)
+			corelog.Warnf("IPManager: failed to remove blacklist from storage: %v", err)
 		}
 		
-		utils.Infof("IPManager: removed %s from blacklist", ip)
+		corelog.Infof("IPManager: removed %s from blacklist", ip)
 	}
 }
 
@@ -188,10 +188,10 @@ func (m *IPManager) AddToWhitelist(ip string, reason string, addedBy string) err
 	
 	// 持久化到Storage
 	if err := m.saveToStorage(IPTypeWhitelist, ip, record); err != nil {
-		utils.Warnf("IPManager: failed to save whitelist to storage: %v", err)
+		corelog.Warnf("IPManager: failed to save whitelist to storage: %v", err)
 	}
 	
-	utils.Infof("IPManager: added %s to whitelist (reason: %s)", ip, reason)
+	corelog.Infof("IPManager: added %s to whitelist (reason: %s)", ip, reason)
 	
 	return nil
 }
@@ -206,10 +206,10 @@ func (m *IPManager) RemoveFromWhitelist(ip string) {
 		
 		// 从Storage删除
 		if err := m.removeFromStorage(IPTypeWhitelist, ip); err != nil {
-			utils.Warnf("IPManager: failed to remove whitelist from storage: %v", err)
+			corelog.Warnf("IPManager: failed to remove whitelist from storage: %v", err)
 		}
 		
-		utils.Infof("IPManager: removed %s from whitelist", ip)
+		corelog.Infof("IPManager: removed %s from whitelist", ip)
 	}
 }
 
@@ -311,7 +311,7 @@ func (m *IPManager) cleanupTask(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			utils.Infof("IPManager: cleanup task stopped")
+			corelog.Infof("IPManager: cleanup task stopped")
 			return
 		case <-ticker.C:
 			m.cleanup()
@@ -338,10 +338,10 @@ func (m *IPManager) cleanup() {
 			
 			// 从Storage删除
 			if err := m.removeFromStorage(IPTypeBlacklist, ip); err != nil {
-				utils.Warnf("IPManager: failed to remove expired blacklist from storage: %v", err)
+				corelog.Warnf("IPManager: failed to remove expired blacklist from storage: %v", err)
 			}
 			
-			utils.Debugf("IPManager: removed expired blacklist entry: %s", ip)
+			corelog.Debugf("IPManager: removed expired blacklist entry: %s", ip)
 		}
 	}
 }
@@ -373,7 +373,7 @@ func (m *IPManager) loadFromStorage() error {
 		return fmt.Errorf("failed to load whitelist: %w", err)
 	}
 	
-	utils.Infof("IPManager: loaded %d blacklist and %d whitelist entries from storage",
+	corelog.Infof("IPManager: loaded %d blacklist and %d whitelist entries from storage",
 		len(m.blacklist), len(m.whitelist))
 	
 	return nil

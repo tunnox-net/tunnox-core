@@ -1,10 +1,10 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"time"
-	"tunnox-core/internal/utils"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -14,13 +14,13 @@ import (
 // SetTunnelStateManager 设置隧道状态管理器
 func (s *SessionManager) SetTunnelStateManager(mgr *TunnelStateManager) {
 	s.tunnelStateManager = mgr
-	utils.Debug("TunnelStateManager configured in SessionManager")
+	corelog.Debug("TunnelStateManager configured in SessionManager")
 }
 
 // SetMigrationManager 设置迁移管理器
 func (s *SessionManager) SetMigrationManager(mgr *TunnelMigrationManager) {
 	s.migrationManager = mgr
-	utils.Debug("MigrationManager configured in SessionManager")
+	corelog.Debug("MigrationManager configured in SessionManager")
 }
 
 // SaveActiveTunnelStates 保存所有活跃隧道状态（在服务器关闭前调用）
@@ -41,7 +41,7 @@ func (s *SessionManager) SaveActiveTunnelStates() error {
 	}
 	s.tunnelConnLock.RUnlock()
 
-	utils.Infof("SessionManager: saving states for %d active tunnels", len(tunnels))
+	corelog.Infof("SessionManager: saving states for %d active tunnels", len(tunnels))
 
 	savedCount := 0
 	failedCount := 0
@@ -65,7 +65,7 @@ func (s *SessionManager) SaveActiveTunnelStates() error {
 
 		// 保存状态
 		if err := s.tunnelStateManager.SaveState(state); err != nil {
-			utils.Warnf("SessionManager: failed to save state for tunnel %s: %v", tunnel.TunnelID, err)
+			corelog.Warnf("SessionManager: failed to save state for tunnel %s: %v", tunnel.TunnelID, err)
 			failedCount++
 			continue
 		}
@@ -73,7 +73,7 @@ func (s *SessionManager) SaveActiveTunnelStates() error {
 		savedCount++
 	}
 
-	utils.Infof("SessionManager: saved tunnel states (success=%d, failed=%d)", savedCount, failedCount)
+	corelog.Infof("SessionManager: saved tunnel states (success=%d, failed=%d)", savedCount, failedCount)
 
 	if failedCount > 0 {
 		return fmt.Errorf("failed to save %d tunnel states", failedCount)
@@ -159,6 +159,6 @@ func (s *SessionManager) ValidateTunnelResumeToken(tokenStr string) (*TunnelStat
 		return nil, fmt.Errorf("resume token expired (issued at %s)", issuedAt.Format(time.RFC3339))
 	}
 
-	utils.Infof("SessionManager: validated resume token for tunnel %s", token.TunnelID)
+	corelog.Infof("SessionManager: validated resume token for tunnel %s", token.TunnelID)
 	return state, nil
 }

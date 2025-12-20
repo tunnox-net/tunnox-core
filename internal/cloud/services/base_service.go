@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"time"
 	"tunnox-core/internal/core/errors"
@@ -111,17 +112,17 @@ func (s *BaseService) WrapErrorWithInt64ID(err error, operation string, id int64
 
 // LogCreated 记录创建成功日志
 func (s *BaseService) LogCreated(resourceType, identifier string) {
-	utils.Infof("Created %s: %s", resourceType, identifier)
+	corelog.Infof("Created %s: %s", resourceType, identifier)
 }
 
 // LogUpdated 记录更新成功日志
 func (s *BaseService) LogUpdated(resourceType, identifier string) {
-	utils.Infof("Updated %s: %s", resourceType, identifier)
+	corelog.Infof("Updated %s: %s", resourceType, identifier)
 }
 
 // LogDeleted 记录删除成功日志
 func (s *BaseService) LogDeleted(resourceType, identifier string) {
-	utils.Infof("Deleted %s: %s", resourceType, identifier)
+	corelog.Infof("Deleted %s: %s", resourceType, identifier)
 }
 
 // LogWarning 记录警告日志

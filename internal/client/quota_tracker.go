@@ -1,10 +1,10 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"time"
 
 	"tunnox-core/internal/cloud/models"
-	"tunnox-core/internal/utils"
 )
 
 // CheckMappingQuota 检查映射配额
@@ -14,7 +14,7 @@ func (c *TunnoxClient) CheckMappingQuota(mappingID string) error {
 	_, err := c.GetUserQuota()
 	if err != nil {
 		// 获取配额失败，记录日志但不阻塞连接
-		utils.Warnf("Client: failed to get quota for mapping %s: %v", mappingID, err)
+		corelog.Warnf("Client: failed to get quota for mapping %s: %v", mappingID, err)
 		return nil
 	}
 
@@ -25,7 +25,7 @@ func (c *TunnoxClient) CheckMappingQuota(mappingID string) error {
 	// 未来可以在这里添加更多业务限制检查
 	// 例如：月流量限制、特定时段限制等
 
-	utils.Debugf("Client: quota check passed for mapping %s", mappingID)
+	corelog.Debugf("Client: quota check passed for mapping %s", mappingID)
 	return nil
 }
 
@@ -55,7 +55,7 @@ func (c *TunnoxClient) TrackTraffic(mappingID string, bytesSent, bytesReceived i
 	c.trafficStatsMu.Unlock()
 
 	// 2. 记录日志
-	utils.Debugf("Client: traffic stats for %s - period(sent=%d, recv=%d), total(sent=%d, recv=%d)",
+	corelog.Debugf("Client: traffic stats for %s - period(sent=%d, recv=%d), total(sent=%d, recv=%d)",
 		mappingID, bytesSent, bytesReceived, totalSent, totalReceived)
 
 	// 3. 预留：可在此处将统计数据上报服务器
@@ -97,7 +97,7 @@ func (c *TunnoxClient) GetUserQuota() (*models.UserQuota, error) {
 	c.quotaLastRefresh = time.Now()
 	c.quotaCacheMu.Unlock()
 
-	utils.Debugf("Client: quota refreshed - MaxConnections=%d, BandwidthLimit=%d",
+	corelog.Debugf("Client: quota refreshed - MaxConnections=%d, BandwidthLimit=%d",
 		defaultQuota.MaxConnections, defaultQuota.BandwidthLimit)
 
 	return defaultQuota, nil

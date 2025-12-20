@@ -1,7 +1,7 @@
 package session
 
 import (
-	"tunnox-core/internal/utils"
+corelog "tunnox-core/internal/core/log"
 )
 
 // GetClientID 获取客户端 ID
@@ -23,7 +23,7 @@ func (c *ServerHTTPLongPollingConn) SetMappingID(mappingID string) {
 	c.closeMu.Lock()
 	defer c.closeMu.Unlock()
 	c.mappingID = mappingID
-	utils.Infof("HTTP long polling: [SetMappingID] setting mappingID=%s, clientID=%d, connID=%s",
+	corelog.Infof("HTTP long polling: [SetMappingID] setting mappingID=%s, clientID=%d, connID=%s",
 		mappingID, c.clientID, c.GetConnectionID())
 }
 
@@ -33,7 +33,7 @@ func (c *ServerHTTPLongPollingConn) SetStreamMode(streamMode bool) {
 	defer c.streamMu.Unlock()
 	oldMode := c.streamMode
 	c.streamMode = streamMode
-	utils.Infof("HTTP long polling: [SetStreamMode] switching stream mode from %v to %v, clientID=%d, mappingID=%s",
+	corelog.Infof("HTTP long polling: [SetStreamMode] switching stream mode from %v to %v, clientID=%d, mappingID=%s",
 		oldMode, streamMode, c.clientID, c.mappingID)
 }
 
@@ -84,7 +84,7 @@ func (c *ServerHTTPLongPollingConn) UpdateClientID(newClientID int64) {
 	c.clientID = newClientID
 	c.closeMu.Unlock()
 
-	utils.Infof("HTTP long polling: [UpdateClientID] updated clientID from %d to %d, connID=%s",
+	corelog.Infof("HTTP long polling: [UpdateClientID] updated clientID from %d to %d, connID=%s",
 		oldClientID, newClientID, c.GetConnectionID())
 }
 

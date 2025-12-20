@@ -1,12 +1,12 @@
 package stream
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
 	"sync"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // StreamManager 流管理器
@@ -47,19 +47,19 @@ func (m *StreamManager) CreateStream(id string, reader io.Reader, writer io.Writ
 	var stream PackageStreamer
 	if streamer, ok := reader.(PackageStreamer); ok {
 		stream = streamer
-		utils.Infof("CreateStream: reader is already a PackageStreamer, using it directly, id=%s, type=%T", id, streamer)
+		corelog.Infof("CreateStream: reader is already a PackageStreamer, using it directly, id=%s, type=%T", id, streamer)
 	} else if streamer, ok := writer.(PackageStreamer); ok {
 		stream = streamer
-		utils.Infof("CreateStream: writer is already a PackageStreamer, using it directly, id=%s, type=%T", id, streamer)
+		corelog.Infof("CreateStream: writer is already a PackageStreamer, using it directly, id=%s, type=%T", id, streamer)
 	} else {
 	// 创建新流
 		stream = m.factory.NewStreamProcessor(reader, writer)
-		utils.Debugf("CreateStream: created new stream processor, id=%s", id)
+		corelog.Debugf("CreateStream: created new stream processor, id=%s", id)
 	}
 
 	m.streams[id] = stream
 
-	utils.Debugf("Created stream: %s", id)
+	corelog.Debugf("Created stream: %s", id)
 	return stream, nil
 }
 
@@ -86,7 +86,7 @@ func (m *StreamManager) RemoveStream(id string) error {
 	stream.Close()
 	delete(m.streams, id)
 
-	utils.Debugf("Removed stream: %s", id)
+	corelog.Debugf("Removed stream: %s", id)
 	return nil
 }
 
@@ -116,7 +116,7 @@ func (m *StreamManager) CloseAllStreams() error {
 
 	for id, stream := range m.streams {
 		stream.Close()
-		utils.Debugf("Closed stream: %s", id)
+		corelog.Debugf("Closed stream: %s", id)
 	}
 	m.streams = make(map[string]PackageStreamer)
 	return nil

@@ -1,6 +1,7 @@
 package server
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
@@ -11,7 +12,6 @@ import (
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/utils"
 )
 
 // ============================================================================
@@ -65,12 +65,12 @@ func (s *BaseService) Start(ctx context.Context) error {
 	}
 
 	// 默认：仅记录日志（写入文件）
-	utils.Infof("Starting service: %s", s.name)
+	corelog.Infof("Starting service: %s", s.name)
 	return nil
 }
 
 func (s *BaseService) Stop(ctx context.Context) error {
-	utils.Infof("Stopping service: %s", s.name)
+	corelog.Infof("Stopping service: %s", s.name)
 
 	// 执行自定义停止逻辑
 	if s.onStop != nil {

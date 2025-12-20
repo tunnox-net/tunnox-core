@@ -1,6 +1,7 @@
 package mapping
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"tunnox-core/internal/config"
-	"tunnox-core/internal/utils"
 )
 
 // SOCKS5常量定义
@@ -52,7 +52,7 @@ func (a *SOCKS5MappingAdapter) StartListener(config config.MappingConfig) error 
 	}
 
 	a.listener = listener
-	utils.Debugf("SOCKS5MappingAdapter: listening on %s", addr)
+	corelog.Debugf("SOCKS5MappingAdapter: listening on %s", addr)
 	return nil
 }
 
@@ -99,7 +99,7 @@ func (a *SOCKS5MappingAdapter) PrepareConnection(conn io.ReadWriteCloser) error 
 		return fmt.Errorf("request failed: %w", err)
 	}
 
-	utils.Infof("SOCKS5MappingAdapter: client requests connection to %s", targetAddr)
+	corelog.Infof("SOCKS5MappingAdapter: client requests connection to %s", targetAddr)
 
 	// 注意：这里我们不发送响应，因为需要先建立隧道
 	// 实际的响应会在隧道建立后发送（通过包装的连接）

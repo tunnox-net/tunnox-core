@@ -1,0 +1,63 @@
+# Tunnox Core Server Configuration for Docker
+# Docker 环境专用配置
+
+server:
+  protocols:
+    tcp:
+      enabled: true
+      port: 7000
+      host: "0.0.0.0"
+    websocket:
+      enabled: true
+      port: 8000
+      host: "0.0.0.0"
+    udp:
+      enabled: false
+    quic:
+      enabled: false
+
+log:
+  level: "info"
+  format: "text"
+  output: "stdout"
+
+cloud:
+  type: "built_in"
+  built_in:
+    jwt_secret_key: "tunnox-docker-secret-key"
+    jwt_expiration: 3600
+    refresh_expiration: 604800
+    jwt_issuer: "tunnox"
+    cleanup_interval: 300
+    data_ttl: 86400
+    id_length: 16
+    max_attempts: 10
+
+message_broker:
+  type: "memory"
+
+storage:
+  type: "hybrid"
+  redis:
+    addr: "redis:6379"
+    password: ""
+    db: 0
+    pool_size: 10
+  hybrid:
+    cache_type: "redis"
+    enable_persistent: true
+    remote:
+      type: "grpc"
+      grpc:
+        address: "storage:50051"
+        timeout: 10
+        max_retries: 3
+
+management_api:
+  enabled: true
+  listen_addr: "0.0.0.0:9000"
+  auth:
+    type: "bearer"
+    token: "tunnox-api-key-for-testing"
+  pprof:
+    enabled: false

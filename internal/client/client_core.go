@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"sync"
 	"sync/atomic"
@@ -10,7 +11,6 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 
 	"github.com/google/uuid"
 )
@@ -106,7 +106,7 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 		startTime:              time.Now(),
 	}
 
-	utils.Infof("Client: instance ID generated: %s", instanceID)
+	corelog.Infof("Client: instance ID generated: %s", instanceID)
 
 	// 初始化API客户端（用于CLI）
 	// 假设Management API在服务器地址的8080端口
@@ -118,7 +118,7 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 
 	// 添加清理处理器
 	client.AddCleanHandler(func() error {
-		utils.Infof("Client: cleaning up client resources")
+		corelog.Infof("Client: cleaning up client resources")
 
 		// 关闭所有映射处理器
 		client.mu.RLock()
@@ -145,7 +145,7 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 
 // Stop 停止客户端
 func (c *TunnoxClient) Stop() {
-	utils.Infof("Client: stopping...")
+	corelog.Infof("Client: stopping...")
 	c.Close()
 }
 

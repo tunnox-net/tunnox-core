@@ -9,7 +9,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // ServiceConfig 服务配置
@@ -73,10 +75,10 @@ func (h *HTTPService) Start(ctx context.Context) error {
 		Handler: h.handler,
 	}
 
-	Infof("Starting HTTP service on %s", h.addr)
+	corelog.Infof("Starting HTTP service on %s", h.addr)
 	go func() {
 		if err := h.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			Errorf("HTTP service error: %v", err)
+			corelog.Errorf("HTTP service error: %v", err)
 		}
 	}()
 
@@ -91,7 +93,7 @@ func (h *HTTPService) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	Infof("Stopping HTTP service on %s", h.addr)
+	corelog.Infof("Stopping HTTP service on %s", h.addr)
 	return h.server.Shutdown(ctx)
 }
 
@@ -145,7 +147,7 @@ func (sm *ServiceManager) RegisterService(service Service) error {
 	}
 
 	sm.services[name] = service
-	Infof("Service registered: %s", name)
+	corelog.Infof("Service registered: %s", name)
 	return nil
 }
 
@@ -159,7 +161,7 @@ func (sm *ServiceManager) UnregisterService(name string) error {
 	}
 
 	delete(sm.services, name)
-	Infof("Service unregistered: %s", name)
+	corelog.Infof("Service unregistered: %s", name)
 	return nil
 }
 
@@ -217,14 +219,14 @@ func (sm *ServiceManager) StartAllServices() error {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	Infof("Starting %d services...", len(sm.services))
+	corelog.Infof("Starting %d services...", len(sm.services))
 
 	for name, service := range sm.services {
 		if err := service.Start(sm.ctx); err != nil {
-			Errorf("Failed to start service %s: %v", name, err)
+			corelog.Errorf("Failed to start service %s: %v", name, err)
 			return fmt.Errorf("failed to start service %s: %v", name, err)
 		}
-		Infof("Service started: %s", name)
+		corelog.Infof("Service started: %s", name)
 	}
 
 	return nil
@@ -235,7 +237,7 @@ func (sm *ServiceManager) StopAllServices() error {
 	sm.mu.RLock()
 	defer sm.mu.RUnlock()
 
-	Infof("Stopping %d services...", len(sm.services))
+	corelog.Infof("Stopping %d services...", len(sm.services))
 
 	// 创建超时上下文
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), sm.config.GracefulShutdownTimeout)
@@ -243,12 +245,12 @@ func (sm *ServiceManager) StopAllServices() error {
 
 	var lastErr error
 	for name, service := range sm.services {
-		Infof("Stopping service: %s", name)
+		corelog.Infof("Stopping service: %s", name)
 		if err := service.Stop(shutdownCtx); err != nil {
-			Errorf("Failed to stop service %s: %v", name, err)
+			corelog.Errorf("Failed to stop service %s: %v", name, err)
 			lastErr = err
 		} else {
-			Infof("Service stopped: %s", name)
+			corelog.Infof("Service stopped: %s", name)
 		}
 	}
 
@@ -293,9 +295,9 @@ func (sm *ServiceManager) RunWithContext(ctx context.Context) error {
 	// 等待上下文取消或关闭信号
 	select {
 	case <-ctx.Done():
-		Infof("Context cancelled, initiating shutdown")
+		corelog.Infof("Context cancelled, initiating shutdown")
 	case <-sm.shutdownChan:
-		Infof("Shutdown signal received")
+		corelog.Infof("Shutdown signal received")
 	}
 
 	// 执行优雅关闭
@@ -314,33 +316,33 @@ func (sm *ServiceManager) setupSignalHandling() {
 
 	go func() {
 		sig := <-sigChan
-		Infof("Received signal: %v", sig)
+		corelog.Infof("Received signal: %v", sig)
 		close(sm.shutdownChan)
 	}()
 }
 
 // gracefulShutdown 优雅关闭
 func (sm *ServiceManager) gracefulShutdown() error {
-	Infof("Starting graceful shutdown...")
+	corelog.Infof("Starting graceful shutdown...")
 
 	// 1. 停止所有服务
 	if err := sm.StopAllServices(); err != nil {
-		Errorf("Service shutdown error: %v", err)
+		corelog.Errorf("Service shutdown error: %v", err)
 	}
 
 	// 2. 释放所有资源
-	Infof("Disposing resources...")
+	corelog.Infof("Disposing resources...")
 	sm.disposeResult = sm.resourceMgr.DisposeWithTimeout(sm.config.ResourceDisposeTimeout)
 
 	if sm.disposeResult.HasErrors() {
-		Errorf("Resource disposal completed with errors: %v", sm.disposeResult.Error())
+		corelog.Errorf("Resource disposal completed with errors: %v", sm.disposeResult.Error())
 		return fmt.Errorf("resource disposal failed: %v", sm.disposeResult.Error())
 	}
 
 	// 3. 取消上下文
 	sm.cancel()
 
-	Infof("Graceful shutdown completed successfully")
+	corelog.Infof("Graceful shutdown completed successfully")
 	return nil
 }
 
@@ -351,14 +353,14 @@ func (sm *ServiceManager) GetDisposeResult() *DisposeResult {
 
 // ForceShutdown 强制关闭
 func (sm *ServiceManager) ForceShutdown() error {
-	Infof("Force shutdown initiated")
+	corelog.Infof("Force shutdown initiated")
 
 	// 强制停止所有服务
 	sm.mu.RLock()
 	for name, service := range sm.services {
-		Infof("Force stopping service: %s", name)
+		corelog.Infof("Force stopping service: %s", name)
 		if err := service.Stop(context.Background()); err != nil {
-			Errorf("Force stop service %s error: %v", name, err)
+			corelog.Errorf("Force stop service %s error: %v", name, err)
 		}
 	}
 	sm.mu.RUnlock()
@@ -367,7 +369,7 @@ func (sm *ServiceManager) ForceShutdown() error {
 	sm.disposeResult = sm.resourceMgr.DisposeAll()
 
 	if sm.disposeResult.HasErrors() {
-		Errorf("Force shutdown resource disposal errors: %v", sm.disposeResult.Error())
+		corelog.Errorf("Force shutdown resource disposal errors: %v", sm.disposeResult.Error())
 	}
 
 	// 取消上下文
@@ -398,17 +400,17 @@ func (sm *ServiceManager) Close() error {
 
 // onClose 资源清理回调
 func (sm *ServiceManager) onClose() error {
-	Infof("Cleaning up service manager resources...")
+	corelog.Infof("Cleaning up service manager resources...")
 
 	// 停止所有服务
 	if err := sm.StopAllServices(); err != nil {
-		Errorf("Failed to stop all services: %v", err)
+		corelog.Errorf("Failed to stop all services: %v", err)
 	}
 
 	// 释放所有资源
 	sm.disposeResult = sm.resourceMgr.DisposeAll()
 	if sm.disposeResult.HasErrors() {
-		Errorf("Resource disposal errors: %v", sm.disposeResult.Error())
+		corelog.Errorf("Resource disposal errors: %v", sm.disposeResult.Error())
 	}
 
 	// 关闭上下文
@@ -416,7 +418,7 @@ func (sm *ServiceManager) onClose() error {
 		sm.cancel()
 	}
 
-	Infof("Service manager resources cleanup completed")
+	corelog.Infof("Service manager resources cleanup completed")
 	return nil
 }
 

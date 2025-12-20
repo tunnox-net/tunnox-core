@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	httppoll "tunnox-core/internal/protocol/httppoll"
-	"tunnox-core/internal/utils"
 )
 
 func (c *HTTPLongPollingConn) sendData(data []byte) error {
@@ -20,14 +20,14 @@ func (c *HTTPLongPollingConn) sendData(data []byte) error {
 		return fmt.Errorf("failed to split data into fragments: %w", err)
 	}
 
-	utils.Infof("HTTP long polling: sendData splitting %d bytes into %d fragments, connectionID=%s", len(data), len(fragments), c.connectionID)
+	corelog.Infof("HTTP long polling: sendData splitting %d bytes into %d fragments, connectionID=%s", len(data), len(fragments), c.connectionID)
 
 	// 发送每个分片
 	for _, fragment := range fragments {
 		if err := c.sendFragment(fragment); err != nil {
 			return fmt.Errorf("failed to send fragment %d/%d: %w", fragment.FragmentIndex, fragment.TotalFragments, err)
 		}
-		utils.Infof("HTTP long polling: sendData sent fragment %d/%d (size=%d, groupID=%s), connectionID=%s",
+		corelog.Infof("HTTP long polling: sendData sent fragment %d/%d (size=%d, groupID=%s), connectionID=%s",
 			fragment.FragmentIndex, fragment.TotalFragments, fragment.FragmentSize, fragment.FragmentGroupID, c.connectionID)
 	}
 
@@ -77,7 +77,7 @@ func (c *HTTPLongPollingConn) sendFragment(fragment *httppoll.FragmentResponse) 
 	}
 	req.Header.Set("X-Tunnel-Package", encodedPkg)
 
-	utils.Infof("HTTP long polling: sending push request (fragment %d/%d), connectionID=%s, clientID=%d, mappingID=%s, fragmentSize=%d, url=%s",
+	corelog.Infof("HTTP long polling: sending push request (fragment %d/%d), connectionID=%s, clientID=%d, mappingID=%s, fragmentSize=%d, url=%s",
 		fragment.FragmentIndex, fragment.TotalFragments, c.connectionID, c.clientID, c.mappingID, fragment.FragmentSize, c.pushURL)
 
 	var resp *http.Response
@@ -111,7 +111,7 @@ func (c *HTTPLongPollingConn) sendFragment(fragment *httppoll.FragmentResponse) 
 	}
 
 	if err != nil {
-		utils.Errorf("HTTP long polling: push request failed after %d retries: %v", retryCount, err)
+		corelog.Errorf("HTTP long polling: push request failed after %d retries: %v", retryCount, err)
 		return fmt.Errorf("push request failed after %d retries: %w", retryCount, err)
 	}
 	defer resp.Body.Close()
@@ -119,11 +119,11 @@ func (c *HTTPLongPollingConn) sendFragment(fragment *httppoll.FragmentResponse) 
 	// 检查响应
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		utils.Errorf("HTTP long polling: push request failed: status %d, body: %s", resp.StatusCode, string(body))
+		corelog.Errorf("HTTP long polling: push request failed: status %d, body: %s", resp.StatusCode, string(body))
 		return fmt.Errorf("push request failed: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	utils.Infof("HTTP long polling: push request succeeded, status=%d", resp.StatusCode)
+	corelog.Infof("HTTP long polling: push request succeeded, status=%d", resp.StatusCode)
 
 	return nil
 }

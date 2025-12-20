@@ -1,10 +1,10 @@
 package httppoll
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"net/http"
 
-	"tunnox-core/internal/utils"
 
 	"github.com/google/uuid"
 )
@@ -59,7 +59,7 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 	sp.closeMu.RUnlock()
 
 	if closed {
-		utils.Debugf("HTTPStreamProcessor: sendPollRequest - connection closed, requestID=%s", requestID)
+		corelog.Debugf("HTTPStreamProcessor: sendPollRequest - connection closed, requestID=%s", requestID)
 		return
 	}
 
@@ -73,14 +73,14 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 	}
 	encoded, err := EncodeTunnelPackage(pollPkg)
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to encode poll package: %v, requestID=%s", err, requestID)
+		corelog.Errorf("HTTPStreamProcessor: sendPollRequest - failed to encode poll package: %v, requestID=%s", err, requestID)
 		return
 	}
 
 	// 发送 Poll 请求
 	req, err := http.NewRequestWithContext(sp.Ctx(), "GET", sp.pollURL+"?timeout=30", nil)
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to create poll request: %v, requestID=%s", err, requestID)
+		corelog.Errorf("HTTPStreamProcessor: sendPollRequest - failed to create poll request: %v, requestID=%s", err, requestID)
 		return
 	}
 
@@ -91,7 +91,7 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 
 	resp, err := sp.httpClient.Do(req)
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor: sendPollRequest - Poll request failed: %v, requestID=%s", err, requestID)
+		corelog.Errorf("HTTPStreamProcessor: sendPollRequest - Poll request failed: %v, requestID=%s", err, requestID)
 		return
 	}
 	defer resp.Body.Close()
@@ -103,10 +103,10 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 	var pollResp FragmentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&pollResp); err == nil && pollResp.Data != "" {
 		if err := sp.handleFragmentData(pollResp, requestID); err != nil {
-			utils.Errorf("HTTPStreamProcessor: sendPollRequest - failed to handle fragment data: %v, requestID=%s", err, requestID)
+			corelog.Errorf("HTTPStreamProcessor: sendPollRequest - failed to handle fragment data: %v, requestID=%s", err, requestID)
 		}
 	} else if pollResp.Timeout {
-		utils.Debugf("HTTPStreamProcessor: sendPollRequest - poll request timeout, requestID=%s", requestID)
+		corelog.Debugf("HTTPStreamProcessor: sendPollRequest - poll request timeout, requestID=%s", requestID)
 	}
 }
 
@@ -121,13 +121,13 @@ func (sp *StreamProcessor) handleControlPacketResponse(resp *http.Response, requ
 	// 解码 TunnelPackage 以检查 RequestId
 	pkg, err := DecodeTunnelPackage(xTunnelPackage)
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor: handleControlPacketResponse - failed to decode tunnel package: %v, requestID=%s", err, requestID)
+		corelog.Errorf("HTTPStreamProcessor: handleControlPacketResponse - failed to decode tunnel package: %v, requestID=%s", err, requestID)
 		return
 	}
 
 	// 检查 RequestId 是否匹配
 	if pkg.RequestID != requestID {
-		utils.Warnf("HTTPStreamProcessor: handleControlPacketResponse - RequestId mismatch, expected=%s, got=%s, ignoring response",
+		corelog.Warnf("HTTPStreamProcessor: handleControlPacketResponse - RequestId mismatch, expected=%s, got=%s, ignoring response",
 			requestID, pkg.RequestID)
 		return
 	}
@@ -135,7 +135,7 @@ func (sp *StreamProcessor) handleControlPacketResponse(resp *http.Response, requ
 	// 转换为 TransferPacket
 	pkt, err := sp.converter.ReadPacket(resp)
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor: handleControlPacketResponse - failed to read packet: %v, requestID=%s", err, requestID)
+		corelog.Errorf("HTTPStreamProcessor: handleControlPacketResponse - failed to read packet: %v, requestID=%s", err, requestID)
 		return
 	}
 

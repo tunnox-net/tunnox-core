@@ -1,10 +1,10 @@
 package protocol
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"tunnox-core/internal/protocol/adapter"
-	"tunnox-core/internal/utils"
 )
 
 // ProtocolService 协议服务适配器，让协议管理器能够作为服务运行
@@ -31,7 +31,7 @@ func (ps *ProtocolService) Name() string {
 func (ps *ProtocolService) Start(ctx context.Context) error {
 	ps.ctx = ctx
 	// 精简日志：只在调试模式下输出服务启动信息
-	utils.Debugf("Starting protocol service: %s", ps.name)
+	corelog.Debugf("Starting protocol service: %s", ps.name)
 
 	// 启动所有协议适配器
 	if err := ps.manager.StartAll(); err != nil {
@@ -39,20 +39,20 @@ func (ps *ProtocolService) Start(ctx context.Context) error {
 	}
 
 	// 精简日志：只在调试模式下输出服务启动完成信息
-	utils.Debugf("Protocol service started: %s", ps.name)
+	corelog.Debugf("Protocol service started: %s", ps.name)
 	return nil
 }
 
 // Stop 停止协议服务
 func (ps *ProtocolService) Stop(ctx context.Context) error {
-	utils.Infof("Stopping protocol service: %s", ps.name)
+	corelog.Infof("Stopping protocol service: %s", ps.name)
 
 	// 关闭所有协议适配器
 	if err := ps.manager.CloseAll(); err != nil {
 		return fmt.Errorf("failed to stop protocol service %s: %v", ps.name, err)
 	}
 
-	utils.Infof("Protocol service stopped: %s", ps.name)
+	corelog.Infof("Protocol service stopped: %s", ps.name)
 	return nil
 }
 

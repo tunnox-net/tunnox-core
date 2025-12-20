@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"tunnox-core/internal/cloud/container"
@@ -9,7 +10,6 @@ import (
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
 	storageCore "tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 )
 
 // CloudControlAPI 云控API实现
@@ -99,7 +99,7 @@ func (api *CloudControlAPI) resolveServices() error {
 		return fmt.Errorf("failed to resolve stats service: %w", err)
 	}
 
-	utils.Infof("All services resolved successfully")
+	corelog.Infof("All services resolved successfully")
 	return nil
 }
 
@@ -369,4 +369,19 @@ func (api *CloudControlAPI) GetTrafficStats(timeRange string) ([]*stats.TrafficD
 
 func (api *CloudControlAPI) GetConnectionStats(timeRange string) ([]*stats.ConnectionDataPoint, error) {
 	return api.statsService.GetConnectionStats(timeRange)
+}
+
+// SetNotifier 设置通知器 (实现了 managers.NotifierAware)
+func (api *CloudControlAPI) SetNotifier(notifier interface{}) {
+	// Cast to managers.ClientNotifier is not possible here due to circular dep if we imported.
+	// Instead we accept interface{} (or define interface locally) and pass to services.
+
+	// Pass to anonymous service
+	api.anonymousService.SetNotifier(notifier)
+
+	// Potentially pass to other services if needed
+}
+
+func (api *CloudControlAPI) Close() error {
+	return nil
 }

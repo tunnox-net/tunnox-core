@@ -1,11 +1,11 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"strings"
 
 	httppoll "tunnox-core/internal/protocol/httppoll"
-	"tunnox-core/internal/utils"
 )
 
 // 注意：此函数不是线程安全的，调用者需要确保在锁保护下调用，或者使用 ConnectionRegistry 的 GetOrCreate 模式
@@ -15,7 +15,7 @@ func (s *ManagementAPIServer) createHTTPLongPollingConnection(connID string, pkg
 
 	// 1. 获取 SessionManager
 	if s.sessionMgr == nil {
-		utils.Errorf("HTTP long polling: SessionManager not available")
+		corelog.Errorf("HTTP long polling: SessionManager not available")
 		return nil
 	}
 
@@ -51,7 +51,7 @@ func (s *ManagementAPIServer) createHTTPLongPollingConnection(connID string, pkg
 	if sessionMgrWithConn != nil {
 		existingConn, exists := sessionMgrWithConn.GetConnection(connID)
 		if exists && existingConn != nil {
-			utils.Debugf("HTTP long polling: connection already exists in SessionManager, connID=%s", connID)
+			corelog.Debugf("HTTP long polling: connection already exists in SessionManager, connID=%s", connID)
 		} else {
 			// 创建适配器，让 ServerStreamProcessor 可以作为 reader/writer 传递给 CreateConnection
 			// StreamManager.CreateStream 会检测到适配器中的 PackageStreamer 并直接使用
@@ -60,18 +60,18 @@ func (s *ManagementAPIServer) createHTTPLongPollingConnection(connID string, pkg
 			if err != nil {
 				// 如果错误是连接已存在，忽略（可能是并发创建导致的）
 				if !strings.Contains(err.Error(), "already exists") {
-					utils.Errorf("HTTP long polling: failed to create connection in SessionManager: %v", err)
+					corelog.Errorf("HTTP long polling: failed to create connection in SessionManager: %v", err)
 				} else {
-					utils.Debugf("HTTP long polling: connection already exists in SessionManager (concurrent creation), connID=%s", connID)
+					corelog.Debugf("HTTP long polling: connection already exists in SessionManager (concurrent creation), connID=%s", connID)
 				}
 				// 即使注册失败，也返回 streamProcessor，因为连接管理主要通过 ConnectionRegistry
 			} else {
-				utils.Infof("HTTP long polling: registered connection in SessionManager, connID=%s", connID)
+				corelog.Infof("HTTP long polling: registered connection in SessionManager, connID=%s", connID)
 			}
 		}
 	}
 
-	utils.Infof("HTTP long polling: created stream processor connID=%s for clientID=%d, mappingID=%s", connID, clientID, pkg.MappingID)
+	corelog.Infof("HTTP long polling: created stream processor connID=%s for clientID=%d, mappingID=%s", connID, clientID, pkg.MappingID)
 
 	return streamProcessor
 }

@@ -1,12 +1,12 @@
 package command
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"tunnox-core/internal/utils"
 )
 
 // LoggingMiddleware 日志中间件
@@ -16,17 +16,17 @@ type LoggingMiddleware struct{}
 func (lm *LoggingMiddleware) Process(ctx *CommandContext, next func(*CommandContext) (*CommandResponse, error)) (*CommandResponse, error) {
 	start := time.Now()
 
-	utils.Debugf("Command started: %v, ConnectionID: %s, RequestID: %s",
+	corelog.Debugf("Command started: %v, ConnectionID: %s, RequestID: %s",
 		ctx.CommandType, ctx.ConnectionID, ctx.RequestID)
 
 	response, err := next(ctx)
 
 	duration := time.Since(start)
 	if err != nil {
-		utils.Errorf("Command failed: %v, Duration: %v, Error: %v",
+		corelog.Errorf("Command failed: %v, Duration: %v, Error: %v",
 			ctx.CommandType, duration, err)
 	} else {
-		utils.Debugf("Command completed: %v, Duration: %v, Success: %v",
+		corelog.Debugf("Command completed: %v, Duration: %v, Success: %v",
 			ctx.CommandType, duration, response.Success)
 	}
 

@@ -1,11 +1,11 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/base64"
 	"fmt"
 	"io"
 
-	"tunnox-core/internal/utils"
 )
 
 // Read 实现 io.Reader（从 HTTP POST 读取数据）
@@ -29,7 +29,7 @@ func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
 	c.streamMu.RUnlock()
 
 	connID := c.GetConnectionID()
-	utils.Infof("HTTP long polling: [READ] entry, streamMode=%v, readBuffer len=%d, requested=%d, clientID=%d, connID=%s",
+	corelog.Infof("HTTP long polling: [READ] entry, streamMode=%v, readBuffer len=%d, requested=%d, clientID=%d, connID=%s",
 		streamMode, len(c.readBuffer), len(p), c.clientID, connID)
 
 	if streamMode && len(c.readBuffer) >= 4 {
@@ -49,13 +49,13 @@ func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
 				}
 				n := copy(p[:readSize], c.readBuffer[:readSize])
 				c.readBuffer = c.readBuffer[n:]
-				utils.Infof("HTTP long polling: [READ] read %d bytes (MySQL packet, length=%d, remaining: %d), clientID=%d, connID=%s",
+				corelog.Infof("HTTP long polling: [READ] read %d bytes (MySQL packet, length=%d, remaining: %d), clientID=%d, connID=%s",
 					n, packetLength, len(c.readBuffer), c.clientID, c.GetConnectionID())
 				return n, nil
 			}
 			// ✅ 如果缓冲区没有完整包，尝试从 base64PushDataChan 接收更多数据（非阻塞）
 			// 如果 channel 为空，立即返回部分数据，避免阻塞导致超时
-			utils.Debugf("HTTP long polling: [READ] incomplete MySQL packet (need %d bytes, have %d), trying to get more data, clientID=%d, connID=%s",
+			corelog.Debugf("HTTP long polling: [READ] incomplete MySQL packet (need %d bytes, have %d), trying to get more data, clientID=%d, connID=%s",
 				packetSize, len(c.readBuffer), c.clientID, c.GetConnectionID())
 			// 尝试从 base64PushDataChan 接收更多数据（非阻塞）
 			select {
@@ -67,12 +67,12 @@ func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
 				// Base64 解码
 				data, err := base64.StdEncoding.DecodeString(base64Data)
 				if err != nil {
-					utils.Errorf("HTTP long polling: [READ] failed to decode Base64 data: %v, clientID=%d", err, c.clientID)
+					corelog.Errorf("HTTP long polling: [READ] failed to decode Base64 data: %v, clientID=%d", err, c.clientID)
 					return 0, fmt.Errorf("failed to decode Base64 data: %w", err)
 				}
 				// 追加到 readBuffer
 				c.readBuffer = append(c.readBuffer, data...)
-				utils.Debugf("HTTP long polling: [READ] received %d bytes from channel, buffer size now: %d, clientID=%d",
+				corelog.Debugf("HTTP long polling: [READ] received %d bytes from channel, buffer size now: %d, clientID=%d",
 					len(data), len(c.readBuffer), c.clientID)
 				// 重新检查是否有完整包
 				if len(c.readBuffer) >= packetSize {
@@ -82,7 +82,7 @@ func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
 					}
 					n := copy(p[:readSize], c.readBuffer[:readSize])
 					c.readBuffer = c.readBuffer[n:]
-					utils.Infof("HTTP long polling: [READ] read %d bytes (MySQL packet, length=%d, remaining: %d), clientID=%d, connID=%s",
+					corelog.Infof("HTTP long polling: [READ] read %d bytes (MySQL packet, length=%d, remaining: %d), clientID=%d, connID=%s",
 						n, packetLength, len(c.readBuffer), c.clientID, c.GetConnectionID())
 					return n, nil
 				}
@@ -93,7 +93,7 @@ func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
 				}
 				n := copy(p[:readSize], c.readBuffer[:readSize])
 				c.readBuffer = c.readBuffer[n:]
-				utils.Debugf("HTTP long polling: [READ] read %d bytes (partial packet, remaining: %d), clientID=%d",
+				corelog.Debugf("HTTP long polling: [READ] read %d bytes (partial packet, remaining: %d), clientID=%d",
 					n, len(c.readBuffer), c.clientID)
 				return n, nil
 			default:
@@ -104,7 +104,7 @@ func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
 				}
 				n := copy(p[:readSize], c.readBuffer[:readSize])
 				c.readBuffer = c.readBuffer[n:]
-				utils.Debugf("HTTP long polling: [READ] read %d bytes (partial packet, channel empty, remaining: %d), clientID=%d",
+				corelog.Debugf("HTTP long polling: [READ] read %d bytes (partial packet, channel empty, remaining: %d), clientID=%d",
 					n, len(c.readBuffer), c.clientID)
 				return n, nil
 			}
@@ -124,34 +124,34 @@ func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
 		}
 		n := copy(p[:readSize], c.readBuffer[:readSize])
 		c.readBuffer = c.readBuffer[n:]
-		utils.Debugf("HTTP long polling: [READ] read %d bytes from buffer (remaining: %d), clientID=%d",
+		corelog.Debugf("HTTP long polling: [READ] read %d bytes from buffer (remaining: %d), clientID=%d",
 			n, len(c.readBuffer), c.clientID)
 		return n, nil
 	}
 
 	// 缓冲区为空，从 base64PushDataChan 接收 Base64 数据并解码
-	utils.Infof("HTTP long polling: [READ] waiting for Base64 data from base64PushDataChan, clientID=%d, connID=%s, channel len=%d, cap=%d",
+	corelog.Infof("HTTP long polling: [READ] waiting for Base64 data from base64PushDataChan, clientID=%d, connID=%s, channel len=%d, cap=%d",
 		c.clientID, c.GetConnectionID(), len(c.base64PushDataChan), cap(c.base64PushDataChan))
 	// 注意：这里不使用超时，因为 ReadPacket 会持续调用 Read，直到读取完整数据包
 	// 如果 channel 为空，应该阻塞等待，而不是返回 EOF
 	select {
 	case <-c.Ctx().Done():
-		utils.Infof("HTTP long polling: [READ] context canceled, clientID=%d, connID=%s", c.clientID, c.GetConnectionID())
+		corelog.Infof("HTTP long polling: [READ] context canceled, clientID=%d, connID=%s", c.clientID, c.GetConnectionID())
 		return 0, c.Ctx().Err()
 	case base64Data, ok := <-c.base64PushDataChan:
 		if !ok {
-			utils.Debugf("HTTP long polling: [READ] base64PushDataChan closed, clientID=%d", c.clientID)
+			corelog.Debugf("HTTP long polling: [READ] base64PushDataChan closed, clientID=%d", c.clientID)
 			return 0, io.EOF
 		}
 
 		// Base64 解码
 		data, err := base64.StdEncoding.DecodeString(base64Data)
 		if err != nil {
-			utils.Errorf("HTTP long polling: [READ] failed to decode Base64 data: %v, clientID=%d", err, c.clientID)
+			corelog.Errorf("HTTP long polling: [READ] failed to decode Base64 data: %v, clientID=%d", err, c.clientID)
 			return 0, fmt.Errorf("failed to decode Base64 data: %w", err)
 		}
 
-		utils.Infof("HTTP long polling: [READ] decoded %d bytes from Base64 data, clientID=%d, connID=%s",
+		corelog.Infof("HTTP long polling: [READ] decoded %d bytes from Base64 data, clientID=%d, connID=%s",
 			len(data), c.clientID, c.GetConnectionID())
 
 		// 追加到 readBuffer
@@ -164,7 +164,7 @@ func (c *ServerHTTPLongPollingConn) Read(p []byte) (int, error) {
 		if len(c.readBuffer) > 0 {
 			firstByte = c.readBuffer[0]
 		}
-		utils.Infof("HTTP long polling: [READ] read %d bytes (remaining in buffer: %d), clientID=%d, connID=%s, firstByte=0x%02x",
+		corelog.Infof("HTTP long polling: [READ] read %d bytes (remaining in buffer: %d), clientID=%d, connID=%s, firstByte=0x%02x",
 			n, len(c.readBuffer), c.clientID, c.GetConnectionID(), firstByte)
 		return n, nil
 	}

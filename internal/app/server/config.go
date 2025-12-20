@@ -1,6 +1,7 @@
 package server
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -254,7 +255,7 @@ type Config struct {
 func LoadConfig(configPath string) (*Config, error) {
 	// 如果配置文件不存在，使用默认配置
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		utils.Warnf(constants.MsgConfigFileNotFound, configPath)
+		corelog.Warnf(constants.MsgConfigFileNotFound, configPath)
 		config := GetDefaultConfig()
 		// ✅ 应用环境变量覆盖（即使没有配置文件）
 		ApplyEnvOverrides(config)
@@ -303,7 +304,7 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf(constants.MsgInvalidConfiguration, err)
 	}
 
-	utils.Infof(constants.MsgConfigLoadedFrom, configPath)
+	corelog.Infof(constants.MsgConfigLoadedFrom, configPath)
 	return &config, nil
 }
 

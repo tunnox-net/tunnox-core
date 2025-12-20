@@ -1,6 +1,7 @@
 package adapter
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"io"
 	"net"
@@ -12,7 +13,6 @@ import (
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // Adapter 协议适配器统一接口
@@ -129,13 +129,13 @@ func (b *BaseAdapter) acceptLoop(adapter ProtocolAdapter) {
 				if isIgnorableError(err) {
 					continue
 				}
-				utils.Errorf("%s accept error: %v", adapter.getConnectionType(), err)
+				corelog.Errorf("%s accept error: %v", adapter.getConnectionType(), err)
 			}
 			return
 		}
 
 		if b.IsClosed() {
-			utils.Warnf("%s connection closed", adapter.getConnectionType())
+			corelog.Warnf("%s connection closed", adapter.getConnectionType())
 			return
 		}
 
@@ -181,11 +181,11 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 		}
 	}()
 
-	utils.Infof("%s adapter handling connection", adapter.getConnectionType())
+	corelog.Infof("%s adapter handling connection", adapter.getConnectionType())
 
 	// Session是系统关键组件，必须存在
 	if b.session == nil {
-		utils.Errorf("Session is required but not set for %s adapter", adapter.getConnectionType())
+		corelog.Errorf("Session is required but not set for %s adapter", adapter.getConnectionType())
 		return
 	}
 
@@ -193,7 +193,7 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 	var err error
 	streamConn, err = b.session.AcceptConnection(conn, conn)
 	if err != nil {
-		utils.Errorf("Failed to initialize connection: %v", err)
+		corelog.Errorf("Failed to initialize connection: %v", err)
 		return
 	}
 
@@ -213,7 +213,7 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 			if reader, ok := streamConn.Stream.GetReader().(interface {
 				IsStreamMode() bool
 			}); ok && reader.IsStreamMode() {
-				utils.Infof("Connection %s is in stream mode, readLoop exiting (data will be forwarded directly via net.Conn)", streamConn.ID)
+				corelog.Infof("Connection %s is in stream mode, readLoop exiting (data will be forwarded directly via net.Conn)", streamConn.ID)
 				shouldCloseConn = false
 				streamConn = nil
 				return
@@ -242,7 +242,7 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 				continue
 			}
 			if err != io.EOF {
-				utils.Errorf("Failed to read packet for connection %s: %v", streamConn.ID, err)
+				corelog.Errorf("Failed to read packet for connection %s: %v", streamConn.ID, err)
 			}
 			return
 		}
@@ -267,11 +267,11 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 					shouldCloseConn = false
 					// 注意：对于隧道连接，streamConn 会被转移到隧道管理，不需要在这里关闭
 					streamConn = nil
-					utils.Infof("Connection %s switched to stream mode, readLoop exiting", connID)
+					corelog.Infof("Connection %s switched to stream mode, readLoop exiting", connID)
 					return
 				}
 			}
-			utils.Errorf("Failed to handle packet for connection %s: %v", streamConn.ID, err)
+			corelog.Errorf("Failed to handle packet for connection %s: %v", streamConn.ID, err)
 		}
 	}
 }
@@ -327,6 +327,6 @@ func (b *BaseAdapter) onClose() error {
 	}
 	b.streamMutex.Unlock()
 
-	utils.Infof("%s adapter closed", b.name)
+	corelog.Infof("%s adapter closed", b.name)
 	return nil
 }

@@ -1,11 +1,11 @@
 package httppoll
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"sync"
 	"time"
 
-	"tunnox-core/internal/utils"
 )
 
 const (
@@ -68,7 +68,7 @@ func (fg *FragmentGroup) AddFragment(index int, size int, data []byte) error {
 
 	// 检查是否已存在
 	if fg.Fragments[index] != nil {
-		utils.Warnf("FragmentGroup[%s]: fragment %d already exists, ignoring duplicate", fg.GroupID, index)
+		corelog.Warnf("FragmentGroup[%s]: fragment %d already exists, ignoring duplicate", fg.GroupID, index)
 		return nil // 忽略重复分片
 	}
 
@@ -88,7 +88,7 @@ func (fg *FragmentGroup) AddFragment(index int, size int, data []byte) error {
 	}
 	fg.ReceivedCount++
 
-	utils.Infof("FragmentGroup[%s]: added fragment %d/%d (size=%d, received=%d/%d, originalSize=%d)",
+	corelog.Infof("FragmentGroup[%s]: added fragment %d/%d (size=%d, received=%d/%d, originalSize=%d)",
 		fg.GroupID, index, fg.TotalFragments, size, fg.ReceivedCount, fg.TotalFragments, fg.OriginalSize)
 
 	return nil
@@ -117,7 +117,7 @@ func (fg *FragmentGroup) Reassemble() ([]byte, error) {
 		return nil, fmt.Errorf("reassembled size mismatch: expected %d, got %d", fg.OriginalSize, len(result))
 	}
 
-	utils.Debugf("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
+	corelog.Debugf("FragmentGroup[%s]: reassembled %d bytes from %d fragments", fg.GroupID, len(result), fg.TotalFragments)
 	return result, nil
 }
 
@@ -134,7 +134,7 @@ func (fg *FragmentGroup) IsCompleteAndReassemble() ([]byte, bool, error) {
 	}
 
 	if fg.ReceivedCount != fg.TotalFragments {
-		utils.Debugf("FragmentGroup[%s]: IsCompleteAndReassemble - not complete yet, received=%d/%d", fg.GroupID, fg.ReceivedCount, fg.TotalFragments)
+		corelog.Debugf("FragmentGroup[%s]: IsCompleteAndReassemble - not complete yet, received=%d/%d", fg.GroupID, fg.ReceivedCount, fg.TotalFragments)
 		return nil, false, nil
 	}
 
@@ -155,7 +155,7 @@ func (fg *FragmentGroup) IsCompleteAndReassemble() ([]byte, bool, error) {
 	// 标记为已重组（防止其他 goroutine 重复重组）
 	fg.reassembled = true
 
-	utils.Infof("FragmentGroup[%s]: IsCompleteAndReassemble - reassembled %d bytes from %d fragments, originalSize=%d", fg.GroupID, len(result), fg.TotalFragments, fg.OriginalSize)
+	corelog.Infof("FragmentGroup[%s]: IsCompleteAndReassemble - reassembled %d bytes from %d fragments, originalSize=%d", fg.GroupID, len(result), fg.TotalFragments, fg.OriginalSize)
 	return result, true, nil
 }
 
@@ -214,7 +214,7 @@ func (fr *FragmentReassembler) AddFragment(groupID string, originalSize int, fra
 		}
 		fr.groups[groupID] = group
 		fr.sequenceGroups[sequenceNumber] = group
-		utils.Debugf("FragmentReassembler: created new fragment group, groupID=%s, sequenceNumber=%d, originalSize=%d, totalFragments=%d", groupID, sequenceNumber, originalSize, totalFragments)
+		corelog.Debugf("FragmentReassembler: created new fragment group, groupID=%s, sequenceNumber=%d, originalSize=%d, totalFragments=%d", groupID, sequenceNumber, originalSize, totalFragments)
 	} else {
 		// 验证一致性
 		if group.OriginalSize != originalSize {
@@ -266,7 +266,7 @@ func (fr *FragmentReassembler) RemoveGroup(groupID string) {
 		if group.SequenceNumber >= 0 {
 			delete(fr.sequenceGroups, group.SequenceNumber)
 		}
-		utils.Debugf("FragmentReassembler: removed fragment group, groupID=%s, sequenceNumber=%d", groupID, group.SequenceNumber)
+		corelog.Debugf("FragmentReassembler: removed fragment group, groupID=%s, sequenceNumber=%d", groupID, group.SequenceNumber)
 	}
 }
 
@@ -280,7 +280,7 @@ func (fr *FragmentReassembler) cleanupExpiredLocked() {
 			if group.SequenceNumber >= 0 {
 				delete(fr.sequenceGroups, group.SequenceNumber)
 			}
-			utils.Warnf("FragmentReassembler: removed expired fragment group, groupID=%s, sequenceNumber=%d, age=%v", groupID, group.SequenceNumber, now.Sub(group.CreatedTime))
+			corelog.Warnf("FragmentReassembler: removed expired fragment group, groupID=%s, sequenceNumber=%d, age=%v", groupID, group.SequenceNumber, now.Sub(group.CreatedTime))
 		}
 	}
 }
@@ -297,7 +297,7 @@ func (fr *FragmentReassembler) GetNextCompleteGroup() (*FragmentGroup, bool, err
 	group, exists := fr.sequenceGroups[fr.nextExpectedSeq]
 	if !exists {
 		// 期望的序列号还不存在，等待
-		utils.Debugf("FragmentReassembler: GetNextCompleteGroup - expected sequence %d not found, waiting", fr.nextExpectedSeq)
+		corelog.Debugf("FragmentReassembler: GetNextCompleteGroup - expected sequence %d not found, waiting", fr.nextExpectedSeq)
 		return nil, false, nil
 	}
 
@@ -312,12 +312,12 @@ func (fr *FragmentReassembler) GetNextCompleteGroup() (*FragmentGroup, bool, err
 		// 找到期望的下一个已完整的分片组，更新期望序列号
 		oldSeq := fr.nextExpectedSeq
 		fr.nextExpectedSeq++
-		utils.Infof("FragmentReassembler: GetNextCompleteGroup - found complete group, sequenceNumber=%d, groupID=%s, nextExpectedSeq=%d", oldSeq, group.GroupID, fr.nextExpectedSeq)
+		corelog.Infof("FragmentReassembler: GetNextCompleteGroup - found complete group, sequenceNumber=%d, groupID=%s, nextExpectedSeq=%d", oldSeq, group.GroupID, fr.nextExpectedSeq)
 		return group, true, nil
 	}
 
 	// 期望的序列号存在但还不完整，等待
-	utils.Debugf("FragmentReassembler: GetNextCompleteGroup - expected sequence %d exists but not complete yet, receivedCount=%d/%d, groupID=%s", fr.nextExpectedSeq, receivedCount, totalFragments, group.GroupID)
+	corelog.Debugf("FragmentReassembler: GetNextCompleteGroup - expected sequence %d exists but not complete yet, receivedCount=%d/%d, groupID=%s", fr.nextExpectedSeq, receivedCount, totalFragments, group.GroupID)
 	return nil, false, nil
 }
 

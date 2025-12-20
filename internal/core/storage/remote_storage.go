@@ -2,10 +2,17 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
+	storagepb "tunnox-core/api/proto/storage"
 	"tunnox-core/internal/core/dispose"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 )
 
 // RemoteStorageConfig 远程存储配置
@@ -27,20 +34,29 @@ type RemoteStorageConfig struct {
 
 // RemoteStorage 远程存储实现（通过 gRPC）
 // 用于集群模式下的持久化存储
-// 注意：此实现为占位符，实际 gRPC 通信需要在生产环境中实现
 type RemoteStorage struct {
 	config *RemoteStorageConfig
 	ctx    context.Context
+	cancel context.CancelFunc
 	dispose.Dispose
 
-	// gRPC 客户端连接（预留，待实现）
-	// client storagepb.StorageServiceClient
+	// gRPC 客户端连接
+	conn   *grpc.ClientConn
+	client storagepb.StorageServiceClient
+
+	// 连接状态
+	connected bool
+	connMu    sync.RWMutex
 }
 
 // NewRemoteStorage 创建远程存储
 func NewRemoteStorage(parentCtx context.Context, config *RemoteStorageConfig) (*RemoteStorage, error) {
 	if config == nil {
 		return nil, fmt.Errorf("remote storage config is required")
+	}
+
+	if config.GRPCAddress == "" {
+		return nil, fmt.Errorf("gRPC address is required")
 	}
 
 	// 设置默认值
@@ -51,103 +67,367 @@ func NewRemoteStorage(parentCtx context.Context, config *RemoteStorageConfig) (*
 		config.MaxRetries = 3
 	}
 
+	ctx, cancel := context.WithCancel(parentCtx)
+
 	storage := &RemoteStorage{
 		config: config,
-		ctx:    parentCtx,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 
-	storage.SetCtx(parentCtx, storage.onClose)
+	storage.SetCtx(ctx, storage.onClose)
 
-	// gRPC 连接建立（预留，待实现）
-	// 在生产环境中需要实现以下逻辑：
-	// 1. 配置 TLS（如果启用）
-	// 2. 创建 gRPC 连接：conn, err := grpc.DialContext(...)
-	// 3. 创建客户端：storage.client = storagepb.NewStorageServiceClient(conn)
-	// 4. 实现重连和健康检查机制
+	// 建立 gRPC 连接
+	if err := storage.connect(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to connect to storage service: %w", err)
+	}
 
-	dispose.Infof("RemoteStorage: initialized (gRPC: %s, stub mode)", config.GRPCAddress)
+	dispose.Infof("RemoteStorage: connected to %s", config.GRPCAddress)
 	return storage, nil
+}
+
+// connect 建立 gRPC 连接
+func (r *RemoteStorage) connect() error {
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
+
+	// 配置 gRPC 连接选项
+	opts := []grpc.DialOption{
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                10 * time.Second,
+			Timeout:             3 * time.Second,
+			PermitWithoutStream: true,
+		}),
+	}
+
+	// TLS 配置
+	if r.config.TLSEnabled {
+		// TODO: 实现 TLS 连接
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	} else {
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+
+	// 建立连接
+	ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+	defer cancel()
+
+	conn, err := grpc.DialContext(ctx, r.config.GRPCAddress, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to dial: %w", err)
+	}
+
+	r.conn = conn
+	r.client = storagepb.NewStorageServiceClient(conn)
+	r.connected = true
+
+	return nil
+}
+
+// ensureConnected 确保连接可用
+func (r *RemoteStorage) ensureConnected() error {
+	r.connMu.RLock()
+	if r.connected && r.conn != nil {
+		r.connMu.RUnlock()
+		return nil
+	}
+	r.connMu.RUnlock()
+
+	return r.connect()
 }
 
 // onClose 资源释放回调
 func (r *RemoteStorage) onClose() error {
 	dispose.Infof("RemoteStorage: closing")
-	// gRPC 连接关闭（预留，待实现）
-	// 在生产环境中需要关闭 gRPC 连接
+	r.cancel()
+
+	r.connMu.Lock()
+	defer r.connMu.Unlock()
+
+	if r.conn != nil {
+		if err := r.conn.Close(); err != nil {
+			dispose.Warnf("RemoteStorage: error closing connection: %v", err)
+		}
+		r.conn = nil
+	}
+	r.connected = false
+
 	return nil
+}
+
+// withRetry 带重试的操作执行器
+func (r *RemoteStorage) withRetry(operation func() error) error {
+	var lastErr error
+	for i := 0; i < r.config.MaxRetries; i++ {
+		if err := r.ensureConnected(); err != nil {
+			lastErr = err
+			time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
+			continue
+		}
+
+		if err := operation(); err != nil {
+			lastErr = err
+			// 检查是否是连接错误，如果是则重连
+			r.connMu.Lock()
+			r.connected = false
+			r.connMu.Unlock()
+			time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("operation failed after %d retries: %w", r.config.MaxRetries, lastErr)
 }
 
 // Set 设置键值对
-// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) Set(key string, value interface{}) error {
-	// 生产环境实现示例：
-	// ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
-	// defer cancel()
-	// _, err := r.client.Set(ctx, &storagepb.SetRequest{Key: key, Value: value})
-	// return err
-	dispose.Debugf("RemoteStorage.Set: key=%s (stub implementation)", key)
-	return nil
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("failed to marshal value: %w", err)
+	}
+
+	return r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.Set(ctx, &storagepb.SetRequest{
+			Key:   key,
+			Value: data,
+		})
+		if err != nil {
+			return err
+		}
+		if !resp.Success {
+			return fmt.Errorf("set failed: %s", resp.Error)
+		}
+		return nil
+	})
 }
 
 // Get 获取值
-// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) Get(key string) (interface{}, error) {
-	dispose.Debugf("RemoteStorage.Get: key=%s (stub implementation)", key)
-	return nil, ErrKeyNotFound
+	var result interface{}
+
+	err := r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.Get(ctx, &storagepb.GetRequest{Key: key})
+		if err != nil {
+			return err
+		}
+		if resp.Error != "" {
+			return fmt.Errorf("get failed: %s", resp.Error)
+		}
+		if !resp.Found {
+			return ErrKeyNotFound
+		}
+
+		if err := json.Unmarshal(resp.Value, &result); err != nil {
+			return fmt.Errorf("failed to unmarshal value: %w", err)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // Delete 删除键
-// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) Delete(key string) error {
-	dispose.Debugf("RemoteStorage.Delete: key=%s (stub implementation)", key)
-	return nil
+	return r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.Delete(ctx, &storagepb.DeleteRequest{Key: key})
+		if err != nil {
+			return err
+		}
+		if !resp.Success {
+			return fmt.Errorf("delete failed: %s", resp.Error)
+		}
+		return nil
+	})
 }
 
 // Exists 检查键是否存在
-// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) Exists(key string) (bool, error) {
-	dispose.Debugf("RemoteStorage.Exists: key=%s (stub implementation)", key)
-	return false, nil
+	var exists bool
+
+	err := r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.Exists(ctx, &storagepb.ExistsRequest{Key: key})
+		if err != nil {
+			return err
+		}
+		if resp.Error != "" {
+			return fmt.Errorf("exists check failed: %s", resp.Error)
+		}
+		exists = resp.Exists
+		return nil
+	})
+
+	return exists, err
 }
 
 // BatchSet 批量设置
-// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) BatchSet(items map[string]interface{}) error {
-	dispose.Debugf("RemoteStorage.BatchSet: %d items (stub implementation)", len(items))
-	return nil
+	kvItems := make([]*storagepb.KeyValue, 0, len(items))
+	for key, value := range items {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("failed to marshal value for key %s: %w", key, err)
+		}
+		kvItems = append(kvItems, &storagepb.KeyValue{
+			Key:   key,
+			Value: data,
+		})
+	}
+
+	return r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.BatchSet(ctx, &storagepb.BatchSetRequest{Items: kvItems})
+		if err != nil {
+			return err
+		}
+		if !resp.Success {
+			return fmt.Errorf("batch set failed: %s", resp.Error)
+		}
+		return nil
+	})
 }
 
 // BatchGet 批量获取
-// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) BatchGet(keys []string) (map[string]interface{}, error) {
-	dispose.Debugf("RemoteStorage.BatchGet: %d keys (stub implementation)", len(keys))
-	return make(map[string]interface{}), nil
+	result := make(map[string]interface{})
+
+	err := r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.BatchGet(ctx, &storagepb.BatchGetRequest{Keys: keys})
+		if err != nil {
+			return err
+		}
+		if resp.Error != "" {
+			return fmt.Errorf("batch get failed: %s", resp.Error)
+		}
+
+		for _, item := range resp.Items {
+			var value interface{}
+			if err := json.Unmarshal(item.Value, &value); err != nil {
+				dispose.Warnf("RemoteStorage: failed to unmarshal value for key %s: %v", item.Key, err)
+				continue
+			}
+			result[item.Key] = value
+		}
+		return nil
+	})
+
+	return result, err
 }
 
 // BatchDelete 批量删除
-// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) BatchDelete(keys []string) error {
-	dispose.Debugf("RemoteStorage.BatchDelete: %d keys (stub implementation)", len(keys))
-	return nil
+	return r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.BatchDelete(ctx, &storagepb.BatchDeleteRequest{Keys: keys})
+		if err != nil {
+			return err
+		}
+		if !resp.Success {
+			return fmt.Errorf("batch delete failed: %s", resp.Error)
+		}
+		return nil
+	})
 }
 
 // QueryByField 按字段查询
-// 注意：此方法为占位符实现，生产环境需要实现 gRPC 调用
 func (r *RemoteStorage) QueryByField(keyPrefix string, fieldName string, fieldValue interface{}) ([]string, error) {
-	dispose.Debugf("RemoteStorage.QueryByField: prefix=%s, field=%s (stub implementation)", keyPrefix, fieldName)
-	// 生产环境实现示例：
-	// ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
-	// defer cancel()
-	// resp, err := r.client.QueryByField(ctx, &storagepb.QueryByFieldRequest{
-	//     KeyPrefix: keyPrefix,
-	//     FieldName: fieldName,
-	//     FieldValue: fieldValue,
-	// })
-	// if err != nil {
-	//     return nil, err
-	// }
-	// return resp.Results, nil
-	return nil, ErrKeyNotFound
+	valueData, err := json.Marshal(fieldValue)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal field value: %w", err)
+	}
+
+	var keys []string
+	err = r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.QueryByField(ctx, &storagepb.QueryByFieldRequest{
+			KeyPrefix:  keyPrefix,
+			FieldName:  fieldName,
+			FieldValue: valueData,
+		})
+		if err != nil {
+			return err
+		}
+		if resp.Error != "" {
+			return fmt.Errorf("query by field failed: %s", resp.Error)
+		}
+		keys = resp.Keys
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+// Ping 健康检查
+func (r *RemoteStorage) Ping() error {
+	return r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.Ping(ctx, &storagepb.PingRequest{
+			Timestamp: time.Now().UnixMilli(),
+		})
+		if err != nil {
+			return err
+		}
+		if !resp.Ok {
+			return fmt.Errorf("ping failed")
+		}
+		return nil
+	})
+}
+
+// GetClientAddress 获取当前节点的外部地址（通过 storage 服务反射获取）
+func (r *RemoteStorage) GetClientAddress() (string, error) {
+	var clientAddr string
+
+	err := r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.Ping(ctx, &storagepb.PingRequest{
+			Timestamp: time.Now().UnixMilli(),
+		})
+		if err != nil {
+			return err
+		}
+		if !resp.Ok {
+			return fmt.Errorf("ping failed")
+		}
+		clientAddr = resp.ClientAddress
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+	return clientAddr, nil
 }
 
 // Close 关闭连接

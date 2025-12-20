@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/binary"
 	"io"
 	"runtime"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 func (c *HTTPLongPollingConn) Write(p []byte) (int, error) {
@@ -36,12 +36,12 @@ func (c *HTTPLongPollingConn) Write(p []byte) (int, error) {
 
 		// 直接发送数据，保持协议包完整性
 		// 如果数据过大，HTTP层会处理（如超时、分块传输等）
-		utils.Debugf("HTTP long polling: [Write] stream mode: sending %d bytes, firstByte=0x%02x, mappingID=%s",
+		corelog.Debugf("HTTP long polling: [Write] stream mode: sending %d bytes, firstByte=0x%02x, mappingID=%s",
 			len(p), firstByte, c.mappingID)
 
 		// 直接发送数据
 		if err := c.sendData(p); err != nil {
-			utils.Errorf("HTTP long polling: [Write] stream mode: failed to send data: %v", err)
+			corelog.Errorf("HTTP long polling: [Write] stream mode: failed to send data: %v", err)
 			return 0, err
 		}
 		return len(p), nil
@@ -64,8 +64,8 @@ func (c *HTTPLongPollingConn) Write(p []byte) (int, error) {
 			if len(p) < previewLen {
 				previewLen = len(p)
 			}
-			utils.Errorf("HTTP long polling: Write called with Base64-like data (first %d bytes are Base64 chars), possible error", base64Count)
-			utils.Errorf("HTTP long polling: Write data preview (first %d bytes): %q, hex: %x", previewLen, string(p[:previewLen]), p[:previewLen])
+			corelog.Errorf("HTTP long polling: Write called with Base64-like data (first %d bytes are Base64 chars), possible error", base64Count)
+			corelog.Errorf("HTTP long polling: Write data preview (first %d bytes): %q, hex: %x", previewLen, string(p[:previewLen]), p[:previewLen])
 		}
 	}
 
@@ -82,9 +82,9 @@ func (c *HTTPLongPollingConn) Write(p []byte) (int, error) {
 
 	// 如果是心跳包类型（0x43 = 0x03 | 0x40），添加更详细的日志
 	if firstByte == 0x43 && len(p) == 1 {
-		utils.Debugf("HTTP long polling: Write called with heartbeat packet type (0x43), len=%d, bufferLen=%d", len(p), bufLen)
+		corelog.Debugf("HTTP long polling: Write called with heartbeat packet type (0x43), len=%d, bufferLen=%d", len(p), bufLen)
 		// 打印调用栈（仅前 5 层）
-		utils.Debugf("HTTP long polling: Write call stack (first 5 frames):")
+		corelog.Debugf("HTTP long polling: Write call stack (first 5 frames):")
 		for i := 1; i <= 5; i++ {
 			pc, file, line, ok := runtime.Caller(i)
 			if ok {
@@ -99,12 +99,12 @@ func (c *HTTPLongPollingConn) Write(p []byte) (int, error) {
 					if idx := strings.LastIndex(funcName, "."); idx >= 0 {
 						funcName = funcName[idx+1:]
 					}
-					utils.Debugf("  [%d] %s:%d %s", i, fileName, line, funcName)
+					corelog.Debugf("  [%d] %s:%d %s", i, fileName, line, funcName)
 				}
 			}
 		}
 	} else {
-		utils.Debugf("HTTP long polling: Write called, len=%d, bufferLen=%d, firstByte=0x%02x", len(p), bufLen, firstByte)
+		corelog.Debugf("HTTP long polling: Write called, len=%d, bufferLen=%d, firstByte=0x%02x", len(p), bufLen, firstByte)
 	}
 
 	if err != nil {
@@ -122,7 +122,7 @@ func (c *HTTPLongPollingConn) Write(p []byte) (int, error) {
 
 // writeFlushLoop 写入刷新循环（检查完整包并发送）
 func (c *HTTPLongPollingConn) writeFlushLoop() {
-	utils.Infof("HTTP long polling: writeFlushLoop started")
+	corelog.Infof("HTTP long polling: writeFlushLoop started")
 	ticker := time.NewTicker(50 * time.Millisecond) // 每50ms检查一次
 	defer ticker.Stop()
 
@@ -134,7 +134,7 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 			// 定期检查缓冲区
 		case <-c.writeFlush:
 			// 收到刷新信号，立即检查
-			utils.Infof("HTTP long polling: writeFlushLoop received flush signal")
+			corelog.Infof("HTTP long polling: writeFlushLoop received flush signal")
 		}
 
 		// 检查缓冲区是否有完整包
@@ -152,7 +152,7 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 				// ✅ 心跳包应该只通过控制连接发送，不应该通过隧道连接
 				// 如果是隧道连接（mappingID 不为空），心跳包不应该出现在这里
 				if c.mappingID != "" {
-					utils.Errorf("HTTP long polling: writeFlushLoop detected heartbeat packet in tunnel connection (mappingID=%s), dropping it", c.mappingID)
+					corelog.Errorf("HTTP long polling: writeFlushLoop detected heartbeat packet in tunnel connection (mappingID=%s), dropping it", c.mappingID)
 					// 丢弃心跳包，清空缓冲区
 					c.writeBuffer.Reset()
 					c.writeBufMu.Unlock()
@@ -164,9 +164,9 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 				c.writeBuffer.Next(1)
 				c.writeBufMu.Unlock()
 
-				utils.Debugf("HTTP long polling: writeFlushLoop sending heartbeat packet (0x%02x) on control connection", data[0])
+				corelog.Debugf("HTTP long polling: writeFlushLoop sending heartbeat packet (0x%02x) on control connection", data[0])
 				if err := c.sendData(data); err != nil {
-					utils.Errorf("HTTP long polling: failed to send heartbeat packet: %v", err)
+					corelog.Errorf("HTTP long polling: failed to send heartbeat packet: %v", err)
 				}
 				continue
 			}
@@ -184,7 +184,7 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 			}
 
 			// 调试：打印前5字节的十六进制值
-			utils.Debugf("HTTP long polling: writeFlushLoop buffer first 5 bytes: %02x %02x %02x %02x %02x",
+			corelog.Debugf("HTTP long polling: writeFlushLoop buffer first 5 bytes: %02x %02x %02x %02x %02x",
 				bufData[0], bufData[1], bufData[2], bufData[3], bufData[4])
 
 			// 检查包类型是否有效（应该是 0x00-0xFF 范围内的值，但通常不会超过 0x3F + 标志位）
@@ -196,7 +196,7 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 			basePacketType := packetType & 0x3F
 			if basePacketType > 0x3F {
 				// 基础包类型无效
-				utils.Errorf("HTTP long polling: invalid base packet type 0x%02x, resetting buffer", basePacketType)
+				corelog.Errorf("HTTP long polling: invalid base packet type 0x%02x, resetting buffer", basePacketType)
 				c.writeBuffer.Reset()
 				c.writeBufMu.Unlock()
 				continue
@@ -210,7 +210,7 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 			// 验证包体大小是否合理（防止解析错误导致无限等待）
 			// 正常的数据包体大小应该在 0-10MB 范围内
 			if bodySize > 10*1024*1024 { // 10MB 上限
-				utils.Errorf("HTTP long polling: invalid bodySize=%d (too large), packetType=0x%02x, first 5 bytes: %02x %02x %02x %02x %02x, resetting buffer",
+				corelog.Errorf("HTTP long polling: invalid bodySize=%d (too large), packetType=0x%02x, first 5 bytes: %02x %02x %02x %02x %02x, resetting buffer",
 					bodySize, packetType, bufData[0], bufData[1], bufData[2], bufData[3], bufData[4])
 				c.writeBuffer.Reset()
 				c.writeBufMu.Unlock()
@@ -219,7 +219,7 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 
 			// 额外检查：如果前5字节都是相同的值（如 43 43 43 43 43），可能是数据损坏
 			if bufData[0] == bufData[1] && bufData[1] == bufData[2] && bufData[2] == bufData[3] && bufData[3] == bufData[4] {
-				utils.Errorf("HTTP long polling: suspicious data pattern (all bytes same: 0x%02x), resetting buffer", bufData[0])
+				corelog.Errorf("HTTP long polling: suspicious data pattern (all bytes same: 0x%02x), resetting buffer", bufData[0])
 				c.writeBuffer.Reset()
 				c.writeBufMu.Unlock()
 				continue
@@ -243,14 +243,14 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 					}
 				}
 				if base64Count >= 10 {
-					utils.Errorf("HTTP long polling: detected Base64 string in writeBuffer (first %d bytes are Base64 chars), resetting buffer", base64Count)
+					corelog.Errorf("HTTP long polling: detected Base64 string in writeBuffer (first %d bytes are Base64 chars), resetting buffer", base64Count)
 					c.writeBuffer.Reset()
 					c.writeBufMu.Unlock()
 					continue
 				}
 			}
 
-			utils.Debugf("HTTP long polling: writeFlushLoop checking buffer, bufLen=%d, bodySize=%d, packetSize=%d", bufLen, bodySize, packetSize)
+			corelog.Debugf("HTTP long polling: writeFlushLoop checking buffer, bufLen=%d, bodySize=%d, packetSize=%d", bufLen, bodySize, packetSize)
 
 			if bufLen >= packetSize {
 				// 有完整包，提取并发送
@@ -259,10 +259,10 @@ func (c *HTTPLongPollingConn) writeFlushLoop() {
 				c.writeBuffer.Next(packetSize)
 				c.writeBufMu.Unlock()
 
-				utils.Infof("HTTP long polling: writeFlushLoop sending complete packet, size=%d", packetSize)
+				corelog.Infof("HTTP long polling: writeFlushLoop sending complete packet, size=%d", packetSize)
 				// 发送数据
 				if err := c.sendData(data); err != nil {
-					utils.Errorf("HTTP long polling: failed to send buffered data: %v", err)
+					corelog.Errorf("HTTP long polling: failed to send buffered data: %v", err)
 				}
 				continue
 			}

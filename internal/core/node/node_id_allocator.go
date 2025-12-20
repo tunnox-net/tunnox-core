@@ -1,11 +1,11 @@
 package node
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"time"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 )
 
 const (
@@ -52,7 +52,7 @@ func NewNodeIDAllocator(storage storage.Storage) *NodeIDAllocator {
 //   - string: 分配的节点ID（如 "node-0001"）
 //   - error: 分配失败的错误
 func (a *NodeIDAllocator) AllocateNodeID(ctx context.Context) (string, error) {
-	utils.Infof("NodeIDAllocator: starting node ID allocation (range: %d-%d)", NodeIDMin, NodeIDMax)
+	corelog.Infof("NodeIDAllocator: starting node ID allocation (range: %d-%d)", NodeIDMin, NodeIDMax)
 
 	for id := NodeIDMin; id <= NodeIDMax; id++ {
 		nodeID := fmt.Sprintf("node-%04d", id) // node-0001, node-0002, ...
@@ -61,13 +61,13 @@ func (a *NodeIDAllocator) AllocateNodeID(ctx context.Context) (string, error) {
 		// 尝试占用这个ID（SETNX + TTL）
 		acquired, err := a.tryAcquireNodeID(key, nodeID)
 		if err != nil {
-			utils.Warnf("NodeIDAllocator: failed to try acquire %s: %v", nodeID, err)
+			corelog.Warnf("NodeIDAllocator: failed to try acquire %s: %v", nodeID, err)
 			continue
 		}
 
 		if acquired {
 			a.nodeID = nodeID
-			utils.Infof("✅ NodeIDAllocator: successfully allocated node ID: %s", nodeID)
+			corelog.Infof("✅ NodeIDAllocator: successfully allocated node ID: %s", nodeID)
 
 			// 启动心跳goroutine，定期续期
 			go a.heartbeatLoop(ctx, key, nodeID)
@@ -75,7 +75,7 @@ func (a *NodeIDAllocator) AllocateNodeID(ctx context.Context) (string, error) {
 			return nodeID, nil
 		}
 
-		utils.Debugf("NodeIDAllocator: %s already occupied, trying next...", nodeID)
+		corelog.Debugf("NodeIDAllocator: %s already occupied, trying next...", nodeID)
 	}
 
 	return "", fmt.Errorf("no available node ID in range %d-%d (all occupied)", NodeIDMin, NodeIDMax)
@@ -141,15 +141,15 @@ func (a *NodeIDAllocator) heartbeatLoop(ctx context.Context, key, nodeID string)
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	utils.Infof("NodeIDAllocator: heartbeat started for %s", nodeID)
+	corelog.Infof("NodeIDAllocator: heartbeat started for %s", nodeID)
 
 	for {
 		select {
 		case <-ctx.Done():
-			utils.Infof("NodeIDAllocator: context cancelled, stopping heartbeat for %s", nodeID)
+			corelog.Infof("NodeIDAllocator: context cancelled, stopping heartbeat for %s", nodeID)
 			return
 		case <-a.stopCh:
-			utils.Infof("NodeIDAllocator: stop signal received, stopping heartbeat for %s", nodeID)
+			corelog.Infof("NodeIDAllocator: stop signal received, stopping heartbeat for %s", nodeID)
 			return
 		case <-ticker.C:
 			// 续期（节点分配是运行时缓存，不应该持久化）
@@ -162,9 +162,9 @@ func (a *NodeIDAllocator) heartbeatLoop(ctx context.Context, key, nodeID string)
 				err = a.storage.Set(key, nodeID, NodeIDLockTTL)
 			}
 			if err != nil {
-				utils.Errorf("NodeIDAllocator: failed to renew node ID %s: %v", nodeID, err)
+				corelog.Errorf("NodeIDAllocator: failed to renew node ID %s: %v", nodeID, err)
 			} else {
-				utils.Debugf("NodeIDAllocator: renewed node ID %s (TTL: %s)", nodeID, NodeIDLockTTL)
+				corelog.Debugf("NodeIDAllocator: renewed node ID %s (TTL: %s)", nodeID, NodeIDLockTTL)
 			}
 		}
 	}
@@ -191,7 +191,7 @@ func (a *NodeIDAllocator) Release() error {
 		return fmt.Errorf("failed to release node ID %s: %w", a.nodeID, err)
 	}
 
-	utils.Infof("NodeIDAllocator: released node ID: %s", a.nodeID)
+	corelog.Infof("NodeIDAllocator: released node ID: %s", a.nodeID)
 	a.nodeID = ""
 	return nil
 }

@@ -1,6 +1,7 @@
 package repos
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,6 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // ConnectionRepo 连接数据访问
@@ -108,10 +108,10 @@ func (r *ConnectionRepo) DeleteConnection(connID string) error {
 
 	// 从映射和客户端列表中移除
 	if err := r.RemoveConnectionFromMapping(connInfo.MappingID, connInfo); err != nil {
-		utils.Warnf("Failed to remove connection from mapping list: %v", err)
+		corelog.Warnf("Failed to remove connection from mapping list: %v", err)
 	}
 	if err := r.RemoveConnectionFromClient(connInfo.ClientID, connInfo); err != nil {
-		utils.Warnf("Failed to remove connection from client list: %v", err)
+		corelog.Warnf("Failed to remove connection from client list: %v", err)
 	}
 
 	// 删除主连接记录

@@ -1,0 +1,271 @@
+syntax = "proto3";
+
+package storage;
+
+option go_package = "tunnox-core/api/proto/storage;storage";
+
+import "google/protobuf/timestamp.proto";
+
+// StorageService 存储服务接口
+// 供 tunnox-core 的 RemoteStorage 客户端调用
+service StorageService {
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 基础 KV 操作
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  rpc Set(SetRequest) returns (SetResponse);
+  rpc Get(GetRequest) returns (GetResponse);
+  rpc Delete(DeleteRequest) returns (DeleteResponse);
+  rpc Exists(ExistsRequest) returns (ExistsResponse);
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 批量操作
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  rpc BatchSet(BatchSetRequest) returns (BatchSetResponse);
+  rpc BatchGet(BatchGetRequest) returns (BatchGetResponse);
+  rpc BatchDelete(BatchDeleteRequest) returns (BatchDeleteResponse);
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 列表操作
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  rpc SetList(SetListRequest) returns (SetListResponse);
+  rpc GetList(GetListRequest) returns (GetListResponse);
+  rpc AppendToList(AppendToListRequest) returns (AppendToListResponse);
+  rpc RemoveFromList(RemoveFromListRequest) returns (RemoveFromListResponse);
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 过期时间
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  rpc SetExpiration(SetExpirationRequest) returns (SetExpirationResponse);
+  rpc GetExpiration(GetExpirationRequest) returns (GetExpirationResponse);
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 查询操作
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  rpc QueryByField(QueryByFieldRequest) returns (QueryByFieldResponse);
+  rpc QueryByPrefix(QueryByPrefixRequest) returns (QueryByPrefixResponse);
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 原子操作
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  rpc SetNX(SetNXRequest) returns (SetNXResponse);
+  rpc Incr(IncrRequest) returns (IncrResponse);
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // 健康检查
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 基础 KV 操作消息
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+message SetRequest {
+  string key = 1;
+  bytes value = 2;            // JSON 序列化的值
+  int64 ttl_seconds = 3;      // 过期时间（秒），0 表示永不过期
+}
+
+message SetResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  bool found = 1;
+  bytes value = 2;
+  string error = 3;
+}
+
+message DeleteRequest {
+  string key = 1;
+}
+
+message DeleteResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message ExistsRequest {
+  string key = 1;
+}
+
+message ExistsResponse {
+  bool exists = 1;
+  string error = 2;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 批量操作消息
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+message KeyValue {
+  string key = 1;
+  bytes value = 2;
+}
+
+message BatchSetRequest {
+  repeated KeyValue items = 1;
+  int64 ttl_seconds = 2;
+}
+
+message BatchSetResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message BatchGetRequest {
+  repeated string keys = 1;
+}
+
+message BatchGetResponse {
+  repeated KeyValue items = 1;
+  string error = 2;
+}
+
+message BatchDeleteRequest {
+  repeated string keys = 1;
+}
+
+message BatchDeleteResponse {
+  bool success = 1;
+  int64 deleted_count = 2;
+  string error = 3;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 列表操作消息
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+message SetListRequest {
+  string key = 1;
+  repeated bytes values = 2;
+  int64 ttl_seconds = 3;
+}
+
+message SetListResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message GetListRequest {
+  string key = 1;
+}
+
+message GetListResponse {
+  repeated bytes values = 1;
+  string error = 2;
+}
+
+message AppendToListRequest {
+  string key = 1;
+  bytes value = 2;
+}
+
+message AppendToListResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message RemoveFromListRequest {
+  string key = 1;
+  bytes value = 2;
+}
+
+message RemoveFromListResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 过期时间消息
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+message SetExpirationRequest {
+  string key = 1;
+  int64 ttl_seconds = 2;
+}
+
+message SetExpirationResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message GetExpirationRequest {
+  string key = 1;
+}
+
+message GetExpirationResponse {
+  int64 ttl_seconds = 1;      // -1 表示永不过期，-2 表示 key 不存在
+  string error = 2;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 查询操作消息
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+message QueryByFieldRequest {
+  string key_prefix = 1;
+  string field_name = 2;
+  bytes field_value = 3;
+}
+
+message QueryByFieldResponse {
+  repeated string keys = 1;
+  string error = 2;
+}
+
+message QueryByPrefixRequest {
+  string prefix = 1;
+  int32 limit = 2;            // 0 表示无限制
+}
+
+message QueryByPrefixResponse {
+  repeated KeyValue items = 1;
+  string error = 2;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 原子操作消息
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+message SetNXRequest {
+  string key = 1;
+  bytes value = 2;
+  int64 ttl_seconds = 3;
+}
+
+message SetNXResponse {
+  bool success = 1;           // true 表示设置成功，false 表示 key 已存在
+  string error = 2;
+}
+
+message IncrRequest {
+  string key = 1;
+  int64 delta = 2;            // 增量值
+}
+
+message IncrResponse {
+  int64 value = 1;            // 增加后的值
+  string error = 2;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 健康检查消息
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+message PingRequest {
+  int64 timestamp = 1;
+}
+
+message PingResponse {
+  bool ok = 1;
+  int64 server_timestamp = 2;
+  string version = 3;
+  string client_address = 4;  // 客户端的真实 IP 地址（用于节点发现）
+}
+

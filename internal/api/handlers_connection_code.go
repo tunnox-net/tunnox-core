@@ -1,6 +1,7 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,7 +11,6 @@ import (
 
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/services"
-	"tunnox-core/internal/utils"
 )
 
 // ConnectionCodeHandlers 连接码API处理器
@@ -54,7 +54,7 @@ type CreateConnectionCodeResponse struct {
 func (h *ConnectionCodeHandlers) HandleCreateConnectionCode(w http.ResponseWriter, r *http.Request) {
 	var req CreateConnectionCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		utils.Warnf("ConnectionCodeAPI: invalid request body: %v", err)
+		corelog.Warnf("ConnectionCodeAPI: invalid request body: %v", err)
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -90,7 +90,7 @@ func (h *ConnectionCodeHandlers) HandleCreateConnectionCode(w http.ResponseWrite
 		CreatedBy:       fmt.Sprintf("api-client-%d", req.TargetClientID),
 	})
 	if err != nil {
-		utils.Errorf("ConnectionCodeAPI: failed to create connection code: %v", err)
+		corelog.Errorf("ConnectionCodeAPI: failed to create connection code: %v", err)
 		if strings.Contains(err.Error(), "quota exceeded") {
 			respondError(w, http.StatusTooManyRequests, err.Error())
 		} else {
@@ -109,7 +109,7 @@ func (h *ConnectionCodeHandlers) HandleCreateConnectionCode(w http.ResponseWrite
 		CreatedAt:           connCode.CreatedAt.Format(time.RFC3339),
 	}
 
-	utils.Infof("ConnectionCodeAPI: created connection code %s for client %d",
+	corelog.Infof("ConnectionCodeAPI: created connection code %s for client %d",
 		connCode.Code, req.TargetClientID)
 
 	respondSuccess(w, http.StatusOK, resp)
@@ -147,7 +147,7 @@ func (h *ConnectionCodeHandlers) HandleActivateConnectionCode(w http.ResponseWri
 
 	var req ActivateConnectionCodeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		utils.Warnf("ConnectionCodeAPI: invalid request body: %v", err)
+		corelog.Warnf("ConnectionCodeAPI: invalid request body: %v", err)
 		respondError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -170,7 +170,7 @@ func (h *ConnectionCodeHandlers) HandleActivateConnectionCode(w http.ResponseWri
 		ListenAddress:  req.ListenAddress,
 	})
 	if err != nil {
-		utils.Errorf("ConnectionCodeAPI: failed to activate connection code %s: %v", req.Code, err)
+		corelog.Errorf("ConnectionCodeAPI: failed to activate connection code %s: %v", req.Code, err)
 		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "expired") {
 			respondError(w, http.StatusNotFound, err.Error())
 		} else if strings.Contains(err.Error(), "quota exceeded") {
@@ -199,7 +199,7 @@ func (h *ConnectionCodeHandlers) HandleActivateConnectionCode(w http.ResponseWri
 		CreatedAt:      mapping.CreatedAt.Format(time.RFC3339),
 	}
 
-	utils.Infof("ConnectionCodeAPI: activated code %s, created mapping %s",
+	corelog.Infof("ConnectionCodeAPI: activated code %s, created mapping %s",
 		req.Code, mapping.ID)
 
 	respondSuccess(w, http.StatusOK, resp)
@@ -219,7 +219,7 @@ func (h *ConnectionCodeHandlers) HandleRevokeConnectionCode(w http.ResponseWrite
 
 	// 撤销连接码
 	if err := h.connCodeService.RevokeConnectionCode(code, "api-admin"); err != nil {
-		utils.Errorf("ConnectionCodeAPI: failed to revoke connection code %s: %v", code, err)
+		corelog.Errorf("ConnectionCodeAPI: failed to revoke connection code %s: %v", code, err)
 		if strings.Contains(err.Error(), "not found") {
 			respondError(w, http.StatusNotFound, "connection code not found")
 		} else if strings.Contains(err.Error(), "already been used") {
@@ -230,7 +230,7 @@ func (h *ConnectionCodeHandlers) HandleRevokeConnectionCode(w http.ResponseWrite
 		return
 	}
 
-	utils.Infof("ConnectionCodeAPI: revoked connection code %s", code)
+	corelog.Infof("ConnectionCodeAPI: revoked connection code %s", code)
 
 	respondSuccess(w, http.StatusOK, map[string]string{
 		"message": "connection code revoked successfully",
@@ -261,7 +261,7 @@ func (h *ConnectionCodeHandlers) HandleListConnectionCodes(w http.ResponseWriter
 	// 列出连接码
 	codes, err := h.connCodeService.ListConnectionCodesByTargetClient(targetClientID)
 	if err != nil {
-		utils.Errorf("ConnectionCodeAPI: failed to list connection codes for client %d: %v",
+		corelog.Errorf("ConnectionCodeAPI: failed to list connection codes for client %d: %v",
 			targetClientID, err)
 		respondError(w, http.StatusInternalServerError, "failed to list connection codes")
 		return
@@ -344,7 +344,7 @@ func (h *ConnectionCodeHandlers) HandleListMappings(w http.ResponseWriter, r *ht
 	}
 
 	if err != nil {
-		utils.Errorf("ConnectionCodeAPI: failed to list %s mappings for client %d: %v",
+		corelog.Errorf("ConnectionCodeAPI: failed to list %s mappings for client %d: %v",
 			direction, clientID, err)
 		respondError(w, http.StatusInternalServerError, "failed to list mappings")
 		return
@@ -408,7 +408,7 @@ func (h *ConnectionCodeHandlers) HandleRevokeMapping(w http.ResponseWriter, r *h
 
 	// 撤销映射
 	if err := h.connCodeService.RevokeMapping(mappingID, clientID, "api-admin"); err != nil {
-		utils.Errorf("ConnectionCodeAPI: failed to revoke mapping %s: %v", mappingID, err)
+		corelog.Errorf("ConnectionCodeAPI: failed to revoke mapping %s: %v", mappingID, err)
 		if strings.Contains(err.Error(), "not found") {
 			respondError(w, http.StatusNotFound, "mapping not found")
 		} else if strings.Contains(err.Error(), "not authorized") {
@@ -419,7 +419,7 @@ func (h *ConnectionCodeHandlers) HandleRevokeMapping(w http.ResponseWriter, r *h
 		return
 	}
 
-	utils.Infof("ConnectionCodeAPI: revoked mapping %s by client %d", mappingID, clientID)
+	corelog.Infof("ConnectionCodeAPI: revoked mapping %s by client %d", mappingID, clientID)
 
 	respondSuccess(w, http.StatusOK, map[string]string{
 		"message": "mapping revoked successfully",

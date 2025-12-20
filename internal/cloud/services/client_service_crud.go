@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"sync"
 	"time"
@@ -105,7 +106,7 @@ func (s *clientService) GetClient(clientID int64) (*models.Client, error) {
 		defer wg.Done()
 		state, stateErr = s.stateRepo.GetState(clientID)
 		if stateErr != nil {
-			utils.Debugf("Failed to get client %d state: %v", clientID, stateErr)
+			corelog.Debugf("Failed to get client %d state: %v", clientID, stateErr)
 			stateErr = nil // 状态不存在不算错误
 		}
 	}()
@@ -115,7 +116,7 @@ func (s *clientService) GetClient(clientID int64) (*models.Client, error) {
 		defer wg.Done()
 		token, tokenErr = s.tokenRepo.GetToken(clientID)
 		if tokenErr != nil {
-			utils.Debugf("Failed to get client %d token: %v", clientID, tokenErr)
+			corelog.Debugf("Failed to get client %d token: %v", clientID, tokenErr)
 			tokenErr = nil // Token不存在不算错误
 		}
 	}()
@@ -138,7 +139,7 @@ func (s *clientService) GetClient(clientID int64) (*models.Client, error) {
 // TouchClient 更新客户端最后活动时间
 func (s *clientService) TouchClient(clientID int64) {
 	if err := s.stateRepo.TouchState(clientID); err != nil {
-		utils.Warnf("Failed to touch client %d state: %v", clientID, err)
+		corelog.Warnf("Failed to touch client %d state: %v", clientID, err)
 	}
 }
 

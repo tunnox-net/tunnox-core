@@ -1,13 +1,13 @@
 package command
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // CommandUtils 命令工具类，支持链式调用
@@ -182,7 +182,7 @@ func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 	}
 
 	// 记录日志
-	utils.Debugf("Executing command: %v, request: %+v", cu.commandType, cu.requestData)
+	corelog.Debugf("Executing command: %v, request: %+v", cu.commandType, cu.requestData)
 
 	// 发送命令包
 	_, err := connInfo.WritePacket(transferPacket, false, 0)
@@ -256,7 +256,7 @@ func (cu *CommandUtils) waitForResponse() (*CommandResponse, error) {
 				if responsePacket.CommandPacket.Token == cu.requestID {
 					// 检查CommandId是否匹配（如果响应中包含CommandId）
 					if responsePacket.CommandPacket.CommandId != "" && responsePacket.CommandPacket.CommandId != cu.commandId {
-						utils.Warnf("CommandId mismatch: expected %s, got %s", cu.commandId, responsePacket.CommandPacket.CommandId)
+						corelog.Warnf("CommandId mismatch: expected %s, got %s", cu.commandId, responsePacket.CommandPacket.CommandId)
 						continue // 继续等待正确的响应
 					}
 
@@ -274,7 +274,7 @@ func (cu *CommandUtils) waitForResponse() (*CommandResponse, error) {
 					}
 
 					// 记录日志
-					utils.Debugf("Command executed successfully: %v", cu.commandType)
+					corelog.Debugf("Command executed successfully: %v", cu.commandType)
 
 					return &response, nil
 				}
@@ -288,7 +288,7 @@ func (cu *CommandUtils) waitForResponse() (*CommandResponse, error) {
 
 // defaultErrorHandler 默认错误处理函数
 func defaultErrorHandler(err error) error {
-	utils.Errorf("Command execution error: %v", err)
+	corelog.Errorf("Command execution error: %v", err)
 	return err
 }
 

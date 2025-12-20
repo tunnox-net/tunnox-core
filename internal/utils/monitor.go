@@ -7,7 +7,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // MonitorConfig 监控配置
@@ -79,7 +81,7 @@ func (rm *ResourceMonitor) Start() error {
 		return fmt.Errorf("monitor is already running")
 	}
 
-	Infof("Starting resource monitor with interval: %v", rm.config.MonitorInterval)
+	corelog.Infof("Starting resource monitor with interval: %v", rm.config.MonitorInterval)
 
 	go rm.monitorLoop()
 	return nil
@@ -92,7 +94,7 @@ func (rm *ResourceMonitor) Stop() error {
 	}
 
 	rm.cancel()
-	Infof("Resource monitor stopped")
+	corelog.Infof("Resource monitor stopped")
 	return nil
 }
 

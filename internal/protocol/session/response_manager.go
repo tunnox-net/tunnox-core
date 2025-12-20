@@ -1,6 +1,7 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // ResponseManager 响应管理器
@@ -37,7 +37,7 @@ func (rm *ResponseManager) SetEventBus(eventBus events.EventBus) error {
 		if err := eventBus.Subscribe("CommandCompleted", rm.handleCommandCompletedEvent); err != nil {
 			return fmt.Errorf("failed to subscribe to CommandCompleted events: %w", err)
 		}
-		utils.Infof("Response manager subscribed to CommandCompleted events")
+		corelog.Infof("Response manager subscribed to CommandCompleted events")
 	}
 
 	return nil
@@ -50,7 +50,7 @@ func (rm *ResponseManager) handleCommandCompletedEvent(event events.Event) error
 		return fmt.Errorf("invalid event type: expected CommandCompletedEvent")
 	}
 
-	utils.Infof("Handling command completed event for connection: %s, success: %v",
+	corelog.Infof("Handling command completed event for connection: %s, success: %v",
 		completedEvent.ConnectionID, completedEvent.Success)
 
 	// 创建命令响应
@@ -80,7 +80,7 @@ func (rm *ResponseManager) SendResponse(connID string, response *command.Command
 		return fmt.Errorf("connection %s is closed or closing", connID)
 	}
 
-	utils.Debugf("Sending response to connection %s: success=%v",
+	corelog.Debugf("Sending response to connection %s: success=%v",
 		connID, response.Success)
 
 	// 1. 构造响应数据
@@ -129,11 +129,11 @@ func (rm *ResponseManager) SendResponse(connID string, response *command.Command
 	}
 
 	if _, err := conn.Stream.WritePacket(transferPacket, true, 0); err != nil {
-		utils.Errorf("Failed to send response to connection %s: %v", connID, err)
+		corelog.Errorf("Failed to send response to connection %s: %v", connID, err)
 		return fmt.Errorf("failed to write response packet: %w", err)
 	}
 
-	utils.Infof("Response sent successfully to connection %s, CommandId=%s, Success=%v",
+	corelog.Infof("Response sent successfully to connection %s, CommandId=%s, Success=%v",
 		connID, response.CommandId, response.Success)
 
 	return nil
@@ -141,16 +141,16 @@ func (rm *ResponseManager) SendResponse(connID string, response *command.Command
 
 // onClose 资源清理回调
 func (rm *ResponseManager) onClose() error {
-	utils.Infof("Cleaning up response manager resources...")
+	corelog.Infof("Cleaning up response manager resources...")
 
 	// 取消事件订阅
 	if rm.eventBus != nil {
 		if err := rm.eventBus.Unsubscribe("CommandCompleted", rm.handleCommandCompletedEvent); err != nil {
-			utils.Warnf("Failed to unsubscribe from CommandCompleted events: %v", err)
+			corelog.Warnf("Failed to unsubscribe from CommandCompleted events: %v", err)
 		}
-		utils.Infof("Response manager unsubscribed from CommandCompleted events")
+		corelog.Infof("Response manager unsubscribed from CommandCompleted events")
 	}
 
-	utils.Infof("Response manager resources cleanup completed")
+	corelog.Infof("Response manager resources cleanup completed")
 	return nil
 }

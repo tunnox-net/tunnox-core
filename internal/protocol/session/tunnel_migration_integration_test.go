@@ -1,12 +1,12 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"testing"
 	"time"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -275,6 +275,6 @@ func TestTunnelResumeFlow_EndToEnd(t *testing.T) {
 	// TODO: 恢复发送缓冲区（如果需要）
 	// session.RestoreToSendBuffer(newTunnel.sendBuffer, loadedState.BufferedPackets)
 
-	utils.Infof("End-to-end tunnel resume test completed successfully")
+	corelog.Infof("End-to-end tunnel resume test completed successfully")
 }
 

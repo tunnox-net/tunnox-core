@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
 	"tunnox-core/internal/app/server"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 )
 
@@ -21,44 +23,44 @@ func main() {
 
 	// 显示帮助信息
 	if *showHelp {
-		utils.Info("Tunnox Core Server")
-		utils.Info("Usage: server [options]")
-		utils.Info()
-		utils.Info("Options:")
+		corelog.Info("Tunnox Core Server")
+		corelog.Info("Usage: server [options]")
+		corelog.Info()
+		corelog.Info("Options:")
 		flag.PrintDefaults()
-		utils.Info()
-		utils.Info("Examples:")
-		utils.Info("  server                    # 使用当前目录下的 config.yaml")
-		utils.Info("  server -config ./my_config.yaml")
-		utils.Info("  server -config /path/to/config.yaml -log /tmp/server.log")
-		utils.Info("  server -log /var/log/tunnox/server.log")
+		corelog.Info()
+		corelog.Info("Examples:")
+		corelog.Info("  server                    # 使用当前目录下的 config.yaml")
+		corelog.Info("  server -config ./my_config.yaml")
+		corelog.Info("  server -config /path/to/config.yaml -log /tmp/server.log")
+		corelog.Info("  server -log /var/log/tunnox/server.log")
 		return
 	}
 
 	// 获取配置文件绝对路径
 	absConfigPath, err := filepath.Abs(*configPath)
 	if err != nil {
-		utils.Fatalf("Failed to resolve config path: %v", err)
+		corelog.Fatalf("Failed to resolve config path: %v", err)
 	}
 
 	// 2. 加载配置并创建服务器
 	config, err := server.LoadConfig(absConfigPath)
 	if err != nil {
-		utils.Fatalf("Failed to load configuration: %v", err)
+		corelog.Fatalf("Failed to load configuration: %v", err)
 	}
 
 	// 3. 如果指定了日志文件路径，覆盖配置
 	if *logFile != "" {
 		expandedPath, err := utils.ExpandPath(*logFile)
 		if err != nil {
-			utils.Fatalf("Failed to expand log file path %q: %v", *logFile, err)
+			corelog.Fatalf("Failed to expand log file path %q: %v", *logFile, err)
 		}
 		config.Log.File = expandedPath
 		config.Log.Output = "file"
 		// 确保日志目录存在
 		logDir := filepath.Dir(expandedPath)
 		if err := os.MkdirAll(logDir, 0755); err != nil {
-			utils.Fatalf("Failed to create log directory %q: %v", logDir, err)
+			corelog.Fatalf("Failed to create log directory %q: %v", logDir, err)
 		}
 	}
 
@@ -74,5 +76,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	utils.Info("Tunnox Core server exited gracefully")
+	corelog.Info("Tunnox Core server exited gracefully")
 }

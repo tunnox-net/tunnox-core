@@ -1,12 +1,12 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"time"
 	
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // getStreamFromConnection 从控制连接获取Stream
@@ -36,12 +36,12 @@ func sendPacketAsync(streamProcessor stream.PackageStreamer, pkt *packet.Transfe
 		select {
 		case err := <-done:
 			if err != nil {
-				utils.Errorf("API: failed to send packet to client %d: %v", clientID, err)
+				corelog.Errorf("API: failed to send packet to client %d: %v", clientID, err)
 			} else {
-				utils.Debugf("API: ✅ packet sent successfully to client %d", clientID)
+				corelog.Debugf("API: ✅ packet sent successfully to client %d", clientID)
 			}
 		case <-time.After(timeout):
-			utils.Errorf("API: send packet to client %d timed out after %v", clientID, timeout)
+			corelog.Errorf("API: send packet to client %d timed out after %v", clientID, timeout)
 		}
 	}()
 }

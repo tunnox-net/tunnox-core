@@ -1,6 +1,7 @@
 package repos
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 )
 
 // ClientStateRepository 客户端状态数据访问层
@@ -50,7 +50,7 @@ func NewClientStateRepository(ctx context.Context, storage storage.Storage) *Cli
 
 // onClose 资源清理回调
 func (r *ClientStateRepository) onClose() error {
-	utils.Infof("ClientStateRepository: closing")
+	corelog.Infof("ClientStateRepository: closing")
 	// 状态数据存储在缓存中，会自动过期，无需手动清理
 	return nil
 }
@@ -118,7 +118,7 @@ func (r *ClientStateRepository) SetState(state *models.ClientRuntimeState) error
 		return fmt.Errorf("failed to set state: %w", err)
 	}
 	
-	utils.Debugf("ClientStateRepository: set state for client %d (node=%s, status=%s)", 
+	corelog.Debugf("ClientStateRepository: set state for client %d (node=%s, status=%s)", 
 		state.ClientID, state.NodeID, state.Status)
 	
 	return nil
@@ -138,7 +138,7 @@ func (r *ClientStateRepository) DeleteState(clientID int64) error {
 		return fmt.Errorf("failed to delete state: %w", err)
 	}
 	
-	utils.Debugf("ClientStateRepository: deleted state for client %d", clientID)
+	corelog.Debugf("ClientStateRepository: deleted state for client %d", clientID)
 	return nil
 }
 
@@ -231,7 +231,7 @@ func (r *ClientStateRepository) AddToNodeClients(nodeID string, clientID int64) 
 		return fmt.Errorf("failed to save node clients: %w", err)
 	}
 	
-	utils.Debugf("ClientStateRepository: added client %d to node %s", clientID, nodeID)
+	corelog.Debugf("ClientStateRepository: added client %d to node %s", clientID, nodeID)
 	return nil
 }
 
@@ -277,7 +277,7 @@ func (r *ClientStateRepository) RemoveFromNodeClients(nodeID string, clientID in
 		return fmt.Errorf("failed to save node clients: %w", err)
 	}
 	
-	utils.Debugf("ClientStateRepository: removed client %d from node %s", clientID, nodeID)
+	corelog.Debugf("ClientStateRepository: removed client %d from node %s", clientID, nodeID)
 	return nil
 }
 

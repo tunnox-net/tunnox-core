@@ -1,6 +1,7 @@
 package server
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -14,7 +15,6 @@ import (
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/security"
-	"tunnox-core/internal/utils"
 )
 
 // ServerAuthHandler 服务器认证处理器
@@ -50,7 +50,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 	// 1. IP黑白名单检查（最高优先级）
 	if h.ipManager != nil {
 		if allowed, reason := h.ipManager.IsAllowed(ip); !allowed {
-			utils.Warnf("ServerAuthHandler: blocked IP %s (blacklisted): %s", ip, reason)
+			corelog.Warnf("ServerAuthHandler: blocked IP %s (blacklisted): %s", ip, reason)
 			return &packet.HandshakeResponse{
 				Success: false,
 				Error:   "Access denied",
@@ -61,7 +61,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 	// 2. 暴力破解防护检查
 	if h.bruteForceProtector != nil {
 		if banned, reason := h.bruteForceProtector.IsBanned(ip); banned {
-			utils.Warnf("ServerAuthHandler: blocked banned IP %s: %s", ip, reason)
+			corelog.Warnf("ServerAuthHandler: blocked banned IP %s: %s", ip, reason)
 			return &packet.HandshakeResponse{
 				Success: false,
 				Error:   "Access denied: too many failed attempts",
@@ -72,7 +72,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 	// 3. 匿名客户端速率限制检查
 	if req.ClientID == 0 && h.rateLimiter != nil {
 		if !h.rateLimiter.AllowIP(ip) {
-			utils.Warnf("ServerAuthHandler: rate limit exceeded for IP %s", ip)
+			corelog.Warnf("ServerAuthHandler: rate limit exceeded for IP %s", ip)
 			return &packet.HandshakeResponse{
 				Success: false,
 				Error:   "Rate limit exceeded, please try again later",
@@ -89,7 +89,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 		anonClient, err := h.cloudControl.GenerateAnonymousCredentials()
 		if err != nil {
 			authError = err
-			utils.Errorf("ServerAuthHandler: failed to generate anonymous credentials: %v", err)
+			corelog.Errorf("ServerAuthHandler: failed to generate anonymous credentials: %v", err)
 			// 记录失败
 			if h.bruteForceProtector != nil {
 				h.bruteForceProtector.RecordFailure(ip)
@@ -100,7 +100,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 			}, err
 		}
 		clientID = anonClient.ID
-		utils.Infof("ServerAuthHandler: generated anonymous client ID: %d", clientID)
+		corelog.Infof("ServerAuthHandler: generated anonymous client ID: %d", clientID)
 	} else {
 		// 注册客户端或匿名客户端重新认证（使用ClientID+Token）
 		// 对于匿名客户端，Token是SecretKey
@@ -113,11 +113,11 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 			// 这通常发生在服务端重启导致数据丢失，或客户端配置的ID无效时
 			if !strings.HasPrefix(req.Token, "anonymous:") && len(req.Token) >= 16 {
 				// 可能是匿名客户端的SecretKey，自动生成新匿名客户端
-				utils.Warnf("ServerAuthHandler: client %d not found, auto-generating new anonymous client (likely server restart or invalid config)", req.ClientID)
+				corelog.Warnf("ServerAuthHandler: client %d not found, auto-generating new anonymous client (likely server restart or invalid config)", req.ClientID)
 				anonClient, genErr := h.cloudControl.GenerateAnonymousCredentials()
 				if genErr != nil {
 					authError = fmt.Errorf("failed to generate new anonymous client: %w", genErr)
-					utils.Errorf("ServerAuthHandler: failed to generate anonymous credentials: %v", genErr)
+					corelog.Errorf("ServerAuthHandler: failed to generate anonymous credentials: %v", genErr)
 					if h.bruteForceProtector != nil {
 						h.bruteForceProtector.RecordFailure(ip)
 					}
@@ -131,7 +131,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 			} else {
 				// 注册客户端或首次匿名握手，返回错误
 				authError = fmt.Errorf("client not found")
-				utils.Errorf("ServerAuthHandler: client %d not found: %v", req.ClientID, err)
+				corelog.Errorf("ServerAuthHandler: client %d not found: %v", req.ClientID, err)
 				if h.bruteForceProtector != nil {
 					h.bruteForceProtector.RecordFailure(ip)
 				}
@@ -148,7 +148,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 				// 匿名客户端：验证SecretKey
 				if client.SecretKey != req.Token {
 					authError = fmt.Errorf("invalid secret key")
-					utils.Warnf("ServerAuthHandler: invalid secret key for anonymous client %d", req.ClientID)
+					corelog.Warnf("ServerAuthHandler: invalid secret key for anonymous client %d", req.ClientID)
 					if h.bruteForceProtector != nil {
 						h.bruteForceProtector.RecordFailure(ip)
 					}
@@ -172,7 +172,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 				})
 				if err != nil {
 					authError = err
-					utils.Errorf("ServerAuthHandler: authentication failed for client %d: %v", req.ClientID, err)
+					corelog.Errorf("ServerAuthHandler: authentication failed for client %d: %v", req.ClientID, err)
 					if h.bruteForceProtector != nil {
 						h.bruteForceProtector.RecordFailure(ip)
 					}
@@ -209,10 +209,10 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 	// 7. 更新客户端状态为在线
 	nodeID := h.sessionMgr.GetNodeID()
 	if nodeID == "" {
-		utils.Warnf("ServerAuthHandler: NodeID not set in SessionManager, using empty string")
+		corelog.Warnf("ServerAuthHandler: NodeID not set in SessionManager, using empty string")
 	}
 	if err := h.cloudControl.UpdateClientStatus(clientID, models.ClientStatusOnline, nodeID); err != nil {
-		utils.Warnf("ServerAuthHandler: failed to update client %d status to online: %v", clientID, err)
+		corelog.Warnf("ServerAuthHandler: failed to update client %d status to online: %v", clientID, err)
 		// 不返回错误，只记录警告，握手仍然成功
 	} else {
 	}
@@ -232,22 +232,22 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 	isNewClient := clientID != req.ClientID && clientID > 0
 	isAnonymousReauth := clientID > 0 && clientID == req.ClientID && !strings.HasPrefix(req.Token, "anonymous:")
 	
-	utils.Debugf("ServerAuthHandler: handshake response check - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v, req.ClientID=%d, clientID=%d", 
+	corelog.Debugf("ServerAuthHandler: handshake response check - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v, req.ClientID=%d, clientID=%d", 
 		isFirstHandshake, isNewClient, isAnonymousReauth, req.ClientID, clientID)
 	
 	if isFirstHandshake || isNewClient || isAnonymousReauth {
 		// 获取匿名客户端信息（包含SecretKey）
 		anonClient, err := h.cloudControl.GetClient(clientID)
 		if err != nil {
-			utils.Warnf("ServerAuthHandler: failed to get anonymous client %d: %v", clientID, err)
+			corelog.Warnf("ServerAuthHandler: failed to get anonymous client %d: %v", clientID, err)
 			response.Message = fmt.Sprintf("Anonymous client authenticated, client_id=%d", clientID)
 		} else if anonClient == nil {
-			utils.Warnf("ServerAuthHandler: anonymous client %d not found (nil)", clientID)
+			corelog.Warnf("ServerAuthHandler: anonymous client %d not found (nil)", clientID)
 			response.Message = fmt.Sprintf("Anonymous client authenticated, client_id=%d", clientID)
 		} else {
 			response.ClientID = clientID
 			response.SecretKey = anonClient.SecretKey
-			utils.Infof("ServerAuthHandler: returning ClientID=%d and SecretKey in handshake response", clientID)
+			corelog.Infof("ServerAuthHandler: returning ClientID=%d and SecretKey in handshake response", clientID)
 			if clientID != req.ClientID {
 				// 自动生成的新客户端，提示客户端更新配置
 				response.Message = fmt.Sprintf("Client ID updated: %d -> %d (please update your config)", req.ClientID, clientID)
@@ -256,7 +256,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 			}
 		}
 	} else {
-		utils.Debugf("ServerAuthHandler: not returning ClientID/SecretKey - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v", 
+		corelog.Debugf("ServerAuthHandler: not returning ClientID/SecretKey - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v", 
 			isFirstHandshake, isNewClient, isAnonymousReauth)
 	}
 
@@ -365,7 +365,7 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 
 	// 1. 验证ClientID
 	if conn.GetClientID() == 0 {
-		utils.Warnf("ServerTunnelHandler: client not authenticated for connection %s", conn.GetConnID())
+		corelog.Warnf("ServerTunnelHandler: client not authenticated for connection %s", conn.GetConnID())
 		return fmt.Errorf("client not authenticated")
 	}
 
@@ -376,13 +376,13 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 
 		// 验证隧道映射权限
 		if h.connCodeService == nil {
-			utils.Errorf("ServerTunnelHandler: connection code service not available")
+			corelog.Errorf("ServerTunnelHandler: connection code service not available")
 			return fmt.Errorf("connection code service not available")
 		}
 
 		validatedMapping, err := h.connCodeService.ValidateMapping(req.MappingID, conn.GetClientID())
 		if err != nil {
-			utils.Warnf("ServerTunnelHandler: mapping validation failed for %s (client %d): %v",
+			corelog.Warnf("ServerTunnelHandler: mapping validation failed for %s (client %d): %v",
 				req.MappingID, conn.GetClientID(), err)
 			return fmt.Errorf("mapping validation failed: %w", err)
 		}
@@ -391,7 +391,7 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 
 		// 记录映射使用（统计）
 		if err := h.connCodeService.RecordMappingUsage(req.MappingID); err != nil {
-			utils.Warnf("ServerTunnelHandler: failed to record mapping usage for %s: %v", req.MappingID, err)
+			corelog.Warnf("ServerTunnelHandler: failed to record mapping usage for %s: %v", req.MappingID, err)
 			// 不返回错误，只记录警告
 		}
 
@@ -402,13 +402,13 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 		// 从旧的PortMapping获取（保持向后兼容）
 		portMapping, err := h.cloudControl.GetPortMapping(req.MappingID)
 		if err != nil {
-			utils.Errorf("ServerTunnelHandler: port mapping not found %s: %v", req.MappingID, err)
+			corelog.Errorf("ServerTunnelHandler: port mapping not found %s: %v", req.MappingID, err)
 			return fmt.Errorf("mapping not found: %w", err)
 		}
 
 		// 验证SecretKey
 		if err := h.validateWithSecretKey(req.SecretKey, portMapping); err != nil {
-			utils.Warnf("ServerTunnelHandler: secret key validation failed for mapping %s",
+			corelog.Warnf("ServerTunnelHandler: secret key validation failed for mapping %s",
 				req.MappingID)
 			return fmt.Errorf("invalid secret key")
 		}
@@ -421,7 +421,7 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 			listenClientID = portMapping.SourceClientID
 		}
 		if listenClientID != conn.GetClientID() && portMapping.TargetClientID != conn.GetClientID() {
-			utils.Warnf("ServerTunnelHandler: client %d not authorized for mapping %s (listenClientID=%d, source=%d, target=%d)",
+			corelog.Warnf("ServerTunnelHandler: client %d not authorized for mapping %s (listenClientID=%d, source=%d, target=%d)",
 				conn.GetClientID(), req.MappingID, portMapping.ListenClientID, portMapping.SourceClientID, portMapping.TargetClientID)
 			return fmt.Errorf("client not authorized for this mapping")
 		}
@@ -429,7 +429,7 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 
 	} else {
 		// 无有效凭证
-		utils.Warnf("ServerTunnelHandler: no valid credentials provided for connection %s",
+		corelog.Warnf("ServerTunnelHandler: no valid credentials provided for connection %s",
 			conn.GetConnID())
 		return fmt.Errorf("authentication required: either mapping_id or secret_key must be provided")
 	}
@@ -488,7 +488,7 @@ func extractIP(addr net.Addr) string {
 // 3. 恢复缓冲区状态（如果启用序列号）
 // 4. 返回成功，客户端可继续传输
 func (h *ServerTunnelHandler) resumeTunnel(conn session.ControlConnectionInterface, req *packet.TunnelOpenRequest) error {
-	utils.Infof("ServerTunnelHandler: attempting to resume tunnel %s for client %d",
+	corelog.Infof("ServerTunnelHandler: attempting to resume tunnel %s for client %d",
 		req.TunnelID, conn.GetClientID())
 
 	// 需要SessionManager支持
@@ -496,21 +496,21 @@ func (h *ServerTunnelHandler) resumeTunnel(conn session.ControlConnectionInterfa
 		ValidateTunnelResumeToken(string) (*session.TunnelState, error)
 	})
 	if !ok {
-		utils.Errorf("ServerTunnelHandler: session manager does not support tunnel resumption")
+		corelog.Errorf("ServerTunnelHandler: session manager does not support tunnel resumption")
 		return fmt.Errorf("tunnel resumption not supported")
 	}
 
 	// 1. 验证ResumeToken并加载隧道状态
 	tunnelState, err := sessionMgr.ValidateTunnelResumeToken(req.ResumeToken)
 	if err != nil {
-		utils.Warnf("ServerTunnelHandler: failed to validate resume token for tunnel %s: %v",
+		corelog.Warnf("ServerTunnelHandler: failed to validate resume token for tunnel %s: %v",
 			req.TunnelID, err)
 		return fmt.Errorf("invalid resume token: %w", err)
 	}
 
 	// 2. 验证TunnelID匹配
 	if tunnelState.TunnelID != req.TunnelID {
-		utils.Warnf("ServerTunnelHandler: tunnel ID mismatch (token=%s, request=%s)",
+		corelog.Warnf("ServerTunnelHandler: tunnel ID mismatch (token=%s, request=%s)",
 			tunnelState.TunnelID, req.TunnelID)
 		return fmt.Errorf("tunnel ID mismatch")
 	}
@@ -519,14 +519,14 @@ func (h *ServerTunnelHandler) resumeTunnel(conn session.ControlConnectionInterfa
 	if h.connCodeService != nil && tunnelState.MappingID != "" {
 		_, err := h.connCodeService.ValidateMapping(tunnelState.MappingID, conn.GetClientID())
 		if err != nil {
-			utils.Warnf("ServerTunnelHandler: mapping validation failed during resume for %s: %v",
+			corelog.Warnf("ServerTunnelHandler: mapping validation failed during resume for %s: %v",
 				tunnelState.MappingID, err)
 			return fmt.Errorf("mapping validation failed: %w", err)
 		}
 	}
 
 	// 4. 记录恢复成功（日志写入文件）
-	utils.Infof("ServerTunnelHandler: tunnel resumed successfully - TunnelID=%s, MappingID=%s, Client=%d",
+	corelog.Infof("ServerTunnelHandler: tunnel resumed successfully - TunnelID=%s, MappingID=%s, Client=%d",
 		tunnelState.TunnelID, tunnelState.MappingID, conn.GetClientID())
 
 	// TODO: 如果需要恢复缓冲区状态，在这里实现

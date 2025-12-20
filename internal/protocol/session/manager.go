@@ -8,10 +8,10 @@ import (
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/idgen"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/security"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // SessionConfig SessionManager配置
@@ -33,9 +33,9 @@ type SessionConfig struct {
 func DefaultSessionConfig() *SessionConfig {
 	return &SessionConfig{
 		HeartbeatTimeout:      60 * time.Second, // 缩短为60秒（负载均衡器后面连接多，需要更积极清理）
-		CleanupInterval:        15 * time.Second, // 缩短为15秒（更频繁检查）
-		MaxConnections:         10000,           // 最大10000个连接
-		MaxControlConnections:  5000,            // 最大5000个控制连接
+		CleanupInterval:       15 * time.Second, // 缩短为15秒（更频繁检查）
+		MaxConnections:        10000,            // 最大10000个连接
+		MaxControlConnections: 5000,             // 最大5000个控制连接
 	}
 }
 
@@ -83,6 +83,9 @@ type SessionManager struct {
 	streamMgr     *stream.StreamManager
 	streamFactory stream.StreamFactory
 
+	// 日志接口（支持依赖注入）
+	logger corelog.Logger
+
 	// 事件驱动架构
 	eventBus        events.EventBus
 	responseManager *ResponseManager
@@ -121,7 +124,6 @@ type SessionManager struct {
 	// ✨ Phase 2: 隧道迁移支持
 	tunnelStateManager *TunnelStateManager
 	migrationManager   *TunnelMigrationManager
-
 
 	dispose.Dispose
 }
@@ -162,13 +164,14 @@ func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.C
 		streamMgr:     streamMgr,
 		streamFactory: streamFactory,
 		config:        config,
+		// 默认使用全局 Logger
+		logger: corelog.Default(),
 		// 事件驱动架构将在后续设置
 		eventBus:        nil,
 		responseManager: nil,
 		tunnelHandler:   nil,
 		authHandler:     nil,
 	}
-
 
 	// 设置资源清理回调
 	session.SetCtx(parentCtx, session.onClose)
@@ -188,13 +191,13 @@ func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.C
 // SetTunnelHandler 设置隧道处理器
 func (s *SessionManager) SetTunnelHandler(handler TunnelHandler) {
 	s.tunnelHandler = handler
-	utils.Debug("Tunnel handler configured in SessionManager")
+	corelog.Debug("Tunnel handler configured in SessionManager")
 }
 
 // SetAuthHandler 设置认证处理器
 func (s *SessionManager) SetAuthHandler(handler AuthHandler) {
 	s.authHandler = handler
-	utils.Debug("Auth handler configured in SessionManager")
+	corelog.Debug("Auth handler configured in SessionManager")
 }
 
 // CloudControlAPI 定义CloudControl接口
@@ -202,18 +205,19 @@ func (s *SessionManager) SetAuthHandler(handler AuthHandler) {
 type CloudControlAPI interface {
 	GetPortMapping(mappingID string) (*models.PortMapping, error)
 	UpdatePortMappingStats(mappingID string, stats interface{}) error
+	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error)
 }
 
 // SetCloudControl 设置CloudControl API
 func (s *SessionManager) SetCloudControl(cc CloudControlAPI) {
 	s.cloudControl = cc
-	utils.Debugf("CloudControl API configured in SessionManager")
+	corelog.Debugf("CloudControl API configured in SessionManager")
 }
 
 // SetBridgeManager 设置BridgeManager（用于跨服务器隧道转发）
 func (s *SessionManager) SetBridgeManager(bridgeManager BridgeManager) {
 	s.bridgeManager = bridgeManager
-	utils.Infof("SessionManager: BridgeManager configured for cross-server forwarding")
+	corelog.Infof("SessionManager: BridgeManager configured for cross-server forwarding")
 
 	// 启动跨节点广播订阅
 	s.startTunnelOpenBroadcastSubscription()
@@ -223,7 +227,7 @@ func (s *SessionManager) SetBridgeManager(bridgeManager BridgeManager) {
 // SetReconnectTokenManager 设置ReconnectTokenManager（用于生成重连Token）
 func (s *SessionManager) SetReconnectTokenManager(manager *security.ReconnectTokenManager) {
 	s.reconnectTokenManager = manager
-	utils.Debugf("SessionManager: ReconnectTokenManager configured")
+	corelog.Debugf("SessionManager: ReconnectTokenManager configured")
 }
 
 // ============================================================================
@@ -240,21 +244,20 @@ func (s *SessionManager) GetStreamFactory() stream.StreamFactory {
 	return s.streamFactory
 }
 
-
 // ============================================================================
 // 资源清理
 // ============================================================================
 
 // onClose 资源清理回调
 func (s *SessionManager) onClose() error {
-	utils.Infof("Cleaning up session manager resources...")
+	corelog.Infof("Cleaning up session manager resources...")
 
 	// 取消事件订阅
 	if s.eventBus != nil {
 		if err := s.eventBus.Unsubscribe("DisconnectRequest", s.handleDisconnectRequestEvent); err != nil {
-			utils.Warnf("Failed to unsubscribe from DisconnectRequest events: %v", err)
+			corelog.Warnf("Failed to unsubscribe from DisconnectRequest events: %v", err)
 		}
-		utils.Infof("Unsubscribed from disconnect request events")
+		corelog.Infof("Unsubscribed from disconnect request events")
 	}
 
 	// 关闭所有连接
@@ -295,36 +298,36 @@ func (s *SessionManager) onClose() error {
 	s.tunnelIDMap = make(map[string]*TunnelConnection)
 	s.tunnelConnLock.Unlock()
 
-	utils.Infof("SessionManager: closed %d connections, %d control connections, %d tunnel connections",
+	corelog.Infof("SessionManager: closed %d connections, %d control connections, %d tunnel connections",
 		connCount, controlConnCount, tunnelConnCount)
 
 	// 关闭流管理器
 	if s.streamMgr != nil {
-		utils.Debug("Stream manager resources cleaned up")
+		corelog.Debug("Stream manager resources cleaned up")
 	}
 
 	// 关闭事件总线
 	if s.eventBus != nil {
 		if err := s.eventBus.Close(); err != nil {
-			utils.Errorf("Failed to close event bus: %v", err)
+			corelog.Errorf("Failed to close event bus: %v", err)
 		}
-		utils.Info("Event bus resources cleaned up")
+		corelog.Info("Event bus resources cleaned up")
 	}
 
-	utils.Info("Session manager resources cleanup completed")
+	corelog.Info("Session manager resources cleanup completed")
 	return nil
 }
 
 // SetTunnelRoutingTable 设置隧道路由表
 func (s *SessionManager) SetTunnelRoutingTable(routingTable *TunnelRoutingTable) {
 	s.tunnelRouting = routingTable
-	utils.Infof("SessionManager: TunnelRoutingTable configured")
+	corelog.Infof("SessionManager: TunnelRoutingTable configured")
 }
 
 // SetNodeID 设置节点ID
 func (s *SessionManager) SetNodeID(nodeID string) {
 	s.nodeID = nodeID
-	utils.Infof("SessionManager: NodeID set to %s", nodeID)
+	corelog.Infof("SessionManager: NodeID set to %s", nodeID)
 }
 
 // GetNodeID 获取节点ID

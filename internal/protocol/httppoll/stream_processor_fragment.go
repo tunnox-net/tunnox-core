@@ -1,10 +1,10 @@
 package httppoll
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/base64"
 	"fmt"
 
-	"tunnox-core/internal/utils"
 )
 
 // handleFragmentData 处理分片数据（从sendPollRequest中提取）
@@ -15,13 +15,13 @@ func (sp *StreamProcessor) handleFragmentData(pollResp FragmentResponse, request
 	// 解码Base64数据
 	fragmentData, err := base64.StdEncoding.DecodeString(pollResp.Data)
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor: handleFragmentData - failed to decode fragment data: %v, requestID=%s", err, requestID)
+		corelog.Errorf("HTTPStreamProcessor: handleFragmentData - failed to decode fragment data: %v, requestID=%s", err, requestID)
 		return fmt.Errorf("failed to decode fragment data: %w", err)
 	}
 
 	// 验证解码后的数据长度是否与 FragmentSize 匹配
 	if len(fragmentData) != pollResp.FragmentSize {
-		utils.Errorf("HTTPStreamProcessor: handleFragmentData - fragment size mismatch: expected %d, got %d, groupID=%s, index=%d, requestID=%s",
+		corelog.Errorf("HTTPStreamProcessor: handleFragmentData - fragment size mismatch: expected %d, got %d, groupID=%s, index=%d, requestID=%s",
 			pollResp.FragmentSize, len(fragmentData), pollResp.FragmentGroupID, pollResp.FragmentIndex, requestID)
 		return fmt.Errorf("fragment size mismatch: expected %d, got %d", pollResp.FragmentSize, len(fragmentData))
 	}
@@ -47,7 +47,7 @@ func (sp *StreamProcessor) handleMultiFragment(pollResp FragmentResponse, fragme
 		fragmentData,
 	)
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor: handleMultiFragment - failed to add fragment: %v, groupID=%s, index=%d, requestID=%s", err, pollResp.FragmentGroupID, pollResp.FragmentIndex, requestID)
+		corelog.Errorf("HTTPStreamProcessor: handleMultiFragment - failed to add fragment: %v, groupID=%s, index=%d, requestID=%s", err, pollResp.FragmentGroupID, pollResp.FragmentIndex, requestID)
 		return fmt.Errorf("failed to add fragment: %w", err)
 	}
 
@@ -77,7 +77,7 @@ func (sp *StreamProcessor) handleSingleFragment(pollResp FragmentResponse, fragm
 		fragmentData,
 	)
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor: handleSingleFragment - failed to add single fragment: %v, groupID=%s, requestID=%s", err, pollResp.FragmentGroupID, requestID)
+		corelog.Errorf("HTTPStreamProcessor: handleSingleFragment - failed to add single fragment: %v, groupID=%s, requestID=%s", err, pollResp.FragmentGroupID, requestID)
 		return fmt.Errorf("failed to add single fragment: %w", err)
 	}
 
@@ -92,7 +92,7 @@ func (sp *StreamProcessor) processCompleteGroups(requestID string) error {
 	for {
 		nextGroup, found, err := sp.fragmentReassembler.GetNextCompleteGroup()
 		if err != nil {
-			utils.Errorf("HTTPStreamProcessor: processCompleteGroups - failed to get next complete group: %v, requestID=%s", err, requestID)
+			corelog.Errorf("HTTPStreamProcessor: processCompleteGroups - failed to get next complete group: %v, requestID=%s", err, requestID)
 			return fmt.Errorf("failed to get next complete group: %w", err)
 		}
 		if !found {
@@ -114,7 +114,7 @@ func (sp *StreamProcessor) processCompleteGroups(requestID string) error {
 func (sp *StreamProcessor) writeReassembledGroup(nextGroup *FragmentGroup, requestID string) error {
 	reassembledData, err := nextGroup.Reassemble()
 	if err != nil {
-		utils.Errorf("HTTPStreamProcessor: writeReassembledGroup - failed to reassemble: %v, groupID=%s, requestID=%s", err, nextGroup.GroupID, requestID)
+		corelog.Errorf("HTTPStreamProcessor: writeReassembledGroup - failed to reassemble: %v, groupID=%s, requestID=%s", err, nextGroup.GroupID, requestID)
 		sp.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
 		return fmt.Errorf("failed to reassemble: %w", err)
 	}
@@ -122,7 +122,7 @@ func (sp *StreamProcessor) writeReassembledGroup(nextGroup *FragmentGroup, reque
 
 	// 验证重组后的数据大小
 	if len(reassembledData) != nextGroup.OriginalSize {
-		utils.Errorf("HTTPStreamProcessor: writeReassembledGroup - reassembled size mismatch: expected %d, got %d, groupID=%s, requestID=%s",
+		corelog.Errorf("HTTPStreamProcessor: writeReassembledGroup - reassembled size mismatch: expected %d, got %d, groupID=%s, requestID=%s",
 			nextGroup.OriginalSize, len(reassembledData), nextGroup.GroupID, requestID)
 		sp.fragmentReassembler.RemoveGroup(nextGroup.GroupID)
 		return fmt.Errorf("reassembled size mismatch: expected %d, got %d", nextGroup.OriginalSize, len(reassembledData))
@@ -133,12 +133,12 @@ func (sp *StreamProcessor) writeReassembledGroup(nextGroup *FragmentGroup, reque
 	if sp.dataBuffer.Len()+len(reassembledData) <= maxBufferSize {
 		_, err := sp.dataBuffer.Write(reassembledData)
 		if err != nil {
-			utils.Errorf("HTTPStreamProcessor: writeReassembledGroup - failed to write to data buffer: %v, requestID=%s", err, requestID)
+			corelog.Errorf("HTTPStreamProcessor: writeReassembledGroup - failed to write to data buffer: %v, requestID=%s", err, requestID)
 			sp.dataBufMu.Unlock()
 			return fmt.Errorf("failed to write to data buffer: %w", err)
 		}
 	} else {
-		utils.Errorf("HTTPStreamProcessor: writeReassembledGroup - data buffer full, dropping %d bytes, buffer size=%d, requestID=%s", len(reassembledData), sp.dataBuffer.Len(), requestID)
+		corelog.Errorf("HTTPStreamProcessor: writeReassembledGroup - data buffer full, dropping %d bytes, buffer size=%d, requestID=%s", len(reassembledData), sp.dataBuffer.Len(), requestID)
 	}
 	sp.dataBufMu.Unlock()
 

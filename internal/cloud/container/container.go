@@ -1,12 +1,12 @@
 package container
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"reflect"
 	"sync"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // ServiceProvider 服务提供者接口
@@ -111,7 +111,7 @@ func NewContainer(parentCtx context.Context) *Container {
 
 // onClose 资源清理回调
 func (c *Container) onClose() error {
-	utils.Infof("Cleaning up container resources...")
+	corelog.Infof("Cleaning up container resources...")
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -127,15 +127,15 @@ func (c *Container) onClose() error {
 		provider := c.services[name]
 
 		if err := provider.Close(); err != nil {
-			utils.Errorf("Failed to close service %s: %v", name, err)
+			corelog.Errorf("Failed to close service %s: %v", name, err)
 		} else {
-			utils.Infof("Successfully closed service: %s", name)
+			corelog.Infof("Successfully closed service: %s", name)
 		}
 	}
 
 	// 清空服务映射
 	c.services = make(map[string]ServiceProvider)
-	utils.Infof("Container resources cleanup completed")
+	corelog.Infof("Container resources cleanup completed")
 	return nil
 }
 
@@ -145,11 +145,11 @@ func (c *Container) RegisterSingleton(name string, creator func() (interface{}, 
 	defer c.mu.Unlock()
 
 	if _, exists := c.services[name]; exists {
-		utils.Warnf("Service %s already registered, overwriting", name)
+		corelog.Warnf("Service %s already registered, overwriting", name)
 	}
 
 	c.services[name] = NewSingletonProvider(creator)
-	utils.Infof("Registered singleton service: %s", name)
+	corelog.Infof("Registered singleton service: %s", name)
 }
 
 // RegisterTransient 注册瞬态服务
@@ -158,11 +158,11 @@ func (c *Container) RegisterTransient(name string, creator func() (interface{}, 
 	defer c.mu.Unlock()
 
 	if _, exists := c.services[name]; exists {
-		utils.Warnf("Service %s already registered, overwriting", name)
+		corelog.Warnf("Service %s already registered, overwriting", name)
 	}
 
 	c.services[name] = NewTransientProvider(creator)
-	utils.Infof("Registered transient service: %s", name)
+	corelog.Infof("Registered transient service: %s", name)
 }
 
 // Resolve 解析服务

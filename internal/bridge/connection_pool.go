@@ -1,12 +1,12 @@
 package bridge
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // BridgeConnectionPool 跨节点桥接连接池（管理多个节点的连接）
@@ -57,7 +57,7 @@ func NewBridgeConnectionPool(parentCtx context.Context, config *PoolConfig) *Bri
 	go pool.healthCheckLoop()
 	go pool.metricsCollectionLoop()
 
-	utils.Infof("BridgeConnectionPool: initialized with config: min=%d, max=%d, max_streams=%d",
+	corelog.Infof("BridgeConnectionPool: initialized with config: min=%d, max=%d, max_streams=%d",
 		config.MinConnsPerNode, config.MaxConnsPerNode, config.MaxStreamsPerConn)
 	return pool
 }
@@ -94,7 +94,7 @@ func (p *BridgeConnectionPool) getOrCreateNodePool(nodeID, nodeAddr string) (*No
 	}
 
 	p.nodePools[nodeID] = nodePool
-	utils.Infof("BridgeConnectionPool: created node pool for %s at %s", nodeID, nodeAddr)
+	corelog.Infof("BridgeConnectionPool: created node pool for %s at %s", nodeID, nodeAddr)
 	return nodePool, nil
 }
 
@@ -113,7 +113,7 @@ func (p *BridgeConnectionPool) CreateSession(ctx context.Context, targetNodeID, 
 	}
 
 	p.metricsCollector.RecordSessionCreated(targetNodeID)
-	utils.Infof("BridgeConnectionPool: created session %s to node %s", session.StreamID(), targetNodeID)
+	corelog.Infof("BridgeConnectionPool: created session %s to node %s", session.StreamID(), targetNodeID)
 	return session, nil
 }
 
@@ -147,7 +147,7 @@ func (p *BridgeConnectionPool) healthCheckLoop() {
 		case <-ticker.C:
 			p.performHealthCheck()
 		case <-p.Ctx().Done():
-			utils.Infof("BridgeConnectionPool: health check loop stopped")
+			corelog.Infof("BridgeConnectionPool: health check loop stopped")
 			return
 		}
 	}
@@ -164,7 +164,7 @@ func (p *BridgeConnectionPool) performHealthCheck() {
 
 	for _, pool := range pools {
 		stats := pool.GetStats()
-		utils.Debugf("NodePool[%s]: conns=%d, streams=%d",
+		corelog.Debugf("NodePool[%s]: conns=%d, streams=%d",
 			stats.NodeID, stats.TotalConns, stats.ActiveStreams)
 
 		p.metricsCollector.UpdatePoolStats(stats.NodeID, stats.TotalConns, stats.ActiveStreams)
@@ -180,9 +180,9 @@ func (p *BridgeConnectionPool) metricsCollectionLoop() {
 		select {
 		case <-ticker.C:
 			metrics := p.metricsCollector.GetMetrics()
-			utils.Debugf("BridgeConnectionPool metrics: %+v", metrics)
+			corelog.Debugf("BridgeConnectionPool metrics: %+v", metrics)
 		case <-p.Ctx().Done():
-			utils.Infof("BridgeConnectionPool: metrics collection loop stopped")
+			corelog.Infof("BridgeConnectionPool: metrics collection loop stopped")
 			return
 		}
 	}
@@ -203,7 +203,7 @@ func (p *BridgeConnectionPool) RemoveNodePool(nodeID string) error {
 	}
 
 	delete(p.nodePools, nodeID)
-	utils.Infof("BridgeConnectionPool: removed node pool for %s", nodeID)
+	corelog.Infof("BridgeConnectionPool: removed node pool for %s", nodeID)
 	return nil
 }
 
@@ -214,14 +214,14 @@ func (p *BridgeConnectionPool) Close() error {
 	// 关闭所有节点池
 	for nodeID, pool := range p.nodePools {
 		if err := pool.Close(); err != nil {
-			utils.Errorf("BridgeConnectionPool: failed to close pool for node %s: %v", nodeID, err)
+			corelog.Errorf("BridgeConnectionPool: failed to close pool for node %s: %v", nodeID, err)
 		}
 	}
 
 	p.nodePools = make(map[string]*NodeConnectionPool)
 	p.nodePoolsMu.Unlock()
 
-	utils.Infof("BridgeConnectionPool: closed all node pools")
+	corelog.Infof("BridgeConnectionPool: closed all node pools")
 
 	// 调用基类 Close
 	return p.ManagerBase.Close()

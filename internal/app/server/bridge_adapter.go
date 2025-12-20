@@ -1,6 +1,7 @@
 package server
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/utils"
 )
 
 // BridgeAdapter 适配器，通过MessageBroker实现跨服务器隧道转发
@@ -21,7 +21,7 @@ type BridgeAdapter struct {
 // NewBridgeAdapter 创建BridgeAdapter（不依赖BridgeManager，直接使用MessageBroker）
 func NewBridgeAdapter(ctx context.Context, messageBroker broker.MessageBroker, nodeID string) *BridgeAdapter {
 	if messageBroker == nil {
-		utils.Warn("MessageBroker is nil in BridgeAdapter")
+		corelog.Warn("MessageBroker is nil in BridgeAdapter")
 	}
 	return &BridgeAdapter{
 		messageBroker: messageBroker,
@@ -78,7 +78,7 @@ func (a *BridgeAdapter) Subscribe(ctx context.Context, topicPattern string) (<-c
 		// 🔥 FIX: 使用传入的topicPattern，而不是硬编码TopicTunnelOpen
 		brokerChan, err := a.messageBroker.Subscribe(ctx, topicPattern)
 		if err != nil {
-			utils.Errorf("BridgeAdapter: failed to subscribe to tunnel_open: %v", err)
+			corelog.Errorf("BridgeAdapter: failed to subscribe to tunnel_open: %v", err)
 			return
 		}
 		

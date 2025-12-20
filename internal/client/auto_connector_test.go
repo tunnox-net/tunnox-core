@@ -40,12 +40,12 @@ func TestDefaultServerEndpoints(t *testing.T) {
 		t.Fatal("Expected non-empty default endpoints")
 	}
 
+	// 当前支持的协议列表（与 DefaultServerEndpoints 保持一致）
 	expectedProtocols := map[string]bool{
-		"tcp":        false,
-		"udp":        false,
-		"quic":       false,
-		"websocket":  false,
-		"httppoll":   false,
+		"tcp":       false,
+		"quic":      false,
+		"websocket": false,
+		"httppoll":  false,
 	}
 
 	for _, endpoint := range DefaultServerEndpoints {
@@ -96,12 +96,12 @@ func TestAutoConnector_ConnectWithAutoDetection_AllFailures(t *testing.T) {
 	connector := NewAutoConnector(ctx, client)
 	defer connector.Close()
 
-	endpoint, err := connector.ConnectWithAutoDetection(ctx)
+	attempt, err := connector.ConnectWithAutoDetection(ctx)
 	if err == nil {
 		t.Error("Expected error when all connections fail")
 	}
-	if endpoint != nil {
-		t.Error("Expected nil endpoint when all connections fail")
+	if attempt != nil && attempt.Conn != nil {
+		t.Error("Expected nil connection when all connections fail")
 	}
 }
 
@@ -127,12 +127,12 @@ func TestAutoConnector_ContextCancellation(t *testing.T) {
 
 	// 启动连接尝试，然后立即取消 context
 	done := make(chan struct{})
-	var endpoint *ServerEndpoint
+	var attempt *ConnectionAttempt
 	var err error
-	
+
 	go func() {
 		defer close(done)
-		endpoint, err = connector.ConnectWithAutoDetection(ctx)
+		attempt, err = connector.ConnectWithAutoDetection(ctx)
 	}()
 
 	// 立即取消 context
@@ -145,7 +145,7 @@ func TestAutoConnector_ContextCancellation(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Test timed out waiting for connection attempt to complete")
 	}
-	
+
 	// 当 context 被取消时，应该返回错误
 	if err == nil {
 		t.Error("Expected error when context is cancelled")
@@ -155,8 +155,8 @@ func TestAutoConnector_ContextCancellation(t *testing.T) {
 			t.Logf("Got error (may be acceptable): %v", err)
 		}
 	}
-	if endpoint != nil {
-		t.Error("Expected nil endpoint when context is cancelled")
+	if attempt != nil && attempt.Conn != nil {
+		t.Error("Expected nil connection when context is cancelled")
 	}
 }
 
@@ -233,4 +233,3 @@ func TestConnectionAttempt(t *testing.T) {
 		t.Error("Expected nil error")
 	}
 }
-

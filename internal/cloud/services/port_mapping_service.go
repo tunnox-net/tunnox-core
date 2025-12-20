@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"time"
@@ -92,7 +93,7 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 		if err := s.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			s.baseService.LogWarning("add mapping to listen client list", err)
 		} else {
-			utils.Infof("PortMappingService: added mapping %s to listen client %s index", mapping.ID, clientKey)
+			corelog.Infof("PortMappingService: added mapping %s to listen client %s index", mapping.ID, clientKey)
 		}
 	}
 
@@ -101,7 +102,7 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 		if err := s.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			s.baseService.LogWarning("add mapping to target client list", err)
 		} else {
-			utils.Infof("PortMappingService: added mapping %s to target client %s index", mapping.ID, clientKey)
+			corelog.Infof("PortMappingService: added mapping %s to target client %s index", mapping.ID, clientKey)
 		}
 	}
 
@@ -214,7 +215,7 @@ func (s *portMappingService) GetUserPortMappings(userID string) ([]*models.PortM
 func (s *portMappingService) ListPortMappings(mappingType models.MappingType) ([]*models.PortMapping, error) {
 	// 暂时返回空列表，因为PortMappingRepo没有按类型列表的方法
 	// 这里预留：可根据类型过滤端口映射
-	utils.Warnf("ListPortMappings by type not implemented yet")
+	corelog.Warnf("ListPortMappings by type not implemented yet")
 	return []*models.PortMapping{}, nil
 }
 
@@ -222,6 +223,6 @@ func (s *portMappingService) ListPortMappings(mappingType models.MappingType) ([
 func (s *portMappingService) SearchPortMappings(keyword string) ([]*models.PortMapping, error) {
 	// 暂时返回空列表，因为PortMappingRepo没有Search方法
 	// 这里预留：可扩展搜索功能
-	utils.Warnf("SearchPortMappings not implemented yet")
+	corelog.Warnf("SearchPortMappings not implemented yet")
 	return []*models.PortMapping{}, nil
 }

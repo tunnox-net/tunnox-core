@@ -1,11 +1,11 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"net"
 	"time"
 
-	"tunnox-core/internal/utils"
 )
 
 func (c *HTTPLongPollingConn) Close() error {
@@ -47,7 +47,7 @@ func (c *HTTPLongPollingConn) SetStreamMode(streamMode bool) {
 	defer c.streamMu.Unlock()
 	oldMode := c.streamMode
 	c.streamMode = streamMode
-	utils.Infof("HTTP long polling: [SetStreamMode] switching stream mode from %v to %v, clientID=%d, mappingID=%s",
+	corelog.Infof("HTTP long polling: [SetStreamMode] switching stream mode from %v to %v, clientID=%d, mappingID=%s",
 		oldMode, streamMode, c.clientID, c.mappingID)
 }
 

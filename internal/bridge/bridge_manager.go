@@ -1,6 +1,7 @@
 package bridge
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,6 @@ import (
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // BridgeManager 桥接管理器（整合连接池和消息代理）
@@ -97,7 +97,7 @@ func NewBridgeManager(ctx context.Context, config *BridgeManagerConfig) (*Bridge
 		return nil, fmt.Errorf("failed to subscribe to topics: %w", err)
 	}
 
-	utils.Infof("BridgeManager: initialized for node %s", config.NodeID)
+	corelog.Infof("BridgeManager: initialized for node %s", config.NodeID)
 	return manager, nil
 }
 
@@ -124,7 +124,7 @@ func (m *BridgeManager) subscribeToTopics() error {
 
 // handleBridgeRequests 处理桥接请求
 func (m *BridgeManager) handleBridgeRequests(requestChan <-chan *broker.Message) {
-	utils.Infof("BridgeManager: started bridge request handler")
+	corelog.Infof("BridgeManager: started bridge request handler")
 
 	for {
 		select {
@@ -135,7 +135,7 @@ func (m *BridgeManager) handleBridgeRequests(requestChan <-chan *broker.Message)
 
 			var req broker.BridgeRequestMessage
 			if err := json.Unmarshal(msg.Payload, &req); err != nil {
-				utils.Errorf("BridgeManager: failed to unmarshal bridge request: %v", err)
+				corelog.Errorf("BridgeManager: failed to unmarshal bridge request: %v", err)
 				continue
 			}
 
@@ -144,11 +144,11 @@ func (m *BridgeManager) handleBridgeRequests(requestChan <-chan *broker.Message)
 				continue
 			}
 
-			utils.Infof("BridgeManager: received bridge request %s from node %s", req.RequestID, req.SourceNodeID)
+			corelog.Infof("BridgeManager: received bridge request %s from node %s", req.RequestID, req.SourceNodeID)
 			go m.processBridgeRequest(&req)
 
 		case <-m.Ctx().Done():
-			utils.Infof("BridgeManager: request handling loop stopped")
+			corelog.Infof("BridgeManager: request handling loop stopped")
 			return
 		}
 	}
@@ -219,7 +219,7 @@ func (m *BridgeManager) processBridgeRequest(req *broker.BridgeRequestMessage) {
 
 	// 发送成功响应
 	m.sendBridgeResponse(req.RequestID, true, "", session.StreamID())
-	utils.Infof("BridgeManager: successfully processed bridge request %s (stream: %s)", req.RequestID, session.StreamID())
+	corelog.Infof("BridgeManager: successfully processed bridge request %s (stream: %s)", req.RequestID, session.StreamID())
 }
 
 // sendBridgeResponse 发送桥接响应
@@ -233,18 +233,18 @@ func (m *BridgeManager) sendBridgeResponse(requestID string, success bool, error
 
 	respData, err := json.Marshal(resp)
 	if err != nil {
-		utils.Errorf("BridgeManager: failed to marshal bridge response: %v", err)
+		corelog.Errorf("BridgeManager: failed to marshal bridge response: %v", err)
 		return
 	}
 
 	if err := m.messageBroker.Publish(m.Ctx(), broker.TopicBridgeResponse, respData); err != nil {
-		utils.Errorf("BridgeManager: failed to publish bridge response: %v", err)
+		corelog.Errorf("BridgeManager: failed to publish bridge response: %v", err)
 	}
 }
 
 // handleBridgeResponses 处理桥接响应
 func (m *BridgeManager) handleBridgeResponses(responseChan <-chan *broker.Message) {
-	utils.Infof("BridgeManager: started bridge response handler")
+	corelog.Infof("BridgeManager: started bridge response handler")
 
 	for {
 		select {
@@ -255,7 +255,7 @@ func (m *BridgeManager) handleBridgeResponses(responseChan <-chan *broker.Messag
 
 			var resp broker.BridgeResponseMessage
 			if err := json.Unmarshal(msg.Payload, &resp); err != nil {
-				utils.Errorf("BridgeManager: failed to unmarshal bridge response: %v", err)
+				corelog.Errorf("BridgeManager: failed to unmarshal bridge response: %v", err)
 				continue
 			}
 
@@ -279,14 +279,14 @@ func (m *BridgeManager) handleBridgeResponses(responseChan <-chan *broker.Messag
 
 				select {
 				case req.ResponseChan <- bridgeResp:
-					utils.Debugf("BridgeManager: delivered bridge response for request %s", resp.RequestID)
+					corelog.Debugf("BridgeManager: delivered bridge response for request %s", resp.RequestID)
 				case <-time.After(1 * time.Second):
-					utils.Warnf("BridgeManager: timeout delivering bridge response for request %s", resp.RequestID)
+					corelog.Warnf("BridgeManager: timeout delivering bridge response for request %s", resp.RequestID)
 				}
 			}
 
 		case <-m.Ctx().Done():
-			utils.Infof("BridgeManager: response handling loop stopped")
+			corelog.Infof("BridgeManager: response handling loop stopped")
 			return
 		}
 	}
@@ -340,7 +340,7 @@ func (m *BridgeManager) RequestBridge(ctx context.Context, targetNodeID string, 
 		return nil, fmt.Errorf("failed to publish bridge request: %w", err)
 	}
 
-	utils.Infof("BridgeManager: published bridge request %s to node %s", requestID, targetNodeID)
+	corelog.Infof("BridgeManager: published bridge request %s to node %s", requestID, targetNodeID)
 
 	// 等待响应
 	select {
@@ -369,7 +369,7 @@ func (m *BridgeManager) PublishMessage(ctx context.Context, topic string, payloa
 		return fmt.Errorf("failed to publish to topic %s: %w", topic, err)
 	}
 
-	utils.Debugf("BridgeManager: published message to topic %s (%d bytes)", topic, len(payload))
+	corelog.Debugf("BridgeManager: published message to topic %s (%d bytes)", topic, len(payload))
 	return nil
 }
 
@@ -387,7 +387,7 @@ func (m *BridgeManager) GetNodeID() string {
 func (m *BridgeManager) Close() error {
 	// 关闭连接池
 	if err := m.connectionPool.Close(); err != nil {
-		utils.Errorf("BridgeManager: failed to close connection pool: %v", err)
+		corelog.Errorf("BridgeManager: failed to close connection pool: %v", err)
 	}
 
 	// 清理挂起的请求
@@ -398,7 +398,7 @@ func (m *BridgeManager) Close() error {
 	}
 	m.requestsMu.Unlock()
 
-	utils.Infof("BridgeManager: closed for node %s", m.nodeID)
+	corelog.Infof("BridgeManager: closed for node %s", m.nodeID)
 
 	// 调用基类 Close
 	return m.ManagerBase.Close()

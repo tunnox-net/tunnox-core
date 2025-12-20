@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
@@ -10,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"tunnox-core/internal/utils"
 
 	"github.com/gorilla/websocket"
 )
@@ -30,7 +30,7 @@ type websocketStreamConn struct {
 
 // newWebSocketStreamConn creates a new WebSocket stream connection
 func newWebSocketStreamConn(wsURL string) (*websocketStreamConn, error) {
-	utils.Debugf("WebSocket: connecting to %s", wsURL)
+	corelog.Debugf("WebSocket: connecting to %s", wsURL)
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 20 * time.Second,
@@ -43,7 +43,7 @@ func newWebSocketStreamConn(wsURL string) (*websocketStreamConn, error) {
 		return nil, fmt.Errorf("websocket dial failed: %w", err)
 	}
 
-	utils.Infof("WebSocket: connected to %s", wsURL)
+	corelog.Infof("WebSocket: connected to %s", wsURL)
 
 	// Set read/write deadlines to prevent hanging
 	conn.SetReadDeadline(time.Time{})
@@ -138,7 +138,7 @@ func (c *websocketStreamConn) Close() error {
 		c.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
 
 		err = c.conn.Close()
-		utils.Debugf("WebSocket: connection closed")
+		corelog.Debugf("WebSocket: connection closed")
 	})
 	return err
 }

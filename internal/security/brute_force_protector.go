@@ -1,13 +1,13 @@
 package security
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
 	"time"
 
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // BruteForceProtector 暴力破解防护器
@@ -140,19 +140,19 @@ func (p *BruteForceProtector) RecordFailure(ip string) bool {
 	// 永久封禁判断
 	if totalCount >= p.config.PermanentBanAt {
 		p.banIP(ip, 0, fmt.Sprintf("累计失败 %d 次", totalCount), totalCount)
-		utils.Warnf("BruteForce: IP %s permanently banned after %d total failures", ip, totalCount)
+		corelog.Warnf("BruteForce: IP %s permanently banned after %d total failures", ip, totalCount)
 		return true
 	}
 
 	// 临时封禁判断
 	if recentFailures >= p.config.MaxFailures {
 		p.banIP(ip, p.config.BanDuration, fmt.Sprintf("时间窗口内失败 %d 次", recentFailures), totalCount)
-		utils.Warnf("BruteForce: IP %s banned for %v after %d failures in time window",
+		corelog.Warnf("BruteForce: IP %s banned for %v after %d failures in time window",
 			ip, p.config.BanDuration, recentFailures)
 		return true
 	}
 
-	utils.Debugf("BruteForce: IP %s failed %d/%d times (total: %d)",
+	corelog.Debugf("BruteForce: IP %s failed %d/%d times (total: %d)",
 		ip, recentFailures, p.config.MaxFailures, totalCount)
 
 	return false
@@ -164,7 +164,7 @@ func (p *BruteForceProtector) RecordSuccess(ip string) {
 	defer p.mu.Unlock()
 
 	delete(p.failures, ip)
-	utils.Debugf("BruteForce: IP %s cleared failures after success", ip)
+	corelog.Debugf("BruteForce: IP %s cleared failures after success", ip)
 }
 
 // IsBanned 检查IP是否被封禁
@@ -224,9 +224,9 @@ func (p *BruteForceProtector) banIP(ip string, duration time.Duration, reason st
 	}
 
 	if duration > 0 {
-		utils.Infof("BruteForce: IP %s banned until %v (%s)", ip, expiresAt.Format(time.RFC3339), reason)
+		corelog.Infof("BruteForce: IP %s banned until %v (%s)", ip, expiresAt.Format(time.RFC3339), reason)
 	} else {
-		utils.Warnf("BruteForce: IP %s PERMANENTLY banned (%s)", ip, reason)
+		corelog.Warnf("BruteForce: IP %s PERMANENTLY banned (%s)", ip, reason)
 	}
 }
 
@@ -237,7 +237,7 @@ func (p *BruteForceProtector) UnbanIP(ip string) {
 
 	if _, exists := p.bannedIPs[ip]; exists {
 		delete(p.bannedIPs, ip)
-		utils.Infof("BruteForce: IP %s unbanned", ip)
+		corelog.Infof("BruteForce: IP %s unbanned", ip)
 	}
 }
 
@@ -316,7 +316,7 @@ func (p *BruteForceProtector) cleanupTask(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			utils.Infof("BruteForce: cleanup task stopped")
+			corelog.Infof("BruteForce: cleanup task stopped")
 			return
 		case <-ticker.C:
 			p.cleanup()
@@ -351,7 +351,7 @@ func (p *BruteForceProtector) cleanup() {
 		// 已过期，解封
 		if now.After(record.ExpiresAt) {
 			delete(p.bannedIPs, ip)
-			utils.Debugf("BruteForce: IP %s unbanned (expired)", ip)
+			corelog.Debugf("BruteForce: IP %s unbanned (expired)", ip)
 		}
 	}
 	p.banMu.Unlock()
@@ -390,5 +390,5 @@ func (p *BruteForceProtector) Reset() {
 	p.failures = make(map[string]*FailureRecord)
 	p.bannedIPs = make(map[string]*BanRecord)
 
-	utils.Infof("BruteForce: all data reset")
+	corelog.Infof("BruteForce: all data reset")
 }

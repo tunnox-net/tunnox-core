@@ -1,9 +1,9 @@
 package distributed
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 )
 
 // LockType 锁类型
@@ -31,11 +31,11 @@ func (f *LockFactory) CreateLock(lockType LockType, owner string) (DistributedLo
 	switch lockType {
 	case LockTypeMemory:
 		// 精简日志：只在调试模式下输出锁创建信息
-		utils.Debugf("Creating memory-based distributed lock")
+		corelog.Debugf("Creating memory-based distributed lock")
 		return NewMemoryLock(), nil
 	case LockTypeStorage:
 		// 精简日志：只在调试模式下输出锁创建信息
-		utils.Debugf("Creating storage-based distributed lock for owner: %s", owner)
+		corelog.Debugf("Creating storage-based distributed lock for owner: %s", owner)
 		return NewStorageBasedLock(f.storage, owner), nil
 	default:
 		return nil, fmt.Errorf("unsupported lock type: %s", lockType)
@@ -46,7 +46,7 @@ func (f *LockFactory) CreateLock(lockType LockType, owner string) (DistributedLo
 func (f *LockFactory) CreateDefaultLock(owner string) DistributedLock {
 	lock, err := f.CreateLock(LockTypeStorage, owner)
 	if err != nil {
-		utils.Errorf("Failed to create default lock, falling back to memory lock: %v", err)
+		corelog.Errorf("Failed to create default lock, falling back to memory lock: %v", err)
 		return NewMemoryLock()
 	}
 	return lock
@@ -62,7 +62,7 @@ func (f *LockFactory) CreateLockWithRetry(lockType LockType, owner string, maxRe
 			return lock, nil
 		}
 		lastErr = err
-		utils.Warnf("Failed to create lock (attempt %d/%d): %v", i+1, maxRetries, err)
+		corelog.Warnf("Failed to create lock (attempt %d/%d): %v", i+1, maxRetries, err)
 	}
 
 	return nil, fmt.Errorf("failed to create lock after %d attempts: %w", maxRetries, lastErr)

@@ -1,13 +1,13 @@
 package bridge
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"io"
 	"sync"
 	"time"
 	pb "tunnox-core/api/proto/bridge"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // GRPCBridgeServer 实现 BridgeService gRPC 服务
@@ -46,7 +46,7 @@ func NewGRPCBridgeServer(parentCtx context.Context, nodeID string, manager *Brid
 	
 	// 注册清理处理器
 	server.AddCleanHandler(func() error {
-		utils.Infof("GRPCBridgeServer: cleaning up resources")
+		corelog.Infof("GRPCBridgeServer: cleaning up resources")
 		
 		server.bridgesMu.Lock()
 		defer server.bridgesMu.Unlock()
@@ -55,7 +55,7 @@ func NewGRPCBridgeServer(parentCtx context.Context, nodeID string, manager *Brid
 		for streamID, bridge := range server.activeBridges {
 			bridge.cancel()
 			close(bridge.recvChan)
-			utils.Debugf("GRPCBridgeServer: closed bridge %s", streamID)
+			corelog.Debugf("GRPCBridgeServer: closed bridge %s", streamID)
 		}
 		server.activeBridges = make(map[string]*BridgeContext)
 		
@@ -81,7 +81,7 @@ func (s *GRPCBridgeServer) ForwardStream(stream pb.BridgeService_ForwardStreamSe
 	}
 	
 	ctx := stream.Context()
-	utils.Infof("GRPCBridgeServer: new forward stream connection established")
+	corelog.Infof("GRPCBridgeServer: new forward stream connection established")
 
 	// 创建桥接上下文
 	bridgeCtx, cancel := context.WithCancel(ctx)
@@ -104,10 +104,10 @@ func (s *GRPCBridgeServer) ForwardStream(stream pb.BridgeService_ForwardStreamSe
 	cancel()
 
 	if err != nil && err != io.EOF {
-		utils.Errorf("GRPCBridgeServer: forward stream error: %v", err)
+		corelog.Errorf("GRPCBridgeServer: forward stream error: %v", err)
 	}
 
-	utils.Infof("GRPCBridgeServer: forward stream connection closed")
+	corelog.Infof("GRPCBridgeServer: forward stream connection closed")
 	return err
 }
 
@@ -117,9 +117,9 @@ func (s *GRPCBridgeServer) receiveLoop(bridge *BridgeContext, errChan chan error
 		packet, err := bridge.stream.Recv()
 		if err != nil {
 			if err == io.EOF {
-				utils.Infof("GRPCBridgeServer: stream closed by client")
+				corelog.Infof("GRPCBridgeServer: stream closed by client")
 			} else {
-				utils.Errorf("GRPCBridgeServer: failed to receive packet: %v", err)
+				corelog.Errorf("GRPCBridgeServer: failed to receive packet: %v", err)
 			}
 			errChan <- err
 			return
@@ -129,7 +129,7 @@ func (s *GRPCBridgeServer) receiveLoop(bridge *BridgeContext, errChan chan error
 		bridge.lastActiveAt = time.Now()
 		bridge.mu.Unlock()
 
-		utils.Debugf("GRPCBridgeServer: received packet (stream_id: %s, type: %v)", packet.StreamId, packet.Type)
+		corelog.Debugf("GRPCBridgeServer: received packet (stream_id: %s, type: %v)", packet.StreamId, packet.Type)
 
 		// 处理数据包
 		switch packet.Type {
@@ -140,7 +140,7 @@ func (s *GRPCBridgeServer) receiveLoop(bridge *BridgeContext, errChan chan error
 		case pb.PacketType_STREAM_CLOSE:
 			s.handleStreamClose(bridge, packet)
 		default:
-			utils.Warnf("GRPCBridgeServer: unknown packet type: %v", packet.Type)
+			corelog.Warnf("GRPCBridgeServer: unknown packet type: %v", packet.Type)
 		}
 	}
 }
@@ -151,7 +151,7 @@ func (s *GRPCBridgeServer) sendLoop(bridge *BridgeContext, errChan chan error) {
 		select {
 		case packet := <-bridge.recvChan:
 			if err := bridge.stream.Send(packet); err != nil {
-				utils.Errorf("GRPCBridgeServer: failed to send packet: %v", err)
+				corelog.Errorf("GRPCBridgeServer: failed to send packet: %v", err)
 				errChan <- err
 				return
 			}
@@ -160,7 +160,7 @@ func (s *GRPCBridgeServer) sendLoop(bridge *BridgeContext, errChan chan error) {
 			bridge.lastActiveAt = time.Now()
 			bridge.mu.Unlock()
 
-			utils.Debugf("GRPCBridgeServer: sent packet (stream_id: %s, type: %v)", packet.StreamId, packet.Type)
+			corelog.Debugf("GRPCBridgeServer: sent packet (stream_id: %s, type: %v)", packet.StreamId, packet.Type)
 
 		case <-bridge.ctx.Done():
 			errChan <- bridge.ctx.Err()
@@ -171,7 +171,7 @@ func (s *GRPCBridgeServer) sendLoop(bridge *BridgeContext, errChan chan error) {
 
 // handleStreamOpen 处理打开流请求
 func (s *GRPCBridgeServer) handleStreamOpen(bridge *BridgeContext, packet *pb.BridgePacket) {
-	utils.Infof("GRPCBridgeServer: handling stream open for %s", packet.StreamId)
+	corelog.Infof("GRPCBridgeServer: handling stream open for %s", packet.StreamId)
 
 	// 存储桥接上下文
 	bridge.streamID = packet.StreamId
@@ -193,15 +193,15 @@ func (s *GRPCBridgeServer) handleStreamOpen(bridge *BridgeContext, packet *pb.Br
 
 	select {
 	case bridge.recvChan <- ackPacket:
-		utils.Infof("GRPCBridgeServer: sent ack for stream %s", packet.StreamId)
+		corelog.Infof("GRPCBridgeServer: sent ack for stream %s", packet.StreamId)
 	case <-time.After(1 * time.Second):
-		utils.Errorf("GRPCBridgeServer: timeout sending ack for stream %s", packet.StreamId)
+		corelog.Errorf("GRPCBridgeServer: timeout sending ack for stream %s", packet.StreamId)
 	}
 }
 
 // handleStreamData 处理数据传输
 func (s *GRPCBridgeServer) handleStreamData(bridge *BridgeContext, packet *pb.BridgePacket) {
-	utils.Debugf("GRPCBridgeServer: handling stream data for %s (size: %d bytes)", packet.StreamId, len(packet.Payload))
+	corelog.Debugf("GRPCBridgeServer: handling stream data for %s (size: %d bytes)", packet.StreamId, len(packet.Payload))
 
 	// 这里应该将数据转发到目标客户端
 	// 目前只是记录日志（实际实现需要与 SessionManager 集成）
@@ -211,7 +211,7 @@ func (s *GRPCBridgeServer) handleStreamData(bridge *BridgeContext, packet *pb.Br
 
 // handleStreamClose 处理关闭流请求
 func (s *GRPCBridgeServer) handleStreamClose(bridge *BridgeContext, packet *pb.BridgePacket) {
-	utils.Infof("GRPCBridgeServer: handling stream close for %s", packet.StreamId)
+	corelog.Infof("GRPCBridgeServer: handling stream close for %s", packet.StreamId)
 
 	s.bridgesMu.Lock()
 	delete(s.activeBridges, packet.StreamId)
@@ -223,7 +223,7 @@ func (s *GRPCBridgeServer) handleStreamClose(bridge *BridgeContext, packet *pb.B
 
 // Ping 实现健康检查
 func (s *GRPCBridgeServer) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	utils.Debugf("GRPCBridgeServer: received ping from node %s", req.NodeId)
+	corelog.Debugf("GRPCBridgeServer: received ping from node %s", req.NodeId)
 
 	return &pb.PingResponse{
 		Ok:              true,
@@ -233,7 +233,7 @@ func (s *GRPCBridgeServer) Ping(ctx context.Context, req *pb.PingRequest) (*pb.P
 
 // GetNodeInfo 实现获取节点信息
 func (s *GRPCBridgeServer) GetNodeInfo(ctx context.Context, req *pb.NodeInfoRequest) (*pb.NodeInfoResponse, error) {
-	utils.Debugf("GRPCBridgeServer: received node info request")
+	corelog.Debugf("GRPCBridgeServer: received node info request")
 
 	s.bridgesMu.RLock()
 	activeBridges := int32(len(s.activeBridges))

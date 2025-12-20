@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"errors"
 	"fmt"
@@ -178,7 +179,7 @@ func (s *ConnectionCodeService) CreateConnectionCode(req *CreateConnectionCodeRe
 		return nil, fmt.Errorf("failed to create connection code: %w", err)
 	}
 
-	utils.Infof("ConnectionCodeService: created code %s for target client %d (expires in %v)",
+	corelog.Infof("ConnectionCodeService: created code %s for target client %d (expires in %v)",
 		code, req.TargetClientID, req.ActivationTTL)
 
 	return connCode, nil
@@ -311,7 +312,7 @@ func (s *ConnectionCodeService) ActivateConnectionCode(req *ActivateConnectionCo
 		return nil, fmt.Errorf("failed to update connection code: %w", err)
 	}
 
-	utils.Infof("ConnectionCodeService: activated code %s, created mapping %s (%d → %d)",
+	corelog.Infof("ConnectionCodeService: activated code %s, created mapping %s (%d → %d)",
 		req.Code, createdMapping.ID, req.ListenClientID, connCode.TargetClientID)
 
 	return createdMapping, nil
@@ -340,7 +341,7 @@ func (s *ConnectionCodeService) RevokeConnectionCode(code string, revokedBy stri
 		return fmt.Errorf("failed to update connection code: %w", err)
 	}
 
-	utils.Infof("ConnectionCodeService: revoked code %s by %s", code, revokedBy)
+	corelog.Infof("ConnectionCodeService: revoked code %s by %s", code, revokedBy)
 
 	return nil
 }
@@ -359,12 +360,12 @@ func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64
 	}
 
 	// 添加详细日志
-	utils.Debugf("ConnectionCodeService.ValidateMapping: mappingID=%s, clientID=%d, ListenClientID=%d, TargetClientID=%d, Status=%s, IsRevoked=%v, IsExpired=%v, IsValid=%v",
+	corelog.Debugf("ConnectionCodeService.ValidateMapping: mappingID=%s, clientID=%d, ListenClientID=%d, TargetClientID=%d, Status=%s, IsRevoked=%v, IsExpired=%v, IsValid=%v",
 		mappingID, clientID, mapping.ListenClientID, mapping.TargetClientID, mapping.Status, mapping.IsRevoked, mapping.IsExpired(), mapping.IsValid())
 
 	// 验证权限
 	if !mapping.CanBeAccessedBy(clientID) {
-		utils.Warnf("ConnectionCodeService.ValidateMapping: CanBeAccessedBy returned false for mappingID=%s, clientID=%d", mappingID, clientID)
+		corelog.Warnf("ConnectionCodeService.ValidateMapping: CanBeAccessedBy returned false for mappingID=%s, clientID=%d", mappingID, clientID)
 		if mapping.IsRevoked {
 			return nil, fmt.Errorf("mapping has been revoked")
 		}
@@ -376,16 +377,16 @@ func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64
 			listenClientID = mapping.SourceClientID
 		}
 		if listenClientID != clientID {
-			utils.Warnf("ConnectionCodeService.ValidateMapping: clientID mismatch - expected ListenClientID=%d, got clientID=%d", listenClientID, clientID)
+			corelog.Warnf("ConnectionCodeService.ValidateMapping: clientID mismatch - expected ListenClientID=%d, got clientID=%d", listenClientID, clientID)
 			return nil, fmt.Errorf("client %d is not authorized to use this mapping", clientID)
 		}
 		// 如果到这里，说明 IsValid() 返回了 false，但具体原因未知
-		utils.Errorf("ConnectionCodeService.ValidateMapping: mapping cannot be accessed - Status=%s, IsRevoked=%v, IsExpired=%v",
+		corelog.Errorf("ConnectionCodeService.ValidateMapping: mapping cannot be accessed - Status=%s, IsRevoked=%v, IsExpired=%v",
 			mapping.Status, mapping.IsRevoked, mapping.IsExpired())
 		return nil, fmt.Errorf("mapping cannot be accessed")
 	}
 
-	utils.Debugf("ConnectionCodeService.ValidateMapping: validation passed for mappingID=%s, clientID=%d", mappingID, clientID)
+	corelog.Debugf("ConnectionCodeService.ValidateMapping: validation passed for mappingID=%s, clientID=%d", mappingID, clientID)
 	return mapping, nil
 }
 
@@ -408,7 +409,7 @@ func (s *ConnectionCodeService) RevokeMapping(mappingID string, clientID int64, 
 		return fmt.Errorf("failed to update mapping: %w", err)
 	}
 
-	utils.Infof("ConnectionCodeService: revoked mapping %s by %s (client %d)",
+	corelog.Infof("ConnectionCodeService: revoked mapping %s by %s (client %d)",
 		mappingID, revokedBy, clientID)
 	return nil
 }
@@ -474,7 +475,7 @@ func (s *ConnectionCodeService) ListConnectionCodesByTargetClient(targetClientID
 			// 异步清理过期的连接码
 			go func(c *models.TunnelConnectionCode) {
 				if err := s.connCodeRepo.Delete(c.ID); err != nil {
-					utils.Debugf("ConnectionCodeService: failed to cleanup expired code %s: %v", c.Code, err)
+					corelog.Debugf("ConnectionCodeService: failed to cleanup expired code %s: %v", c.Code, err)
 				}
 			}(code)
 			continue
@@ -502,27 +503,27 @@ func (s *ConnectionCodeService) GetConnectionCode(code string) (*models.TunnelCo
 // 返回指定ListenClient创建的所有映射（我在访问谁）
 func (s *ConnectionCodeService) ListOutboundMappings(listenClientID int64) ([]*models.PortMapping, error) {
 	clientKey := utils.Int64ToString(listenClientID)
-	utils.Infof("ConnectionCodeService.ListOutboundMappings: querying mappings for client %d (key=%s)", listenClientID, clientKey)
+	corelog.Infof("ConnectionCodeService.ListOutboundMappings: querying mappings for client %d (key=%s)", listenClientID, clientKey)
 
 	allMappings, err := s.portMappingRepo.GetClientPortMappings(clientKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client port mappings: %w", err)
 	}
 
-	utils.Infof("ConnectionCodeService.ListOutboundMappings: found %d mappings from index for client %d", len(allMappings), listenClientID)
+	corelog.Infof("ConnectionCodeService.ListOutboundMappings: found %d mappings from index for client %d", len(allMappings), listenClientID)
 
 	// 过滤出 ListenClientID 匹配的映射
 	result := make([]*models.PortMapping, 0)
 	for _, m := range allMappings {
 		if m.ListenClientID == listenClientID || (m.ListenClientID == 0 && m.SourceClientID == listenClientID) {
-			utils.Debugf("ConnectionCodeService.ListOutboundMappings: adding mapping %s (ListenClientID=%d, SourceClientID=%d)", m.ID, m.ListenClientID, m.SourceClientID)
+			corelog.Debugf("ConnectionCodeService.ListOutboundMappings: adding mapping %s (ListenClientID=%d, SourceClientID=%d)", m.ID, m.ListenClientID, m.SourceClientID)
 			result = append(result, m)
 		} else {
-			utils.Debugf("ConnectionCodeService.ListOutboundMappings: skipping mapping %s (ListenClientID=%d != %d, SourceClientID=%d)", m.ID, m.ListenClientID, listenClientID, m.SourceClientID)
+			corelog.Debugf("ConnectionCodeService.ListOutboundMappings: skipping mapping %s (ListenClientID=%d != %d, SourceClientID=%d)", m.ID, m.ListenClientID, listenClientID, m.SourceClientID)
 		}
 	}
 
-	utils.Infof("ConnectionCodeService.ListOutboundMappings: returning %d outbound mappings for client %d", len(result), listenClientID)
+	corelog.Infof("ConnectionCodeService.ListOutboundMappings: returning %d outbound mappings for client %d", len(result), listenClientID)
 	return result, nil
 }
 
@@ -531,27 +532,27 @@ func (s *ConnectionCodeService) ListOutboundMappings(listenClientID int64) ([]*m
 // 返回访问指定TargetClient的所有映射（谁在访问我）
 func (s *ConnectionCodeService) ListInboundMappings(targetClientID int64) ([]*models.PortMapping, error) {
 	clientKey := utils.Int64ToString(targetClientID)
-	utils.Infof("ConnectionCodeService.ListInboundMappings: querying mappings for client %d (key=%s)", targetClientID, clientKey)
+	corelog.Infof("ConnectionCodeService.ListInboundMappings: querying mappings for client %d (key=%s)", targetClientID, clientKey)
 
 	allMappings, err := s.portMappingRepo.GetClientPortMappings(clientKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client port mappings: %w", err)
 	}
 
-	utils.Infof("ConnectionCodeService.ListInboundMappings: found %d mappings from index for client %d", len(allMappings), targetClientID)
+	corelog.Infof("ConnectionCodeService.ListInboundMappings: found %d mappings from index for client %d", len(allMappings), targetClientID)
 
 	// 过滤出 TargetClientID 匹配的映射
 	result := make([]*models.PortMapping, 0)
 	for _, m := range allMappings {
 		if m.TargetClientID == targetClientID {
-			utils.Debugf("ConnectionCodeService.ListInboundMappings: adding mapping %s (TargetClientID=%d)", m.ID, m.TargetClientID)
+			corelog.Debugf("ConnectionCodeService.ListInboundMappings: adding mapping %s (TargetClientID=%d)", m.ID, m.TargetClientID)
 			result = append(result, m)
 		} else {
-			utils.Debugf("ConnectionCodeService.ListInboundMappings: skipping mapping %s (TargetClientID=%d != %d)", m.ID, m.TargetClientID, targetClientID)
+			corelog.Debugf("ConnectionCodeService.ListInboundMappings: skipping mapping %s (TargetClientID=%d != %d)", m.ID, m.TargetClientID, targetClientID)
 		}
 	}
 
-	utils.Infof("ConnectionCodeService.ListInboundMappings: returning %d inbound mappings for client %d", len(result), targetClientID)
+	corelog.Infof("ConnectionCodeService.ListInboundMappings: returning %d inbound mappings for client %d", len(result), targetClientID)
 	return result, nil
 }
 
@@ -579,10 +580,10 @@ func (s *ConnectionCodeService) cleanupExpiredEntities(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			utils.Infof("ConnectionCodeService: cleanup task stopped")
+			corelog.Infof("ConnectionCodeService: cleanup task stopped")
 			return
 		case <-ticker.C:
-			utils.Debugf("ConnectionCodeService: running cleanup task")
+			corelog.Debugf("ConnectionCodeService: running cleanup task")
 			// 清理过期的连接码索引
 			// 注意：Redis TTL会自动删除过期的键，但索引列表需要手动清理
 			// 这里通过遍历所有客户端来清理索引中的过期引用

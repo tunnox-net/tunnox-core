@@ -1,12 +1,12 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"os"
 	"path/filepath"
 	
 	"gopkg.in/yaml.v3"
-	"tunnox-core/internal/utils"
 )
 
 // ConfigManager 客户端配置管理器
@@ -43,7 +43,7 @@ func (cm *ConfigManager) LoadConfig(cmdConfigPath string) (*ClientConfig, error)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load config from %s: %w", cmdConfigPath, err)
 		}
-		utils.Infof("ConfigManager: loaded config from %s (command line)", cmdConfigPath)
+		corelog.Infof("ConfigManager: loaded config from %s (command line)", cmdConfigPath)
 		return config, nil
 	}
 	
@@ -51,18 +51,18 @@ func (cm *ConfigManager) LoadConfig(cmdConfigPath string) (*ClientConfig, error)
 	for _, path := range cm.searchPaths {
 		config, err := cm.loadConfigFromFile(path)
 		if err == nil {
-			utils.Infof("ConfigManager: loaded config from %s", path)
+			corelog.Infof("ConfigManager: loaded config from %s", path)
 			return config, nil
 		}
 		// 文件不存在是正常情况，继续尝试下一个
 		if !os.IsNotExist(err) {
-			utils.Warnf("ConfigManager: failed to load config from %s: %v", path, err)
+			corelog.Warnf("ConfigManager: failed to load config from %s: %v", path, err)
 		}
 	}
 	
 	// 3. 所有路径都没有配置文件，返回空配置（不设置默认地址）
 	// 这样可以在 CLI 模式下触发自动连接
-	utils.Infof("ConfigManager: no config file found, using empty config")
+	corelog.Infof("ConfigManager: no config file found, using empty config")
 	return &ClientConfig{
 		Anonymous: true,
 		DeviceID:  "anonymous-device",
@@ -103,19 +103,19 @@ func (cm *ConfigManager) SaveConfigWithOptions(config *ClientConfig, allowUpdate
 		// 确保目录存在
 		dir := filepath.Dir(path)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			utils.Warnf("ConfigManager: failed to create directory %s: %v, trying next...", dir, err)
+			corelog.Warnf("ConfigManager: failed to create directory %s: %v, trying next...", dir, err)
 			lastErr = err
 			continue
 		}
 		
 		// 尝试写入配置
 		if err := cm.saveConfigToFile(path, config); err != nil {
-			utils.Warnf("ConfigManager: failed to save config to %s: %v, trying next...", path, err)
+			corelog.Warnf("ConfigManager: failed to save config to %s: %v, trying next...", path, err)
 			lastErr = err
 			continue
 		}
 		
-		utils.Infof("ConfigManager: config saved to %s", path)
+		corelog.Infof("ConfigManager: config saved to %s", path)
 		return nil
 	}
 	
@@ -168,7 +168,7 @@ func (cm *ConfigManager) saveConfigToFile(path string, config *ClientConfig) err
 func getExecutableDir() string {
 	execPath, err := os.Executable()
 	if err != nil {
-		utils.Warnf("ConfigManager: failed to get executable path: %v", err)
+		corelog.Warnf("ConfigManager: failed to get executable path: %v", err)
 		return "."
 	}
 	return filepath.Dir(execPath)
@@ -178,7 +178,7 @@ func getExecutableDir() string {
 func getWorkingDir() string {
 	workDir, err := os.Getwd()
 	if err != nil {
-		utils.Warnf("ConfigManager: failed to get working directory: %v", err)
+		corelog.Warnf("ConfigManager: failed to get working directory: %v", err)
 		return "."
 	}
 	return workDir
@@ -188,7 +188,7 @@ func getWorkingDir() string {
 func getUserHomeDir() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		utils.Warnf("ConfigManager: failed to get user home directory: %v", err)
+		corelog.Warnf("ConfigManager: failed to get user home directory: %v", err)
 		return "."
 	}
 	return homeDir

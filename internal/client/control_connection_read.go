@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"io"
 	"time"
 
@@ -26,7 +27,7 @@ func (c *TunnoxClient) readLoop() {
 		pkt, _, err := c.controlStream.ReadPacket()
 		if err != nil {
 			if err != io.EOF {
-				utils.Errorf("Client: failed to read packet: %v", err)
+				corelog.Errorf("Client: failed to read packet: %v", err)
 			}
 			c.mu.Lock()
 			if c.controlStream != nil {
@@ -51,12 +52,12 @@ func (c *TunnoxClient) readLoop() {
 			c.handleCommand(pkt)
 		case packet.TunnelOpen:
 			// ✅ TunnelOpen 应该由隧道连接处理，控制连接忽略它
-			utils.Debugf("Client: ignoring TunnelOpen in control connection read loop")
+			corelog.Debugf("Client: ignoring TunnelOpen in control connection read loop")
 		case packet.TunnelOpenAck:
 			// ✅ TunnelOpenAck 应该由隧道连接处理，控制连接忽略它
-			utils.Debugf("Client: ignoring TunnelOpenAck in control connection read loop")
+			corelog.Debugf("Client: ignoring TunnelOpenAck in control connection read loop")
 		default:
-			utils.Warnf("Client: unknown packet type: %d", pkt.PacketType)
+			corelog.Warnf("Client: unknown packet type: %d", pkt.PacketType)
 		}
 	}
 }
@@ -78,7 +79,7 @@ func (c *TunnoxClient) requestMappingConfig() {
 
 	commandID, err := utils.GenerateRandomString(16)
 	if err != nil {
-		utils.Errorf("Client: failed to generate command ID: %v", err)
+		corelog.Errorf("Client: failed to generate command ID: %v", err)
 		return
 	}
 
@@ -101,29 +102,29 @@ func (c *TunnoxClient) requestMappingConfig() {
 	for retry := 0; retry < 3; retry++ {
 		if retry > 0 {
 			time.Sleep(time.Second)
-			utils.Debugf("Client: retrying mapping config request (attempt %d/3)", retry+1)
+			corelog.Debugf("Client: retrying mapping config request (attempt %d/3)", retry+1)
 		}
 		_, writeErr = controlStream.WritePacket(pkt, true, 0)
 		if writeErr == nil {
 			break
 		}
-		utils.Warnf("Client: failed to request mapping config (attempt %d/3): %v", retry+1, writeErr)
+		corelog.Warnf("Client: failed to request mapping config (attempt %d/3): %v", retry+1, writeErr)
 	}
 
 	if writeErr != nil {
-		utils.Errorf("Client: failed to request mapping config after 3 attempts: %v", writeErr)
+		corelog.Errorf("Client: failed to request mapping config after 3 attempts: %v", writeErr)
 		return
 	}
 
 	select {
 	case resp := <-responseChan:
 		if !resp.Success {
-			utils.Errorf("Client: ConfigGet failed: %s", resp.Error)
+			corelog.Errorf("Client: ConfigGet failed: %s", resp.Error)
 			return
 		}
 		c.handleConfigUpdate(resp.Data)
 	case <-time.After(30 * time.Second):
-		utils.Errorf("Client: ConfigGet request timeout after 30s")
+		corelog.Errorf("Client: ConfigGet request timeout after 30s")
 	case <-c.Ctx().Done():
 	}
 }

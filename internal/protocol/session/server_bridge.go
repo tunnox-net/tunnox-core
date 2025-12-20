@@ -1,18 +1,18 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"net"
 	"time"
 
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // startSourceBridge 创建源端隧道桥接器（用于客户端或服务器侧的源连接）
 func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, sourceConn net.Conn, sourceStream stream.PackageStreamer) error {
-	utils.Infof("Tunnel[%s]: startSourceBridge called, mappingID=%s", req.TunnelID, req.MappingID)
+	corelog.Infof("Tunnel[%s]: startSourceBridge called, mappingID=%s", req.TunnelID, req.MappingID)
 	
 	if s.cloudControl == nil {
 		return fmt.Errorf("cloud control not configured")
@@ -21,7 +21,7 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 	// ✅ 统一使用 GetPortMapping，直接返回 PortMapping
 	mapping, err := s.cloudControl.GetPortMapping(req.MappingID)
 	if err != nil {
-		utils.Errorf("Tunnel[%s]: failed to get mapping: %v", req.TunnelID, err)
+		corelog.Errorf("Tunnel[%s]: failed to get mapping: %v", req.TunnelID, err)
 		return fmt.Errorf("mapping not found: %w", err)
 	}
 
@@ -51,12 +51,12 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 	s.bridgeLock.Lock()
 	if _, exists := s.tunnelBridges[req.TunnelID]; exists {
 		s.bridgeLock.Unlock()
-		utils.Warnf("Tunnel[%s]: bridge already exists", req.TunnelID)
+		corelog.Warnf("Tunnel[%s]: bridge already exists", req.TunnelID)
 		return fmt.Errorf("tunnel %s already exists", req.TunnelID)
 	}
 	s.tunnelBridges[req.TunnelID] = bridge
 	s.bridgeLock.Unlock()
-	utils.Infof("Tunnel[%s]: bridge created and registered", req.TunnelID)
+	corelog.Infof("Tunnel[%s]: bridge created and registered", req.TunnelID)
 
 	// ✅ 注册到路由表（用于跨服务器隧道）
 	if s.tunnelRouting != nil {
@@ -78,20 +78,20 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 		}
 
 		if err := s.tunnelRouting.RegisterWaitingTunnel(s.Ctx(), routingState); err != nil {
-			utils.Warnf("Tunnel[%s]: failed to register routing state: %v", req.TunnelID, err)
+			corelog.Warnf("Tunnel[%s]: failed to register routing state: %v", req.TunnelID, err)
 			// 不是致命错误，继续处理
 		} else {
-			utils.Infof("Tunnel[%s]: registered waiting tunnel (source_node=%s, target_client=%d, ttl=30s)", 
+			corelog.Infof("Tunnel[%s]: registered waiting tunnel (source_node=%s, target_client=%d, ttl=30s)", 
 				req.TunnelID, routingState.SourceNodeID, routingState.TargetClientID)
 		}
 	}
 
 	// 通知目标端客户端建立隧道
-	utils.Infof("Tunnel[%s]: notifying target client to open tunnel, targetClientID=%d", req.TunnelID, mapping.TargetClientID)
+	corelog.Infof("Tunnel[%s]: notifying target client to open tunnel, targetClientID=%d", req.TunnelID, mapping.TargetClientID)
 	go s.notifyTargetClientToOpenTunnel(req)
 
 	// 启动桥接生命周期
-	utils.Infof("Tunnel[%s]: starting bridge lifecycle", req.TunnelID)
+	corelog.Infof("Tunnel[%s]: starting bridge lifecycle", req.TunnelID)
 	go s.runBridgeLifecycle(req.TunnelID, bridge)
 
 	return nil
@@ -120,14 +120,14 @@ func (s *SessionManager) StartServerTunnel(mappingID string, sourceConn net.Conn
 		return "", err
 	}
 
-	utils.Infof("Server UDP ingress: started tunnel %s for mapping %s", tunnelID, mappingID)
+	corelog.Infof("Server UDP ingress: started tunnel %s for mapping %s", tunnelID, mappingID)
 	return tunnelID, nil
 }
 
 // runBridgeLifecycle 启动桥接并在结束后清理
 func (s *SessionManager) runBridgeLifecycle(tunnelID string, bridge *TunnelBridge) {
 	if err := bridge.Start(); err != nil {
-		utils.Errorf("Tunnel[%s]: bridge failed: %v", tunnelID, err)
+		corelog.Errorf("Tunnel[%s]: bridge failed: %v", tunnelID, err)
 	}
 
 	s.bridgeLock.Lock()
@@ -150,14 +150,14 @@ func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) TunnelBrid
 		// 检查 sourceTunnelConn 的 ConnectionID
 		if bridge.sourceTunnelConn != nil {
 			if bridge.sourceTunnelConn.GetConnectionID() == connID {
-				utils.Infof("GetTunnelBridgeByConnectionID: found bridge by sourceTunnelConn, tunnelID=%s, connID=%s", tunnelID, connID)
+				corelog.Infof("GetTunnelBridgeByConnectionID: found bridge by sourceTunnelConn, tunnelID=%s, connID=%s", tunnelID, connID)
 				return bridge
 			}
 		}
 		// 检查 targetTunnelConn 的 ConnectionID
 		if bridge.targetTunnelConn != nil {
 			if bridge.targetTunnelConn.GetConnectionID() == connID {
-				utils.Infof("GetTunnelBridgeByConnectionID: found bridge by targetTunnelConn, tunnelID=%s, connID=%s", tunnelID, connID)
+				corelog.Infof("GetTunnelBridgeByConnectionID: found bridge by targetTunnelConn, tunnelID=%s, connID=%s", tunnelID, connID)
 				return bridge
 			}
 		}
@@ -165,7 +165,7 @@ func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) TunnelBrid
 		if bridge.sourceConn != nil {
 			if srcConn, ok := bridge.sourceConn.(interface{ GetConnectionID() string }); ok {
 				if srcConn.GetConnectionID() == connID {
-					utils.Infof("GetTunnelBridgeByConnectionID: found bridge by sourceConn (legacy), tunnelID=%s, connID=%s", tunnelID, connID)
+					corelog.Infof("GetTunnelBridgeByConnectionID: found bridge by sourceConn (legacy), tunnelID=%s, connID=%s", tunnelID, connID)
 					return bridge
 				}
 			}
@@ -173,14 +173,14 @@ func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) TunnelBrid
 		if bridge.targetConn != nil {
 			if tgtConn, ok := bridge.targetConn.(interface{ GetConnectionID() string }); ok {
 				if tgtConn.GetConnectionID() == connID {
-					utils.Infof("GetTunnelBridgeByConnectionID: found bridge by targetConn (legacy), tunnelID=%s, connID=%s", tunnelID, connID)
+					corelog.Infof("GetTunnelBridgeByConnectionID: found bridge by targetConn (legacy), tunnelID=%s, connID=%s", tunnelID, connID)
 					return bridge
 				}
 			}
 		}
 	}
 
-	utils.Debugf("GetTunnelBridgeByConnectionID: bridge not found, connID=%s", connID)
+	corelog.Debugf("GetTunnelBridgeByConnectionID: bridge not found, connID=%s", connID)
 	return nil
 }
 
@@ -194,7 +194,7 @@ func (s *SessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID i
 	s.bridgeLock.RLock()
 	defer s.bridgeLock.RUnlock()
 
-	utils.Debugf("GetTunnelBridgeByMappingID: searching for bridge, mappingID=%s, clientID=%d, total bridges=%d",
+	corelog.Debugf("GetTunnelBridgeByMappingID: searching for bridge, mappingID=%s, clientID=%d, total bridges=%d",
 		mappingID, clientID, len(s.tunnelBridges))
 
 	// 遍历所有 bridge，找到匹配 mappingID 的
@@ -214,11 +214,11 @@ func (s *SessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID i
 					}
 				}
 			}
-			utils.Debugf("GetTunnelBridgeByMappingID: found matching bridge, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
+			corelog.Debugf("GetTunnelBridgeByMappingID: found matching bridge, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
 						return bridge
 					}
 	}
 
-	utils.Debugf("GetTunnelBridgeByMappingID: bridge not found, mappingID=%s, clientID=%d", mappingID, clientID)
+	corelog.Debugf("GetTunnelBridgeByMappingID: bridge not found, mappingID=%s, clientID=%d", mappingID, clientID)
 	return nil
 }

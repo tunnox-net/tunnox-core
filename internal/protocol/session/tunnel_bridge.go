@@ -1,6 +1,7 @@
 package session
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"net"
@@ -9,7 +10,6 @@ import (
 
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 
 	"golang.org/x/time/rate"
 )
@@ -111,12 +111,12 @@ func NewTunnelBridge(parentCtx context.Context, config *TunnelBridgeConfig) *Tun
 	// 配置带宽限制
 	if config.BandwidthLimit > 0 {
 		bridge.rateLimiter = rate.NewLimiter(rate.Limit(config.BandwidthLimit), int(config.BandwidthLimit*2))
-		utils.Infof("TunnelBridge[%s]: bandwidth limit set to %d bytes/sec", config.TunnelID, config.BandwidthLimit)
+		corelog.Infof("TunnelBridge[%s]: bandwidth limit set to %d bytes/sec", config.TunnelID, config.BandwidthLimit)
 	}
 
 	// 注册清理处理器
 	bridge.AddCleanHandler(func() error {
-		utils.Infof("TunnelBridge[%s]: cleaning up resources", config.TunnelID)
+		corelog.Infof("TunnelBridge[%s]: cleaning up resources", config.TunnelID)
 
 		// 上报最终流量统计
 		bridge.reportTrafficStats()

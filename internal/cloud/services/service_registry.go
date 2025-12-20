@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"tunnox-core/internal/cloud/container"
@@ -8,7 +9,6 @@ import (
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/idgen"
 	storageCore "tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 )
 
 // ServiceRegistry 服务注册器，提供依赖注入和错误处理
@@ -284,7 +284,7 @@ func registerInfrastructureServices(container *container.Container, config *mana
 		return statsManager, nil
 	})
 
-	utils.Infof("Infrastructure services registered successfully")
+	corelog.Infof("Infrastructure services registered successfully")
 	return nil
 }
 
@@ -616,6 +616,6 @@ func registerBusinessServices(container *container.Container, parentCtx context.
 		return statsService, nil
 	})
 
-	utils.Infof("Business services registered successfully")
+	corelog.Infof("Business services registered successfully")
 	return nil
 }

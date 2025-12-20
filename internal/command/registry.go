@@ -1,12 +1,12 @@
 package command
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // CommandRegistry 命令注册表，实现 common.CommandRegistry 接口
@@ -40,7 +40,7 @@ func (r *CommandRegistry) Register(handler CommandHandler) error {
 	}
 
 	r.handlers[commandType] = handler
-	utils.Debugf("Registered command handler for type: %v", commandType)
+	corelog.Debugf("Registered command handler for type: %v", commandType)
 	return nil
 }
 
@@ -59,7 +59,7 @@ func (r *CommandRegistry) Unregister(commandType packet.CommandType) error {
 	}
 
 	delete(r.handlers, commandType)
-	utils.Debugf("Unregistered command handler for type: %v", commandType)
+	corelog.Debugf("Unregistered command handler for type: %v", commandType)
 	return nil
 }
 

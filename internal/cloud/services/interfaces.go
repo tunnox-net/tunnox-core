@@ -73,6 +73,7 @@ type AnonymousService interface {
 	CreateAnonymousMapping(listenClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) // ✅ 统一命名：listenClientID
 	GetAnonymousMappings() ([]*models.PortMapping, error)
 	CleanupExpiredAnonymous() error
+	SetNotifier(notifier interface{}) // 使用 interface{} 避免循环依赖，具体实现转换
 }
 
 // ConnectionService 连接管理服务

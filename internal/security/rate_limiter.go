@@ -1,12 +1,12 @@
 package security
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"sync"
 	"time"
 	
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // RateLimiter 速率限制器
@@ -150,7 +150,7 @@ func (r *RateLimiter) cleanupTask(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			utils.Infof("RateLimiter: cleanup task stopped")
+			corelog.Infof("RateLimiter: cleanup task stopped")
 			return
 		case <-ticker.C:
 			r.cleanup()
@@ -268,7 +268,7 @@ func (r *RateLimiter) Reset() {
 	r.ipBuckets = make(map[string]*TokenBucket)
 	r.tunnelBuckets = make(map[string]*TokenBucket)
 	
-	utils.Infof("RateLimiter: all buckets reset")
+	corelog.Infof("RateLimiter: all buckets reset")
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -324,7 +324,7 @@ func (r *RateLimiter) SetIPRateLimit(rate int, burst int) {
 	// 清空现有buckets，让它们重新创建
 	r.ipBuckets = make(map[string]*TokenBucket)
 	
-	utils.Infof("RateLimiter: IP rate limit updated to %d/s (burst: %d)", rate, burst)
+	corelog.Infof("RateLimiter: IP rate limit updated to %d/s (burst: %d)", rate, burst)
 }
 
 // SetTunnelRateLimit 动态调整隧道速率限制
@@ -338,6 +338,6 @@ func (r *RateLimiter) SetTunnelRateLimit(rate int, burst int) {
 	// 清空现有buckets，让它们重新创建
 	r.tunnelBuckets = make(map[string]*TokenBucket)
 	
-	utils.Infof("RateLimiter: Tunnel rate limit updated to %d bytes/s (burst: %d bytes)", rate, burst)
+	corelog.Infof("RateLimiter: Tunnel rate limit updated to %d bytes/s (burst: %d bytes)", rate, burst)
 }
 

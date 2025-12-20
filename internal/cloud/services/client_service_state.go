@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"sync"
 	"time"
@@ -71,7 +72,7 @@ func (s *clientService) UpdateClientStatus(clientID int64, status models.ClientS
 		}
 	}
 
-	utils.Infof("Updated client %d status to %s on node %s", clientID, status, nodeID)
+	corelog.Infof("Updated client %d status to %s on node %s", clientID, status, nodeID)
 	return nil
 }
 
@@ -133,7 +134,7 @@ func (s *clientService) ConnectClient(clientID int64, nodeID, connID, ipAddress,
 		}
 	}
 
-	utils.Infof("Client %d connected to node %s (conn=%s, ip=%s, proto=%s)",
+	corelog.Infof("Client %d connected to node %s (conn=%s, ip=%s, proto=%s)",
 		clientID, nodeID, connID, ipAddress, protocol)
 	return nil
 }
@@ -184,7 +185,7 @@ func (s *clientService) DisconnectClient(clientID int64) error {
 		}
 	}
 
-	utils.Infof("Client %d disconnected from node %s", clientID, state.NodeID)
+	corelog.Infof("Client %d disconnected from node %s", clientID, state.NodeID)
 	return nil
 }
 

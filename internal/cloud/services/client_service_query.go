@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"sync"
 	"tunnox-core/internal/cloud/models"
@@ -88,7 +89,7 @@ func (s *clientService) GetClientPortMappings(clientID int64) ([]*models.PortMap
 // SearchClients 搜索客户端
 func (s *clientService) SearchClients(keyword string) ([]*models.Client, error) {
 	// 暂时返回空列表
-	utils.Warnf("SearchClients not implemented yet")
+	corelog.Warnf("SearchClients not implemented yet")
 	return []*models.Client{}, nil
 }
 

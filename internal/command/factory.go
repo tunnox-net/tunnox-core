@@ -1,9 +1,9 @@
 package command
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"tunnox-core/internal/core/types"
-	"tunnox-core/internal/utils"
 )
 
 // CreateDefaultRegistry 创建默认的命令注册表
@@ -37,13 +37,13 @@ func RegisterDefaultHandlers(registry types.CommandRegistry) {
 
 	for _, handler := range handlers {
 		if err := registry.Register(handler); err != nil {
-			utils.Errorf("Failed to register handler for command type %v: %v", handler.GetCommandType(), err)
+			corelog.Errorf("Failed to register handler for command type %v: %v", handler.GetCommandType(), err)
 		} else {
-			utils.Infof("Registered command handler for type: %v", handler.GetCommandType())
+			corelog.Infof("Registered command handler for type: %v", handler.GetCommandType())
 		}
 	}
 
-	utils.Infof("Registered %d default command handlers", len(handlers))
+	corelog.Infof("Registered %d default command handlers", len(handlers))
 }
 
 // RegisterDefaultHandlersToService 注册默认命令处理器到服务
@@ -63,11 +63,11 @@ func RegisterDefaultHandlersToService(service CommandService) {
 
 	for _, handler := range handlers {
 		if err := service.RegisterHandler(handler); err != nil {
-			utils.Errorf("Failed to register handler for command type %v: %v", handler.GetCommandType(), err)
+			corelog.Errorf("Failed to register handler for command type %v: %v", handler.GetCommandType(), err)
 		} else {
-			utils.Infof("Registered command handler for type: %v", handler.GetCommandType())
+			corelog.Infof("Registered command handler for type: %v", handler.GetCommandType())
 		}
 	}
 
-	utils.Infof("Registered %d default command handlers to service", len(handlers))
+	corelog.Infof("Registered %d default command handlers to service", len(handlers))
 }

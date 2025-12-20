@@ -1,12 +1,12 @@
 package server
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 
 	"tunnox-core/internal/command"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/utils"
 )
 
 // ConfigCommandHandlers 配置命令处理器集合
@@ -75,7 +75,7 @@ func (h *ConfigGetHandler) Handle(ctx *command.CommandContext) (*command.Command
 	// 调用 GetClientConfig 获取配置
 	configJSON, err := h.authHandler.GetClientConfig(controlConn)
 	if err != nil {
-		utils.Errorf("ConfigGetHandler: failed to get client config for client %d: %v", clientID, err)
+		corelog.Errorf("ConfigGetHandler: failed to get client config for client %d: %v", clientID, err)
 		return h.errorResponse(ctx, fmt.Sprintf("failed to get config: %v", err))
 	}
 

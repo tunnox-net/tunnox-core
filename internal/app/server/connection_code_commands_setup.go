@@ -1,11 +1,11 @@
 package server
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 
 	"tunnox-core/internal/command"
 	"tunnox-core/internal/core/types"
-	"tunnox-core/internal/utils"
 )
 
 // setupConnectionCodeCommands 设置连接码命令处理器
@@ -59,7 +59,7 @@ func (s *Server) setupConnectionCodeCommands() error {
 	}
 	// 注册配置命令处理器
 	if s.authHandler == nil {
-		utils.Warnf("Server: auth handler not set, skipping ConfigGet handler registration")
+		corelog.Warnf("Server: auth handler not set, skipping ConfigGet handler registration")
 	} else {
 		configHandlers := NewConfigCommandHandlers(s.authHandler, s.session)
 		if err := configHandlers.RegisterHandlers(cmdRegistry); err != nil {

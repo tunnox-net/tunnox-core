@@ -1,10 +1,10 @@
 package command
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"time"
-	"tunnox-core/internal/utils"
 )
 
 // CommandPipeline 命令处理管道
@@ -78,7 +78,7 @@ func (cp *CommandPipeline) ExecuteWithTimeout(ctx *CommandContext, timeout time.
 // AddMiddleware 添加中间件到管道
 func (cp *CommandPipeline) AddMiddleware(middleware Middleware) {
 	cp.middleware = append(cp.middleware, middleware)
-	utils.Debugf("Added middleware to pipeline: %T", middleware)
+	corelog.Debugf("Added middleware to pipeline: %T", middleware)
 }
 
 // GetMiddlewareCount 获取中间件数量

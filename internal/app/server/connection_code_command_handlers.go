@@ -1,6 +1,7 @@
 package server
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -9,7 +10,6 @@ import (
 	"tunnox-core/internal/command"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
-	"tunnox-core/internal/utils"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -118,7 +118,7 @@ func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 	}
 
 	if err := json.Unmarshal([]byte(ctx.RequestBody), &req); err != nil {
-		utils.Errorf("GenerateConnectionCodeHandler: failed to parse request: %v", err)
+		corelog.Errorf("GenerateConnectionCodeHandler: failed to parse request: %v", err)
 		return h.errorResponse(ctx, fmt.Sprintf("invalid request: %v", err))
 	}
 
@@ -133,7 +133,7 @@ func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 	})
 
 	if err != nil {
-		utils.Errorf("GenerateConnectionCodeHandler: failed to create connection code: %v", err)
+		corelog.Errorf("GenerateConnectionCodeHandler: failed to create connection code: %v", err)
 		return h.errorResponse(ctx, fmt.Sprintf("failed to create connection code: %v", err))
 	}
 

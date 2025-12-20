@@ -1,13 +1,13 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"net"
 	"strings"
 	"time"
 
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // connectWithAutoDetection 使用自动连接检测连接到服务器
@@ -25,7 +25,7 @@ func (c *TunnoxClient) connectWithAutoDetection() error {
 	c.config.Server.Protocol = attempt.Endpoint.Protocol
 	c.config.Server.Address = attempt.Endpoint.Address
 
-	utils.Infof("Client: auto-detected server endpoint - %s://%s", attempt.Endpoint.Protocol, attempt.Endpoint.Address)
+	corelog.Infof("Client: auto-detected server endpoint - %s://%s", attempt.Endpoint.Protocol, attempt.Endpoint.Address)
 
 	// 使用已建立的连接和 Stream（握手已在 ConnectWithAutoDetection 中完成）
 	c.mu.Lock()
@@ -42,12 +42,12 @@ func (c *TunnoxClient) connectWithAutoDetection() error {
 	if attempt.Conn.RemoteAddr() != nil {
 		remoteAddr = attempt.Conn.RemoteAddr().String()
 	}
-	utils.Infof("Client: %s connection established and handshake completed - Local=%s, Remote=%s",
+	corelog.Infof("Client: %s connection established and handshake completed - Local=%s, Remote=%s",
 		strings.ToUpper(attempt.Endpoint.Protocol), localAddr, remoteAddr)
 
 	// 启动读取循环（接收服务器命令）
 	if !c.readLoopRunning.CompareAndSwap(false, true) {
-		utils.Warnf("Client: readLoop already running, skipping")
+		corelog.Warnf("Client: readLoop already running, skipping")
 	} else {
 		go func() {
 			defer c.readLoopRunning.Store(false)
@@ -57,7 +57,7 @@ func (c *TunnoxClient) connectWithAutoDetection() error {
 
 	// 启动心跳循环
 	if !c.heartbeatLoopRunning.CompareAndSwap(false, true) {
-		utils.Debugf("Client: heartbeatLoop already running, skipping")
+		corelog.Debugf("Client: heartbeatLoop already running, skipping")
 	} else {
 		go func() {
 			defer c.heartbeatLoopRunning.Store(false)
@@ -65,13 +65,13 @@ func (c *TunnoxClient) connectWithAutoDetection() error {
 		}()
 	}
 
-	utils.Infof("Client: control connection established successfully")
+	corelog.Infof("Client: control connection established successfully")
 	return nil
 }
 
 // connectWithEndpoint 使用指定的协议和地址建立控制连接
 func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
-	utils.Infof("Client: connecting to server %s://%s", protocol, address)
+	corelog.Infof("Client: connecting to server %s://%s", protocol, address)
 
 	var (
 		conn net.Conn
@@ -125,7 +125,7 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 	if conn.RemoteAddr() != nil {
 		remoteAddr = conn.RemoteAddr().String()
 	}
-	utils.Infof("Client: %s connection established - Local=%s, Remote=%s",
+	corelog.Infof("Client: %s connection established - Local=%s, Remote=%s",
 		strings.ToUpper(protocol), localAddr, remoteAddr)
 
 	// 发送握手请求
@@ -145,7 +145,7 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 
 	// 启动读取循环
 	if !c.readLoopRunning.CompareAndSwap(false, true) {
-		utils.Warnf("Client: readLoop already running, skipping")
+		corelog.Warnf("Client: readLoop already running, skipping")
 	} else {
 		go func() {
 			defer c.readLoopRunning.Store(false)
@@ -155,7 +155,7 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 
 	// 启动心跳循环
 	if !c.heartbeatLoopRunning.CompareAndSwap(false, true) {
-		utils.Debugf("Client: heartbeatLoop already running, skipping")
+		corelog.Debugf("Client: heartbeatLoop already running, skipping")
 	} else {
 		go func() {
 			defer c.heartbeatLoopRunning.Store(false)
@@ -163,7 +163,7 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 		}()
 	}
 
-	utils.Infof("Client: control connection established successfully")
+	corelog.Infof("Client: control connection established successfully")
 	return nil
 }
 

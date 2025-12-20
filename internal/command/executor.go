@@ -1,6 +1,7 @@
 package command
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -73,7 +74,7 @@ func (ce *CommandExecutor) executeOneway(ctx *types.CommandContext, handler type
 		ctx.Context = execCtx
 		_, err := ce.executeWithMiddleware(ctx, handler)
 		if err != nil {
-			utils.Errorf("Oneway command handler failed: %v", err)
+			corelog.Errorf("Oneway command handler failed: %v", err)
 		}
 	}()
 
@@ -86,7 +87,7 @@ func (ce *CommandExecutor) executeDuplex(ctx *types.CommandContext, handler type
 	requestID := ce.generateRequestID()
 	ctx.RequestID = requestID
 
-	utils.Debugf("CommandExecutor: executing duplex command, ConnectionID=%s, CommandType=%d, CommandID=%s, RequestID=%s",
+	corelog.Debugf("CommandExecutor: executing duplex command, ConnectionID=%s, CommandType=%d, CommandID=%s, RequestID=%s",
 		ctx.ConnectionID, ctx.CommandType, ctx.CommandId, requestID)
 
 	// 创建响应通道
@@ -96,7 +97,7 @@ func (ce *CommandExecutor) executeDuplex(ctx *types.CommandContext, handler type
 
 	// 获取超时时间
 	timeout := ce.rpcManager.GetTimeout()
-	utils.Debugf("CommandExecutor: timeout set to %v", timeout)
+	corelog.Debugf("CommandExecutor: timeout set to %v", timeout)
 
 	// 异步执行命令
 	go func() {
@@ -104,46 +105,46 @@ func (ce *CommandExecutor) executeDuplex(ctx *types.CommandContext, handler type
 		defer cancel()
 
 		ctx.Context = execCtx
-		utils.Debugf("CommandExecutor: calling handler.Handle, ConnectionID=%s, CommandID=%s", ctx.ConnectionID, ctx.CommandId)
+		corelog.Debugf("CommandExecutor: calling handler.Handle, ConnectionID=%s, CommandID=%s", ctx.ConnectionID, ctx.CommandId)
 		response, err := ce.executeWithMiddleware(ctx, handler)
 		if err != nil {
-			utils.Errorf("CommandExecutor: handler execution failed: %v", err)
+			corelog.Errorf("CommandExecutor: handler execution failed: %v", err)
 			response = &types.CommandResponse{
 				Success: false,
 				Error:   err.Error(),
 			}
 		} else {
-			utils.Debugf("CommandExecutor: handler execution succeeded, Success=%v, CommandID=%s", response.Success, ctx.CommandId)
+			corelog.Debugf("CommandExecutor: handler execution succeeded, Success=%v, CommandID=%s", response.Success, ctx.CommandId)
 		}
 
 		// 发送响应
-		utils.Debugf("CommandExecutor: sending response, ConnectionID=%s, CommandID=%s", ctx.ConnectionID, ctx.CommandId)
+		corelog.Debugf("CommandExecutor: sending response, ConnectionID=%s, CommandID=%s", ctx.ConnectionID, ctx.CommandId)
 		if err := ce.sendResponse(ctx.ConnectionID, response); err != nil {
-			utils.Errorf("CommandExecutor: failed to send response: %v", err)
+			corelog.Errorf("CommandExecutor: failed to send response: %v", err)
 		} else {
-			utils.Debugf("CommandExecutor: response sent successfully, ConnectionID=%s, CommandID=%s", ctx.ConnectionID, ctx.CommandId)
+			corelog.Debugf("CommandExecutor: response sent successfully, ConnectionID=%s, CommandID=%s", ctx.ConnectionID, ctx.CommandId)
 		}
 
 		// 将响应发送到通道
 		select {
 		case responseChan <- response:
-			utils.Debugf("CommandExecutor: response sent to channel, CommandID=%s", ctx.CommandId)
+			corelog.Debugf("CommandExecutor: response sent to channel, CommandID=%s", ctx.CommandId)
 		default:
-			utils.Warnf("CommandExecutor: response channel is full, dropping response")
+			corelog.Warnf("CommandExecutor: response channel is full, dropping response")
 		}
 	}()
 
 	// 等待响应
-	utils.Debugf("CommandExecutor: waiting for response, CommandID=%s, timeout=%v", ctx.CommandId, timeout)
+	corelog.Debugf("CommandExecutor: waiting for response, CommandID=%s, timeout=%v", ctx.CommandId, timeout)
 	select {
 	case response := <-responseChan:
-		utils.Debugf("CommandExecutor: received response from channel, Success=%v, CommandID=%s", response.Success, ctx.CommandId)
+		corelog.Debugf("CommandExecutor: received response from channel, Success=%v, CommandID=%s", response.Success, ctx.CommandId)
 		if !response.Success {
 			return fmt.Errorf("command execution failed: %s", response.Error)
 		}
 		return nil
 	case <-time.After(timeout):
-		utils.Errorf("CommandExecutor: command timeout, CommandID=%s, ConnectionID=%s", ctx.CommandId, ctx.ConnectionID)
+		corelog.Errorf("CommandExecutor: command timeout, CommandID=%s, ConnectionID=%s", ctx.CommandId, ctx.ConnectionID)
 		return fmt.Errorf("command timeout")
 	}
 }
@@ -193,7 +194,7 @@ func (ce *CommandExecutor) createCommandContext(streamPacket *types.StreamPacket
 
 // sendResponse 发送响应
 func (ce *CommandExecutor) sendResponse(connectionID string, response *types.CommandResponse) error {
-	utils.Debugf("CommandExecutor.sendResponse: sending response, ConnectionID=%s, CommandID=%s, Success=%v",
+	corelog.Debugf("CommandExecutor.sendResponse: sending response, ConnectionID=%s, CommandID=%s, Success=%v",
 		connectionID, response.CommandId, response.Success)
 
 	if ce.session == nil {
@@ -203,17 +204,17 @@ func (ce *CommandExecutor) sendResponse(connectionID string, response *types.Com
 	// 通过 Session 接口获取连接
 	conn, exists := ce.session.GetConnection(connectionID)
 	if !exists || conn == nil {
-		utils.Errorf("CommandExecutor.sendResponse: connection not found, ConnectionID=%s", connectionID)
+		corelog.Errorf("CommandExecutor.sendResponse: connection not found, ConnectionID=%s", connectionID)
 		return fmt.Errorf("connection not found: %s", connectionID)
 	}
 
 	if conn.Stream == nil {
-		utils.Errorf("CommandExecutor.sendResponse: stream is nil, ConnectionID=%s", connectionID)
+		corelog.Errorf("CommandExecutor.sendResponse: stream is nil, ConnectionID=%s", connectionID)
 		return fmt.Errorf("stream is nil for connection %s", connectionID)
 	}
 
 	pkgStream := conn.Stream
-	utils.Debugf("CommandExecutor.sendResponse: got stream, ConnectionID=%s, StreamType=%T", connectionID, pkgStream)
+	corelog.Debugf("CommandExecutor.sendResponse: got stream, ConnectionID=%s, StreamType=%T", connectionID, pkgStream)
 
 	// 构造响应数据
 	responseData := map[string]interface{}{
@@ -256,15 +257,15 @@ func (ce *CommandExecutor) sendResponse(connectionID string, response *types.Com
 	}
 
 	// 发送响应
-	utils.Debugf("CommandExecutor.sendResponse: writing packet, ConnectionID=%s, PacketType=%d, CommandID=%s",
+	corelog.Debugf("CommandExecutor.sendResponse: writing packet, ConnectionID=%s, PacketType=%d, CommandID=%s",
 		connectionID, transferPacket.PacketType, response.CommandId)
 	written, err := pkgStream.WritePacket(transferPacket, true, 0)
 	if err != nil {
-		utils.Errorf("CommandExecutor.sendResponse: failed to write packet, ConnectionID=%s, Error=%v", connectionID, err)
+		corelog.Errorf("CommandExecutor.sendResponse: failed to write packet, ConnectionID=%s, Error=%v", connectionID, err)
 		return fmt.Errorf("failed to write response packet: %w", err)
 	}
 
-	utils.Infof("CommandExecutor.sendResponse: response sent successfully, ConnectionID=%s, CommandID=%s, Success=%v, Bytes=%d",
+	corelog.Infof("CommandExecutor.sendResponse: response sent successfully, ConnectionID=%s, CommandID=%s, Success=%v, Bytes=%d",
 		connectionID, response.CommandId, response.Success, written)
 
 	return nil
@@ -282,7 +283,7 @@ func (ce *CommandExecutor) SetSession(session types.Session) {
 	ce.mu.Lock()
 	defer ce.mu.Unlock()
 	ce.session = session
-	utils.Infof("Session set in command executor")
+	corelog.Infof("Session set in command executor")
 }
 
 // GetRegistry 获取命令注册表

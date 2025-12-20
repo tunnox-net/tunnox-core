@@ -1,11 +1,11 @@
 package protocol
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"sync"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/protocol/adapter"
-	"tunnox-core/internal/utils"
 )
 
 // ProtocolManager 协议管理器
@@ -41,13 +41,13 @@ func (pm *ProtocolManager) StartAll() error {
 	defer pm.mu.Unlock()
 	for name, a := range pm.adapters {
 		// 保留关键的适配器启动信息
-		utils.Infof("Starting %s adapter on %s", name, a.GetAddr())
+		corelog.Infof("Starting %s adapter on %s", name, a.GetAddr())
 		if err := a.ListenFrom(a.GetAddr()); err != nil {
-			utils.Errorf("Failed to start adapter %s: %v", name, err)
+			corelog.Errorf("Failed to start adapter %s: %v", name, err)
 			return err
 		}
 		// 保留关键的适配器启动完成信息
-		utils.Infof("Successfully started %s adapter on %s", name, a.GetAddr())
+		corelog.Infof("Successfully started %s adapter on %s", name, a.GetAddr())
 	}
 	return nil
 }
@@ -63,7 +63,7 @@ func (pm *ProtocolManager) onClose() error {
 		var lastErr error
 		for _, adapter := range pm.adapters {
 			if err := adapter.Close(); err != nil {
-				utils.Errorf("Failed to close adapter %s: %v", adapter.Name(), err)
+				corelog.Errorf("Failed to close adapter %s: %v", adapter.Name(), err)
 				lastErr = err
 			}
 		}

@@ -1,12 +1,12 @@
 package events
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 )
 
 // eventBus 事件总线实现
@@ -34,7 +34,7 @@ func NewEventBus(parentCtx context.Context) EventBus {
 
 // onClose 资源清理回调
 func (bus *eventBus) onClose() error {
-	utils.Infof("Cleaning up event bus resources...")
+	corelog.Infof("Cleaning up event bus resources...")
 
 	// 取消上下文
 	if bus.cancel != nil {
@@ -46,7 +46,7 @@ func (bus *eventBus) onClose() error {
 	bus.subscribers = make(map[string][]EventHandler)
 	bus.mu.Unlock()
 
-	utils.Infof("Event bus resources cleanup completed")
+	corelog.Infof("Event bus resources cleanup completed")
 	return nil
 }
 
@@ -62,7 +62,7 @@ func (bus *eventBus) Publish(event Event) error {
 	handlers, exists := bus.subscribers[eventType]
 	if !exists {
 		bus.mu.RUnlock()
-		utils.Debugf("No handlers for event type: %s", eventType)
+		corelog.Debugf("No handlers for event type: %s", eventType)
 		return nil
 	}
 
@@ -71,18 +71,18 @@ func (bus *eventBus) Publish(event Event) error {
 	copy(handlersCopy, handlers)
 	bus.mu.RUnlock()
 
-	utils.Debugf("Publishing event: %s, handlers count: %d", eventType, len(handlersCopy))
+	corelog.Debugf("Publishing event: %s, handlers count: %d", eventType, len(handlersCopy))
 
 	// 异步处理事件
 	go func() {
 		for _, handler := range handlersCopy {
 			select {
 			case <-bus.ctx.Done():
-				utils.Debugf("Event bus context cancelled, stopping event processing")
+				corelog.Debugf("Event bus context cancelled, stopping event processing")
 				return
 			default:
 				if err := handler(event); err != nil {
-					utils.Errorf("Event handler failed for event %s: %v", eventType, err)
+					corelog.Errorf("Event handler failed for event %s: %v", eventType, err)
 				}
 			}
 		}
@@ -115,13 +115,13 @@ func (bus *eventBus) Subscribe(eventType string, handler EventHandler) error {
 	// 检查是否已经订阅
 	for _, existingHandler := range bus.subscribers[eventType] {
 		if fmt.Sprintf("%p", existingHandler) == fmt.Sprintf("%p", handler) {
-			utils.Warnf("Handler already subscribed for event type: %s", eventType)
+			corelog.Warnf("Handler already subscribed for event type: %s", eventType)
 			return nil
 		}
 	}
 
 	bus.subscribers[eventType] = append(bus.subscribers[eventType], handler)
-	utils.Infof("Subscribed handler for event type: %s, total handlers: %d", eventType, len(bus.subscribers[eventType]))
+	corelog.Infof("Subscribed handler for event type: %s, total handlers: %d", eventType, len(bus.subscribers[eventType]))
 
 	return nil
 }
@@ -145,7 +145,7 @@ func (bus *eventBus) Unsubscribe(eventType string, handler EventHandler) error {
 		if fmt.Sprintf("%p", existingHandler) == handlerPtr {
 			// 移除处理器
 			bus.subscribers[eventType] = append(handlers[:i], handlers[i+1:]...)
-			utils.Infof("Unsubscribed handler for event type: %s, remaining handlers: %d", eventType, len(bus.subscribers[eventType]))
+			corelog.Infof("Unsubscribed handler for event type: %s, remaining handlers: %d", eventType, len(bus.subscribers[eventType]))
 			return nil
 		}
 	}

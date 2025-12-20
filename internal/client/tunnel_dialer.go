@@ -1,6 +1,7 @@
 package client
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -11,7 +12,6 @@ import (
 	"tunnox-core/internal/packet"
 	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
 )
 
 // dialTunnel 建立隧道连接（通用方法）
@@ -42,7 +42,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 			token = c.config.SecretKey
 		}
 		// 隧道连接需要传入 mappingID
-		utils.Infof("Client: dialing HTTP long polling tunnel connection, mappingID=%s, clientID=%d", mappingID, c.config.ClientID)
+		corelog.Infof("Client: dialing HTTP long polling tunnel connection, mappingID=%s, clientID=%d", mappingID, c.config.ClientID)
 		conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, c.config.ClientID, token, c.GetInstanceID(), mappingID)
 		// 保存 token 供后续使用
 		_ = token
@@ -111,7 +111,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 	}
 
 	// 等待 TunnelOpenAck（忽略心跳包）
-	utils.Infof("Client: waiting for TunnelOpenAck, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
+	corelog.Infof("Client: waiting for TunnelOpenAck, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
 	var ackPkt *packet.TransferPacket
 	timeout := time.After(30 * time.Second)
 	for {
@@ -125,7 +125,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 
 		pkt, bytesRead, err := tunnelStream.ReadPacket()
 		if err != nil {
-			utils.Errorf("Client: failed to read packet while waiting for TunnelOpenAck: %v", err)
+			corelog.Errorf("Client: failed to read packet while waiting for TunnelOpenAck: %v", err)
 			tunnelStream.Close()
 			conn.Close()
 			return nil, nil, fmt.Errorf("failed to read tunnel open ack: %w", err)
@@ -133,21 +133,21 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 
 		// 忽略心跳包和TunnelOpen包（可能是其他连接的TunnelOpen）
 		baseType := pkt.PacketType & 0x3F
-		utils.Debugf("Client: received packet while waiting for TunnelOpenAck, type=%d (base=%d), bytesRead=%d", pkt.PacketType, baseType, bytesRead)
+		corelog.Debugf("Client: received packet while waiting for TunnelOpenAck, type=%d (base=%d), bytesRead=%d", pkt.PacketType, baseType, bytesRead)
 		if baseType == packet.Heartbeat {
-			utils.Debugf("Client: ignoring heartbeat packet while waiting for TunnelOpenAck")
+			corelog.Debugf("Client: ignoring heartbeat packet while waiting for TunnelOpenAck")
 			// 对于 HTTP 长轮询连接，心跳包已经被 ReadPacket 消耗，不需要恢复
 			continue
 		}
 		if baseType == packet.TunnelOpen {
-			utils.Debugf("Client: ignoring TunnelOpen packet while waiting for TunnelOpenAck")
+			corelog.Debugf("Client: ignoring TunnelOpen packet while waiting for TunnelOpenAck")
 			// 对于 HTTP 长轮询连接，TunnelOpen 包已经被 ReadPacket 消耗，不需要恢复
 			continue
 		}
 
 		// 检查是否是 TunnelOpenAck
 		if baseType == packet.TunnelOpenAck {
-			utils.Infof("Client: received TunnelOpenAck, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
+			corelog.Infof("Client: received TunnelOpenAck, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
 			ackPkt = pkt
 			break
 		}
@@ -165,7 +165,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 				restoreData[0] = byte(pkt.PacketType)
 				binary.BigEndian.PutUint32(restoreData[1:5], uint32(len(pkt.Payload)))
 				copy(restoreData[5:], pkt.Payload)
-				utils.Infof("Client: restoring %d bytes to readBuffer (packet type=%d, payload len=%d), tunnelID=%s, mappingID=%s",
+				corelog.Infof("Client: restoring %d bytes to readBuffer (packet type=%d, payload len=%d), tunnelID=%s, mappingID=%s",
 					len(restoreData), baseType, len(pkt.Payload), tunnelID, mappingID)
 				httppollConn.Unread(restoreData)
 			} else {
@@ -173,14 +173,14 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 				restoreData := make([]byte, 5)
 				restoreData[0] = byte(pkt.PacketType)
 				binary.BigEndian.PutUint32(restoreData[1:5], 0)
-				utils.Infof("Client: restoring packet header (5 bytes) to readBuffer, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
+				corelog.Infof("Client: restoring packet header (5 bytes) to readBuffer, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
 				httppollConn.Unread(restoreData)
 			}
 			continue
 		}
 
 		// 收到其他类型的包，返回错误
-		utils.Errorf("Client: unexpected packet type: %v (expected TunnelOpenAck), baseType=%d", pkt.PacketType, baseType)
+		corelog.Errorf("Client: unexpected packet type: %v (expected TunnelOpenAck), baseType=%d", pkt.PacketType, baseType)
 		tunnelStream.Close()
 		conn.Close()
 		return nil, nil, fmt.Errorf("unexpected packet type: %v (expected TunnelOpenAck)", pkt.PacketType)
@@ -204,7 +204,7 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 		if httppollConn, ok := conn.(interface {
 			SetStreamMode(streamMode bool)
 		}); ok {
-			utils.Infof("Client: switching HTTP long polling tunnel connection to stream mode, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
+			corelog.Infof("Client: switching HTTP long polling tunnel connection to stream mode, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
 			httppollConn.SetStreamMode(true)
 		}
 	}

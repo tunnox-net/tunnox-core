@@ -1,6 +1,7 @@
 package services
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"time"
@@ -13,6 +14,11 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+// localNotifier avoids circular dependency with managers package
+type localNotifier interface {
+	NotifyClientUpdate(clientID int64)
+}
+
 // anonymousService 匿名服务实现
 type anonymousService struct {
 	*dispose.ServiceBase
@@ -20,6 +26,7 @@ type anonymousService struct {
 	clientRepo  *repos.ClientRepository
 	mappingRepo *repos.PortMappingRepo
 	idManager   *idgen.IDManager
+	notifier    localNotifier // 通知识别接口
 }
 
 // NewAnonymousService 创建匿名服务
@@ -182,7 +189,14 @@ func (s *anonymousService) CreateAnonymousMapping(listenClientID, targetClientID
 		return nil, fmt.Errorf("failed to create anonymous mapping: %w", err)
 	}
 
-	utils.Infof("Created anonymous mapping: %s between clients %d and %d", mappingID, listenClientID, targetClientID)
+	corelog.Infof("Created anonymous mapping: %s between clients %d and %d", mappingID, listenClientID, targetClientID)
+
+	// ✅ 通知监听客户端更新配置
+	if s.notifier != nil {
+		corelog.Infof("Notifying client %d of mapping update", listenClientID)
+		s.notifier.NotifyClientUpdate(listenClientID)
+	}
+
 	return mapping, nil
 }
 
@@ -190,7 +204,7 @@ func (s *anonymousService) CreateAnonymousMapping(listenClientID, targetClientID
 func (s *anonymousService) GetAnonymousMappings() ([]*models.PortMapping, error) {
 	// 暂时返回空列表，因为PortMappingRepo没有按类型列表的方法
 	// 这里预留：支持按类型筛选匿名服务
-	utils.Warnf("GetAnonymousMappings not implemented yet")
+	corelog.Warnf("GetAnonymousMappings not implemented yet")
 	return []*models.PortMapping{}, nil
 }
 
@@ -209,13 +223,23 @@ func (s *anonymousService) CleanupExpiredAnonymous() error {
 		// 检查是否过期（超过24小时未活动）
 		if client.LastSeen != nil && now.Sub(*client.LastSeen) > 24*time.Hour {
 			if err := s.DeleteAnonymousClient(client.ID); err != nil {
-				utils.Warnf("Failed to delete expired anonymous client %d: %v", client.ID, err)
+				corelog.Warnf("Failed to delete expired anonymous client %d: %v", client.ID, err)
 			} else {
 				expiredCount++
 			}
 		}
 	}
 
-	utils.Infof("Cleaned up %d expired anonymous clients", expiredCount)
+	corelog.Infof("Cleaned up %d expired anonymous clients", expiredCount)
 	return nil
+}
+
+// SetNotifier 设置通知器
+func (s *anonymousService) SetNotifier(notifier interface{}) {
+	if n, ok := notifier.(localNotifier); ok {
+		s.notifier = n
+		corelog.Infof("AnonymousService: Notifier set successfully")
+	} else {
+		corelog.Warnf("AnonymousService: Invalid notifier type passed to SetNotifier")
+	}
 }

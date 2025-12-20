@@ -1,13 +1,13 @@
 package broker
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"context"
 	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -81,7 +81,7 @@ func NewRedisBroker(parentCtx context.Context, config *RedisBrokerConfig, nodeID
 		closed:      false,
 	}
 
-	utils.Infof("RedisBroker initialized for node: %s (cluster_mode: %v)", nodeID, config.ClusterMode)
+	corelog.Infof("RedisBroker initialized for node: %s (cluster_mode: %v)", nodeID, config.ClusterMode)
 	return broker, nil
 }
 
@@ -108,11 +108,11 @@ func (r *RedisBroker) Publish(ctx context.Context, topic string, message []byte)
 	// 发布到 Redis（添加前缀避免冲突）
 	channel := fmt.Sprintf("tunnox:%s", topic)
 	if err := r.client.Publish(ctx, channel, data).Err(); err != nil {
-		utils.Errorf("RedisBroker: failed to publish to %s: %v", topic, err)
+		corelog.Errorf("RedisBroker: failed to publish to %s: %v", topic, err)
 		return fmt.Errorf("failed to publish to Redis: %w", err)
 	}
 
-	utils.Debugf("RedisBroker: published message to topic %s", topic)
+	corelog.Debugf("RedisBroker: published message to topic %s", topic)
 	return nil
 }
 
@@ -152,18 +152,18 @@ func (r *RedisBroker) Subscribe(ctx context.Context, topic string) (<-chan *Mess
 		go r.receiveLoop()
 	}
 
-	utils.Infof("RedisBroker: subscribed to topic %s (total topics: %d)", topic, len(r.subscribers))
+	corelog.Infof("RedisBroker: subscribed to topic %s (total topics: %d)", topic, len(r.subscribers))
 	return msgChan, nil
 }
 
 // receiveLoop 接收 Redis 消息循环
 func (r *RedisBroker) receiveLoop() {
-	utils.Infof("RedisBroker: receive loop started")
+	corelog.Infof("RedisBroker: receive loop started")
 
 	for {
 		select {
 		case <-r.Ctx().Done():
-			utils.Infof("RedisBroker: receive loop stopped")
+			corelog.Infof("RedisBroker: receive loop stopped")
 			return
 		default:
 			// 接收消息
@@ -172,7 +172,7 @@ func (r *RedisBroker) receiveLoop() {
 				if r.closed {
 					return
 				}
-				utils.Errorf("RedisBroker: failed to receive message: %v", err)
+				corelog.Errorf("RedisBroker: failed to receive message: %v", err)
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
@@ -180,7 +180,7 @@ func (r *RedisBroker) receiveLoop() {
 			// 解析消息
 			var message Message
 			if err := json.Unmarshal([]byte(msg.Payload), &message); err != nil {
-				utils.Errorf("RedisBroker: failed to unmarshal message: %v", err)
+				corelog.Errorf("RedisBroker: failed to unmarshal message: %v", err)
 				continue
 			}
 
@@ -195,11 +195,11 @@ func (r *RedisBroker) receiveLoop() {
 			if exists {
 				select {
 				case ch <- &message:
-					utils.Debugf("RedisBroker: delivered message to topic %s", topic)
+					corelog.Debugf("RedisBroker: delivered message to topic %s", topic)
 				case <-r.Ctx().Done():
 					return
 				default:
-					utils.Warnf("RedisBroker: subscriber channel full for topic %s, dropping message", topic)
+					corelog.Warnf("RedisBroker: subscriber channel full for topic %s, dropping message", topic)
 				}
 			}
 		}
@@ -224,7 +224,7 @@ func (r *RedisBroker) Unsubscribe(ctx context.Context, topic string) error {
 	channel := fmt.Sprintf("tunnox:%s", topic)
 	if r.pubsub != nil {
 		if err := r.pubsub.Unsubscribe(ctx, channel); err != nil {
-			utils.Warnf("RedisBroker: failed to unsubscribe from Redis: %v", err)
+			corelog.Warnf("RedisBroker: failed to unsubscribe from Redis: %v", err)
 		}
 	}
 
@@ -232,7 +232,7 @@ func (r *RedisBroker) Unsubscribe(ctx context.Context, topic string) error {
 	close(ch)
 	delete(r.subscribers, topic)
 
-	utils.Infof("RedisBroker: unsubscribed from topic %s", topic)
+	corelog.Infof("RedisBroker: unsubscribed from topic %s", topic)
 	return nil
 }
 
@@ -266,25 +266,25 @@ func (r *RedisBroker) Close() error {
 	// 关闭 PubSub
 	if r.pubsub != nil {
 		if err := r.pubsub.Close(); err != nil {
-			utils.Warnf("RedisBroker: failed to close pubsub: %v", err)
+			corelog.Warnf("RedisBroker: failed to close pubsub: %v", err)
 		}
 	}
 
 	// 关闭所有订阅者通道
 	for topic, ch := range r.subscribers {
 		close(ch)
-		utils.Debugf("RedisBroker: closed subscriber for topic %s", topic)
+		corelog.Debugf("RedisBroker: closed subscriber for topic %s", topic)
 	}
 	r.subscribers = make(map[string]chan *Message)
 
 	// 关闭 Redis 客户端
 	if err := r.client.Close(); err != nil {
-		utils.Warnf("RedisBroker: failed to close Redis client: %v", err)
+		corelog.Warnf("RedisBroker: failed to close Redis client: %v", err)
 	}
 
 	r.mu.Unlock()
 
-	utils.Infof("RedisBroker closed for node: %s", r.nodeID)
+	corelog.Infof("RedisBroker closed for node: %s", r.nodeID)
 
 	// 调用基类 Close
 	return r.ServiceBase.Close()

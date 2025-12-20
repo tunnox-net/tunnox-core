@@ -1,10 +1,10 @@
 package models
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"time"
 
-	"tunnox-core/internal/utils"
 )
 
 // IsExpired 检查映射是否已过期
@@ -40,7 +40,7 @@ func (m *PortMapping) IsValid() bool {
 // 防止映射被其他客户端劫持
 func (m *PortMapping) CanBeAccessedBy(clientID int64) bool {
 	if !m.IsValid() {
-		utils.Debugf("PortMapping.CanBeAccessedBy: IsValid() returned false for mappingID=%s, Status=%s, IsRevoked=%v, IsExpired=%v",
+		corelog.Debugf("PortMapping.CanBeAccessedBy: IsValid() returned false for mappingID=%s, Status=%s, IsRevoked=%v, IsExpired=%v",
 			m.ID, m.Status, m.IsRevoked, m.IsExpired())
 		return false
 	}
@@ -54,7 +54,7 @@ func (m *PortMapping) CanBeAccessedBy(clientID int64) bool {
 	// 只有 ListenClient 可以使用此映射
 	result := listenClientID == clientID
 	if !result {
-		utils.Debugf("PortMapping.CanBeAccessedBy: clientID mismatch - mappingID=%s, listenClientID=%d, clientID=%d",
+		corelog.Debugf("PortMapping.CanBeAccessedBy: clientID mismatch - mappingID=%s, listenClientID=%d, clientID=%d",
 			m.ID, listenClientID, clientID)
 	}
 	return result

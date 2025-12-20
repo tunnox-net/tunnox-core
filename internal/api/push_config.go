@@ -1,6 +1,7 @@
 package api
 
 import (
+corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -8,7 +9,6 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/config"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
 )
 
 // pushMappingToClients 推送映射配置给相关客户端
@@ -16,11 +16,11 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 	if s.sessionMgr == nil {
 		// 在测试环境中，SessionManager 可能未配置，这是可以接受的
 		// 只记录警告，不返回错误，允许测试继续进行
-		utils.Warnf("API: SessionManager not configured, skipping config push for mapping %s", mapping.ID)
+		corelog.Warnf("API: SessionManager not configured, skipping config push for mapping %s", mapping.ID)
 		return nil
 	}
 
-	utils.Debugf("API: pushing mapping %s to clients (source=%d, target=%d)",
+	corelog.Debugf("API: pushing mapping %s to clients (source=%d, target=%d)",
 		mapping.ID, mapping.SourceClientID, mapping.TargetClientID)
 
 	// 构造映射配置
@@ -49,7 +49,7 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 
 	configJSON, err := json.Marshal(&configData)
 	if err != nil {
-		utils.Errorf("API: failed to marshal mapping config: %v", err)
+		corelog.Errorf("API: failed to marshal mapping config: %v", err)
 		return fmt.Errorf("failed to marshal mapping config: %w", err)
 	}
 
@@ -70,7 +70,7 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 
 		targetJSON, err := json.Marshal(&targetData)
 		if err != nil {
-			utils.Errorf("API: failed to marshal target config: %v", err)
+			corelog.Errorf("API: failed to marshal target config: %v", err)
 			return fmt.Errorf("failed to marshal target config: %w", err)
 		}
 
@@ -96,24 +96,24 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 	if s.cloudControl != nil {
 		clientNodeID, err := s.cloudControl.GetClientNodeID(clientID)
 		if err != nil {
-			utils.Debugf("API: failed to query client %d node from Redis: %v", clientID, err)
+			corelog.Debugf("API: failed to query client %d node from Redis: %v", clientID, err)
 			// 继续fallback到本地查询
 		} else if clientNodeID != "" {
 			// 客户端在线，且已知节点ID
 			currentNodeID := s.sessionMgr.GetNodeID()
 			if clientNodeID != currentNodeID {
 				// Client在其他节点，直接广播
-				utils.Debugf("API: client %d is on node %s (current: %s), broadcasting via Redis",
+				corelog.Debugf("API: client %d is on node %s (current: %s), broadcasting via Redis",
 					clientID, clientNodeID, currentNodeID)
 				if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
 					return fmt.Errorf("failed to broadcast config push to cluster: %w", err)
 				}
 				return nil
 			}
-			utils.Debugf("API: client %d confirmed on THIS node %s via Redis", clientID, currentNodeID)
+			corelog.Debugf("API: client %d confirmed on THIS node %s via Redis", clientID, currentNodeID)
 		} else {
 			// clientNodeID为空 = 客户端离线或不存在
-			utils.Debugf("API: client %d is offline (no nodeID in Redis), will broadcast anyway", clientID)
+			corelog.Debugf("API: client %d is offline (no nodeID in Redis), will broadcast anyway", clientID)
 			if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
 				return fmt.Errorf("failed to broadcast config push for offline client: %w", err)
 			}
@@ -125,7 +125,7 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 	connInterface := s.sessionMgr.GetControlConnectionInterface(clientID)
 	if connInterface == nil {
 		// 本地未找到，尝试通过消息队列广播到其他节点
-		utils.Debugf("API: client %d NOT found locally, broadcasting to cluster", clientID)
+		corelog.Debugf("API: client %d NOT found locally, broadcasting to cluster", clientID)
 		if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
 			return fmt.Errorf("failed to broadcast config push to cluster: %w", err)
 		}
@@ -136,7 +136,7 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 	streamProcessor, connID, remoteAddr, err := getStreamFromConnection(connInterface, clientID)
 	if err != nil {
 		// 发现脏数据（有连接对象但stream为nil），清理并广播
-		utils.Warnf("API: client %d has stale local connection (stream is nil), broadcasting to cluster", clientID)
+		corelog.Warnf("API: client %d has stale local connection (stream is nil), broadcasting to cluster", clientID)
 		if err := s.broadcastConfigPushToCluster(clientID, configBody); err != nil {
 			return fmt.Errorf("failed to broadcast after detecting stale connection: %w", err)
 		}
@@ -155,7 +155,7 @@ func (s *ManagementAPIServer) pushConfigToClient(clientID int64, configBody stri
 	}
 
 	// 异步发送配置推送包
-	utils.Debugf("API: pushing config to client %d (ConnID=%s, RemoteAddr=%s)",
+	corelog.Debugf("API: pushing config to client %d (ConnID=%s, RemoteAddr=%s)",
 		clientID, connID, remoteAddr)
 	sendPacketAsync(streamProcessor, pkt, clientID, 5*time.Second)
 
@@ -174,11 +174,11 @@ func (s *ManagementAPIServer) broadcastConfigPushToCluster(clientID int64, confi
 // removeMappingFromClients 通知客户端移除映射
 func (s *ManagementAPIServer) removeMappingFromClients(mapping *models.PortMapping) {
 	if s.sessionMgr == nil {
-		utils.Warnf("API: SessionManager not configured, cannot push removal notification")
+		corelog.Warnf("API: SessionManager not configured, cannot push removal notification")
 		return
 	}
 
-	utils.Infof("API: notifying clients to remove mapping %s (source=%d, target=%d)",
+	corelog.Infof("API: notifying clients to remove mapping %s (source=%d, target=%d)",
 		mapping.ID, mapping.SourceClientID, mapping.TargetClientID)
 
 	// 构造空的映射配置（表示移除）
@@ -189,7 +189,7 @@ func (s *ManagementAPIServer) removeMappingFromClients(mapping *models.PortMappi
 
 	configJSON, err := json.Marshal(&configData)
 	if err != nil {
-		utils.Errorf("API: failed to marshal removal config: %v", err)
+		corelog.Errorf("API: failed to marshal removal config: %v", err)
 		return
 	}
 
@@ -205,23 +205,23 @@ func (s *ManagementAPIServer) removeMappingFromClients(mapping *models.PortMappi
 // kickClient 踢下线指定客户端
 func (s *ManagementAPIServer) kickClient(clientID int64, reason, code string) {
 	if s.sessionMgr == nil {
-		utils.Warnf("API: SessionManager not configured, cannot kick client")
+		corelog.Warnf("API: SessionManager not configured, cannot kick client")
 		return
 	}
 
-	utils.Infof("API: kicking client %d, reason=%s, code=%s", clientID, reason, code)
+	corelog.Infof("API: kicking client %d, reason=%s, code=%s", clientID, reason, code)
 
 	// 获取客户端的控制连接
 	connInterface := s.sessionMgr.GetControlConnectionInterface(clientID)
 	if connInterface == nil {
-		utils.Warnf("API: client %d not connected, cannot kick", clientID)
+		corelog.Warnf("API: client %d not connected, cannot kick", clientID)
 		return
 	}
 
 	// 获取StreamProcessor
 	streamProcessor, connID, remoteAddr, err := getStreamFromConnection(connInterface, clientID)
 	if err != nil {
-		utils.Warnf("API: failed to get stream for client %d: %v", clientID, err)
+		corelog.Warnf("API: failed to get stream for client %d: %v", clientID, err)
 		return
 	}
 
@@ -243,12 +243,12 @@ func (s *ManagementAPIServer) kickClient(clientID int64, reason, code string) {
 	}
 
 	// 异步发送踢下线命令
-	utils.Infof("API: sending kick command to client %d (ConnID=%s, RemoteAddr=%s)", clientID, connID, remoteAddr)
+	corelog.Infof("API: sending kick command to client %d (ConnID=%s, RemoteAddr=%s)", clientID, connID, remoteAddr)
 	sendPacketAsync(streamProcessor, pkt, clientID, 3*time.Second)
 }
 
 // SetSessionManager 设置SessionManager（由Server启动时调用）
 func (s *ManagementAPIServer) SetSessionManager(sessionMgr SessionManager) {
 	s.sessionMgr = sessionMgr
-	utils.Infof("API: SessionManager configured")
+	corelog.Infof("API: SessionManager configured")
 }
