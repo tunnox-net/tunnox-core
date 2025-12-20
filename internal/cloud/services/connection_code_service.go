@@ -1,11 +1,11 @@
 package services
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"errors"
 	"fmt"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/models"
@@ -372,12 +372,8 @@ func (s *ConnectionCodeService) ValidateMapping(mappingID string, clientID int64
 		if mapping.IsExpired() {
 			return nil, fmt.Errorf("mapping has expired")
 		}
-		listenClientID := mapping.ListenClientID
-		if listenClientID == 0 {
-			listenClientID = mapping.SourceClientID
-		}
-		if listenClientID != clientID {
-			corelog.Warnf("ConnectionCodeService.ValidateMapping: clientID mismatch - expected ListenClientID=%d, got clientID=%d", listenClientID, clientID)
+		if mapping.ListenClientID != clientID {
+			corelog.Warnf("ConnectionCodeService.ValidateMapping: clientID mismatch - expected ListenClientID=%d, got clientID=%d", mapping.ListenClientID, clientID)
 			return nil, fmt.Errorf("client %d is not authorized to use this mapping", clientID)
 		}
 		// 如果到这里，说明 IsValid() 返回了 false，但具体原因未知
@@ -515,11 +511,11 @@ func (s *ConnectionCodeService) ListOutboundMappings(listenClientID int64) ([]*m
 	// 过滤出 ListenClientID 匹配的映射
 	result := make([]*models.PortMapping, 0)
 	for _, m := range allMappings {
-		if m.ListenClientID == listenClientID || (m.ListenClientID == 0 && m.SourceClientID == listenClientID) {
-			corelog.Debugf("ConnectionCodeService.ListOutboundMappings: adding mapping %s (ListenClientID=%d, SourceClientID=%d)", m.ID, m.ListenClientID, m.SourceClientID)
+		if m.ListenClientID == listenClientID {
+			corelog.Debugf("ConnectionCodeService.ListOutboundMappings: adding mapping %s (ListenClientID=%d)", m.ID, m.ListenClientID)
 			result = append(result, m)
 		} else {
-			corelog.Debugf("ConnectionCodeService.ListOutboundMappings: skipping mapping %s (ListenClientID=%d != %d, SourceClientID=%d)", m.ID, m.ListenClientID, listenClientID, m.SourceClientID)
+			corelog.Debugf("ConnectionCodeService.ListOutboundMappings: skipping mapping %s (ListenClientID=%d != %d)", m.ID, m.ListenClientID, listenClientID)
 		}
 	}
 

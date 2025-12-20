@@ -1,7 +1,6 @@
 package client
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
@@ -11,6 +10,8 @@ corelog "tunnox-core/internal/core/log"
 	"sync"
 	"time"
 
+	"tunnox-core/internal/cloud/constants"
+	corelog "tunnox-core/internal/core/log"
 
 	"github.com/gorilla/websocket"
 )
@@ -34,8 +35,8 @@ func newWebSocketStreamConn(wsURL string) (*websocketStreamConn, error) {
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 20 * time.Second,
-		ReadBufferSize:   64 * 1024,
-		WriteBufferSize:  64 * 1024,
+		ReadBufferSize:   constants.WebSocketBufferSize,
+		WriteBufferSize:  constants.WebSocketBufferSize,
 	}
 
 	conn, _, err := dialer.Dial(wsURL, nil)

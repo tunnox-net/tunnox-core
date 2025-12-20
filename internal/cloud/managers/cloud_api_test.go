@@ -158,7 +158,7 @@ func TestBuiltInCloudControl_ConnectionManagement(t *testing.T) {
 		mapping := &models.PortMapping{
 			ID:             "test_mapping_1",
 			UserID:         "test_user_1",
-			SourceClientID: client1.ID,
+			ListenClientID: client1.ID,
 			TargetClientID: client2.ID,
 			Protocol:       models.ProtocolTCP,
 			SourcePort:     8080,

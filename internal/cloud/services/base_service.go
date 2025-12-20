@@ -1,10 +1,10 @@
 package services
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"time"
 	"tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 )
 
@@ -28,12 +28,12 @@ func (s *BaseService) HandleErrorWithIDRelease(err error, id interface{}, releas
 		_ = releaseFunc(id)
 	}
 
-	// 根据原始错误类型选择合适的错误类型
-	errType := errors.GetErrorType(err)
-	if errType == errors.ErrorTypePermanent {
-		errType = errors.ErrorTypeStorage // 默认使用 Storage 类型，因为通常是资源操作失败
+	// 根据原始错误类型选择合适的错误码
+	errCode := errors.GetCode(err)
+	if errCode == errors.CodeInternal {
+		errCode = errors.CodeStorageError // 默认使用 Storage 类型，因为通常是资源操作失败
 	}
-	return errors.Wrap(err, errType, message)
+	return errors.Wrap(err, errCode, message)
 }
 
 // HandleErrorWithIDReleaseInt64 处理需要释放int64类型ID的错误
@@ -47,12 +47,12 @@ func (s *BaseService) HandleErrorWithIDReleaseInt64(err error, id int64, release
 		_ = releaseFunc(id)
 	}
 
-	// 根据原始错误类型选择合适的错误类型
-	errType := errors.GetErrorType(err)
-	if errType == errors.ErrorTypePermanent {
-		errType = errors.ErrorTypeStorage // 默认使用 Storage 类型，因为通常是资源操作失败
+	// 根据原始错误类型选择合适的错误码
+	errCode := errors.GetCode(err)
+	if errCode == errors.CodeInternal {
+		errCode = errors.CodeStorageError // 默认使用 Storage 类型，因为通常是资源操作失败
 	}
-	return errors.Wrap(err, errType, message)
+	return errors.Wrap(err, errCode, message)
 }
 
 // HandleErrorWithIDReleaseString 处理需要释放string类型ID的错误
@@ -66,12 +66,12 @@ func (s *BaseService) HandleErrorWithIDReleaseString(err error, id string, relea
 		_ = releaseFunc(id)
 	}
 
-	// 根据原始错误类型选择合适的错误类型
-	errType := errors.GetErrorType(err)
-	if errType == errors.ErrorTypePermanent {
-		errType = errors.ErrorTypeStorage // 默认使用 Storage 类型，因为通常是资源操作失败
+	// 根据原始错误类型选择合适的错误码
+	errCode := errors.GetCode(err)
+	if errCode == errors.CodeInternal {
+		errCode = errors.CodeStorageError // 默认使用 Storage 类型，因为通常是资源操作失败
 	}
-	return errors.Wrap(err, errType, message)
+	return errors.Wrap(err, errCode, message)
 }
 
 // WrapError 包装错误，提供统一的错误格式
@@ -79,11 +79,11 @@ func (s *BaseService) WrapError(err error, operation string) error {
 	if err == nil {
 		return nil
 	}
-	errType := errors.GetErrorType(err)
-	if errType == errors.ErrorTypePermanent {
-		errType = errors.ErrorTypeStorage // 默认使用 Storage 类型
+	errCode := errors.GetCode(err)
+	if errCode == errors.CodeInternal {
+		errCode = errors.CodeStorageError // 默认使用 Storage 类型
 	}
-	return errors.Wrapf(err, errType, "failed to %s", operation)
+	return errors.Wrapf(err, errCode, "failed to %s", operation)
 }
 
 // WrapErrorWithID 包装带ID的错误
@@ -91,11 +91,11 @@ func (s *BaseService) WrapErrorWithID(err error, operation, id string) error {
 	if err == nil {
 		return nil
 	}
-	errType := errors.GetErrorType(err)
-	if errType == errors.ErrorTypePermanent {
-		errType = errors.ErrorTypeStorage // 默认使用 Storage 类型
+	errCode := errors.GetCode(err)
+	if errCode == errors.CodeInternal {
+		errCode = errors.CodeStorageError // 默认使用 Storage 类型
 	}
-	return errors.Wrapf(err, errType, "failed to %s %s", operation, id)
+	return errors.Wrapf(err, errCode, "failed to %s %s", operation, id)
 }
 
 // WrapErrorWithInt64ID 包装带int64 ID的错误
@@ -103,11 +103,11 @@ func (s *BaseService) WrapErrorWithInt64ID(err error, operation string, id int64
 	if err == nil {
 		return nil
 	}
-	errType := errors.GetErrorType(err)
-	if errType == errors.ErrorTypePermanent {
-		errType = errors.ErrorTypeStorage // 默认使用 Storage 类型
+	errCode := errors.GetCode(err)
+	if errCode == errors.CodeInternal {
+		errCode = errors.CodeStorageError // 默认使用 Storage 类型
 	}
-	return errors.Wrapf(err, errType, "failed to %s %d", operation, id)
+	return errors.Wrapf(err, errCode, "failed to %s %d", operation, id)
 }
 
 // LogCreated 记录创建成功日志

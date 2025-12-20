@@ -1,10 +1,10 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"net"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
@@ -108,16 +108,12 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		if s.cloudControl != nil && req.MappingID != "" {
 			mapping, err := s.cloudControl.GetPortMapping(req.MappingID)
 			if err == nil {
-				listenClientID := mapping.ListenClientID
-				if listenClientID == 0 {
-					listenClientID = mapping.SourceClientID
-				}
 				// 从连接中获取 clientID（使用 extractClientID 函数，支持多种方式）
 				connClientID := extractClientID(conn.Stream, netConn)
 				// 如果 extractClientID 返回 0，稍后从控制连接获取（clientConn 在后面定义）
-				isSourceClient = (connClientID == listenClientID)
+				isSourceClient = (connClientID == mapping.ListenClientID)
 				corelog.Infof("Tunnel[%s]: identified connection type - isSourceClient=%v, connClientID=%d, listenClientID=%d, targetClientID=%d",
-					req.TunnelID, isSourceClient, connClientID, listenClientID, mapping.TargetClientID)
+					req.TunnelID, isSourceClient, connClientID, mapping.ListenClientID, mapping.TargetClientID)
 			}
 		}
 
@@ -321,19 +317,15 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 	if s.cloudControl != nil && req.MappingID != "" {
 		mapping, err := s.cloudControl.GetPortMapping(req.MappingID)
 		if err == nil {
-			listenClientID := mapping.ListenClientID
-			if listenClientID == 0 {
-				listenClientID = mapping.SourceClientID
-			}
 			// 从连接中获取 clientID（使用 extractClientID 函数，支持多种方式）
 			connClientID := extractClientID(conn.Stream, netConn)
 			if connClientID == 0 && connClientIDFromControl > 0 {
 				// 如果 extractClientID 返回 0，使用从控制连接获取的 clientID
 				connClientID = connClientIDFromControl
 			}
-			isSourceClient = (connClientID == listenClientID)
+			isSourceClient = (connClientID == mapping.ListenClientID)
 			corelog.Infof("Tunnel[%s]: identified connection type for new bridge - isSourceClient=%v, connClientID=%d, listenClientID=%d, targetClientID=%d, connID=%s",
-				req.TunnelID, isSourceClient, connClientID, listenClientID, mapping.TargetClientID, connPacket.ConnectionID)
+				req.TunnelID, isSourceClient, connClientID, mapping.ListenClientID, mapping.TargetClientID, connPacket.ConnectionID)
 		}
 	}
 

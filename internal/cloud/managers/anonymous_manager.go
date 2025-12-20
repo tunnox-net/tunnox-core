@@ -1,7 +1,6 @@
 package managers
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"time"
@@ -12,6 +11,7 @@ corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 )
 
@@ -181,8 +181,7 @@ func (am *AnonymousManager) CreateAnonymousMapping(listenClientID, targetClientI
 		ID:             mappingID,
 		SecretKey:      secretKey,
 		UserID:         "",
-		ListenClientID: listenClientID, // ✅ 统一使用 ListenClientID
-		SourceClientID: listenClientID, // 向后兼容
+		ListenClientID: listenClientID,
 		TargetClientID: targetClientID,
 		Protocol:       protocol,
 		SourcePort:     sourcePort,

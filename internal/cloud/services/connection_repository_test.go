@@ -220,7 +220,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 		// 先创建一个映射
 		mapping := &models.PortMapping{
 			ID:             "test-mapping-8",
-			SourceClientID: 2,
+			ListenClientID: 2,
 			TargetClientID: 3,
 			Protocol:       models.ProtocolTCP,
 			SourcePort:     8080,
@@ -260,7 +260,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 		// 先创建一个映射
 		mapping := &models.PortMapping{
 			ID:             "test-mapping-9",
-			SourceClientID: 6,
+			ListenClientID: 6,
 			TargetClientID: 7,
 			Protocol:       models.ProtocolTCP,
 			SourcePort:     8082,
@@ -313,7 +313,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 		// 先创建一个映射
 		mapping := &models.PortMapping{
 			ID:             "test-mapping-10",
-			SourceClientID: 8,
+			ListenClientID: 8,
 			TargetClientID: 9,
 			Protocol:       models.ProtocolTCP,
 			SourcePort:     8083,
@@ -355,7 +355,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 		// 先创建一个映射
 		mapping := &models.PortMapping{
 			ID:             "test-mapping-11",
-			SourceClientID: 10,
+			ListenClientID: 10,
 			TargetClientID: 11,
 			Protocol:       models.ProtocolTCP,
 			SourcePort:     8084,

@@ -167,11 +167,7 @@ func (ct *ConcurrentTest) RunConcurrent(testFunc func() error) {
 			select {
 			case ct.results <- testFunc():
 			case <-ctx.Done():
-				ct.results <- errors.NewStandardErrorWithCause(
-					errors.ErrCodeTimeout,
-					"concurrent test timeout",
-					ctx.Err(),
-				)
+				ct.results <- errors.Wrap(ctx.Err(), errors.CodeTimeout, "concurrent test timeout")
 			}
 		}()
 	}

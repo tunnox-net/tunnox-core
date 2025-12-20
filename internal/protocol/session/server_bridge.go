@@ -1,10 +1,10 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"net"
 	"time"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -13,7 +13,7 @@ corelog "tunnox-core/internal/core/log"
 // startSourceBridge 创建源端隧道桥接器（用于客户端或服务器侧的源连接）
 func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, sourceConn net.Conn, sourceStream stream.PackageStreamer) error {
 	corelog.Infof("Tunnel[%s]: startSourceBridge called, mappingID=%s", req.TunnelID, req.MappingID)
-	
+
 	if s.cloudControl == nil {
 		return fmt.Errorf("cloud control not configured")
 	}
@@ -39,13 +39,13 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 	}
 
 	bridge := NewTunnelBridge(s.Ctx(), &TunnelBridgeConfig{
-		TunnelID:        req.TunnelID,
-		MappingID:       req.MappingID,
+		TunnelID:         req.TunnelID,
+		MappingID:        req.MappingID,
 		SourceTunnelConn: sourceTunnelConn,
-		SourceConn:      sourceConn,  // 向后兼容
-		SourceStream:    sourceStream, // 向后兼容
-		BandwidthLimit:  bandwidthLimit,
-		CloudControl:    s.cloudControl,
+		SourceConn:       sourceConn,   // 向后兼容
+		SourceStream:     sourceStream, // 向后兼容
+		BandwidthLimit:   bandwidthLimit,
+		CloudControl:     s.cloudControl,
 	})
 
 	s.bridgeLock.Lock()
@@ -60,18 +60,12 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 
 	// ✅ 注册到路由表（用于跨服务器隧道）
 	if s.tunnelRouting != nil {
-		// ✅ 统一使用 ListenClientID（向后兼容：如果为 0 则使用 SourceClientID）
-		listenClientID := mapping.ListenClientID
-		if listenClientID == 0 {
-			listenClientID = mapping.SourceClientID
-		}
-
 		routingState := &TunnelWaitingState{
 			TunnelID:       req.TunnelID,
 			MappingID:      req.MappingID,
 			SecretKey:      req.SecretKey,
 			SourceNodeID:   s.getNodeID(),
-			SourceClientID: listenClientID, // ✅ 使用 ListenClientID
+			SourceClientID: mapping.ListenClientID,
 			TargetClientID: mapping.TargetClientID,
 			TargetHost:     mapping.TargetHost,
 			TargetPort:     mapping.TargetPort,
@@ -81,7 +75,7 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 			corelog.Warnf("Tunnel[%s]: failed to register routing state: %v", req.TunnelID, err)
 			// 不是致命错误，继续处理
 		} else {
-			corelog.Infof("Tunnel[%s]: registered waiting tunnel (source_node=%s, target_client=%d, ttl=30s)", 
+			corelog.Infof("Tunnel[%s]: registered waiting tunnel (source_node=%s, target_client=%d, ttl=30s)",
 				req.TunnelID, routingState.SourceNodeID, routingState.TargetClientID)
 		}
 	}
@@ -204,19 +198,15 @@ func (s *SessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID i
 			if clientID > 0 && s.cloudControl != nil {
 				mapping, err := s.cloudControl.GetPortMapping(mappingID)
 				if err == nil {
-					listenClientID := mapping.ListenClientID
-					if listenClientID == 0 {
-						listenClientID = mapping.SourceClientID
-					}
 					// 验证 clientID 是否匹配
-					if clientID != listenClientID && clientID != mapping.TargetClientID {
+					if clientID != mapping.ListenClientID && clientID != mapping.TargetClientID {
 						continue
 					}
 				}
 			}
 			corelog.Debugf("GetTunnelBridgeByMappingID: found matching bridge, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
-						return bridge
-					}
+			return bridge
+		}
 	}
 
 	corelog.Debugf("GetTunnelBridgeByMappingID: bridge not found, mappingID=%s, clientID=%d", mappingID, clientID)

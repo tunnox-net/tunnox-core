@@ -209,7 +209,7 @@ func TestSearchPortMappings(t *testing.T) {
 
 	// 创建测试映射
 	mapping1 := &models.PortMapping{
-		SourceClientID: 12345678,
+		ListenClientID: 12345678,
 		TargetClientID: 87654321,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,

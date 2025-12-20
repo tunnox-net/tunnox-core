@@ -1,7 +1,6 @@
 package services
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"time"
@@ -12,6 +11,7 @@ corelog "tunnox-core/internal/core/log"
 	cloudutils "tunnox-core/internal/cloud/utils"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 )
 
@@ -79,17 +79,10 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 		}
 	}
 
-	// ✅ 双向索引：同时添加到 ListenClientID 和 TargetClientID 的索引
+	// 双向索引：同时添加到 ListenClientID 和 TargetClientID 的索引
 	// 确保 GetClientPortMappings 能查询到该客户端作为 ListenClient 或 TargetClient 的所有映射
-	listenClientID := mapping.ListenClientID
-	if listenClientID == 0 {
-		// 向后兼容：如果 ListenClientID 为 0，尝试使用 SourceClientID
-		listenClientID = mapping.SourceClientID
-		mapping.ListenClientID = listenClientID
-	}
-
-	if listenClientID > 0 {
-		clientKey := utils.Int64ToString(listenClientID)
+	if mapping.ListenClientID > 0 {
+		clientKey := utils.Int64ToString(mapping.ListenClientID)
 		if err := s.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			s.baseService.LogWarning("add mapping to listen client list", err)
 		} else {
@@ -113,11 +106,7 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 		}
 	}
 
-	clientID := mapping.ListenClientID
-	if clientID == 0 {
-		clientID = mapping.SourceClientID
-	}
-	s.baseService.LogCreated("port mapping", fmt.Sprintf("%s for client: %d", mappingID, clientID))
+	s.baseService.LogCreated("port mapping", fmt.Sprintf("%s for client: %d", mappingID, mapping.ListenClientID))
 	return mapping, nil
 }
 

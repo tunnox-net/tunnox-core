@@ -3,28 +3,28 @@ package session
 import (
 	"io"
 	"sync/atomic"
+
+	"tunnox-core/internal/cloud/constants"
 )
 
 // copyWithControl 带流量统计和限速的数据拷贝（极致性能优化版）
 // 🚀 优化点:
 // 1. 移除所有热路径日志
-// 2. 使用 512KB 大缓冲区
+// 2. 使用 32KB 缓冲区（性价比最优）
 // 3. 极低频率的 context 检查 (每 10000 次)
 // 4. 批量更新流量统计
 func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction string, counter *atomic.Int64) int64 {
-	// 🚀 性能优化: 使用 32KB 缓冲区（性价比最优）
-	buf := make([]byte, 32*1024)
+	buf := make([]byte, constants.CopyBufferSize)
 	var total int64
 	var batchCounter int64 // 批量统计，减少原子操作
 
 	// 🚀 性能优化: 极低频率的 Context 检查
 	checkCounter := 0
-	const checkInterval = 10000 // 每 10000 次循环检查一次
 
 	for {
 		// 极低频率检查 context
 		checkCounter++
-		if checkCounter >= checkInterval {
+		if checkCounter >= constants.ContextCheckInterval {
 			checkCounter = 0
 			select {
 			case <-b.Ctx().Done():
@@ -49,8 +49,8 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 			if nw > 0 {
 				total += int64(nw)
 				batchCounter += int64(nw)
-				// 🚀 批量更新统计（每 1MB 更新一次）
-				if batchCounter >= 1024*1024 {
+				// 🚀 批量更新统计
+				if batchCounter >= constants.BatchUpdateThreshold {
 					counter.Add(batchCounter)
 					batchCounter = 0
 				}

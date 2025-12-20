@@ -1,85 +1,107 @@
 package constants
 
 import (
-	"errors"
 	"fmt"
-	coreerrors "tunnox-core/internal/errors"
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
-// 云控相关错误
+// ============================================================================
+// 云控相关错误（使用 core/errors 包的哨兵错误）
+// ============================================================================
+
+// 认证相关错误 - 直接使用 core/errors 包的哨兵错误
 var (
-	// 认证相关错误
-	ErrAuthenticationFailed = errors.New(ErrMsgAuthenticationFailed)
-	ErrInvalidToken         = errors.New(ErrMsgTokenInvalid)
-	ErrTokenExpired         = errors.New(ErrMsgTokenExpired)
-	ErrTokenRevoked         = errors.New(ErrMsgTokenRevoked)
-	ErrInvalidAuthCode      = errors.New(ErrMsgInvalidAuthCode)
-	ErrInvalidSecretKey     = errors.New(ErrMsgInvalidSecretKey)
-
-	// 实体不存在错误
-	ErrClientNotFound      = errors.New(ErrMsgClientNotFound)
-	ErrNodeNotFound        = errors.New(ErrMsgNodeNotFound)
-	ErrUserNotFound        = errors.New(ErrMsgUserNotFound)
-	ErrPortMappingNotFound = errors.New(ErrMsgMappingNotFound)
-	ErrConnectionNotFound  = errors.New(ErrMsgConnectionNotFound)
-	ErrEntityDoesNotExist  = errors.New(ErrMsgEntityDoesNotExist)
-
-	// 实体已存在错误
-	ErrEntityAlreadyExists = errors.New(ErrMsgEntityAlreadyExists)
-
-	// 业务逻辑错误
-	ErrClientBlocked      = errors.New(ErrMsgClientBlocked)
-	ErrNetworkUnavailable = errors.New("network unavailable")
-	ErrInvalidConfig      = errors.New(ErrMsgInvalidRequest)
-
-	// 系统错误
-	ErrInternalError         = errors.New(ErrMsgInternalError)
-	ErrStorageError          = errors.New(ErrMsgStorageError)
-	ErrLockAcquisitionFailed = errors.New(ErrMsgLockAcquisitionFailed)
-	ErrCleanupTaskFailed     = errors.New(ErrMsgCleanupTaskFailed)
-	ErrConfigUpdateFailed    = errors.New(ErrMsgConfigUpdateFailed)
+	ErrAuthenticationFailed = coreerrors.ErrAuthFailed
+	ErrInvalidToken         = coreerrors.ErrInvalidToken
+	ErrTokenExpired         = coreerrors.ErrTokenExpired
+	ErrTokenRevoked         = coreerrors.ErrTokenRevoked
+	ErrInvalidAuthCode      = coreerrors.ErrInvalidAuthCode
+	ErrInvalidSecretKey     = coreerrors.ErrInvalidSecretKey
 )
 
-// 错误检查函数，用于检查特定错误类型
+// 实体不存在错误
+var (
+	ErrClientNotFound      = coreerrors.ErrClientNotFound
+	ErrNodeNotFound        = coreerrors.ErrNodeNotFound
+	ErrUserNotFound        = coreerrors.ErrUserNotFound
+	ErrPortMappingNotFound = coreerrors.ErrMappingNotFound
+	ErrConnectionNotFound  = coreerrors.ErrNotFound
+	ErrEntityDoesNotExist  = coreerrors.ErrNotFound
+)
+
+// 实体已存在错误
+var (
+	ErrEntityAlreadyExists = coreerrors.ErrAlreadyExists
+)
+
+// 业务逻辑错误
+var (
+	ErrClientBlocked      = coreerrors.ErrClientBlocked
+	ErrNetworkUnavailable = coreerrors.ErrUnavailable
+	ErrInvalidConfig      = coreerrors.ErrInvalidRequest
+)
+
+// 系统错误
+var (
+	ErrInternalError         = coreerrors.ErrInternal
+	ErrStorageError          = coreerrors.ErrStorageError
+	ErrLockAcquisitionFailed = coreerrors.ErrInternal
+	ErrCleanupTaskFailed     = coreerrors.ErrInternal
+	ErrConfigUpdateFailed    = coreerrors.ErrInternal
+)
+
+// ============================================================================
+// 错误检查函数（委托给 core/errors 包）
+// ============================================================================
+
+// IsNotFoundError 检查是否为资源不存在错误
 func IsNotFoundError(err error) bool {
-	return errors.Is(err, ErrClientNotFound) ||
-		errors.Is(err, ErrNodeNotFound) ||
-		errors.Is(err, ErrUserNotFound) ||
-		errors.Is(err, ErrPortMappingNotFound) ||
-		errors.Is(err, ErrConnectionNotFound) ||
-		errors.Is(err, ErrEntityDoesNotExist)
+	return coreerrors.IsNotFound(err)
 }
 
+// IsAuthenticationError 检查是否为认证错误
 func IsAuthenticationError(err error) bool {
-	return errors.Is(err, ErrAuthenticationFailed) ||
-		errors.Is(err, ErrInvalidToken) ||
-		errors.Is(err, ErrTokenExpired) ||
-		errors.Is(err, ErrTokenRevoked) ||
-		errors.Is(err, ErrInvalidAuthCode) ||
-		errors.Is(err, ErrInvalidSecretKey)
+	return coreerrors.IsAuthError(err)
 }
 
+// IsSystemError 检查是否为系统错误
 func IsSystemError(err error) bool {
-	return errors.Is(err, ErrInternalError) ||
-		errors.Is(err, ErrStorageError) ||
-		errors.Is(err, ErrLockAcquisitionFailed) ||
-		errors.Is(err, ErrCleanupTaskFailed) ||
-		errors.Is(err, ErrConfigUpdateFailed)
+	return coreerrors.IsSystemError(err)
 }
 
-// 创建带上下文的错误
+// ============================================================================
+// 创建带上下文的错误（使用 core/errors 包）
+// ============================================================================
+
+// NewNotFoundError 创建资源不存在错误
 func NewNotFoundError(entityType, entityID string) error {
-	return coreerrors.WrapError(ErrEntityDoesNotExist, fmt.Sprintf("%s with ID %s", entityType, entityID))
+	return coreerrors.Newf(coreerrors.CodeNotFound, "%s with ID %s not found", entityType, entityID)
 }
 
+// NewAuthenticationError 创建认证错误
 func NewAuthenticationError(reason string) error {
-	return coreerrors.WrapError(ErrAuthenticationFailed, reason)
+	return coreerrors.Newf(coreerrors.CodeAuthFailed, "authentication failed: %s", reason)
 }
 
+// NewStorageError 创建存储错误
 func NewStorageError(operation string) error {
-	return coreerrors.WrapError(ErrStorageError, fmt.Sprintf("storage operation '%s' failed", operation))
+	return coreerrors.Newf(coreerrors.CodeStorageError, "storage operation '%s' failed", operation)
 }
 
+// NewLockError 创建锁获取错误
 func NewLockError(operation string) error {
-	return coreerrors.WrapError(ErrLockAcquisitionFailed, fmt.Sprintf("lock acquisition for '%s' failed", operation))
+	return coreerrors.Newf(coreerrors.CodeInternal, "lock acquisition for '%s' failed", operation)
+}
+
+// NewValidationError 创建验证错误
+func NewValidationError(field, reason string) error {
+	return coreerrors.Newf(coreerrors.CodeValidationError, "validation failed for %s: %s", field, reason)
+}
+
+// WrapError 包装错误（兼容旧代码）
+func WrapError(err error, context string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", context, err)
 }

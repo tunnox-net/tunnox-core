@@ -78,7 +78,6 @@ func (sm *SearchManager) SearchPortMappings(keyword string) ([]*models.PortMappi
 	for _, mapping := range mappings {
 		if strings.Contains(mapping.ID, keyword) ||
 			strings.Contains(fmt.Sprintf("%d", mapping.ListenClientID), keyword) ||
-			strings.Contains(fmt.Sprintf("%d", mapping.SourceClientID), keyword) || // 向后兼容
 			strings.Contains(fmt.Sprintf("%d", mapping.TargetClientID), keyword) ||
 			strings.Contains(string(mapping.Protocol), strings.ToLower(keyword)) ||
 			strings.Contains(mapping.TargetHost, strings.ToLower(keyword)) {

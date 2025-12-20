@@ -119,7 +119,7 @@ func TestBatchDeleteMappings(t *testing.T) {
 
 	// 创建多个映射
 	mapping1 := &models.PortMapping{
-		SourceClientID: 12345678,
+		ListenClientID: 12345678,
 		TargetClientID: 87654321,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8001,
@@ -129,7 +129,7 @@ func TestBatchDeleteMappings(t *testing.T) {
 	require.NoError(t, err)
 
 	mapping2 := &models.PortMapping{
-		SourceClientID: 12345678,
+		ListenClientID: 12345678,
 		TargetClientID: 87654321,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8002,
@@ -139,7 +139,7 @@ func TestBatchDeleteMappings(t *testing.T) {
 	require.NoError(t, err)
 
 	mapping3 := &models.PortMapping{
-		SourceClientID: 12345678,
+		ListenClientID: 12345678,
 		TargetClientID: 87654321,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8003,
@@ -191,7 +191,7 @@ func TestBatchUpdateMappingStatus(t *testing.T) {
 
 	// 创建多个映射
 	mapping1 := &models.PortMapping{
-		SourceClientID: 12345678,
+		ListenClientID: 12345678,
 		TargetClientID: 87654321,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8001,
@@ -202,7 +202,7 @@ func TestBatchUpdateMappingStatus(t *testing.T) {
 	require.NoError(t, err)
 
 	mapping2 := &models.PortMapping{
-		SourceClientID: 12345678,
+		ListenClientID: 12345678,
 		TargetClientID: 87654321,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8002,

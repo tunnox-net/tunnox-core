@@ -11,10 +11,5 @@ func (s *ManagementAPIServer) isSourceClientForMapping(mappingID string, clientI
 		return false
 	}
 
-	listenClientID := mapping.ListenClientID
-	if listenClientID == 0 {
-		listenClientID = mapping.SourceClientID
-	}
-
-	return clientID == listenClientID
+	return clientID == mapping.ListenClientID
 }

@@ -225,9 +225,7 @@ func (c *CloudControl) MigrateClientMappings(fromClientID, toClientID int64) err
 	// 迁移每个映射
 	for _, mapping := range mappings {
 		// 更新映射的源客户端ID
-		// ✅ 统一使用 ListenClientID
 		mapping.ListenClientID = toClientID
-		mapping.SourceClientID = toClientID // 向后兼容
 		mapping.UpdatedAt = time.Now()
 
 		// 保存更新后的映射

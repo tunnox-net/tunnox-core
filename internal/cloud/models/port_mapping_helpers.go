@@ -1,10 +1,9 @@
 package models
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"time"
-
+	corelog "tunnox-core/internal/core/log"
 )
 
 // IsExpired 检查映射是否已过期
@@ -45,17 +44,11 @@ func (m *PortMapping) CanBeAccessedBy(clientID int64) bool {
 		return false
 	}
 
-	// 统一使用 ListenClientID（向后兼容：如果为 0 则使用 SourceClientID）
-	listenClientID := m.ListenClientID
-	if listenClientID == 0 {
-		listenClientID = m.SourceClientID
-	}
-
 	// 只有 ListenClient 可以使用此映射
-	result := listenClientID == clientID
+	result := m.ListenClientID == clientID
 	if !result {
 		corelog.Debugf("PortMapping.CanBeAccessedBy: clientID mismatch - mappingID=%s, listenClientID=%d, clientID=%d",
-			m.ID, listenClientID, clientID)
+			m.ID, m.ListenClientID, clientID)
 	}
 	return result
 }
@@ -64,13 +57,7 @@ func (m *PortMapping) CanBeAccessedBy(clientID int64) bool {
 //
 // TargetClient 和 ListenClient 都可以撤销映射
 func (m *PortMapping) CanBeRevokedBy(clientID int64) bool {
-	// 统一使用 ListenClientID（向后兼容：如果为 0 则使用 SourceClientID）
-	listenClientID := m.ListenClientID
-	if listenClientID == 0 {
-		listenClientID = m.SourceClientID
-	}
-
-	return listenClientID == clientID || m.TargetClientID == clientID
+	return m.ListenClientID == clientID || m.TargetClientID == clientID
 }
 
 // Revoke 撤销映射
@@ -104,4 +91,3 @@ func (m *PortMapping) TimeRemaining() time.Duration {
 	}
 	return time.Until(*m.ExpiresAt)
 }
-

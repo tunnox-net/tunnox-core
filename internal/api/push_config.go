@@ -20,14 +20,8 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 		return nil
 	}
 
-	// 使用 ListenClientID（SourceClientID 已废弃）
-	listenClientID := mapping.ListenClientID
-	if listenClientID == 0 {
-		listenClientID = mapping.SourceClientID // 向后兼容
-	}
-
 	corelog.Debugf("API: pushing mapping %s to clients (listen=%d, target=%d)",
-		mapping.ID, listenClientID, mapping.TargetClientID)
+		mapping.ID, mapping.ListenClientID, mapping.TargetClientID)
 
 	// 构造映射配置
 	mappingConfigs := []config.MappingConfig{
@@ -60,12 +54,12 @@ func (s *ManagementAPIServer) pushMappingToClients(mapping *models.PortMapping) 
 	}
 
 	// 推送给监听端客户端
-	if err := s.pushConfigToClient(listenClientID, string(configJSON)); err != nil {
-		return fmt.Errorf("failed to push config to listen client %d: %w", listenClientID, err)
+	if err := s.pushConfigToClient(mapping.ListenClientID, string(configJSON)); err != nil {
+		return fmt.Errorf("failed to push config to listen client %d: %w", mapping.ListenClientID, err)
 	}
 
 	// 推送给目标客户端（如果不是同一个客户端）
-	if mapping.TargetClientID != listenClientID {
+	if mapping.TargetClientID != mapping.ListenClientID {
 		// 目标端配置：LocalPort设为0
 		targetConfig := mappingConfigs[0]
 		targetConfig.LocalPort = 0 // 目标端不需要监听
@@ -184,14 +178,8 @@ func (s *ManagementAPIServer) removeMappingFromClients(mapping *models.PortMappi
 		return
 	}
 
-	// 使用 ListenClientID（SourceClientID 已废弃）
-	listenClientID := mapping.ListenClientID
-	if listenClientID == 0 {
-		listenClientID = mapping.SourceClientID // 向后兼容
-	}
-
 	corelog.Infof("API: notifying clients to remove mapping %s (listen=%d, target=%d)",
-		mapping.ID, listenClientID, mapping.TargetClientID)
+		mapping.ID, mapping.ListenClientID, mapping.TargetClientID)
 
 	// 构造空的映射配置（表示移除）
 	configData := ConfigRemovalData{
@@ -206,10 +194,10 @@ func (s *ManagementAPIServer) removeMappingFromClients(mapping *models.PortMappi
 	}
 
 	// 通知监听端客户端
-	s.pushConfigToClient(listenClientID, string(configJSON))
+	s.pushConfigToClient(mapping.ListenClientID, string(configJSON))
 
 	// 通知目标客户端（如果不是同一个客户端）
-	if mapping.TargetClientID != listenClientID {
+	if mapping.TargetClientID != mapping.ListenClientID {
 		s.pushConfigToClient(mapping.TargetClientID, string(configJSON))
 	}
 }

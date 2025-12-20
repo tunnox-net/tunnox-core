@@ -1,7 +1,6 @@
 package services
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"time"
@@ -11,6 +10,7 @@ corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 )
 
@@ -167,8 +167,7 @@ func (s *anonymousService) CreateAnonymousMapping(listenClientID, targetClientID
 	// 创建映射
 	mapping := &models.PortMapping{
 		ID:             mappingID,
-		ListenClientID: listenClientID, // ✅ 统一使用 ListenClientID
-		SourceClientID: listenClientID, // 向后兼容
+		ListenClientID: listenClientID,
 		TargetClientID: targetClientID,
 		Protocol:       protocol,
 		SourcePort:     sourcePort,

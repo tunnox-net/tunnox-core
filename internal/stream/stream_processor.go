@@ -10,7 +10,7 @@ import (
 	"sync"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/errors"
+	"tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream/compression"
 	"tunnox-core/internal/utils"

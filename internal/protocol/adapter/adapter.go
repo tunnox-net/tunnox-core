@@ -1,7 +1,6 @@
 package adapter
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"fmt"
 	"io"
 	"net"
@@ -9,6 +8,7 @@ corelog "tunnox-core/internal/core/log"
 	"time"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
@@ -145,8 +145,8 @@ func (b *BaseAdapter) acceptLoop(adapter ProtocolAdapter) {
 
 // isIgnorableError 检查是否为可忽略的错误
 func isIgnorableError(err error) bool {
-	// 检查是否为自定义超时错误
-	if errors.IsProtocolTimeoutError(err) {
+	// 检查是否为超时错误码
+	if errors.IsCode(err, errors.CodeTimeout) {
 		return true
 	}
 

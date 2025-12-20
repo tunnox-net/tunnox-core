@@ -5,7 +5,7 @@ import (
 	"io"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/errors"
+	"tunnox-core/internal/core/errors"
 )
 
 // RateLimiter 实现限速传输的Reader和Writer

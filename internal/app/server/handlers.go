@@ -1,11 +1,11 @@
 package server
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
+	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
@@ -231,10 +231,10 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 	isFirstHandshake := req.ClientID == 0 && strings.HasPrefix(req.Token, "anonymous:")
 	isNewClient := clientID != req.ClientID && clientID > 0
 	isAnonymousReauth := clientID > 0 && clientID == req.ClientID && !strings.HasPrefix(req.Token, "anonymous:")
-	
-	corelog.Debugf("ServerAuthHandler: handshake response check - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v, req.ClientID=%d, clientID=%d", 
+
+	corelog.Debugf("ServerAuthHandler: handshake response check - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v, req.ClientID=%d, clientID=%d",
 		isFirstHandshake, isNewClient, isAnonymousReauth, req.ClientID, clientID)
-	
+
 	if isFirstHandshake || isNewClient || isAnonymousReauth {
 		// 获取匿名客户端信息（包含SecretKey）
 		anonClient, err := h.cloudControl.GetClient(clientID)
@@ -256,7 +256,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 			}
 		}
 	} else {
-		corelog.Debugf("ServerAuthHandler: not returning ClientID/SecretKey - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v", 
+		corelog.Debugf("ServerAuthHandler: not returning ClientID/SecretKey - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v",
 			isFirstHandshake, isNewClient, isAnonymousReauth)
 	}
 
@@ -274,14 +274,8 @@ func (h *ServerAuthHandler) GetClientConfig(conn session.ControlConnectionInterf
 	// 转换为客户端配置格式（使用共享的config.MappingConfig）
 	configs := make([]config.MappingConfig, 0, len(mappings))
 	for _, m := range mappings {
-		// ✅ 统一使用 ListenClientID（向后兼容：如果为 0 则使用 SourceClientID）
-		listenClientID := m.ListenClientID
-		if listenClientID == 0 {
-			listenClientID = m.SourceClientID
-		}
-
 		// ✅ 处理源端映射：需要监听本地端口
-		if listenClientID == conn.GetClientID() {
+		if m.ListenClientID == conn.GetClientID() {
 			// 从 ListenAddress 解析端口
 			localPort := m.SourcePort
 			if localPort == 0 && m.ListenAddress != "" {
@@ -307,7 +301,7 @@ func (h *ServerAuthHandler) GetClientConfig(conn session.ControlConnectionInterf
 		}
 		// ✅ 处理目标端映射：需要准备接收TunnelOpen请求
 		// 目标端不需要监听端口，所以LocalPort设为0
-		if m.TargetClientID == conn.GetClientID() && m.TargetClientID != listenClientID {
+		if m.TargetClientID == conn.GetClientID() && m.TargetClientID != m.ListenClientID {
 			configs = append(configs, config.MappingConfig{
 				MappingID:         m.ID,
 				SecretKey:         m.SecretKey,
@@ -395,7 +389,6 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 			// 不返回错误，只记录警告
 		}
 
-
 	} else if req.SecretKey != "" {
 		// 优先级2: SecretKey验证（向后兼容，用于旧版API调用）
 
@@ -414,18 +407,12 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 		}
 
 		// ✅ 验证客户端是否有权限使用这个mapping
-		// 使用与 MappingID 验证路径相同的逻辑：检查 ListenClientID（如果为 0 则使用 SourceClientID）
-		// 只有 ListenClient 可以使用此映射（防止映射被其他客户端劫持）
-		listenClientID := portMapping.ListenClientID
-		if listenClientID == 0 {
-			listenClientID = portMapping.SourceClientID
-		}
-		if listenClientID != conn.GetClientID() && portMapping.TargetClientID != conn.GetClientID() {
-			corelog.Warnf("ServerTunnelHandler: client %d not authorized for mapping %s (listenClientID=%d, source=%d, target=%d)",
-				conn.GetClientID(), req.MappingID, portMapping.ListenClientID, portMapping.SourceClientID, portMapping.TargetClientID)
+		// 只有 ListenClient 或 TargetClient 可以使用此映射
+		if portMapping.ListenClientID != conn.GetClientID() && portMapping.TargetClientID != conn.GetClientID() {
+			corelog.Warnf("ServerTunnelHandler: client %d not authorized for mapping %s (listenClientID=%d, target=%d)",
+				conn.GetClientID(), req.MappingID, portMapping.ListenClientID, portMapping.TargetClientID)
 			return fmt.Errorf("client not authorized for this mapping")
 		}
-
 
 	} else {
 		// 无有效凭证
@@ -433,7 +420,6 @@ func (h *ServerTunnelHandler) HandleTunnelOpen(conn session.ControlConnectionInt
 			conn.GetConnID())
 		return fmt.Errorf("authentication required: either mapping_id or secret_key must be provided")
 	}
-
 
 	// 存储mapping信息到conn（如果需要后续使用）
 	_ = mapping // 暂时未使用，但保留以备后续扩展

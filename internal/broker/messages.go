@@ -43,8 +43,8 @@ type TunnelOpenMessage struct {
 // MappingCreatedMessage 映射创建消息
 type MappingCreatedMessage struct {
 	MappingID      int64  `json:"mapping_id"`
-	SourceClientID int64  `json:"source_client_id"`
-	TargetClientID int64  `json:"target_client_id"`
+	ListenClientID int64  `json:"listen_client_id"` // 监听端客户端ID
+	TargetClientID int64  `json:"target_client_id"` // 目标端客户端ID
 	Protocol       string `json:"protocol"`
 	Timestamp      int64  `json:"timestamp"`
 }
@@ -88,4 +88,3 @@ type NodeShutdownMessage struct {
 	NodeID    string `json:"node_id"`
 	Timestamp int64  `json:"timestamp"`
 }
-

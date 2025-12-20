@@ -125,7 +125,7 @@ func TestPortMapping_CanBeAccessedBy(t *testing.T) {
 		{
 			name: "source client can access (backward compatibility)",
 			mapping: &PortMapping{
-				SourceClientID: 100,
+				ListenClientID: 100,
 				Status:         MappingStatusActive,
 				IsRevoked:      false,
 				ExpiresAt:      &future,

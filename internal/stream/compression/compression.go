@@ -6,7 +6,7 @@ import (
 	"io"
 	"sync"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/errors"
+	"tunnox-core/internal/core/errors"
 )
 
 // GzipReader Gzip解压缩读取器

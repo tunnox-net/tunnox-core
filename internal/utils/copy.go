@@ -4,6 +4,7 @@ import (
 	"io"
 	"sync"
 
+	"tunnox-core/internal/cloud/constants"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream/transform"
 )
@@ -92,7 +93,7 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		defer writerB.Close()
 
 		// 🚀 性能优化: 使用 32KB 缓冲区
-		buf := make([]byte, 32*1024)
+		buf := make([]byte, constants.CopyBufferSize)
 		var totalWritten int64
 		for {
 			nr, err := connA.Read(buf)
@@ -133,7 +134,7 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		}
 
 		// 🚀 性能优化: 使用 32KB 缓冲区
-		buf := make([]byte, 32*1024)
+		buf := make([]byte, constants.CopyBufferSize)
 		var totalWritten int64
 		for {
 			nr, err := readerB.Read(buf)

@@ -6,7 +6,7 @@ import (
 	"time"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/errors"
+	"tunnox-core/internal/core/errors"
 )
 
 // TokenBucket 令牌桶限流器

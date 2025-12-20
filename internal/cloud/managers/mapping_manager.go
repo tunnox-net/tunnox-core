@@ -80,21 +80,16 @@ func (c *CloudControl) CreatePortMapping(mapping *models.PortMapping) (*models.P
 		// 不回滚，继续执行
 	}
 
-	// ✅ 添加到客户端的映射索引（用于配置推送查询）
-	// 使用 ListenClientID（SourceClientID 已废弃）
-	listenClientID := mapping.ListenClientID
-	if listenClientID == 0 {
-		listenClientID = mapping.SourceClientID // 向后兼容
-	}
-	if listenClientID > 0 {
-		clientKey := fmt.Sprintf("%d", listenClientID)
+	// 添加到客户端的映射索引（用于配置推送查询）
+	if mapping.ListenClientID > 0 {
+		clientKey := fmt.Sprintf("%d", mapping.ListenClientID)
 		if err := c.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			corelog.Warnf("CloudControl: failed to add mapping %s to listen client %s: %v", mappingID, clientKey, err)
 		} else {
 			corelog.Infof("CloudControl: added mapping %s to listen client %s index", mappingID, clientKey)
 		}
 	}
-	if mapping.TargetClientID > 0 && mapping.TargetClientID != listenClientID {
+	if mapping.TargetClientID > 0 && mapping.TargetClientID != mapping.ListenClientID {
 		clientKey := fmt.Sprintf("%d", mapping.TargetClientID)
 		if err := c.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			corelog.Warnf("CloudControl: failed to add mapping %s to target client %s: %v", mappingID, clientKey, err)

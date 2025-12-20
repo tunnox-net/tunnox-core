@@ -1,9 +1,9 @@
 package session
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"encoding/json"
 	"tunnox-core/internal/config"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -33,8 +33,7 @@ func (s *SessionManager) NotifyClientUpdate(clientID int64) {
 	var mappingConfigs []config.MappingConfig
 	for _, m := range mappings {
 		// 只发送当前客户端作为 ListenClient 的映射（需要启动监听的）
-		// 或者 SourceClientID (兼容旧版)
-		if m.ListenClientID == clientID || (m.ListenClientID == 0 && m.SourceClientID == clientID) {
+		if m.ListenClientID == clientID {
 			cfg := config.MappingConfig{
 				MappingID:  m.ID,
 				SecretKey:  m.SecretKey,

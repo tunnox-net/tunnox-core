@@ -115,13 +115,10 @@ type PortMapping struct {
 	UserID string `json:"user_id,omitempty"` // 所属用户ID（匿名映射可能为空）
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// 映射双方（统一命名）
+	// 映射双方
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	ListenClientID int64 `json:"listen_client_id"` // 监听端客户端ID（访问方）
-	// SourceClientID 已废弃，使用 ListenClientID
-	// 保持 JSON 标签向后兼容
-	SourceClientID int64 `json:"source_client_id,omitempty"` // 已废弃：使用 ListenClientID
-	TargetClientID int64 `json:"target_client_id"`           // 目标端客户端ID（被访问方）
+	TargetClientID int64 `json:"target_client_id"` // 目标端客户端ID（被访问方）
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// 地址信息

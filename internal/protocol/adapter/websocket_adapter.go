@@ -1,7 +1,6 @@
 package adapter
 
 import (
-corelog "tunnox-core/internal/core/log"
 	"context"
 	"fmt"
 	"io"
@@ -10,6 +9,8 @@ corelog "tunnox-core/internal/core/log"
 	"sync"
 	"time"
 
+	"tunnox-core/internal/cloud/constants"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/protocol/session"
 
 	"github.com/gorilla/websocket"
@@ -30,8 +31,8 @@ func NewWebSocketAdapter(parentCtx context.Context, sess session.Session) *WebSo
 	adapter := &WebSocketAdapter{
 		BaseAdapter: BaseAdapter{},
 		upgrader: websocket.Upgrader{
-			ReadBufferSize:  64 * 1024,
-			WriteBufferSize: 64 * 1024,
+			ReadBufferSize:  constants.WebSocketBufferSize,
+			WriteBufferSize: constants.WebSocketBufferSize,
 			CheckOrigin: func(r *http.Request) bool {
 				return true // Allow all origins for now
 			},

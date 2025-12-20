@@ -183,10 +183,10 @@ func (l *LogEntry) WithMapping(mappingID string) *LogEntry {
 func (l *LogEntry) WithError(err error) *LogEntry {
 	entry := l.WithField(constants.LogFieldError, err)
 	if err != nil {
-		errorType := coreerrors.GetErrorType(err)
-		entry = entry.WithField(constants.LogFieldErrorType, string(errorType))
+		errorCode := coreerrors.GetCode(err)
+		entry = entry.WithField(constants.LogFieldErrorType, string(errorCode))
 		entry = entry.WithField(constants.LogFieldRetryable, coreerrors.IsRetryable(err))
-		entry = entry.WithField(constants.LogFieldAlertable, coreerrors.IsAlertable(err))
+		entry = entry.WithField(constants.LogFieldAlertable, coreerrors.IsSystemError(err))
 	}
 	return entry
 }
@@ -223,8 +223,8 @@ func logErrorWithLevel(entry *logrus.Entry, err error, messages ...string) {
 		return
 	}
 
-	errorType := coreerrors.GetErrorType(err)
-	isAlertable := coreerrors.IsAlertable(err)
+	errorCode := coreerrors.GetCode(err)
+	isSystemError := coreerrors.IsSystemError(err)
 	isRetryable := coreerrors.IsRetryable(err)
 
 	message := ""
@@ -234,17 +234,24 @@ func logErrorWithLevel(entry *logrus.Entry, err error, messages ...string) {
 		message = err.Error()
 	}
 
-	switch errorType {
-	case coreerrors.ErrorTypeFatal:
-		entry.Fatal(message)
-	case coreerrors.ErrorTypeAuth, coreerrors.ErrorTypeProtocol, coreerrors.ErrorTypeStorage:
+	// 根据错误码选择日志级别
+	switch errorCode {
+	case coreerrors.CodeInternal, coreerrors.CodeStorageError:
+		// 系统级错误，使用 Error 级别
 		entry.Error(message)
-	case coreerrors.ErrorTypeNetwork, coreerrors.ErrorTypeTemporary:
+	case coreerrors.CodeAuthFailed, coreerrors.CodeInvalidToken, coreerrors.CodeTokenExpired,
+		coreerrors.CodeForbidden, coreerrors.CodeClientBlocked:
+		// 认证/权限错误，使用 Error 级别
+		entry.Error(message)
+	case coreerrors.CodeNetworkError, coreerrors.CodeTimeout, coreerrors.CodeUnavailable,
+		coreerrors.CodeRateLimited:
+		// 网络/临时错误，使用 Warn 级别（可重试）
 		entry.Warn(message)
-	case coreerrors.ErrorTypePermanent:
-		entry.Error(message)
+	case coreerrors.CodeStreamClosed, coreerrors.CodeConnectionError:
+		// 连接错误，使用 Warn 级别
+		entry.Warn(message)
 	default:
-		if isAlertable {
+		if isSystemError {
 			entry.Error(message)
 		} else if isRetryable {
 			entry.Warn(message)

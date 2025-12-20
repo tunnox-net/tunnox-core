@@ -8,6 +8,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"tunnox-core/internal/cloud/constants"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/protocol/session"
 )
@@ -45,7 +47,6 @@ const (
 	// 超时配置
 	socksHandshakeTimeout = 10 * time.Second
 	socksDialTimeout      = 30 * time.Second
-	socksBufferSize       = 32 * 1024
 )
 
 // SocksAdapter SOCKS5 代理适配器
@@ -475,7 +476,6 @@ func (s *SocksAdapter) dialThroughTunnel(targetAddr string) (net.Conn, error) {
 }
 
 // relay 在两个连接之间双向转发数据（高性能版本）
-// 🚀 优化: 使用 512KB 缓冲区，移除热路径日志
 func (s *SocksAdapter) relay(client, remote net.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -483,7 +483,7 @@ func (s *SocksAdapter) relay(client, remote net.Conn) {
 	// 客户端 -> 远程
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 512*1024) // 512KB buffer
+		buf := make([]byte, constants.TCPSocketBufferSize)
 		io.CopyBuffer(remote, client, buf)
 		if tcpConn, ok := remote.(*net.TCPConn); ok {
 			tcpConn.CloseWrite()
@@ -493,7 +493,7 @@ func (s *SocksAdapter) relay(client, remote net.Conn) {
 	// 远程 -> 客户端
 	go func() {
 		defer wg.Done()
-		buf := make([]byte, 512*1024) // 512KB buffer
+		buf := make([]byte, constants.TCPSocketBufferSize)
 		io.CopyBuffer(client, remote, buf)
 		if tcpConn, ok := client.(*net.TCPConn); ok {
 			tcpConn.CloseWrite()

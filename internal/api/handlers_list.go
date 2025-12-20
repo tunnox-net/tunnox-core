@@ -80,11 +80,7 @@ func (s *ManagementAPIServer) handleListAllMappings(w http.ResponseWriter, r *ht
 		if direction == "outbound" {
 			// 只返回作为 ListenClient 的映射
 			for _, m := range allMappings {
-				listenClientID := m.ListenClientID
-				if listenClientID == 0 {
-					listenClientID = m.SourceClientID
-				}
-				if listenClientID == clientID {
+				if m.ListenClientID == clientID {
 					mappings = append(mappings, m)
 				}
 			}

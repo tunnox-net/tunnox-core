@@ -395,7 +395,7 @@ func TestPortMappingRepo_CreateMapping(t *testing.T) {
 
 	mapping := &models.PortMapping{
 		ID:             mappingID,
-		SourceClientID: 1,
+		ListenClientID: 1,
 		TargetClientID: 2,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,
@@ -409,7 +409,7 @@ func TestPortMappingRepo_CreateMapping(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, mapping)
 
-	assert.Equal(t, int64(1), mapping.SourceClientID)
+	assert.Equal(t, int64(1), mapping.ListenClientID)
 	assert.Equal(t, int64(2), mapping.TargetClientID)
 	assert.Equal(t, models.ProtocolTCP, mapping.Protocol)
 	assert.Equal(t, 8080, mapping.SourcePort)
@@ -428,7 +428,7 @@ func TestPortMappingRepo_GetMapping(t *testing.T) {
 
 	mapping := &models.PortMapping{
 		ID:             mappingID,
-		SourceClientID: 1,
+		ListenClientID: 1,
 		TargetClientID: 2,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,
@@ -446,7 +446,7 @@ func TestPortMappingRepo_GetMapping(t *testing.T) {
 	require.NotNil(t, retrievedMapping)
 
 	assert.Equal(t, mapping.ID, retrievedMapping.ID)
-	assert.Equal(t, mapping.SourceClientID, retrievedMapping.SourceClientID)
+	assert.Equal(t, mapping.ListenClientID, retrievedMapping.ListenClientID)
 	assert.Equal(t, mapping.TargetClientID, retrievedMapping.TargetClientID)
 
 	_, err = mappingRepo.GetPortMapping("nonexistent")
@@ -462,7 +462,7 @@ func TestPortMappingRepo_UpdateMapping(t *testing.T) {
 
 	mapping := &models.PortMapping{
 		ID:             mappingID,
-		SourceClientID: 1,
+		ListenClientID: 1,
 		TargetClientID: 2,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,
@@ -498,7 +498,7 @@ func TestPortMappingRepo_DeleteMapping(t *testing.T) {
 
 	mapping := &models.PortMapping{
 		ID:             mappingID,
-		SourceClientID: 1,
+		ListenClientID: 1,
 		TargetClientID: 2,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,
@@ -534,7 +534,7 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 	// 创建多个映射
 	mapping1 := &models.PortMapping{
 		ID:             mappingID1,
-		SourceClientID: 1,
+		ListenClientID: 1,
 		TargetClientID: 2,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8080,
@@ -551,7 +551,7 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 
 	mapping2 := &models.PortMapping{
 		ID:             mappingID2,
-		SourceClientID: 3,
+		ListenClientID: 3,
 		TargetClientID: 4,
 		Protocol:       models.ProtocolUDP,
 		SourcePort:     8081,
@@ -568,7 +568,7 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 
 	mapping3 := &models.PortMapping{
 		ID:             mappingID3,
-		SourceClientID: 5,
+		ListenClientID: 5,
 		TargetClientID: 6,
 		Protocol:       models.ProtocolTCP,
 		SourcePort:     8082,
@@ -817,7 +817,7 @@ func TestRepository_KeyPrefixes(t *testing.T) {
 		mapping := &models.PortMapping{
 			ID:             "prefix_test_mapping",
 			UserID:         user.ID,
-			SourceClientID: client.ID,
+			ListenClientID: client.ID,
 			TargetClientID: 67890,
 			Protocol:       models.ProtocolTCP,
 			SourcePort:     9090,
