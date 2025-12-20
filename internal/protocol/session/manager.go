@@ -44,37 +44,41 @@ func DefaultSessionConfig() *SessionConfig {
 // 职责说明：
 // 本文件仅包含核心协调逻辑，具体实现已按功能拆分：
 //
+//   - client_registry.go: 客户端注册表（控制连接管理）
+//   - tunnel_registry.go: 隧道注册表（隧道连接管理）
+//   - packet_router.go: 数据包路由
 //   - connection_lifecycle.go: 连接生命周期管理
-//     CreateConnection, AcceptConnection, GetConnection, ListConnections,
-//     UpdateConnectionState, CloseConnection, GetActiveConnections,
-//     RegisterControlConnection, UpdateControlConnectionAuth, GetControlConnectionByClientID,
-//     KickOldControlConnection, RemoveControlConnection,
-//     RegisterTunnelConnection, UpdateTunnelConnectionAuth, GetTunnelConnectionByTunnelID,
-//     GetTunnelConnectionByConnID, RemoveTunnelConnection, GetConnectionByClientID
-//
 //   - command_integration.go: Command 集成
-//     SetEventBus, GetEventBus, GetResponseManager,
-//     RegisterCommandHandler, UnregisterCommandHandler, ProcessCommand,
-//     GetCommandRegistry, GetCommandExecutor, SetCommandExecutor,
-//     handleCommandPacket, handleDefaultCommand, handleHeartbeat
-//
 //   - packet_handler.go: 数据包处理
-//     HandlePacket, ProcessPacket,
-//     handleHandshake, handleTunnelOpen
-//
 //   - event_handlers.go: 事件处理
-//     handleDisconnectRequestEvent
 type SessionManager struct {
+	// ============================================================================
+	// 新架构组件（推荐使用）
+	// ============================================================================
+
+	// 客户端注册表（控制连接管理）
+	clientRegistry *ClientRegistry
+
+	// 隧道注册表（隧道连接管理）
+	tunnelRegistry *TunnelRegistry
+
+	// 数据包路由器
+	packetRouter *PacketRouter
+
+	// ============================================================================
+	// 旧架构字段（保持向后兼容，逐步迁移）
+	// ============================================================================
+
 	// 基础连接映射（所有连接）
 	connMap  map[string]*types.Connection
 	connLock sync.RWMutex
 
-	// 指令连接（Control Connection）
+	// 指令连接（Control Connection）- 已迁移到 clientRegistry
 	controlConnMap   map[string]*ControlConnection // connID -> 指令连接
 	clientIDIndexMap map[int64]*ControlConnection  // clientID -> 指令连接（快速查找）
 	controlConnLock  sync.RWMutex
 
-	// 映射连接（Tunnel Connection）
+	// 映射连接（Tunnel Connection）- 已迁移到 tunnelRegistry
 	tunnelConnMap  map[string]*TunnelConnection // connID -> 映射连接
 	tunnelIDMap    map[string]*TunnelConnection // tunnelID -> 映射连接
 	tunnelConnLock sync.RWMutex
@@ -145,15 +149,37 @@ func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.C
 	// 创建流管理器
 	streamMgr := stream.NewStreamManager(streamFactory, parentCtx)
 
+	// 默认使用全局 Logger
+	logger := corelog.Default()
+
+	// 创建新架构组件
+	clientRegistry := NewClientRegistry(&ClientRegistryConfig{
+		MaxConnections: config.MaxControlConnections,
+		Logger:         logger,
+	})
+
+	tunnelRegistry := NewTunnelRegistry(&TunnelRegistryConfig{
+		Logger: logger,
+	})
+
+	packetRouter := NewPacketRouter(&PacketRouterConfig{
+		Logger: logger,
+	})
+
 	session := &SessionManager{
-		// 基础连接
+		// 新架构组件
+		clientRegistry: clientRegistry,
+		tunnelRegistry: tunnelRegistry,
+		packetRouter:   packetRouter,
+
+		// 基础连接（保持向后兼容）
 		connMap: make(map[string]*types.Connection),
 
-		// 指令连接
+		// 指令连接（保持向后兼容，同时使用 clientRegistry）
 		controlConnMap:   make(map[string]*ControlConnection),
 		clientIDIndexMap: make(map[int64]*ControlConnection),
 
-		// 映射连接
+		// 映射连接（保持向后兼容，同时使用 tunnelRegistry）
 		tunnelConnMap: make(map[string]*TunnelConnection),
 		tunnelIDMap:   make(map[string]*TunnelConnection),
 
@@ -164,8 +190,8 @@ func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.C
 		streamMgr:     streamMgr,
 		streamFactory: streamFactory,
 		config:        config,
-		// 默认使用全局 Logger
-		logger: corelog.Default(),
+		logger:        logger,
+
 		// 事件驱动架构将在后续设置
 		eventBus:        nil,
 		responseManager: nil,
@@ -260,7 +286,15 @@ func (s *SessionManager) onClose() error {
 		corelog.Infof("Unsubscribed from disconnect request events")
 	}
 
-	// 关闭所有连接
+	// 关闭新架构组件
+	if s.clientRegistry != nil {
+		s.clientRegistry.Close()
+	}
+	if s.tunnelRegistry != nil {
+		s.tunnelRegistry.Close()
+	}
+
+	// 关闭所有连接（旧架构，保持向后兼容）
 	s.connLock.Lock()
 	connCount := len(s.connMap)
 	for _, conn := range s.connMap {
@@ -274,7 +308,7 @@ func (s *SessionManager) onClose() error {
 	s.connMap = make(map[string]*types.Connection)
 	s.connLock.Unlock()
 
-	// 关闭所有控制连接
+	// 关闭所有控制连接（旧架构）
 	s.controlConnLock.Lock()
 	controlConnCount := len(s.controlConnMap)
 	for _, conn := range s.controlConnMap {
@@ -286,7 +320,7 @@ func (s *SessionManager) onClose() error {
 	s.clientIDIndexMap = make(map[int64]*ControlConnection)
 	s.controlConnLock.Unlock()
 
-	// 关闭所有隧道连接
+	// 关闭所有隧道连接（旧架构）
 	s.tunnelConnLock.Lock()
 	tunnelConnCount := len(s.tunnelConnMap)
 	for _, conn := range s.tunnelConnMap {
@@ -333,4 +367,23 @@ func (s *SessionManager) SetNodeID(nodeID string) {
 // GetNodeID 获取节点ID
 func (s *SessionManager) GetNodeID() string {
 	return s.nodeID
+}
+
+// ============================================================================
+// 新架构组件访问器
+// ============================================================================
+
+// GetClientRegistry 获取客户端注册表
+func (s *SessionManager) GetClientRegistry() *ClientRegistry {
+	return s.clientRegistry
+}
+
+// GetTunnelRegistry 获取隧道注册表
+func (s *SessionManager) GetTunnelRegistry() *TunnelRegistry {
+	return s.tunnelRegistry
+}
+
+// GetPacketRouter 获取数据包路由器
+func (s *SessionManager) GetPacketRouter() *PacketRouter {
+	return s.packetRouter
 }
