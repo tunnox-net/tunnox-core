@@ -553,7 +553,7 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 		ID:             mappingID2,
 		ListenClientID: 3,
 		TargetClientID: 4,
-		Protocol:       models.ProtocolUDP,
+		Protocol:       models.ProtocolHTTP,
 		SourcePort:     8081,
 		TargetPort:     9091,
 		UserID:         "user1",
@@ -610,19 +610,19 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 	}
 	assert.Equal(t, 2, tcpCount)
 
-	// 验证UDP映射数量
-	udpCount := 0
+	// 验证HTTP映射数量
+	httpCount := 0
 	for _, m := range userMappings {
-		if m.Protocol == models.ProtocolUDP {
-			udpCount++
+		if m.Protocol == models.ProtocolHTTP {
+			httpCount++
 		}
 	}
 	for _, m := range user2Mappings {
-		if m.Protocol == models.ProtocolUDP {
-			udpCount++
+		if m.Protocol == models.ProtocolHTTP {
+			httpCount++
 		}
 	}
-	assert.Equal(t, 1, udpCount)
+	assert.Equal(t, 1, httpCount)
 }
 
 func TestNodeRepository_CreateNode(t *testing.T) {
