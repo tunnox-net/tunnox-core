@@ -40,8 +40,8 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		}
 	}
 
-	corelog.Infof("Tunnel open request: TunnelID=%s, MappingID=%s, ConnID=%s, TargetHost=[%s], TargetPort=[%d], PayloadLen=%d",
-		req.TunnelID, req.MappingID, connPacket.ConnectionID, req.TargetHost, req.TargetPort, len(connPacket.Packet.Payload))
+	corelog.Infof("Tunnel open request: TunnelID=%s, MappingID=%s, ConnID=%s, TargetHost=%s, TargetPort=%d",
+		req.TunnelID, req.MappingID, connPacket.ConnectionID, req.TargetHost, req.TargetPort)
 
 	// ✅ 对于支持 mappingID 的连接，立即设置 mappingID 并注册隧道连接
 	// 这样后续的请求就能正确路由到隧道连接

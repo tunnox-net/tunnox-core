@@ -107,8 +107,6 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 	}
 
 	reqData, _ := json.Marshal(req)
-	corelog.Infof("Client: sending TunnelOpen, tunnelID=%s, mappingID=%s, targetHost=%s, targetPort=%d, payloadLen=%d",
-		tunnelID, mappingID, targetHost, targetPort, len(reqData))
 	openPkt := &packet.TransferPacket{
 		PacketType: packet.TunnelOpen,
 		TunnelID:   tunnelID,
