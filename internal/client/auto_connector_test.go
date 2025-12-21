@@ -42,9 +42,10 @@ func TestDefaultServerEndpoints(t *testing.T) {
 
 	// 当前支持的协议列表（与 DefaultServerEndpoints 保持一致）
 	expectedProtocols := map[string]bool{
-		"tcp":       false,
-		"quic":      false,
 		"websocket": false,
+		"tcp":       false,
+		"kcp":       false,
+		"quic":      false,
 		"httppoll":  false,
 	}
 
