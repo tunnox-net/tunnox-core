@@ -107,7 +107,7 @@ func (c *PacketConverter) WritePacket(pkt *packet.TransferPacket, requestID ...s
 	}
 
 	// 4. 构建 HTTP Request（控制包不需要 body，但需要设置 Content-Length: 0）
-	req, err := http.NewRequest("POST", "/tunnox/v1/push", http.NoBody)
+	req, err := http.NewRequest("POST", "/_tunnox/v1/push", http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

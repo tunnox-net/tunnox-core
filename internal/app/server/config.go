@@ -14,8 +14,8 @@ import (
 // ProtocolConfig 协议配置
 type ProtocolConfig struct {
 	Enabled bool   `yaml:"enabled"`
-	Port    int    `yaml:"port"`
-	Host    string `yaml:"host"`
+	Port    int    `yaml:"port,omitempty"`
+	Host    string `yaml:"host,omitempty"`
 }
 
 // ServerConfig 服务器配置
@@ -253,18 +253,18 @@ type Config struct {
 
 // LoadConfig 加载配置文件
 func LoadConfig(configPath string) (*Config, error) {
-	// 如果配置文件不存在，使用默认配置并生成配置文件
+	// 如果配置文件不存在，使用默认配置并生成简洁的示例配置文件
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		corelog.Warnf(constants.MsgConfigFileNotFound, configPath)
 		config := GetDefaultConfig()
 		// ✅ 应用环境变量覆盖（即使没有配置文件）
 		ApplyEnvOverrides(config)
 
-		// ✅ 生成配置文件
-		if err := SaveConfig(configPath, config); err != nil {
-			corelog.Warnf("Failed to save default config to %s: %v", configPath, err)
+		// ✅ 生成简洁的示例配置文件
+		if err := SaveMinimalConfig(configPath); err != nil {
+			corelog.Warnf("Failed to save config template to %s: %v", configPath, err)
 		} else {
-			corelog.Infof("Generated default config file: %s", configPath)
+			corelog.Infof("Generated config template: %s", configPath)
 		}
 
 		return config, nil
@@ -337,7 +337,8 @@ func ValidateConfig(config *Config) error {
 	}
 
 	// 设置默认协议配置
-	// 注意：websocket 和 httppoll 不需要独立端口，它们通过 HTTP 服务容器提供
+	// 独立协议适配器：tcp, kcp, quic (需要端口和 host)
+	// HTTP 服务协议：websocket, httppoll (通过 management_api 提供,不需要端口)
 	defaultProtocols := map[string]ProtocolConfig{
 		"tcp": {
 			Enabled: true,
@@ -356,9 +357,11 @@ func ValidateConfig(config *Config) error {
 		},
 		"websocket": {
 			Enabled: true,
+			// 注意：websocket 通过 HTTP 服务提供,不需要独立端口
 		},
 		"httppoll": {
 			Enabled: true,
+			// 注意：httppoll 通过 HTTP 服务提供,不需要独立端口
 		},
 	}
 
@@ -603,7 +606,7 @@ func GetDefaultConfig() *Config {
 					Port:    443,
 					Host:    "0.0.0.0",
 				},
-				// websocket 和 httppoll 通过 HTTP 服务容器提供，不需要独立端口
+				// websocket 和 httppoll 通过 HTTP 服务提供，不需要独立端口
 				"websocket": {
 					Enabled: true,
 				},
@@ -688,6 +691,57 @@ func SaveConfig(configPath string, config *Config) error {
 	if err := os.Rename(tempFile, configPath); err != nil {
 		os.Remove(tempFile) // 清理临时文件
 		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	return nil
+}
+
+// SaveMinimalConfig 保存简洁的配置模板到文件
+func SaveMinimalConfig(configPath string) error {
+	// 确保目录存在
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// 简洁的配置模板
+	template := `# Tunnox Core Server Configuration
+# 只需配置需要修改的部分，其他保持默认即可
+
+# 协议配置
+server:
+  protocols:
+    tcp:
+      enabled: true
+      port: 8000
+    kcp:
+      enabled: true
+      port: 8000
+    quic:
+      enabled: true
+      port: 443
+    websocket:
+      enabled: true
+    httppoll:
+      enabled: true
+
+# 日志配置
+log:
+  level: info      # debug, info, warn, error
+  output: file     # stdout, file
+
+# HTTP 管理服务
+management_api:
+  enabled: true
+  listen_addr: "0.0.0.0:9000"
+  auth:
+    type: bearer
+    token: ""      # 设置 API 访问令牌
+`
+
+	// 写入文件
+	if err := os.WriteFile(configPath, []byte(template), 0644); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
 	return nil

@@ -139,8 +139,8 @@ func displayManagementAPI(s *Server, reset func(...interface{}) string) {
 	// 显示已启用的模块
 	fmt.Printf("  %s\n", bannerBold("Modules:"))
 	fmt.Printf("    • %s\n", "Management API")
-	fmt.Printf("    • %s %s\n", "WebSocket", bannerFaint("(ws://"+s.config.ManagementAPI.ListenAddr+"/tunnox/v1/ws)"))
-	fmt.Printf("    • %s %s\n", "HTTP Long Poll", bannerFaint("(POST/GET /tunnox/v1/push|poll)"))
+	fmt.Printf("    • %s %s\n", "WebSocket", bannerFaint("(ws://"+s.config.ManagementAPI.ListenAddr+"/_tunnox)"))
+	fmt.Printf("    • %s %s\n", "HTTP Long Poll", bannerFaint("(POST/GET /_tunnox/v1/push|poll)"))
 	if s.config.ManagementAPI.PProf.Enabled {
 		fmt.Printf("    • %s %s\n", "PProf", bannerFaint("(/tunnox/v1/debug/pprof/)"))
 	}

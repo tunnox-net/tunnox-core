@@ -284,8 +284,8 @@ func (ac *AutoConnector) tryConnectWithStreamContext(connCtx, streamCtx context.
 	if endpoint.Protocol == "httppoll" || endpoint.Protocol == "http-long-polling" || endpoint.Protocol == "httplp" {
 		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
 			baseURL := httppollConn.baseURL
-			pushURL := baseURL + "/tunnox/v1/push"
-			pollURL := baseURL + "/tunnox/v1/poll"
+			pushURL := baseURL + "/_tunnox/v1/push"
+			pollURL := baseURL + "/_tunnox/v1/poll"
 			pkgStream = httppoll.NewStreamProcessor(streamCtx, baseURL, pushURL, pollURL, 0, "", httppollConn.instanceID, "")
 			if httppollConn.connectionID != "" {
 				pkgStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)
@@ -363,8 +363,8 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 	if endpoint.Protocol == "httppoll" || endpoint.Protocol == "http-long-polling" || endpoint.Protocol == "httplp" {
 		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
 			baseURL := httppollConn.baseURL
-			pushURL := baseURL + "/tunnox/v1/push"
-			pollURL := baseURL + "/tunnox/v1/poll"
+			pushURL := baseURL + "/_tunnox/v1/push"
+			pollURL := baseURL + "/_tunnox/v1/poll"
 			pkgStream = httppoll.NewStreamProcessor(ctx, baseURL, pushURL, pollURL, 0, "", httppollConn.instanceID, "")
 			if httppollConn.connectionID != "" {
 				pkgStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)

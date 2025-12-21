@@ -19,6 +19,7 @@ type HTTPServiceConfig struct {
 type ModulesConfig struct {
 	ManagementAPI  ManagementAPIModuleConfig  `yaml:"management_api"`
 	HTTPPoll       HTTPPollModuleConfig       `yaml:"httppoll"`
+	WebSocket      WebSocketModuleConfig      `yaml:"websocket"`
 	DomainProxy    DomainProxyModuleConfig    `yaml:"domain_proxy"`
 	WebSocketProxy WebSocketProxyModuleConfig `yaml:"websocket_proxy"`
 }
@@ -57,6 +58,11 @@ type TunnelPoolConfig struct {
 
 // WebSocketProxyModuleConfig WebSocket 代理模块配置
 type WebSocketProxyModuleConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// WebSocketModuleConfig WebSocket 传输模块配置（客户端控制连接）
+type WebSocketModuleConfig struct {
 	Enabled bool `yaml:"enabled"`
 }
 
@@ -112,6 +118,9 @@ func DefaultHTTPServiceConfig() *HTTPServiceConfig {
 				MaxRequestSize: 1048576, // 1MB
 				DefaultTimeout: 30,
 				MaxTimeout:     60,
+			},
+			WebSocket: WebSocketModuleConfig{
+				Enabled: true,
 			},
 			DomainProxy: DomainProxyModuleConfig{
 				Enabled:              false,

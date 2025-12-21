@@ -260,7 +260,8 @@ func NewProtocolFactory(session *session.SessionManager) *ProtocolFactory {
 }
 
 // CreateAdapter 创建协议适配器
-// 注意：websocket 和 httppoll 不需要独立适配器，它们通过 HTTP 服务容器提供
+// 支持的协议：tcp, kcp, quic
+// 注意：websocket 和 httppoll 通过 HTTP 服务容器提供，不需要独立适配器
 func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Context) (adapter.Adapter, error) {
 	switch protocolName {
 	case "tcp":

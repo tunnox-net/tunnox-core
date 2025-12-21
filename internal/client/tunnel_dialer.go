@@ -69,8 +69,8 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
 			// 创建 HTTPStreamProcessor
 			baseURL := httppollConn.baseURL
-			pushURL := baseURL + "/tunnox/v1/push"
-			pollURL := baseURL + "/tunnox/v1/poll"
+			pushURL := baseURL + "/_tunnox/v1/push"
+			pollURL := baseURL + "/_tunnox/v1/poll"
 			tunnelStream = httppoll.NewStreamProcessor(c.Ctx(), baseURL, pushURL, pollURL, c.config.ClientID, token, c.GetInstanceID(), mappingID)
 			// 设置 ConnectionID（如果已从握手响应中获取）
 			if httppollConn.connectionID != "" {

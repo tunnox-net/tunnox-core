@@ -13,6 +13,7 @@ import (
 	"tunnox-core/internal/httpservice/modules/domainproxy"
 	"tunnox-core/internal/httpservice/modules/httppoll"
 	"tunnox-core/internal/httpservice/modules/management"
+	"tunnox-core/internal/httpservice/modules/websocket"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/stream"
 
@@ -184,6 +185,12 @@ func (s *Server) setupProtocolAdapters() error {
 	registeredProtocols := make([]string, 0, len(enabledProtocols))
 
 	for protocolName, config := range enabledProtocols {
+		// 跳过通过 HTTP 服务提供的协议（它们不需要独立的协议适配器）
+		if protocolName == "websocket" || protocolName == "httppoll" {
+			corelog.Debugf("Skipping %s protocol adapter (provided by HTTP service)", protocolName)
+			continue
+		}
+
 		// 创建适配器
 		adapter, err := s.protocolFactory.CreateAdapter(protocolName, s.serviceManager.GetContext())
 		if err != nil {
@@ -215,8 +222,18 @@ func (s *Server) getEnabledProtocols() map[string]ProtocolConfig {
 	return enabled
 }
 
-// createHTTPService 创建统一 HTTP 服务
+// 创建统一 HTTP 服务
 func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService {
+	// 检查协议是否在 server.protocols 中启用
+	httpPollEnabled := false
+	if httpPollConfig, exists := s.config.Server.Protocols["httppoll"]; exists {
+		httpPollEnabled = httpPollConfig.Enabled
+	}
+	websocketEnabled := false
+	if wsConfig, exists := s.config.Server.Protocols["websocket"]; exists {
+		websocketEnabled = wsConfig.Enabled
+	}
+
 	// 构建 HTTP 服务配置
 	httpConfig := &httpservice.HTTPServiceConfig{
 		Enabled:    s.config.ManagementAPI.Enabled,
@@ -243,10 +260,13 @@ func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService
 				},
 			},
 			HTTPPoll: httpservice.HTTPPollModuleConfig{
-				Enabled:        true,
+				Enabled:        httpPollEnabled,
 				MaxRequestSize: 1048576, // 1MB
 				DefaultTimeout: 30,
 				MaxTimeout:     60,
+			},
+			WebSocket: httpservice.WebSocketModuleConfig{
+				Enabled: websocketEnabled,
 			},
 			DomainProxy: httpservice.DomainProxyModuleConfig{
 				Enabled:              true,
@@ -266,10 +286,22 @@ func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService
 	mgmtModule := management.NewManagementModule(ctx, mgmtConfig, s.cloudControl, s.connCodeService, s.healthManager)
 	httpSvc.RegisterModule(mgmtModule)
 
-	// 创建并注册 HTTPPoll 模块
-	httpPollConfig := &httpConfig.Modules.HTTPPoll
-	httpPollModule := httppoll.NewHTTPPollModule(ctx, httpPollConfig)
-	httpSvc.RegisterModule(httpPollModule)
+	// 创建并注册 WebSocket 模块（如果启用）
+	if websocketEnabled {
+		wsConfig := &httpConfig.Modules.WebSocket
+		wsModule := websocket.NewWebSocketModule(ctx, wsConfig)
+		if s.session != nil {
+			wsModule.SetSession(s.session)
+		}
+		httpSvc.RegisterModule(wsModule)
+	}
+
+	// 创建并注册 HTTPPoll 模块（如果启用）
+	if httpPollEnabled {
+		httpPollConfig := &httpConfig.Modules.HTTPPoll
+		httpPollModule := httppoll.NewHTTPPollModule(ctx, httpPollConfig)
+		httpSvc.RegisterModule(httpPollModule)
+	}
 
 	// 创建并注册 Domain Proxy 模块
 	domainProxyConfig := &httpConfig.Modules.DomainProxy

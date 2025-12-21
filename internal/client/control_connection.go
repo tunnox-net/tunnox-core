@@ -139,8 +139,8 @@ func (c *TunnoxClient) Connect() error {
 		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
 			// 创建 HTTPStreamProcessor
 			baseURL := httppollConn.baseURL
-			pushURL := baseURL + "/tunnox/v1/push"
-			pollURL := baseURL + "/tunnox/v1/poll"
+			pushURL := baseURL + "/_tunnox/v1/push"
+			pollURL := baseURL + "/_tunnox/v1/poll"
 			c.controlStream = httppoll.NewStreamProcessor(c.Ctx(), baseURL, pushURL, pollURL, c.config.ClientID, token, c.GetInstanceID(), "")
 			// ✅ 重要：设置客户端生成的临时 ConnectionID（用于初始握手）
 			// 服务端会在握手响应中分配正式的 ConnectionID，然后会更新这个值

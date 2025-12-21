@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2025-12-21
+
+### Changed
+- **协议架构重构**：WebSocket 和 HTTPPoll 统一通过 HTTP 服务提供
+  - WebSocket 不再作为独立协议适配器，改为 HTTP 服务模块
+  - HTTPPoll 不再作为独立协议适配器，改为 HTTP 服务模块
+  - 独立协议适配器：TCP (8000), KCP (8000), QUIC (443)
+  - HTTP 服务协议：WebSocket (`/_tunnox`), HTTPPoll (`/_tunnox/v1/push|poll`)
+  - 所有客户端控制连接协议统一使用 `/_tunnox` 路径前缀
+
+- **配置文件优化**：大幅简化配置文件结构
+  - 自动生成的配置文件从 140+ 行精简到 30 行
+  - 移除所有空值和不必要的默认值
+  - WebSocket 和 HTTPPoll 配置只需 `enabled` 字段，不需要 `port` 和 `host`
+  - 配置模板更清晰，注释更准确
+
+- **路径统一**：客户端和服务端路径完全一致
+  - WebSocket: `ws://host:9000/_tunnox`
+  - HTTPPoll Push: `POST http://host:9000/_tunnox/v1/push`
+  - HTTPPoll Poll: `GET http://host:9000/_tunnox/v1/poll`
+
+### Added
+- **WebSocket HTTP 模块**：新增 `internal/httpservice/modules/websocket` 模块
+  - 在 HTTP 服务中处理 WebSocket 升级请求
+  - 支持通过会话管理器处理客户端连接
+  - 路径: `/_tunnox`
+
+### Fixed
+- 修复 WebSocket 协议注册错误："unsupported protocol: websocket"
+- 修复 HTTPPoll 协议注册错误："unsupported protocol: httppoll"
+- 修复客户端和服务端路径不一致的问题
+
+### Technical
+- 移除 `WebSocketAdapter` 作为独立协议适配器的使用
+- `ProtocolFactory` 只支持创建 TCP, KCP, QUIC 适配器
+- `setupProtocolAdapters` 跳过 websocket 和 httppoll 的适配器创建
+- 新增 `SaveMinimalConfig` 函数生成简洁配置模板
+- 配置结构体 `ProtocolConfig` 的 `port` 和 `host` 字段添加 `omitempty` 标签
+
+### Documentation
+- 更新 `config.yaml` 配置模板，准确说明协议分类
+- 更新启动横幅显示，WebSocket 和 HTTPPoll 显示在 HTTP Service 模块下
+
 ## [1.1.2] - 2025-12-21
 ### Changed
 - **加入Docker镜像构建**：能构建Docker镜像
