@@ -88,7 +88,8 @@ func displayProtocolListeners(s *Server, reset func(...interface{}) string) {
 	fmt.Println(bannerBold("  Protocol Listeners"))
 	fmt.Println(bannerFaint("  " + strings.Repeat("─", bannerWidth)))
 
-	protocolNames := []string{"tcp", "websocket", "kcp", "quic", "httppoll"}
+	// 只显示独立端口的协议（TCP, KCP, QUIC）
+	protocolNames := []string{"tcp", "kcp", "quic"}
 	for _, name := range protocolNames {
 		cfg, exists := s.config.Server.Protocols[name]
 		if !exists {
@@ -96,9 +97,7 @@ func displayProtocolListeners(s *Server, reset func(...interface{}) string) {
 		}
 
 		displayName := strings.ToUpper(name[:1]) + name[1:]
-		if name == "websocket" {
-			displayName = "WebSocket"
-		} else if name == "tcp" {
+		if name == "tcp" {
 			displayName = "TCP"
 		} else if name == "kcp" {
 			displayName = "KCP"
@@ -117,13 +116,13 @@ func displayProtocolListeners(s *Server, reset func(...interface{}) string) {
 	fmt.Println()
 }
 
-// displayManagementAPI 显示管理 API 信息
+// displayManagementAPI 显示HTTP服务信息（包含所有HTTP模块）
 func displayManagementAPI(s *Server, reset func(...interface{}) string) {
 	if !s.config.ManagementAPI.Enabled {
 		return
 	}
 
-	fmt.Println(bannerBold("  Management API"))
+	fmt.Println(bannerBold("  HTTP Service"))
 	fmt.Println(bannerFaint("  " + strings.Repeat("─", bannerWidth)))
 
 	authType := s.config.ManagementAPI.Auth.Type
@@ -135,9 +134,15 @@ func displayManagementAPI(s *Server, reset func(...interface{}) string) {
 	fmt.Printf("  %-18s %s\n", bannerBold("Address:"), fmt.Sprintf("http://%s", s.config.ManagementAPI.ListenAddr))
 	fmt.Printf("  %-18s %s\n", bannerBold("Authentication:"), authType)
 	fmt.Printf("  %-18s %s\n", bannerBold("Base Path:"), bannerFaint("/tunnox/v1"))
-	fmt.Printf("  %-18s %s\n", bannerBold("HTTP Long Poll:"), bannerFaint("POST /tunnox/v1/push, GET /tunnox/v1/poll"))
+	fmt.Println()
+
+	// 显示已启用的模块
+	fmt.Printf("  %s\n", bannerBold("Modules:"))
+	fmt.Printf("    • %s\n", "Management API")
+	fmt.Printf("    • %s %s\n", "WebSocket", bannerFaint("(ws://"+s.config.ManagementAPI.ListenAddr+"/tunnox/v1/ws)"))
+	fmt.Printf("    • %s %s\n", "HTTP Long Poll", bannerFaint("(POST/GET /tunnox/v1/push|poll)"))
 	if s.config.ManagementAPI.PProf.Enabled {
-		fmt.Printf("  %-18s %s\n", bannerBold("PProf:"), bannerFaint("/tunnox/v1/debug/pprof/"))
+		fmt.Printf("    • %s %s\n", "PProf", bannerFaint("(/tunnox/v1/debug/pprof/)"))
 	}
 	fmt.Println()
 }

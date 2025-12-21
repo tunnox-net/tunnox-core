@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -190,7 +191,12 @@ type MappingInfoCmd struct {
 
 // ListMappings 通过指令通道列出映射
 func (c *TunnoxClient) ListMappings(req *ListMappingsRequest) (*ListMappingsResponseCmd, error) {
-	cmdResp, err := c.sendCommandAndWaitResponse(&CommandRequest{
+	return c.ListMappingsWithContext(context.Background(), req)
+}
+
+// ListMappingsWithContext 通过指令通道列出映射（支持context取消）
+func (c *TunnoxClient) ListMappingsWithContext(ctx context.Context, req *ListMappingsRequest) (*ListMappingsResponseCmd, error) {
+	cmdResp, err := c.sendCommandAndWaitResponseWithContext(ctx, &CommandRequest{
 		CommandType: packet.MappingList,
 		RequestBody: req,
 		EnableTrace: true,
@@ -242,8 +248,13 @@ type GetMappingResponseCmd struct {
 
 // GetMapping 通过指令通道获取映射详情
 func (c *TunnoxClient) GetMapping(mappingID string) (*MappingInfoCmd, error) {
+	return c.GetMappingWithContext(context.Background(), mappingID)
+}
+
+// GetMappingWithContext 通过指令通道获取映射详情（支持context取消）
+func (c *TunnoxClient) GetMappingWithContext(ctx context.Context, mappingID string) (*MappingInfoCmd, error) {
 	req := &GetMappingRequest{MappingID: mappingID}
-	cmdResp, err := c.sendCommandAndWaitResponse(&CommandRequest{
+	cmdResp, err := c.sendCommandAndWaitResponseWithContext(ctx, &CommandRequest{
 		CommandType: packet.MappingGet,
 		RequestBody: req,
 		EnableTrace: false,
@@ -269,8 +280,13 @@ type DeleteMappingRequest struct {
 
 // DeleteMapping 通过指令通道删除映射
 func (c *TunnoxClient) DeleteMapping(mappingID string) error {
+	return c.DeleteMappingWithContext(context.Background(), mappingID)
+}
+
+// DeleteMappingWithContext 通过指令通道删除映射（支持context取消）
+func (c *TunnoxClient) DeleteMappingWithContext(ctx context.Context, mappingID string) error {
 	req := &DeleteMappingRequest{MappingID: mappingID}
-	_, err := c.sendCommandAndWaitResponse(&CommandRequest{
+	_, err := c.sendCommandAndWaitResponseWithContext(ctx, &CommandRequest{
 		CommandType: packet.MappingDelete,
 		RequestBody: req,
 		EnableTrace: false,

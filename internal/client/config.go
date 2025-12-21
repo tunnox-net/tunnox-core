@@ -24,8 +24,8 @@ type ClientConfig struct {
 
 // LogConfig 日志配置
 type LogConfig struct {
-	Level  string `yaml:"level"`  // 日志级别：debug, info, warn, error
-	Format string `yaml:"format"` // 日志格式：text, json
-	Output string `yaml:"output"` // 输出目标：stdout, stderr, file
-	File   string `yaml:"file"`   // 日志文件路径（当output=file时）
+	Level  string `yaml:"level"`            // 日志级别：debug, info, warn, error
+	Format string `yaml:"format"`           // 日志格式：text, json
+	Output string `yaml:"output,omitempty"` // 输出目标：由系统根据运行模式自动控制，不保存到配置文件
+	File   string `yaml:"file"`             // 日志文件路径
 }

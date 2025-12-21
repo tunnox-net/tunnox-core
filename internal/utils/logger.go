@@ -108,7 +108,15 @@ func InitLogger(config *LogConfig) error {
 			return fmt.Errorf("failed to open log file %q: %w", expandedPath, err)
 		}
 		currentLogFile = file
-		Logger.SetOutput(file)
+
+		// 根据 output 配置决定输出目标
+		if config.Output == "both" {
+			// 同时输出到文件和控制台
+			Logger.SetOutput(io.MultiWriter(file, os.Stderr))
+		} else {
+			// 只输出到文件（CLI模式）
+			Logger.SetOutput(file)
+		}
 	} else {
 		// 没有配置文件地址，不输出日志
 		if currentLogFile != nil {

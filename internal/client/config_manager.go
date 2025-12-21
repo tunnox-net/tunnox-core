@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/utils"
 
 	"gopkg.in/yaml.v3"
 )
@@ -143,6 +144,26 @@ func (cm *ConfigManager) loadConfigFromFile(path string) (*ClientConfig, error) 
 
 // saveConfigToFile 保存配置到文件
 func (cm *ConfigManager) saveConfigToFile(path string, config *ClientConfig) error {
+	// ✅ 在保存前，确保日志配置有默认值（不保存空值）
+	if config.Log.Level == "" {
+		config.Log.Level = "info"
+	}
+	if config.Log.Format == "" {
+		config.Log.Format = "text"
+	}
+	// ✅ output 字段不保存到配置文件，由系统根据运行模式自动控制
+	// CLI模式：只写文件，不输出到控制台
+	// Daemon模式：同时写文件和输出到控制台
+	config.Log.Output = "" // 清空output字段，不保存
+
+	if config.Log.File == "" {
+		// 使用默认日志路径
+		candidates := utils.GetDefaultClientLogPath(false)
+		if len(candidates) > 0 {
+			config.Log.File = candidates[0]
+		}
+	}
+
 	// 序列化为 YAML
 	data, err := yaml.Marshal(config)
 	if err != nil {

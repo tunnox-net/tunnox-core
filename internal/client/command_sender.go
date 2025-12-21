@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -28,6 +29,11 @@ type CommandResponseData struct {
 
 // sendCommandAndWaitResponse 发送命令并等待响应（统一处理所有命令发送逻辑）
 func (c *TunnoxClient) sendCommandAndWaitResponse(req *CommandRequest) (*CommandResponseData, error) {
+	return c.sendCommandAndWaitResponseWithContext(context.Background(), req)
+}
+
+// sendCommandAndWaitResponseWithContext 发送命令并等待响应（支持context取消）
+func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context, req *CommandRequest) (*CommandResponseData, error) {
 	if !c.IsConnected() {
 		return nil, fmt.Errorf("control connection not established, please connect to server first")
 	}
@@ -122,7 +128,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponse(req *CommandRequest) (*Command
 		}
 	}
 
-	// 等待响应
+	// 等待响应（支持context取消）
 	var waitStartTime time.Time
 	if req.EnableTrace {
 		waitStartTime = time.Now()
@@ -130,7 +136,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponse(req *CommandRequest) (*Command
 			cmdPkt.CommandId, waitStartTime.Format("15:04:05.000"))
 	}
 
-	cmdResp, err := c.commandResponseManager.WaitForResponse(cmdPkt.CommandId, responseChan)
+	cmdResp, err := c.commandResponseManager.WaitForResponseWithContext(ctx, cmdPkt.CommandId, responseChan)
 	if err != nil {
 		if req.EnableTrace {
 			corelog.Errorf("[CMD_TRACE] [CLIENT] [WAIT_FAILED] CommandID=%s, WaitDuration=%v, Error=%v, Time=%s",

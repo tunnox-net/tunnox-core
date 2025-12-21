@@ -99,8 +99,8 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		select {
-		case sig := <-sigChan:
-			fmt.Fprintf(os.Stderr, "\n⚠️  Received signal %v, cancelling connection...\n", sig)
+		case <-sigChan:
+			// 用户按下Ctrl+C，取消连接
 			cancel()
 		case <-ctx.Done():
 		}
@@ -125,102 +125,64 @@ func main() {
 	// 根据运行模式决定连接策略
 	if runInteractive {
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-		// 交互模式：可选连接，失败不退出
+		// 交互模式：必须连接成功才能进入CLI
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-		// 尝试连接（如果有配置地址或需要自动连接）
-		// 自动连接会在 Connect() 内部处理
-		// 检查是否需要自动连接（配置文件和命令行都没有指定地址和协议）
+		// 尝试连接
 		needsAutoConnect := config.Server.Address == "" && config.Server.Protocol == ""
 		if needsAutoConnect {
-			// 没有配置地址和协议，会触发自动连接，显示提示信息
-			fmt.Fprintf(os.Stderr, "🔍 No server address configured, attempting auto-connection...\n")
-			fmt.Fprintf(os.Stderr, "💡 Press Ctrl+C to cancel\n")
+			// 自动连接模式
+			fmt.Fprintf(os.Stderr, "\n🔍 Connecting to Tunnox service...\n")
+		} else {
+			// 指定服务器连接
+			fmt.Fprintf(os.Stderr, "\n🔗 Connecting to %s://%s...\n", config.Server.Protocol, config.Server.Address)
 		}
+
 		if err := tunnoxClient.Connect(); err != nil {
 			// 检查是否是因为 context 取消导致的错误
 			if ctx.Err() == context.Canceled {
-				fmt.Fprintf(os.Stderr, "\n⚠️  Connection cancelled by user\n")
+				fmt.Fprintf(os.Stderr, "\n⚠️  Connection cancelled\n")
 				os.Exit(0)
 			}
-			// 连接失败，显示提示信息，用户可通过CLI命令重连
-			fmt.Fprintf(os.Stderr, "⚠️  Failed to connect to server: %v\n", err)
-			fmt.Fprintf(os.Stderr, "💡 You can use CLI commands to connect later, or configure server address with -s flag\n")
-		} else {
-			fmt.Fprintf(os.Stderr, "✅ Connected to server successfully\n")
+			// 连接失败，CLI模式下直接退出
+			fmt.Fprintf(os.Stderr, "\n❌ Connection failed\n")
+			fmt.Fprintf(os.Stderr, "💡 Please check your network or specify server with -s flag\n")
+			os.Exit(1)
 		}
 
-		// 交互模式：尝试启动CLI
+		// 连接成功，启动CLI
+		fmt.Fprintf(os.Stderr, "✅ Connected successfully\n\n")
+
+		// 启动CLI
 		corelog.Infof("Client: initializing CLI...")
 		tunnoxCLI, err := cli.NewCLI(ctx, tunnoxClient)
 		if err != nil {
 			corelog.Errorf("Client: CLI initialization failed: %v", err)
-			// CLI初始化失败（通常是因为没有TTY），自动降级到daemon模式
-			fmt.Fprintf(os.Stderr, "\n⚠️  CLI initialization failed: %v\n", err)
-			fmt.Fprintf(os.Stderr, "🔄 Auto-switching to daemon mode...\n")
+			fmt.Fprintf(os.Stderr, "❌ Failed to initialize CLI: %v\n", err)
+			os.Exit(1)
+		}
 
-			// 验证必须配置
-			if config.Server.Address == "" {
-				fmt.Fprintf(os.Stderr, "❌ Error: server address is required\n")
-				fmt.Fprintf(os.Stderr, "💡 Please configure server address in config file or use -s flag\n")
-				os.Exit(1)
-			}
+		// 启动自动重连监控（交互模式也需要自动重连）
+		go monitorConnectionAndReconnect(ctx, tunnoxClient)
 
-			// 如果还未连接，尝试连接
-			if !tunnoxClient.IsConnected() {
-				if err := connectWithRetry(tunnoxClient, 5); err != nil {
-					// 检查是否是因为 context 取消导致的错误
-					if ctx.Err() == context.Canceled {
-						fmt.Fprintf(os.Stderr, "\n⚠️  Connection cancelled by user\n")
-						os.Exit(0)
-					}
-					fmt.Fprintf(os.Stderr, "❌ Failed to connect to server after retries: %v\n", err)
-					os.Exit(1)
-				}
-				fmt.Println("✅ Connected to server successfully!")
-			}
-
-			fmt.Println("   Press Ctrl+C to stop")
-			fmt.Println()
-
-			// 启动自动重连监控
-			go monitorConnectionAndReconnect(ctx, tunnoxClient)
-
-			// 等待信号（daemon模式）
+		// 在goroutine中处理信号
+		go func() {
 			sigChan := make(chan os.Signal, 1)
 			signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
 			select {
 			case sig := <-sigChan:
 				corelog.Infof("Client: received signal %v, shutting down...", sig)
+				cancel()
+				tunnoxCLI.Stop()
 			case <-ctx.Done():
-				corelog.Infof("Client: context cancelled, shutting down...")
+				tunnoxCLI.Stop()
 			}
-		} else {
-			// CLI初始化成功，正常启动交互模式
-			corelog.Infof("Client: CLI initialized successfully, starting...")
-			// 启动自动重连监控（交互模式也需要自动重连）
-			go monitorConnectionAndReconnect(ctx, tunnoxClient)
+		}()
 
-			// 在goroutine中处理信号
-			go func() {
-				sigChan := make(chan os.Signal, 1)
-				signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-				select {
-				case sig := <-sigChan:
-					corelog.Infof("Client: received signal %v, shutting down...", sig)
-					cancel()
-					tunnoxCLI.Stop()
-				case <-ctx.Done():
-					tunnoxCLI.Stop()
-				}
-			}()
-
-			// 启动CLI（阻塞）
-			corelog.Infof("Client: calling CLI.Start()...")
-			tunnoxCLI.Start()
-			corelog.Infof("Client: CLI.Start() returned")
-		}
+		// 启动CLI（阻塞）
+		corelog.Infof("Client: calling CLI.Start()...")
+		tunnoxCLI.Start()
+		corelog.Infof("Client: CLI.Start() returned")
 
 	} else {
 		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -454,7 +416,8 @@ NOTES:
 // configureLogging 配置日志输出
 //
 // 返回：日志文件路径（如果输出到文件）和可能的错误
-// 注意：日志默认只输出到文件，不输出到console
+// CLI模式：只写文件，不输出到控制台（避免干扰用户）
+// Daemon模式：同时写文件和输出到控制台
 func configureLogging(config *client.ClientConfig, interactive bool) (string, error) {
 	logConfig := &client.LogConfig{
 		Level:  "info",
@@ -469,8 +432,16 @@ func configureLogging(config *client.ClientConfig, interactive bool) (string, er
 		logConfig.Format = config.Log.Format
 	}
 
-	// 日志总是输出到文件，不输出到console
-	// 如果有配置文件地址就使用，否则使用默认路径
+	// 根据运行模式设置日志输出
+	if interactive {
+		// CLI模式：只写文件，不输出到控制台
+		logConfig.Output = "file"
+	} else {
+		// Daemon模式：同时写文件和输出到控制台
+		logConfig.Output = "both"
+	}
+
+	// 确定日志文件路径
 	logFile := config.Log.File
 	if logFile == "" {
 		// 使用默认路径列表（按优先级）

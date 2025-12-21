@@ -92,6 +92,7 @@ func ApplyEnvOverrides(config *Config) {
 	}
 
 	// 协议端口配置
+	// 注意：websocket 和 httppoll 不需要独立端口，它们通过 HTTP 服务容器提供
 	if v := os.Getenv("SERVER_TCP_PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil {
 			if config.Server.Protocols == nil {
@@ -101,17 +102,6 @@ func ApplyEnvOverrides(config *Config) {
 			pc.Port = port
 			pc.Enabled = true
 			config.Server.Protocols["tcp"] = pc
-		}
-	}
-	if v := os.Getenv("SERVER_WEBSOCKET_PORT"); v != "" {
-		if port, err := strconv.Atoi(v); err == nil {
-			if config.Server.Protocols == nil {
-				config.Server.Protocols = make(map[string]ProtocolConfig)
-			}
-			pc := config.Server.Protocols["websocket"]
-			pc.Port = port
-			pc.Enabled = true
-			config.Server.Protocols["websocket"] = pc
 		}
 	}
 	// KCP 端口

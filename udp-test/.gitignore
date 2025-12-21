@@ -1,0 +1,22 @@
+# SSH 私钥
+*.key
+*.pem
+private.*
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 测试日志
+*.log
+
+# 临时文件
+*.tmp
+*.swp
+*~
+
+# 本地配置（如果需要）
+config.yaml
+

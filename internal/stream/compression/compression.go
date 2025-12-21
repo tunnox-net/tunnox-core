@@ -45,6 +45,14 @@ func (r *GzipReader) onClose() error {
 		defer func() {
 			r.gzipReader = nil
 		}()
+
+		// 安全关闭，捕获panic
+		defer func() {
+			if rec := recover(); rec != nil {
+				// 忽略panic，避免程序崩溃
+			}
+		}()
+
 		return r.gzipReader.Close()
 	}
 	return nil
@@ -103,6 +111,14 @@ func (w *GzipWriter) onClose() error {
 		defer func() {
 			w.gWriter = nil
 		}()
+
+		// 安全关闭，捕获panic
+		defer func() {
+			if r := recover(); r != nil {
+				// 忽略panic，避免程序崩溃
+			}
+		}()
+
 		return w.gWriter.Close()
 	}
 
@@ -111,7 +127,12 @@ func (w *GzipWriter) onClose() error {
 
 func NewGzipWriter(writer io.Writer, parentCtx context.Context) *GzipWriter {
 	w := &GzipWriter{writer: writer}
-	w.gWriter = gzip.NewWriter(writer)
+
+	// 只有在writer不为nil时才创建gzip.Writer
+	if writer != nil {
+		w.gWriter = gzip.NewWriter(writer)
+	}
+
 	w.SetCtx(parentCtx, w.onClose)
 	return w
 }

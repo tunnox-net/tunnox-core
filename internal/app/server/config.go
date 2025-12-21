@@ -253,12 +253,20 @@ type Config struct {
 
 // LoadConfig 加载配置文件
 func LoadConfig(configPath string) (*Config, error) {
-	// 如果配置文件不存在，使用默认配置
+	// 如果配置文件不存在，使用默认配置并生成配置文件
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		corelog.Warnf(constants.MsgConfigFileNotFound, configPath)
 		config := GetDefaultConfig()
 		// ✅ 应用环境变量覆盖（即使没有配置文件）
 		ApplyEnvOverrides(config)
+
+		// ✅ 生成配置文件
+		if err := SaveConfig(configPath, config); err != nil {
+			corelog.Warnf("Failed to save default config to %s: %v", configPath, err)
+		} else {
+			corelog.Infof("Generated default config file: %s", configPath)
+		}
+
 		return config, nil
 	}
 
@@ -329,15 +337,11 @@ func ValidateConfig(config *Config) error {
 	}
 
 	// 设置默认协议配置
+	// 注意：websocket 和 httppoll 不需要独立端口，它们通过 HTTP 服务容器提供
 	defaultProtocols := map[string]ProtocolConfig{
 		"tcp": {
 			Enabled: true,
 			Port:    8000,
-			Host:    "0.0.0.0",
-		},
-		"websocket": {
-			Enabled: true,
-			Port:    8443,
 			Host:    "0.0.0.0",
 		},
 		"kcp": {
@@ -349,6 +353,12 @@ func ValidateConfig(config *Config) error {
 			Enabled: true,
 			Port:    443,
 			Host:    "0.0.0.0",
+		},
+		"websocket": {
+			Enabled: true,
+		},
+		"httppoll": {
+			Enabled: true,
 		},
 	}
 
@@ -567,6 +577,9 @@ func containsString(slice []string, item string) bool {
 
 // GetDefaultConfig 获取默认配置
 func GetDefaultConfig() *Config {
+	// 获取默认日志路径
+	defaultLogPath := utils.GetDefaultServerLogPath()
+
 	return &Config{
 		Server: ServerConfig{
 			Host:         "0.0.0.0",
@@ -580,11 +593,6 @@ func GetDefaultConfig() *Config {
 					Port:    8000,
 					Host:    "0.0.0.0",
 				},
-				"websocket": {
-					Enabled: true,
-					Port:    8443,
-					Host:    "0.0.0.0",
-				},
 				"kcp": {
 					Enabled: true,
 					Port:    8000,
@@ -595,6 +603,13 @@ func GetDefaultConfig() *Config {
 					Port:    443,
 					Host:    "0.0.0.0",
 				},
+				// websocket 和 httppoll 通过 HTTP 服务容器提供，不需要独立端口
+				"websocket": {
+					Enabled: true,
+				},
+				"httppoll": {
+					Enabled: true,
+				},
 			},
 		},
 		Storage: StorageConfig{
@@ -603,7 +618,7 @@ func GetDefaultConfig() *Config {
 				CacheType:        "memory",
 				EnablePersistent: true, // 默认启用持久化（但会根据是否有Redis自动调整）
 				JSON: JSONStorageConfigYAML{
-					FilePath:     "", // 留空，由智能逻辑自动决定
+					FilePath:     "data/tunnox-data.json",
 					AutoSave:     true,
 					SaveInterval: 30,
 				},
@@ -613,7 +628,7 @@ func GetDefaultConfig() *Config {
 			Level:  constants.LogLevelInfo,
 			Format: constants.LogFormatText,
 			Output: constants.LogOutputFile,
-			File:   "logs/server.log",
+			File:   defaultLogPath,
 		},
 		Cloud: CloudConfig{
 			Type: "built_in",
@@ -647,4 +662,33 @@ func GetDefaultConfig() *Config {
 			Type: "memory", // 默认使用 memory
 		},
 	}
+}
+
+// SaveConfig 保存配置到文件
+func SaveConfig(configPath string, config *Config) error {
+	// 确保目录存在
+	dir := filepath.Dir(configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// 序列化为 YAML
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	// 写入临时文件
+	tempFile := configPath + ".tmp"
+	if err := os.WriteFile(tempFile, data, 0644); err != nil {
+		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+
+	// 原子替换
+	if err := os.Rename(tempFile, configPath); err != nil {
+		os.Remove(tempFile) // 清理临时文件
+		return fmt.Errorf("failed to rename temp file: %w", err)
+	}
+
+	return nil
 }

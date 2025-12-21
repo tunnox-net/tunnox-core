@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -126,14 +127,33 @@ func (c *CLI) cmdListMappings(args []string) {
 	}
 	c.output.Header(header)
 
+	// 创建可取消的context（支持Ctrl+C）
+	ctx, cancel := context.WithCancel(c.ctx)
+	defer cancel()
+
+	// 在goroutine中监听Ctrl+C
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+		case <-done:
+		}
+	}()
+
 	// 通过指令通道调用
 	req := &client.ListMappingsRequest{
 		Direction: direction,
 		Type:      mappingType,
 	}
-	resp, err := c.client.ListMappings(req)
+	resp, err := c.client.ListMappingsWithContext(ctx, req)
+	close(done)
 
 	if err != nil {
+		// 检查是否是用户取消
+		if ctx.Err() == context.Canceled {
+			c.output.Info("Operation cancelled")
+			return
+		}
 		c.output.Error("Failed to list mappings: %v", err)
 		return
 	}
@@ -187,8 +207,17 @@ func (c *CLI) cmdShowMapping(args []string) {
 	mappingID := args[0]
 	c.output.Header(fmt.Sprintf("Mapping Details: %s", mappingID))
 
-	mapping, err := c.client.GetMapping(mappingID)
+	// 创建可取消的context（支持Ctrl+C）
+	ctx, cancel := context.WithCancel(c.ctx)
+	defer cancel()
+
+	mapping, err := c.client.GetMappingWithContext(ctx, mappingID)
 	if err != nil {
+		// 检查是否是用户取消
+		if ctx.Err() == context.Canceled {
+			c.output.Info("Operation cancelled")
+			return
+		}
 		c.output.Error("Failed to get mapping: %v", err)
 		return
 	}
@@ -238,7 +267,16 @@ func (c *CLI) cmdDeleteMapping(args []string) {
 
 	c.output.Info("Deleting mapping...")
 
-	if err := c.client.DeleteMapping(mappingID); err != nil {
+	// 创建可取消的context（支持Ctrl+C）
+	ctx, cancel := context.WithCancel(c.ctx)
+	defer cancel()
+
+	if err := c.client.DeleteMappingWithContext(ctx, mappingID); err != nil {
+		// 检查是否是用户取消
+		if ctx.Err() == context.Canceled {
+			c.output.Info("Operation cancelled")
+			return
+		}
 		c.output.Error("Failed to delete mapping: %v", err)
 		return
 	}

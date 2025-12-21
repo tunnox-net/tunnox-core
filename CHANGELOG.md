@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2025-12-21
+
+### Fixed
+- **客户端自动连接修复**：修复首次启动时自动连接失败的问题
+  - 修复 Stream 创建时使用超时 context 导致过早关闭的问题
+  - 优化连接尝试逻辑：先收集所有成功的连接，再按优先级顺序尝试握手
+  - 添加握手超时控制（10秒），避免永久阻塞
+  - 自动连接现在按优先级尝试：websocket → tcp → kcp → quic → httppoll
+- **日志系统统一**：修复 CLI 模式下日志输出到控制台的问题
+  - dispose 包现在使用主 log 系统（corelog）
+  - CLI 模式：所有日志只写文件，不输出到控制台
+  - Daemon 模式：日志同时写文件和输出到控制台
+- **资源清理优化**：修复连接取消时的 panic 问题
+  - GzipWriter/GzipReader 的 cleanup handler 添加 panic 恢复机制
+  - 优雅处理资源清理错误，避免程序崩溃
+- **配置文件优化**：客户端配置文件不再保存 output 字段
+  - output 字段由系统根据运行模式自动控制
+  - 生成的配置文件更简洁
+
+### Changed
+- **服务端启动信息优化**：调整 Protocol Listeners 显示
+  - WebSocket 不再显示为独立协议监听器
+  - WebSocket 和 HTTP Long Poll 显示为 HTTP Service 的模块
+  - 移除 SERVER_WEBSOCKET_PORT 环境变量
+- **客户端行为改进**：
+  - CLI 模式下，连接失败后直接退出（不进入 CLI）
+  - 连接过程中的输出信息更简洁专业
+  - Ctrl+C 可以随时中断连接过程
+- **配置管理**：
+  - 服务端启动时，如果没有配置文件会自动生成
+  - 配置文件中的默认值填充完整（不再保存空字符串）
+  - 客户端 CLI 命令支持 Ctrl+C 返回上一级
+
+### Technical
+- 添加 `tunnox-core/internal/client/constants.go`：定义公共服务端点常量
+- 添加 `tunnox-core/internal/utils/logger_dispose.go`：dispose 包日志集成
+- 优化 `auto_connector.go` 的连接和握手逻辑
+- 改进 context 取消处理，避免资源泄漏
+
+### Documentation
+- 更新 `.gitignore`：添加配置文件忽略规则
+- 从 git 跟踪中移除运行时配置文件
+
 ## [1.1.0] - 2025-12-21
 
 ### Added
