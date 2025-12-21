@@ -10,7 +10,7 @@
 
 一个为分布式网络环境设计的高性能隧道解决方案，支持多种传输协议和灵活的部署模式。
 
-[English](README_EN.md) | [架构文档](docs/ARCHITECTURE_DESIGN_V2.2.md) | [API 文档](docs/MANAGEMENT_API.md)
+[English](README_EN.md) | [快速开始](docs/QuickStart.md) | [架构文档](docs/ARCHITECTURE_DESIGN_V2.2.md) | [API 文档](docs/MANAGEMENT_API.md)
 
 </div>
 
@@ -18,21 +18,24 @@
 
 ## 项目简介
 
-Tunnox Core 是一个基于 Go 开发的内网穿透平台内核，提供安全、稳定的远程访问能力。项目采用分层架构设计，支持 TCP、WebSocket、UDP、QUIC 等多种传输协议，可灵活适配不同的网络环境和业务场景。
+Tunnox Core 是一个基于 Go 开发的内网穿透工具，提供安全、稳定的远程访问能力。项目采用分层架构设计，支持 TCP、WebSocket、UDP、QUIC 等多种传输协议，可灵活适配不同的网络环境和业务场景。
+
+**设计理念**：Tunnox Core 可以作为独立工具直接使用（无需外部存储和管理平台），也可以作为平台内核集成到更大的系统中。
 
 ### 核心特性
 
-- **多协议传输**：支持 TCP、WebSocket、UDP、QUIC 四种传输协议
+- **零依赖启动**：无需数据库、Redis 等外部存储，开箱即用
+- **多协议传输**：支持 TCP、WebSocket、KCP、QUIC、HTTP Long Polling 五种传输协议
 - **端到端加密**：AES-256-GCM 加密，保障数据传输安全
 - **数据压缩**：Gzip 压缩，降低带宽消耗
 - **流量控制**：令牌桶算法实现精确的带宽限制
-- **SOCKS5 代理**：支持 SOCKS5 协议，实现灵活的网络代理
-- **分布式架构**：支持集群部署，节点间 gRPC 通信
-- **实时配置推送**：通过控制连接实时推送配置变更
-- **匿名接入**：支持匿名客户端，降低使用门槛
+- **SOCKS5 代理**：支持 SOCKS5 协议，实现灵活的网络代理，支持动态目标地址
+- **HTTP 域名代理**：支持通过 HTTP 代理访问目标网络中的 HTTP 服务
+- **匿名接入**：支持匿名客户端，无需注册即可使用
 - **交互式 CLI**：完善的命令行界面，支持连接码生成、端口映射管理等
 - **连接码系统**：一次性连接码，简化隧道建立流程
-- **优雅启动显示**：服务端启动时显示美观的运行时信息
+- **自动连接**：客户端支持多协议自动连接，自动选择最佳可用协议
+- **灵活部署**：支持单机部署（内存存储）和集群部署（Redis + gRPC）
 
 ### 应用场景
 
@@ -58,14 +61,15 @@ Tunnox Core 是一个基于 Go 开发的内网穿透平台内核，提供安全�
 
 ### 传输协议
 
-Tunnox 支持四种传输协议，可根据网络环境灵活选择：
+Tunnox 支持五种传输协议，可根据网络环境灵活选择：
 
 | 协议 | 特点 | 适用场景 |
 |------|------|----------|
 | **TCP** | 稳定可靠，兼容性好 | 传统网络环境，数据库连接 |
 | **WebSocket** | HTTP 兼容，防火墙穿透强 | 企业网络，CDN 加速 |
-| **UDP** | 低延迟，无连接开销 | 实时应用，游戏服务 |
-| **QUIC** | 多路复用，内置加密 | 移动网络，不稳定网络 |
+| **KCP** | 基于 UDP，低延迟，快速重传 | 实时应用，游戏服务，不稳定网络 |
+| **QUIC** | 多路复用，内置加密，0-RTT 连接 | 移动网络，高性能场景 |
+| **HTTP Long Polling** | 纯 HTTP，最强穿透能力 | 严格防火墙环境，仅 HTTP/HTTPS 可用的网络 |
 
 ### 核心组件
 
@@ -107,148 +111,164 @@ Tunnox 支持四种传输协议，可根据网络环境灵活选择：
 
 ## 快速开始
 
-### 环境要求
+### 最简单的使用方式（无需配置文件）
 
-- Go 1.24 或更高版本
-- Docker (可选，用于测试环境)
+Tunnox Core 设计为零配置启动，无需数据库、Redis 等外部依赖。
 
-### 编译
+**环境要求**：
+- Go 1.24 或更高版本（仅编译时需要）
+- 或直接使用编译好的二进制文件
+
+**1. 编译**
 
 ```bash
 # 克隆仓库
 git clone https://github.com/your-org/tunnox-core.git
 cd tunnox-core
 
-# 安装依赖
-go mod download
-
-# 编译服务端
+# 编译服务端和客户端
 go build -o bin/tunnox-server ./cmd/server
-
-# 编译客户端
 go build -o bin/tunnox-client ./cmd/client
 ```
 
-### 运行
-
-**1. 启动服务端**
+**2. 启动服务端（零配置）**
 
 ```bash
+# 直接启动，使用默认配置（内存存储，无需外部依赖）
+./bin/tunnox-server
+
+# 或指定配置文件
 ./bin/tunnox-server -config config.yaml
 ```
 
 服务端默认监听：
-- TCP: 7001
-- WebSocket: 7000 (路径: `/_tunnox`)
-- QUIC: 7003
-- Management API: 9000
+- TCP: 8000
+- WebSocket: 8443
+- KCP: 8000 (基于 UDP)
+- QUIC: 443
+- HTTP Long Polling: 通过 Management API 端口 (9000)
 
-**2. 启动客户端**
+日志输出到：`~/logs/server.log`
+
+**3. 启动客户端（匿名模式）**
 
 ```bash
-# 启动客户端（交互式 CLI）
-./bin/tunnox-client -config client.yaml
+# 交互式模式（推荐）
+./bin/tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous
+
+# 守护进程模式
+./bin/tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous -daemon
 ```
 
-客户端启动后会进入交互式命令行界面，支持以下命令：
+客户端启动后会自动连接到服务器，无需注册账号。
+
+**4. 使用连接码创建隧道（最简单的方式）**
+
+在交互式模式下，使用连接码可以快速建立隧道：
+
+**目标端（有服务的机器）**：
+```bash
+tunnox> generate-code
+Select Protocol: 1 (TCP)
+Target Address: localhost:3306
+✅ Connection code generated: abc-def-123
+```
+
+**源端（需要访问服务的机器）**：
+```bash
+tunnox> use-code abc-def-123
+Local Listen Address: 127.0.0.1:13306
+✅ Mapping created successfully
+```
+
+**5. 访问服务**
+
+```bash
+# 现在可以通过本地端口访问远程服务
+mysql -h 127.0.0.1 -P 13306 -u root -p
+```
+
+### 常用命令
+
+客户端交互式 CLI 支持以下命令：
 
 ```bash
 tunnox> help                    # 显示帮助信息
-tunnox> connect                 # 连接到服务器
+tunnox> status                  # 显示连接状态
 tunnox> generate-code           # 生成连接码（目标端）
 tunnox> use-code <code>         # 使用连接码创建映射（源端）
 tunnox> list-codes              # 列出所有连接码
 tunnox> list-mappings           # 列出所有端口映射
-tunnox> status                  # 显示连接状态
+tunnox> delete-mapping <id>     # 删除映射
 tunnox> exit                    # 退出 CLI
 ```
 
-**3. 使用连接码创建映射（推荐方式）**
+### 配置说明
 
-**目标端（TargetClient）**：
-```bash
-tunnox> generate-code
-# 交互式选择协议（TCP/UDP/SOCKS5）
-# 输入目标地址（如：192.168.1.10:8080）
-# 生成连接码，例如：abc-def-123
-```
+**服务端配置是可选的**，不提供配置文件时使用默认值。
 
-**源端（ListenClient）**：
-```bash
-tunnox> use-code abc-def-123
-# 输入本地监听地址（如：127.0.0.1:8080）
-# 映射创建成功
-```
-
-**4. 访问服务**
-
-```bash
-# 通过映射访问目标服务
-mysql -h 127.0.0.1 -P 8080 -u user -p
-```
-
-**或者使用 Management API 创建映射**：
-
-```bash
-curl -X POST http://localhost:9000/api/v1/mappings \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-api-key" \
-  -d '{
-    "source_client_id": 10000001,
-    "target_client_id": 10000002,
-    "protocol": "tcp",
-    "source_port": 8080,
-    "target_host": "localhost",
-    "target_port": 3306,
-    "enable_compression": true,
-    "enable_encryption": true
-  }'
-```
-
-### 配置示例
-
-**服务端配置 (server.yaml)**
+**最小化服务端配置 (config.yaml)**
 
 ```yaml
 server:
-  host: "0.0.0.0"
-  port: 7000
-  
   protocols:
     tcp:
       enabled: true
-      port: 7001
+      port: 8000
     websocket:
       enabled: true
-      port: 7000
+      port: 8443
+    kcp:
+      enabled: true
+      port: 8000
     quic:
       enabled: true
-      port: 7003
+      port: 443
 
 log:
   level: "info"
-  format: "text"
+  output: "file"
+  file: "~/logs/server.log"
 
+# 使用内置存储，无需外部依赖
 cloud:
   type: "built_in"
   built_in:
-    jwt_secret_key: "your-secret-key"
+    jwt_secret_key: "change-this-in-production"
+
+# 使用内存存储，无需 Redis
+storage:
+  type: "memory"
+
+message_broker:
+  type: "memory"
 ```
 
-**客户端配置 (client.yaml)**
+**客户端配置 (client-config.yaml)**
 
 ```yaml
-# 匿名模式
+# 匿名模式（推荐用于快速测试）
 anonymous: true
 device_id: "my-device"
 
-# 或注册模式
-client_id: 10000001
-auth_token: "your-token"
-
 server:
-  address: "server.example.com:7001"
-  protocol: "tcp"  # tcp/websocket/udp/quic
+  address: "127.0.0.1:8000"
+  protocol: "tcp"  # tcp/websocket/kcp/quic/httppoll
+
+log:
+  level: "info"
+  output: "file"
+  file: "/tmp/tunnox-client.log"
+```
+
+**命令行参数优先级高于配置文件**，可以直接使用命令行参数覆盖配置：
+
+```bash
+# 使用命令行参数，无需配置文件
+./bin/tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous -device my-device
+
+# 支持的协议：tcp, websocket, kcp, quic, httppoll
+./bin/tunnox-client -s 127.0.0.1:8000 -p kcp -anonymous
 ```
 
 ---
@@ -374,8 +394,9 @@ tunnox-core/
 ### 已实现功能
 
 **传输协议** ✅
-- TCP、WebSocket、UDP、QUIC 四种协议完整实现
+- TCP、WebSocket、KCP、QUIC、HTTP Long Polling 五种协议完整实现
 - 协议适配器框架和统一接口
+- 客户端多协议自动连接功能
 
 **流处理系统** ✅
 - 数据包协议和 StreamProcessor
@@ -384,12 +405,16 @@ tunnox-core/
 - 令牌桶限流
 
 **客户端功能** ✅
-- TCP/HTTP/SOCKS5/UDP 映射处理器
-- 多协议传输支持
+- TCP/HTTP/SOCKS5 映射处理器
+- SOCKS5 代理支持（动态目标地址）
+- HTTP 域名代理支持
+- 多协议传输支持（TCP/WebSocket/KCP/QUIC/HTTP Long Polling）
+- 多协议自动连接（自动选择最佳可用协议）
 - 自动重连和心跳保活
 - 交互式 CLI 界面
 - 连接码生成和使用
 - 端口映射管理（列表、查看、删除）
+- 配置热更新（服务端推送配置变更）
 - 表格化数据显示
 
 **服务端功能** ✅
@@ -472,59 +497,87 @@ tunnox-core/
 
 ## 部署方式
 
-### 单节点部署
+### 单机部署（推荐用于个人和小团队）
 
-适合小规模使用或测试环境：
+单机部署无需外部依赖，使用内存存储即可：
 
 ```bash
-# 启动服务端
-./tunnox-server -config server.yaml
+# 1. 启动服务端（零配置）
+./tunnox-server
 
-# 启动客户端
-./tunnox-client -config client.yaml
+# 2. 启动客户端（匿名模式）
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
 ```
 
-### 集群部署
+**特点**：
+- 无需数据库、Redis 等外部存储
+- 配置简单，开箱即用
+- 适合个人使用、小团队协作、临时测试
 
-适合生产环境和大规模使用：
+### 集群部署（适合生产环境）
 
-**基础设施要求**
-- Kubernetes 集群
-- Redis Cluster (消息广播)
-- PostgreSQL/MySQL (可选，持久化存储)
+如需高可用和横向扩展，可以部署集群模式：
 
-**部署架构**
+**基础设施要求**：
+- Redis Cluster（用于会话共享和消息广播）
+- 负载均衡器（可选，用于多节点负载均衡）
+
+**服务端配置**：
+
+```yaml
+# 集群模式配置
+storage:
+  type: "redis"
+  redis:
+    address: "redis-cluster:6379"
+    password: "your-password"
+
+message_broker:
+  type: "redis"
+  redis:
+    address: "redis-cluster:6379"
+    password: "your-password"
+  # node_id 会在服务启动时自动分配（node-0001 到 node-1000）
+  # 无需手动配置
 ```
-LoadBalancer (80/443)
-    ↓
-Tunnox Server Pods (多副本)
-    ↓
+
+**部署架构**：
+```
+客户端
+  ↓
+负载均衡器 (可选)
+  ↓
+Tunnox Server 节点 1, 2, 3...
+  ↓
 Redis Cluster (会话和消息)
-    ↓
-Remote Storage (gRPC)
 ```
 
-详细部署文档参见：[docs/ARCHITECTURE_DESIGN_V2.2.md](docs/ARCHITECTURE_DESIGN_V2.2.md)
+**说明**：
+- 节点 ID 由 NodeIDAllocator 在服务启动时自动分配（范围：node-0001 到 node-1000）
+- 使用分布式锁机制确保 ID 唯一性
+- 节点 crash 后，ID 会在 90 秒后自动释放
+- 可通过环境变量 `NODE_ID` 或 `MESSAGE_BROKER_NODE_ID` 手动指定（主要用于测试环境）
 
 ### Docker 部署
 
 ```bash
 # 构建镜像
-docker build -t tunnox-server -f Dockerfile.server .
+docker build -t tunnox-server -f Dockerfile .
 docker build -t tunnox-client -f Dockerfile.client .
 
-# 运行服务端
+# 运行服务端（单机模式）
 docker run -d \
-  -p 7000:7000 \
-  -p 7001:7001 \
-  -p 7003:7003 \
-  -p 9000:9000 \
-  -v ./config.yaml:/app/config.yaml \
+  -p 8000:8000 \
+  -p 8443:8443 \
+  --name tunnox-server \
   tunnox-server
 
 # 运行客户端
 docker run -d \
-  -v ./client.yaml:/app/client.yaml \
+  -e SERVER_ADDRESS="server-ip:8000" \
+  -e PROTOCOL="tcp" \
+  -e ANONYMOUS="true" \
+  --name tunnox-client \
   tunnox-client
 ```
 
@@ -534,65 +587,98 @@ docker run -d \
 
 ### 示例 1：映射 MySQL 数据库
 
-**场景**：访问远程 MySQL 数据库
+**场景**：在本地访问远程服务器上的 MySQL 数据库
 
+**步骤**：
+
+1. 在远程服务器（有 MySQL 的机器）上启动目标端客户端：
 ```bash
-# 1. 创建映射
-curl -X POST http://localhost:9000/api/v1/mappings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source_client_id": 10000001,
-    "target_client_id": 10000002,
-    "protocol": "tcp",
-    "source_port": 13306,
-    "target_host": "localhost",
-    "target_port": 3306,
-    "enable_compression": true,
-    "enable_encryption": true
-  }'
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+```
 
-# 2. 连接数据库
+2. 在目标端生成连接码：
+```bash
+tunnox> generate-code
+Select Protocol: 1 (TCP)
+Target Address: localhost:3306
+✅ Connection code: mysql-abc-123
+```
+
+3. 在本地机器上启动源端客户端：
+```bash
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+```
+
+4. 在源端使用连接码：
+```bash
+tunnox> use-code mysql-abc-123
+Local Listen Address: 127.0.0.1:13306
+✅ Mapping created
+```
+
+5. 连接数据库：
+```bash
 mysql -h 127.0.0.1 -P 13306 -u root -p
 ```
 
 ### 示例 2：映射 Web 服务
 
-**场景**：临时分享本地 Web 服务
+**场景**：临时分享本地开发的 Web 服务给同事测试
 
+**步骤**：
+
+1. 在开发机器上启动目标端：
 ```bash
-# 1. 创建映射
-curl -X POST http://localhost:9000/api/v1/mappings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source_client_id": 10000001,
-    "target_client_id": 10000002,
-    "protocol": "tcp",
-    "source_port": 8080,
-    "target_host": "localhost",
-    "target_port": 3000
-  }'
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+tunnox> generate-code
+Select Protocol: 1 (TCP)
+Target Address: localhost:3000
+✅ Connection code: web-xyz-456
+```
 
-# 2. 访问服务
+2. 同事在他的机器上启动源端：
+```bash
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+tunnox> use-code web-xyz-456
+Local Listen Address: 127.0.0.1:8080
+✅ Mapping created
+```
+
+3. 同事访问服务：
+```bash
 curl http://localhost:8080
+# 或在浏览器打开 http://localhost:8080
 ```
 
 ### 示例 3：SOCKS5 代理
 
-**场景**：通过 SOCKS5 访问内网服务
+**场景**：通过 SOCKS5 代理访问内网多个服务
 
+**步骤**：
+
+1. 在内网机器上启动目标端：
 ```bash
-# 1. 创建 SOCKS5 映射
-curl -X POST http://localhost:9000/api/v1/mappings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source_client_id": 10000001,
-    "target_client_id": 10000002,
-    "protocol": "socks5",
-    "source_port": 1080
-  }'
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+tunnox> generate-code
+Select Protocol: 3 (SOCKS5)
+✅ Connection code: socks-def-789
+```
 
-# 2. 使用 SOCKS5 代理
-curl --socks5 localhost:1080 http://internal-service:8080
+2. 在外网机器上启动源端：
+```bash
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+tunnox> use-code socks-def-789
+Local Listen Address: 127.0.0.1:1080
+✅ SOCKS5 proxy created
+```
+
+3. 使用 SOCKS5 代理访问内网服务：
+```bash
+# 通过代理访问内网任意服务
+curl --socks5 localhost:1080 http://192.168.1.100:8080
+curl --socks5 localhost:1080 http://internal-api.local/api/data
+
+# 配置浏览器使用 SOCKS5 代理：127.0.0.1:1080
 ```
 
 ---
@@ -639,7 +725,7 @@ cloud:
 # 消息代理
 message_broker:
   type: "memory"       # memory/redis
-  node_id: "node-001"
+  # node_id 在服务启动时自动分配，无需配置
 
 # Management API
 management_api:
@@ -866,13 +952,42 @@ go test -race ./...
 
 ## 常见问题
 
-**Q: Tunnox 与 frp、ngrok 有什么区别？**
+**Q: 是否需要数据库或 Redis？**
 
-A: Tunnox 在架构上更注重可扩展性和商业化支持，内置完整的云控管理系统、配额管理、多协议支持和集群部署能力。frp 更适合个人使用，ngrok 是闭源商业产品。
+A: 不需要。Tunnox Core 默认使用内存存储，可以零依赖启动。如果需要集群部署或持久化，可以选择配置 Redis。
 
-**Q: 支持哪些操作系统？**
+**Q: 如何快速测试？**
 
-A: 支持 Linux、macOS、Windows，以及 Docker 容器部署。
+A: 最简单的方式是在同一台机器上启动服务端和两个客户端：
+```bash
+# 终端 1：启动服务端
+./tunnox-server
+
+# 终端 2：启动目标端客户端
+./tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous
+
+# 终端 3：启动源端客户端
+./tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous
+
+# 然后使用连接码建立隧道
+```
+
+**Q: 匿名模式和注册模式有什么区别？**
+
+A: 匿名模式无需注册，使用设备 ID 即可连接，适合快速测试和个人使用。注册模式需要 JWT Token，支持配额管理和权限控制，适合团队和生产环境。
+
+**Q: 支持哪些协议？**
+
+A: 支持 TCP、WebSocket、KCP、QUIC、HTTP Long Polling 五种传输协议。推荐使用 TCP（稳定）、KCP（低延迟）或 QUIC（高性能）。
+
+**Q: 如何选择传输协议？**
+
+A: 
+- **TCP**：最稳定，兼容性好，推荐用于数据库连接和日常使用
+- **WebSocket**：可穿透 HTTP 代理和防火墙，适合企业网络
+- **KCP**：基于 UDP，低延迟，快速重传，适合实时应用和游戏
+- **QUIC**：多路复用，0-RTT 连接，适合移动网络和高性能场景
+- **HTTP Long Polling**：纯 HTTP，最强穿透能力，适合严格防火墙环境
 
 **Q: 性能如何？**
 
@@ -892,7 +1007,11 @@ A: 可以，项目采用 MIT 许可证，允许商业使用和二次开发。
 
 **Q: 日志输出到哪里？**
 
-A: 服务端和客户端日志默认写入文件，不输出到控制台。服务端日志路径：`logs/server.log`，客户端日志路径：`~/.tunnox/client.log`（交互模式）或 `/var/log/tunnox-client.log`（守护进程模式）。
+A: 默认输出到文件，不污染控制台。服务端：`~/logs/server.log`，客户端：`/tmp/tunnox-client.log`。可通过配置文件或命令行参数修改。
+
+**Q: 如何在生产环境部署？**
+
+A: 建议使用守护进程模式运行客户端（`-daemon` 参数），配置系统服务（systemd）实现自动启动和重启。服务端建议使用 Docker 或 Kubernetes 部署。
 
 ---
 

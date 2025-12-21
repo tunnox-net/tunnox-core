@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"tunnox-core/internal/core/dispose"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 )
@@ -103,8 +105,23 @@ func (r *RemoteStorage) connect() error {
 
 	// TLS 配置
 	if r.config.TLSEnabled {
-		// TODO: 实现 TLS 连接
-		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		// 如果提供了证书文件，使用客户端证书
+		if r.config.TLSCertFile != "" {
+			creds, err := credentials.NewClientTLSFromFile(r.config.TLSCertFile, "")
+			if err != nil {
+				return fmt.Errorf("failed to load TLS credentials from %s: %w", r.config.TLSCertFile, err)
+			}
+			opts = append(opts, grpc.WithTransportCredentials(creds))
+			dispose.Debugf("RemoteStorage: using TLS with certificate file: %s", r.config.TLSCertFile)
+		} else {
+			// 使用系统证书池（不验证服务器证书）
+			tlsConfig := &tls.Config{
+				InsecureSkipVerify: false, // 生产环境应该验证证书
+			}
+			creds := credentials.NewTLS(tlsConfig)
+			opts = append(opts, grpc.WithTransportCredentials(creds))
+			dispose.Debugf("RemoteStorage: using TLS with system certificate pool")
+		}
 	} else {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}

@@ -248,10 +248,30 @@ func (s *ConnectionCodeService) ActivateConnectionCode(req *ActivateConnectionCo
 		return nil, fmt.Errorf("invalid target address %q: %w", connCode.TargetAddress, err)
 	}
 
-	// 5. 检查映射配额（TODO: 实现配额检查逻辑，GetClientPortMappings 已实现）
-	// 需要获取客户端现有映射数量，并与配额限制进行比较
-	// mappings, _ := s.clientService.GetClientPortMappings(req.ListenClientID)
-	// if len(mappings) >= quota.MaxMappings { ... }
+	// 5. 检查映射配额
+	clientKey := utils.Int64ToString(req.ListenClientID)
+	mappings, err := s.portMappingRepo.GetClientPortMappings(clientKey)
+	if err != nil {
+		corelog.Warnf("ConnectionCodeService: failed to get client mappings for quota check: %v", err)
+		// 不因为查询失败而阻止激活，只记录警告
+	} else {
+		// 统计活跃映射数量
+		activeMappings := 0
+		for _, m := range mappings {
+			if m.Status == models.MappingStatusActive && !m.IsRevoked && !m.IsExpired() {
+				activeMappings++
+			}
+		}
+
+		// 检查是否超过配额
+		if activeMappings >= s.maxActiveMappingsPerClient {
+			return nil, fmt.Errorf("quota exceeded: max %d active mappings allowed, current: %d",
+				s.maxActiveMappingsPerClient, activeMappings)
+		}
+
+		corelog.Debugf("ConnectionCodeService: quota check passed for client %d: %d/%d active mappings",
+			req.ListenClientID, activeMappings, s.maxActiveMappingsPerClient)
+	}
 
 	// 6. 创建PortMapping
 	now := time.Now()

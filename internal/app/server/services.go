@@ -52,6 +52,15 @@ func (a *SessionManagerAdapter) SendHTTPProxyRequest(clientID int64, request *ht
 	return a.sessionMgr.SendHTTPProxyRequest(clientID, request)
 }
 
+// RequestTunnelForHTTP 请求为 HTTP 代理创建隧道连接
+func (a *SessionManagerAdapter) RequestTunnelForHTTP(clientID int64, mappingID string, targetURL string, method string) (httpservice.TunnelConnectionInterface, error) {
+	tunnelConn, err := a.sessionMgr.RequestTunnelForHTTP(clientID, mappingID, targetURL, method)
+	if err != nil {
+		return nil, err
+	}
+	return &TunnelConnectionAdapter{conn: tunnelConn}, nil
+}
+
 // NotifyClientUpdate 通知客户端更新配置
 func (a *SessionManagerAdapter) NotifyClientUpdate(clientID int64) {
 	a.sessionMgr.NotifyClientUpdate(clientID)
@@ -74,6 +83,54 @@ func (a *ControlConnectionAdapter) GetRemoteAddr() string {
 		return ""
 	}
 	return addr.String()
+}
+
+// TunnelConnectionAdapter 隧道连接适配器
+type TunnelConnectionAdapter struct {
+	conn session.TunnelConnectionInterface
+}
+
+// GetNetConn 获取底层网络连接
+func (a *TunnelConnectionAdapter) GetNetConn() interface{} {
+	return a.conn.GetNetConn()
+}
+
+// GetStream 获取数据流
+func (a *TunnelConnectionAdapter) GetStream() interface{} {
+	return a.conn.GetStream()
+}
+
+// Read 读取数据
+func (a *TunnelConnectionAdapter) Read(p []byte) (int, error) {
+	stream := a.conn.GetStream()
+	if stream == nil {
+		return 0, fmt.Errorf("stream is nil")
+	}
+	// 使用 stream 的 Read 方法
+	reader := stream.GetReader()
+	if reader == nil {
+		return 0, fmt.Errorf("reader is nil")
+	}
+	return reader.Read(p)
+}
+
+// Write 写入数据
+func (a *TunnelConnectionAdapter) Write(p []byte) (int, error) {
+	stream := a.conn.GetStream()
+	if stream == nil {
+		return 0, fmt.Errorf("stream is nil")
+	}
+	// 使用 stream 的 Write 方法
+	writer := stream.GetWriter()
+	if writer == nil {
+		return 0, fmt.Errorf("writer is nil")
+	}
+	return writer.Write(p)
+}
+
+// Close 关闭连接
+func (a *TunnelConnectionAdapter) Close() error {
+	return a.conn.Close()
 }
 
 // ============================================================================

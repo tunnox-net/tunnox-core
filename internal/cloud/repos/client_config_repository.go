@@ -183,6 +183,32 @@ func (r *ClientConfigRepository) ListConfigs() ([]*models.ClientConfig, error) {
 	return r.List(constants.KeyPrefixPersistClientsList)
 }
 
+// ListUserConfigs 列出用户的所有客户端配置
+//
+// 参数：
+//   - userID: 用户ID
+//
+// 返回：
+//   - []*models.ClientConfig: 用户的配置列表
+//   - error: 错误信息
+func (r *ClientConfigRepository) ListUserConfigs(userID string) ([]*models.ClientConfig, error) {
+	// 获取所有配置
+	allConfigs, err := r.ListConfigs()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all configs: %w", err)
+	}
+
+	// 过滤出指定用户的配置
+	userConfigs := make([]*models.ClientConfig, 0)
+	for _, config := range allConfigs {
+		if config.UserID == userID {
+			userConfigs = append(userConfigs, config)
+		}
+	}
+
+	return userConfigs, nil
+}
+
 // AddConfigToList 将配置添加到全局列表
 //
 // 参数：

@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-12-21
+
+### Added
+- **KCP 协议支持**：基于 UDP 的可靠传输协议，提供低延迟和快速重传特性
+  - KCP 协议适配器（`kcp_adapter.go`）：完整的 KCP 协议实现
+  - 支持 FEC（前向纠错）配置
+  - 优化的窗口大小和 MTU 配置
+  - 适合实时应用、游戏服务和不稳定网络环境
+- **HTTP Long Polling 协议支持**：纯 HTTP 传输协议，最强防火墙穿透能力
+  - HTTP Long Polling 模块（`httppoll`）：通过 Management API 端口提供服务
+  - 适合严格防火墙环境和仅允许 HTTP/HTTPS 的网络
+- **节点 ID 自动分配机制**：服务端启动时自动分配唯一节点 ID
+  - NodeIDAllocator：通过分布式锁机制分配 node-0001 到 node-1000
+  - 自动心跳续期（每 30 秒）
+  - 节点 crash 后 90 秒自动释放 ID
+  - 支持通过环境变量手动指定（用于测试环境）
+
+### Changed
+- **文档全面更新**：中英文 README 和 QuickStart 文档完全重写
+  - 重点突出零依赖、无外部存储的使用方式
+  - 添加详细的快速开始指南（5 分钟上手）
+  - 更新协议支持说明（TCP、WebSocket、KCP、QUIC、HTTP Long Polling）
+  - 添加实用的使用示例（MySQL、Web 服务、SOCKS5 代理）
+  - 完善 FAQ 部分，解答常见问题
+  - 客观陈述项目能力，不做竞品对比
+- **协议配置更新**：
+  - 服务端默认端口配置更新（TCP: 8000, WebSocket: 8443, KCP: 8000, QUIC: 443）
+  - 客户端支持的协议列表更新
+  - 配置文件示例更新，包含所有支持的协议
+- **集群部署说明优化**：
+  - 明确说明 node_id 自动分配机制
+  - 移除手动配置 node_id 的示例
+  - 添加环境变量覆盖说明
+
+### Documentation
+- 新增 `docs/QuickStart.md`（中文快速开始指南）
+- 新增 `docs/QuickStart_EN.md`（英文快速开始指南）
+- 更新 `README.md`：完整重写，重点突出实用性
+- 更新 `README_EN.md`：与中文版保持完全一致
+- 所有文档与代码实现保持同步
+
+### Technical
+- 验证所有协议适配器实现（TCP、WebSocket、KCP、QUIC）
+- 确认 HTTP Long Polling 通过 Management API 提供服务
+- 验证 NodeIDAllocator 的分布式锁机制
+- 确认环境变量配置覆盖逻辑
+
 ## [1.0.13] - 2025-12-21
 
 ### Added

@@ -209,9 +209,55 @@ func TestConnectionCodeService_ActivateConnectionCode_AlreadyUsed(t *testing.T) 
 	assert.Contains(t, err.Error(), "already been used")
 }
 
-// TestConnectionCodeService_ActivateConnectionCode_MappingQuotaExceeded
-// 已移除：映射配额检查尚未实现（见 connection_code_service.go:250-251）
-// TODO: 实现映射配额检查后，重新添加此测试
+// TestConnectionCodeService_ActivateConnectionCode_MappingQuotaExceeded 测试映射配额超限
+func TestConnectionCodeService_ActivateConnectionCode_MappingQuotaExceeded(t *testing.T) {
+	service, _, _, _ := setupConnCodeServiceTest(t)
+
+	listenClientID := int64(99999999)
+
+	// 创建并激活映射直到达到配额限制（默认50个）
+	for i := 0; i < 50; i++ {
+		createReq := &CreateConnectionCodeRequest{
+			TargetClientID:  int64(10000000 + i),
+			TargetAddress:   "tcp://192.168.1.1:8080",
+			ActivationTTL:   10 * time.Minute,
+			MappingDuration: 7 * 24 * time.Hour,
+		}
+
+		connCode, err := service.CreateConnectionCode(createReq)
+		require.NoError(t, err, "Failed to create connection code %d", i)
+
+		activateReq := &ActivateConnectionCodeRequest{
+			Code:           connCode.Code,
+			ListenClientID: listenClientID,
+			ListenAddress:  "0.0.0.0:9000",
+		}
+
+		_, err = service.ActivateConnectionCode(activateReq)
+		require.NoError(t, err, "Failed to activate connection code %d", i)
+	}
+
+	// 尝试激活第51个，应该失败
+	createReq := &CreateConnectionCodeRequest{
+		TargetClientID:  88888888,
+		TargetAddress:   "tcp://192.168.1.200:9090",
+		ActivationTTL:   10 * time.Minute,
+		MappingDuration: 7 * 24 * time.Hour,
+	}
+
+	connCode, err := service.CreateConnectionCode(createReq)
+	require.NoError(t, err, "Failed to create connection code")
+
+	activateReq := &ActivateConnectionCodeRequest{
+		Code:           connCode.Code,
+		ListenClientID: listenClientID,
+		ListenAddress:  "0.0.0.0:8888",
+	}
+
+	_, err = service.ActivateConnectionCode(activateReq)
+	assert.Error(t, err, "Expected error for quota exceeded")
+	assert.Contains(t, err.Error(), "quota exceeded")
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 撤销

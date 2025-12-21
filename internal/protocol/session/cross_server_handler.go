@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"time"
+	"tunnox-core/internal/broker"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
@@ -164,8 +165,27 @@ func (s *SessionManager) registerCrossServerConnection(
 	corelog.Infof("Tunnel[%s]: ✅ cross-server connection registered (target_node=%s, source_node=%s)",
 		tunnelID, s.getNodeID(), routingState.SourceNodeID)
 
-	// TODO: 通过MessageBroker通知源端Server "连接已就绪"
+	// 通过MessageBroker通知源端Server "连接已就绪"
 	// 源端Server收到通知后，主动建立Bridge连接来拉取数据
+	if s.bridgeManager != nil {
+		msg := &broker.TunnelOpenMessage{
+			TunnelID:   tunnelID,
+			TargetHost: s.getNodeID(), // 当前节点ID（目标端）
+			Timestamp:  time.Now().Unix(),
+		}
+		msgData, err := json.Marshal(msg)
+		if err != nil {
+			corelog.Warnf("Tunnel[%s]: failed to marshal TunnelOpenMessage: %v", tunnelID, err)
+		} else {
+			if err := s.bridgeManager.PublishMessage(s.Ctx(), broker.TopicTunnelOpen, msgData); err != nil {
+				corelog.Warnf("Tunnel[%s]: failed to publish TunnelOpen notification: %v", tunnelID, err)
+			} else {
+				corelog.Infof("Tunnel[%s]: ✅ published TunnelOpen notification to source node %s", tunnelID, routingState.SourceNodeID)
+			}
+		}
+	} else {
+		corelog.Warnf("Tunnel[%s]: BridgeManager not available, cannot send notification (falling back to polling)", tunnelID)
+	}
 
 	return nil
 }

@@ -20,15 +20,17 @@ func (s *clientService) ListClients(userID string, clientType models.ClientType)
 
 	if userID != "" {
 		// 获取用户的客户端配置
-		// TODO: 需要实现ConfigRepo的ListUserConfigs方法
-		// 暂时fallback到旧逻辑
-		return s.ListUserClients(userID)
-	}
+		configs, err = s.configRepo.ListUserConfigs(userID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list user configs: %w", err)
+		}
+	} else {
 
-	// 获取所有客户端配置
-	configs, err = s.configRepo.ListConfigs()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list client configs: %w", err)
+		// 获取所有客户端配置
+		configs, err = s.configRepo.ListConfigs()
+		if err != nil {
+			return nil, fmt.Errorf("failed to list client configs: %w", err)
+		}
 	}
 
 	// 并发聚合每个客户端的完整信息
@@ -68,12 +70,39 @@ func (s *clientService) ListClients(userID string, clientType models.ClientType)
 
 // ListUserClients 列出用户的所有客户端
 func (s *clientService) ListUserClients(userID string) ([]*models.Client, error) {
-	// TODO: 实现基于ConfigRepo的查询
-	// 暂时使用旧Repository
-	clients, err := s.clientRepo.ListUserClients(userID)
+	// 使用ConfigRepo查询用户配置
+	configs, err := s.configRepo.ListUserConfigs(userID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list user configs: %w", err)
 	}
+
+	// 并发聚合每个客户端的完整信息
+	clients := make([]*models.Client, 0, len(configs))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, cfg := range configs {
+		wg.Add(1)
+		go func(config *models.ClientConfig) {
+			defer wg.Done()
+
+			// 获取状态和Token
+			var state *models.ClientRuntimeState
+			var token *models.ClientToken
+
+			state, _ = s.stateRepo.GetState(config.ID)
+			token, _ = s.tokenRepo.GetToken(config.ID)
+
+			// 聚合
+			client := models.FromConfigAndState(config, state, token)
+
+			mu.Lock()
+			clients = append(clients, client)
+			mu.Unlock()
+		}(cfg)
+	}
+
+	wg.Wait()
 	return clients, nil
 }
 

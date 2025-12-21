@@ -3,7 +3,10 @@ package client
 import (
 	"bytes"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	coreerrors "tunnox-core/internal/core/errors"
@@ -64,10 +67,10 @@ func (e *HTTPProxyExecutor) Execute(req *httpservice.HTTPProxyRequest) (*httpser
 		return nil, coreerrors.New(coreerrors.CodeForbidden, "HTTP proxy is disabled")
 	}
 
-	// TODO: 验证目标地址是否允许访问
-	// if !e.isAllowed(req.URL) {
-	// 	return nil, coreerrors.New(coreerrors.CodeForbidden, "target host not allowed")
-	// }
+	// 验证目标地址是否允许访问
+	if !e.isAllowed(req.URL) {
+		return nil, coreerrors.New(coreerrors.CodeForbidden, "target host not allowed")
+	}
 
 	// 创建 HTTP 请求
 	var bodyReader io.Reader
@@ -153,4 +156,72 @@ func (e *HTTPProxyExecutor) UpdateConfig(config *HTTPProxyConfig) {
 		timeout = 30 * time.Second
 	}
 	e.httpClient.Timeout = timeout
+}
+
+// isAllowed 检查目标地址是否允许访问
+func (e *HTTPProxyExecutor) isAllowed(targetURL string) bool {
+	// 解析URL获取host
+	u, err := url.Parse(targetURL)
+	if err != nil {
+		corelog.Warnf("HTTPProxyExecutor: failed to parse URL %s: %v", targetURL, err)
+		return false
+	}
+
+	host := u.Hostname()
+	if host == "" {
+		return false
+	}
+
+	// 检查禁止列表
+	for _, denied := range e.config.DeniedHosts {
+		if matchHost(host, denied) {
+			corelog.Debugf("HTTPProxyExecutor: host %s denied by rule %s", host, denied)
+			return false
+		}
+	}
+
+	// 如果有允许列表，必须在列表中
+	if len(e.config.AllowedHosts) > 0 {
+		for _, allowed := range e.config.AllowedHosts {
+			if matchHost(host, allowed) {
+				corelog.Debugf("HTTPProxyExecutor: host %s allowed by rule %s", host, allowed)
+				return true
+			}
+		}
+		corelog.Debugf("HTTPProxyExecutor: host %s not in allowed list", host)
+		return false
+	}
+
+	// 没有允许列表，默认允许
+	return true
+}
+
+// matchHost 匹配主机名或CIDR
+func matchHost(host, pattern string) bool {
+	// 精确匹配
+	if host == pattern {
+		return true
+	}
+
+	// 通配符匹配（简单实现）
+	if strings.HasPrefix(pattern, "*.") {
+		suffix := pattern[1:] // 去掉 *
+		if strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+
+	// CIDR匹配
+	if strings.Contains(pattern, "/") {
+		_, ipNet, err := net.ParseCIDR(pattern)
+		if err != nil {
+			return false
+		}
+		ip := net.ParseIP(host)
+		if ip != nil && ipNet.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
 }

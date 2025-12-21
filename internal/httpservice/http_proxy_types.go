@@ -25,3 +25,20 @@ type WSProxyTarget struct {
 	URL     string            `json:"url"`     // 目标 WebSocket URL
 	Headers map[string]string `json:"headers"` // 请求头
 }
+
+// HTTPTunnelRequest HTTP 隧道请求
+// 用于大文件上传、流式传输等场景
+type HTTPTunnelRequest struct {
+	TunnelID  string `json:"tunnel_id"`  // 隧道ID
+	MappingID string `json:"mapping_id"` // 映射ID
+	TargetURL string `json:"target_url"` // 目标URL
+	Method    string `json:"method"`     // HTTP 方法
+}
+
+// WebSocketTunnelRequest WebSocket 隧道请求
+type WebSocketTunnelRequest struct {
+	TunnelID  string            `json:"tunnel_id"`  // 隧道ID
+	MappingID string            `json:"mapping_id"` // 映射ID
+	TargetURL string            `json:"target_url"` // 目标 WebSocket URL
+	Headers   map[string]string `json:"headers"`    // 请求头
+}

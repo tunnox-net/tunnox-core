@@ -10,7 +10,7 @@
 
 A high-performance tunnel solution designed for distributed network environments, supporting multiple transport protocols and flexible deployment models.
 
-[中文文档](README.md) | [Architecture](docs/ARCHITECTURE_DESIGN_V2.2.md) | [API Documentation](docs/MANAGEMENT_API.md)
+[中文文档](README.md) | [Quick Start](docs/QuickStart_EN.md) | [Architecture](docs/ARCHITECTURE_DESIGN_V2.2.md) | [API Documentation](docs/MANAGEMENT_API.md)
 
 </div>
 
@@ -18,21 +18,24 @@ A high-performance tunnel solution designed for distributed network environments
 
 ## Introduction
 
-Tunnox Core is a NAT traversal platform kernel developed in Go, providing secure and stable remote access capabilities. The project adopts a layered architecture design, supports multiple transport protocols including TCP, WebSocket, UDP, and QUIC, and can flexibly adapt to different network environments and business scenarios.
+Tunnox Core is a NAT traversal tool developed in Go, providing secure and stable remote access capabilities. The project adopts a layered architecture design, supports multiple transport protocols including TCP, WebSocket, UDP, and QUIC, and can flexibly adapt to different network environments and business scenarios.
+
+**Design Philosophy**: Tunnox Core can be used as a standalone tool directly (without external storage and management platform), or integrated as a platform kernel into larger systems.
 
 ### Key Features
 
-- **Multi-Protocol Transport**: TCP, WebSocket, UDP, and QUIC support
+- **Zero Dependencies**: No database, Redis, or other external storage required, ready to use out of the box
+- **Multi-Protocol Transport**: TCP, WebSocket, KCP, QUIC, and HTTP Long Polling support
 - **End-to-End Encryption**: AES-256-GCM encryption for secure data transmission
 - **Data Compression**: Gzip compression to reduce bandwidth consumption
 - **Traffic Control**: Token bucket algorithm for precise bandwidth limiting
-- **SOCKS5 Proxy**: Support for SOCKS5 protocol for flexible network proxying
-- **Distributed Architecture**: Cluster deployment with gRPC inter-node communication
-- **Real-Time Configuration**: Push configuration changes through control connections
-- **Anonymous Access**: Support anonymous clients for lower barriers to entry
+- **SOCKS5 Proxy**: Support for SOCKS5 protocol for flexible network proxying with dynamic target addresses
+- **HTTP Domain Proxy**: Support for accessing HTTP services in target network via HTTP proxy
+- **Anonymous Access**: Support anonymous clients, no registration required
 - **Interactive CLI**: Comprehensive command-line interface with connection code generation and port mapping management
 - **Connection Code System**: One-time connection codes for simplified tunnel establishment
-- **Elegant Startup Display**: Beautiful runtime information display on server startup
+- **Auto-Connect**: Client supports multi-protocol auto-connection, automatically selects best available protocol
+- **Flexible Deployment**: Support standalone deployment (memory storage) and cluster deployment (Redis + gRPC)
 
 ### Use Cases
 
@@ -58,14 +61,15 @@ Tunnox Core is a NAT traversal platform kernel developed in Go, providing secure
 
 ### Transport Protocols
 
-Tunnox supports four transport protocols, allowing flexible selection based on network conditions:
+Tunnox supports five transport protocols, allowing flexible selection based on network conditions:
 
 | Protocol | Characteristics | Use Cases |
 |----------|----------------|-----------|
 | **TCP** | Stable, reliable, good compatibility | Traditional networks, database connections |
 | **WebSocket** | HTTP compatible, strong firewall traversal | Enterprise networks, CDN acceleration |
-| **UDP** | Low latency, connectionless | Real-time applications, gaming services |
-| **QUIC** | Multiplexing, built-in encryption | Mobile networks, unstable networks |
+| **KCP** | UDP-based, low latency, fast retransmission | Real-time applications, gaming, unstable networks |
+| **QUIC** | Multiplexing, built-in encryption, 0-RTT connection | Mobile networks, high-performance scenarios |
+| **HTTP Long Polling** | Pure HTTP, strongest traversal capability | Strict firewall environments, HTTP/HTTPS-only networks |
 
 ### Core Components
 
@@ -107,102 +111,96 @@ Clients handle compression and encryption, while the server only performs transp
 
 ## Quick Start
 
-### Requirements
+### Simplest Usage (No Configuration File Required)
 
-- Go 1.24 or higher
-- Docker (optional, for testing environment)
+Tunnox Core is designed for zero-configuration startup, with no need for databases, Redis, or other external dependencies.
 
-### Build
+**Requirements**:
+- Go 1.24 or higher (only for compilation)
+- Or use pre-compiled binaries directly
+
+**1. Build**
 
 ```bash
 # Clone repository
 git clone https://github.com/your-org/tunnox-core.git
 cd tunnox-core
 
-# Install dependencies
-go mod download
-
-# Build server
+# Build server and client
 go build -o bin/tunnox-server ./cmd/server
-
-# Build client
 go build -o bin/tunnox-client ./cmd/client
 ```
 
-### Run
-
-**1. Start Server**
+**2. Start Server (Zero Configuration)**
 
 ```bash
+# Start directly with default configuration (memory storage, no external dependencies)
+./bin/tunnox-server
+
+# Or specify a config file
 ./bin/tunnox-server -config config.yaml
 ```
 
 Default listening ports:
-- TCP: 7001
-- WebSocket: 7000 (path: `/_tunnox`)
-- QUIC: 7003
-- Management API: 9000
+- TCP: 8000
+- WebSocket: 8443
+- KCP: 8000 (UDP-based)
+- QUIC: 443
+- HTTP Long Polling: via Management API port (9000)
 
-**2. Start Client**
+Logs output to: `~/logs/server.log`
+
+**3. Start Client (Anonymous Mode)**
 
 ```bash
-# Start client (interactive CLI)
-./bin/tunnox-client -config client.yaml
+# Interactive mode (recommended)
+./bin/tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous
+
+# Daemon mode
+./bin/tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous -daemon
 ```
 
-The client will enter an interactive command-line interface with the following commands:
+The client will automatically connect to the server without requiring account registration.
+
+**4. Create Tunnel Using Connection Code (Simplest Way)**
+
+In interactive mode, use connection codes to quickly establish tunnels:
+
+**Target (machine with the service)**:
+```bash
+tunnox> generate-code
+Select Protocol: 1 (TCP)
+Target Address: localhost:3306
+✅ Connection code generated: abc-def-123
+```
+
+**Source (machine that needs to access the service)**:
+```bash
+tunnox> use-code abc-def-123
+Local Listen Address: 127.0.0.1:13306
+✅ Mapping created successfully
+```
+
+**5. Access Service**
+
+```bash
+# Now you can access the remote service through local port
+mysql -h 127.0.0.1 -P 13306 -u root -p
+```
+
+### Common Commands
+
+Client interactive CLI supports the following commands:
 
 ```bash
 tunnox> help                    # Show help
-tunnox> connect                 # Connect to server
+tunnox> status                  # Show connection status
 tunnox> generate-code           # Generate connection code (target)
 tunnox> use-code <code>         # Use connection code to create mapping (source)
 tunnox> list-codes              # List all connection codes
 tunnox> list-mappings           # List all port mappings
-tunnox> status                  # Show connection status
+tunnox> delete-mapping <id>     # Delete mapping
 tunnox> exit                    # Exit CLI
-```
-
-**3. Create Mapping Using Connection Code (Recommended)**
-
-**Target Client**:
-```bash
-tunnox> generate-code
-# Interactive protocol selection (TCP/UDP/SOCKS5)
-# Enter target address (e.g., 192.168.1.10:8080)
-# Connection code generated, e.g., abc-def-123
-```
-
-**Source Client**:
-```bash
-tunnox> use-code abc-def-123
-# Enter local listen address (e.g., 127.0.0.1:8080)
-# Mapping created successfully
-```
-
-**4. Access Service**
-
-```bash
-# Access target service through mapping
-mysql -h 127.0.0.1 -P 8080 -u user -p
-```
-
-**Or create mapping via Management API**:
-
-```bash
-curl -X POST http://localhost:9000/api/v1/mappings \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-api-key" \
-  -d '{
-    "source_client_id": 10000001,
-    "target_client_id": 10000002,
-    "protocol": "tcp",
-    "source_port": 8080,
-    "target_host": "localhost",
-    "target_port": 3306,
-    "enable_compression": true,
-    "enable_encryption": true
-  }'
 ```
 
 ### Configuration Examples
@@ -375,8 +373,9 @@ tunnox-core/
 ### Implemented Features
 
 **Transport Protocols** ✅
-- Complete implementation of TCP, WebSocket, UDP, QUIC
+- Complete implementation of TCP, WebSocket, KCP, QUIC, HTTP Long Polling
 - Protocol adapter framework and unified interface
+- Client multi-protocol auto-connection feature
 
 **Stream Processing System** ✅
 - Packet protocol and StreamProcessor
@@ -385,12 +384,16 @@ tunnox-core/
 - Token bucket rate limiting
 
 **Client Features** ✅
-- TCP/HTTP/SOCKS5/UDP mapping handlers
-- Multi-protocol transport support
+- TCP/HTTP/SOCKS5 mapping handlers
+- SOCKS5 proxy support (dynamic target addresses)
+- HTTP domain proxy support
+- Multi-protocol transport support (TCP/WebSocket/KCP/QUIC/HTTP Long Polling)
+- Multi-protocol auto-connection (automatically selects best available protocol)
 - Auto-reconnect and keepalive
 - Interactive CLI interface
 - Connection code generation and usage
 - Port mapping management (list, view, delete)
+- Configuration hot-reload (server pushes config changes)
 - Tabular data display
 
 **Server Features** ✅
@@ -473,59 +476,87 @@ Performance data based on local test environment (Docker Nginx):
 
 ## Deployment
 
-### Single Node Deployment
+### Standalone Deployment (Recommended for Personal and Small Teams)
 
-Suitable for small-scale use or testing:
+Standalone deployment requires no external dependencies, using memory storage:
 
 ```bash
-# Start server
-./tunnox-server -config server.yaml
+# 1. Start server (zero configuration)
+./tunnox-server
 
-# Start client
-./tunnox-client -config client.yaml
+# 2. Start client (anonymous mode)
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
 ```
 
-### Cluster Deployment
+**Features**:
+- No database, Redis, or other external storage required
+- Simple configuration, ready to use out of the box
+- Suitable for personal use, small team collaboration, temporary testing
 
-Suitable for production and large-scale use:
+### Cluster Deployment (For Production Environments)
 
-**Infrastructure Requirements**
-- Kubernetes cluster
-- Redis Cluster (message broadcasting)
-- PostgreSQL/MySQL (optional, persistent storage)
+For high availability and horizontal scaling, deploy in cluster mode:
 
-**Deployment Architecture**
+**Infrastructure Requirements**:
+- Redis Cluster (for session sharing and message broadcasting)
+- Load Balancer (optional, for multi-node load balancing)
+
+**Server Configuration**:
+
+```yaml
+# Cluster mode configuration
+storage:
+  type: "redis"
+  redis:
+    address: "redis-cluster:6379"
+    password: "your-password"
+
+message_broker:
+  type: "redis"
+  redis:
+    address: "redis-cluster:6379"
+    password: "your-password"
+  # node_id is automatically allocated at server startup (node-0001 to node-1000)
+  # No manual configuration needed
 ```
-LoadBalancer (80/443)
-    ↓
-Tunnox Server Pods (multiple replicas)
-    ↓
+
+**Deployment Architecture**:
+```
+Clients
+  ↓
+Load Balancer (optional)
+  ↓
+Tunnox Server Nodes 1, 2, 3...
+  ↓
 Redis Cluster (sessions and messages)
-    ↓
-Remote Storage (gRPC)
 ```
 
-Detailed deployment documentation: [docs/ARCHITECTURE_DESIGN_V2.2.md](docs/ARCHITECTURE_DESIGN_V2.2.md)
+**Notes**:
+- Node ID is automatically allocated by NodeIDAllocator at server startup (range: node-0001 to node-1000)
+- Uses distributed lock mechanism to ensure ID uniqueness
+- After node crash, ID is automatically released after 90 seconds
+- Can be manually specified via environment variable `NODE_ID` or `MESSAGE_BROKER_NODE_ID` (mainly for testing)
 
 ### Docker Deployment
 
 ```bash
 # Build images
-docker build -t tunnox-server -f Dockerfile.server .
+docker build -t tunnox-server -f Dockerfile .
 docker build -t tunnox-client -f Dockerfile.client .
 
-# Run server
+# Run server (standalone mode)
 docker run -d \
-  -p 7000:7000 \
-  -p 7001:7001 \
-  -p 7003:7003 \
-  -p 9000:9000 \
-  -v ./config.yaml:/app/config.yaml \
+  -p 8000:8000 \
+  -p 8443:8443 \
+  --name tunnox-server \
   tunnox-server
 
 # Run client
 docker run -d \
-  -v ./client.yaml:/app/client.yaml \
+  -e SERVER_ADDRESS="server-ip:8000" \
+  -e PROTOCOL="tcp" \
+  -e ANONYMOUS="true" \
+  --name tunnox-client \
   tunnox-client
 ```
 
@@ -535,157 +566,168 @@ docker run -d \
 
 ### Example 1: MySQL Database Mapping
 
-**Scenario**: Access remote MySQL database
+**Scenario**: Access MySQL database on remote server from local machine
 
+**Steps**:
+
+1. Start target client on remote server (machine with MySQL):
 ```bash
-# 1. Create mapping
-curl -X POST http://localhost:9000/api/v1/mappings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source_client_id": 10000001,
-    "target_client_id": 10000002,
-    "protocol": "tcp",
-    "source_port": 13306,
-    "target_host": "localhost",
-    "target_port": 3306,
-    "enable_compression": true,
-    "enable_encryption": true
-  }'
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+```
 
-# 2. Connect to database
+2. Generate connection code on target:
+```bash
+tunnox> generate-code
+Select Protocol: 1 (TCP)
+Target Address: localhost:3306
+✅ Connection code: mysql-abc-123
+```
+
+3. Start source client on local machine:
+```bash
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+```
+
+4. Use connection code on source:
+```bash
+tunnox> use-code mysql-abc-123
+Local Listen Address: 127.0.0.1:13306
+✅ Mapping created
+```
+
+5. Connect to database:
+```bash
 mysql -h 127.0.0.1 -P 13306 -u root -p
 ```
 
 ### Example 2: Web Service Mapping
 
-**Scenario**: Temporarily share local web service
+**Scenario**: Temporarily share local development web service with colleagues for testing
 
+**Steps**:
+
+1. Start target client on development machine:
 ```bash
-# 1. Create mapping
-curl -X POST http://localhost:9000/api/v1/mappings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source_client_id": 10000001,
-    "target_client_id": 10000002,
-    "protocol": "tcp",
-    "source_port": 8080,
-    "target_host": "localhost",
-    "target_port": 3000
-  }'
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+tunnox> generate-code
+Select Protocol: 1 (TCP)
+Target Address: localhost:3000
+✅ Connection code: web-xyz-456
+```
 
-# 2. Access service
+2. Colleague starts source client on their machine:
+```bash
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+tunnox> use-code web-xyz-456
+Local Listen Address: 127.0.0.1:8080
+✅ Mapping created
+```
+
+3. Colleague accesses the service:
+```bash
 curl http://localhost:8080
+# Or open http://localhost:8080 in browser
 ```
 
 ### Example 3: SOCKS5 Proxy
 
-**Scenario**: Access internal services through SOCKS5
+**Scenario**: Access multiple internal network services through SOCKS5 proxy
 
+**Steps**:
+
+1. Start target client on internal network machine:
 ```bash
-# 1. Create SOCKS5 mapping
-curl -X POST http://localhost:9000/api/v1/mappings \
-  -H "Content-Type: application/json" \
-  -d '{
-    "source_client_id": 10000001,
-    "target_client_id": 10000002,
-    "protocol": "socks5",
-    "source_port": 1080
-  }'
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+tunnox> generate-code
+Select Protocol: 3 (SOCKS5)
+✅ Connection code: socks-def-789
+```
 
-# 2. Use SOCKS5 proxy
-curl --socks5 localhost:1080 http://internal-service:8080
+2. Start source client on external network machine:
+```bash
+./tunnox-client -s server-ip:8000 -p tcp -anonymous
+tunnox> use-code socks-def-789
+Local Listen Address: 127.0.0.1:1080
+✅ SOCKS5 proxy created
+```
+
+3. Use SOCKS5 proxy to access internal services:
+```bash
+# Access any internal service through proxy
+curl --socks5 localhost:1080 http://192.168.1.100:8080
+curl --socks5 localhost:1080 http://internal-api.local/api/data
+
+# Configure browser to use SOCKS5 proxy: 127.0.0.1:1080
 ```
 
 ---
 
 ## Configuration
 
-### Server Configuration
+**Server configuration is optional**, default values are used when no config file is provided.
+
+**Minimal Server Configuration (config.yaml)**
 
 ```yaml
 server:
-  host: "0.0.0.0"
-  port: 7000
-  
-  # Protocol configuration
   protocols:
     tcp:
       enabled: true
-      port: 7001
+      port: 8000
     websocket:
       enabled: true
-      port: 7000
-    udp:
-      enabled: false
-      port: 7002
+      port: 8443
+    kcp:
+      enabled: true
+      port: 8000
     quic:
       enabled: true
-      port: 7003
+      port: 443
 
-# Logging
 log:
-  level: "info"        # debug/info/warn/error
-  format: "text"       # text/json
-  output: "file"       # Only "file" supported (logs to file, no console output)
-  file: "logs/server.log"
+  level: "info"
+  output: "file"
+  file: "~/logs/server.log"
 
-# Cloud control
+# Use built-in storage, no external dependencies
 cloud:
-  type: "built_in"     # built_in/external
+  type: "built_in"
   built_in:
-    jwt_secret_key: "your-secret-key"
-    jwt_expiration: 3600
-    cleanup_interval: 300
+    jwt_secret_key: "change-this-in-production"
 
-# Message broker
+# Use memory storage, no Redis required
+storage:
+  type: "memory"
+
 message_broker:
-  type: "memory"       # memory/redis
-  node_id: "node-001"
-
-# Management API
-management_api:
-  enabled: true
-  listen_addr: ":9000"
-  auth:
-    type: "bearer"
-    bearer_token: "your-api-key"
+  type: "memory"
 ```
 
-### Client Configuration
+**Client Configuration (client-config.yaml)**
 
 ```yaml
-# Anonymous mode (recommended for testing)
+# Anonymous mode (recommended for quick testing)
 anonymous: true
-device_id: "my-device-001"
+device_id: "my-device"
 
-# Registered mode (recommended for production)
-client_id: 10000001
-auth_token: "your-jwt-token"
-
-# Server configuration
 server:
-  address: "server.example.com:7001"
-  protocol: "tcp"      # tcp/websocket/udp/quic
+  address: "127.0.0.1:8000"
+  protocol: "tcp"  # tcp/websocket/kcp/quic/httppoll
+
+log:
+  level: "info"
+  output: "file"
+  file: "/tmp/tunnox-client.log"
 ```
 
-### Mapping Configuration
+**Command-line parameters have higher priority than config file**, you can use command-line parameters to override config:
 
-Mappings are created dynamically through Management API:
+```bash
+# Use command-line parameters, no config file needed
+./bin/tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous -device my-device
 
-```json
-{
-  "source_client_id": 10000001,
-  "target_client_id": 10000002,
-  "protocol": "tcp",
-  "source_port": 8080,
-  "target_host": "localhost",
-  "target_port": 3306,
-  "enable_compression": true,
-  "compression_level": 6,
-  "enable_encryption": true,
-  "encryption_method": "aes-256-gcm",
-  "bandwidth_limit": 10485760
-}
+# Supported protocols: tcp, websocket, kcp, quic, httppoll
+./bin/tunnox-client -s 127.0.0.1:8000 -p kcp -anonymous
 ```
 
 ---
@@ -867,13 +909,42 @@ We welcome all forms of contribution:
 
 ## FAQ
 
-**Q: What's the difference between Tunnox and frp/ngrok?**
+**Q: Do I need a database or Redis?**
 
-A: Tunnox focuses more on scalability and commercial readiness in its architecture, with built-in cloud control management, quota management, multi-protocol support, and cluster deployment capabilities. frp is more suitable for personal use, while ngrok is a closed-source commercial product.
+A: No. Tunnox Core uses memory storage by default and can start with zero dependencies. If you need cluster deployment or persistence, you can optionally configure Redis.
 
-**Q: Which operating systems are supported?**
+**Q: How to quickly test?**
 
-A: Linux, macOS, Windows, and Docker container deployment are all supported.
+A: The simplest way is to start the server and two clients on the same machine:
+```bash
+# Terminal 1: Start server
+./tunnox-server
+
+# Terminal 2: Start target client
+./tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous
+
+# Terminal 3: Start source client
+./tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous
+
+# Then use connection codes to establish tunnels
+```
+
+**Q: What's the difference between anonymous mode and registered mode?**
+
+A: Anonymous mode requires no registration, uses device ID to connect, suitable for quick testing and personal use. Registered mode requires JWT Token, supports quota management and permission control, suitable for teams and production environments.
+
+**Q: Which protocols are supported?**
+
+A: TCP, WebSocket, KCP, QUIC, and HTTP Long Polling. TCP (stable), KCP (low latency), or QUIC (high performance) are recommended.
+
+**Q: How to choose transport protocol?**
+
+A: 
+- **TCP**: Most stable, good compatibility, recommended for database connections and daily use
+- **WebSocket**: Can traverse HTTP proxies and firewalls, suitable for enterprise networks
+- **KCP**: UDP-based, low latency, fast retransmission, suitable for real-time applications and gaming
+- **QUIC**: Multiplexing, 0-RTT connection, suitable for mobile and high-performance scenarios
+- **HTTP Long Polling**: Pure HTTP, strongest traversal capability, suitable for strict firewall environments
 
 **Q: How is the performance?**
 
@@ -893,7 +964,11 @@ A: Yes, the project uses the MIT License, allowing commercial use and secondary 
 
 **Q: Where are logs written?**
 
-A: Both server and client logs are written to files by default, not to console. Server log path: `logs/server.log`, client log path: `~/.tunnox/client.log` (interactive mode) or `/var/log/tunnox-client.log` (daemon mode).
+A: Logs are written to files by default, not polluting the console. Server: `~/logs/server.log`, Client: `/tmp/tunnox-client.log`. Can be modified via config file or command-line parameters.
+
+**Q: How to deploy in production?**
+
+A: It's recommended to run the client in daemon mode (`-daemon` parameter), configure system service (systemd) for automatic startup and restart. Server deployment is recommended using Docker or Kubernetes.
 
 ---
 

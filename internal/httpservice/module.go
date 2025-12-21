@@ -64,8 +64,30 @@ type SessionManagerInterface interface {
 	// SendHTTPProxyRequest 发送 HTTP 代理请求（命令模式）
 	SendHTTPProxyRequest(clientID int64, request *HTTPProxyRequest) (*HTTPProxyResponse, error)
 
+	// RequestTunnelForHTTP 请求为 HTTP 代理创建隧道连接（隧道模式）
+	RequestTunnelForHTTP(clientID int64, mappingID string, targetURL string, method string) (TunnelConnectionInterface, error)
+
 	// NotifyClientUpdate 通知客户端更新配置
 	NotifyClientUpdate(clientID int64)
+}
+
+// TunnelConnectionInterface 隧道连接接口
+// 用于解耦 HTTP 服务与 session 包的隧道连接依赖
+type TunnelConnectionInterface interface {
+	// GetNetConn 获取底层网络连接
+	GetNetConn() interface{}
+
+	// GetStream 获取数据流
+	GetStream() interface{}
+
+	// Read 读取数据
+	Read(p []byte) (n int, err error)
+
+	// Write 写入数据
+	Write(p []byte) (n int, err error)
+
+	// Close 关闭连接
+	Close() error
 }
 
 // ControlConnectionAccessor 控制连接访问器接口
