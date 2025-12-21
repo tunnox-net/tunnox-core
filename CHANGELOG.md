@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2025-12-21
+### Changed
+- **加入Docker镜像构建**：能构建Docker镜像
+
+
 ## [1.1.1] - 2025-12-21
 
 ### Fixed
