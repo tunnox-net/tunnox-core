@@ -248,8 +248,10 @@ func (s *ConnectionCodeService) ActivateConnectionCode(req *ActivateConnectionCo
 		return nil, fmt.Errorf("invalid target address %q: %w", connCode.TargetAddress, err)
 	}
 
-	// 5. 检查映射配额（TODO: 需要实现 GetClientPortMappings 并统计）
-	// 暂时跳过配额检查，后续实现
+	// 5. 检查映射配额（TODO: 实现配额检查逻辑，GetClientPortMappings 已实现）
+	// 需要获取客户端现有映射数量，并与配额限制进行比较
+	// mappings, _ := s.clientService.GetClientPortMappings(req.ListenClientID)
+	// if len(mappings) >= quota.MaxMappings { ... }
 
 	// 6. 创建PortMapping
 	now := time.Now()

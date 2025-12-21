@@ -272,8 +272,8 @@ func TestTunnelResumeFlow_EndToEnd(t *testing.T) {
 	assert.Greater(t, loadedState.LastSeqNum, uint64(0))
 
 	// ========== 阶段4: 服务器B恢复隧道 ==========
-	// TODO: 恢复发送缓冲区（如果需要）
-	// session.RestoreToSendBuffer(newTunnel.sendBuffer, loadedState.BufferedPackets)
+	// 注意：缓冲区恢复功能已实现（见 session.RestoreToSendBuffer），
+	// 如需测试缓冲区恢复，可在此处调用：session.RestoreToSendBuffer(newTunnel.sendBuffer, loadedState.BufferedPackets)
 
 	corelog.Infof("End-to-end tunnel resume test completed successfully")
 }
