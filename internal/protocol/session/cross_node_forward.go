@@ -8,6 +8,7 @@ import (
 	"time"
 
 	coreerrors "tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 )
@@ -21,9 +22,11 @@ func (s *SessionManager) handleCrossNodeTargetConnection(
 ) error {
 	// 1. 检查必要的组件
 	if s.tunnelRouting == nil {
+		corelog.Errorf("CrossNode[%s]: TunnelRoutingTable not configured", req.TunnelID)
 		return coreerrors.New(coreerrors.CodeUnavailable, "TunnelRoutingTable not configured")
 	}
 	if s.crossNodePool == nil {
+		corelog.Errorf("CrossNode[%s]: CrossNodePool not configured", req.TunnelID)
 		return coreerrors.New(coreerrors.CodeUnavailable, "CrossNodePool not configured")
 	}
 
@@ -34,6 +37,7 @@ func (s *SessionManager) handleCrossNodeTargetConnection(
 	// 3. 查询隧道路由信息
 	routingState, err := s.lookupTunnelRouting(ctx, req.TunnelID)
 	if err != nil {
+		corelog.Errorf("CrossNode[%s]: failed to lookup routing: %v", req.TunnelID, err)
 		return err
 	}
 
@@ -129,6 +133,7 @@ func (s *SessionManager) forwardToSourceNode(
 	// 1. 从连接池获取跨节点连接
 	crossConn, err := s.crossNodePool.Get(ctx, routingState.SourceNodeID)
 	if err != nil {
+		corelog.Errorf("CrossNode[%s]: failed to get cross-node connection: %v", req.TunnelID, err)
 		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to get cross-node connection")
 	}
 
@@ -136,6 +141,7 @@ func (s *SessionManager) forwardToSourceNode(
 	tunnelID, _ := TunnelIDFromString(req.TunnelID)
 	readyData := EncodeTargetReadyMessage(req.TunnelID, s.nodeID)
 	if err := WriteFrame(crossConn.GetTCPConn(), tunnelID, FrameTypeTargetReady, readyData); err != nil {
+		corelog.Errorf("CrossNode[%s]: failed to send target ready message: %v", req.TunnelID, err)
 		crossConn.MarkBroken()
 		s.crossNodePool.CloseConn(crossConn)
 		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send target ready message")

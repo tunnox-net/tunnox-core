@@ -7,10 +7,10 @@ import (
 	"io"
 	"sync"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/protocol/queue"
 
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/stream"
 )
 
@@ -28,7 +28,7 @@ type ServerStreamProcessor struct {
 	tunnelType   string
 
 	// 数据队列（用于 Poll 响应 - 仅用于数据流，不用于控制包）
-	pollDataQueue *session.PriorityQueue
+	pollDataQueue *queue.PriorityQueue
 	pollDataChan  chan []byte
 	pollWaitChan  chan struct{}
 
@@ -85,7 +85,7 @@ func NewServerStreamProcessor(ctx context.Context, connID string, clientID int64
 		clientID:              clientID,
 		mappingID:             mappingID,
 		tunnelType:            connType,
-		pollDataQueue:         session.NewPriorityQueue(3),
+		pollDataQueue:         queue.NewPriorityQueue(3),
 		pollDataChan:          make(chan []byte, 100),                // 增加容量，避免阻塞
 		pollWaitChan:          make(chan struct{}, 10),               // 增加容量，避免丢失通知
 		controlPacketChan:     make(chan *packet.TransferPacket, 10), // 控制包通道

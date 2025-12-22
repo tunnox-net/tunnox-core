@@ -80,8 +80,6 @@ func (m *WebSocketModule) RegisterRoutes(router *mux.Router) {
 
 // handleWebSocket 处理 WebSocket 升级请求
 func (m *WebSocketModule) handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	corelog.Debugf("WebSocketModule: upgrade request from %s", r.RemoteAddr)
-
 	// 升级 HTTP 连接为 WebSocket
 	conn, err := m.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -89,25 +87,22 @@ func (m *WebSocketModule) handleWebSocket(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	corelog.Infof("WebSocketModule: connection established from %s", r.RemoteAddr)
-
 	// 包装 WebSocket 连接
 	wsConn := &WebSocketServerConn{
-		conn:       conn,
-		remoteAddr: r.RemoteAddr,
-		closed:     make(chan struct{}),
+		conn:           conn,
+		remoteAddr:     r.RemoteAddr,
+		closed:         make(chan struct{}),
+		streamDataChan: make(chan []byte, 100), // 流模式数据通道
 	}
 
 	// 如果有会话管理器，处理连接
 	if m.session != nil {
-		corelog.Infof("WebSocketModule: session is set, starting handleConnection")
 		go m.handleConnection(wsConn)
 	} else {
 		corelog.Warnf("WebSocketModule: session is nil, cannot handle connection")
 		// 没有会话管理器，发送到通道等待处理
 		select {
 		case m.connChan <- wsConn:
-			corelog.Debugf("WebSocketModule: connection queued for acceptance")
 		case <-m.Ctx().Done():
 			wsConn.Close()
 			return
@@ -136,8 +131,6 @@ func (m *WebSocketModule) handleConnection(wsConn *WebSocketServerConn) {
 		}
 	}()
 
-	corelog.Infof("WebSocketModule: handling connection from %s", wsConn.remoteAddr)
-
 	// 初始化连接
 	var err error
 	streamConn, err = m.session.AcceptConnection(wsConn, wsConn)
@@ -146,7 +139,8 @@ func (m *WebSocketModule) handleConnection(wsConn *WebSocketServerConn) {
 		return
 	}
 
-	corelog.Infof("WebSocketModule: connection accepted, connID=%s", streamConn.ID)
+	// 设置连接ID（用于调试）
+	wsConn.SetConnectionID(streamConn.ID)
 
 	// 数据包处理循环
 	for {
@@ -161,7 +155,9 @@ func (m *WebSocketModule) handleConnection(wsConn *WebSocketServerConn) {
 			if reader, ok := streamConn.Stream.GetReader().(interface {
 				IsStreamMode() bool
 			}); ok && reader.IsStreamMode() {
-				corelog.Infof("WebSocketModule: connection %s is in stream mode, readLoop exiting", streamConn.ID)
+				// 启动流模式读取器
+				wsConn.SetStreamMode(true)
+				wsConn.StartStreamModeReader()
 				shouldCloseConn = false
 				streamConn = nil
 				return
@@ -199,10 +195,11 @@ func (m *WebSocketModule) handleConnection(wsConn *WebSocketServerConn) {
 					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" ||
 					errMsg == "tunnel target connected via cross-node forwarding, switching to stream mode" ||
 					errMsg == "tunnel connected to existing bridge, switching to stream mode" {
-					connID := streamConn.ID
+					// 启动流模式读取器
+					wsConn.SetStreamMode(true)
+					wsConn.StartStreamModeReader()
 					shouldCloseConn = false
 					streamConn = nil
-					corelog.Infof("WebSocketModule: connection %s switched to stream mode, readLoop exiting", connID)
 					return
 				}
 			}
@@ -242,6 +239,12 @@ type WebSocketServerConn struct {
 	writeMu    sync.Mutex
 	closeOnce  sync.Once
 	closed     chan struct{}
+
+	// 流模式支持（用于跨节点隧道）
+	streamMode     bool
+	streamModeMu   sync.RWMutex
+	streamDataChan chan []byte // 流模式数据通道
+	connectionID   string      // 连接ID（用于调试）
 }
 
 // Read 实现 io.Reader
@@ -262,7 +265,29 @@ func (c *WebSocketServerConn) Read(p []byte) (int, error) {
 		return n, nil
 	}
 
-	// 读取下一个 WebSocket 消息
+	// 检查是否在流模式
+	c.streamModeMu.RLock()
+	isStreamMode := c.streamMode
+	c.streamModeMu.RUnlock()
+
+	if isStreamMode {
+		// 流模式：从数据通道读取
+		select {
+		case <-c.closed:
+			return 0, io.EOF
+		case data, ok := <-c.streamDataChan:
+			if !ok {
+				return 0, io.EOF
+			}
+			n := copy(p, data)
+			if n < len(data) {
+				c.readBuf = append(c.readBuf, data[n:]...)
+			}
+			return n, nil
+		}
+	}
+
+	// 非流模式：直接读取 WebSocket 消息
 	messageType, data, err := c.conn.ReadMessage()
 	if err != nil {
 		select {
@@ -358,4 +383,200 @@ func (a *wsAddr) Network() string {
 
 func (a *wsAddr) String() string {
 	return a.addr
+}
+
+// ============================================================================
+// 流模式支持（用于跨节点隧道数据转发）
+// ============================================================================
+
+// SetStreamMode 设置流模式
+func (c *WebSocketServerConn) SetStreamMode(streamMode bool) {
+	c.streamModeMu.Lock()
+	defer c.streamModeMu.Unlock()
+	c.streamMode = streamMode
+}
+
+// IsStreamMode 检查是否在流模式
+func (c *WebSocketServerConn) IsStreamMode() bool {
+	c.streamModeMu.RLock()
+	defer c.streamModeMu.RUnlock()
+	return c.streamMode
+}
+
+// SetConnectionID 设置连接ID（用于调试）
+func (c *WebSocketServerConn) SetConnectionID(connID string) {
+	c.connectionID = connID
+}
+
+// GetConnectionID 获取连接ID
+func (c *WebSocketServerConn) GetConnectionID() string {
+	return c.connectionID
+}
+
+// ReadAvailable 读取可用数据（不等待完整长度）- 实现 StreamDataForwarder 接口
+func (c *WebSocketServerConn) ReadAvailable(maxLength int) ([]byte, error) {
+	c.readMu.Lock()
+	defer c.readMu.Unlock()
+
+	select {
+	case <-c.closed:
+		return nil, io.EOF
+	default:
+	}
+
+	// 如果有缓冲数据，先返回
+	if len(c.readBuf) > 0 {
+		readLen := len(c.readBuf)
+		if readLen > maxLength {
+			readLen = maxLength
+		}
+		data := make([]byte, readLen)
+		copy(data, c.readBuf[:readLen])
+		c.readBuf = c.readBuf[readLen:]
+		return data, nil
+	}
+
+	// 检查是否在流模式
+	c.streamModeMu.RLock()
+	isStreamMode := c.streamMode
+	c.streamModeMu.RUnlock()
+
+	if isStreamMode {
+		// 流模式：从数据通道读取（带超时）
+		select {
+		case <-c.closed:
+			return nil, io.EOF
+		case data, ok := <-c.streamDataChan:
+			if !ok {
+				return nil, io.EOF
+			}
+			readLen := len(data)
+			if readLen > maxLength {
+				readLen = maxLength
+				// 将多余的数据放回缓冲区
+				c.readBuf = append(c.readBuf, data[readLen:]...)
+			}
+			return data[:readLen], nil
+		case <-time.After(5 * time.Second):
+			// 超时，返回空数据（不是错误）
+			return nil, nil
+		}
+	}
+
+	// 非流模式：直接读取 WebSocket 消息
+	messageType, data, err := c.conn.ReadMessage()
+	if err != nil {
+		select {
+		case <-c.closed:
+			return nil, io.EOF
+		default:
+			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				return nil, io.EOF
+			}
+			return nil, err
+		}
+	}
+
+	if messageType != websocket.BinaryMessage {
+		return nil, nil // 忽略非二进制消息
+	}
+
+	readLen := len(data)
+	if readLen > maxLength {
+		readLen = maxLength
+		// 将多余的数据放回缓冲区
+		c.readBuf = append(c.readBuf, data[readLen:]...)
+	}
+	return data[:readLen], nil
+}
+
+// ReadExact 读取指定长度的数据 - 实现 StreamDataForwarder 接口
+func (c *WebSocketServerConn) ReadExact(length int) ([]byte, error) {
+	result := make([]byte, 0, length)
+
+	for len(result) < length {
+		data, err := c.ReadAvailable(length - len(result))
+		if err != nil {
+			if len(result) > 0 {
+				return result, err
+			}
+			return nil, err
+		}
+		if len(data) == 0 {
+			// 超时，继续等待
+			continue
+		}
+		result = append(result, data...)
+	}
+
+	return result, nil
+}
+
+// WriteExact 写入数据 - 实现 StreamDataForwarder 接口
+func (c *WebSocketServerConn) WriteExact(data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	select {
+	case <-c.closed:
+		return io.ErrClosedPipe
+	default:
+	}
+
+	return c.conn.WriteMessage(websocket.BinaryMessage, data)
+}
+
+// PushStreamData 推送数据到流模式通道（由 WebSocket 消息读取循环调用）
+func (c *WebSocketServerConn) PushStreamData(data []byte) error {
+	select {
+	case <-c.closed:
+		return io.ErrClosedPipe
+	case c.streamDataChan <- data:
+		return nil
+	default:
+		// 通道满了，阻塞等待
+		select {
+		case <-c.closed:
+			return io.ErrClosedPipe
+		case c.streamDataChan <- data:
+			return nil
+		}
+	}
+}
+
+// StartStreamModeReader 启动流模式读取器（在切换到流模式后调用）
+// 这个方法会持续读取 WebSocket 消息并推送到数据通道
+func (c *WebSocketServerConn) StartStreamModeReader() {
+	go func() {
+		for {
+			select {
+			case <-c.closed:
+				return
+			default:
+			}
+
+			// 读取 WebSocket 消息
+			messageType, data, err := c.conn.ReadMessage()
+			if err != nil {
+				select {
+				case <-c.closed:
+					return
+				default:
+					if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+						return
+					}
+					return
+				}
+			}
+
+			if messageType != websocket.BinaryMessage {
+				continue // 忽略非二进制消息
+			}
+
+			// 推送到数据通道
+			if err := c.PushStreamData(data); err != nil {
+				return
+			}
+		}
+	}()
 }

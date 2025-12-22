@@ -96,6 +96,12 @@ func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID s
 	var state TunnelWaitingState
 
 	switch v := value.(type) {
+	case *TunnelWaitingState:
+		// 直接返回（内存存储可能直接返回原始类型）
+		state = *v
+	case TunnelWaitingState:
+		// 值类型
+		state = v
 	case map[string]interface{}:
 		// 重新序列化为 JSON，再反序列化为具体类型
 		data, err := json.Marshal(v)

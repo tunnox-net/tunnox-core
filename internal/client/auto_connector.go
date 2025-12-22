@@ -26,10 +26,10 @@ type ServerEndpoint struct {
 // DefaultServerEndpoints 默认服务器端点列表（按优先级排序）
 // 使用常量文件中定义的公共服务端点
 var DefaultServerEndpoints = []ServerEndpoint{
-	{Protocol: "websocket", Address: PublicServiceWebSocket},
-	{Protocol: "tcp", Address: PublicServiceTCP},
-	{Protocol: "kcp", Address: PublicServiceKCP},
 	{Protocol: "quic", Address: PublicServiceQUIC},
+	{Protocol: "tcp", Address: PublicServiceTCP},
+	{Protocol: "websocket", Address: PublicServiceWebSocket},
+	{Protocol: "kcp", Address: PublicServiceKCP},
 	{Protocol: "httppoll", Address: PublicServiceHTTPPoll},
 }
 
@@ -103,7 +103,7 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 
 		// 显示当前轮次信息
 		if round == 0 {
-			fmt.Fprintf(os.Stderr, "   Trying protocols: websocket, tcp, kcp, quic, httppoll\n")
+			fmt.Fprintf(os.Stderr, "   Trying protocols: quic, tcp, websocket, kcp, httppoll\n")
 		} else {
 			fmt.Fprintf(os.Stderr, "   Retrying (round %d/%d, timeout: %ds)...\n", round+1, len(roundTimeouts), int(timeout.Seconds()))
 		}

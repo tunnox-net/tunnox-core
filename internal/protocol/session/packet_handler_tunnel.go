@@ -40,9 +40,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		}
 	}
 
-	corelog.Infof("Tunnel[%s]: MappingID=%s, TargetHost=%s:%d",
-		req.TunnelID, req.MappingID, req.TargetHost, req.TargetPort)
-
 	// ✅ 对于支持 mappingID 的连接，立即设置 mappingID 并注册隧道连接
 	// 这样后续的请求就能正确路由到隧道连接
 	if req.MappingID != "" && conn != nil && conn.Stream != nil {
@@ -406,8 +403,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			s.connLock.Lock()
 			delete(s.connMap, connPacket.ConnectionID)
 			s.connLock.Unlock()
-		} else if shouldKeep {
-			corelog.Debugf("Tunnel[%s]: keeping connection %s in connMap", req.TunnelID, connPacket.ConnectionID)
 		}
 	}
 
@@ -450,7 +445,6 @@ func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, re
 		Payload:    respData,
 	}
 
-	corelog.Infof("Tunnel[%s]: sending TunnelOpenAck, Success=%v", resp.TunnelID, resp.Success)
 	// 发送响应
 	if _, err := conn.Stream.WritePacket(respPacket, true, 0); err != nil {
 		return fmt.Errorf("failed to write tunnel open response: %w", err)

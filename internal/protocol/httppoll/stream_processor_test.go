@@ -61,11 +61,12 @@ func TestStreamProcessor_GetReader_GetWriter(t *testing.T) {
 	reader := sp.GetReader()
 	writer := sp.GetWriter()
 
-	// HTTP 长轮询是无状态的，GetReader 和 GetWriter 应该返回 nil
-	if reader != nil {
-		t.Error("GetReader should return nil for HTTP long polling")
+	// 客户端 StreamProcessor 返回适配器用于读写
+	// 注意：与 ServerStreamProcessor 不同，客户端需要 reader/writer 进行数据传输
+	if reader == nil {
+		t.Error("GetReader should return a reader adapter for client HTTP long polling")
 	}
-	if writer != nil {
-		t.Error("GetWriter should return nil for HTTP long polling")
+	if writer == nil {
+		t.Error("GetWriter should return a writer adapter for client HTTP long polling")
 	}
 }

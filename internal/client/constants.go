@@ -6,10 +6,10 @@ const (
 	PublicServiceDomain = "gw.tunnox.net"
 
 	// 公共服务端点（按优先级排序）
-	PublicServiceWebSocket = "wss://gw.tunnox.net/_tunnox"
-	PublicServiceTCP       = "gw.tunnox.net:8000"
-	PublicServiceKCP       = "gw.tunnox.net:8000"
 	PublicServiceQUIC      = "gw.tunnox.net:443"
+	PublicServiceTCP       = "gw.tunnox.net:8000"
+	PublicServiceWebSocket = "wss://gw.tunnox.net/_tunnox"
+	PublicServiceKCP       = "gw.tunnox.net:8000"
 	PublicServiceHTTPPoll  = "https://gw.tunnox.net/_tunnox"
 )
 
@@ -26,9 +26,9 @@ const (
 
 // 协议优先级顺序
 var DefaultProtocolPriority = []string{
-	"websocket",
-	"tcp",
-	"kcp",
 	"quic",
+	"tcp",
+	"websocket",
+	"kcp",
 	"httppoll",
 }
