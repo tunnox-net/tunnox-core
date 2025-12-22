@@ -69,8 +69,15 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
 			// 创建 HTTPStreamProcessor
 			baseURL := httppollConn.baseURL
-			pushURL := baseURL + "/_tunnox/v1/push"
-			pollURL := baseURL + "/_tunnox/v1/poll"
+			// 构建 push/poll URL（与 NewHTTPLongPollingConn 保持一致）
+			var pushURL, pollURL string
+			if strings.Contains(baseURL, "/_tunnox") {
+				pushURL = baseURL + "/push"
+				pollURL = baseURL + "/poll"
+			} else {
+				pushURL = baseURL + "/_tunnox/v1/push"
+				pollURL = baseURL + "/_tunnox/v1/poll"
+			}
 			tunnelStream = httppoll.NewStreamProcessor(c.Ctx(), baseURL, pushURL, pollURL, c.config.ClientID, token, c.GetInstanceID(), mappingID)
 			// 设置 ConnectionID（如果已从握手响应中获取）
 			if httppollConn.connectionID != "" {
@@ -215,6 +222,13 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 		}); ok {
 			corelog.Infof("Client: switching HTTP long polling tunnel connection to stream mode, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
 			httppollConn.SetStreamMode(true)
+		}
+
+		// ✅ 启动数据 Poll 循环（隧道建立后才开始 Poll）
+		// 这样可以避免在服务端还没准备好时发送 Poll 请求
+		if sp, ok := tunnelStream.(*httppoll.StreamProcessor); ok {
+			corelog.Infof("Client: starting data poll loop after TunnelOpenAck, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
+			sp.StartDataPoll()
 		}
 	}
 

@@ -81,6 +81,7 @@ type Dependencies struct {
 	// 消息和桥接
 	MessageBroker broker.MessageBroker
 	BridgeManager *internalbridge.BridgeManager
+	BridgeAdapter *BridgeAdapter
 	GRPCServer    *grpc.Server
 
 	// HTTP 服务

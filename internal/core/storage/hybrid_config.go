@@ -6,16 +6,22 @@ import "time"
 type DataCategory int
 
 const (
-	// DataCategoryRuntime 运行时数据（仅缓存）
+	// DataCategoryRuntime 运行时数据（仅本地缓存）
 	DataCategoryRuntime DataCategory = iota
 	// DataCategoryPersistent 持久化数据（数据库+缓存）
 	DataCategoryPersistent
+	// DataCategoryShared 共享数据（必须写入共享缓存，用于跨节点通信）
+	DataCategoryShared
 )
 
 // HybridConfig 混合存储配置
 type HybridConfig struct {
 	// 持久化数据的 key 前缀列表
 	PersistentPrefixes []string
+
+	// 共享数据的 key 前缀列表（跨节点共享，必须写入 Redis）
+	// 这些数据不需要持久化，但需要在多节点间共享
+	SharedPrefixes []string
 
 	// 默认缓存 TTL
 	DefaultCacheTTL time.Duration
@@ -38,6 +44,11 @@ func DefaultHybridConfig() *HybridConfig {
 			"tunnox:port_mapping:",     // 端口映射配置（实际使用的key）
 			"tunnox:node:",             // 节点信息
 			"tunnox:stats:persistent:", // 持久化统计数据
+		},
+		SharedPrefixes: []string{
+			"tunnox:conn_state:",     // 连接状态（跨节点查询）
+			"tunnox:client_conn:",    // 客户端连接索引（跨节点查询）
+			"tunnox:tunnel_waiting:", // 隧道等待状态（跨节点路由）
 		},
 		DefaultCacheTTL:    1 * time.Hour,
 		PersistentCacheTTL: 24 * time.Hour,

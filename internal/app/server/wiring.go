@@ -62,32 +62,25 @@ func (s *Server) registerServices() {
 
 // createMessageBroker 创建消息代理
 func (s *Server) createMessageBroker(ctx context.Context) broker.MessageBroker {
+	// 根据配置决定使用哪种消息代理
+	brokerType := "memory"
+	var redisConfig *broker.RedisBrokerConfig
+
+	if s.config.Redis.Enabled {
+		brokerType = "redis"
+		redisConfig = &broker.RedisBrokerConfig{
+			Addrs:       []string{s.config.Redis.Addr},
+			Password:    s.config.Redis.Password,
+			DB:          s.config.Redis.DB,
+			ClusterMode: false,
+			PoolSize:    10,
+		}
+	}
+
 	brokerConfig := &broker.BrokerConfig{
-		Type:   broker.BrokerType(s.config.MessageBroker.Type),
-		NodeID: s.config.MessageBroker.NodeID,
-	}
-
-	// 如果 NodeID 未配置，使用服务器ID
-	if brokerConfig.NodeID == "" {
-		brokerConfig.NodeID = s.serverID
-	}
-
-	// 配置 Redis（如果使用 Redis）
-	if brokerConfig.Type == broker.BrokerTypeRedis {
-		redisConfig := &broker.RedisBrokerConfig{
-			Addrs:       []string{s.config.MessageBroker.Redis.Addr},
-			Password:    s.config.MessageBroker.Redis.Password,
-			DB:          s.config.MessageBroker.Redis.DB,
-			ClusterMode: s.config.MessageBroker.Redis.ClusterMode,
-			PoolSize:    s.config.MessageBroker.Redis.PoolSize,
-		}
-
-		// 设置默认值
-		if redisConfig.PoolSize <= 0 {
-			redisConfig.PoolSize = 10
-		}
-
-		brokerConfig.Redis = redisConfig
+		Type:   broker.BrokerType(brokerType),
+		NodeID: s.nodeID,
+		Redis:  redisConfig,
 	}
 
 	mb, err := broker.NewMessageBroker(ctx, brokerConfig)
@@ -100,25 +93,32 @@ func (s *Server) createMessageBroker(ctx context.Context) broker.MessageBroker {
 
 // createBridgeManager 创建桥接管理器
 func (s *Server) createBridgeManager(ctx context.Context) *internalbridge.BridgeManager {
+	// Bridge Manager 只在集群模式下需要（即启用了 Redis）
+	if !s.config.Redis.Enabled {
+		corelog.Debug("Redis not enabled, BridgeManager will not be created")
+		return nil
+	}
+
 	if s.messageBroker == nil {
 		corelog.Warn("MessageBroker not initialized, BridgeManager will not be created")
 		return nil
 	}
 
+	// 使用默认的桥接池配置
 	poolConfig := &internalbridge.PoolConfig{
-		MinConnsPerNode:     s.config.BridgePool.MinConnsPerNode,
-		MaxConnsPerNode:     s.config.BridgePool.MaxConnsPerNode,
-		MaxIdleTime:         time.Duration(s.config.BridgePool.MaxIdleTime) * time.Second,
-		MaxStreamsPerConn:   s.config.BridgePool.MaxStreamsPerConn,
-		DialTimeout:         time.Duration(s.config.BridgePool.DialTimeout) * time.Second,
-		HealthCheckInterval: time.Duration(s.config.BridgePool.HealthCheckInterval) * time.Second,
+		MinConnsPerNode:     2,
+		MaxConnsPerNode:     10,
+		MaxIdleTime:         300 * time.Second,
+		MaxStreamsPerConn:   100,
+		DialTimeout:         10 * time.Second,
+		HealthCheckInterval: 30 * time.Second,
 	}
 
 	// 创建简单的节点注册表（实际应该从 Storage 或 Cloud 获取）
 	nodeRegistry := NewSimpleNodeRegistry()
 
 	managerConfig := &internalbridge.BridgeManagerConfig{
-		NodeID:         s.config.MessageBroker.NodeID,
+		NodeID:         s.nodeID,
 		PoolConfig:     poolConfig,
 		MessageBroker:  s.messageBroker,
 		NodeRegistry:   nodeRegistry,
@@ -135,21 +135,20 @@ func (s *Server) createBridgeManager(ctx context.Context) *internalbridge.Bridge
 
 // startGRPCServer 启动 gRPC 服务器
 func (s *Server) startGRPCServer() *grpc.Server {
-	// 从配置中获取 gRPC 服务器地址
-	grpcServerConfig := s.config.BridgePool.GRPCServer
-
-	// 检查端口是否配置（如果未配置则不启动）
-	if grpcServerConfig.Port == 0 {
-		corelog.Warn("gRPC server port not configured, skipping gRPC server startup")
+	// gRPC 服务器只在集群模式下需要（即启用了 Redis）
+	if !s.config.Redis.Enabled {
+		corelog.Debug("Redis not enabled, skipping gRPC server startup")
 		return nil
 	}
 
-	port := grpcServerConfig.Port
-	host := grpcServerConfig.Addr
-	if host == "" {
-		host = "0.0.0.0"
+	if s.bridgeManager == nil {
+		corelog.Warn("BridgeManager not initialized, skipping gRPC server startup")
+		return nil
 	}
 
+	// 使用默认端口 50051
+	port := 50051
+	host := "0.0.0.0"
 	addr := fmt.Sprintf("%s:%d", host, port)
 
 	listener, err := net.Listen("tcp", addr)
@@ -159,7 +158,7 @@ func (s *Server) startGRPCServer() *grpc.Server {
 
 	grpcServer := grpc.NewServer()
 	// 使用 serviceManager 的 context 作为父 context，确保能接收退出信号
-	bridgeServer := internalbridge.NewGRPCBridgeServer(s.serviceManager.GetContext(), s.config.MessageBroker.NodeID, s.bridgeManager)
+	bridgeServer := internalbridge.NewGRPCBridgeServer(s.serviceManager.GetContext(), s.nodeID, s.bridgeManager)
 	bridge.RegisterBridgeServiceServer(grpcServer, bridgeServer)
 
 	// 在后台启动 gRPC 服务器
@@ -236,27 +235,27 @@ func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService
 
 	// 构建 HTTP 服务配置
 	httpConfig := &httpservice.HTTPServiceConfig{
-		Enabled:    s.config.ManagementAPI.Enabled,
-		ListenAddr: s.config.ManagementAPI.ListenAddr,
+		Enabled:    true, // HTTP 服务始终启用
+		ListenAddr: s.config.Management.Listen,
 		CORS: httpservice.CORSConfig{
-			Enabled:        s.config.ManagementAPI.CORS.Enabled,
-			AllowedOrigins: s.config.ManagementAPI.CORS.AllowedOrigins,
+			Enabled:        false,
+			AllowedOrigins: []string{},
 		},
 		RateLimit: httpservice.RateLimitConfig{
-			Enabled: s.config.ManagementAPI.RateLimit.Enabled,
+			Enabled: false,
 		},
 		Modules: httpservice.ModulesConfig{
 			ManagementAPI: httpservice.ManagementAPIModuleConfig{
 				Enabled: true,
 				Auth: httpservice.AuthConfig{
-					Type:   s.config.ManagementAPI.Auth.Type,
-					Secret: s.config.ManagementAPI.Auth.Token,
+					Type:   s.config.Management.Auth.Type,
+					Secret: s.config.Management.Auth.Token,
 				},
 				PProf: httpservice.PProfConfig{
-					Enabled:     s.config.ManagementAPI.PProf.Enabled,
-					DataDir:     s.config.ManagementAPI.PProf.DataDir,
-					Retention:   s.config.ManagementAPI.PProf.Retention,
-					AutoCapture: s.config.ManagementAPI.PProf.AutoCapture,
+					Enabled:     s.config.Management.PProf.Enabled,
+					DataDir:     s.config.Management.PProf.DataDir,
+					Retention:   s.config.Management.PProf.Retention,
+					AutoCapture: s.config.Management.PProf.AutoCapture,
 				},
 			},
 			HTTPPoll: httpservice.HTTPPollModuleConfig{
@@ -297,9 +296,13 @@ func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService
 	}
 
 	// 创建并注册 HTTPPoll 模块（如果启用）
+	var httpPollModule *httppoll.HTTPPollModule
 	if httpPollEnabled {
 		httpPollConfig := &httpConfig.Modules.HTTPPoll
-		httpPollModule := httppoll.NewHTTPPollModule(ctx, httpPollConfig)
+		httpPollModule = httppoll.NewHTTPPollModule(ctx, httpPollConfig)
+		if s.session != nil {
+			httpPollModule.SetSession(s.session)
+		}
 		httpSvc.RegisterModule(httpPollModule)
 	}
 

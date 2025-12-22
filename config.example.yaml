@@ -1,0 +1,44 @@
+# Tunnox Core Server Configuration Example
+# 此文件为示例配置，实际部署时请通过 ConfigMap 或环境变量覆盖
+
+server:
+  protocols:
+    tcp:
+      enabled: true
+      port: 8000
+      host: "0.0.0.0"
+    kcp:
+      enabled: true
+      port: 8000
+      host: "0.0.0.0"
+    quic:
+      enabled: true
+      port: 8443
+      host: "0.0.0.0"
+    websocket:
+      enabled: true
+    httppoll:
+      enabled: true
+
+log:
+  level: "info"
+  format: "text"
+  output: "stdout"
+
+message_broker:
+  type: "memory"
+
+storage:
+  type: hybrid
+  hybrid:
+    cache_type: memory
+    enable_persistent: true
+
+management_api:
+  enabled: true
+  listen_addr: "0.0.0.0:9000"
+  auth:
+    type: "bearer"
+    token: ""
+  pprof:
+    enabled: true

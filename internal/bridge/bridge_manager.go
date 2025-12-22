@@ -378,6 +378,23 @@ func (m *BridgeManager) GetConnectionPool() *BridgeConnectionPool {
 	return m.connectionPool
 }
 
+// CreateCrossNodeSession 创建跨节点转发会话
+// 实现 session.BridgeManager 接口
+func (m *BridgeManager) CreateCrossNodeSession(ctx context.Context, targetNodeID, targetNodeAddr string, metadata *SessionMetadata) (*ForwardSession, error) {
+	if m.connectionPool == nil {
+		return nil, fmt.Errorf("connection pool not initialized")
+	}
+
+	session, err := m.connectionPool.CreateSession(ctx, targetNodeID, targetNodeAddr, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cross-node session: %w", err)
+	}
+
+	corelog.Infof("BridgeManager: created cross-node session %s to node %s at %s",
+		session.StreamID(), targetNodeID, targetNodeAddr)
+	return session, nil
+}
+
 // GetNodeID 获取当前节点ID
 func (m *BridgeManager) GetNodeID() string {
 	return m.nodeID

@@ -60,9 +60,9 @@ func displayServerInfo(s *Server, configPath string, reset func(...interface{}) 
 	fmt.Println(bannerFaint("  " + strings.Repeat("─", bannerWidth)))
 
 	logFile := getLogFilePath(s.config.Log.File)
-	cacheInfo := formatCacheInfo(s.config.Storage)
-	persistentInfo := formatPersistentStorageInfo(s.config.Storage)
-	brokerInfo := formatBrokerInfo(s.config.MessageBroker)
+	runMode := getRunMode(s.config)
+	cacheInfo := formatCacheInfo(s.config)
+	persistentInfo := formatPersistentStorageInfo(s.config)
 
 	infoRows := []struct {
 		label string
@@ -71,9 +71,9 @@ func displayServerInfo(s *Server, configPath string, reset func(...interface{}) 
 		{"Node ID", s.nodeID},
 		{"Config File", configPath},
 		{"Start Time", time.Now().Format("2006-01-02 15:04:05")},
+		{"Run Mode", runMode},
 		{"Cache", cacheInfo},
 		{"Persistent", persistentInfo},
-		{"Message Broker", brokerInfo},
 		{"Log File", logFile},
 	}
 
@@ -118,20 +118,16 @@ func displayProtocolListeners(s *Server, reset func(...interface{}) string) {
 
 // displayManagementAPI 显示HTTP服务信息（包含所有HTTP模块）
 func displayManagementAPI(s *Server, reset func(...interface{}) string) {
-	if !s.config.ManagementAPI.Enabled {
-		return
-	}
-
 	fmt.Println(bannerBold("  HTTP Service"))
 	fmt.Println(bannerFaint("  " + strings.Repeat("─", bannerWidth)))
 
-	authType := s.config.ManagementAPI.Auth.Type
+	authType := s.config.Management.Auth.Type
 	if authType == "" {
 		authType = "none"
 	}
 
 	fmt.Printf("  %-18s %s\n", bannerBold("Status:"), bannerGreen("✓ Enabled"))
-	fmt.Printf("  %-18s %s\n", bannerBold("Address:"), fmt.Sprintf("http://%s", s.config.ManagementAPI.ListenAddr))
+	fmt.Printf("  %-18s %s\n", bannerBold("Address:"), fmt.Sprintf("http://%s", s.config.Management.Listen))
 	fmt.Printf("  %-18s %s\n", bannerBold("Authentication:"), authType)
 	fmt.Printf("  %-18s %s\n", bannerBold("Base Path:"), bannerFaint("/tunnox/v1"))
 	fmt.Println()
@@ -139,9 +135,18 @@ func displayManagementAPI(s *Server, reset func(...interface{}) string) {
 	// 显示已启用的模块
 	fmt.Printf("  %s\n", bannerBold("Modules:"))
 	fmt.Printf("    • %s\n", "Management API")
-	fmt.Printf("    • %s %s\n", "WebSocket", bannerFaint("(ws://"+s.config.ManagementAPI.ListenAddr+"/_tunnox)"))
-	fmt.Printf("    • %s %s\n", "HTTP Long Poll", bannerFaint("(POST/GET /_tunnox/v1/push|poll)"))
-	if s.config.ManagementAPI.PProf.Enabled {
+
+	// 检查 WebSocket 是否启用
+	if wsConfig, exists := s.config.Server.Protocols["websocket"]; exists && wsConfig.Enabled {
+		fmt.Printf("    • %s %s\n", "WebSocket", bannerFaint("(ws://"+s.config.Management.Listen+"/_tunnox)"))
+	}
+
+	// 检查 HTTPPoll 是否启用
+	if httpPollConfig, exists := s.config.Server.Protocols["httppoll"]; exists && httpPollConfig.Enabled {
+		fmt.Printf("    • %s %s\n", "HTTP Long Poll", bannerFaint("(POST/GET /_tunnox/v1/push|poll)"))
+	}
+
+	if s.config.Management.PProf.Enabled {
 		fmt.Printf("    • %s %s\n", "PProf", bannerFaint("(/tunnox/v1/debug/pprof/)"))
 	}
 	fmt.Println()
@@ -167,50 +172,35 @@ func getLogFilePath(configuredPath string) string {
 	return expandedPath
 }
 
-// formatCacheInfo 格式化缓存信息
-func formatCacheInfo(storage StorageConfig) string {
-	switch storage.Type {
-	case "hybrid":
-		if storage.Hybrid.CacheType == "redis" && storage.Redis.Addr != "" {
-			return fmt.Sprintf("Redis (%s)", storage.Redis.Addr)
-		}
-		return "Memory"
-	case "redis":
-		if storage.Redis.Addr != "" {
-			return fmt.Sprintf("Redis (%s)", storage.Redis.Addr)
-		}
-		return "Redis"
-	case "memory":
-		return "Memory"
-	default:
-		return "Memory"
+// getRunMode 获取运行模式
+func getRunMode(config *Config) string {
+	if config.Storage.Enabled {
+		return "Remote Storage"
 	}
+	if config.Redis.Enabled {
+		return "Cluster (Redis)"
+	}
+	if config.Persistence.Enabled {
+		return "Standalone (Persistent)"
+	}
+	return "Standalone (Memory)"
+}
+
+// formatCacheInfo 格式化缓存信息
+func formatCacheInfo(config *Config) string {
+	if config.Redis.Enabled {
+		return fmt.Sprintf("Redis (%s)", config.Redis.Addr)
+	}
+	return "Memory"
 }
 
 // formatPersistentStorageInfo 格式化持久化存储信息
-func formatPersistentStorageInfo(storage StorageConfig) string {
-	switch storage.Type {
-	case "hybrid":
-		if storage.Hybrid.EnablePersistent {
-			if storage.Hybrid.Remote.Type == "grpc" && storage.Hybrid.Remote.GRPC.Address != "" {
-				return fmt.Sprintf("Remote gRPC (%s)", storage.Hybrid.Remote.GRPC.Address)
-			}
-			return "Local JSON"
-		}
-		return "None"
-	case "redis":
-		return "Redis (built-in)"
-	case "memory":
-		return "None"
-	default:
-		return "None"
+func formatPersistentStorageInfo(config *Config) string {
+	if config.Storage.Enabled {
+		return fmt.Sprintf("Remote (%s)", config.Storage.URL)
 	}
-}
-
-// formatBrokerInfo 格式化消息代理信息
-func formatBrokerInfo(broker MessageBrokerConfig) string {
-	if broker.Type == "redis" && broker.Redis.Addr != "" {
-		return fmt.Sprintf("Redis (%s)", broker.Redis.Addr)
+	if config.Persistence.Enabled {
+		return fmt.Sprintf("Local (%s)", config.Persistence.File)
 	}
-	return broker.Type
+	return "None"
 }

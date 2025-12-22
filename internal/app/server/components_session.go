@@ -183,6 +183,35 @@ func (c *HandlersComponent) Initialize(ctx context.Context, deps *Dependencies) 
 	if deps.Storage != nil {
 		tunnelRouting := session.NewTunnelRoutingTable(deps.Storage, 30*time.Second)
 		deps.SessionMgr.SetTunnelRoutingTable(tunnelRouting)
+
+		// 注册节点地址到 Redis（用于跨节点转发）
+		// 节点地址格式：nodeID:50052（跨节点 TCP 端口）
+		nodeAddr := fmt.Sprintf("%s:50052", deps.NodeID)
+		if err := tunnelRouting.RegisterNodeAddress(deps.NodeID, nodeAddr); err != nil {
+			corelog.Warnf("Failed to register node address: %v", err)
+		} else {
+			corelog.Infof("Registered node address: %s -> %s", deps.NodeID, nodeAddr)
+		}
+
+		// ✅ 创建并注入 ConnectionStateStore（用于跨节点客户端位置查询）
+		connStateStore := session.NewConnectionStateStore(deps.Storage, deps.NodeID, 5*time.Minute)
+		deps.SessionMgr.SetConnectionStateStore(connStateStore)
+		corelog.Infof("ConnectionStateStore initialized for node %s", deps.NodeID)
+
+		// ✅ 创建并注入 CrossNodePool（跨节点连接池）
+		crossNodePoolConfig := session.DefaultCrossNodePoolConfig()
+		crossNodePool := session.NewCrossNodePool(ctx, deps.Storage, deps.NodeID, crossNodePoolConfig)
+		deps.SessionMgr.SetCrossNodePool(crossNodePool)
+		corelog.Infof("CrossNodePool initialized for node %s", deps.NodeID)
+
+		// ✅ 创建并启动 CrossNodeListener（跨节点连接监听器）
+		crossNodeListener := session.NewCrossNodeListener(deps.SessionMgr, 50052)
+		if err := crossNodeListener.Start(ctx); err != nil {
+			corelog.Warnf("Failed to start CrossNodeListener: %v", err)
+		} else {
+			deps.SessionMgr.SetCrossNodeListener(crossNodeListener)
+			corelog.Infof("CrossNodeListener started on port 50052 for node %s", deps.NodeID)
+		}
 	}
 
 	corelog.Infof("Handlers initialized")

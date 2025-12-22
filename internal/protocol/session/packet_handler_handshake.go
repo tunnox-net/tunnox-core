@@ -95,19 +95,53 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		return err
 	}
 
+	// 调试日志
+	corelog.Infof("Handshake: after sendHandshakeResponse - isControlConnection=%v, isAuthenticated=%v, clientID=%d, connID=%s",
+		isControlConnection, clientConn.IsAuthenticated(), clientConn.GetClientID(), connPacket.ConnectionID)
+
 	if isControlConnection && clientConn.IsAuthenticated() && clientConn.GetClientID() > 0 {
+		corelog.Infof("Handshake: updating clientIDIndexMap for client %d, isControlConnection=%v, isAuthenticated=%v",
+			clientConn.GetClientID(), isControlConnection, clientConn.IsAuthenticated())
 		s.controlConnLock.Lock()
 		oldConn, exists := s.clientIDIndexMap[clientConn.GetClientID()]
 		if exists && oldConn != nil && oldConn.GetConnID() != clientConn.GetConnID() {
 			corelog.Warnf("Client %d reconnected: oldConnID=%s, newConnID=%s, cleaning up old connection",
 				clientConn.GetClientID(), oldConn.GetConnID(), clientConn.GetConnID())
 			delete(s.controlConnMap, oldConn.GetConnID())
+			// 清理旧连接的 Redis 记录
+			if s.connStateStore != nil {
+				if err := s.connStateStore.UnregisterConnection(s.Ctx(), oldConn.GetConnID()); err != nil {
+					corelog.Warnf("Failed to unregister old connection state: %v", err)
+				}
+			}
 		}
 		// 需要将接口转换为具体类型存储（内部实现需要）
 		if concreteConn, ok := clientConn.(*ControlConnection); ok {
 			s.clientIDIndexMap[clientConn.GetClientID()] = concreteConn
 		}
 		s.controlConnLock.Unlock()
+
+		// ✅ 登记客户端位置到 Redis（用于跨节点查询）
+		if s.connStateStore != nil {
+			conn := s.getConnectionByConnID(connPacket.ConnectionID)
+			protocol := "tcp"
+			if conn != nil && conn.Protocol != "" {
+				protocol = conn.Protocol
+			}
+			stateInfo := &ConnectionStateInfo{
+				ConnectionID: connPacket.ConnectionID,
+				ClientID:     clientConn.GetClientID(),
+				NodeID:       s.nodeID,
+				Protocol:     protocol,
+				ConnType:     "control",
+			}
+			if err := s.connStateStore.RegisterConnection(s.Ctx(), stateInfo); err != nil {
+				corelog.Warnf("Failed to register connection state: %v", err)
+			} else {
+				corelog.Infof("Registered client %d location to Redis (node=%s, connID=%s)",
+					clientConn.GetClientID(), s.nodeID, connPacket.ConnectionID)
+			}
+		}
 
 		conn := s.getConnectionByConnID(connPacket.ConnectionID)
 		if conn != nil && conn.Stream != nil {
@@ -119,6 +153,9 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 				handshakeHandler.OnHandshakeComplete(clientConn.GetClientID())
 			}
 		}
+	} else {
+		corelog.Warnf("Handshake: NOT updating clientIDIndexMap - isControlConnection=%v, isAuthenticated=%v, clientID=%d",
+			isControlConnection, clientConn.IsAuthenticated(), clientConn.GetClientID())
 	}
 
 	corelog.Infof("Handshake succeeded for connection %s, ClientID=%d",

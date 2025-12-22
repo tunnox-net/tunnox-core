@@ -68,6 +68,11 @@ type StreamProcessor struct {
 	// 待使用的 Poll 请求 ID（由 TriggerImmediatePoll 设置，供 ReadPacket 使用）
 	pendingPollRequestID string
 	pendingPollRequestMu sync.Mutex
+
+	// 数据 Poll 循环是否已启动（用于延迟启动 dataPollLoop，等待隧道建立后再开始）
+	dataPollStarted bool
+	dataPollStartMu sync.Mutex
+	dataPollStartCh chan struct{} // 用于通知 dataPollLoop 可以开始
 }
 
 // NewStreamProcessor 创建 HTTP 长轮询流处理器
@@ -95,6 +100,7 @@ func NewStreamProcessor(ctx context.Context, baseURL, pushURL, pollURL string, c
 		responseCache:       make(map[string]*cachedResponse),
 		pollRequestChan:     make(chan string, 10),    // 缓冲 10 个请求
 		fragmentReassembler: NewFragmentReassembler(), // 创建分片重组器
+		dataPollStartCh:     make(chan struct{}),      // 用于通知 dataPollLoop 可以开始
 	}
 
 	sp.converter.SetConnectionInfo("", clientID, mappingID, connType)
@@ -149,23 +155,21 @@ func (sp *StreamProcessor) UpdateClientID(newClientID int64) {
 func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 	sp.closeMu.RLock()
 	closed := sp.closed
-	connID := sp.connectionID
 	sp.closeMu.RUnlock()
 
 	if closed {
 		return nil, 0, io.EOF
 	}
 
-	// 如果 connectionID 为空，说明还没有从服务端获取到 ConnectionID
-	// 在握手阶段，客户端会先发送 Push（握手请求），然后立即发送 Poll（等待握手响应）
-	// 此时 connectionID 可能还是空的，需要等待服务端在握手响应中分配
-	if connID == "" {
-		// 先检查 packetQueue 中是否有响应包（Push 请求的响应可能已经在队列中）
-		select {
-		case pkt := <-sp.packetQueue:
+	// ✅ 始终先检查 packetQueue 中是否有响应包
+	// Push 请求的响应（如 HandshakeResp）会被放入 packetQueue
+	select {
+	case pkt := <-sp.packetQueue:
+		if pkt != nil {
+			corelog.Debugf("HTTPStreamProcessor: ReadPacket - got packet from packetQueue, type=0x%02x, connID=%s", byte(pkt.PacketType), sp.connectionID)
 			return pkt, 0, nil
-		default:
 		}
+	default:
 	}
 
 	// 检查是否有待使用的 Poll 请求 ID（由 TriggerImmediatePoll 设置）
@@ -237,6 +241,8 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 
 // WritePacket 通过 HTTP Push 发送包
 func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompression bool, rateLimitBytesPerSecond int64) (int, error) {
+	corelog.Infof("HTTPStreamProcessor: WritePacket - called, packetType=0x%02x, connID=%s", byte(pkt.PacketType), sp.connectionID)
+
 	sp.closeMu.RLock()
 	closed := sp.closed
 	sp.closeMu.RUnlock()
@@ -304,16 +310,23 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	defer resp.Body.Close()
 
 	// 5. 处理响应（如果有控制包响应，在 X-Tunnel-Package 中）
-	if resp.Header.Get("X-Tunnel-Package") != "" {
+	xTunnelPackage := resp.Header.Get("X-Tunnel-Package")
+	corelog.Infof("HTTPStreamProcessor: WritePacket - response received, status=%d, X-Tunnel-Package=%s, requestID=%s, connID=%s",
+		resp.StatusCode, xTunnelPackage, requestID, sp.connectionID)
+	if xTunnelPackage != "" {
 		// 解码 TunnelPackage 以检查 RequestId
-		pkg, err := DecodeTunnelPackage(resp.Header.Get("X-Tunnel-Package"))
+		pkg, err := DecodeTunnelPackage(xTunnelPackage)
 		if err == nil {
-			// 检查 RequestId 是否匹配
-			if pkg.RequestID == requestID {
-				// RequestId 匹配，处理响应
+			corelog.Infof("HTTPStreamProcessor: WritePacket - decoded TunnelPackage, Type=%s, RequestID=%s, expected=%s, connID=%s",
+				pkg.Type, pkg.RequestID, requestID, sp.connectionID)
+			// 检查 RequestId 是否匹配（或者响应中没有 RequestId，也接受）
+			if pkg.RequestID == requestID || pkg.RequestID == "" {
+				// RequestId 匹配或为空，处理响应
 				respPkt, _ := sp.converter.ReadPacket(resp)
 				// 将响应包放入队列，供后续读取
 				if respPkt != nil {
+					corelog.Infof("HTTPStreamProcessor: WritePacket - got response packet, type=0x%02x, putting into packetQueue, requestID=%s, connID=%s",
+						byte(respPkt.PacketType), requestID, sp.connectionID)
 					// 安全地向 packetQueue 写入，使用 recover 捕获可能的 panic（channel 已关闭）
 					func() {
 						defer func() {
@@ -323,11 +336,14 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 						}()
 						select {
 						case sp.packetQueue <- respPkt:
+							corelog.Infof("HTTPStreamProcessor: WritePacket - response packet put into packetQueue successfully, requestID=%s, connID=%s", requestID, sp.connectionID)
 						default:
 							// 队列满，丢弃
 							corelog.Warnf("HTTPStreamProcessor: WritePacket - packetQueue full, dropping response packet, requestID=%s, connID=%s", requestID, sp.connectionID)
 						}
 					}()
+				} else {
+					corelog.Warnf("HTTPStreamProcessor: WritePacket - converter.ReadPacket returned nil, requestID=%s, connID=%s", requestID, sp.connectionID)
 				}
 				// 更新连接信息
 				if pkg.ConnectionID != "" {
@@ -337,6 +353,8 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 				corelog.Debugf("HTTPStreamProcessor: WritePacket - RequestId mismatch, expected=%s, got=%s, ignoring response",
 					requestID, pkg.RequestID)
 			}
+		} else {
+			corelog.Warnf("HTTPStreamProcessor: WritePacket - failed to decode X-Tunnel-Package: %v, requestID=%s, connID=%s", err, requestID, sp.connectionID)
 		}
 	}
 
@@ -479,18 +497,93 @@ func (sp *StreamProcessor) ReadExact(length int) ([]byte, error) {
 	return data[:n], nil
 }
 
-// GetReader 获取底层 Reader（HTTP 无状态，返回 nil）
+// GetReader 获取底层 Reader
+// 返回一个适配器，从 dataBuffer 读取数据（由 dataPollLoop 填充）
 func (sp *StreamProcessor) GetReader() io.Reader {
-	// HTTP 是无状态的，没有底层的 io.Reader
-	// 返回 nil，上层代码应该使用 ReadPacket() 和 ReadExact()
-	return nil
+	return &streamProcessorReader{sp: sp}
 }
 
-// GetWriter 获取底层 Writer（HTTP 无状态，返回 nil）
+// streamProcessorReader 适配器，实现 io.Reader 接口
+type streamProcessorReader struct {
+	sp *StreamProcessor
+}
+
+// Read 从 dataBuffer 读取数据
+func (r *streamProcessorReader) Read(p []byte) (int, error) {
+	sp := r.sp
+
+	// 检查连接是否已关闭
+	sp.closeMu.RLock()
+	closed := sp.closed
+	sp.closeMu.RUnlock()
+	if closed {
+		return 0, io.EOF
+	}
+
+	// 循环等待数据
+	for {
+		// 检查 context 是否已取消
+		select {
+		case <-sp.Ctx().Done():
+			corelog.Infof("HTTPStreamProcessor: streamProcessorReader.Read - context done, connID=%s, err=%v", sp.connectionID, sp.Ctx().Err())
+			return 0, sp.Ctx().Err()
+		default:
+		}
+
+		// 检查 dataBuffer 是否有数据
+		sp.dataBufMu.Lock()
+		bufLen := sp.dataBuffer.Len()
+		if bufLen > 0 {
+			n, err := sp.dataBuffer.Read(p)
+			sp.dataBufMu.Unlock()
+			corelog.Infof("HTTPStreamProcessor: streamProcessorReader.Read - read %d bytes from dataBuffer (remaining=%d), connID=%s", n, sp.dataBuffer.Len(), sp.connectionID)
+			return n, err
+		}
+		sp.dataBufMu.Unlock()
+
+		// 等待一小段时间，避免忙等待
+		select {
+		case <-sp.Ctx().Done():
+			corelog.Infof("HTTPStreamProcessor: streamProcessorReader.Read - context done while waiting, connID=%s, err=%v", sp.connectionID, sp.Ctx().Err())
+			return 0, sp.Ctx().Err()
+		case <-time.After(10 * time.Millisecond):
+			// 继续循环
+		}
+	}
+}
+
+// GetWriter 获取底层 Writer
+// 返回一个适配器，通过 WriteExact 发送数据
 func (sp *StreamProcessor) GetWriter() io.Writer {
-	// HTTP 是无状态的，没有底层的 io.Writer
-	// 返回 nil，上层代码应该使用 WritePacket() 和 WriteExact()
-	return nil
+	return &streamProcessorWriter{sp: sp}
+}
+
+// streamProcessorWriter 适配器，实现 io.Writer 接口
+type streamProcessorWriter struct {
+	sp *StreamProcessor
+}
+
+// Write 通过 WriteExact 发送数据
+func (w *streamProcessorWriter) Write(p []byte) (int, error) {
+	sp := w.sp
+
+	// 检查连接是否已关闭
+	sp.closeMu.RLock()
+	closed := sp.closed
+	sp.closeMu.RUnlock()
+	if closed {
+		return 0, io.ErrClosedPipe
+	}
+
+	corelog.Infof("HTTPStreamProcessor: streamProcessorWriter.Write - writing %d bytes, connID=%s", len(p), sp.connectionID)
+
+	// 通过 WriteExact 发送数据
+	if err := sp.WriteExact(p); err != nil {
+		corelog.Errorf("HTTPStreamProcessor: streamProcessorWriter.Write - WriteExact failed: %v, connID=%s", err, sp.connectionID)
+		return 0, err
+	}
+
+	return len(p), nil
 }
 
 // Close 关闭连接

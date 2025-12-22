@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -284,8 +285,15 @@ func (ac *AutoConnector) tryConnectWithStreamContext(connCtx, streamCtx context.
 	if endpoint.Protocol == "httppoll" || endpoint.Protocol == "http-long-polling" || endpoint.Protocol == "httplp" {
 		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
 			baseURL := httppollConn.baseURL
-			pushURL := baseURL + "/_tunnox/v1/push"
-			pollURL := baseURL + "/_tunnox/v1/poll"
+			// 构建 push/poll URL（与 NewHTTPLongPollingConn 保持一致）
+			var pushURL, pollURL string
+			if strings.Contains(baseURL, "/_tunnox") {
+				pushURL = baseURL + "/push"
+				pollURL = baseURL + "/poll"
+			} else {
+				pushURL = baseURL + "/_tunnox/v1/push"
+				pollURL = baseURL + "/_tunnox/v1/poll"
+			}
 			pkgStream = httppoll.NewStreamProcessor(streamCtx, baseURL, pushURL, pollURL, 0, "", httppollConn.instanceID, "")
 			if httppollConn.connectionID != "" {
 				pkgStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)

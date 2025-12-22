@@ -261,6 +261,7 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 				if errMsg == "tunnel source connected, switching to stream mode" ||
 					errMsg == "tunnel target connected, switching to stream mode" ||
 					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" ||
+					errMsg == "tunnel target connected via cross-node forwarding, switching to stream mode" ||
 					errMsg == "tunnel connected to existing bridge, switching to stream mode" {
 					// 在设置为 nil 之前保存 ID 用于日志
 					connID := streamConn.ID

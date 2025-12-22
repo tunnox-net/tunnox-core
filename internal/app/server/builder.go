@@ -60,7 +60,14 @@ func (b *ServerBuilder) Build(parentCtx context.Context) (*Server, error) {
 	b.parentCtx = parentCtx
 
 	// 初始化日志（在组件初始化之前）
-	if err := utils.InitLogger(&b.config.Log); err != nil {
+	// 服务端固定为 console+file 输出
+	logConfig := &utils.LogConfig{
+		Level:  b.config.Log.Level,
+		Format: "text",
+		Output: "both", // 服务端固定同时输出到 console 和 file
+		File:   b.config.Log.File,
+	}
+	if err := utils.InitLogger(logConfig); err != nil {
 		return nil, fmt.Errorf("failed to initialize logger: %w", err)
 	}
 

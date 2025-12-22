@@ -77,6 +77,9 @@ type HTTPLongPollingConn struct {
 	// 地址信息（用于实现 net.Conn 接口）
 	localAddr  net.Addr
 	remoteAddr net.Addr
+
+	// 是否禁用内部 pollLoop（当使用 HTTPStreamProcessor 时应禁用）
+	disablePollLoop bool
 }
 
 // UpdateClientID 更新客户端 ID（握手后调用）
@@ -89,8 +92,22 @@ func (c *HTTPLongPollingConn) UpdateClientID(newClientID int64) {
 	corelog.Infof("HTTP long polling: updated clientID from %d to %d", oldClientID, newClientID)
 }
 
+// DisablePollLoop 禁用内部 pollLoop
+// 当使用 HTTPStreamProcessor 时应调用此方法，因为 HTTPStreamProcessor 有自己的 pollLoop
+func (c *HTTPLongPollingConn) DisablePollLoop() {
+	c.disablePollLoop = true
+}
+
 // NewHTTPLongPollingConn 创建 HTTP 长轮询连接
+// 注意：此函数启用内部 pollLoop，适用于直接使用 HTTPLongPollingConn 的场景
+// 如果使用 HTTPStreamProcessor，应该使用 dialHTTPLongPolling 或 newHTTPLongPollingConnInternal
 func NewHTTPLongPollingConn(ctx context.Context, baseURL string, clientID int64, token string, instanceID string, mappingID string) (*HTTPLongPollingConn, error) {
+	return newHTTPLongPollingConnInternal(ctx, baseURL, clientID, token, instanceID, mappingID, false)
+}
+
+// newHTTPLongPollingConnInternal 创建 HTTP 长轮询连接（内部函数）
+// disablePollLoop: 当使用 HTTPStreamProcessor 时应设为 true
+func newHTTPLongPollingConnInternal(ctx context.Context, baseURL string, clientID int64, token string, instanceID string, mappingID string, disablePollLoop bool) (*HTTPLongPollingConn, error) {
 	// 确保 baseURL 以 / 结尾
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
@@ -110,6 +127,19 @@ func NewHTTPLongPollingConn(ctx context.Context, baseURL string, clientID int64,
 		connType = "data"
 	}
 
+	// 构建 push/poll URL
+	// 如果 baseURL 已经包含 /_tunnox，则直接使用；否则拼接 /_tunnox/v1
+	var pushURL, pollURL string
+	if strings.Contains(baseURL, "/_tunnox") {
+		// baseURL 已经包含路径，直接拼接 push/poll
+		pushURL = baseURL + "/push"
+		pollURL = baseURL + "/poll"
+	} else {
+		// baseURL 只有主机和端口，拼接完整路径
+		pushURL = baseURL + "/_tunnox/v1/push"
+		pollURL = baseURL + "/_tunnox/v1/poll"
+	}
+
 	conn := &HTTPLongPollingConn{
 		ManagerBase:  dispose.NewManager("HTTPLongPollingConn", ctx),
 		baseURL:      baseURL,
@@ -119,8 +149,8 @@ func NewHTTPLongPollingConn(ctx context.Context, baseURL string, clientID int64,
 		instanceID:   instanceID,
 		mappingID:    mappingID,
 		connType:     connType,
-		pushURL:      baseURL + "/_tunnox/v1/push",
-		pollURL:      baseURL + "/_tunnox/v1/poll",
+		pushURL:      pushURL,
+		pollURL:      pollURL,
 		pushClient: &http.Client{
 			Timeout: httppollDefaultPushTimeout,
 		},
@@ -132,23 +162,30 @@ func NewHTTPLongPollingConn(ctx context.Context, baseURL string, clientID int64,
 		fragmentReassembler: httppoll.NewFragmentReassembler(), // 创建分片重组器
 		localAddr:           &httppollAddr{network: "httppoll", addr: "local"},
 		remoteAddr:          &httppollAddr{network: "httppoll", addr: baseURL},
+		disablePollLoop:     disablePollLoop, // 设置是否禁用 pollLoop
 	}
 
 	// 注册清理处理器
 	conn.AddCleanHandler(conn.onClose)
 
-	// 启动接收循环
-	corelog.Debugf("HTTP long polling: starting pollLoop goroutine, clientID=%d, pollURL=%s", conn.clientID, conn.pollURL)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				corelog.Errorf("HTTP long polling: pollLoop panic: %v, stack: %s", r, string(debug.Stack()))
-			}
+	// 启动接收循环（仅当未禁用时）
+	// 注意：当使用 HTTPStreamProcessor 时，应该禁用此 pollLoop，
+	// 因为 HTTPStreamProcessor 有自己的 pollLoop，两个 pollLoop 会冲突
+	if !conn.disablePollLoop {
+		corelog.Debugf("HTTP long polling: starting pollLoop goroutine, clientID=%d, pollURL=%s", conn.clientID, conn.pollURL)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					corelog.Errorf("HTTP long polling: pollLoop panic: %v, stack: %s", r, string(debug.Stack()))
+				}
+			}()
+			corelog.Debugf("HTTP long polling: pollLoop goroutine started, about to call pollLoop(), clientID=%d", conn.clientID)
+			conn.pollLoop()
+			corelog.Debugf("HTTP long polling: pollLoop goroutine finished, clientID=%d", conn.clientID)
 		}()
-		corelog.Debugf("HTTP long polling: pollLoop goroutine started, about to call pollLoop(), clientID=%d", conn.clientID)
-		conn.pollLoop()
-		corelog.Debugf("HTTP long polling: pollLoop goroutine finished, clientID=%d", conn.clientID)
-	}()
+	} else {
+		corelog.Debugf("HTTP long polling: pollLoop disabled (using HTTPStreamProcessor), clientID=%d", conn.clientID)
+	}
 
 	// 启动写入刷新循环（定期刷新缓冲区）
 	go conn.writeFlushLoop()
@@ -174,6 +211,8 @@ func (c *HTTPLongPollingConn) onClose() error {
 }
 
 // dialHTTPLongPolling 建立 HTTP 长轮询连接
+// 注意：默认禁用内部 pollLoop，因为客户端使用 HTTPStreamProcessor 来处理控制连接
+// HTTPStreamProcessor 有自己的 pollLoop，两个 pollLoop 会冲突
 func dialHTTPLongPolling(ctx context.Context, baseURL string, clientID int64, token string, instanceID string, mappingID string) (net.Conn, error) {
-	return NewHTTPLongPollingConn(ctx, baseURL, clientID, token, instanceID, mappingID)
+	return newHTTPLongPollingConnInternal(ctx, baseURL, clientID, token, instanceID, mappingID, true)
 }

@@ -77,6 +77,13 @@ func (s *SessionManager) startSourceBridge(req *packet.TunnelOpenRequest, source
 		} else {
 			corelog.Infof("Tunnel[%s]: registered waiting tunnel (source_node=%s, target_client=%d, ttl=30s)",
 				req.TunnelID, routingState.SourceNodeID, routingState.TargetClientID)
+
+			// ✅ 广播隧道就绪通知，让其他节点知道可以进行跨节点转发
+			if s.bridgeManager != nil {
+				if err := s.bridgeManager.NotifyTunnelReady(s.Ctx(), req.TunnelID, routingState.SourceNodeID); err != nil {
+					corelog.Warnf("Tunnel[%s]: failed to notify tunnel ready: %v", req.TunnelID, err)
+				}
+			}
 		}
 	}
 

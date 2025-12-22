@@ -14,6 +14,7 @@ import (
 
 // sendHandshake 发送握手请求（使用控制连接）
 func (c *TunnoxClient) sendHandshake() error {
+	corelog.Infof("Client: sendHandshake called, controlStream=%p", c.controlStream)
 	return c.sendHandshakeOnStream(c.controlStream, "control")
 }
 
@@ -40,6 +41,8 @@ func (c *TunnoxClient) saveAnonymousCredentials() error {
 
 // sendHandshakeOnStream 在指定的stream上发送握手请求（用于隧道连接）
 func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, connectionType string) error {
+	corelog.Infof("Client: sendHandshakeOnStream called, stream=%p, streamType=%T, connectionType=%s", stream, stream, connectionType)
+
 	var req *packet.HandshakeRequest
 
 	// 认证策略：

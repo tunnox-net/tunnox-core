@@ -11,19 +11,31 @@ import (
 )
 
 // HybridStorage 混合存储实现
-// 自动区分持久化数据和运行时数据，提供统一的存储接口
+// 自动区分持久化数据、共享数据和运行时数据，提供统一的存储接口
+//
+// 数据分类：
+// - 持久化数据：写入持久化存储 + 缓存
+// - 共享数据：写入共享缓存（Redis），用于跨节点通信
+// - 运行时数据：仅写入本地缓存
 type HybridStorage struct {
 	*dispose.ManagerBase
 
-	cache      CacheStorage      // 缓存存储（Memory/Redis）
-	persistent PersistentStorage // 持久化存储（Database/gRPC，纯内存模式为 nil）
-	config     *HybridConfig     // 配置
+	cache       CacheStorage      // 本地缓存存储（Memory）
+	sharedCache CacheStorage      // 共享缓存存储（Redis，可选）
+	persistent  PersistentStorage // 持久化存储（Database/gRPC，纯内存模式为 nil）
+	config      *HybridConfig     // 配置
 
 	mu sync.RWMutex // 保护配置修改
 }
 
 // NewHybridStorage 创建混合存储
 func NewHybridStorage(parentCtx context.Context, cache CacheStorage, persistent PersistentStorage, config *HybridConfig) *HybridStorage {
+	return NewHybridStorageWithSharedCache(parentCtx, cache, nil, persistent, config)
+}
+
+// NewHybridStorageWithSharedCache 创建带共享缓存的混合存储
+// sharedCache 用于跨节点共享数据（如连接状态、隧道路由等）
+func NewHybridStorageWithSharedCache(parentCtx context.Context, cache CacheStorage, sharedCache CacheStorage, persistent PersistentStorage, config *HybridConfig) *HybridStorage {
 	if config == nil {
 		config = DefaultHybridConfig()
 	}
@@ -37,6 +49,7 @@ func NewHybridStorage(parentCtx context.Context, cache CacheStorage, persistent 
 	storage := &HybridStorage{
 		ManagerBase: dispose.NewManager("HybridStorage", parentCtx),
 		cache:       cache,
+		sharedCache: sharedCache,
 		persistent:  persistent,
 		config:      config,
 	}
@@ -47,7 +60,12 @@ func NewHybridStorage(parentCtx context.Context, cache CacheStorage, persistent 
 	if config.EnablePersistent {
 		mode = "hybrid"
 	}
-	dispose.Infof("HybridStorage: initialized in %s mode", mode)
+	sharedMode := "disabled"
+	if sharedCache != nil {
+		sharedMode = "enabled"
+	}
+	dispose.Infof("HybridStorage: initialized in %s mode, shared cache: %s", mode, sharedMode)
+	dispose.Infof("HybridStorage: SharedPrefixes=%v", config.SharedPrefixes)
 
 	return storage
 }
@@ -58,10 +76,17 @@ func (h *HybridStorage) onClose() error {
 
 	var errs []error
 
-	// 关闭缓存
+	// 关闭本地缓存
 	if h.cache != nil {
 		if err := h.cache.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("cache close error: %w", err))
+		}
+	}
+
+	// 关闭共享缓存
+	if h.sharedCache != nil {
+		if err := h.sharedCache.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("shared cache close error: %w", err))
 		}
 	}
 
@@ -92,22 +117,52 @@ func (h *HybridStorage) isPersistent(key string) bool {
 	return false
 }
 
+// isShared 判断 key 是否为共享数据（需要跨节点共享）
+func (h *HybridStorage) isShared(key string) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	for _, prefix := range h.config.SharedPrefixes {
+		if strings.HasPrefix(key, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // getCategory 获取数据分类
 func (h *HybridStorage) getCategory(key string) DataCategory {
+	// 优先检查共享数据（跨节点通信优先级最高）
+	if h.isShared(key) {
+		return DataCategoryShared
+	}
 	if h.isPersistent(key) {
 		return DataCategoryPersistent
 	}
 	return DataCategoryRuntime
 }
 
+// getCacheForKey 根据 key 获取应该使用的缓存
+// 共享数据使用共享缓存（如果有），否则使用本地缓存
+func (h *HybridStorage) getCacheForKey(key string) CacheStorage {
+	if h.isShared(key) && h.sharedCache != nil {
+		return h.sharedCache
+	}
+	return h.cache
+}
+
 // Set 设置键值对（自动识别数据类型）
 func (h *HybridStorage) Set(key string, value interface{}, ttl time.Duration) error {
 	category := h.getCategory(key)
 
-	if category == DataCategoryPersistent {
+	switch category {
+	case DataCategoryPersistent:
 		return h.setPersistent(key, value, ttl)
+	case DataCategoryShared:
+		return h.setShared(key, value, ttl)
+	default:
+		return h.setRuntime(key, value, ttl)
 	}
-	return h.setRuntime(key, value, ttl)
 }
 
 // setPersistent 设置持久化数据
@@ -135,29 +190,47 @@ func (h *HybridStorage) setPersistent(key string, value interface{}, ttl time.Du
 
 // setRuntime 设置运行时数据
 func (h *HybridStorage) setRuntime(key string, value interface{}, ttl time.Duration) error {
-	// 运行时数据仅写入缓存
+	// 运行时数据仅写入本地缓存
 	if ttl == 0 {
 		ttl = h.config.DefaultCacheTTL
 	}
 	return h.cache.Set(key, value, ttl)
 }
 
+// setShared 设置共享数据（跨节点共享）
+func (h *HybridStorage) setShared(key string, value interface{}, ttl time.Duration) error {
+	// 共享数据写入共享缓存（如果有），否则写入本地缓存
+	cache := h.getCacheForKey(key)
+	if ttl == 0 {
+		ttl = h.config.DefaultCacheTTL
+	}
+	dispose.Debugf("HybridStorage.setShared: key=%s, hasSharedCache=%v, ttl=%v", key, h.sharedCache != nil, ttl)
+	return cache.Set(key, value, ttl)
+}
+
 // Get 获取值（自动识别数据类型）
 func (h *HybridStorage) Get(key string) (interface{}, error) {
-	// 1. 先从缓存读取
+	category := h.getCategory(key)
+
+	// 共享数据从共享缓存读取
+	if category == DataCategoryShared {
+		cache := h.getCacheForKey(key)
+		return cache.Get(key)
+	}
+
+	// 1. 先从本地缓存读取
 	if value, err := h.cache.Get(key); err == nil {
 		return value, nil
 	}
 
 	// 2. 如果是持久化数据，从持久化存储读取
-	category := h.getCategory(key)
 	if category == DataCategoryPersistent && h.config.EnablePersistent {
 		value, err := h.persistent.Get(key)
 		if err != nil {
 			return nil, err
 		}
 
-		// 3. 写回缓存（异步）
+		// 3. 写回本地缓存（异步）
 		go func() {
 			cacheTTL := h.config.PersistentCacheTTL
 			if err := h.cache.Set(key, value, cacheTTL); err != nil {
@@ -178,9 +251,17 @@ func (h *HybridStorage) Delete(key string) error {
 
 	var errs []error
 
-	// 1. 从缓存删除
-	if err := h.cache.Delete(key); err != nil && err != ErrKeyNotFound {
-		errs = append(errs, fmt.Errorf("cache delete error: %w", err))
+	// 共享数据从共享缓存删除
+	if category == DataCategoryShared {
+		cache := h.getCacheForKey(key)
+		if err := cache.Delete(key); err != nil && err != ErrKeyNotFound {
+			errs = append(errs, fmt.Errorf("shared cache delete error: %w", err))
+		}
+	} else {
+		// 1. 从本地缓存删除
+		if err := h.cache.Delete(key); err != nil && err != ErrKeyNotFound {
+			errs = append(errs, fmt.Errorf("cache delete error: %w", err))
+		}
 	}
 
 	// 2. 如果是持久化数据，从持久化存储删除
@@ -199,13 +280,20 @@ func (h *HybridStorage) Delete(key string) error {
 
 // Exists 检查键是否存在
 func (h *HybridStorage) Exists(key string) (bool, error) {
-	// 1. 先检查缓存
+	category := h.getCategory(key)
+
+	// 共享数据检查共享缓存
+	if category == DataCategoryShared {
+		cache := h.getCacheForKey(key)
+		return cache.Exists(key)
+	}
+
+	// 1. 先检查本地缓存
 	if exists, err := h.cache.Exists(key); err == nil && exists {
 		return true, nil
 	}
 
 	// 2. 如果是持久化数据，检查持久化存储
-	category := h.getCategory(key)
 	if category == DataCategoryPersistent && h.config.EnablePersistent {
 		return h.persistent.Exists(key)
 	}
@@ -395,22 +483,25 @@ func (h *HybridStorage) CleanupExpired() error {
 }
 
 func (h *HybridStorage) SetNX(key string, value interface{}, ttl time.Duration) (bool, error) {
-	// 仅支持缓存的原子操作
-	if nxSetter, ok := h.cache.(interface {
+	// 获取应该使用的缓存
+	cache := h.getCacheForKey(key)
+
+	// 尝试使用原子操作
+	if nxSetter, ok := cache.(interface {
 		SetNX(string, interface{}, time.Duration) (bool, error)
 	}); ok {
 		return nxSetter.SetNX(key, value, ttl)
 	}
 
 	// 降级实现
-	exists, err := h.cache.Exists(key)
+	exists, err := cache.Exists(key)
 	if err != nil {
 		return false, err
 	}
 	if exists {
 		return false, nil
 	}
-	return true, h.cache.Set(key, value, ttl)
+	return true, cache.Set(key, value, ttl)
 }
 
 func (h *HybridStorage) CompareAndSwap(key string, oldValue, newValue interface{}, ttl time.Duration) (bool, error) {

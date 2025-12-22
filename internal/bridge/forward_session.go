@@ -254,3 +254,65 @@ func (s *ForwardSession) UpdateLastActive() {
 	defer s.mu.Unlock()
 	s.lastActiveAt = time.Now()
 }
+
+// ForwardFromReader 从 Reader 读取数据并转发到 gRPC 流
+// 用于跨节点数据转发：本地连接 -> gRPC -> 远程节点
+func (s *ForwardSession) ForwardFromReader(reader io.Reader) error {
+	buf := make([]byte, 32*1024) // 32KB buffer
+
+	for {
+		select {
+		case <-s.Ctx().Done():
+			return s.Ctx().Err()
+		default:
+		}
+
+		n, err := reader.Read(buf)
+		if n > 0 {
+			// 发送数据到 gRPC 流
+			if sendErr := s.Send(buf[:n]); sendErr != nil {
+				corelog.Debugf("ForwardSession[%s]: send error: %v", s.streamID, sendErr)
+				return sendErr
+			}
+			s.UpdateLastActive()
+		}
+
+		if err != nil {
+			if err == io.EOF {
+				corelog.Debugf("ForwardSession[%s]: reader EOF", s.streamID)
+				return nil
+			}
+			return err
+		}
+	}
+}
+
+// ForwardToWriter 从 gRPC 流接收数据并写入 Writer
+// 用于跨节点数据转发：远程节点 -> gRPC -> 本地连接
+func (s *ForwardSession) ForwardToWriter(writer io.Writer) error {
+	for {
+		select {
+		case <-s.Ctx().Done():
+			return s.Ctx().Err()
+		default:
+		}
+
+		data, err := s.Receive()
+		if err != nil {
+			if err == io.EOF {
+				corelog.Debugf("ForwardSession[%s]: receive EOF", s.streamID)
+				return nil
+			}
+			return err
+		}
+
+		if len(data) > 0 {
+			_, writeErr := writer.Write(data)
+			if writeErr != nil {
+				corelog.Debugf("ForwardSession[%s]: write error: %v", s.streamID, writeErr)
+				return writeErr
+			}
+			s.UpdateLastActive()
+		}
+	}
+}

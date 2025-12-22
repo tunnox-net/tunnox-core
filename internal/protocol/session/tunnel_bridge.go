@@ -43,6 +43,10 @@ type TunnelBridge struct {
 
 	ready chan struct{} // 用于通知目标端连接已建立
 
+	// 跨节点支持
+	crossNodeConn   *CrossNodeConn // 跨节点连接（如果有）
+	crossNodeConnMu sync.RWMutex   // 保护跨节点连接
+
 	// 商业特性
 	rateLimiter          *rate.Limiter   // 带宽限制器
 	bytesSent            atomic.Int64    // 源端→目标端字节数
@@ -122,6 +126,9 @@ func NewTunnelBridge(parentCtx context.Context, config *TunnelBridgeConfig) *Tun
 		bridge.reportTrafficStats()
 
 		var errs []error
+
+		// 释放跨节点连接（归还到池）
+		bridge.ReleaseCrossNodeConnection()
 
 		// 关闭统一接口连接
 		if bridge.sourceTunnelConn != nil {

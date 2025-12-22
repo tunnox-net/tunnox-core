@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
+	"os"
 	"time"
 	corelog "tunnox-core/internal/core/log"
 
@@ -31,7 +33,7 @@ func (c *StorageComponent) Name() string {
 
 func (c *StorageComponent) Initialize(ctx context.Context, deps *Dependencies) error {
 	storageFactory := storage.NewStorageFactory(ctx)
-	serverStorage, err := createStorage(storageFactory, &deps.Config.Storage)
+	serverStorage, err := createStorage(storageFactory, deps.Config)
 	if err != nil {
 		return fmt.Errorf("failed to create storage: %w", err)
 	}
@@ -42,7 +44,17 @@ func (c *StorageComponent) Initialize(ctx context.Context, deps *Dependencies) e
 	// 创建共享的 Repository
 	deps.Repository = repos.NewRepository(serverStorage)
 
-	corelog.Infof("Storage initialized: type=%s", deps.Config.Storage.Type)
+	// 确定存储类型用于日志
+	storageType := "memory"
+	if deps.Config.Storage.Enabled {
+		storageType = "remote"
+	} else if deps.Config.Redis.Enabled {
+		storageType = "redis"
+	} else if deps.Config.Persistence.Enabled {
+		storageType = "hybrid"
+	}
+
+	corelog.Infof("Storage initialized: type=%s", storageType)
 	return nil
 }
 
@@ -69,10 +81,8 @@ func (c *MetricsComponent) Name() string {
 
 func (c *MetricsComponent) Initialize(ctx context.Context, deps *Dependencies) error {
 	metricsFactory := metrics.NewMetricsFactory(ctx)
-	metricsType := metrics.MetricsType(deps.Config.Metrics.Type)
-	if metricsType == "" {
-		metricsType = metrics.MetricsTypeMemory
-	}
+	// 固定使用 memory 类型的 metrics
+	metricsType := metrics.MetricsTypeMemory
 
 	serverMetrics, err := metricsFactory.CreateMetrics(metricsType)
 	if err != nil {
@@ -117,7 +127,7 @@ func (c *CloudControlComponent) Initialize(ctx context.Context, deps *Dependenci
 	}
 
 	cloudControlConfig := managers.DefaultConfig()
-	cloudControlConfig.NodeID = deps.Config.MessageBroker.NodeID
+	cloudControlConfig.NodeID = deps.NodeID // 使用运行时分配的 NodeID
 
 	cloudControl := managers.NewBuiltinCloudControlWithStorage(cloudControlConfig, deps.Storage)
 
@@ -154,28 +164,37 @@ func (c *NodeComponent) Initialize(ctx context.Context, deps *Dependencies) erro
 		return fmt.Errorf("storage is required")
 	}
 
-	// 创建节点ID分配器并分配唯一节点ID
-	deps.NodeAllocator = node.NewNodeIDAllocator(deps.Storage)
-	allocatedNodeID, err := deps.NodeAllocator.AllocateNodeID(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to allocate node ID: %w", err)
+	// 优先使用环境变量 NODE_ID（用于集群部署）
+	envNodeID := os.Getenv("NODE_ID")
+	if envNodeID != "" {
+		deps.NodeID = envNodeID
+		corelog.Infof("Node ID from environment: %s", envNodeID)
+	} else {
+		// 创建节点ID分配器并分配唯一节点ID
+		deps.NodeAllocator = node.NewNodeIDAllocator(deps.Storage)
+		allocatedNodeID, err := deps.NodeAllocator.AllocateNodeID(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to allocate node ID: %w", err)
+		}
+		deps.NodeID = allocatedNodeID
+		corelog.Infof("Node ID allocated: %s", allocatedNodeID)
 	}
-	deps.NodeID = allocatedNodeID
 
 	// 注册当前节点到 CloudControl
 	if deps.CloudBuiltin != nil {
 		nodeAddress := c.getNodeAddress(deps)
-		if err := c.registerNode(deps, allocatedNodeID, nodeAddress); err != nil {
+		if err := c.registerNode(deps, deps.NodeID, nodeAddress); err != nil {
 			corelog.Warnf("Failed to register current node: %v", err)
 		}
 	}
 
-	corelog.Infof("Node initialized: nodeID=%s", allocatedNodeID)
+	corelog.Infof("Node initialized: nodeID=%s", deps.NodeID)
 	return nil
 }
 
 func (c *NodeComponent) getNodeAddress(deps *Dependencies) string {
-	nodeAddress := fmt.Sprintf("%s:%d", deps.Config.Server.Host, deps.Config.Server.Port)
+	// 使用 Management API 的监听地址作为节点地址
+	nodeAddress := deps.Config.Management.Listen
 
 	// 尝试从 RemoteStorage 获取真实的外部地址
 	if deps.Storage != nil {
@@ -183,7 +202,13 @@ func (c *NodeComponent) getNodeAddress(deps *Dependencies) string {
 			if remoteStorage := hybrid.GetRemoteStorage(); remoteStorage != nil {
 				corelog.Infof("RemoteStorage found, trying to get client address...")
 				if clientAddr, err := remoteStorage.GetClientAddress(); err == nil && clientAddr != "" {
-					nodeAddress = fmt.Sprintf("%s:%d", clientAddr, deps.Config.Server.Port)
+					// 提取端口号
+					_, port, _ := net.SplitHostPort(deps.Config.Management.Listen)
+					if port != "" {
+						nodeAddress = fmt.Sprintf("%s:%s", clientAddr, port)
+					} else {
+						nodeAddress = clientAddr
+					}
 					corelog.Infof("Node external address detected: %s", nodeAddress)
 				} else if err != nil {
 					corelog.Warnf("Failed to get client address from RemoteStorage: %v", err)

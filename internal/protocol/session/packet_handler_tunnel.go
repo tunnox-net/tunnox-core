@@ -40,8 +40,8 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		}
 	}
 
-	corelog.Infof("Tunnel open request: TunnelID=%s, MappingID=%s, ConnID=%s, TargetHost=%s, TargetPort=%d",
-		req.TunnelID, req.MappingID, connPacket.ConnectionID, req.TargetHost, req.TargetPort)
+	corelog.Infof("Tunnel[%s]: MappingID=%s, TargetHost=%s:%d",
+		req.TunnelID, req.MappingID, req.TargetHost, req.TargetPort)
 
 	// ✅ 对于支持 mappingID 的连接，立即设置 mappingID 并注册隧道连接
 	// 这样后续的请求就能正确路由到隧道连接
@@ -53,8 +53,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		}); ok {
 			clientID := mappingConn.GetClientID()
 			if clientID > 0 {
-				corelog.Infof("Tunnel[%s]: setting mappingID immediately for tunnel connection, MappingID=%s, ConnID=%s, ClientID=%d",
-					req.TunnelID, req.MappingID, connPacket.ConnectionID, clientID)
 				mappingConn.SetMappingID(req.MappingID)
 			}
 		}
@@ -97,7 +95,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			writer := conn.Stream.GetWriter()
 			if reader == nil || writer == nil {
 				// 该协议不支持桥接（如 HTTP 长轮询），数据已通过协议本身传输
-				corelog.Infof("Tunnel[%s]: connection does not support net.Conn bridge, data forwarding handled by protocol", req.TunnelID)
 			}
 		}
 
@@ -112,8 +109,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 				connClientID := extractClientID(conn.Stream, netConn)
 				// 如果 extractClientID 返回 0，稍后从控制连接获取（clientConn 在后面定义）
 				isSourceClient = (connClientID == mapping.ListenClientID)
-				corelog.Infof("Tunnel[%s]: identified connection type - isSourceClient=%v, connClientID=%d, listenClientID=%d, targetClientID=%d",
-					req.TunnelID, isSourceClient, connClientID, mapping.ListenClientID, mapping.TargetClientID)
 			}
 		}
 
@@ -124,11 +119,9 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		if isSourceClient {
 			// 源端重连，更新 sourceConn
 			bridge.SetSourceConnection(tunnelConn)
-			corelog.Infof("Tunnel[%s]: updated sourceConn for existing bridge, connID=%s, hasNetConn=%v", req.TunnelID, conn.ID, netConn != nil)
 		} else {
 			// 目标端连接
 			bridge.SetTargetConnection(tunnelConn)
-			corelog.Infof("Tunnel[%s]: set targetConn for existing bridge, connID=%s, hasNetConn=%v", req.TunnelID, conn.ID, netConn != nil)
 		}
 
 		// ✅ 切换到流模式（通过接口调用，协议无关）
@@ -137,7 +130,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			if streamModeConn, ok := reader.(interface {
 				SetStreamMode(streamMode bool)
 			}); ok {
-				corelog.Infof("Tunnel[%s]: switching connection to stream mode (existing bridge), connID=%s", req.TunnelID, conn.ID)
 				streamModeConn.SetStreamMode(true)
 			}
 		}
@@ -162,10 +154,14 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		return fmt.Errorf("tunnel connected to existing bridge, switching to stream mode")
 	}
 
+	// ✅ 检查是否是跨节点的目标端连接
+	// 如果在 TunnelRoutingTable 中找到了路由信息，说明 Bridge 在其他节点
 	if s.tunnelRouting != nil {
-		routingState, err := s.tunnelRouting.LookupWaitingTunnel(s.Ctx(), req.TunnelID)
+		_, err := s.tunnelRouting.LookupWaitingTunnel(s.Ctx(), req.TunnelID)
 		if err == nil {
-			return s.handleCrossServerTargetConnection(conn, req, routingState)
+			// 提取 net.Conn 用于跨节点转发
+			netConn := s.extractNetConn(conn)
+			return s.handleCrossNodeTargetConnection(req, conn, netConn)
 		} else if err != ErrTunnelNotFound && err != ErrTunnelExpired {
 			corelog.Errorf("Tunnel[%s]: failed to lookup routing state: %v", req.TunnelID, err)
 		}
@@ -184,7 +180,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 				GetClientID() int64
 			}); ok {
 				clientID = streamWithClientID.GetClientID()
-				corelog.Infof("Tunnel[%s]: got clientID=%d from stream, connID=%s", req.TunnelID, clientID, connPacket.ConnectionID)
 			} else {
 				type streamProcessorGetter interface {
 					GetStreamProcessor() interface {
@@ -198,7 +193,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 					streamProc := adapter.GetStreamProcessor()
 					if streamProc != nil {
 						clientID = streamProc.GetClientID()
-						corelog.Infof("Tunnel[%s]: got clientID=%d from stream adapter, connID=%s", req.TunnelID, clientID, connPacket.ConnectionID)
 					}
 				}
 			}
@@ -206,9 +200,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			// 如果获取到 clientID，尝试通过 clientID 查找控制连接
 			if clientID > 0 {
 				clientConn = s.GetControlConnectionByClientID(clientID)
-				if clientConn != nil {
-					corelog.Infof("Tunnel[%s]: found control connection by clientID=%d, controlConnID=%s", req.TunnelID, clientID, clientConn.GetConnID())
-				}
 			}
 
 			// 如果还是找不到，尝试创建临时控制连接（通过接口判断，协议无关）
@@ -218,7 +209,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 					CanCreateTemporaryControlConn() bool
 					GetClientID() int64
 				}); ok && tempConn.CanCreateTemporaryControlConn() {
-					corelog.Infof("Tunnel[%s]: creating temporary control connection, connID=%s", req.TunnelID, connPacket.ConnectionID)
 					var remoteAddr net.Addr
 					if conn.RawConn != nil {
 						remoteAddr = conn.RawConn.RemoteAddr()
@@ -231,14 +221,12 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 					if clientID > 0 {
 						newConn.SetClientID(clientID)
 						newConn.SetAuthenticated(true)
-						corelog.Infof("Tunnel[%s]: set clientID=%d for temporary control connection", req.TunnelID, clientID)
 					} else {
 						// 尝试从 reader 获取 clientID
 						tempClientID := tempConn.GetClientID()
 						if tempClientID > 0 {
 							newConn.SetClientID(tempClientID)
 							newConn.SetAuthenticated(true)
-							corelog.Infof("Tunnel[%s]: set clientID=%d for temporary control connection (from reader)", req.TunnelID, tempClientID)
 						}
 					}
 					clientConn = newConn
@@ -293,7 +281,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			if mappingConn, ok := reader.(interface {
 				SetMappingID(mappingID string)
 			}); ok {
-				corelog.Infof("Tunnel[%s]: setting mappingID=%s", req.TunnelID, req.MappingID)
 				mappingConn.SetMappingID(req.MappingID)
 			}
 		}
@@ -324,8 +311,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 				connClientID = connClientIDFromControl
 			}
 			isSourceClient = (connClientID == mapping.ListenClientID)
-			corelog.Infof("Tunnel[%s]: identified connection type for new bridge - isSourceClient=%v, connClientID=%d, listenClientID=%d, targetClientID=%d, connID=%s",
-				req.TunnelID, isSourceClient, connClientID, mapping.ListenClientID, mapping.TargetClientID, connPacket.ConnectionID)
 		}
 	}
 
@@ -343,11 +328,8 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 				writer := sourceStream.GetWriter()
 				if reader == nil || writer == nil {
 					// 该协议不支持桥接（如 HTTP 长轮询），数据已通过协议本身传输
-					corelog.Infof("Tunnel[%s]: connection does not support net.Conn bridge, data forwarding handled by protocol, connID=%s", req.TunnelID, conn.ID)
 				}
 			}
-			corelog.Infof("Tunnel[%s]: extracted sourceConn for new bridge, connID=%s, hasNetConn=%v, hasStream=%v, isSourceClient=%v",
-				req.TunnelID, conn.ID, netConn != nil, sourceStream != nil, isSourceClient)
 		}
 
 		// ✅ 切换到流模式（通过接口调用，协议无关）
@@ -356,7 +338,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			if streamModeConn, ok := reader.(interface {
 				SetStreamMode(streamMode bool)
 			}); ok {
-				corelog.Infof("Tunnel[%s]: switching connection to stream mode", req.TunnelID)
 				streamModeConn.SetStreamMode(true)
 			}
 		}
@@ -372,8 +353,12 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		s.bridgeLock.RUnlock()
 
 		if !exists {
-			corelog.Errorf("Tunnel[%s]: target connection received but bridge not found, connID=%s", req.TunnelID, connPacket.ConnectionID)
-			return fmt.Errorf("bridge not found for tunnel %s", req.TunnelID)
+			// 本地未找到 Bridge，尝试跨节点转发
+			if err := s.handleCrossNodeTargetConnection(req, conn, netConn); err != nil {
+				corelog.Errorf("Tunnel[%s]: cross-node forwarding failed: %v", req.TunnelID, err)
+				return fmt.Errorf("bridge not found for tunnel %s: %w", req.TunnelID, err)
+			}
+			return nil
 		}
 
 		// 创建统一接口连接
@@ -382,7 +367,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 
 		// 设置目标端连接
 		bridge.SetTargetConnection(tunnelConn)
-		corelog.Infof("Tunnel[%s]: set targetConn for new bridge, connID=%s, hasNetConn=%v", req.TunnelID, conn.ID, netConn != nil)
 
 		// ✅ 切换到流模式（通过接口调用，协议无关）
 		if conn != nil && conn.Stream != nil {
@@ -390,7 +374,6 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			if streamModeConn, ok := reader.(interface {
 				SetStreamMode(streamMode bool)
 			}); ok {
-				corelog.Infof("Tunnel[%s]: switching target connection to stream mode, connID=%s", req.TunnelID, conn.ID)
 				streamModeConn.SetStreamMode(true)
 			}
 		}
@@ -467,13 +450,11 @@ func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, re
 		Payload:    respData,
 	}
 
-	corelog.Infof("Tunnel[%s]: sending TunnelOpenAck, Success=%v, conn.Protocol=%s", resp.TunnelID, resp.Success, conn.Protocol)
+	corelog.Infof("Tunnel[%s]: sending TunnelOpenAck, Success=%v", resp.TunnelID, resp.Success)
 	// 发送响应
 	if _, err := conn.Stream.WritePacket(respPacket, true, 0); err != nil {
-		corelog.Errorf("Tunnel[%s]: failed to write tunnel open response: %v", resp.TunnelID, err)
 		return fmt.Errorf("failed to write tunnel open response: %w", err)
 	}
-	corelog.Infof("Tunnel[%s]: TunnelOpenAck sent successfully", resp.TunnelID)
 
 	return nil
 }
@@ -494,11 +475,9 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 	}
 
 	// 2. 找到目标客户端的控制连接（本地或跨服务器）
-	corelog.Infof("Tunnel[%s]: looking for target client control connection, targetClientID=%d", req.TunnelID, mapping.TargetClientID)
 	targetControlConn := s.GetControlConnectionByClientID(mapping.TargetClientID)
 	if targetControlConn == nil {
-		// ✅ 某些协议可能没有注册为控制连接，尝试通过 connMap 查找
-		corelog.Infof("Tunnel[%s]: target client %d control connection not found, searching in connMap", req.TunnelID, mapping.TargetClientID)
+		// 某些协议可能没有注册为控制连接，尝试通过 connMap 查找
 		allConns := s.ListConnections()
 		for _, c := range allConns {
 			if c.Stream != nil {
@@ -509,7 +488,6 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 					connClientID := clientIDConn.GetClientID()
 					if connClientID == mapping.TargetClientID {
 						// 找到目标客户端的连接，创建临时控制连接
-						corelog.Infof("Tunnel[%s]: found target client connection in connMap, creating temporary control connection, connID=%s", req.TunnelID, c.ID)
 						var remoteAddr net.Addr
 						if c.RawConn != nil {
 							remoteAddr = c.RawConn.RemoteAddr()
@@ -521,7 +499,6 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 						// 注册为控制连接（临时）
 						s.RegisterControlConnection(tempConn)
 						targetControlConn = tempConn
-						corelog.Infof("Tunnel[%s]: created and registered temporary control connection for target client %d", req.TunnelID, mapping.TargetClientID)
 						break
 					}
 				}
@@ -529,19 +506,9 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 		}
 	}
 	if targetControlConn == nil {
-		// ✅ 本地未找到，尝试跨服务器转发
+		// 本地未找到，尝试跨服务器转发
 		if s.bridgeManager != nil {
-			corelog.Infof("Tunnel[%s]: target client %d not on this server, broadcasting to other nodes",
-				req.TunnelID, mapping.TargetClientID)
-			if err := s.bridgeManager.BroadcastTunnelOpen(req, mapping.TargetClientID); err != nil {
-				corelog.Errorf("Tunnel[%s]: failed to broadcast to other nodes: %v", req.TunnelID, err)
-			} else {
-				corelog.Infof("Tunnel[%s]: broadcasted to other nodes for client %d",
-					req.TunnelID, mapping.TargetClientID)
-			}
-		} else {
-			corelog.Errorf("Tunnel[%s]: target client %d not connected and BridgeManager not configured",
-				req.TunnelID, mapping.TargetClientID)
+			s.bridgeManager.BroadcastTunnelOpen(req, mapping.TargetClientID)
 		}
 		return
 	}
@@ -554,7 +521,6 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 	if mapping.Protocol == "socks5" && req.TargetHost != "" {
 		targetHost = req.TargetHost
 		targetPort = req.TargetPort
-		corelog.Infof("Tunnel[%s]: using SOCKS5 dynamic target %s:%d", req.TunnelID, targetHost, targetPort)
 	}
 
 	cmdBody := map[string]interface{}{
@@ -593,9 +559,5 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 	if err != nil {
 		corelog.Errorf("Tunnel[%s]: failed to send tunnel open request to target client %d: %v",
 			req.TunnelID, mapping.TargetClientID, err)
-		return
 	}
-
-	corelog.Infof("Tunnel[%s]: sent TunnelOpenRequest to target client %d via control connection",
-		req.TunnelID, mapping.TargetClientID)
 }

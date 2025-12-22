@@ -32,14 +32,8 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 	var err error
 	if connIDProvider, ok := reader.(interface{ GetConnectionID() string }); ok {
 		connID = connIDProvider.GetConnectionID()
-		if connID != "" {
-			corelog.Debugf("CreateConnection: using provided connectionID=%s", connID)
-		}
 	} else if connIDProvider, ok := writer.(interface{ GetConnectionID() string }); ok {
 		connID = connIDProvider.GetConnectionID()
-		if connID != "" {
-			corelog.Debugf("CreateConnection: using provided connectionID=%s", connID)
-		}
 	}
 
 	// 如果没有从连接获取到 connectionID，则生成新的
@@ -48,6 +42,7 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate connection ID: %w", err)
 		}
+		corelog.Infof("CreateConnection: generated new connectionID=%s", connID)
 	}
 
 	// ✅ 尝试提取原始的net.Conn（用于纯流转发）
@@ -174,6 +169,13 @@ func (s *SessionManager) CloseConnection(connectionId string) error {
 
 	// 从隧道连接映射中移除
 	s.RemoveTunnelConnection(connectionId)
+
+	// ✅ 清理 Redis 中的连接状态记录
+	if s.connStateStore != nil {
+		if err := s.connStateStore.UnregisterConnection(s.Ctx(), connectionId); err != nil {
+			corelog.Warnf("Failed to unregister connection state from Redis: %v", err)
+		}
+	}
 
 	return nil
 }

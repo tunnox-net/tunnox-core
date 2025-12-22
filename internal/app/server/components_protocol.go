@@ -14,6 +14,7 @@ import (
 	"tunnox-core/internal/httpservice/modules/domainproxy"
 	"tunnox-core/internal/httpservice/modules/httppoll"
 	"tunnox-core/internal/httpservice/modules/management"
+	"tunnox-core/internal/httpservice/modules/websocket"
 	"tunnox-core/internal/protocol"
 
 	"google.golang.org/grpc"
@@ -66,31 +67,25 @@ func (c *MessageBrokerComponent) Name() string {
 }
 
 func (c *MessageBrokerComponent) Initialize(ctx context.Context, deps *Dependencies) error {
+	// 根据配置决定使用哪种消息代理
+	brokerType := "memory"
+	var redisConfig *broker.RedisBrokerConfig
+
+	if deps.Config.Redis.Enabled {
+		brokerType = "redis"
+		redisConfig = &broker.RedisBrokerConfig{
+			Addrs:       []string{deps.Config.Redis.Addr},
+			Password:    deps.Config.Redis.Password,
+			DB:          deps.Config.Redis.DB,
+			ClusterMode: false,
+			PoolSize:    10,
+		}
+	}
+
 	brokerConfig := &broker.BrokerConfig{
-		Type:   broker.BrokerType(deps.Config.MessageBroker.Type),
-		NodeID: deps.Config.MessageBroker.NodeID,
-	}
-
-	// 如果 NodeID 未配置，使用节点ID
-	if brokerConfig.NodeID == "" {
-		brokerConfig.NodeID = deps.NodeID
-	}
-
-	// 配置 Redis（如果使用 Redis）
-	if brokerConfig.Type == broker.BrokerTypeRedis {
-		redisConfig := &broker.RedisBrokerConfig{
-			Addrs:       []string{deps.Config.MessageBroker.Redis.Addr},
-			Password:    deps.Config.MessageBroker.Redis.Password,
-			DB:          deps.Config.MessageBroker.Redis.DB,
-			ClusterMode: deps.Config.MessageBroker.Redis.ClusterMode,
-			PoolSize:    deps.Config.MessageBroker.Redis.PoolSize,
-		}
-
-		if redisConfig.PoolSize <= 0 {
-			redisConfig.PoolSize = 10
-		}
-
-		brokerConfig.Redis = redisConfig
+		Type:   broker.BrokerType(brokerType),
+		NodeID: deps.NodeID,
+		Redis:  redisConfig,
 	}
 
 	mb, err := broker.NewMessageBroker(ctx, brokerConfig)
@@ -102,11 +97,12 @@ func (c *MessageBrokerComponent) Initialize(ctx context.Context, deps *Dependenc
 
 	// 注入 BridgeAdapter 到 SessionManager
 	if deps.SessionMgr != nil && mb != nil {
-		bridgeAdapter := NewBridgeAdapter(ctx, mb, deps.Config.MessageBroker.NodeID)
+		bridgeAdapter := NewBridgeAdapter(ctx, mb, deps.NodeID)
 		deps.SessionMgr.SetBridgeManager(bridgeAdapter)
+		deps.BridgeAdapter = bridgeAdapter // 保存到 deps 供后续组件使用
 	}
 
-	corelog.Infof("MessageBroker initialized: type=%s", brokerConfig.Type)
+	corelog.Infof("MessageBroker initialized: type=%s", brokerType)
 	return nil
 }
 
@@ -133,9 +129,9 @@ func (c *BridgeComponent) Name() string {
 }
 
 func (c *BridgeComponent) Initialize(ctx context.Context, deps *Dependencies) error {
-	// 如果未启用桥接池，跳过
-	if !deps.Config.BridgePool.Enabled {
-		corelog.Debugf("BridgePool not enabled, skipping")
+	// Bridge Manager 只在集群模式下需要（即启用了 Redis）
+	if !deps.Config.Redis.Enabled {
+		corelog.Debug("Redis not enabled, BridgeManager will not be created")
 		return nil
 	}
 
@@ -144,20 +140,20 @@ func (c *BridgeComponent) Initialize(ctx context.Context, deps *Dependencies) er
 		return nil
 	}
 
-	// 创建桥接管理器
+	// 使用默认的桥接池配置
 	poolConfig := &internalbridge.PoolConfig{
-		MinConnsPerNode:     deps.Config.BridgePool.MinConnsPerNode,
-		MaxConnsPerNode:     deps.Config.BridgePool.MaxConnsPerNode,
-		MaxIdleTime:         time.Duration(deps.Config.BridgePool.MaxIdleTime) * time.Second,
-		MaxStreamsPerConn:   deps.Config.BridgePool.MaxStreamsPerConn,
-		DialTimeout:         time.Duration(deps.Config.BridgePool.DialTimeout) * time.Second,
-		HealthCheckInterval: time.Duration(deps.Config.BridgePool.HealthCheckInterval) * time.Second,
+		MinConnsPerNode:     2,
+		MaxConnsPerNode:     10,
+		MaxIdleTime:         300 * time.Second,
+		MaxStreamsPerConn:   100,
+		DialTimeout:         10 * time.Second,
+		HealthCheckInterval: 30 * time.Second,
 	}
 
 	nodeRegistry := NewSimpleNodeRegistry()
 
 	managerConfig := &internalbridge.BridgeManagerConfig{
-		NodeID:         deps.Config.MessageBroker.NodeID,
+		NodeID:         deps.NodeID,
 		PoolConfig:     poolConfig,
 		MessageBroker:  deps.MessageBroker,
 		NodeRegistry:   nodeRegistry,
@@ -170,6 +166,11 @@ func (c *BridgeComponent) Initialize(ctx context.Context, deps *Dependencies) er
 	}
 
 	deps.BridgeManager = manager
+
+	// 将 BridgeManager 设置到 BridgeAdapter（用于跨节点转发）
+	if deps.BridgeAdapter != nil {
+		deps.BridgeAdapter.SetBridgeManager(manager)
+	}
 
 	// 启动 gRPC 服务器
 	grpcServer, err := c.startGRPCServer(ctx, deps)
@@ -184,19 +185,9 @@ func (c *BridgeComponent) Initialize(ctx context.Context, deps *Dependencies) er
 }
 
 func (c *BridgeComponent) startGRPCServer(ctx context.Context, deps *Dependencies) (*grpc.Server, error) {
-	grpcServerConfig := deps.Config.BridgePool.GRPCServer
-
-	if grpcServerConfig.Port == 0 {
-		corelog.Warnf("gRPC server port not configured, skipping gRPC server startup")
-		return nil, nil
-	}
-
-	port := grpcServerConfig.Port
-	host := grpcServerConfig.Addr
-	if host == "" {
-		host = "0.0.0.0"
-	}
-
+	// 使用默认端口 50051
+	port := 50051
+	host := "0.0.0.0"
 	addr := fmt.Sprintf("%s:%d", host, port)
 
 	listener, err := net.Listen("tcp", addr)
@@ -205,7 +196,7 @@ func (c *BridgeComponent) startGRPCServer(ctx context.Context, deps *Dependencie
 	}
 
 	grpcServer := grpc.NewServer()
-	bridgeServer := internalbridge.NewGRPCBridgeServer(ctx, deps.Config.MessageBroker.NodeID, deps.BridgeManager)
+	bridgeServer := internalbridge.NewGRPCBridgeServer(ctx, deps.NodeID, deps.BridgeManager)
 	bridge.RegisterBridgeServiceServer(grpcServer, bridgeServer)
 
 	// 在后台启动 gRPC 服务器
@@ -244,41 +235,51 @@ func (c *HTTPServiceComponent) Name() string {
 }
 
 func (c *HTTPServiceComponent) Initialize(ctx context.Context, deps *Dependencies) error {
-	if !deps.Config.ManagementAPI.Enabled {
-		corelog.Debugf("HTTPService not enabled, skipping")
-		return nil
+	// HTTP 服务始终启用
+
+	// 检查协议是否在 server.protocols 中启用
+	httpPollEnabled := false
+	if httpPollConfig, exists := deps.Config.Server.Protocols["httppoll"]; exists {
+		httpPollEnabled = httpPollConfig.Enabled
+	}
+	websocketEnabled := false
+	if wsConfig, exists := deps.Config.Server.Protocols["websocket"]; exists {
+		websocketEnabled = wsConfig.Enabled
 	}
 
 	// 构建 HTTP 服务配置
 	httpConfig := &httpservice.HTTPServiceConfig{
-		Enabled:    deps.Config.ManagementAPI.Enabled,
-		ListenAddr: deps.Config.ManagementAPI.ListenAddr,
+		Enabled:    true,
+		ListenAddr: deps.Config.Management.Listen,
 		CORS: httpservice.CORSConfig{
-			Enabled:        deps.Config.ManagementAPI.CORS.Enabled,
-			AllowedOrigins: deps.Config.ManagementAPI.CORS.AllowedOrigins,
+			Enabled:        false,
+			AllowedOrigins: []string{},
 		},
 		RateLimit: httpservice.RateLimitConfig{
-			Enabled: deps.Config.ManagementAPI.RateLimit.Enabled,
+			Enabled: false,
 		},
 		Modules: httpservice.ModulesConfig{
 			ManagementAPI: httpservice.ManagementAPIModuleConfig{
 				Enabled: true,
 				Auth: httpservice.AuthConfig{
-					Type:   deps.Config.ManagementAPI.Auth.Type,
-					Secret: deps.Config.ManagementAPI.Auth.Token,
+					Type:   deps.Config.Management.Auth.Type,
+					Secret: deps.Config.Management.Auth.Token,
 				},
 				PProf: httpservice.PProfConfig{
-					Enabled:     deps.Config.ManagementAPI.PProf.Enabled,
-					DataDir:     deps.Config.ManagementAPI.PProf.DataDir,
-					Retention:   deps.Config.ManagementAPI.PProf.Retention,
-					AutoCapture: deps.Config.ManagementAPI.PProf.AutoCapture,
+					Enabled:     deps.Config.Management.PProf.Enabled,
+					DataDir:     deps.Config.Management.PProf.DataDir,
+					Retention:   deps.Config.Management.PProf.Retention,
+					AutoCapture: deps.Config.Management.PProf.AutoCapture,
 				},
 			},
 			HTTPPoll: httpservice.HTTPPollModuleConfig{
-				Enabled:        true,
+				Enabled:        httpPollEnabled,
 				MaxRequestSize: 1048576, // 1MB
 				DefaultTimeout: 30,
 				MaxTimeout:     60,
+			},
+			WebSocket: httpservice.WebSocketModuleConfig{
+				Enabled: websocketEnabled,
 			},
 			DomainProxy: httpservice.DomainProxyModuleConfig{
 				Enabled:              true,
@@ -298,10 +299,25 @@ func (c *HTTPServiceComponent) Initialize(ctx context.Context, deps *Dependencie
 	mgmtModule := management.NewManagementModule(ctx, mgmtConfig, deps.CloudControl, deps.ConnCodeService, deps.HealthManager)
 	httpSvc.RegisterModule(mgmtModule)
 
-	// 创建并注册 HTTPPoll 模块
-	httpPollConfig := &httpConfig.Modules.HTTPPoll
-	httpPollModule := httppoll.NewHTTPPollModule(ctx, httpPollConfig)
-	httpSvc.RegisterModule(httpPollModule)
+	// 创建并注册 WebSocket 模块（如果启用）
+	if websocketEnabled {
+		wsConfig := &httpConfig.Modules.WebSocket
+		wsModule := websocket.NewWebSocketModule(ctx, wsConfig)
+		if deps.SessionMgr != nil {
+			wsModule.SetSession(deps.SessionMgr)
+		}
+		httpSvc.RegisterModule(wsModule)
+	}
+
+	// 创建并注册 HTTPPoll 模块（如果启用）
+	if httpPollEnabled {
+		httpPollConfig := &httpConfig.Modules.HTTPPoll
+		httpPollModule := httppoll.NewHTTPPollModule(ctx, httpPollConfig)
+		if deps.SessionMgr != nil {
+			httpPollModule.SetSession(deps.SessionMgr)
+		}
+		httpSvc.RegisterModule(httpPollModule)
+	}
 
 	// 创建并注册 Domain Proxy 模块
 	domainProxyConfig := &httpConfig.Modules.DomainProxy

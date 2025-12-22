@@ -3,13 +3,17 @@ package httppoll
 import (
 	"encoding/json"
 	"net/http"
-	corelog "tunnox-core/internal/core/log"
 
 	"github.com/google/uuid"
 )
 
 // pollLoop 持续发送 Poll 请求并缓存响应
 func (sp *StreamProcessor) pollLoop() {
+	// 对于数据连接（mappingID 不为空），启动持续的 Poll 循环
+	if sp.mappingID != "" {
+		go sp.dataPollLoop()
+	}
+
 	for {
 		select {
 		case <-sp.Ctx().Done():
@@ -18,9 +22,81 @@ func (sp *StreamProcessor) pollLoop() {
 			if !ok {
 				return
 			}
-			// 发送 Poll 请求
 			sp.sendPollRequest(requestID)
 		}
+	}
+}
+
+// dataPollLoop 数据连接的持续 Poll 循环
+func (sp *StreamProcessor) dataPollLoop() {
+	// 等待启动信号（隧道建立后才开始 Poll）
+	select {
+	case <-sp.Ctx().Done():
+		return
+	case <-sp.dataPollStartCh:
+	}
+
+	for {
+		select {
+		case <-sp.Ctx().Done():
+			return
+		default:
+		}
+
+		sp.closeMu.RLock()
+		closed := sp.closed
+		sp.closeMu.RUnlock()
+		if closed {
+			return
+		}
+
+		requestID := uuid.New().String()
+		sp.sendDataPollRequest(requestID)
+	}
+}
+
+// sendDataPollRequest 发送数据 Poll 请求
+func (sp *StreamProcessor) sendDataPollRequest(requestID string) {
+	sp.closeMu.RLock()
+	closed := sp.closed
+	connID := sp.connectionID
+	sp.closeMu.RUnlock()
+
+	if closed {
+		return
+	}
+
+	pollPkg := &TunnelPackage{
+		ConnectionID: connID,
+		RequestID:    requestID,
+		ClientID:     sp.clientID,
+		MappingID:    sp.mappingID,
+		TunnelType:   "data",
+	}
+	encoded, err := EncodeTunnelPackage(pollPkg)
+	if err != nil {
+		return
+	}
+
+	req, err := http.NewRequestWithContext(sp.Ctx(), "GET", sp.pollURL+"?timeout=30", nil)
+	if err != nil {
+		return
+	}
+
+	req.Header.Set("X-Tunnel-Package", encoded)
+	if sp.token != "" {
+		req.Header.Set("Authorization", "Bearer "+sp.token)
+	}
+
+	resp, err := sp.httpClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	var pollResp FragmentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pollResp); err == nil && pollResp.Data != "" {
+		sp.handleFragmentData(pollResp, requestID)
 	}
 }
 
@@ -50,6 +126,18 @@ func (sp *StreamProcessor) TriggerImmediatePoll() string {
 	}
 }
 
+// StartDataPoll 启动数据 Poll 循环（隧道建立后调用）
+func (sp *StreamProcessor) StartDataPoll() {
+	sp.dataPollStartMu.Lock()
+	defer sp.dataPollStartMu.Unlock()
+
+	if sp.dataPollStarted {
+		return
+	}
+	sp.dataPollStarted = true
+	close(sp.dataPollStartCh)
+}
+
 // sendPollRequest 发送单个 Poll 请求并缓存响应
 func (sp *StreamProcessor) sendPollRequest(requestID string) {
 	sp.closeMu.RLock()
@@ -58,11 +146,9 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 	sp.closeMu.RUnlock()
 
 	if closed {
-		corelog.Debugf("HTTPStreamProcessor: sendPollRequest - connection closed, requestID=%s", requestID)
 		return
 	}
 
-	// 构建 Poll 请求的 TunnelPackage
 	pollPkg := &TunnelPackage{
 		ConnectionID: connID,
 		RequestID:    requestID,
@@ -72,14 +158,11 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 	}
 	encoded, err := EncodeTunnelPackage(pollPkg)
 	if err != nil {
-		corelog.Errorf("HTTPStreamProcessor: sendPollRequest - failed to encode poll package: %v, requestID=%s", err, requestID)
 		return
 	}
 
-	// 发送 Poll 请求
 	req, err := http.NewRequestWithContext(sp.Ctx(), "GET", sp.pollURL+"?timeout=30", nil)
 	if err != nil {
-		corelog.Errorf("HTTPStreamProcessor: sendPollRequest - failed to create poll request: %v, requestID=%s", err, requestID)
 		return
 	}
 
@@ -90,59 +173,42 @@ func (sp *StreamProcessor) sendPollRequest(requestID string) {
 
 	resp, err := sp.httpClient.Do(req)
 	if err != nil {
-		corelog.Errorf("HTTPStreamProcessor: sendPollRequest - Poll request failed: %v, requestID=%s", err, requestID)
 		return
 	}
 	defer resp.Body.Close()
 
-	// 处理控制包响应（X-Tunnel-Package 中）
 	sp.handleControlPacketResponse(resp, requestID)
 
-	// 处理数据流（如果有）- 支持分片数据
 	var pollResp FragmentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&pollResp); err == nil && pollResp.Data != "" {
-		if err := sp.handleFragmentData(pollResp, requestID); err != nil {
-			corelog.Errorf("HTTPStreamProcessor: sendPollRequest - failed to handle fragment data: %v, requestID=%s", err, requestID)
-		}
-	} else if pollResp.Timeout {
-		corelog.Debugf("HTTPStreamProcessor: sendPollRequest - poll request timeout, requestID=%s", requestID)
+		sp.handleFragmentData(pollResp, requestID)
 	}
 }
 
 // handleControlPacketResponse 处理控制包响应
 func (sp *StreamProcessor) handleControlPacketResponse(resp *http.Response, requestID string) {
-	// 检查是否有控制包（X-Tunnel-Package 中）
 	xTunnelPackage := resp.Header.Get("X-Tunnel-Package")
 	if xTunnelPackage == "" {
 		return
 	}
 
-	// 解码 TunnelPackage 以检查 RequestId
 	pkg, err := DecodeTunnelPackage(xTunnelPackage)
 	if err != nil {
-		corelog.Errorf("HTTPStreamProcessor: handleControlPacketResponse - failed to decode tunnel package: %v, requestID=%s", err, requestID)
 		return
 	}
 
-	// 检查 RequestId 是否匹配
 	if pkg.RequestID != requestID {
-		corelog.Warnf("HTTPStreamProcessor: handleControlPacketResponse - RequestId mismatch, expected=%s, got=%s, ignoring response",
-			requestID, pkg.RequestID)
 		return
 	}
 
-	// 转换为 TransferPacket
 	pkt, err := sp.converter.ReadPacket(resp)
 	if err != nil {
-		corelog.Errorf("HTTPStreamProcessor: handleControlPacketResponse - failed to read packet: %v, requestID=%s", err, requestID)
 		return
 	}
 
-	// 更新连接信息
 	if pkg.ConnectionID != "" {
 		sp.SetConnectionID(pkg.ConnectionID)
 	}
 
-	// 缓存响应
 	sp.setCachedResponse(requestID, pkt)
 }

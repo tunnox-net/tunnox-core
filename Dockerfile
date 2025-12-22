@@ -15,7 +15,10 @@ WORKDIR /build
 COPY go.mod go.sum* ./
 RUN go mod download
 
-# Copy source code
+# Cache bust argument - 传入时间戳强制重新编译
+ARG CACHEBUST=1
+
+# Copy source code (CACHEBUST 会使这一步及之后的缓存失效)
 COPY . .
 
 # Build the server binary
@@ -37,8 +40,8 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /build/tunnox-server .
 
-# Copy config template
-COPY cmd/server/config/ ./config/
+# Copy example config (用户可以通过 ConfigMap 覆盖 /app/config.yaml)
+COPY config.example.yaml ./config.example.yaml
 
 # Create data directory
 RUN mkdir -p /app/data /app/logs
@@ -50,15 +53,19 @@ RUN adduser -D -u 1000 tunnox && \
 USER tunnox
 
 # Expose ports
-# 7000 - TCP client connections
-# 8000 - WebSocket
-# 9000 - Management API
-EXPOSE 7000 8000 9000
+# 8000 - TCP/KCP client connections
+# 8443 - QUIC
+# 9000 - Management API (WebSocket + HTTPPoll)
+# 50052 - Cross-node TCP connections
+EXPOSE 8000 8443 9000 50052
 
 # Health check via Management API
 HEALTHCHECK --interval=10s --timeout=5s --start-period=30s --retries=3 \
     CMD wget -q -O /dev/null http://localhost:9000/tunnox/v1/health || exit 1
 
 # Run the server
+# 默认使用 /app/config.yaml
+# 如果文件不存在，程序会自动生成简洁的配置模板
+# 建议通过 ConfigMap 挂载配置文件到 /app/config.yaml
 ENTRYPOINT ["/app/tunnox-server"]
-CMD ["-config", "/app/config/config.docker.yaml"]
+CMD ["-config", "/app/config.yaml"]

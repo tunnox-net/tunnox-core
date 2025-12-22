@@ -128,13 +128,16 @@ func (sp *StreamProcessor) writeReassembledGroup(nextGroup *FragmentGroup, reque
 
 	// 写入数据缓冲区
 	sp.dataBufMu.Lock()
-	if sp.dataBuffer.Len()+len(reassembledData) <= maxBufferSize {
+	oldLen := sp.dataBuffer.Len()
+	if oldLen+len(reassembledData) <= maxBufferSize {
 		_, err := sp.dataBuffer.Write(reassembledData)
 		if err != nil {
 			corelog.Errorf("HTTPStreamProcessor: writeReassembledGroup - failed to write to data buffer: %v, requestID=%s", err, requestID)
 			sp.dataBufMu.Unlock()
 			return fmt.Errorf("failed to write to data buffer: %w", err)
 		}
+		corelog.Infof("HTTPStreamProcessor: writeReassembledGroup - wrote %d bytes to dataBuffer (old=%d, new=%d), groupID=%s, connID=%s",
+			len(reassembledData), oldLen, sp.dataBuffer.Len(), nextGroup.GroupID, sp.connectionID)
 	} else {
 		corelog.Errorf("HTTPStreamProcessor: writeReassembledGroup - data buffer full, dropping %d bytes, buffer size=%d, requestID=%s", len(reassembledData), sp.dataBuffer.Len(), requestID)
 	}

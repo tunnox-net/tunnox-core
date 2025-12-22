@@ -76,20 +76,33 @@ func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error
 	hybridConfig := DefaultHybridConfig()
 
 	var cache CacheStorage
+	var sharedCache CacheStorage
 	var persistent PersistentStorage
 
 	// 解析配置
 	if config != nil {
 		if hc, ok := config.(*HybridStorageConfig); ok {
-			// 创建缓存存储
+			// 创建本地缓存存储
 			if hc.CacheType == "redis" && hc.RedisConfig != nil {
 				redisStorage, err := NewRedisStorage(f.ctx, hc.RedisConfig)
 				if err != nil {
 					return nil, fmt.Errorf("failed to create Redis cache: %w", err)
 				}
 				cache = redisStorage
+				// 如果本地缓存是 Redis，共享缓存也使用同一个 Redis
+				sharedCache = redisStorage
 			} else {
 				cache = NewMemoryStorage(f.ctx)
+			}
+
+			// 创建共享缓存（如果配置了独立的共享缓存）
+			if hc.SharedCacheConfig != nil {
+				sharedRedis, err := NewRedisStorage(f.ctx, hc.SharedCacheConfig)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create shared Redis cache: %w", err)
+				}
+				sharedCache = sharedRedis
+				dispose.Infof("StorageFactory: shared cache configured (Redis: %s)", hc.SharedCacheConfig.Addr)
 			}
 
 			// 创建持久化存储
@@ -135,7 +148,7 @@ func (f *StorageFactory) createHybridStorage(config interface{}) (Storage, error
 		cache = NewMemoryStorage(f.ctx)
 	}
 
-	storage := NewHybridStorage(f.ctx, cache, persistent, hybridConfig)
+	storage := NewHybridStorageWithSharedCache(f.ctx, cache, sharedCache, persistent, hybridConfig)
 	dispose.Infof("StorageFactory: created Hybrid storage")
 	return storage, nil
 }
@@ -159,6 +172,11 @@ type HybridStorageConfig struct {
 
 	// 混合存储配置
 	HybridConfig *HybridConfig
+
+	// 共享缓存配置（用于跨节点共享数据）
+	// 如果设置，共享数据（如连接状态、隧道路由）将写入此缓存
+	// 如果未设置，共享数据将写入本地缓存（单节点模式）
+	SharedCacheConfig *RedisConfig
 }
 
 // CreateStorageWithConfig 根据配置创建存储

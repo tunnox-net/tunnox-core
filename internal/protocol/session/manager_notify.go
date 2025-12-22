@@ -10,6 +10,7 @@ import (
 
 // NotifyClientUpdate 通知客户端更新配置
 // 实现 managers.ClientNotifier 接口
+// 在集群模式下，如果客户端不在本节点，会通过 Redis 广播通知其他节点
 func (s *SessionManager) NotifyClientUpdate(clientID int64) {
 	corelog.Infof("SessionManager: ⚡ NotifyClientUpdate called for client %d", clientID)
 
@@ -17,12 +18,7 @@ func (s *SessionManager) NotifyClientUpdate(clientID int64) {
 	conn, ok := s.clientIDIndexMap[clientID]
 	s.controlConnLock.RUnlock()
 
-	if !ok || conn == nil {
-		corelog.Warnf("SessionManager: Client %d not found or not connected, cannot notify update", clientID)
-		return
-	}
-
-	// 1. 获取客户端的所有映射
+	// 1. 获取客户端的所有映射（无论客户端在哪个节点，都需要获取映射）
 	mappings, err := s.cloudControl.GetClientPortMappings(clientID)
 	if err != nil {
 		corelog.Errorf("SessionManager: Failed to get mappings for client %d: %v", clientID, err)
@@ -37,11 +33,11 @@ func (s *SessionManager) NotifyClientUpdate(clientID int64) {
 			cfg := config.MappingConfig{
 				MappingID:      m.ID,
 				SecretKey:      m.SecretKey,
-				Protocol:       string(m.Protocol), // models.Protocol is string alias? Assuming so
+				Protocol:       string(m.Protocol),
 				LocalPort:      m.SourcePort,
-				TargetHost:     m.TargetHost, // 可能为空，对于P2P或转发可能是 server
+				TargetHost:     m.TargetHost,
 				TargetPort:     m.TargetPort,
-				TargetClientID: m.TargetClientID, // SOCKS5 需要
+				TargetClientID: m.TargetClientID,
 
 				// 商业化配额
 				BandwidthLimit:    int64(m.Config.BandwidthLimit),
@@ -65,9 +61,24 @@ func (s *SessionManager) NotifyClientUpdate(clientID int64) {
 		return
 	}
 
+	// 4. 如果客户端在本节点，直接发送
+	if ok && conn != nil {
+		s.sendConfigToLocalClient(clientID, conn, payloadBytes)
+		return
+	}
+
+	// 5. 客户端不在本节点，尝试通过广播通知其他节点
+	corelog.Infof("SessionManager: Client %d not on this node, broadcasting config update to cluster", clientID)
+	if err := s.BroadcastConfigPush(clientID, string(payloadBytes)); err != nil {
+		corelog.Errorf("SessionManager: Failed to broadcast config update for client %d: %v", clientID, err)
+	}
+}
+
+// sendConfigToLocalClient 向本地客户端发送配置更新
+func (s *SessionManager) sendConfigToLocalClient(clientID int64, conn *ControlConnection, payloadBytes []byte) {
 	cmdID, _ := utils.GenerateUUID()
 	cmdPacket := &packet.CommandPacket{
-		CommandType: packet.ConfigSet, // 51
+		CommandType: packet.ConfigSet,
 		CommandId:   cmdID,
 		CommandBody: string(payloadBytes),
 	}
@@ -77,13 +88,12 @@ func (s *SessionManager) NotifyClientUpdate(clientID int64) {
 		CommandPacket: cmdPacket,
 	}
 
-	// 5. 写入流
 	streamer := conn.GetStream()
 	if streamer != nil {
 		if _, err := streamer.WritePacket(transferPacket, false, 0); err != nil {
 			corelog.Errorf("SessionManager: Failed to send config update to client %d: %v", clientID, err)
 		} else {
-			corelog.Infof("SessionManager: Sent ConfigSet to client %d with %d mappings", clientID, len(mappingConfigs))
+			corelog.Infof("SessionManager: Sent ConfigSet to client %d locally", clientID)
 		}
 	} else {
 		corelog.Warnf("SessionManager: Client %d stream is nil", clientID)

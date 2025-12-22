@@ -15,9 +15,10 @@ import (
 func main() {
 	// 1. 解析命令行参数
 	var (
-		configPath = flag.String("config", "config.yaml", "Path to configuration file")
-		logFile    = flag.String("log", "", "Log file path (overrides config file)")
-		showHelp   = flag.Bool("help", false, "Show help information")
+		configPath   = flag.String("config", "config.yaml", "Path to configuration file")
+		logFile      = flag.String("log", "", "Log file path (overrides config file)")
+		exportConfig = flag.String("export-config", "", "Export configuration template to file and exit")
+		showHelp     = flag.Bool("help", false, "Show help information")
 	)
 	flag.Parse()
 
@@ -30,10 +31,19 @@ func main() {
 		flag.PrintDefaults()
 		corelog.Info()
 		corelog.Info("Examples:")
-		corelog.Info("  server                    # 使用当前目录下的 config.yaml")
-		corelog.Info("  server -config ./my_config.yaml")
-		corelog.Info("  server -config /path/to/config.yaml -log /tmp/server.log")
-		corelog.Info("  server -log /var/log/tunnox/server.log")
+		corelog.Info("  server                              # 使用当前目录下的 config.yaml")
+		corelog.Info("  server -config ./my_config.yaml     # 使用指定配置文件")
+		corelog.Info("  server -export-config config.yaml   # 导出配置模板到文件")
+		corelog.Info("  server -log /var/log/tunnox.log     # 指定日志文件")
+		return
+	}
+
+	// 导出配置模板
+	if *exportConfig != "" {
+		if err := server.ExportConfigTemplate(*exportConfig); err != nil {
+			corelog.Fatalf("Failed to export config template: %v", err)
+		}
+		corelog.Infof("Configuration template exported to: %s", *exportConfig)
 		return
 	}
 
@@ -56,7 +66,6 @@ func main() {
 			corelog.Fatalf("Failed to expand log file path %q: %v", *logFile, err)
 		}
 		config.Log.File = expandedPath
-		config.Log.Output = "file"
 		// 确保日志目录存在
 		logDir := filepath.Dir(expandedPath)
 		if err := os.MkdirAll(logDir, 0755); err != nil {
@@ -64,12 +73,23 @@ func main() {
 		}
 	}
 
+	// 4. 初始化日志系统（服务端固定为 console+file）
+	logConfig := &utils.LogConfig{
+		Level:  config.Log.Level,
+		Format: "text",
+		Output: "both", // 服务端固定同时输出到 console 和 file
+		File:   config.Log.File,
+	}
+	if err := utils.InitLogger(logConfig); err != nil {
+		corelog.Fatalf("Failed to initialize logger: %v", err)
+	}
+
 	srv := server.New(config, context.Background())
 
 	// 显示启动信息横幅（在日志初始化之后，服务启动之前）
 	srv.DisplayStartupBanner(absConfigPath)
 
-	// 3. 运行服务器（包含信号处理和优雅关闭）
+	// 5. 运行服务器（包含信号处理和优雅关闭）
 	if err := srv.Run(); err != nil {
 		// 确保错误信息输出到控制台（即使日志配置为只输出到文件）
 		fmt.Fprintf(os.Stderr, "ERROR: Failed to run server: %v\n", err)

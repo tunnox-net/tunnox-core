@@ -115,6 +115,15 @@ type SessionManager struct {
 	// TunnelRoutingTable（用于跨服务器隧道路由）
 	tunnelRouting *TunnelRoutingTable
 
+	// CrossNodePool（跨节点连接池）
+	crossNodePool *CrossNodePool
+
+	// CrossNodeListener（跨节点连接监听器）
+	crossNodeListener *CrossNodeListener
+
+	// ConnectionStateStore（用于跨节点连接状态查询）
+	connStateStore *ConnectionStateStore
+
 	// 节点ID（用于跨服务器识别）
 	nodeID string
 
@@ -348,6 +357,20 @@ func (s *SessionManager) onClose() error {
 		corelog.Info("Event bus resources cleaned up")
 	}
 
+	// 关闭跨节点连接监听器
+	if s.crossNodeListener != nil {
+		if err := s.crossNodeListener.Stop(); err != nil {
+			corelog.Warnf("Failed to stop CrossNodeListener: %v", err)
+		}
+		corelog.Info("CrossNodeListener stopped")
+	}
+
+	// 关闭跨节点连接池
+	if s.crossNodePool != nil {
+		s.crossNodePool.Close()
+		corelog.Info("CrossNodePool closed")
+	}
+
 	corelog.Info("Session manager resources cleanup completed")
 	return nil
 }
@@ -356,6 +379,39 @@ func (s *SessionManager) onClose() error {
 func (s *SessionManager) SetTunnelRoutingTable(routingTable *TunnelRoutingTable) {
 	s.tunnelRouting = routingTable
 	corelog.Infof("SessionManager: TunnelRoutingTable configured")
+}
+
+// SetCrossNodePool 设置跨节点连接池
+func (s *SessionManager) SetCrossNodePool(pool *CrossNodePool) {
+	s.crossNodePool = pool
+	corelog.Infof("SessionManager: CrossNodePool configured")
+}
+
+// GetCrossNodePool 获取跨节点连接池
+func (s *SessionManager) GetCrossNodePool() *CrossNodePool {
+	return s.crossNodePool
+}
+
+// SetCrossNodeListener 设置跨节点连接监听器
+func (s *SessionManager) SetCrossNodeListener(listener *CrossNodeListener) {
+	s.crossNodeListener = listener
+	corelog.Infof("SessionManager: CrossNodeListener configured")
+}
+
+// GetCrossNodeListener 获取跨节点连接监听器
+func (s *SessionManager) GetCrossNodeListener() *CrossNodeListener {
+	return s.crossNodeListener
+}
+
+// SetConnectionStateStore 设置连接状态存储
+func (s *SessionManager) SetConnectionStateStore(store *ConnectionStateStore) {
+	s.connStateStore = store
+	corelog.Infof("SessionManager: ConnectionStateStore configured")
+}
+
+// GetConnectionStateStore 获取连接状态存储
+func (s *SessionManager) GetConnectionStateStore() *ConnectionStateStore {
+	return s.connStateStore
 }
 
 // SetNodeID 设置节点ID

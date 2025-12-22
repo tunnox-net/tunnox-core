@@ -1,8 +1,9 @@
 package session
 
 import (
+	"fmt"
 	"net"
-	corelog "tunnox-core/internal/core/log"
+	"time"
 
 	"tunnox-core/internal/stream"
 )
@@ -51,34 +52,20 @@ func (b *TunnelBridge) SetTargetConnectionLegacy(targetConn net.Conn, targetStre
 // SetSourceConnection 设置源端连接（统一接口）
 func (b *TunnelBridge) SetSourceConnection(conn TunnelConnectionInterface) {
 	b.tunnelConnMu.Lock()
-	oldConn := b.sourceTunnelConn
 	b.sourceTunnelConn = conn
-	oldForwarder := b.sourceForwarder
 	if conn != nil {
 		b.sourceConn = conn.GetNetConn()
 		b.sourceStream = conn.GetStream()
-		connID := "unknown"
-		if conn.GetStream() != nil {
-			if streamConn, ok := conn.GetStream().(interface{ GetConnectionID() string }); ok {
-				connID = streamConn.GetConnectionID()
-			}
-		}
-		corelog.Infof("TunnelBridge[%s]: SetSourceConnection creating forwarder, connID=%s, hasNetConn=%v, hasStream=%v", b.tunnelID, connID, b.sourceConn != nil, b.sourceStream != nil)
 		b.sourceForwarder = createDataForwarder(b.sourceConn, b.sourceStream)
-		corelog.Infof("TunnelBridge[%s]: SetSourceConnection forwarder created, forwarder=%v, connID=%s", b.tunnelID, b.sourceForwarder != nil, connID)
 	} else {
 		b.sourceForwarder = nil
-		corelog.Infof("TunnelBridge[%s]: SetSourceConnection clearing connection", b.tunnelID)
 	}
 	b.tunnelConnMu.Unlock()
-	corelog.Infof("TunnelBridge[%s]: updated sourceConn (unified), mappingID=%s, oldConn=%v, newConn=%v, oldForwarder=%v, newForwarder=%v",
-		b.tunnelID, b.mappingID, oldConn != nil, conn != nil, oldForwarder != nil, b.sourceForwarder != nil)
 }
 
 // SetSourceConnectionLegacy 设置源端连接（向后兼容）
 func (b *TunnelBridge) SetSourceConnectionLegacy(sourceConn net.Conn, sourceStream stream.PackageStreamer) {
 	b.sourceConnMu.Lock()
-	oldConn := b.sourceConn
 	b.sourceConn = sourceConn
 	b.sourceForwarder = createDataForwarder(sourceConn, sourceStream)
 	b.sourceConnMu.Unlock()
@@ -104,9 +91,6 @@ func (b *TunnelBridge) SetSourceConnectionLegacy(sourceConn net.Conn, sourceStre
 		)
 		b.tunnelConnMu.Unlock()
 	}
-
-	corelog.Infof("TunnelBridge[%s]: updated sourceConn (legacy), mappingID=%s, oldConn=%v, newConn=%v, hasForwarder=%v",
-		b.tunnelID, b.mappingID, oldConn, sourceConn, b.sourceForwarder != nil)
 }
 
 // getSourceConn 获取源端连接（线程安全）
@@ -114,4 +98,69 @@ func (b *TunnelBridge) getSourceConn() net.Conn {
 	b.sourceConnMu.RLock()
 	defer b.sourceConnMu.RUnlock()
 	return b.sourceConn
+}
+
+// getSourceForwarder 获取源端数据转发器（线程安全）
+func (b *TunnelBridge) getSourceForwarder() DataForwarder {
+	b.sourceConnMu.RLock()
+	defer b.sourceConnMu.RUnlock()
+	return b.sourceForwarder
+}
+
+// WaitForTarget 等待目标端连接就绪
+func (b *TunnelBridge) WaitForTarget(timeout time.Duration) error {
+	select {
+	case <-b.ready:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("timeout waiting for target connection")
+	case <-b.Ctx().Done():
+		return b.Ctx().Err()
+	}
+}
+
+// IsTargetReady 检查目标端是否就绪
+func (b *TunnelBridge) IsTargetReady() bool {
+	select {
+	case <-b.ready:
+		return true
+	default:
+		return false
+	}
+}
+
+// NotifyTargetReady 通知目标端就绪（用于跨节点场景）
+func (b *TunnelBridge) NotifyTargetReady() {
+	select {
+	case <-b.ready:
+		// 已经关闭，忽略
+	default:
+		close(b.ready)
+	}
+}
+
+// SetCrossNodeConnection 设置跨节点连接
+func (b *TunnelBridge) SetCrossNodeConnection(conn *CrossNodeConn) {
+	b.crossNodeConnMu.Lock()
+	b.crossNodeConn = conn
+	b.crossNodeConnMu.Unlock()
+}
+
+// GetCrossNodeConnection 获取跨节点连接
+func (b *TunnelBridge) GetCrossNodeConnection() *CrossNodeConn {
+	b.crossNodeConnMu.RLock()
+	defer b.crossNodeConnMu.RUnlock()
+	return b.crossNodeConn
+}
+
+// ReleaseCrossNodeConnection 释放跨节点连接（归还到池）
+func (b *TunnelBridge) ReleaseCrossNodeConnection() {
+	b.crossNodeConnMu.Lock()
+	conn := b.crossNodeConn
+	b.crossNodeConn = nil
+	b.crossNodeConnMu.Unlock()
+
+	if conn != nil {
+		conn.Release()
+	}
 }

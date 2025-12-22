@@ -20,253 +20,97 @@ type ProtocolConfig struct {
 
 // ServerConfig 服务器配置
 type ServerConfig struct {
-	Host         string                    `yaml:"host"`
-	Port         int                       `yaml:"port"`
-	ReadTimeout  int                       `yaml:"read_timeout"`
-	WriteTimeout int                       `yaml:"write_timeout"`
-	IdleTimeout  int                       `yaml:"idle_timeout"`
-	Protocols    map[string]ProtocolConfig `yaml:"protocols"`
+	Protocols map[string]ProtocolConfig `yaml:"protocols"`
 }
 
-// CloudConfig 云控配置
-type CloudConfig struct {
-	Type     string              `yaml:"type"`
-	BuiltIn  BuiltInCloudConfig  `yaml:"built_in"`
-	External ExternalCloudConfig `yaml:"external"`
-}
-
-// BuiltInCloudConfig 内置云控配置
-type BuiltInCloudConfig struct {
-	Enabled bool `yaml:"enabled"`
-}
-
-// ExternalCloudConfig 外部云控配置
-type ExternalCloudConfig struct {
-	Endpoint string `yaml:"endpoint"`
-	APIKey   string `yaml:"api_key"`
-	Timeout  int    `yaml:"timeout"` // 秒
-}
-
-// MessageBrokerConfig 消息代理配置
-type MessageBrokerConfig struct {
-	Type   string               `yaml:"type"`
-	NodeID string               `yaml:"node_id"`
-	Redis  RedisBrokerConfig    `yaml:"redis"`
-	Rabbit RabbitMQBrokerConfig `yaml:"rabbitmq"`
-	Kafka  KafkaBrokerConfig    `yaml:"kafka"`
-}
-
-// RedisBrokerConfig Redis 消息队列配置
-type RedisBrokerConfig struct {
-	Addr        string `yaml:"addr"`
-	Password    string `yaml:"password"`
-	DB          int    `yaml:"db"`
-	Channel     string `yaml:"channel"`
-	PoolSize    int    `yaml:"pool_size"`
-	ClusterMode bool   `yaml:"cluster_mode"`
-}
-
-// RabbitMQBrokerConfig RabbitMQ 消息队列配置
-type RabbitMQBrokerConfig struct {
-	URL          string `yaml:"url"`
-	Exchange     string `yaml:"exchange"`
-	ExchangeType string `yaml:"exchange_type"`
-	RoutingKey   string `yaml:"routing_key"`
-}
-
-// KafkaBrokerConfig Kafka 消息队列配置
-type KafkaBrokerConfig struct {
-	Brokers []string `yaml:"brokers"`
-	Topic   string   `yaml:"topic"`
-	GroupID string   `yaml:"group_id"`
-}
-
-// BridgePoolConfig 桥接连接池配置
-type BridgePoolConfig struct {
-	Enabled             bool             `yaml:"enabled"`
-	MinConnsPerNode     int32            `yaml:"min_conns_per_node"`
-	MaxConnsPerNode     int32            `yaml:"max_conns_per_node"`
-	MaxIdleTime         int              `yaml:"max_idle_time"` // 秒
-	MaxStreamsPerConn   int32            `yaml:"max_streams_per_conn"`
-	DialTimeout         int              `yaml:"dial_timeout"`          // 秒
-	HealthCheckInterval int              `yaml:"health_check_interval"` // 秒
-	GRPCServer          GRPCServerConfig `yaml:"grpc_server"`
-}
-
-// GRPCServerConfig gRPC 服务器配置
-type GRPCServerConfig struct {
-	Addr             string        `yaml:"addr"`
-	Port             int           `yaml:"port"`
-	EnableTLS        bool          `yaml:"enable_tls"`
-	TLS              TLSConfigYAML `yaml:"tls"`
-	MaxRecvMsgSize   int           `yaml:"max_recv_msg_size"` // MB
-	MaxSendMsgSize   int           `yaml:"max_send_msg_size"` // MB
-	KeepaliveTime    int           `yaml:"keepalive_time"`    // 秒
-	KeepaliveTimeout int           `yaml:"keepalive_timeout"` // 秒
-}
-
-// ManagementAPIConfig 管理 API 配置
-type ManagementAPIConfig struct {
-	Enabled    bool            `yaml:"enabled"`
-	ListenAddr string          `yaml:"listen_addr"`
-	Auth       AuthConfig      `yaml:"auth"`
-	CORS       CORSConfig      `yaml:"cors"`
-	RateLimit  RateLimitConfig `yaml:"rate_limit"`
-	PProf      PProfConfig     `yaml:"pprof"`
+// ManagementConfig 管理服务配置
+type ManagementConfig struct {
+	Listen string      `yaml:"listen"`
+	Auth   AuthConfig  `yaml:"auth"`
+	PProf  PProfConfig `yaml:"pprof"`
 }
 
 // PProfConfig PProf 性能分析配置
 type PProfConfig struct {
-	Enabled     bool   `yaml:"enabled"`      // 是否启用 pprof
-	DataDir     string `yaml:"data_dir"`     // pprof 数据保存目录
-	Retention   int    `yaml:"retention"`    // 保留分钟数（默认10分钟）
-	AutoCapture bool   `yaml:"auto_capture"` // 是否自动抓取（默认true）
+	Enabled     bool   `yaml:"enabled"`
+	DataDir     string `yaml:"data_dir"`
+	Retention   int    `yaml:"retention"`
+	AutoCapture bool   `yaml:"auto_capture"`
 }
 
 // AuthConfig 认证配置
 type AuthConfig struct {
-	Type   string `yaml:"type"`    // bearer | basic | none
-	Token  string `yaml:"token"`   // Bearer token
-	APIKey string `yaml:"api_key"` // API key
+	Type  string `yaml:"type"`  // bearer | basic | none
+	Token string `yaml:"token"` // Bearer token
 }
 
-// CORSConfig 跨域配置
-type CORSConfig struct {
-	Enabled          bool     `yaml:"enabled"`
-	AllowedOrigins   []string `yaml:"allowed_origins"`
-	AllowedMethods   []string `yaml:"allowed_methods"`
-	AllowedHeaders   []string `yaml:"allowed_headers"`
-	AllowCredentials bool     `yaml:"allow_credentials"`
+// LogConfig 日志配置
+type LogConfig struct {
+	Level    string            `yaml:"level"`    // debug, info, warn, error
+	File     string            `yaml:"file"`     // 日志文件路径
+	Rotation LogRotationConfig `yaml:"rotation"` // 日志轮转配置
 }
 
-// RateLimitConfig 速率限制配置
-type RateLimitConfig struct {
-	Enabled bool `yaml:"enabled"`
-	RPS     int  `yaml:"rps"`   // 每秒请求数
-	Burst   int  `yaml:"burst"` // 突发容量
+// LogRotationConfig 日志轮转配置
+type LogRotationConfig struct {
+	MaxSize    int  `yaml:"max_size"`    // 单个文件最大大小(MB)
+	MaxBackups int  `yaml:"max_backups"` // 保留的旧文件数量
+	MaxAge     int  `yaml:"max_age"`     // 保留天数
+	Compress   bool `yaml:"compress"`    // 是否压缩
 }
 
-// UDPIngressListenerConfig UDP接入监听配置
-type UDPIngressListenerConfig struct {
-	Name         string `yaml:"name"`
-	Address      string `yaml:"address"`
-	MappingID    string `yaml:"mapping_id"`
-	IdleTimeout  int    `yaml:"idle_timeout"`
-	MaxSessions  int    `yaml:"max_sessions"`
-	FrameBacklog int    `yaml:"frame_backlog"`
-}
-
-// UDPIngressConfig UDP接入总体配置
-type UDPIngressConfig struct {
-	Enabled   bool                       `yaml:"enabled"`
-	Listeners []UDPIngressListenerConfig `yaml:"listeners"`
-}
-
-// MetricsConfig Metrics 配置
-type MetricsConfig struct {
-	Type string `yaml:"type"` // memory | prometheus
-}
-
-// StorageConfig 存储配置
-type StorageConfig struct {
-	Type   string                  `yaml:"type"`   // memory | redis | hybrid
-	Redis  RedisStorageConfig      `yaml:"redis"`  // Redis存储配置
-	Hybrid HybridStorageConfigYAML `yaml:"hybrid"` // 混合存储配置
-}
-
-// RedisStorageConfig Redis存储配置
-type RedisStorageConfig struct {
-	Addr         string `yaml:"addr"`
-	Password     string `yaml:"password"`
-	DB           int    `yaml:"db"`
-	PoolSize     int    `yaml:"pool_size"`
-	MaxRetries   int    `yaml:"max_retries"`
-	DialTimeout  int    `yaml:"dial_timeout"`  // 秒
-	ReadTimeout  int    `yaml:"read_timeout"`  // 秒
-	WriteTimeout int    `yaml:"write_timeout"` // 秒
-}
-
-// HybridStorageConfigYAML 混合存储YAML配置
-type HybridStorageConfigYAML struct {
-	CacheType        string                  `yaml:"cache_type"`        // memory | redis
-	EnablePersistent bool                    `yaml:"enable_persistent"` // 是否启用持久化
-	JSON             JSONStorageConfigYAML   `yaml:"json"`              // JSON 文件存储配置（优先）
-	Remote           RemoteStorageConfigYAML `yaml:"remote"`            // 远程存储配置
-}
-
-// JSONStorageConfigYAML JSON 文件存储配置
-type JSONStorageConfigYAML struct {
-	FilePath     string `yaml:"file_path"`     // JSON 文件路径
-	AutoSave     bool   `yaml:"auto_save"`     // 是否自动保存
-	SaveInterval int    `yaml:"save_interval"` // 自动保存间隔（秒）
-}
-
-// RemoteStorageConfigYAML 远程存储YAML配置
-type RemoteStorageConfigYAML struct {
-	Type string                `yaml:"type"` // grpc | http
-	GRPC GRPCStorageConfigYAML `yaml:"grpc"`
-	HTTP HTTPStorageConfigYAML `yaml:"http"`
-}
-
-// GRPCStorageConfigYAML gRPC存储YAML配置
-type GRPCStorageConfigYAML struct {
-	Address    string        `yaml:"address"`
-	Timeout    int           `yaml:"timeout"` // 秒
-	MaxRetries int           `yaml:"max_retries"`
-	TLS        TLSConfigYAML `yaml:"tls"`
-}
-
-// HTTPStorageConfigYAML HTTP存储YAML配置
-type HTTPStorageConfigYAML struct {
-	BaseURL    string         `yaml:"base_url"`
-	Timeout    int            `yaml:"timeout"` // 秒
-	MaxRetries int            `yaml:"max_retries"`
-	Auth       AuthConfigYAML `yaml:"auth"`
-}
-
-// TLSConfigYAML TLS配置
-type TLSConfigYAML struct {
+// RedisConfig Redis 配置
+type RedisConfig struct {
 	Enabled  bool   `yaml:"enabled"`
-	CertFile string `yaml:"cert_file"`
-	KeyFile  string `yaml:"key_file"`
-	CAFile   string `yaml:"ca_file"`
+	Addr     string `yaml:"addr"`
+	Password string `yaml:"password"`
+	DB       int    `yaml:"db"`
 }
 
-// AuthConfigYAML 认证配置
-type AuthConfigYAML struct {
-	Type  string `yaml:"type"` // bearer | basic | none
-	Token string `yaml:"token"`
+// PersistenceConfig 持久化配置
+type PersistenceConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	File         string `yaml:"file"`
+	AutoSave     bool   `yaml:"auto_save"`
+	SaveInterval int    `yaml:"save_interval"` // 秒
+}
+
+// StorageConfig 远程存储配置
+type StorageConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	URL     string `yaml:"url"`
+	Token   string `yaml:"token"`
+	Timeout int    `yaml:"timeout"` // 秒
+}
+
+// PlatformConfig 云控平台配置
+type PlatformConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	URL     string `yaml:"url"`
+	Token   string `yaml:"token"`
+	Timeout int    `yaml:"timeout"` // 秒
 }
 
 // Config 应用配置
 type Config struct {
-	Server        ServerConfig        `yaml:"server"`
-	Storage       StorageConfig       `yaml:"storage"` // 存储配置
-	Log           utils.LogConfig     `yaml:"log"`
-	Cloud         CloudConfig         `yaml:"cloud"`
-	MessageBroker MessageBrokerConfig `yaml:"message_broker"`
-	BridgePool    BridgePoolConfig    `yaml:"bridge_pool"`
-	ManagementAPI ManagementAPIConfig `yaml:"management_api"`
-	UDPIngress    UDPIngressConfig    `yaml:"udp_ingress"`
-	Metrics       MetricsConfig       `yaml:"metrics"`
+	Server      ServerConfig      `yaml:"server"`
+	Management  ManagementConfig  `yaml:"management"`
+	Log         LogConfig         `yaml:"log"`
+	Redis       RedisConfig       `yaml:"redis"`
+	Persistence PersistenceConfig `yaml:"persistence"`
+	Storage     StorageConfig     `yaml:"storage"`
+	Platform    PlatformConfig    `yaml:"platform"`
 }
 
 // LoadConfig 加载配置文件
+// 如果配置文件不存在,使用默认配置(不自动生成文件)
 func LoadConfig(configPath string) (*Config, error) {
-	// 如果配置文件不存在，使用默认配置并生成简洁的示例配置文件
+	// 如果配置文件不存在,使用默认配置
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		corelog.Warnf(constants.MsgConfigFileNotFound, configPath)
+		corelog.Infof("Using default configuration (no config file generated)")
 		config := GetDefaultConfig()
-		// ✅ 应用环境变量覆盖（即使没有配置文件）
 		ApplyEnvOverrides(config)
-
-		// ✅ 生成简洁的示例配置文件
-		if err := SaveMinimalConfig(configPath); err != nil {
-			corelog.Warnf("Failed to save config template to %s: %v", configPath, err)
-		} else {
-			corelog.Infof("Generated config template: %s", configPath)
-		}
-
 		return config, nil
 	}
 
@@ -282,29 +126,25 @@ func LoadConfig(configPath string) (*Config, error) {
 		return nil, fmt.Errorf(constants.MsgFailedToParseConfigFile, configPath, err)
 	}
 
-	// ✅ 应用环境变量覆盖（环境变量优先级高于配置文件）
+	// 应用环境变量覆盖（环境变量优先级高于配置文件）
 	ApplyEnvOverrides(&config)
 
-	// 确保日志输出到文件（不输出到console）
-	if config.Log.Output == "" || config.Log.Output == constants.LogOutputStdout || config.Log.Output == constants.LogOutputStderr {
-		config.Log.Output = constants.LogOutputFile
-		if config.Log.File == "" {
-			// 使用默认路径
-			config.Log.File = utils.GetDefaultServerLogPath()
-		} else {
-			// 展开路径（支持 ~ 和相对路径）
-			expandedPath, err := utils.ExpandPath(config.Log.File)
-			if err != nil {
-				return nil, fmt.Errorf("failed to expand log file path %q: %w", config.Log.File, err)
-			}
-			config.Log.File = expandedPath
+	// 确保日志文件路径已设置
+	if config.Log.File == "" {
+		config.Log.File = utils.GetDefaultServerLogPath()
+	} else {
+		// 展开路径（支持 ~ 和相对路径）
+		expandedPath, err := utils.ExpandPath(config.Log.File)
+		if err != nil {
+			return nil, fmt.Errorf("failed to expand log file path %q: %w", config.Log.File, err)
 		}
+		config.Log.File = expandedPath
+	}
 
-		// 确保日志目录存在
-		logDir := filepath.Dir(config.Log.File)
-		if err := os.MkdirAll(logDir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create log directory %q: %w", logDir, err)
-		}
+	// 确保日志目录存在
+	logDir := filepath.Dir(config.Log.File)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create log directory %q: %w", logDir, err)
 	}
 
 	// 验证配置
@@ -318,27 +158,12 @@ func LoadConfig(configPath string) (*Config, error) {
 
 // ValidateConfig 验证配置
 func ValidateConfig(config *Config) error {
-	// 验证存储配置
-	if err := validateStorageConfig(&config.Storage); err != nil {
-		return fmt.Errorf("invalid storage config: %w", err)
-	}
-
-	// 验证服务器配置
-	if config.Server.Host == "" {
-		config.Server.Host = "0.0.0.0"
-	}
-	if config.Server.Port <= 0 {
-		config.Server.Port = 8000
-	}
-
 	// 验证协议配置
 	if config.Server.Protocols == nil {
 		config.Server.Protocols = make(map[string]ProtocolConfig)
 	}
 
 	// 设置默认协议配置
-	// 独立协议适配器：tcp, kcp, quic (需要端口和 host)
-	// HTTP 服务协议：websocket, httppoll (通过 management_api 提供,不需要端口)
 	defaultProtocols := map[string]ProtocolConfig{
 		"tcp": {
 			Enabled: true,
@@ -352,244 +177,100 @@ func ValidateConfig(config *Config) error {
 		},
 		"quic": {
 			Enabled: true,
-			Port:    443,
+			Port:    8443,
 			Host:    "0.0.0.0",
 		},
 		"websocket": {
 			Enabled: true,
-			// 注意：websocket 通过 HTTP 服务提供,不需要独立端口
 		},
 		"httppoll": {
 			Enabled: true,
-			// 注意：httppoll 通过 HTTP 服务提供,不需要独立端口
 		},
 	}
 
-	// 合并默认配置（智能合并：如果用户配置了协议但某些字段缺失，使用默认值填充）
+	// 合并默认配置
 	for name, defaultConfig := range defaultProtocols {
 		if userConfig, exists := config.Server.Protocols[name]; exists {
-			// 用户已配置该协议，合并缺失的字段
 			if userConfig.Port <= 0 {
 				userConfig.Port = defaultConfig.Port
 			}
 			if userConfig.Host == "" {
 				userConfig.Host = defaultConfig.Host
 			}
-			// 如果用户没有明确设置 Enabled，保持默认值（但通常用户会设置）
 			config.Server.Protocols[name] = userConfig
 		} else {
-			// 用户未配置该协议，使用默认配置
 			config.Server.Protocols[name] = defaultConfig
 		}
 	}
 
-	// ============================================================================
-	// Redis 自动共享逻辑
-	// ============================================================================
-
-	// 规则 1: 如果 storage.redis 已配置，但 message_broker 未配置或为 memory
-	//        自动使用 Redis 作为消息队列
-	if config.Storage.Redis.Addr != "" {
-		if config.MessageBroker.Type == "" || config.MessageBroker.Type == "memory" {
-			config.MessageBroker.Type = "redis"
-			config.MessageBroker.Redis.Addr = config.Storage.Redis.Addr
-			config.MessageBroker.Redis.Password = config.Storage.Redis.Password
-			config.MessageBroker.Redis.DB = config.Storage.Redis.DB
-			if config.MessageBroker.Redis.Channel == "" {
-				config.MessageBroker.Redis.Channel = "tunnox:messages"
-			}
-			if config.MessageBroker.Redis.PoolSize <= 0 {
-				config.MessageBroker.Redis.PoolSize = 10
-			}
-		}
+	// 验证 Management 配置
+	if config.Management.Listen == "" {
+		config.Management.Listen = "0.0.0.0:9000"
 	}
-
-	// 规则 2: 如果 message_broker.redis 已配置，但 storage.redis 未配置
-	//        自动使用 message_broker 的 Redis 配置给 storage
-	if config.MessageBroker.Type == "redis" && config.MessageBroker.Redis.Addr != "" {
-		if config.Storage.Redis.Addr == "" {
-			config.Storage.Redis.Addr = config.MessageBroker.Redis.Addr
-			config.Storage.Redis.Password = config.MessageBroker.Redis.Password
-			config.Storage.Redis.DB = config.MessageBroker.Redis.DB
-
-			// 设置默认值
-			if config.Storage.Redis.PoolSize <= 0 {
-				config.Storage.Redis.PoolSize = 10
-			}
-		}
+	if config.Management.Auth.Type == "" {
+		config.Management.Auth.Type = "bearer"
 	}
-
-	// 验证 MessageBroker 配置
-	if config.MessageBroker.Type == "" {
-		config.MessageBroker.Type = "memory"
+	if config.Management.PProf.DataDir == "" {
+		config.Management.PProf.DataDir = "logs/pprof"
 	}
-	if config.MessageBroker.NodeID == "" {
-		config.MessageBroker.NodeID = "node-001"
-	}
-
-	// 验证 Cloud 配置
-	if config.Cloud.Type == "" {
-		config.Cloud.Type = "built_in"
-	}
-
-	// 验证 ManagementAPI 配置
-	if config.ManagementAPI.ListenAddr == "" {
-		config.ManagementAPI.ListenAddr = "0.0.0.0:9000"
-	}
-	// 默认启用 ManagementAPI
-	if !config.ManagementAPI.Enabled {
-		config.ManagementAPI.Enabled = true
-	}
-
-	// 验证 UDP Ingress 配置
-	if config.UDPIngress.Listeners == nil {
-		config.UDPIngress.Listeners = []UDPIngressListenerConfig{}
-	}
-	for i := range config.UDPIngress.Listeners {
-		if config.UDPIngress.Listeners[i].IdleTimeout <= 0 {
-			config.UDPIngress.Listeners[i].IdleTimeout = 60
-		}
-		if config.UDPIngress.Listeners[i].FrameBacklog <= 0 {
-			config.UDPIngress.Listeners[i].FrameBacklog = 64
-		}
+	if config.Management.PProf.Retention <= 0 {
+		config.Management.PProf.Retention = 10
 	}
 
 	// 验证日志配置
 	if config.Log.Level == "" {
-		config.Log.Level = constants.LogLevelInfo
+		config.Log.Level = "info"
 	}
-	if config.Log.Format == "" {
-		config.Log.Format = constants.LogFormatText
+	if config.Log.File == "" {
+		config.Log.File = "logs/server.log"
 	}
-	if config.Log.Output == "" {
-		config.Log.Output = constants.LogOutputStdout
+	// 设置日志轮转默认值
+	if config.Log.Rotation.MaxSize <= 0 {
+		config.Log.Rotation.MaxSize = 100
 	}
-
-	return nil
-}
-
-// validateStorageConfig 验证存储配置
-func validateStorageConfig(config *StorageConfig) error {
-	// 如果未配置，使用默认值
-	if config.Type == "" {
-		config.Type = "hybrid"
+	if config.Log.Rotation.MaxBackups <= 0 {
+		config.Log.Rotation.MaxBackups = 10
+	}
+	if config.Log.Rotation.MaxAge <= 0 {
+		config.Log.Rotation.MaxAge = 30
 	}
 
-	// 验证存储类型
-	validTypes := []string{"memory", "redis", "hybrid"}
-	if !containsString(validTypes, config.Type) {
-		return fmt.Errorf("invalid storage type: %s, must be one of: %v", config.Type, validTypes)
+	// 验证 Redis 配置
+	if config.Redis.Enabled && config.Redis.Addr == "" {
+		return fmt.Errorf("redis.addr is required when redis.enabled is true")
 	}
 
-	// 如果是 Redis，验证 Redis 配置
-	if config.Type == "redis" {
-		if config.Redis.Addr == "" {
-			return fmt.Errorf("redis.addr is required when storage type is redis")
-		}
-		// 设置默认值
-		if config.Redis.PoolSize <= 0 {
-			config.Redis.PoolSize = 10
-		}
-		if config.Redis.MaxRetries <= 0 {
-			config.Redis.MaxRetries = 3
-		}
-		if config.Redis.DialTimeout <= 0 {
-			config.Redis.DialTimeout = 5
-		}
-		if config.Redis.ReadTimeout <= 0 {
-			config.Redis.ReadTimeout = 3
-		}
-		if config.Redis.WriteTimeout <= 0 {
-			config.Redis.WriteTimeout = 3
-		}
+	// 验证 Persistence 配置
+	if config.Persistence.Enabled && config.Persistence.File == "" {
+		config.Persistence.File = "data/tunnox.json"
+	}
+	if config.Persistence.SaveInterval <= 0 {
+		config.Persistence.SaveInterval = 30
 	}
 
-	// 如果是 Hybrid，验证 Hybrid 配置
-	if config.Type == "hybrid" {
-		// 自动检测缓存类型：如果配置了 Redis，且缓存类型未显式设置或为 memory，自动升级为 redis
-		// 这样可以支持多节点部署，共享运行时数据（会话、连接状态等）
-		if config.Hybrid.CacheType == "" || config.Hybrid.CacheType == "memory" {
-			if config.Redis.Addr != "" {
-				config.Hybrid.CacheType = "redis"
-			} else {
-				// 没有配置 Redis，使用内存缓存
-				if config.Hybrid.CacheType == "" {
-					config.Hybrid.CacheType = "memory"
-				}
-			}
-		}
+	// 验证 Storage 配置
+	if config.Storage.Enabled && config.Storage.URL == "" {
+		return fmt.Errorf("storage.url is required when storage.enabled is true")
+	}
+	if config.Storage.Timeout <= 0 {
+		config.Storage.Timeout = 10
+	}
 
-		if config.Hybrid.CacheType != "memory" && config.Hybrid.CacheType != "redis" {
-			return fmt.Errorf("invalid hybrid.cache_type: %s, must be 'memory' or 'redis'", config.Hybrid.CacheType)
-		}
-
-		if config.Hybrid.CacheType == "redis" && config.Redis.Addr == "" {
-			return fmt.Errorf("redis.addr is required when hybrid.cache_type is redis")
-		}
-
-		// 前缀和 TTL 使用 storage.DefaultHybridConfig() 中的默认值，不需要用户配置
-
-		if config.Hybrid.EnablePersistent {
-			// 检查是否配置了 JSON 或 Remote 存储
-			hasJSONConfig := config.Hybrid.JSON.FilePath != ""
-			hasRemoteConfig := config.Hybrid.Remote.Type != "" && config.Hybrid.Remote.GRPC.Address != ""
-
-			if !hasJSONConfig && !hasRemoteConfig {
-				// 使用默认 JSON 存储配置
-				config.Hybrid.JSON.FilePath = "data/tunnox-data.json"
-				config.Hybrid.JSON.AutoSave = true
-				config.Hybrid.JSON.SaveInterval = 30
-			}
-
-			// 如果配置了 Remote 存储，验证配置
-			if config.Hybrid.Remote.Type != "" {
-				if config.Hybrid.Remote.Type != "grpc" && config.Hybrid.Remote.Type != "http" {
-					return fmt.Errorf("invalid hybrid.remote.type: %s, must be 'grpc' or 'http'", config.Hybrid.Remote.Type)
-				}
-
-				if config.Hybrid.Remote.Type == "grpc" && config.Hybrid.Remote.GRPC.Address == "" {
-					return fmt.Errorf("hybrid.remote.grpc.address is required when remote.type is grpc")
-				}
-
-				// 设置默认超时
-				if config.Hybrid.Remote.GRPC.Timeout <= 0 {
-					config.Hybrid.Remote.GRPC.Timeout = 5
-				}
-				if config.Hybrid.Remote.GRPC.MaxRetries <= 0 {
-					config.Hybrid.Remote.GRPC.MaxRetries = 3
-				}
-			}
-		}
+	// 验证 Platform 配置
+	if config.Platform.Enabled && config.Platform.URL == "" {
+		return fmt.Errorf("platform.url is required when platform.enabled is true")
+	}
+	if config.Platform.Timeout <= 0 {
+		config.Platform.Timeout = 10
 	}
 
 	return nil
 }
-
-// containsString 检查字符串切片是否包含指定字符串
-func containsString(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
-// 注意：前缀配置已移至 internal/core/storage/hybrid_config.go
-// 使用 storage.DefaultHybridConfig() 获取默认配置
 
 // GetDefaultConfig 获取默认配置
 func GetDefaultConfig() *Config {
-	// 获取默认日志路径
-	defaultLogPath := utils.GetDefaultServerLogPath()
-
 	return &Config{
 		Server: ServerConfig{
-			Host:         "0.0.0.0",
-			Port:         8000,
-			ReadTimeout:  30,
-			WriteTimeout: 30,
-			IdleTimeout:  60,
 			Protocols: map[string]ProtocolConfig{
 				"tcp": {
 					Enabled: true,
@@ -603,10 +284,9 @@ func GetDefaultConfig() *Config {
 				},
 				"quic": {
 					Enabled: true,
-					Port:    443,
+					Port:    8443,
 					Host:    "0.0.0.0",
 				},
-				// websocket 和 httppoll 通过 HTTP 服务提供，不需要独立端口
 				"websocket": {
 					Enabled: true,
 				},
@@ -615,54 +295,52 @@ func GetDefaultConfig() *Config {
 				},
 			},
 		},
-		Storage: StorageConfig{
-			Type: "hybrid",
-			Hybrid: HybridStorageConfigYAML{
-				CacheType:        "memory",
-				EnablePersistent: true, // 默认启用持久化（但会根据是否有Redis自动调整）
-				JSON: JSONStorageConfigYAML{
-					FilePath:     "data/tunnox-data.json",
-					AutoSave:     true,
-					SaveInterval: 30,
-				},
-			},
-		},
-		Log: utils.LogConfig{
-			Level:  constants.LogLevelInfo,
-			Format: constants.LogFormatText,
-			Output: constants.LogOutputFile,
-			File:   defaultLogPath,
-		},
-		Cloud: CloudConfig{
-			Type: "built_in",
-		},
-		MessageBroker: MessageBrokerConfig{
-			Type:   "memory",
-			NodeID: "node-001",
-		},
-		BridgePool: BridgePoolConfig{
-			Enabled: false,
-		},
-		ManagementAPI: ManagementAPIConfig{
-			Enabled:    true,
-			ListenAddr: "0.0.0.0:9000",
+		Management: ManagementConfig{
+			Listen: "0.0.0.0:9000",
 			Auth: AuthConfig{
-				Type:  "bearer", // 默认需要 bearer token 认证
-				Token: "",       // 需要在配置文件中设置
+				Type:  "bearer",
+				Token: "",
 			},
 			PProf: PProfConfig{
-				Enabled:     true,         // 默认启用 pprof（需要密钥访问）
-				DataDir:     "logs/pprof", // 默认保存目录
-				Retention:   10,           // 默认保留10分钟
-				AutoCapture: true,         // 默认启用自动抓取
+				Enabled:     true,
+				DataDir:     "logs/pprof",
+				Retention:   10,
+				AutoCapture: true,
 			},
 		},
-		UDPIngress: UDPIngressConfig{
-			Enabled:   false,
-			Listeners: []UDPIngressListenerConfig{},
+		Log: LogConfig{
+			Level: "info",
+			File:  "logs/server.log",
+			Rotation: LogRotationConfig{
+				MaxSize:    100,
+				MaxBackups: 10,
+				MaxAge:     30,
+				Compress:   false,
+			},
 		},
-		Metrics: MetricsConfig{
-			Type: "memory", // 默认使用 memory
+		Redis: RedisConfig{
+			Enabled:  false,
+			Addr:     "redis:6379",
+			Password: "",
+			DB:       0,
+		},
+		Persistence: PersistenceConfig{
+			Enabled:      true,
+			File:         "data/tunnox.json",
+			AutoSave:     true,
+			SaveInterval: 30,
+		},
+		Storage: StorageConfig{
+			Enabled: false,
+			URL:     "http://tunnox-storage:8080",
+			Token:   "",
+			Timeout: 10,
+		},
+		Platform: PlatformConfig{
+			Enabled: false,
+			URL:     "http://tunnox-platform:8080",
+			Token:   "",
+			Timeout: 10,
 		},
 	}
 }
@@ -698,6 +376,11 @@ func SaveConfig(configPath string, config *Config) error {
 
 // SaveMinimalConfig 保存简洁的配置模板到文件
 func SaveMinimalConfig(configPath string) error {
+	return ExportConfigTemplate(configPath)
+}
+
+// ExportConfigTemplate 导出配置模板
+func ExportConfigTemplate(configPath string) error {
 	// 确保目录存在
 	dir := filepath.Dir(configPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -705,39 +388,7 @@ func SaveMinimalConfig(configPath string) error {
 	}
 
 	// 简洁的配置模板
-	template := `# Tunnox Core Server Configuration
-# 只需配置需要修改的部分，其他保持默认即可
-
-# 协议配置
-server:
-  protocols:
-    tcp:
-      enabled: true
-      port: 8000
-    kcp:
-      enabled: true
-      port: 8000
-    quic:
-      enabled: true
-      port: 443
-    websocket:
-      enabled: true
-    httppoll:
-      enabled: true
-
-# 日志配置
-log:
-  level: info      # debug, info, warn, error
-  output: file     # stdout, file
-
-# HTTP 管理服务
-management_api:
-  enabled: true
-  listen_addr: "0.0.0.0:9000"
-  auth:
-    type: bearer
-    token: ""      # 设置 API 访问令牌
-`
+	template := GetConfigTemplate()
 
 	// 写入文件
 	if err := os.WriteFile(configPath, []byte(template), 0644); err != nil {
@@ -745,4 +396,99 @@ management_api:
 	}
 
 	return nil
+}
+
+// GetConfigTemplate 获取配置模板
+func GetConfigTemplate() string {
+	return `# Tunnox Core Server Configuration
+# 只需配置需要修改的部分，其他保持默认即可
+
+# ============================================
+# 协议配置
+# ============================================
+server:
+  protocols:
+    tcp:
+      enabled: true
+      port: 8000
+      host: "0.0.0.0"
+    kcp:
+      enabled: true
+      port: 8000
+      host: "0.0.0.0"
+    quic:
+      enabled: true
+      port: 8443
+      host: "0.0.0.0"
+    websocket:
+      enabled: true
+    httppoll:
+      enabled: true
+
+# ============================================
+# HTTP 管理服务
+# ============================================
+management:
+  listen: "0.0.0.0:9000"
+  auth:
+    type: bearer
+    token: ""  # 设置 API 访问令牌
+  pprof:
+    enabled: true
+    data_dir: "logs/pprof"
+    retention: 10
+    auto_capture: true
+
+# ============================================
+# 日志配置
+# ============================================
+log:
+  level: info  # debug, info, warn, error
+  file: "logs/server.log"
+  rotation:
+    max_size: 100     # MB
+    max_backups: 10
+    max_age: 30       # days
+    compress: false
+
+# ============================================
+# Redis 配置 - 可选
+# 启用后自动切换为集群模式
+# ============================================
+redis:
+  enabled: false
+  addr: "redis:6379"
+  password: ""
+  db: 0
+
+# ============================================
+# 本地持久化 - 可选
+# 单节点模式下推荐启用
+# ============================================
+persistence:
+  enabled: true
+  file: "data/tunnox.json"
+  auto_save: true
+  save_interval: 30  # seconds
+
+# ============================================
+# 远程存储 - 可选
+# 连接 tunnox-storage 服务
+# ============================================
+storage:
+  enabled: false
+  url: "http://tunnox-storage:8080"
+  token: ""
+  timeout: 10  # seconds
+
+# ============================================
+# 云控平台 - 可选
+# 连接 tunnox-platform 服务
+# ============================================
+platform:
+  enabled: false
+  url: "http://tunnox-platform:8080"
+  token: ""
+  timeout: 10  # seconds
+`
 }

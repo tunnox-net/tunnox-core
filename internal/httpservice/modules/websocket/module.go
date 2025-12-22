@@ -13,7 +13,9 @@ import (
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/core/dispose"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/httpservice"
+	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/session"
 
 	"github.com/gorilla/mux"
@@ -98,14 +100,10 @@ func (m *WebSocketModule) handleWebSocket(w http.ResponseWriter, r *http.Request
 
 	// 如果有会话管理器，处理连接
 	if m.session != nil {
-		go func() {
-			_, err := m.session.AcceptConnection(wsConn, wsConn)
-			if err != nil {
-				corelog.Errorf("WebSocketModule: failed to accept connection: %v", err)
-				wsConn.Close()
-			}
-		}()
+		corelog.Infof("WebSocketModule: session is set, starting handleConnection")
+		go m.handleConnection(wsConn)
 	} else {
+		corelog.Warnf("WebSocketModule: session is nil, cannot handle connection")
 		// 没有会话管理器，发送到通道等待处理
 		select {
 		case m.connChan <- wsConn:
@@ -117,6 +115,98 @@ func (m *WebSocketModule) handleWebSocket(w http.ResponseWriter, r *http.Request
 			corelog.Errorf("WebSocketModule: connection queue full, rejecting")
 			wsConn.Close()
 			return
+		}
+	}
+}
+
+// handleConnection 处理 WebSocket 连接的数据包循环
+func (m *WebSocketModule) handleConnection(wsConn *WebSocketServerConn) {
+	shouldCloseConn := true
+	var streamConn *types.StreamConnection
+
+	defer func() {
+		// 清理 SessionManager 中的连接（如果已创建）
+		if streamConn != nil && m.session != nil {
+			_ = m.session.CloseConnection(streamConn.ID)
+		}
+
+		// 关闭底层连接
+		if shouldCloseConn {
+			wsConn.Close()
+		}
+	}()
+
+	corelog.Infof("WebSocketModule: handling connection from %s", wsConn.remoteAddr)
+
+	// 初始化连接
+	var err error
+	streamConn, err = m.session.AcceptConnection(wsConn, wsConn)
+	if err != nil {
+		corelog.Errorf("WebSocketModule: failed to accept connection: %v", err)
+		return
+	}
+
+	corelog.Infof("WebSocketModule: connection accepted, connID=%s", streamConn.ID)
+
+	// 数据包处理循环
+	for {
+		select {
+		case <-m.Ctx().Done():
+			return
+		default:
+		}
+
+		// 检查连接是否已切换到流模式
+		if streamConn != nil && streamConn.Stream != nil {
+			if reader, ok := streamConn.Stream.GetReader().(interface {
+				IsStreamMode() bool
+			}); ok && reader.IsStreamMode() {
+				corelog.Infof("WebSocketModule: connection %s is in stream mode, readLoop exiting", streamConn.ID)
+				shouldCloseConn = false
+				streamConn = nil
+				return
+			}
+		}
+
+		pkt, _, err := streamConn.Stream.ReadPacket()
+		if err != nil {
+			// 检查是否为超时错误
+			if netErr, ok := err.(interface {
+				Timeout() bool
+				Temporary() bool
+			}); ok && netErr.Timeout() && netErr.Temporary() {
+				continue
+			}
+			if err != io.EOF {
+				corelog.Errorf("WebSocketModule: failed to read packet for connection %s: %v", streamConn.ID, err)
+			}
+			return
+		}
+
+		streamPacket := &types.StreamPacket{
+			ConnectionID: streamConn.ID,
+			Packet:       pkt,
+			Timestamp:    time.Now(),
+		}
+
+		isTunnelOpenPacket := (pkt.PacketType & 0x3F) == packet.TunnelOpen
+
+		if err := m.session.HandlePacket(streamPacket); err != nil {
+			if isTunnelOpenPacket {
+				errMsg := err.Error()
+				if errMsg == "tunnel source connected, switching to stream mode" ||
+					errMsg == "tunnel target connected, switching to stream mode" ||
+					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" ||
+					errMsg == "tunnel target connected via cross-node forwarding, switching to stream mode" ||
+					errMsg == "tunnel connected to existing bridge, switching to stream mode" {
+					connID := streamConn.ID
+					shouldCloseConn = false
+					streamConn = nil
+					corelog.Infof("WebSocketModule: connection %s switched to stream mode, readLoop exiting", connID)
+					return
+				}
+			}
+			corelog.Errorf("WebSocketModule: failed to handle packet for connection %s: %v", streamConn.ID, err)
 		}
 	}
 }

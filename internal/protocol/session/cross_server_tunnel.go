@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/packet"
@@ -28,20 +27,14 @@ type TunnelOpenBroadcastMessage struct {
 // startTunnelOpenBroadcastSubscription 启动TunnelOpen广播订阅
 func (s *SessionManager) startTunnelOpenBroadcastSubscription() {
 	if s.bridgeManager == nil {
-		corelog.Debugf("SessionManager: BridgeManager not configured, skipping tunnel broadcast subscription")
 		return
 	}
-
-	corelog.Infof("SessionManager: starting TunnelOpen broadcast subscription for cross-server forwarding")
 
 	// 订阅TunnelOpen广播
 	msgChan, err := s.bridgeManager.Subscribe(s.Ctx(), broker.TopicTunnelOpen)
 	if err != nil {
-		corelog.Errorf("SessionManager: failed to subscribe to %s: %v", broker.TopicTunnelOpen, err)
 		return
 	}
-
-	corelog.Infof("SessionManager: ✅ subscribed to %s for cross-server tunnel forwarding", broker.TopicTunnelOpen)
 
 	// 启动消息处理循环
 	go s.processTunnelOpenBroadcasts(msgChan)
@@ -49,20 +42,16 @@ func (s *SessionManager) startTunnelOpenBroadcastSubscription() {
 
 // processTunnelOpenBroadcasts 处理TunnelOpen广播消息
 func (s *SessionManager) processTunnelOpenBroadcasts(msgChan <-chan *BroadcastMessage) {
-	corelog.Infof("SessionManager: TunnelOpen broadcast processor started")
-
 	for {
 		select {
 		case msg, ok := <-msgChan:
 			if !ok {
-				corelog.Infof("SessionManager: TunnelOpen broadcast channel closed")
 				return
 			}
 
 			// 解析消息
 			var broadcastMsg TunnelOpenBroadcastMessage
 			if err := json.Unmarshal(msg.Payload, &broadcastMsg); err != nil {
-				corelog.Errorf("SessionManager: failed to unmarshal TunnelOpen broadcast: %v", err)
 				continue
 			}
 
@@ -70,7 +59,6 @@ func (s *SessionManager) processTunnelOpenBroadcasts(msgChan <-chan *BroadcastMe
 			s.handleTunnelOpenBroadcast(&broadcastMsg)
 
 		case <-s.Ctx().Done():
-			corelog.Infof("SessionManager: TunnelOpen broadcast processor stopped")
 			return
 		}
 	}
@@ -78,30 +66,20 @@ func (s *SessionManager) processTunnelOpenBroadcasts(msgChan <-chan *BroadcastMe
 
 // handleTunnelOpenBroadcast 处理收到的TunnelOpen广播
 func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessage) {
-	corelog.Infof("SessionManager: received TunnelOpen broadcast for client %d, tunnel %s",
-		msg.TargetClientID, msg.TunnelID)
-
 	// 检查目标客户端是否在本地
 	targetConn := s.GetControlConnectionByClientID(msg.TargetClientID)
 	if targetConn == nil {
-		corelog.Debugf("SessionManager: target client %d not on this node, ignoring broadcast",
-			msg.TargetClientID)
 		return
 	}
-
-	corelog.Infof("SessionManager: ✅ target client %d found locally, sending TunnelOpenRequest",
-		msg.TargetClientID)
 
 	// 获取映射配置
 	if s.cloudControl == nil {
-		corelog.Errorf("SessionManager: CloudControl not configured")
 		return
 	}
 
-	// ✅ 统一使用 GetPortMapping，直接返回 PortMapping
+	// 统一使用 GetPortMapping，直接返回 PortMapping
 	mapping, err := s.cloudControl.GetPortMapping(msg.MappingID)
 	if err != nil {
-		corelog.Errorf("SessionManager: failed to get mapping %s: %v", msg.MappingID, err)
 		return
 	}
 
@@ -112,8 +90,6 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 	if mapping.Protocol == "socks5" && msg.TargetHost != "" {
 		targetHost = msg.TargetHost
 		targetPort = msg.TargetPort
-		corelog.Infof("SessionManager: using SOCKS5 dynamic target %s:%d for tunnel %s",
-			targetHost, targetPort, msg.TunnelID)
 	}
 
 	cmdBody := map[string]interface{}{
@@ -133,7 +109,6 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 
 	cmdBodyJSON, err := json.Marshal(cmdBody)
 	if err != nil {
-		corelog.Errorf("SessionManager: failed to marshal TunnelOpenRequest: %v", err)
 		return
 	}
 
@@ -148,25 +123,22 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 		CommandPacket: cmd,
 	}
 
-	// 设置超时
-	ctx, cancel := context.WithTimeout(s.Ctx(), 5*time.Second)
-	defer cancel()
-
 	// 异步发送（避免阻塞）
 	go func() {
+		// 设置超时（在 goroutine 内部创建 context，避免被外部 defer 取消）
+		ctx, cancel := context.WithTimeout(s.Ctx(), 5*time.Second)
+		defer cancel()
+
+		// 使用 channel 来等待发送完成或超时
+		done := make(chan error, 1)
+		go func() {
+			_, err := targetConn.Stream.WritePacket(pkt, true, 0)
+			done <- err
+		}()
+
 		select {
 		case <-ctx.Done():
-			corelog.Errorf("SessionManager: sending TunnelOpenRequest to client %d timed out",
-				msg.TargetClientID)
-			return
-		default:
-			if _, err := targetConn.Stream.WritePacket(pkt, true, 0); err != nil {
-				corelog.Errorf("SessionManager: failed to send TunnelOpenRequest to client %d: %v",
-					msg.TargetClientID, err)
-				return
-			}
-			corelog.Infof("SessionManager: ✅ sent TunnelOpenRequest to client %d for tunnel %s (cross-server)",
-				msg.TargetClientID, msg.TunnelID)
+		case <-done:
 		}
 	}()
 }

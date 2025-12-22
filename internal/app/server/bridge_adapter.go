@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
@@ -13,9 +14,11 @@ import (
 
 // BridgeAdapter 适配器，通过MessageBroker实现跨服务器隧道转发
 type BridgeAdapter struct {
-	messageBroker broker.MessageBroker
-	nodeID        string
-	ctx           context.Context // context 用于接收退出信号
+	messageBroker  broker.MessageBroker
+	nodeID         string
+	ctx            context.Context                      // context 用于接收退出信号
+	bridgeManager  *internalbridge.BridgeManager        // 可选：真正的 BridgeManager（用于跨节点转发）
+	connectionPool *internalbridge.BridgeConnectionPool // 可选：连接池（用于跨节点转发）
 }
 
 // NewBridgeAdapter 创建BridgeAdapter（不依赖BridgeManager，直接使用MessageBroker）
@@ -30,16 +33,26 @@ func NewBridgeAdapter(ctx context.Context, messageBroker broker.MessageBroker, n
 	}
 }
 
+// SetBridgeManager 设置真正的 BridgeManager（用于跨节点转发）
+func (a *BridgeAdapter) SetBridgeManager(bm *internalbridge.BridgeManager) {
+	a.bridgeManager = bm
+	if bm != nil {
+		a.connectionPool = bm.GetConnectionPool()
+	}
+	corelog.Infof("BridgeAdapter: BridgeManager set (pool available: %v)", a.connectionPool != nil)
+}
+
 // BroadcastTunnelOpen 广播隧道打开请求到其他节点
 func (a *BridgeAdapter) BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targetClientID int64) error {
 	if a.messageBroker == nil {
 		return fmt.Errorf("message broker not initialized")
 	}
 
-	// 构造广播消息（包含 SOCKS5 动态目标地址）
+	// 构造广播消息（包含 SOCKS5 动态目标地址和 MappingID）
 	message := broker.TunnelOpenMessage{
-		ClientID:   targetClientID,
+		ClientID:   targetClientID, // 目标客户端ID
 		TunnelID:   req.TunnelID,
+		MappingID:  req.MappingID,  // 映射ID
 		TargetHost: req.TargetHost, // SOCKS5 动态目标地址
 		TargetPort: req.TargetPort, // SOCKS5 动态目标端口
 		Timestamp:  time.Now().Unix(),
@@ -120,4 +133,104 @@ func (a *BridgeAdapter) PublishMessage(ctx context.Context, topic string, payloa
 	}
 
 	return nil
+}
+
+// CreateCrossNodeSession 创建跨节点转发会话
+// 实现 session.BridgeManager 接口
+func (a *BridgeAdapter) CreateCrossNodeSession(ctx context.Context, targetNodeID, targetNodeAddr string, metadata *internalbridge.SessionMetadata) (*internalbridge.ForwardSession, error) {
+	if a.connectionPool == nil {
+		return nil, fmt.Errorf("connection pool not available (BridgeManager not set)")
+	}
+
+	session, err := a.connectionPool.CreateSession(ctx, targetNodeID, targetNodeAddr, metadata)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cross-node session: %w", err)
+	}
+
+	corelog.Infof("BridgeAdapter: created cross-node session %s to node %s at %s",
+		session.StreamID(), targetNodeID, targetNodeAddr)
+	return session, nil
+}
+
+// GetNodeID 获取当前节点ID
+func (a *BridgeAdapter) GetNodeID() string {
+	return a.nodeID
+}
+
+// NotifyTunnelReady 广播隧道就绪通知
+func (a *BridgeAdapter) NotifyTunnelReady(ctx context.Context, tunnelID, sourceNodeID string) error {
+	if a.messageBroker == nil {
+		return fmt.Errorf("message broker not initialized")
+	}
+
+	msg := broker.TunnelReadyMessage{
+		TunnelID:     tunnelID,
+		SourceNodeID: sourceNodeID,
+		Timestamp:    time.Now().Unix(),
+	}
+
+	msgJSON, err := json.Marshal(&msg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tunnel ready message: %w", err)
+	}
+
+	if err := a.messageBroker.Publish(ctx, broker.TopicTunnelReady, msgJSON); err != nil {
+		return fmt.Errorf("failed to publish tunnel ready message: %w", err)
+	}
+
+	corelog.Debugf("BridgeAdapter: notified tunnel ready - tunnelID=%s, sourceNodeID=%s", tunnelID, sourceNodeID)
+	return nil
+}
+
+// WaitForTunnelReady 等待隧道就绪通知
+// 通过订阅 TopicTunnelReady 主题，等待匹配的 tunnelID
+func (a *BridgeAdapter) WaitForTunnelReady(ctx context.Context, tunnelID string) (string, error) {
+	if a.messageBroker == nil {
+		return "", fmt.Errorf("message broker not initialized")
+	}
+
+	// 订阅隧道就绪主题
+	brokerChan, err := a.messageBroker.Subscribe(ctx, broker.TopicTunnelReady)
+	if err != nil {
+		return "", fmt.Errorf("failed to subscribe to tunnel ready: %w", err)
+	}
+
+	// 确保退出时取消订阅
+	defer func() {
+		if unsubErr := a.messageBroker.Unsubscribe(ctx, broker.TopicTunnelReady); unsubErr != nil {
+			corelog.Warnf("BridgeAdapter: failed to unsubscribe from tunnel ready: %v", unsubErr)
+		}
+	}()
+
+	corelog.Debugf("BridgeAdapter: waiting for tunnel ready - tunnelID=%s", tunnelID)
+
+	for {
+		select {
+		case msg, ok := <-brokerChan:
+			if !ok {
+				return "", fmt.Errorf("tunnel ready channel closed")
+			}
+
+			// 解析消息
+			var readyMsg broker.TunnelReadyMessage
+			if err := json.Unmarshal(msg.Payload, &readyMsg); err != nil {
+				corelog.Warnf("BridgeAdapter: failed to unmarshal tunnel ready message: %v", err)
+				continue
+			}
+
+			// 检查是否是我们等待的隧道
+			if readyMsg.TunnelID == tunnelID {
+				corelog.Infof("BridgeAdapter: received tunnel ready - tunnelID=%s, sourceNodeID=%s",
+					tunnelID, readyMsg.SourceNodeID)
+				return readyMsg.SourceNodeID, nil
+			}
+
+			// 不是我们的隧道，继续等待
+			corelog.Debugf("BridgeAdapter: received tunnel ready for different tunnel - got=%s, want=%s",
+				readyMsg.TunnelID, tunnelID)
+
+		case <-ctx.Done():
+			return "", fmt.Errorf("timeout waiting for tunnel ready: %w", ctx.Err())
+		}
+	}
 }

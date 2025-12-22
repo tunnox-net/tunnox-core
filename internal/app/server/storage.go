@@ -8,171 +8,147 @@ import (
 )
 
 // createStorage 根据配置创建存储
-// 注意：所有storage类型都统一使用HybridStorage架构，只是内部配置不同
-func createStorage(factory *storage.StorageFactory, config *StorageConfig) (storage.Storage, error) {
-	switch storage.StorageType(config.Type) {
-	case storage.StorageTypeMemory:
-		// memory类型：使用HybridStorage，cache=memory，不启用persistent
-		return createHybridStorageWithCacheType(factory, config, "memory", false)
+// 根据新的配置结构自动推断存储类型
+func createStorage(factory *storage.StorageFactory, config *Config) (storage.Storage, error) {
+	// 自动推断存储类型：
+	// 1. storage.enabled -> 使用远程存储
+	// 2. redis.enabled -> 使用 Redis 缓存 + 可选持久化
+	// 3. persistence.enabled -> 使用内存缓存 + JSON 持久化
+	// 4. 默认 -> 纯内存存储
 
-	case storage.StorageTypeRedis:
-		// redis类型：使用HybridStorage，cache=redis，不启用persistent
-		// 这样可以保证数据分类逻辑（runtime vs persistent）正常工作
-		return createHybridStorageWithCacheType(factory, config, "redis", false)
-
-	case storage.StorageTypeHybrid:
-		// hybrid类型：显式配置，完全由用户控制
-		return createHybridStorage(factory, config)
-
-	default:
-		return nil, fmt.Errorf("unsupported storage type: %s", config.Type)
+	if config.Storage.Enabled {
+		return createRemoteStorage(factory, config)
 	}
+
+	if config.Redis.Enabled {
+		return createRedisStorage(factory, config)
+	}
+
+	if config.Persistence.Enabled {
+		return createPersistentStorage(factory, config)
+	}
+
+	return createMemoryStorage(factory)
 }
 
-// createHybridStorageWithCacheType 使用指定cache类型创建HybridStorage（简化配置）
-func createHybridStorageWithCacheType(factory *storage.StorageFactory, config *StorageConfig, cacheType string, enablePersistent bool) (storage.Storage, error) {
-	hybridConfig := &storage.HybridStorageConfig{
-		CacheType:        cacheType,
-		EnablePersistent: enablePersistent,
-		HybridConfig:     storage.DefaultHybridConfig(), // 使用默认的数据分类前缀
-	}
+// createRemoteStorage 创建远程存储（连接 tunnox-storage 服务）
+func createRemoteStorage(factory *storage.StorageFactory, config *Config) (storage.Storage, error) {
+	fmt.Printf("✅ Using Remote Storage\n")
+	fmt.Printf("   → URL: %s\n", config.Storage.URL)
 
-	// 如果cache使用redis，提供redis配置
-	if cacheType == "redis" {
-		if config.Redis.Addr == "" {
-			return nil, fmt.Errorf("redis storage type requires redis.addr configuration")
-		}
+	// 本地缓存类型（用于持久化数据的缓存）
+	cacheType := "memory"
 
-		hybridConfig.RedisConfig = &storage.RedisConfig{
+	// 共享缓存配置（用于跨节点共享数据）
+	var sharedCacheConfig *storage.RedisConfig
+	if config.Redis.Enabled {
+		sharedCacheConfig = &storage.RedisConfig{
 			Addr:     config.Redis.Addr,
 			Password: config.Redis.Password,
 			DB:       config.Redis.DB,
-			PoolSize: config.Redis.PoolSize,
+			PoolSize: 10,
 		}
-
-		fmt.Printf("✅ Using HybridStorage with Redis cache (addr=%s)\n", config.Redis.Addr)
+		fmt.Printf("   → Local Cache: Memory\n")
+		fmt.Printf("   → Shared Cache: Redis (%s) - cross-node sharing enabled\n", config.Redis.Addr)
 	} else {
-		fmt.Printf("✅ Using HybridStorage with Memory cache\n")
+		fmt.Printf("   → Cache: Memory - single node mode\n")
+	}
+
+	hybridConfig := &storage.HybridStorageConfig{
+		CacheType:         cacheType,
+		EnablePersistent:  true,
+		HybridConfig:      storage.DefaultHybridConfig(),
+		SharedCacheConfig: sharedCacheConfig,
+		RemoteConfig: &storage.RemoteStorageConfig{
+			GRPCAddress: config.Storage.URL,
+			Timeout:     time.Duration(config.Storage.Timeout) * time.Second,
+			MaxRetries:  3,
+		},
+	}
+	hybridConfig.HybridConfig.EnablePersistent = true
+
+	return factory.CreateStorage(storage.StorageTypeHybrid, hybridConfig)
+}
+
+// createRedisStorage 创建 Redis 存储（集群模式）
+func createRedisStorage(factory *storage.StorageFactory, config *Config) (storage.Storage, error) {
+	fmt.Printf("✅ Using Redis Storage (Cluster Mode)\n")
+	fmt.Printf("   → Addr: %s\n", config.Redis.Addr)
+	fmt.Printf("   → Cache: Redis\n")
+
+	// 集群模式下不启用 JSON 持久化（避免多节点写冲突）
+	// 如果需要持久化，应该使用远程存储
+	enablePersistent := false
+	if config.Storage.Enabled {
+		fmt.Printf("   → Persistent: Remote (%s)\n", config.Storage.URL)
+		enablePersistent = true
+	} else {
+		fmt.Printf("   → Persistent: Disabled (cluster mode, use remote storage for persistence)\n")
+	}
+
+	redisConfig := &storage.RedisConfig{
+		Addr:     config.Redis.Addr,
+		Password: config.Redis.Password,
+		DB:       config.Redis.DB,
+		PoolSize: 10,
+	}
+
+	hybridConfig := &storage.HybridStorageConfig{
+		CacheType:        "redis",
+		EnablePersistent: enablePersistent,
+		HybridConfig:     storage.DefaultHybridConfig(),
+		RedisConfig:      redisConfig,
+		// Redis 模式下，本地缓存和共享缓存都是 Redis，不需要单独配置 SharedCacheConfig
+	}
+	hybridConfig.HybridConfig.EnablePersistent = enablePersistent
+
+	if enablePersistent {
+		hybridConfig.RemoteConfig = &storage.RemoteStorageConfig{
+			GRPCAddress: config.Storage.URL,
+			Timeout:     time.Duration(config.Storage.Timeout) * time.Second,
+			MaxRetries:  3,
+		}
 	}
 
 	return factory.CreateStorage(storage.StorageTypeHybrid, hybridConfig)
 }
 
-// createHybridStorage 创建混合存储
-func createHybridStorage(factory *storage.StorageFactory, config *StorageConfig) (storage.Storage, error) {
-	// 自动检测是否应该使用 Redis 缓存
-	// 规则：如果配置了 Redis（无论是存储还是消息队列），且缓存类型未显式设置，则自动使用 Redis
-	cacheType := config.Hybrid.CacheType
-	autoUpgraded := false
-
-	// 如果缓存类型为 memory，但 Redis 已配置，自动升级为 redis
-	if cacheType == "memory" || cacheType == "" {
-		if config.Redis.Addr != "" {
-			cacheType = "redis"
-			autoUpgraded = true
-		}
+// createPersistentStorage 创建持久化存储（单节点模式）
+func createPersistentStorage(factory *storage.StorageFactory, config *Config) (storage.Storage, error) {
+	fmt.Printf("✅ Using Persistent Storage (Standalone Mode)\n")
+	fmt.Printf("   → Cache: Memory\n")
+	fmt.Printf("   → Persistent: Local JSON (%s)\n", config.Persistence.File)
+	if config.Persistence.AutoSave {
+		fmt.Printf("   → Auto-save: Enabled (interval: %ds)\n", config.Persistence.SaveInterval)
 	}
 
-	// ✅ 智能持久化策略：
-	// - 单节点（无Redis）→ 自动启用JSON持久化
-	// - 多节点（有Redis）→ JSON持久化自动禁用（避免写冲突），但远程存储可用
-	enablePersistent := config.Hybrid.EnablePersistent
-
-	if cacheType == "redis" {
-		// 多节点模式（有Redis）→ JSON持久化有写冲突风险，需要禁用
-		// 但远程存储（gRPC）本身支持多节点，可以保留
-		hasRemoteStorage := config.Hybrid.Remote.GRPC.Address != ""
-
-		if hasRemoteStorage {
-			// 有远程存储配置，保留
-			fmt.Printf("✅ Multi-node mode detected (Redis cache enabled)\n")
-			fmt.Printf("   → Using remote gRPC persistent storage: %s\n", config.Hybrid.Remote.GRPC.Address)
-			fmt.Printf("   → Remote storage supports multi-node concurrent writes\n")
-			// 清空JSON配置（多节点不能用JSON）
-			config.Hybrid.JSON.FilePath = ""
-		} else {
-			// 默认：多节点模式不持久化
-			fmt.Printf("⚠️  Multi-node mode detected (Redis cache enabled)\n")
-			fmt.Printf("   → JSON persistent storage DISABLED (avoid multi-node write conflicts)\n")
-			fmt.Printf("   → Data synchronized via Redis cache only (not persisted to disk)\n")
-			fmt.Printf("   → To enable persistence in multi-node, configure remote gRPC storage\n")
-			// 禁用JSON持久化
-			config.Hybrid.JSON.FilePath = ""
-			enablePersistent = false
-		}
-
-	} else if cacheType == "memory" {
-		// 单节点模式（Memory cache）→ 自动启用JSON持久化
-		if config.Hybrid.JSON.FilePath == "" && config.Hybrid.Remote.GRPC.Address == "" {
-			// 没有配置持久化路径，使用默认JSON
-			if !enablePersistent {
-				enablePersistent = true
-			}
-			config.Hybrid.JSON.FilePath = "data/tunnox-data.json" // 相对路径，避免权限问题
-			config.Hybrid.JSON.AutoSave = true
-			if config.Hybrid.JSON.SaveInterval == 0 {
-				config.Hybrid.JSON.SaveInterval = 60
-			}
-			fmt.Printf("✅ Single-node mode detected (Memory cache)\n")
-			fmt.Printf("   → Auto-enabled JSON persistent storage: %s\n", config.Hybrid.JSON.FilePath)
-			fmt.Printf("   → Auto-save enabled (interval: %ds)\n", config.Hybrid.JSON.SaveInterval)
-		} else if config.Hybrid.JSON.FilePath != "" {
-			// 用户配置了JSON路径
-			fmt.Printf("✅ Single-node mode with JSON persistent storage\n")
-			fmt.Printf("   → JSON file: %s\n", config.Hybrid.JSON.FilePath)
-		} else if config.Hybrid.Remote.GRPC.Address != "" {
-			// 用户配置了远程存储
-			fmt.Printf("✅ Single-node mode with remote persistent storage\n")
-			fmt.Printf("   → Remote gRPC: %s\n", config.Hybrid.Remote.GRPC.Address)
-		}
-	}
-
-	// 准备混合存储配置（使用默认的前缀配置，这些是内部实现细节）
 	hybridConfig := &storage.HybridStorageConfig{
-		CacheType:        cacheType,
-		EnablePersistent: enablePersistent,
-		HybridConfig:     storage.DefaultHybridConfig(), // 使用默认配置（包含默认前缀）
+		CacheType:        "memory",
+		EnablePersistent: true,
+		HybridConfig:     storage.DefaultHybridConfig(),
+		JSONConfig: &storage.JSONStorageConfig{
+			FilePath:     config.Persistence.File,
+			AutoSave:     config.Persistence.AutoSave,
+			SaveInterval: time.Duration(config.Persistence.SaveInterval) * time.Second,
+		},
 	}
-	hybridConfig.HybridConfig.EnablePersistent = enablePersistent
+	hybridConfig.HybridConfig.EnablePersistent = true
 
-	// 如果缓存类型是 Redis，提供 Redis 配置
-	if cacheType == "redis" {
-		if config.Redis.Addr == "" {
-			return nil, fmt.Errorf("redis cache enabled but redis.addr not configured")
-		}
+	return factory.CreateStorage(storage.StorageTypeHybrid, hybridConfig)
+}
 
-		hybridConfig.RedisConfig = &storage.RedisConfig{
-			Addr:     config.Redis.Addr,
-			Password: config.Redis.Password,
-			DB:       config.Redis.DB,
-			PoolSize: config.Redis.PoolSize,
-		}
+// createMemoryStorage 创建纯内存存储
+func createMemoryStorage(factory *storage.StorageFactory) (storage.Storage, error) {
+	fmt.Printf("✅ Using Memory Storage (No Persistence)\n")
+	fmt.Printf("   → Cache: Memory\n")
+	fmt.Printf("   → Persistent: Disabled\n")
 
-		if autoUpgraded {
-			fmt.Printf("✅ Auto-upgraded cache to Redis (multi-node support enabled)\n")
-		}
+	hybridConfig := &storage.HybridStorageConfig{
+		CacheType:        "memory",
+		EnablePersistent: false,
+		HybridConfig:     storage.DefaultHybridConfig(),
 	}
-
-	// 如果启用持久化，配置具体的persistent实现
-	if enablePersistent {
-		// 优先使用 JSON 文件存储
-		if config.Hybrid.JSON.FilePath != "" {
-			hybridConfig.JSONConfig = &storage.JSONStorageConfig{
-				FilePath:     config.Hybrid.JSON.FilePath,
-				AutoSave:     config.Hybrid.JSON.AutoSave,
-				SaveInterval: time.Duration(config.Hybrid.JSON.SaveInterval) * time.Second,
-			}
-		} else if config.Hybrid.Remote.GRPC.Address != "" {
-			// 使用远程存储
-			hybridConfig.RemoteConfig = &storage.RemoteStorageConfig{
-				GRPCAddress: config.Hybrid.Remote.GRPC.Address,
-				Timeout:     time.Duration(config.Hybrid.Remote.GRPC.Timeout) * time.Second,
-				MaxRetries:  config.Hybrid.Remote.GRPC.MaxRetries,
-			}
-		}
-		// 如果都没配置，factory 会使用 NullPersistentStorage
-	}
-	// 多节点模式已经在上面输出提示信息了
+	hybridConfig.HybridConfig.EnablePersistent = false
 
 	return factory.CreateStorage(storage.StorageTypeHybrid, hybridConfig)
 }
