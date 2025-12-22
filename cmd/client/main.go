@@ -78,7 +78,13 @@ func main() {
 	if !runInteractive {
 		fmt.Printf("🚀 Tunnox Client Starting...\n")
 		fmt.Printf("   Protocol: %s\n", config.Server.Protocol)
-		fmt.Printf("   Server:   %s\n", config.Server.Address)
+		// 智能显示服务器地址（避免重复协议前缀）
+		serverDisplay := config.Server.Address
+		if config.Server.Protocol != "" && !strings.Contains(serverDisplay, "://") {
+			// 只有当地址不包含协议时才添加
+			serverDisplay = fmt.Sprintf("%s://%s", config.Server.Protocol, serverDisplay)
+		}
+		fmt.Printf("   Server:   %s\n", serverDisplay)
 		if config.Anonymous {
 			fmt.Printf("   Mode:     Anonymous (device: %s)\n", config.DeviceID)
 		} else {
@@ -134,8 +140,15 @@ func main() {
 			// 自动连接模式
 			fmt.Fprintf(os.Stderr, "\n🔍 Connecting to Tunnox service...\n")
 		} else {
-			// 指定服务器连接
-			fmt.Fprintf(os.Stderr, "\n🔗 Connecting to %s://%s...\n", config.Server.Protocol, config.Server.Address)
+			// 指定服务器连接 - 智能显示地址
+			serverDisplay := config.Server.Address
+			if strings.Contains(serverDisplay, "://") {
+				// 地址已包含协议，直接显示
+				fmt.Fprintf(os.Stderr, "\n🔗 Connecting to %s...\n", serverDisplay)
+			} else {
+				// 地址不包含协议，添加协议前缀
+				fmt.Fprintf(os.Stderr, "\n🔗 Connecting to %s://%s...\n", config.Server.Protocol, serverDisplay)
+			}
 		}
 
 		if err := tunnoxClient.Connect(); err != nil {

@@ -5,7 +5,6 @@ import (
 	"net/http/pprof"
 	"os"
 	"path/filepath"
-	"runtime"
 	rpprof "runtime/pprof"
 	"sync"
 	"time"
@@ -136,7 +135,8 @@ func (c *PProfCapture) capture() {
 	// 抓取 heap profile
 	heapFile := filepath.Join(c.config.DataDir, "heap_"+timestamp+".pprof")
 	if f, err := os.Create(heapFile); err == nil {
-		runtime.GC()
+		// 不再强制触发 GC，使用当前 heap 状态
+		// 强制 GC 会导致 CPU 飙升和内存峰值，在生产环境可能触发 OOM
 		rpprof.WriteHeapProfile(f)
 		f.Close()
 	}

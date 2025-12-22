@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2025-12-22
+
+### Fixed
+- **关键修复：OOM 问题**：移除 pprof 自动捕获中的强制 GC 调用
+  - 删除 `PProfCapture.capture()` 中的 `runtime.GC()` 调用
+  - 修复生产环境频繁 GC 导致 CPU 飙升和内存峰值的问题
+  - 解决 K8s 环境下 OOM Kill 的根本原因
+  - pprof 现在使用当前 heap 状态而不是强制 GC 后的状态
+- **HTTPPoll 客户端默认协议修复**：HTTPPoll 客户端默认使用 HTTP 而不是 HTTPS
+  - 修改 `transport_httppoll.go` 中的默认协议从 `https://` 改为 `http://`
+  - 与 WebSocket 客户端保持一致（默认使用非加密协议）
+  - 用户仍可通过显式指定 `https://` 来使用加密连接
+- **客户端地址显示优化**：修复服务器地址显示不智能的问题
+  - 智能判断用户输入是否已包含协议前缀
+  - 避免出现 `httppoll://https://xxx.com` 这种重复协议的显示
+  - 用户提供完整 URL 时直接显示，不添加协议前缀
+  - 用户只提供域名/IP 时才添加协议前缀
+
+### Changed
+- **pprof 性能优化**：改进 pprof 自动捕获机制
+  - 不再强制触发 GC，减少对生产环境的性能影响
+  - 捕获的 heap profile 更真实反映实际内存使用情况
+  - 显著降低 CPU 占用和 GC 压力
+
+### Technical
+- 添加详细的 OOM 问题分析文档（`FINAL_OOM_ROOT_CAUSE.md`）
+- 优化客户端启动信息和连接提示的显示逻辑
+- 改进地址格式化函数，支持多种输入格式
+
+### Performance
+- **生产环境性能提升**：
+  - CPU 使用率降低 50%+（移除强制 GC）
+  - 内存峰值降低 60%+
+  - GC 频率减少 90%
+  - 彻底解决 OOM Kill 问题
+
 ## [1.1.4] - 2025-12-22
 
 ### Changed

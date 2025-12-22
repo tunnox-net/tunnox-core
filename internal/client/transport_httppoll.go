@@ -111,7 +111,9 @@ func newHTTPLongPollingConnInternal(ctx context.Context, baseURL string, clientI
 	// 确保 baseURL 以 / 结尾
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
-		baseURL = "https://" + baseURL
+		// 默认使用 HTTP（与 WebSocket 保持一致）
+		// 如果需要 HTTPS，用户应该显式指定 https://
+		baseURL = "http://" + baseURL
 	}
 
 	// 生成 ConnectionID（唯一标识，在创建时就确定，不会改变）
