@@ -3,7 +3,7 @@ name: Build and Push Docker Images
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*.*.*'  # 只在语义化版本标签推送时触发，如 v1.1.5
 
 env:
   REGISTRY: cr.cnkl.org
