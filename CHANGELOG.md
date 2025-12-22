@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] - 2025-12-22
+
+### Changed
+- **协议优先级调整**：调整默认服务端点顺序，QUIC 优先于 WebSocket
+  - 更新协议优先级列表以反映新顺序
+  - 优化客户端自动连接的协议选择策略
+
+### Added
+- **WebSocket 流模式支持**：重构 WebSocket 模块，改进连接处理
+  - 添加流模式支持，提升 WebSocket 连接的可靠性
+  - 引入新的优先级队列实现，优化数据包管理
+  - 简化会话管理，集成新的队列结构
+- **配置管理重构**：迁移配置管理到专用管理器包
+  - 添加 `-export-config` CLI 标志，按需生成配置模板
+  - 新增 `config.example.yaml` 作为用户参考模板
+  - 支持同时输出控制台和文件日志
+- **跨节点连接处理**：实现新的连接状态存储和帧路由
+  - 新增连接状态存储（`connection_state_store.go`）
+  - 实现跨节点连接池（`cross_node_pool.go`）
+  - 添加跨节点帧路由（`cross_node_frame.go`）
+  - 改进跨节点转发机制（`cross_node_forward.go`）
+
+### Refactored
+- **协议适配器层重构**：移除遗留 WebSocket 适配器实现
+  - 删除独立的 `websocket_adapter.go`，WebSocket 完全通过 HTTP 服务模块提供
+  - 重构会话管理器和桥接适配器，更清晰的关注点分离
+- **HTTPPoll 模块化**：替换单体实现为模块化流处理器
+  - 移除 `httppoll_server_conn.go` 及相关单体实现
+  - 引入模块化的流处理器架构
+  - 优化 HTTPPoll 优先级队列实现
+- **配置文件处理简化**：自动生成配置模板作为后备方案
+  - 改进配置验证和环境变量处理
+  - 更新 Docker 配置，使用单一 `config.yaml` 并支持 ConfigMap
+
+### Fixed
+- 增强跨节点连接处理的错误日志，改进调试体验
+- 修复配置加载时的边界情况处理
+
+### Technical
+- 新增通用优先级队列实现（`internal/protocol/queue/priority_queue.go`）
+- 重构桥接管理器，添加转发会话支持
+- 改进日志初始化，使用显式 LogConfig 结构
+- 更新 Docker 暴露端口文档：TCP/KCP (8000), QUIC (8443), 跨节点 (50052)
+- 代码变更：66 个文件修改，4035 行新增，3023 行删除
+
 ## [1.1.3] - 2025-12-21
 
 ### Changed
