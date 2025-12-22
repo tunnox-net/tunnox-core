@@ -106,7 +106,7 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 
 		// 显示当前轮次信息
 		if round == 0 {
-			fmt.Fprintf(os.Stderr, "   Trying endpoints: quic(mydtc/gw), tcp(mydtc/gw), ws(mydtc/ws.tunnox), kcp, httppoll\n")
+			fmt.Fprintf(os.Stderr, "   Trying protocols: quic, tcp, websocket, kcp, httppoll\n")
 		} else {
 			fmt.Fprintf(os.Stderr, "   Retrying (round %d/%d, timeout: %ds)...\n", round+1, len(roundTimeouts), int(timeout.Seconds()))
 		}

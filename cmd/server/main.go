@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"tunnox-core/internal/app/server"
 	corelog "tunnox-core/internal/core/log"
@@ -13,6 +14,27 @@ import (
 )
 
 func main() {
+	// 添加全局 panic 恢复机制
+	defer func() {
+		if r := recover(); r != nil {
+			// 获取堆栈信息
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			stackTrace := string(buf[:n])
+
+			// 记录到日志
+			corelog.Errorf("FATAL: Server panic recovered: %v\nStack trace:\n%s", r, stackTrace)
+
+			// 同时输出到 stderr，确保即使日志系统失败也能看到
+			fmt.Fprintf(os.Stderr, "\n=== FATAL ERROR ===\n")
+			fmt.Fprintf(os.Stderr, "Server crashed with panic: %v\n", r)
+			fmt.Fprintf(os.Stderr, "\nStack trace:\n%s\n", stackTrace)
+			fmt.Fprintf(os.Stderr, "==================\n\n")
+
+			os.Exit(1)
+		}
+	}()
+
 	// 1. 解析命令行参数
 	var (
 		configPath   = flag.String("config", "config.yaml", "Path to configuration file")
