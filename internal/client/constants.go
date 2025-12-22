@@ -6,9 +6,22 @@ const (
 	PublicServiceDomain = "gw.tunnox.net"
 
 	// 公共服务端点（按优先级排序）
-	PublicServiceQUIC      = "gw.tunnox.net:443"
-	PublicServiceTCP       = "gw.tunnox.net:8000"
-	PublicServiceWebSocket = "wss://gw.tunnox.net/_tunnox"
+	// QUIC 端点
+	PublicServiceQUIC1 = "tunnox.mydtc.net:8443"
+	PublicServiceQUIC2 = "gw.tunnox.net:8443"
+
+	// TCP 端点
+	PublicServiceTCP1 = "tunnox.mydtc.net:8080"
+	PublicServiceTCP2 = "gw.tunnox.net:8080"
+
+	// WebSocket 端点
+	PublicServiceWebSocket1 = "ws://tunnox.mydtc.net"
+	PublicServiceWebSocket2 = "wss://ws.tunnox.net"
+
+	// 保留旧的常量名以保持向后兼容
+	PublicServiceQUIC      = PublicServiceQUIC2
+	PublicServiceTCP       = PublicServiceTCP2
+	PublicServiceWebSocket = PublicServiceWebSocket2
 	PublicServiceKCP       = "gw.tunnox.net:8000"
 	PublicServiceHTTPPoll  = "https://gw.tunnox.net/_tunnox"
 )

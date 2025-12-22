@@ -26,9 +26,12 @@ type ServerEndpoint struct {
 // DefaultServerEndpoints 默认服务器端点列表（按优先级排序）
 // 使用常量文件中定义的公共服务端点
 var DefaultServerEndpoints = []ServerEndpoint{
-	{Protocol: "quic", Address: PublicServiceQUIC},
-	{Protocol: "tcp", Address: PublicServiceTCP},
-	{Protocol: "websocket", Address: PublicServiceWebSocket},
+	{Protocol: "quic", Address: PublicServiceQUIC1},           // quic://tunnox.mydtc.net:8443
+	{Protocol: "quic", Address: PublicServiceQUIC2},           // quic://gw.tunnox.net:8443
+	{Protocol: "tcp", Address: PublicServiceTCP1},             // tcp://tunnox.mydtc.net:8080
+	{Protocol: "tcp", Address: PublicServiceTCP2},             // tcp://gw.tunnox.net:8080
+	{Protocol: "websocket", Address: PublicServiceWebSocket1}, // ws://tunnox.mydtc.net
+	{Protocol: "websocket", Address: PublicServiceWebSocket2}, // wss://ws.tunnox.net
 	{Protocol: "kcp", Address: PublicServiceKCP},
 	{Protocol: "httppoll", Address: PublicServiceHTTPPoll},
 }
@@ -103,7 +106,7 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 
 		// 显示当前轮次信息
 		if round == 0 {
-			fmt.Fprintf(os.Stderr, "   Trying protocols: quic, tcp, websocket, kcp, httppoll\n")
+			fmt.Fprintf(os.Stderr, "   Trying endpoints: quic(mydtc/gw), tcp(mydtc/gw), ws(mydtc/ws.tunnox), kcp, httppoll\n")
 		} else {
 			fmt.Fprintf(os.Stderr, "   Retrying (round %d/%d, timeout: %ds)...\n", round+1, len(roundTimeouts), int(timeout.Seconds()))
 		}

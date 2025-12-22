@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2025-12-22
+
+### Changed
+- **客户端连接优先级优化**：调整自动连接的服务器端点优先级
+  - 新增多个服务器端点以提高连接成功率和可用性
+  - QUIC 协议优先级最高：`tunnox.mydtc.net:8443` → `gw.tunnox.net:8443`
+  - TCP 协议次之：`tunnox.mydtc.net:8080` → `gw.tunnox.net:8080`
+  - WebSocket 协议：`ws://tunnox.mydtc.net` → `wss://ws.tunnox.net`
+  - 保留 KCP 和 HTTPPoll 作为备用协议
+  - 优先尝试 mydtc.net 域名，提供更好的国内访问体验
+
+### Technical
+- 更新 `DefaultServerEndpoints` 配置，支持 8 个端点的并发连接尝试
+- 优化连接提示信息，显示多端点连接策略
+- 保持向后兼容性，旧的常量名仍然可用
+
 ## [1.1.5] - 2025-12-22
 
 ### Fixed
