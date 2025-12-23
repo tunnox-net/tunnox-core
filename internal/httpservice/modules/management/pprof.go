@@ -87,9 +87,14 @@ func (c *PProfCapture) Start() error {
 
 	c.running = true
 
-	go c.captureLoop()
+	// 只有在启用 auto_capture 时才启动自动捕获循环
+	if c.config.AutoCapture {
+		go c.captureLoop()
+		corelog.Infof("PProfCapture: started with auto_capture enabled, data_dir=%s, retention=%d min", c.config.DataDir, c.config.Retention)
+	} else {
+		corelog.Infof("PProfCapture: started with auto_capture disabled (manual capture only), data_dir=%s", c.config.DataDir)
+	}
 
-	corelog.Infof("PProfCapture: started, data_dir=%s, retention=%d min", c.config.DataDir, c.config.Retention)
 	return nil
 }
 

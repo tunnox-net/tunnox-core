@@ -155,14 +155,14 @@ func (sp *StreamProcessor) UpdateClientID(newClientID int64) {
 func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 	sp.closeMu.RLock()
 	closed := sp.closed
+	mappingID := sp.mappingID
 	sp.closeMu.RUnlock()
 
 	if closed {
 		return nil, 0, io.EOF
 	}
 
-	// ✅ 始终先检查 packetQueue 中是否有响应包
-	// Push 请求的响应（如 HandshakeResp）会被放入 packetQueue
+	// 先检查 packetQueue 中是否有响应包（所有连接类型都需要）
 	select {
 	case pkt := <-sp.packetQueue:
 		if pkt != nil {
@@ -170,6 +170,12 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 			return pkt, 0, nil
 		}
 	default:
+	}
+
+	// 控制连接（mappingID 为空）：需要 Poll 服务器来获取推送的命令（如 TunnelOpen）
+	// 超时后继续循环，不返回错误
+	if mappingID == "" {
+		return sp.readPacketForControl()
 	}
 
 	// 检查是否有待使用的 Poll 请求 ID（由 TriggerImmediatePoll 设置）
@@ -222,6 +228,12 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 		case <-timeout.C:
 			corelog.Debugf("HTTPStreamProcessor: ReadPacket - timeout waiting for response, requestID=%s", requestID)
 			return nil, 0, fmt.Errorf("timeout waiting for response")
+		case pkt := <-sp.packetQueue:
+			// 优先处理 packetQueue 中的响应包
+			if pkt != nil {
+				corelog.Debugf("HTTPStreamProcessor: ReadPacket - got packet from packetQueue in poll loop, type=0x%02x, connID=%s", byte(pkt.PacketType), sp.connectionID)
+				return pkt, 0, nil
+			}
 		case <-ticker.C:
 			// 检查缓存
 			if pkt, exists := sp.getCachedResponse(requestID); exists {
@@ -235,6 +247,59 @@ func (sp *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 				sp.cleanupExpiredResponses()
 				lastCleanup = time.Now()
 			}
+		}
+	}
+}
+
+// readPacketForControl 控制连接专用的读取方法
+// 控制连接需要 Poll 服务器来获取推送的命令（如 TunnelOpen）
+// 超时后继续循环，不返回错误
+func (sp *StreamProcessor) readPacketForControl() (*packet.TransferPacket, int, error) {
+	for {
+		sp.closeMu.RLock()
+		closed := sp.closed
+		sp.closeMu.RUnlock()
+
+		if closed {
+			return nil, 0, io.EOF
+		}
+
+		// 生成新的 RequestId
+		requestID := uuid.New().String()
+
+		// 通知 pollLoop 发送 Poll 请求
+		select {
+		case sp.pollRequestChan <- requestID:
+		case <-sp.Ctx().Done():
+			return nil, 0, sp.Ctx().Err()
+		default:
+			// 通道满，直接等待 packetQueue
+		}
+
+		// 等待响应（5秒超时，超时后继续循环发送新的 Poll 请求）
+		// 使用较短的超时以便及时接收服务端推送的命令
+		timeout := time.NewTimer(5 * time.Second)
+
+		select {
+		case <-sp.Ctx().Done():
+			timeout.Stop()
+			return nil, 0, sp.Ctx().Err()
+		case pkt := <-sp.packetQueue:
+			timeout.Stop()
+			if pkt != nil {
+				corelog.Debugf("HTTPStreamProcessor: readPacketForControl - got packet from packetQueue, type=0x%02x, connID=%s", byte(pkt.PacketType), sp.connectionID)
+				return pkt, 0, nil
+			}
+			// nil packet，继续循环
+		case <-timeout.C:
+			// 检查响应缓存
+			if pkt, exists := sp.getCachedResponse(requestID); exists {
+				sp.removeCachedResponse(requestID)
+				corelog.Debugf("HTTPStreamProcessor: readPacketForControl - got packet from cache, type=0x%02x, connID=%s", byte(pkt.PacketType), sp.connectionID)
+				return pkt, 0, nil
+			}
+			// 超时，继续循环发送下一个 Poll 请求
+			corelog.Debugf("HTTPStreamProcessor: readPacketForControl - poll timeout, retrying, connID=%s", sp.connectionID)
 		}
 	}
 }
@@ -378,11 +443,14 @@ func (sp *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 
 // WriteExact 将数据流写入 HTTP Request Body
 func (sp *StreamProcessor) WriteExact(data []byte) error {
+	corelog.Infof("HTTPStreamProcessor: WriteExact - called, dataLen=%d, connID=%s, pushURL=%s", len(data), sp.connectionID, sp.pushURL)
+
 	sp.closeMu.RLock()
 	closed := sp.closed
 	sp.closeMu.RUnlock()
 
 	if closed {
+		corelog.Errorf("HTTPStreamProcessor: WriteExact - connection closed, connID=%s", sp.connectionID)
 		return io.ErrClosedPipe
 	}
 
@@ -397,6 +465,8 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 		corelog.Errorf("HTTPStreamProcessor[%s]: WriteExact - failed to split data into fragments: %v, connID=%s", sp.connectionID, err, sp.connectionID)
 		return fmt.Errorf("failed to split data into fragments: %w", err)
 	}
+
+	corelog.Infof("HTTPStreamProcessor: WriteExact - split into %d fragments, connID=%s", len(fragments), sp.connectionID)
 
 	// 发送每个分片
 	for i, fragment := range fragments {
@@ -446,6 +516,9 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 		}
 
 		// 发送请求
+		corelog.Infof("HTTPStreamProcessor: WriteExact - sending fragment %d/%d, groupID=%s, requestID=%s, connID=%s",
+			i+1, len(fragments), fragment.FragmentGroupID, requestID, sp.connectionID)
+
 		resp, err := sp.httpClient.Do(req)
 		if err != nil {
 			corelog.Errorf("HTTPStreamProcessor[%s]: WriteExact - push request failed for fragment %d/%d: %v, groupID=%s, requestID=%s, connID=%s",
@@ -460,8 +533,11 @@ func (sp *StreamProcessor) WriteExact(data []byte) error {
 				sp.connectionID, i+1, len(fragments), resp.StatusCode, string(body), fragment.FragmentGroupID, requestID, sp.connectionID)
 			return fmt.Errorf("push data request failed: status %d, body: %s", resp.StatusCode, string(body))
 		}
+
+		corelog.Infof("HTTPStreamProcessor: WriteExact - fragment %d/%d sent successfully, connID=%s", i+1, len(fragments), sp.connectionID)
 	}
 
+	corelog.Infof("HTTPStreamProcessor: WriteExact - all fragments sent, connID=%s", sp.connectionID)
 	return nil
 }
 

@@ -236,10 +236,15 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	protocol := h.client.GetServerProtocol()
 	copyStrategy := strategyFactory.CreateStrategy(protocol)
 
-	copyStrategy.Copy(localConn, tunnelRWC, &utils.BidirectionalCopyOptions{
+	corelog.Infof("BaseMappingHandler[%s]: starting bidirectional copy for tunnel %s", h.config.MappingID, tunnelID)
+
+	result := copyStrategy.Copy(localConn, tunnelRWC, &utils.BidirectionalCopyOptions{
 		Transformer: h.transformer,
 		LogPrefix:   fmt.Sprintf("BaseMappingHandler[%s][%s]", h.config.MappingID, tunnelID),
 	})
+
+	corelog.Infof("BaseMappingHandler[%s]: bidirectional copy finished for tunnel %s, sent=%d, received=%d, sendErr=%v, recvErr=%v",
+		h.config.MappingID, tunnelID, result.BytesSent, result.BytesReceived, result.SendError, result.ReceiveError)
 
 	// 9. 更新连接计数统计
 	h.trafficStats.ConnectionCount.Add(1)

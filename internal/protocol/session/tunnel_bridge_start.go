@@ -17,6 +17,16 @@ func (b *TunnelBridge) Start() error {
 		return fmt.Errorf("bridge cancelled before target connection")
 	}
 
+	// 跨节点场景：数据转发由 CrossNodeListener 负责，这里只管理生命周期
+	if b.GetCrossNodeConnection() != nil {
+		if b.cloudControl != nil && b.mappingID != "" {
+			go b.periodicTrafficReport()
+		}
+		// 等待跨节点转发完成（由 CrossNodeListener.runBridgeForward 处理）
+		<-b.Ctx().Done()
+		return nil
+	}
+
 	// 检查数据转发器是否可用
 	if b.sourceForwarder == nil {
 		b.sourceForwarder = createDataForwarder(b.sourceConn, b.sourceStream)

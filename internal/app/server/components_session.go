@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/core/storage"
 
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/services"
@@ -185,8 +186,26 @@ func (c *HandlersComponent) Initialize(ctx context.Context, deps *Dependencies) 
 		deps.SessionMgr.SetTunnelRoutingTable(tunnelRouting)
 
 		// 注册节点地址到 Redis（用于跨节点转发）
-		// 节点地址格式：nodeID:50052（跨节点 TCP 端口）
-		nodeAddr := fmt.Sprintf("%s:50052", deps.NodeID)
+		// 从 RemoteStorage 获取 Pod IP（通过连接 storage 服务获取本机地址）
+		nodeHost := deps.NodeID
+		if hybrid, ok := deps.Storage.(*storage.HybridStorage); ok {
+			if remoteStorage := hybrid.GetRemoteStorage(); remoteStorage != nil {
+				if clientAddr, err := remoteStorage.GetClientAddress(); err == nil && clientAddr != "" {
+					// storage 服务返回的是纯 IP 地址（不含端口）
+					nodeHost = clientAddr
+					corelog.Infof("Got Pod IP from RemoteStorage: %s", nodeHost)
+				} else if err != nil {
+					corelog.Warnf("Failed to get Pod IP from RemoteStorage: %v", err)
+				} else {
+					corelog.Warnf("RemoteStorage.GetClientAddress() returned empty address")
+				}
+			} else {
+				corelog.Warnf("HybridStorage.GetRemoteStorage() returned nil, using nodeID as host")
+			}
+		} else {
+			corelog.Warnf("Storage is not HybridStorage (type=%T), using nodeID as host", deps.Storage)
+		}
+		nodeAddr := fmt.Sprintf("%s:50052", nodeHost)
 		if err := tunnelRouting.RegisterNodeAddress(deps.NodeID, nodeAddr); err != nil {
 			corelog.Warnf("Failed to register node address: %v", err)
 		} else {

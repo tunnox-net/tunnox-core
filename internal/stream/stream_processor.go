@@ -184,6 +184,29 @@ func (ps *StreamProcessor) ReadExact(length int) ([]byte, error) {
 	return result, nil
 }
 
+// ReadAvailable 读取当前可用的数据（不等待完整长度）
+// 用于流模式下的数据转发，避免阻塞等待固定长度的数据
+func (ps *StreamProcessor) ReadAvailable(maxLength int) ([]byte, error) {
+	if err := ps.acquireReadLock(); err != nil {
+		return nil, err
+	}
+	defer ps.readLock.Unlock()
+
+	if maxLength <= 0 {
+		maxLength = 32 * 1024
+	}
+
+	// 分配缓冲区
+	buffer := make([]byte, maxLength)
+
+	// 直接读取可用数据，不循环等待
+	n, err := ps.reader.Read(buffer)
+	if n > 0 {
+		return buffer[:n], err
+	}
+	return nil, err
+}
+
 // ReadExactZeroCopy 零拷贝读取指定长度的字节
 // 返回零拷贝缓冲区和清理函数，调用方负责调用清理函数
 func (ps *StreamProcessor) ReadExactZeroCopy(length int) (*utils.ZeroCopyBuffer, error) {
@@ -306,24 +329,22 @@ func (ps *StreamProcessor) readPacketBodySize() (uint32, error) {
 	return binary.BigEndian.Uint32(sizeBuffer), nil
 }
 
-// readPacketBody 读取包体数据，使用内存池
+// readPacketBody 读取包体数据，优化版本避免内存复制
 func (ps *StreamProcessor) readPacketBody(bodySize uint32) ([]byte, error) {
-	bodyData := ps.bufferMgr.Allocate(int(bodySize))
-	defer ps.bufferMgr.Release(bodyData)
+	// 直接分配最终大小的 buffer，避免二次分配和复制
+	// 这样可以减少 50% 的内存使用和 GC 压力
+	result := make([]byte, bodySize)
 
 	totalRead := 0
 	for totalRead < int(bodySize) {
-		n, err := ps.reader.Read(bodyData[totalRead:])
+		n, err := ps.reader.Read(result[totalRead:])
 		if err != nil {
 			return nil, errors.NewStreamError("read_packet_body", "failed to read packet body", err)
 		}
 		totalRead += n
 	}
 
-	// 创建新的切片，避免内存池中的数据被修改
-	result := make([]byte, totalRead)
-	copy(result, bodyData[:totalRead])
-	return result, nil
+	return result[:totalRead], nil
 }
 
 // decompressData 解压数据

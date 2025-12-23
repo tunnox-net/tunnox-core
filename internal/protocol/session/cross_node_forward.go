@@ -124,6 +124,8 @@ func (s *SessionManager) forwardToSourceNode(
 	netConn net.Conn,
 	routingState *TunnelWaitingState,
 ) error {
+	corelog.Infof("CrossNode[%s]: forwardToSourceNode called, sourceNodeID=%s", req.TunnelID, routingState.SourceNodeID)
+
 	// 0. 先发送 TunnelOpenAck 给 Target 客户端
 	s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{
 		TunnelID: req.TunnelID,
@@ -136,16 +138,19 @@ func (s *SessionManager) forwardToSourceNode(
 		corelog.Errorf("CrossNode[%s]: failed to get cross-node connection: %v", req.TunnelID, err)
 		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to get cross-node connection")
 	}
+	corelog.Infof("CrossNode[%s]: got cross-node connection to %s", req.TunnelID, routingState.SourceNodeID)
 
 	// 2. 发送 TargetTunnelReady 消息
 	tunnelID, _ := TunnelIDFromString(req.TunnelID)
 	readyData := EncodeTargetReadyMessage(req.TunnelID, s.nodeID)
+	corelog.Infof("CrossNode[%s]: sending TargetReady message, tunnelID=%v, dataLen=%d", req.TunnelID, tunnelID, len(readyData))
 	if err := WriteFrame(crossConn.GetTCPConn(), tunnelID, FrameTypeTargetReady, readyData); err != nil {
 		corelog.Errorf("CrossNode[%s]: failed to send target ready message: %v", req.TunnelID, err)
 		crossConn.MarkBroken()
 		s.crossNodePool.CloseConn(crossConn)
 		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send target ready message")
 	}
+	corelog.Infof("CrossNode[%s]: TargetReady message sent successfully", req.TunnelID)
 
 	// 3. 启动数据转发（零拷贝）
 	go s.runCrossNodeDataForward(req.TunnelID, conn, netConn, crossConn)
@@ -155,56 +160,87 @@ func (s *SessionManager) forwardToSourceNode(
 }
 
 // runCrossNodeDataForward 运行跨节点数据转发（零拷贝）
+// 重要：这个函数在 Target 节点上运行，负责在 Target 客户端的隧道连接和跨节点连接之间转发数据
+// 数据流：Target Client ←→ [本函数] ←→ CrossNodeConn ←→ Source 节点
+//
+// 关键点：必须使用 conn.Stream 的 GetReader()/GetWriter()，而不是原始 netConn
+// 因为 Target 客户端通过 tunnelStream 读写数据（带协议层），我们需要在同一层对接
 func (s *SessionManager) runCrossNodeDataForward(
 	tunnelID string,
 	conn *types.Connection,
 	netConn net.Conn,
 	crossConn *CrossNodeConn,
 ) {
+	corelog.Infof("CrossNodeDataForward[%s]: starting, conn=%v, netConn=%v, crossConn=%v",
+		tunnelID, conn != nil, netConn != nil, crossConn != nil)
 	defer func() {
+		corelog.Infof("CrossNodeDataForward[%s]: finished", tunnelID)
 		if crossConn != nil {
 			crossConn.Release()
 		}
 	}()
 
 	// 获取本地连接
+	// 重要：优先使用 conn.Stream 的 GetReader()/GetWriter()
+	// 这样才能和 Target 客户端的 tunnelStream 正确对接
 	var localConn io.ReadWriter
-	if netConn != nil {
-		localConn = netConn
-	} else if conn != nil && conn.Stream != nil {
+	if conn != nil && conn.Stream != nil {
 		reader := conn.Stream.GetReader()
 		writer := conn.Stream.GetWriter()
-		if reader == nil || writer == nil {
-			return
+		corelog.Infof("CrossNodeDataForward[%s]: stream reader=%T, writer=%T", tunnelID, reader, writer)
+		if reader != nil && writer != nil {
+			localConn = &readWriterWrapper{reader: reader, writer: writer}
+			corelog.Infof("CrossNodeDataForward[%s]: using stream as localConn", tunnelID)
 		}
-		localConn = &readWriterWrapper{reader: reader, writer: writer}
-	} else {
+	}
+
+	// 如果 Stream 不可用，回退到 netConn（但这可能导致协议层不匹配）
+	if localConn == nil && netConn != nil {
+		localConn = netConn
+		corelog.Warnf("CrossNodeDataForward[%s]: falling back to netConn as localConn (may cause protocol mismatch)", tunnelID)
+	}
+
+	if localConn == nil {
+		corelog.Errorf("CrossNodeDataForward[%s]: no valid localConn", tunnelID)
 		return
 	}
 
 	// 获取跨节点 TCP 连接（用于零拷贝）
 	tcpConn := crossConn.GetTCPConn()
 	if tcpConn == nil {
+		corelog.Errorf("CrossNodeDataForward[%s]: tcpConn is nil", tunnelID)
 		return
 	}
+
+	corelog.Infof("CrossNodeDataForward[%s]: starting bidirectional copy, localConn=%T, tcpConn=%T", tunnelID, localConn, tcpConn)
 
 	// 双向数据转发
 	errChan := make(chan error, 2)
 
-	// 本地 -> 跨节点（零拷贝，如果两端都是 TCP）
+	// 本地 -> 跨节点
 	go func() {
-		_, err := io.Copy(tcpConn, localConn)
+		corelog.Infof("CrossNodeDataForward[%s]: local->crossNode goroutine started", tunnelID)
+		n, err := io.Copy(tcpConn, localConn)
+		corelog.Infof("CrossNodeDataForward[%s]: local->crossNode finished, bytes=%d, err=%v", tunnelID, n, err)
+		// 关闭写方向，通知对端 EOF
+		tcpConn.CloseWrite()
 		errChan <- err
 	}()
 
-	// 跨节点 -> 本地（零拷贝，如果两端都是 TCP）
+	// 跨节点 -> 本地
 	go func() {
-		_, err := io.Copy(localConn, tcpConn)
+		corelog.Infof("CrossNodeDataForward[%s]: crossNode->local goroutine started", tunnelID)
+		n, err := io.Copy(localConn, tcpConn)
+		corelog.Infof("CrossNodeDataForward[%s]: crossNode->local finished, bytes=%d, err=%v", tunnelID, n, err)
 		errChan <- err
 	}()
 
-	// 等待任一方向完成
-	<-errChan
+	// 等待两个方向都完成
+	err1 := <-errChan
+	corelog.Infof("CrossNodeDataForward[%s]: first direction completed, err=%v", tunnelID, err1)
+	err2 := <-errChan
+	corelog.Infof("CrossNodeDataForward[%s]: second direction completed, err=%v", tunnelID, err2)
+	corelog.Infof("CrossNodeDataForward[%s]: both directions completed", tunnelID)
 }
 
 // readWriterWrapper 包装 Reader 和 Writer

@@ -111,6 +111,11 @@ func main() {
 	// 显示启动信息横幅（在日志初始化之后，服务启动之前）
 	srv.DisplayStartupBanner(absConfigPath)
 
+	// 记录启动开始（带明显标记，便于在混合日志中识别）
+	corelog.Infof("========================================")
+	corelog.Infof("🚀 SERVER STARTING - PID: %d", os.Getpid())
+	corelog.Infof("========================================")
+
 	// 5. 运行服务器（包含信号处理和优雅关闭）
 	if err := srv.Run(); err != nil {
 		// 确保错误信息输出到控制台（即使日志配置为只输出到文件）
@@ -119,4 +124,7 @@ func main() {
 	}
 
 	corelog.Info("Tunnox Core server exited gracefully")
+	corelog.Infof("========================================")
+	corelog.Infof("✅ SERVER STOPPED - PID: %d", os.Getpid())
+	corelog.Infof("========================================")
 }

@@ -316,7 +316,10 @@ func (sm *ServiceManager) setupSignalHandling() {
 
 	go func() {
 		sig := <-sigChan
-		corelog.Infof("Received signal: %v", sig)
+		corelog.Infof("========================================")
+		corelog.Infof("⚠️  SIGNAL RECEIVED: %v (PID: %d)", sig, os.Getpid())
+		corelog.Infof("========================================")
+		corelog.Infof("Initiating graceful shutdown...")
 		close(sm.shutdownChan)
 	}()
 }

@@ -118,12 +118,15 @@ func (l *CrossNodeListener) handleConnection(ctx context.Context, conn net.Conn)
 
 // handleTargetReady 处理 TargetTunnelReady 消息
 func (l *CrossNodeListener) handleTargetReady(ctx context.Context, conn *net.TCPConn, tunnelIDStr string, data []byte) {
+	corelog.Infof("CrossNodeListener: handleTargetReady called, tunnelIDStr=%s, dataLen=%d", tunnelIDStr, len(data))
+
 	// 解析消息 - 从消息体获取完整的 tunnelID（帧头中的可能被截断）
 	fullTunnelID, targetNodeID, err := DecodeTargetReadyMessage(data)
 	if err != nil {
 		corelog.Errorf("CrossNodeListener: failed to decode target ready message: %v", err)
 		return
 	}
+	corelog.Infof("CrossNodeListener: decoded TargetReady message, fullTunnelID=%s, targetNodeID=%s", fullTunnelID, targetNodeID)
 
 	// 使用消息体中的完整 tunnelID
 	if fullTunnelID != "" {
@@ -136,9 +139,10 @@ func (l *CrossNodeListener) handleTargetReady(ctx context.Context, conn *net.TCP
 	l.sessionMgr.bridgeLock.RUnlock()
 
 	if !exists {
-		corelog.Errorf("CrossNodeListener: bridge not found for tunnelID=%s", tunnelIDStr)
+		corelog.Errorf("CrossNodeListener: bridge not found for tunnelID=%s, available bridges: %v", tunnelIDStr, l.getBridgeIDs())
 		return
 	}
+	corelog.Infof("CrossNodeListener: found bridge for tunnelID=%s", tunnelIDStr)
 
 	// 创建 CrossNodeConn 并设置到 Bridge
 	crossConn := NewCrossNodeConn(ctx, targetNodeID, conn, nil)
@@ -170,31 +174,48 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 		return
 	}
 
+	corelog.Infof("CrossNodeListener[%s]: starting data forward", tunnelID)
+
 	// 双向数据转发
-	errChan := make(chan error, 2)
+	done := make(chan struct{})
 
 	// 源端 -> 跨节点
 	go func() {
+		defer func() { done <- struct{}{} }()
 		n, err := io.Copy(tcpConn, sourceForwarder)
 		if err != nil && err != io.EOF {
 			corelog.Errorf("CrossNodeListener[%s]: source->crossNode error: %v", tunnelID, err)
 		} else {
 			corelog.Infof("CrossNodeListener[%s]: source->crossNode finished, bytes=%d", tunnelID, n)
 		}
-		errChan <- err
+		// 关闭写方向，通知对端 EOF
+		tcpConn.CloseWrite()
 	}()
 
 	// 跨节点 -> 源端
 	go func() {
+		defer func() { done <- struct{}{} }()
 		n, err := io.Copy(sourceForwarder, tcpConn)
 		if err != nil && err != io.EOF {
 			corelog.Errorf("CrossNodeListener[%s]: crossNode->source error: %v", tunnelID, err)
 		} else {
 			corelog.Infof("CrossNodeListener[%s]: crossNode->source finished, bytes=%d", tunnelID, n)
 		}
-		errChan <- err
 	}()
 
-	// 等待任一方向完成
-	<-errChan
+	// 等待两个方向都完成
+	<-done
+	<-done
+	corelog.Infof("CrossNodeListener[%s]: data forward completed", tunnelID)
+}
+
+// getBridgeIDs 获取所有 bridge ID（用于调试）
+func (l *CrossNodeListener) getBridgeIDs() []string {
+	l.sessionMgr.bridgeLock.RLock()
+	defer l.sessionMgr.bridgeLock.RUnlock()
+	ids := make([]string, 0, len(l.sessionMgr.tunnelBridges))
+	for id := range l.sessionMgr.tunnelBridges {
+		ids = append(ids, id)
+	}
+	return ids
 }

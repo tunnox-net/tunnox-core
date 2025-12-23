@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	"tunnox-core/internal/cloud/constants"
-	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream/transform"
 )
 
@@ -79,20 +78,18 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// A → B（压缩 + 加密）
+	// A → B
 	go func() {
 		defer wg.Done()
 		defer connB.Close()
 
 		writerB, err := options.Transformer.WrapWriter(connB)
 		if err != nil {
-			corelog.Errorf("BidirectionalCopy: failed to wrap writer: %v", err)
 			result.SendError = err
 			return
 		}
 		defer writerB.Close()
 
-		// 🚀 性能优化: 使用 32KB 缓冲区
 		buf := make([]byte, constants.CopyBufferSize)
 		var totalWritten int64
 		for {
@@ -121,19 +118,17 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		}
 	}()
 
-	// B → A（解密 + 解压）
+	// B → A
 	go func() {
 		defer wg.Done()
 		defer connA.Close()
 
 		readerB, err := options.Transformer.WrapReader(connB)
 		if err != nil {
-			corelog.Errorf("BidirectionalCopy: failed to wrap reader: %v", err)
 			result.ReceiveError = err
 			return
 		}
 
-		// 🚀 性能优化: 使用 32KB 缓冲区
 		buf := make([]byte, constants.CopyBufferSize)
 		var totalWritten int64
 		for {

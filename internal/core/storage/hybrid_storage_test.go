@@ -56,7 +56,7 @@ func TestHybridStorage_DataCategoryRecognition(t *testing.T) {
 		{"tunnox:user:123", true},
 		{"tunnox:client:456", true},
 		{"tunnox:mapping:789", true},
-		{"tunnox:node:abc", true},
+		{"tunnox:node:abc", false}, // 节点信息现在是共享数据，不是持久化数据
 		{"tunnox:stats:persistent:xyz", true},
 		{"tunnox:runtime:key:123", false},
 		{"tunnox:session:abc", false},

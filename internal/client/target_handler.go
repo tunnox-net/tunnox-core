@@ -61,12 +61,17 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	transformConfig *transform.TransformConfig) {
 	// 1. 连接到目标服务
 	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
+	corelog.Infof("Client[TCP-target][%s]: connecting to target %s", tunnelID, targetAddr)
 	targetConn, err := net.DialTimeout("tcp", targetAddr, 30*time.Second)
 	if err != nil {
 		corelog.Errorf("Client: failed to connect to target %s: %v", targetAddr, err)
 		return
 	}
 	defer targetConn.Close()
+
+	// 打印连接的实际地址
+	corelog.Infof("Client[TCP-target][%s]: connected to target, local=%s, remote=%s",
+		tunnelID, targetConn.LocalAddr().String(), targetConn.RemoteAddr().String())
 
 	// 2. 建立隧道连接
 	tunnelConn, tunnelStream, err := c.dialTunnel(tunnelID, mappingID, secretKey)

@@ -66,6 +66,8 @@ func (m *HTTPPollModule) RegisterRoutes(router *mux.Router) {
 
 // handlePush 处理 Push 请求
 func (m *HTTPPollModule) handlePush(w http.ResponseWriter, r *http.Request) {
+	corelog.Debugf("HTTPPollModule: handlePush - received request, X-Tunnel-Package=%s", r.Header.Get("X-Tunnel-Package"))
+
 	var req httppoll.TunnelPackage
 
 	if xTunnelPackage := r.Header.Get("X-Tunnel-Package"); xTunnelPackage != "" {
@@ -132,17 +134,49 @@ func (m *HTTPPollModule) handlePush(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		needAcceptConnection := pkt.PacketType == packet.Handshake || (pkt.PacketType&0x3F) == packet.TunnelOpen
-		if needAcceptConnection {
+		// HTTPPoll 的特殊性：每个请求都是独立的 HTTP 请求，可能落到不同节点
+		// 为了让命令处理器能够找到控制连接，我们需要为每个 ClientID 创建一个稳定的控制连接 ID
+		isHandshakeOrTunnelOpen := pkt.PacketType == packet.Handshake || (pkt.PacketType&0x3F) == packet.TunnelOpen
+
+		// 检查本地是否已有此连接
+		_, hasLocalConn := m.session.GetConnection(connID)
+
+		// 如果是握手/隧道打开，或者本地没有连接，都需要 AcceptConnection
+		if isHandshakeOrTunnelOpen || !hasLocalConn {
 			httpPollConn := NewHTTPPollConn(sp, r.RemoteAddr)
 			streamConn, err := m.session.AcceptConnection(httpPollConn, httpPollConn)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
-			sp.SetConnectionID(streamConn.ID)
-			connID = streamConn.ID
+			// 对于非握手请求，保持客户端传来的 connID
+			if isHandshakeOrTunnelOpen {
+				sp.SetConnectionID(streamConn.ID)
+				connID = streamConn.ID
+			}
 			m.registry.Register(connID, sp)
+		}
+
+		// ✨ HTTPPoll 协议的核心修复：
+		// 为每个已认证的 ClientID 创建一个控制连接，使用当前请求的 connID
+		// 这样命令处理器就能通过当前请求的 connID 找到认证信息
+		if req.ClientID > 0 && m.session != nil {
+			if sessionMgr, ok := m.session.(*session.SessionManager); ok {
+				// 检查当前请求的 connID 是否已有控制连接
+				existingCtrlConn := sessionMgr.GetControlConnection(connID)
+				if existingCtrlConn == nil {
+					// 不存在，为当前请求的 connID 创建控制连接
+					conn, exists := m.session.GetConnection(connID)
+					if exists && conn != nil {
+						// 创建 ControlConnection
+						ctrlConn := session.NewControlConnection(connID, conn.Stream, nil, "httppoll")
+						ctrlConn.SetClientID(req.ClientID)
+						ctrlConn.SetAuthenticated(true)
+						sessionMgr.RegisterControlConnection(ctrlConn)
+						corelog.Debugf("HTTPPollModule: created ControlConnection for current request, ClientID=%d, ConnID=%s", req.ClientID, connID)
+					}
+				}
+			}
 		}
 
 		streamPacket := &types.StreamPacket{
@@ -153,7 +187,9 @@ func (m *HTTPPollModule) handlePush(w http.ResponseWriter, r *http.Request) {
 
 		m.session.HandlePacket(streamPacket)
 
-		if pkt.PacketType == packet.Handshake || (pkt.PacketType&0x3F) == packet.TunnelOpen {
+		// 等待响应：握手/隧道打开和命令请求都需要等待响应
+		needWaitResponse := isHandshakeOrTunnelOpen || pkt.PacketType.IsJsonCommand()
+		if needWaitResponse {
 			responsePkg = sp.WaitForControlPacket(r.Context(), 5*time.Second)
 		}
 	}

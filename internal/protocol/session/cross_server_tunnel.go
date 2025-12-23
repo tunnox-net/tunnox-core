@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/broker"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
 
@@ -66,11 +67,16 @@ func (s *SessionManager) processTunnelOpenBroadcasts(msgChan <-chan *BroadcastMe
 
 // handleTunnelOpenBroadcast 处理收到的TunnelOpen广播
 func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessage) {
+	corelog.Infof("handleTunnelOpenBroadcast: received broadcast for tunnel %s, targetClientID=%d", msg.TunnelID, msg.TargetClientID)
+
 	// 检查目标客户端是否在本地
 	targetConn := s.GetControlConnectionByClientID(msg.TargetClientID)
 	if targetConn == nil {
+		corelog.Debugf("handleTunnelOpenBroadcast: target client %d not on this node", msg.TargetClientID)
 		return
 	}
+
+	corelog.Infof("handleTunnelOpenBroadcast: found target client %d on this node, sending TunnelOpenRequest", msg.TargetClientID)
 
 	// 获取映射配置
 	if s.cloudControl == nil {
@@ -138,7 +144,13 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 
 		select {
 		case <-ctx.Done():
-		case <-done:
+			corelog.Warnf("handleTunnelOpenBroadcast: timeout sending TunnelOpenRequest to client %d", msg.TargetClientID)
+		case err := <-done:
+			if err != nil {
+				corelog.Errorf("handleTunnelOpenBroadcast: failed to send TunnelOpenRequest to client %d: %v", msg.TargetClientID, err)
+			} else {
+				corelog.Infof("handleTunnelOpenBroadcast: sent TunnelOpenRequest to client %d for tunnel %s", msg.TargetClientID, msg.TunnelID)
+			}
 		}
 	}()
 }

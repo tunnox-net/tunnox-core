@@ -42,13 +42,14 @@ func DefaultHybridConfig() *HybridConfig {
 			"tunnox:config:client:",    // 客户端配置（新版）
 			"tunnox:mapping:",          // 端口映射配置（旧key）
 			"tunnox:port_mapping:",     // 端口映射配置（实际使用的key）
-			"tunnox:node:",             // 节点信息
 			"tunnox:stats:persistent:", // 持久化统计数据
 		},
 		SharedPrefixes: []string{
-			"tunnox:conn_state:",     // 连接状态（跨节点查询）
-			"tunnox:client_conn:",    // 客户端连接索引（跨节点查询）
-			"tunnox:tunnel_waiting:", // 隧道等待状态（跨节点路由）
+			"tunnox:conn_state:",      // 连接状态（跨节点查询）
+			"tunnox:client_conn:",     // 客户端连接索引（跨节点查询）
+			"tunnox:tunnel_waiting:",  // 隧道等待状态（跨节点路由）
+			"tunnox:client_mappings:", // 客户端映射索引（跨节点共享）
+			"tunnox:node:",            // 节点信息（地址、ID分配锁，跨节点共享）
 		},
 		DefaultCacheTTL:    1 * time.Hour,
 		PersistentCacheTTL: 24 * time.Hour,

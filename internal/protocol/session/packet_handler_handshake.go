@@ -160,7 +160,51 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 
 	corelog.Infof("Handshake succeeded for connection %s, ClientID=%d",
 		connPacket.ConnectionID, clientConn.GetClientID())
+
+	// ✅ 握手成功后，主动推送客户端的映射配置
+	if isControlConnection && clientConn.IsAuthenticated() && clientConn.GetClientID() > 0 {
+		go s.pushConfigToClient(clientConn)
+	}
+
 	return nil
+}
+
+// pushConfigToClient 推送配置给客户端
+func (s *SessionManager) pushConfigToClient(conn ControlConnectionInterface) {
+	if s.authHandler == nil {
+		corelog.Warnf("SessionManager: authHandler is nil, cannot push config to client %d", conn.GetClientID())
+		return
+	}
+
+	configBody, err := s.authHandler.GetClientConfig(conn)
+	if err != nil {
+		corelog.Errorf("SessionManager: failed to get config for client %d: %v", conn.GetClientID(), err)
+		return
+	}
+
+	// 发送配置
+	responseCmd := &packet.CommandPacket{
+		CommandType: packet.ConfigSet,
+		CommandBody: configBody,
+	}
+
+	responsePacket := &packet.TransferPacket{
+		PacketType:    packet.JsonCommand,
+		CommandPacket: responseCmd,
+	}
+
+	stream := conn.GetStream()
+	if stream == nil {
+		corelog.Errorf("SessionManager: stream is nil for client %d", conn.GetClientID())
+		return
+	}
+
+	if _, err := stream.WritePacket(responsePacket, true, 0); err != nil {
+		corelog.Errorf("SessionManager: failed to push config to client %d: %v", conn.GetClientID(), err)
+		return
+	}
+
+	corelog.Infof("SessionManager: pushed config to client %d (%d bytes)", conn.GetClientID(), len(configBody))
 }
 
 // sendHandshakeResponse 发送握手响应

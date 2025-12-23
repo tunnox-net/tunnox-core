@@ -311,6 +311,36 @@ func (h *HybridStorage) SetRuntime(key string, value interface{}, ttl time.Durat
 	return h.setRuntime(key, value, ttl)
 }
 
+// SetNXRuntime 原子设置运行时数据（仅当键不存在时）
+// 用于节点 ID 分配等需要原子操作的场景
+func (h *HybridStorage) SetNXRuntime(key string, value interface{}, ttl time.Duration) (bool, error) {
+	// 运行时数据优先写入共享缓存（Redis），确保多节点原子性
+	if h.sharedCache != nil {
+		if nxSetter, ok := h.sharedCache.(interface {
+			SetNX(string, interface{}, time.Duration) (bool, error)
+		}); ok {
+			return nxSetter.SetNX(key, value, ttl)
+		}
+	}
+
+	// 回退到本地缓存
+	if nxSetter, ok := h.cache.(interface {
+		SetNX(string, interface{}, time.Duration) (bool, error)
+	}); ok {
+		return nxSetter.SetNX(key, value, ttl)
+	}
+
+	// 降级实现（非原子，仅用于兼容）
+	exists, err := h.Exists(key)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+	return true, h.setRuntime(key, value, ttl)
+}
+
 // GetConfig 获取配置（只读）
 func (h *HybridStorage) GetConfig() *HybridConfig {
 	h.mu.RLock()
@@ -353,7 +383,18 @@ func (h *HybridStorage) SetList(key string, values []interface{}, ttl time.Durat
 }
 
 func (h *HybridStorage) GetList(key string) ([]interface{}, error) {
-	value, err := h.cache.Get(key)
+	// 根据 key 类别选择正确的缓存
+	var value interface{}
+	var err error
+
+	category := h.getCategory(key)
+	if category == DataCategoryShared {
+		cache := h.getCacheForKey(key)
+		value, err = cache.Get(key)
+	} else {
+		value, err = h.cache.Get(key)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +417,8 @@ func (h *HybridStorage) AppendToList(key string, value interface{}) error {
 	}
 
 	list = append(list, value)
-	return h.cache.Set(key, list, h.config.DefaultCacheTTL)
+	// 使用 Set 方法，它会根据 key 类别自动选择正确的存储（本地缓存/共享缓存/持久化）
+	return h.Set(key, list, h.config.DefaultCacheTTL)
 }
 
 func (h *HybridStorage) RemoveFromList(key string, value interface{}) error {
@@ -393,7 +435,8 @@ func (h *HybridStorage) RemoveFromList(key string, value interface{}) error {
 		}
 	}
 
-	return h.cache.Set(key, newList, h.config.DefaultCacheTTL)
+	// 使用 Set 方法，它会根据 key 类别自动选择正确的存储
+	return h.Set(key, newList, h.config.DefaultCacheTTL)
 }
 
 func (h *HybridStorage) SetHash(key string, field string, value interface{}) error {

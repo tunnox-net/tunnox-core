@@ -24,152 +24,14 @@ type StreamDataForwarder interface {
 	GetConnectionID() string // 获取连接ID（用于调试）
 }
 
-// checkStreamDataForwarder 检查 stream 是否实现了 StreamDataForwarder 接口
-func checkStreamDataForwarder(stream stream.PackageStreamer) StreamDataForwarder {
-	type readExact interface {
-		ReadExact(length int) ([]byte, error)
-	}
-	type readAvailable interface {
-		ReadAvailable(maxLength int) ([]byte, error)
-	}
-	type writeExact interface {
-		WriteExact(data []byte) error
-	}
-	type closer interface {
-		Close()
-	}
-
-	if r, ok := stream.(readExact); ok {
-		if w, ok := stream.(writeExact); ok {
-			if c, ok := stream.(closer); ok {
-				var ra readAvailable
-				if streamRA, ok := stream.(readAvailable); ok {
-					ra = streamRA
-				}
-				type getConnID interface {
-					GetConnectionID() string
-				}
-				var gci getConnID
-				if streamGCI, ok := stream.(getConnID); ok {
-					gci = streamGCI
-				}
-				return &streamDataForwarderWrapper{
-					readExact:     r,
-					readAvailable: ra,
-					writeExact:    w,
-					closer:        c,
-					getConnID:     gci,
-				}
-			}
-		}
+// checkStreamDataForwarder 检查 stream 是否实现了完整的 StreamDataForwarder 接口
+// 注意：必须同时实现 ReadExact、ReadAvailable、WriteExact 和 Close
+func checkStreamDataForwarder(s stream.PackageStreamer) StreamDataForwarder {
+	// 直接检查是否实现了完整接口
+	if forwarder, ok := s.(StreamDataForwarder); ok {
+		return forwarder
 	}
 	return nil
-}
-
-// checkStreamDataForwarderFromReaderWriter 检查 reader/writer 是否实现了 StreamDataForwarder 接口
-func checkStreamDataForwarderFromReaderWriter(reader io.Reader, writer io.Writer) StreamDataForwarder {
-	type readExact interface {
-		ReadExact(length int) ([]byte, error)
-	}
-	type readAvailable interface {
-		ReadAvailable(maxLength int) ([]byte, error)
-	}
-	type writeExact interface {
-		WriteExact(data []byte) error
-	}
-	type closer interface {
-		Close() error
-	}
-	type getConnID interface {
-		GetConnectionID() string
-	}
-
-	r, hasReadExact := reader.(readExact)
-	ra, _ := reader.(readAvailable)
-	w, hasWriteExact := writer.(writeExact)
-
-	var c closer
-	if readerCloser, ok := reader.(closer); ok {
-		c = readerCloser
-	} else if writerCloser, ok := writer.(closer); ok {
-		c = writerCloser
-	}
-
-	var gci getConnID
-	if readerGCI, ok := reader.(getConnID); ok {
-		gci = readerGCI
-	} else if writerGCI, ok := writer.(getConnID); ok {
-		gci = writerGCI
-	}
-
-	if !hasReadExact || !hasWriteExact {
-		return nil
-	}
-
-	var closerWrapper interface{ Close() }
-	if c != nil {
-		closerWrapper = &closerAdapter{c}
-	}
-
-	return &streamDataForwarderWrapper{
-		readExact:     r,
-		readAvailable: ra,
-		writeExact:    w,
-		closer:        closerWrapper,
-		getConnID:     gci,
-	}
-}
-
-// closerAdapter 将 Close() error 适配为 Close()
-type closerAdapter struct {
-	closer interface{ Close() error }
-}
-
-func (a *closerAdapter) Close() {
-	_ = a.closer.Close()
-}
-
-// streamDataForwarderWrapper 包装实现了 ReadExact/ReadAvailable/WriteExact/Close 的对象
-type streamDataForwarderWrapper struct {
-	readExact interface {
-		ReadExact(length int) ([]byte, error)
-	}
-	readAvailable interface {
-		ReadAvailable(maxLength int) ([]byte, error)
-	}
-	writeExact interface{ WriteExact(data []byte) error }
-	closer     interface{ Close() }
-	getConnID  interface{ GetConnectionID() string } // 可选的 GetConnectionID 方法
-}
-
-func (w *streamDataForwarderWrapper) ReadExact(length int) ([]byte, error) {
-	return w.readExact.ReadExact(length)
-}
-
-func (w *streamDataForwarderWrapper) ReadAvailable(maxLength int) ([]byte, error) {
-	if w.readAvailable != nil {
-		return w.readAvailable.ReadAvailable(maxLength)
-	}
-	// 如果没有 ReadAvailable，回退到 ReadExact
-	if maxLength > 256 {
-		maxLength = 256
-	}
-	return w.readExact.ReadExact(maxLength)
-}
-
-func (w *streamDataForwarderWrapper) WriteExact(data []byte) error {
-	return w.writeExact.WriteExact(data)
-}
-
-func (w *streamDataForwarderWrapper) Close() {
-	w.closer.Close()
-}
-
-func (w *streamDataForwarderWrapper) GetConnectionID() string {
-	if w.getConnID != nil {
-		return w.getConnID.GetConnectionID()
-	}
-	return "unknown"
 }
 
 // streamDataForwarderAdapter 将 StreamDataForwarder 适配为 DataForwarder
@@ -250,33 +112,30 @@ func (a *streamDataForwarderAdapter) Close() error {
 	return nil
 }
 
-// createDataForwarder 创建数据转发器（通过接口抽象，不依赖具体协议）
-func createDataForwarder(conn net.Conn, stream stream.PackageStreamer) DataForwarder {
-	if stream != nil {
-		// 首先检查 stream 本身是否实现了 StreamDataForwarder 接口（如 HTTPPoll）
-		if streamForwarder := checkStreamDataForwarder(stream); streamForwarder != nil {
-			return &streamDataForwarderAdapter{stream: streamForwarder}
-		}
-
-		// 然后检查 Stream 的 Reader/Writer
-		reader := stream.GetReader()
-		writer := stream.GetWriter()
+// createDataForwarder 创建数据转发器
+// 优先使用 stream 的底层 Reader/Writer，这是最通用的方式
+// 只有实现了完整 StreamDataForwarder 接口的特殊协议才使用适配器
+func createDataForwarder(conn net.Conn, s stream.PackageStreamer) DataForwarder {
+	if s != nil {
+		// 获取底层 Reader/Writer（对于 TCP，这就是原始的 net.Conn）
+		reader := s.GetReader()
+		writer := s.GetWriter()
 
 		if reader != nil && writer != nil {
-			// 检查 reader 是否实现了 StreamDataForwarder 接口（如 WebSocketServerConn）
-			if readerForwarder := checkStreamDataForwarderFromReaderWriter(reader, writer); readerForwarder != nil {
-				return &streamDataForwarderAdapter{stream: readerForwarder}
-			}
-
-			// 使用 Stream 的 Reader/Writer 创建适配器
+			// 优先使用标准的 io.ReadWriteCloser 方式
 			return utils.NewReadWriteCloser(reader, writer, func() error {
-				stream.Close()
+				s.Close()
 				return nil
 			})
 		}
+
+		// 如果 stream 实现了完整的 StreamDataForwarder 接口（如 HTTP 长轮询）
+		if forwarder := checkStreamDataForwarder(s); forwarder != nil {
+			return &streamDataForwarderAdapter{stream: forwarder}
+		}
 	}
 
-	// 如果 Stream 不可用，回退到 net.Conn（仅用于纯 TCP 协议）
+	// 直接使用 net.Conn
 	if conn != nil {
 		return conn
 	}

@@ -95,27 +95,31 @@ func (a *NodeIDAllocator) AllocateNodeID(ctx context.Context) (string, error) {
 //   - bool: 是否成功占用
 //   - error: 错误信息
 func (a *NodeIDAllocator) tryAcquireNodeID(key, nodeID string) (bool, error) {
-	// 检查是否已存在
+	// 使用原子 SetNX 操作，避免竞态条件
+	// 优先使用 SetNXRuntime（对于 HybridStorage，确保只写入缓存不持久化）
+	if hybridStorage, ok := a.storage.(interface {
+		SetNXRuntime(key string, value interface{}, ttl time.Duration) (bool, error)
+	}); ok {
+		return hybridStorage.SetNXRuntime(key, nodeID, NodeIDLockTTL)
+	}
+
+	// 回退到普通 SetNX
+	if nxStorage, ok := a.storage.(interface {
+		SetNX(key string, value interface{}, ttl time.Duration) (bool, error)
+	}); ok {
+		return nxStorage.SetNX(key, nodeID, NodeIDLockTTL)
+	}
+
+	// 如果 storage 不支持 SetNX，使用原来的非原子方式（兼容性）
 	exists, err := a.storage.Exists(key)
 	if err != nil {
 		return false, fmt.Errorf("failed to check existence: %w", err)
 	}
-
 	if exists {
-		return false, nil // 已被占用
+		return false, nil
 	}
 
-	// 尝试设置（带TTL）
-	// 注意：节点分配是运行时缓存，不应该持久化
-	// 如果 storage 支持 SetRuntime，使用它来显式设置为运行时数据
-	// 否则使用普通的 Set（对于非 HybridStorage 的情况）
-	if hybridStorage, ok := a.storage.(interface {
-		SetRuntime(key string, value interface{}, ttl time.Duration) error
-	}); ok {
-		err = hybridStorage.SetRuntime(key, nodeID, NodeIDLockTTL)
-	} else {
-		err = a.storage.Set(key, nodeID, NodeIDLockTTL)
-	}
+	err = a.storage.Set(key, nodeID, NodeIDLockTTL)
 	if err != nil {
 		return false, fmt.Errorf("failed to set node ID: %w", err)
 	}
@@ -127,10 +131,10 @@ func (a *NodeIDAllocator) tryAcquireNodeID(key, nodeID string) (bool, error) {
 	}
 
 	if valueStr, ok := value.(string); ok && valueStr == nodeID {
-		return true, nil // 成功占用
+		return true, nil
 	}
 
-	return false, nil // 被其他节点抢占
+	return false, nil
 }
 
 // heartbeatLoop 心跳循环，定期续期节点ID

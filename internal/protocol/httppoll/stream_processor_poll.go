@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // pollLoop 持续发送 Poll 请求并缓存响应
@@ -197,9 +198,10 @@ func (sp *StreamProcessor) handleControlPacketResponse(resp *http.Response, requ
 		return
 	}
 
-	if pkg.RequestID != requestID {
-		return
-	}
+	// 不再检查 requestID 匹配，因为服务端推送的命令可能携带不同的 requestID
+	// if pkg.RequestID != requestID {
+	// 	return
+	// }
 
 	pkt, err := sp.converter.ReadPacket(resp)
 	if err != nil {
@@ -210,5 +212,14 @@ func (sp *StreamProcessor) handleControlPacketResponse(resp *http.Response, requ
 		sp.SetConnectionID(pkg.ConnectionID)
 	}
 
-	sp.setCachedResponse(requestID, pkt)
+	// 将控制包放入 packetQueue，让 readPacketForControl 能够立即读取
+	if pkt != nil {
+		corelog.Debugf("HTTPStreamProcessor: handleControlPacketResponse - putting packet into packetQueue, type=0x%02x, connID=%s", byte(pkt.PacketType), sp.connectionID)
+		select {
+		case sp.packetQueue <- pkt:
+		default:
+			// 队列满，放入缓存作为备用
+			sp.setCachedResponse(requestID, pkt)
+		}
+	}
 }

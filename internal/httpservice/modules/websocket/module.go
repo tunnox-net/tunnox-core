@@ -241,10 +241,11 @@ type WebSocketServerConn struct {
 	closed     chan struct{}
 
 	// 流模式支持（用于跨节点隧道）
-	streamMode     bool
-	streamModeMu   sync.RWMutex
-	streamDataChan chan []byte // 流模式数据通道
-	connectionID   string      // 连接ID（用于调试）
+	streamMode         bool
+	streamModeMu       sync.RWMutex
+	streamDataChan     chan []byte // 流模式数据通道
+	streamDataChanOnce sync.Once   // 确保 streamDataChan 只关闭一次
+	connectionID       string      // 连接ID（用于调试）
 }
 
 // Read 实现 io.Reader
@@ -272,11 +273,14 @@ func (c *WebSocketServerConn) Read(p []byte) (int, error) {
 
 	if isStreamMode {
 		// 流模式：从数据通道读取
+		// 注意：这里不应该设置超时，因为 io.Copy 需要阻塞等待数据
+		// 如果 channel 关闭或连接关闭，会返回 EOF
 		select {
 		case <-c.closed:
 			return 0, io.EOF
 		case data, ok := <-c.streamDataChan:
 			if !ok {
+				// channel 已关闭（由 StartStreamModeReader 关闭）
 				return 0, io.EOF
 			}
 			n := copy(p, data)
@@ -548,6 +552,15 @@ func (c *WebSocketServerConn) PushStreamData(data []byte) error {
 // 这个方法会持续读取 WebSocket 消息并推送到数据通道
 func (c *WebSocketServerConn) StartStreamModeReader() {
 	go func() {
+		corelog.Debugf("WebSocket[%s]: StartStreamModeReader started", c.connectionID)
+		defer func() {
+			corelog.Debugf("WebSocket[%s]: StartStreamModeReader exited", c.connectionID)
+			// 关闭数据通道，让 Read() 返回 EOF（只关闭一次）
+			c.streamDataChanOnce.Do(func() {
+				close(c.streamDataChan)
+			})
+		}()
+
 		for {
 			select {
 			case <-c.closed:
@@ -563,18 +576,24 @@ func (c *WebSocketServerConn) StartStreamModeReader() {
 					return
 				default:
 					if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+						corelog.Debugf("WebSocket[%s]: connection closed normally", c.connectionID)
 						return
 					}
+					corelog.Errorf("WebSocket[%s]: read error in stream mode: %v", c.connectionID, err)
 					return
 				}
 			}
 
 			if messageType != websocket.BinaryMessage {
+				corelog.Debugf("WebSocket[%s]: ignoring non-binary message type: %d", c.connectionID, messageType)
 				continue // 忽略非二进制消息
 			}
 
+			corelog.Debugf("WebSocket[%s]: read %d bytes in stream mode", c.connectionID, len(data))
+
 			// 推送到数据通道
 			if err := c.PushStreamData(data); err != nil {
+				corelog.Errorf("WebSocket[%s]: failed to push data: %v", c.connectionID, err)
 				return
 			}
 		}
