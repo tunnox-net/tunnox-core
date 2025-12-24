@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 	corelog "tunnox-core/internal/core/log"
-	"tunnox-core/internal/core/storage"
 
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/services"
@@ -186,24 +186,13 @@ func (c *HandlersComponent) Initialize(ctx context.Context, deps *Dependencies) 
 		deps.SessionMgr.SetTunnelRoutingTable(tunnelRouting)
 
 		// 注册节点地址到 Redis（用于跨节点转发）
-		// 从 RemoteStorage 获取 Pod IP（通过连接 storage 服务获取本机地址）
-		nodeHost := deps.NodeID
-		if hybrid, ok := deps.Storage.(*storage.HybridStorage); ok {
-			if remoteStorage := hybrid.GetRemoteStorage(); remoteStorage != nil {
-				if clientAddr, err := remoteStorage.GetClientAddress(); err == nil && clientAddr != "" {
-					// storage 服务返回的是纯 IP 地址（不含端口）
-					nodeHost = clientAddr
-					corelog.Infof("Got Pod IP from RemoteStorage: %s", nodeHost)
-				} else if err != nil {
-					corelog.Warnf("Failed to get Pod IP from RemoteStorage: %v", err)
-				} else {
-					corelog.Warnf("RemoteStorage.GetClientAddress() returned empty address")
-				}
-			} else {
-				corelog.Warnf("HybridStorage.GetRemoteStorage() returned nil, using nodeID as host")
-			}
+		// 通过 UDP 探测获取本机出口 IP（不依赖外部服务）
+		nodeHost := getLocalOutboundIP()
+		if nodeHost == "" {
+			nodeHost = deps.NodeID
+			corelog.Warnf("Failed to detect local IP, using nodeID as fallback: %s", nodeHost)
 		} else {
-			corelog.Warnf("Storage is not HybridStorage (type=%T), using nodeID as host", deps.Storage)
+			corelog.Infof("Detected local outbound IP: %s", nodeHost)
 		}
 		nodeAddr := fmt.Sprintf("%s:50052", nodeHost)
 		if err := tunnelRouting.RegisterNodeAddress(deps.NodeID, nodeAddr); err != nil {
@@ -243,4 +232,20 @@ func (c *HandlersComponent) Start() error {
 
 func (c *HandlersComponent) Stop() error {
 	return nil
+}
+
+// getLocalOutboundIP 通过 UDP 探测获取本机出口 IP
+// 这个方法不依赖任何外部服务，通过创建一个虚拟的 UDP 连接来获取本机的出口 IP
+// 在 K8s 环境中，这个 IP 就是 Pod IP
+func getLocalOutboundIP() string {
+	// 使用 Google DNS 作为目标（不会真正发送数据）
+	conn, err := net.DialTimeout("udp", "8.8.8.8:53", 3*time.Second)
+	if err != nil {
+		corelog.Warnf("Failed to probe local outbound IP: %v", err)
+		return ""
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP.String()
 }
