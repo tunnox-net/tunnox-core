@@ -64,7 +64,6 @@ func (m *HTTPProxyManager) HandleResponse(resp *httpservice.HTTPProxyResponse) {
 
 	select {
 	case ch <- resp:
-		corelog.Debugf("HTTPProxyManager: response delivered for request %s", resp.RequestID)
 	default:
 		corelog.Warnf("HTTPProxyManager: response channel full for request %s", resp.RequestID)
 	}
@@ -151,9 +150,6 @@ func (s *SessionManager) SendHTTPProxyRequest(
 	// 5. 获取代理管理器并注册等待
 	proxyMgr := getHTTPProxyManager()
 
-	corelog.Debugf("SessionManager: sending HTTP proxy request %s to client %d, url=%s",
-		request.RequestID, clientID, request.URL)
-
 	// 6. 发送命令
 	if _, err := conn.Stream.WritePacket(cmdPkt, true, 0); err != nil {
 		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send proxy request")
@@ -164,9 +160,6 @@ func (s *SessionManager) SendHTTPProxyRequest(
 	if err != nil {
 		return nil, err
 	}
-
-	corelog.Debugf("SessionManager: received HTTP proxy response for request %s, status=%d",
-		request.RequestID, resp.StatusCode)
 
 	return resp, nil
 }
@@ -226,7 +219,6 @@ func (m *TunnelWaitManager) NotifyTunnelEstablished(tunnelID string, conn Tunnel
 
 	select {
 	case ch <- conn:
-		corelog.Debugf("TunnelWaitManager: tunnel %s established notification delivered", tunnelID)
 	default:
 		corelog.Warnf("TunnelWaitManager: tunnel channel full for %s", tunnelID)
 	}

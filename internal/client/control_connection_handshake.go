@@ -8,7 +8,6 @@ import (
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
-	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
 )
 
@@ -138,15 +137,6 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		return fmt.Errorf("handshake failed: %s", resp.Error)
 	}
 
-	// ✅ 更新 ConnectionID（如果服务端返回了 ConnectionID）
-	if resp.ConnectionID != "" {
-		// 对于 HTTP 长轮询，更新 HTTPStreamProcessor 的 ConnectionID
-		if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
-			httppollStream.SetConnectionID(resp.ConnectionID)
-			corelog.Infof("Client: received ConnectionID from server: %s", resp.ConnectionID)
-		}
-	}
-
 	// 匿名模式下，服务器会返回分配的凭据（仅对控制连接有用）
 	if c.config.Anonymous && stream == c.controlStream {
 		// ✅ 优先使用结构化字段
@@ -160,12 +150,6 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 				corelog.Warnf("Client: failed to save anonymous credentials: %v", err)
 			}
 
-			// ✅ 更新 HTTPStreamProcessor 的 clientID
-			if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
-				httppollStream.UpdateClientID(resp.ClientID)
-				corelog.Debugf("Client: updated HTTPStreamProcessor clientID to %d", resp.ClientID)
-			}
-
 			// ✅ 更新 SOCKS5Manager 的 clientID
 			if c.socks5Manager != nil {
 				c.socks5Manager.SetClientID(resp.ClientID)
@@ -176,11 +160,6 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 			var assignedClientID int64
 			if _, err := fmt.Sscanf(resp.Message, "Anonymous client authenticated, client_id=%d", &assignedClientID); err == nil {
 				c.config.ClientID = assignedClientID
-				// ✅ 更新 HTTPStreamProcessor 的 clientID
-				if httppollStream, ok := stream.(*httppoll.StreamProcessor); ok {
-					httppollStream.UpdateClientID(assignedClientID)
-					corelog.Debugf("Client: updated HTTPStreamProcessor clientID to %d", assignedClientID)
-				}
 				// ✅ 更新 SOCKS5Manager 的 clientID
 				if c.socks5Manager != nil {
 					c.socks5Manager.SetClientID(assignedClientID)

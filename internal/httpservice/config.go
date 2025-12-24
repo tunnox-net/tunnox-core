@@ -18,7 +18,6 @@ type HTTPServiceConfig struct {
 // ModulesConfig 模块配置
 type ModulesConfig struct {
 	ManagementAPI  ManagementAPIModuleConfig  `yaml:"management_api"`
-	HTTPPoll       HTTPPollModuleConfig       `yaml:"httppoll"`
 	WebSocket      WebSocketModuleConfig      `yaml:"websocket"`
 	DomainProxy    DomainProxyModuleConfig    `yaml:"domain_proxy"`
 	WebSocketProxy WebSocketProxyModuleConfig `yaml:"websocket_proxy"`
@@ -29,14 +28,6 @@ type ManagementAPIModuleConfig struct {
 	Enabled bool        `yaml:"enabled"`
 	Auth    AuthConfig  `yaml:"auth"`
 	PProf   PProfConfig `yaml:"pprof"`
-}
-
-// HTTPPollModuleConfig HTTP 长轮询传输模块配置
-type HTTPPollModuleConfig struct {
-	Enabled        bool `yaml:"enabled"`
-	MaxRequestSize int  `yaml:"max_request_size"` // 最大请求大小（字节）
-	DefaultTimeout int  `yaml:"default_timeout"`  // 默认超时（秒）
-	MaxTimeout     int  `yaml:"max_timeout"`      // 最大超时（秒）
 }
 
 // DomainProxyModuleConfig 域名代理模块配置
@@ -112,12 +103,6 @@ func DefaultHTTPServiceConfig() *HTTPServiceConfig {
 					Retention:   10,
 					AutoCapture: true,
 				},
-			},
-			HTTPPoll: HTTPPollModuleConfig{
-				Enabled:        true,
-				MaxRequestSize: 1048576, // 1MB
-				DefaultTimeout: 30,
-				MaxTimeout:     60,
 			},
 			WebSocket: WebSocketModuleConfig{
 				Enabled: true,

@@ -30,16 +30,12 @@ func (ss *StreamService) Name() string {
 // Start 启动流服务
 func (ss *StreamService) Start(ctx context.Context) error {
 	ss.ctx = ctx
-	// 精简日志：只在调试模式下输出服务启动信息
-	corelog.Debugf("Starting stream service: %s", ss.name)
 
 	// 流管理器在创建时就已经初始化，这里主要是验证状态
 	if ss.manager == nil {
 		return fmt.Errorf("stream manager is nil for service %s", ss.name)
 	}
 
-	// 精简日志：只在调试模式下输出服务启动完成信息
-	corelog.Debugf("Stream service started: %s", ss.name)
 	return nil
 }
 

@@ -66,7 +66,6 @@ func (r *PacketRouter) RegisterHandler(packetType packet.Type, handler PacketHan
 	defer r.mu.Unlock()
 
 	r.handlers[packetType] = handler
-	r.logger.Debugf("PacketRouter: registered handler for packet type %v", packetType)
 }
 
 // RegisterHandlerFunc 注册数据包处理函数
@@ -80,7 +79,6 @@ func (r *PacketRouter) UnregisterHandler(packetType packet.Type) {
 	defer r.mu.Unlock()
 
 	delete(r.handlers, packetType)
-	r.logger.Debugf("PacketRouter: unregistered handler for packet type %v", packetType)
 }
 
 // SetDefaultHandler 设置默认处理器

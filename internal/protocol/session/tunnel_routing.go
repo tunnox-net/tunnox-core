@@ -132,9 +132,6 @@ func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID s
 		return nil, ErrTunnelExpired
 	}
 
-	corelog.Debugf("TunnelRouting: found waiting tunnel %s (source_node=%s)",
-		tunnelID, state.SourceNodeID)
-
 	return &state, nil
 }
 
@@ -152,7 +149,6 @@ func (t *TunnelRoutingTable) RemoveWaitingTunnel(ctx context.Context, tunnelID s
 		return nil
 	}
 
-	corelog.Debugf("TunnelRouting: removed waiting tunnel %s", tunnelID)
 	return nil
 }
 
@@ -162,7 +158,6 @@ func (t *TunnelRoutingTable) CleanupExpiredTunnels(ctx context.Context) (int, er
 	// Redis会自动清理过期的key，这里只是为了统计
 	// 实际生产环境中可以通过Redis的SCAN命令遍历所有tunnox:tunnel_waiting:*的key
 	// 但为了性能考虑，这里暂不实现全量扫描
-	corelog.Debugf("TunnelRouting: cleanup triggered (Redis auto-expires keys)")
 	return 0, nil
 }
 

@@ -171,10 +171,7 @@ func (s *SessionManager) runCrossNodeDataForward(
 	netConn net.Conn,
 	crossConn *CrossNodeConn,
 ) {
-	corelog.Infof("CrossNodeDataForward[%s]: starting, conn=%v, netConn=%v, crossConn=%v",
-		tunnelID, conn != nil, netConn != nil, crossConn != nil)
 	defer func() {
-		corelog.Infof("CrossNodeDataForward[%s]: finished", tunnelID)
 		if crossConn != nil {
 			crossConn.Release()
 		}
@@ -187,10 +184,8 @@ func (s *SessionManager) runCrossNodeDataForward(
 	if conn != nil && conn.Stream != nil {
 		reader := conn.Stream.GetReader()
 		writer := conn.Stream.GetWriter()
-		corelog.Infof("CrossNodeDataForward[%s]: stream reader=%T, writer=%T", tunnelID, reader, writer)
 		if reader != nil && writer != nil {
 			localConn = &readWriterWrapper{reader: reader, writer: writer}
-			corelog.Infof("CrossNodeDataForward[%s]: using stream as localConn", tunnelID)
 		}
 	}
 
@@ -212,16 +207,12 @@ func (s *SessionManager) runCrossNodeDataForward(
 		return
 	}
 
-	corelog.Infof("CrossNodeDataForward[%s]: starting bidirectional copy, localConn=%T, tcpConn=%T", tunnelID, localConn, tcpConn)
-
 	// 双向数据转发
 	errChan := make(chan error, 2)
 
 	// 本地 -> 跨节点
 	go func() {
-		corelog.Infof("CrossNodeDataForward[%s]: local->crossNode goroutine started", tunnelID)
-		n, err := io.Copy(tcpConn, localConn)
-		corelog.Infof("CrossNodeDataForward[%s]: local->crossNode finished, bytes=%d, err=%v", tunnelID, n, err)
+		_, err := io.Copy(tcpConn, localConn)
 		// 关闭写方向，通知对端 EOF
 		tcpConn.CloseWrite()
 		errChan <- err
@@ -229,18 +220,13 @@ func (s *SessionManager) runCrossNodeDataForward(
 
 	// 跨节点 -> 本地
 	go func() {
-		corelog.Infof("CrossNodeDataForward[%s]: crossNode->local goroutine started", tunnelID)
-		n, err := io.Copy(localConn, tcpConn)
-		corelog.Infof("CrossNodeDataForward[%s]: crossNode->local finished, bytes=%d, err=%v", tunnelID, n, err)
+		_, err := io.Copy(localConn, tcpConn)
 		errChan <- err
 	}()
 
 	// 等待两个方向都完成
-	err1 := <-errChan
-	corelog.Infof("CrossNodeDataForward[%s]: first direction completed, err=%v", tunnelID, err1)
-	err2 := <-errChan
-	corelog.Infof("CrossNodeDataForward[%s]: second direction completed, err=%v", tunnelID, err2)
-	corelog.Infof("CrossNodeDataForward[%s]: both directions completed", tunnelID)
+	<-errChan
+	<-errChan
 }
 
 // readWriterWrapper 包装 Reader 和 Writer

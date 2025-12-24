@@ -6,7 +6,6 @@ import (
 	"io"
 	"sync"
 	"tunnox-core/internal/core/dispose"
-	corelog "tunnox-core/internal/core/log"
 )
 
 // StreamManager 流管理器
@@ -47,19 +46,15 @@ func (m *StreamManager) CreateStream(id string, reader io.Reader, writer io.Writ
 	var stream PackageStreamer
 	if streamer, ok := reader.(PackageStreamer); ok {
 		stream = streamer
-		corelog.Infof("CreateStream: reader is already a PackageStreamer, using it directly, id=%s, type=%T", id, streamer)
 	} else if streamer, ok := writer.(PackageStreamer); ok {
 		stream = streamer
-		corelog.Infof("CreateStream: writer is already a PackageStreamer, using it directly, id=%s, type=%T", id, streamer)
 	} else {
 		// 创建新流
 		stream = m.factory.NewStreamProcessor(reader, writer)
-		corelog.Debugf("CreateStream: created new stream processor, id=%s", id)
 	}
 
 	m.streams[id] = stream
 
-	corelog.Debugf("Created stream: %s", id)
 	return stream, nil
 }
 
@@ -86,7 +81,6 @@ func (m *StreamManager) RemoveStream(id string) error {
 	stream.Close()
 	delete(m.streams, id)
 
-	corelog.Debugf("Removed stream: %s", id)
 	return nil
 }
 
@@ -114,9 +108,8 @@ func (m *StreamManager) CloseAllStreams() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for id, stream := range m.streams {
+	for _, stream := range m.streams {
 		stream.Close()
-		corelog.Debugf("Closed stream: %s", id)
 	}
 	m.streams = make(map[string]PackageStreamer)
 	return nil

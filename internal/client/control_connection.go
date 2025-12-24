@@ -8,7 +8,6 @@ import (
 	"time"
 	corelog "tunnox-core/internal/core/log"
 
-	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
 )
 
@@ -42,9 +41,8 @@ func (c *TunnoxClient) Connect() error {
 	}
 
 	var (
-		conn  net.Conn
-		err   error
-		token string // HTTP 长轮询使用的 token
+		conn net.Conn
+		err  error
 	)
 
 	// 为所有连接设置超时 context（20秒），并支持取消
@@ -84,20 +82,6 @@ func (c *TunnoxClient) Connect() error {
 			resultConn, resultErr = dialQUIC(connectCtx, c.config.Server.Address)
 		case "kcp":
 			resultConn, resultErr = dialKCP(connectCtx, c.config.Server.Address)
-		case "httppoll", "http-long-polling", "httplp":
-			// HTTP 长轮询使用 AuthToken 或 SecretKey
-			token = c.config.AuthToken
-			if token == "" && c.config.Anonymous {
-				token = c.config.SecretKey
-			}
-			// 首次握手时，对于匿名客户端，必须使用 clientID=0
-			// 对于已注册客户端，使用配置的 clientID
-			clientID := c.config.ClientID
-			if c.config.Anonymous {
-				// 匿名客户端首次握手，强制使用 0（不管配置文件中是否有保存的 ClientID）
-				clientID = 0
-			}
-			resultConn, resultErr = dialHTTPLongPolling(connectCtx, c.config.Server.Address, clientID, token, c.GetInstanceID(), "")
 		default:
 			resultErr = fmt.Errorf("unsupported server protocol: %s", protocol)
 		}
@@ -133,39 +117,8 @@ func (c *TunnoxClient) Connect() error {
 	c.mu.Lock()
 	c.controlConn = conn
 	// 2. 创建 Stream
-	// HTTP 长轮询协议直接使用 HTTPStreamProcessor，不需要通过 CreateStreamProcessor
-	if protocol == "httppoll" || protocol == "http-long-polling" || protocol == "httplp" {
-		// 对于 HTTP 长轮询，conn 是 HTTPLongPollingConn，需要转换为 HTTPStreamProcessor
-		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
-			// 创建 HTTPStreamProcessor
-			baseURL := httppollConn.baseURL
-			// 构建 push/poll URL（与 NewHTTPLongPollingConn 保持一致）
-			var pushURL, pollURL string
-			if strings.Contains(baseURL, "/_tunnox") {
-				pushURL = baseURL + "/push"
-				pollURL = baseURL + "/poll"
-			} else {
-				pushURL = baseURL + "/_tunnox/v1/push"
-				pollURL = baseURL + "/_tunnox/v1/poll"
-			}
-			c.controlStream = httppoll.NewStreamProcessor(c.Ctx(), baseURL, pushURL, pollURL, c.config.ClientID, token, c.GetInstanceID(), "")
-			// ✅ 重要：设置客户端生成的临时 ConnectionID（用于初始握手）
-			// 服务端会在握手响应中分配正式的 ConnectionID，然后会更新这个值
-			if httppollConn.connectionID != "" {
-				c.controlStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)
-				corelog.Infof("Client: set initial ConnectionID from HTTPLongPollingConn: %s", httppollConn.connectionID)
-			} else {
-				corelog.Warnf("Client: HTTPLongPollingConn has empty connectionID")
-			}
-		} else {
-			// 回退到默认方式
-			streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
-			c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
-		}
-	} else {
-		streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
-		c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
-	}
+	streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
+	c.controlStream = streamFactory.CreateStreamProcessor(conn, conn)
 	c.mu.Unlock()
 
 	// 记录连接信息用于调试

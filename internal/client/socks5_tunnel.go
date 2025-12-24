@@ -44,8 +44,6 @@ func (c *SOCKS5TunnelCreatorImpl) CreateSOCKS5Tunnel(
 	// 1. 生成隧道ID
 	tunnelID := c.idGenerator()
 
-	corelog.Infof("SOCKS5TunnelCreator: creating tunnel %s for mapping %s, target=%s:%d",
-		tunnelID, mappingID, targetHost, targetPort)
 
 	// 2. 建立到 Server 的隧道连接（包含 SOCKS5 动态目标地址）
 	serverConn, _, err := c.client.dialTunnelWithTarget(tunnelID, mappingID, secretKey, targetHost, targetPort)
@@ -53,7 +51,6 @@ func (c *SOCKS5TunnelCreatorImpl) CreateSOCKS5Tunnel(
 		return fmt.Errorf("failed to dial tunnel: %w", err)
 	}
 
-	corelog.Infof("SOCKS5TunnelCreator: tunnel %s established, starting forwarding", tunnelID)
 
 	// 3. 开始双向数据转发
 	go c.forwardData(tunnelID, userConn, serverConn)
@@ -69,27 +66,24 @@ func (c *SOCKS5TunnelCreatorImpl) forwardData(tunnelID string, userConn, serverC
 	// 用户 -> 服务器
 	go func() {
 		defer wg.Done()
-		n, err := io.Copy(serverConn, userConn)
+		_, err := io.Copy(serverConn, userConn)
 		if err != nil && err != io.EOF {
 			corelog.Debugf("SOCKS5Tunnel[%s]: user->server error: %v", tunnelID, err)
 		}
-		corelog.Debugf("SOCKS5Tunnel[%s]: user->server copied %d bytes", tunnelID, n)
 		serverConn.Close()
 	}()
 
 	// 服务器 -> 用户
 	go func() {
 		defer wg.Done()
-		n, err := io.Copy(userConn, serverConn)
+		_, err := io.Copy(userConn, serverConn)
 		if err != nil && err != io.EOF {
 			corelog.Debugf("SOCKS5Tunnel[%s]: server->user error: %v", tunnelID, err)
 		}
-		corelog.Debugf("SOCKS5Tunnel[%s]: server->user copied %d bytes", tunnelID, n)
 		userConn.Close()
 	}()
 
 	wg.Wait()
-	corelog.Infof("SOCKS5Tunnel[%s]: forwarding completed", tunnelID)
 }
 
 // SOCKS5TunnelRequest SOCKS5 隧道请求

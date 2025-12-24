@@ -11,7 +11,6 @@ import (
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/httpservice/modules/domainproxy"
-	"tunnox-core/internal/httpservice/modules/httppoll"
 	"tunnox-core/internal/httpservice/modules/management"
 	"tunnox-core/internal/httpservice/modules/websocket"
 	"tunnox-core/internal/protocol"
@@ -185,8 +184,9 @@ func (s *Server) setupProtocolAdapters() error {
 
 	for protocolName, config := range enabledProtocols {
 		// 跳过通过 HTTP 服务提供的协议（它们不需要独立的协议适配器）
+		// 或已废弃的协议
 		if protocolName == "websocket" || protocolName == "httppoll" {
-			corelog.Debugf("Skipping %s protocol adapter (provided by HTTP service)", protocolName)
+			corelog.Debugf("Skipping %s protocol adapter (provided by HTTP service or deprecated)", protocolName)
 			continue
 		}
 
@@ -224,10 +224,6 @@ func (s *Server) getEnabledProtocols() map[string]ProtocolConfig {
 // 创建统一 HTTP 服务
 func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService {
 	// 检查协议是否在 server.protocols 中启用
-	httpPollEnabled := false
-	if httpPollConfig, exists := s.config.Server.Protocols["httppoll"]; exists {
-		httpPollEnabled = httpPollConfig.Enabled
-	}
 	websocketEnabled := false
 	if wsConfig, exists := s.config.Server.Protocols["websocket"]; exists {
 		websocketEnabled = wsConfig.Enabled
@@ -258,12 +254,6 @@ func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService
 					AutoCapture: s.config.Management.PProf.AutoCapture,
 				},
 			},
-			HTTPPoll: httpservice.HTTPPollModuleConfig{
-				Enabled:        httpPollEnabled,
-				MaxRequestSize: 1048576, // 1MB
-				DefaultTimeout: 30,
-				MaxTimeout:     60,
-			},
 			WebSocket: httpservice.WebSocketModuleConfig{
 				Enabled: websocketEnabled,
 			},
@@ -293,17 +283,6 @@ func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService
 			wsModule.SetSession(s.session)
 		}
 		httpSvc.RegisterModule(wsModule)
-	}
-
-	// 创建并注册 HTTPPoll 模块（如果启用）
-	var httpPollModule *httppoll.HTTPPollModule
-	if httpPollEnabled {
-		httpPollConfig := &httpConfig.Modules.HTTPPoll
-		httpPollModule = httppoll.NewHTTPPollModule(ctx, httpPollConfig)
-		if s.session != nil {
-			httpPollModule.SetSession(s.session)
-		}
-		httpSvc.RegisterModule(httpPollModule)
 	}
 
 	// 创建并注册 Domain Proxy 模块

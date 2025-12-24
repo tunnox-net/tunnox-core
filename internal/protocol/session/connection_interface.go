@@ -20,11 +20,11 @@ type TunnelConnectionInterface interface {
 	GetClientID() int64      // 客户端ID（所有协议通用）
 	GetMappingID() string    // 映射ID（所有协议通用）
 	GetTunnelID() string     // 隧道ID（所有协议通用）
-	GetProtocol() string     // 协议类型（tcp/websocket/quic/httppoll）
+	GetProtocol() string     // 协议类型（tcp/websocket/quic）
 
 	// 流接口
 	GetStream() stream.PackageStreamer // 获取流（所有协议通用）
-	GetNetConn() net.Conn              // 获取底层连接（TCP/WebSocket/QUIC 返回 net.Conn，HTTP 长轮询返回 nil）
+	GetNetConn() net.Conn              // 获取底层连接（TCP/WebSocket/QUIC 返回 net.Conn）
 
 	// 连接状态管理（统一接口）
 	ConnectionState() ConnectionStateManager     // 获取连接状态管理器
@@ -152,6 +152,5 @@ type ConnectionReuseStrategy interface {
 }
 
 // 协议特定实现已移至独立文件：
-// - connection_managers.go: TCP 和 HTTP 长轮询的连接管理器实现
+// - connection_managers.go: TCP 的连接管理器实现
 // - tcp_connection.go: TCP 协议的隧道连接实现
-// - httppoll_connection.go: HTTP 长轮询协议的隧道连接实现

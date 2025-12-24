@@ -23,7 +23,6 @@ const (
 	PublicServiceTCP       = PublicServiceTCP2
 	PublicServiceWebSocket = PublicServiceWebSocket2
 	PublicServiceKCP       = "gw.tunnox.net:8000"
-	PublicServiceHTTPPoll  = "https://gw.tunnox.net/_tunnox"
 )
 
 // 自动连接配置
@@ -43,5 +42,4 @@ var DefaultProtocolPriority = []string{
 	"tcp",
 	"websocket",
 	"kcp",
-	"httppoll",
 }

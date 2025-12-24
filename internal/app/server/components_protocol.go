@@ -12,7 +12,6 @@ import (
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/httpservice/modules/domainproxy"
-	"tunnox-core/internal/httpservice/modules/httppoll"
 	"tunnox-core/internal/httpservice/modules/management"
 	"tunnox-core/internal/httpservice/modules/websocket"
 	"tunnox-core/internal/protocol"
@@ -238,10 +237,6 @@ func (c *HTTPServiceComponent) Initialize(ctx context.Context, deps *Dependencie
 	// HTTP 服务始终启用
 
 	// 检查协议是否在 server.protocols 中启用
-	httpPollEnabled := false
-	if httpPollConfig, exists := deps.Config.Server.Protocols["httppoll"]; exists {
-		httpPollEnabled = httpPollConfig.Enabled
-	}
 	websocketEnabled := false
 	if wsConfig, exists := deps.Config.Server.Protocols["websocket"]; exists {
 		websocketEnabled = wsConfig.Enabled
@@ -272,12 +267,6 @@ func (c *HTTPServiceComponent) Initialize(ctx context.Context, deps *Dependencie
 					AutoCapture: deps.Config.Management.PProf.AutoCapture,
 				},
 			},
-			HTTPPoll: httpservice.HTTPPollModuleConfig{
-				Enabled:        httpPollEnabled,
-				MaxRequestSize: 1048576, // 1MB
-				DefaultTimeout: 30,
-				MaxTimeout:     60,
-			},
 			WebSocket: httpservice.WebSocketModuleConfig{
 				Enabled: websocketEnabled,
 			},
@@ -307,16 +296,6 @@ func (c *HTTPServiceComponent) Initialize(ctx context.Context, deps *Dependencie
 			wsModule.SetSession(deps.SessionMgr)
 		}
 		httpSvc.RegisterModule(wsModule)
-	}
-
-	// 创建并注册 HTTPPoll 模块（如果启用）
-	if httpPollEnabled {
-		httpPollConfig := &httpConfig.Modules.HTTPPoll
-		httpPollModule := httppoll.NewHTTPPollModule(ctx, httpPollConfig)
-		if deps.SessionMgr != nil {
-			httpPollModule.SetSession(deps.SessionMgr)
-		}
-		httpSvc.RegisterModule(httpPollModule)
 	}
 
 	// 创建并注册 Domain Proxy 模块

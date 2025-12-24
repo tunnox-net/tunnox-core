@@ -29,23 +29,6 @@ func (s *DefaultCopyStrategy) Copy(connA, connB io.ReadWriteCloser, options *Bid
 	return BidirectionalCopy(connA, connB, options)
 }
 
-// HTTPPollCopyStrategy HTTP 长轮询拷贝策略
-// 针对 HTTP-poll 的特殊处理（如果需要）
-type HTTPPollCopyStrategy struct{}
-
-// NewHTTPPollCopyStrategy 创建 HTTP-poll 拷贝策略
-func NewHTTPPollCopyStrategy() CopyStrategy {
-	return &HTTPPollCopyStrategy{}
-}
-
-// Copy 执行 HTTP-poll 双向数据拷贝
-// 当前实现与默认策略相同，但保留扩展点
-func (s *HTTPPollCopyStrategy) Copy(connA, connB io.ReadWriteCloser, options *BidirectionalCopyOptions) *BidirectionalCopyResult {
-	// HTTP-poll 使用标准的 BidirectionalCopy
-	// 如果需要特殊处理（如缓冲、批处理等），可以在此实现
-	return BidirectionalCopy(connA, connB, options)
-}
-
 // CopyStrategyFactory 拷贝策略工厂
 type CopyStrategyFactory struct{}
 
@@ -55,12 +38,7 @@ func NewCopyStrategyFactory() *CopyStrategyFactory {
 }
 
 // CreateStrategy 根据协议创建对应的拷贝策略
-// protocol: 协议名称（如 "tcp", "httppoll", "websocket" 等）
+// protocol: 协议名称（如 "tcp", "websocket" 等）
 func (f *CopyStrategyFactory) CreateStrategy(protocol string) CopyStrategy {
-	switch protocol {
-	case "httppoll", "http-long-polling", "httplp":
-		return NewHTTPPollCopyStrategy()
-	default:
-		return NewDefaultCopyStrategy()
-	}
+	return NewDefaultCopyStrategy()
 }

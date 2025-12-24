@@ -49,6 +49,8 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 	switch protocol {
 	case "tcp":
 		go c.handleTCPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
+	case "udp":
+		go c.handleUDPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
 	case "socks5":
 		go c.handleSOCKS5TargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
 	default:
@@ -69,9 +71,6 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	}
 	defer targetConn.Close()
 
-	// 打印连接的实际地址
-	corelog.Infof("Client[TCP-target][%s]: connected to target, local=%s, remote=%s",
-		tunnelID, targetConn.LocalAddr().String(), targetConn.RemoteAddr().String())
 
 	// 2. 建立隧道连接
 	tunnelConn, tunnelStream, err := c.dialTunnel(tunnelID, mappingID, secretKey)
@@ -95,7 +94,6 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 			// tunnelConn 实现了 io.Reader（通过接口抽象）
 			if reader, ok := tunnelConn.(io.Reader); ok && reader != nil {
 				tunnelReader = reader
-				corelog.Infof("Client[TCP-target][%s]: using tunnelConn as Reader (via interface)", tunnelID)
 			} else {
 				corelog.Errorf("Client[TCP-target][%s]: tunnelConn does not implement io.Reader or reader is nil, GetReader() returned nil", tunnelID)
 				return
@@ -110,7 +108,6 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 			// tunnelConn 实现了 io.Writer（通过接口抽象）
 			if writer, ok := tunnelConn.(io.Writer); ok && writer != nil {
 				tunnelWriter = writer
-				corelog.Infof("Client[TCP-target][%s]: using tunnelConn as Writer (via interface)", tunnelID)
 			} else {
 				corelog.Errorf("Client[TCP-target][%s]: tunnelConn does not implement io.Writer or writer is nil, GetWriter() returned nil", tunnelID)
 				return
@@ -128,7 +125,6 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 		return
 	}
 	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
-		corelog.Debugf("Client[TCP-target][%s]: closing tunnel stream and connection", tunnelID)
 		tunnelStream.Close()
 		if tunnelConn != nil {
 			tunnelConn.Close()
@@ -149,4 +145,88 @@ func (c *TunnoxClient) handleSOCKS5TargetTunnel(tunnelID, mappingID, secretKey, 
 	transformConfig *transform.TransformConfig) {
 	corelog.Infof("Client: handling SOCKS5 target tunnel, tunnel_id=%s, target=%s:%d", tunnelID, targetHost, targetPort)
 	c.handleTCPTargetTunnel(tunnelID, mappingID, secretKey, targetHost, targetPort, transformConfig)
+}
+
+// handleUDPTargetTunnel 处理UDP目标端隧道
+func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int,
+	transformConfig *transform.TransformConfig) {
+	// 1. 连接到目标UDP服务
+	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
+	corelog.Infof("Client[UDP-target][%s]: connecting to target %s", tunnelID, targetAddr)
+
+	udpAddr, err := net.ResolveUDPAddr("udp", targetAddr)
+	if err != nil {
+		corelog.Errorf("Client: failed to resolve UDP address %s: %v", targetAddr, err)
+		return
+	}
+
+	targetConn, err := net.DialUDP("udp", nil, udpAddr)
+	if err != nil {
+		corelog.Errorf("Client: failed to connect to UDP target %s: %v", targetAddr, err)
+		return
+	}
+	defer targetConn.Close()
+
+	// 2. 建立隧道连接
+	tunnelConn, tunnelStream, err := c.dialTunnel(tunnelID, mappingID, secretKey)
+	if err != nil {
+		corelog.Errorf("Client: failed to dial tunnel: %v", err)
+		return
+	}
+	defer tunnelConn.Close()
+
+	corelog.Infof("Client: UDP tunnel %s established for target %s", tunnelID, targetAddr)
+
+	// 3. 获取 Reader/Writer
+	tunnelReader := tunnelStream.GetReader()
+	tunnelWriter := tunnelStream.GetWriter()
+
+	if tunnelReader == nil {
+		if tunnelConn != nil {
+			if reader, ok := tunnelConn.(io.Reader); ok && reader != nil {
+				tunnelReader = reader
+			} else {
+				corelog.Errorf("Client[UDP-target][%s]: tunnelConn does not implement io.Reader", tunnelID)
+				return
+			}
+		} else {
+			corelog.Errorf("Client[UDP-target][%s]: tunnelConn is nil and GetReader() returned nil", tunnelID)
+			return
+		}
+	}
+
+	if tunnelWriter == nil {
+		if tunnelConn != nil {
+			if writer, ok := tunnelConn.(io.Writer); ok && writer != nil {
+				tunnelWriter = writer
+			} else {
+				corelog.Errorf("Client[UDP-target][%s]: tunnelConn does not implement io.Writer", tunnelID)
+				return
+			}
+		} else {
+			corelog.Errorf("Client[UDP-target][%s]: tunnelConn is nil and GetWriter() returned nil", tunnelID)
+			return
+		}
+	}
+
+	// 4. 包装隧道连接
+	if tunnelReader == nil || tunnelWriter == nil {
+		corelog.Errorf("Client[UDP-target][%s]: tunnelReader or tunnelWriter is nil", tunnelID)
+		return
+	}
+
+	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
+		tunnelStream.Close()
+		if tunnelConn != nil {
+			tunnelConn.Close()
+		}
+		return nil
+	})
+
+	// 5. 双向转发（UDP需要特殊处理数据包边界）
+	transformer, _ := transform.NewTransformer(transformConfig)
+	utils.BidirectionalCopy(targetConn, tunnelRWC, &utils.BidirectionalCopyOptions{
+		Transformer: transformer,
+		LogPrefix:   fmt.Sprintf("Client[UDP-target][%s]", tunnelID),
+	})
 }

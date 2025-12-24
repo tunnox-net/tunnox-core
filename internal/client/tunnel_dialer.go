@@ -10,7 +10,6 @@ import (
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
-	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
 )
 
@@ -23,9 +22,8 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targetHost string, targetPort int) (net.Conn, stream.PackageStreamer, error) {
 	// 根据协议建立到服务器的连接
 	var (
-		conn  net.Conn
-		err   error
-		token string // HTTP 长轮询使用的 token
+		conn net.Conn
+		err  error
 	)
 
 	protocol := strings.ToLower(c.config.Server.Protocol)
@@ -42,17 +40,6 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 		conn, err = dialQUIC(c.Ctx(), c.config.Server.Address)
 	case "kcp":
 		conn, err = dialKCP(c.Ctx(), c.config.Server.Address)
-	case "httppoll", "http-long-polling", "httplp":
-		// HTTP 长轮询使用 AuthToken 或 SecretKey
-		token = c.config.AuthToken
-		if token == "" && c.config.Anonymous {
-			token = c.config.SecretKey
-		}
-		// 隧道连接需要传入 mappingID
-		corelog.Infof("Client: dialing HTTP long polling tunnel connection, mappingID=%s, clientID=%d", mappingID, c.config.ClientID)
-		conn, err = dialHTTPLongPolling(c.Ctx(), c.config.Server.Address, c.config.ClientID, token, c.GetInstanceID(), mappingID)
-		// 保存 token 供后续使用
-		_ = token
 	default:
 		return nil, nil, fmt.Errorf("unsupported server protocol: %s", protocol)
 	}
@@ -62,46 +49,14 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 	}
 
 	// 创建 StreamProcessor
-	// HTTP 长轮询协议直接使用 HTTPStreamProcessor，不需要通过 CreateStreamProcessor
-	var tunnelStream stream.PackageStreamer
-	if protocol == "httppoll" || protocol == "http-long-polling" || protocol == "httplp" {
-		// 对于 HTTP 长轮询，conn 是 HTTPLongPollingConn，需要转换为 HTTPStreamProcessor
-		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
-			// 创建 HTTPStreamProcessor
-			baseURL := httppollConn.baseURL
-			// 构建 push/poll URL（与 NewHTTPLongPollingConn 保持一致）
-			var pushURL, pollURL string
-			if strings.Contains(baseURL, "/_tunnox") {
-				pushURL = baseURL + "/push"
-				pollURL = baseURL + "/poll"
-			} else {
-				pushURL = baseURL + "/_tunnox/v1/push"
-				pollURL = baseURL + "/_tunnox/v1/poll"
-			}
-			tunnelStream = httppoll.NewStreamProcessor(c.Ctx(), baseURL, pushURL, pollURL, c.config.ClientID, token, c.GetInstanceID(), mappingID)
-			// 设置 ConnectionID（如果已从握手响应中获取）
-			if httppollConn.connectionID != "" {
-				tunnelStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)
-			}
-		} else {
-			// 回退到默认方式
-			streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
-			tunnelStream = streamFactory.CreateStreamProcessor(conn, conn)
-		}
-	} else {
-		streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
-		tunnelStream = streamFactory.CreateStreamProcessor(conn, conn)
-	}
+	streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
+	tunnelStream := streamFactory.CreateStreamProcessor(conn, conn)
 
-	// ✅ HTTP 长轮询连接已经通过 HTTP 请求认证，不需要再次握手
-	// 其他协议（TCP/UDP/WebSocket/QUIC）需要握手
-	if protocol != "httppoll" && protocol != "http-long-polling" && protocol != "httplp" {
-		// ✅ 新连接需要先进行握手认证（标识为隧道连接）
-		if err := c.sendHandshakeOnStream(tunnelStream, "tunnel"); err != nil {
-			tunnelStream.Close()
-			conn.Close()
-			return nil, nil, fmt.Errorf("tunnel connection handshake failed: %w", err)
-		}
+	// ✅ 新连接需要先进行握手认证（标识为隧道连接）
+	if err := c.sendHandshakeOnStream(tunnelStream, "tunnel"); err != nil {
+		tunnelStream.Close()
+		conn.Close()
+		return nil, nil, fmt.Errorf("tunnel connection handshake failed: %w", err)
 	}
 
 	// 发送 TunnelOpen（包含 SOCKS5 动态目标地址）
@@ -213,23 +168,6 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 		tunnelStream.Close()
 		conn.Close()
 		return nil, nil, fmt.Errorf("tunnel open failed: %s", ack.Error)
-	}
-
-	// ✅ 对于 HTTP 长轮询连接，切换到流模式（不再解析数据包格式，直接转发原始数据）
-	if protocol == "httppoll" || protocol == "http-long-polling" || protocol == "httplp" {
-		if httppollConn, ok := conn.(interface {
-			SetStreamMode(streamMode bool)
-		}); ok {
-			corelog.Infof("Client: switching HTTP long polling tunnel connection to stream mode, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
-			httppollConn.SetStreamMode(true)
-		}
-
-		// ✅ 启动数据 Poll 循环（隧道建立后才开始 Poll）
-		// 这样可以避免在服务端还没准备好时发送 Poll 请求
-		if sp, ok := tunnelStream.(*httppoll.StreamProcessor); ok {
-			corelog.Infof("Client: starting data poll loop after TunnelOpenAck, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
-			sp.StartDataPoll()
-		}
 	}
 
 	return conn, tunnelStream, nil

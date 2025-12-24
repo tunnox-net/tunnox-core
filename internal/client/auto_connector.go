@@ -6,15 +6,11 @@ import (
 	"net"
 	"os"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
 	"tunnox-core/internal/core/dispose"
-	httppoll "tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/stream"
-
-	"github.com/google/uuid"
 )
 
 // ServerEndpoint 服务器端点定义
@@ -33,7 +29,6 @@ var DefaultServerEndpoints = []ServerEndpoint{
 	{Protocol: "websocket", Address: PublicServiceWebSocket1}, // ws://tunnox.mydtc.net
 	{Protocol: "websocket", Address: PublicServiceWebSocket2}, // wss://ws.tunnox.net
 	{Protocol: "kcp", Address: PublicServiceKCP},
-	{Protocol: "httppoll", Address: PublicServiceHTTPPoll},
 }
 
 // ConnectionAttempt 连接尝试结果
@@ -106,7 +101,7 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 
 		// 显示当前轮次信息
 		if round == 0 {
-			fmt.Fprintf(os.Stderr, "   Trying protocols: quic, tcp, websocket, kcp, httppoll\n")
+			fmt.Fprintf(os.Stderr, "   Trying protocols: quic, tcp, websocket, kcp\n")
 		} else {
 			fmt.Fprintf(os.Stderr, "   Retrying (round %d/%d, timeout: %ds)...\n", round+1, len(roundTimeouts), int(timeout.Seconds()))
 		}
@@ -261,9 +256,6 @@ func (ac *AutoConnector) tryConnectWithStreamContext(connCtx, streamCtx context.
 		conn, err = dialQUIC(connCtx, endpoint.Address)
 	case "kcp":
 		conn, err = dialKCP(connCtx, endpoint.Address)
-	case "httppoll", "http-long-polling", "httplp":
-		tempInstanceID := uuid.New().String()
-		conn, err = dialHTTPLongPolling(connCtx, endpoint.Address, 0, "", tempInstanceID, "")
 	default:
 		attempt.Err = fmt.Errorf("unsupported protocol: %s", endpoint.Protocol)
 		return attempt
@@ -284,31 +276,8 @@ func (ac *AutoConnector) tryConnectWithStreamContext(connCtx, streamCtx context.
 	}
 
 	// 创建 Stream（使用streamCtx，不受连接超时影响）
-	var pkgStream stream.PackageStreamer
-	if endpoint.Protocol == "httppoll" || endpoint.Protocol == "http-long-polling" || endpoint.Protocol == "httplp" {
-		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
-			baseURL := httppollConn.baseURL
-			// 构建 push/poll URL（与 NewHTTPLongPollingConn 保持一致）
-			var pushURL, pollURL string
-			if strings.Contains(baseURL, "/_tunnox") {
-				pushURL = baseURL + "/push"
-				pollURL = baseURL + "/poll"
-			} else {
-				pushURL = baseURL + "/_tunnox/v1/push"
-				pollURL = baseURL + "/_tunnox/v1/poll"
-			}
-			pkgStream = httppoll.NewStreamProcessor(streamCtx, baseURL, pushURL, pollURL, 0, "", httppollConn.instanceID, "")
-			if httppollConn.connectionID != "" {
-				pkgStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)
-			}
-		} else {
-			streamFactory := stream.NewDefaultStreamFactory(streamCtx)
-			pkgStream = streamFactory.CreateStreamProcessor(conn, conn)
-		}
-	} else {
-		streamFactory := stream.NewDefaultStreamFactory(streamCtx)
-		pkgStream = streamFactory.CreateStreamProcessor(conn, conn)
-	}
+	streamFactory := stream.NewDefaultStreamFactory(streamCtx)
+	pkgStream := streamFactory.CreateStreamProcessor(conn, conn)
 
 	attempt.Conn = conn
 	attempt.Stream = pkgStream
@@ -347,9 +316,6 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 		conn, err = dialQUIC(ctx, endpoint.Address)
 	case "kcp":
 		conn, err = dialKCP(ctx, endpoint.Address)
-	case "httppoll", "http-long-polling", "httplp":
-		tempInstanceID := uuid.New().String()
-		conn, err = dialHTTPLongPolling(ctx, endpoint.Address, 0, "", tempInstanceID, "")
 	default:
 		attempt.Err = fmt.Errorf("unsupported protocol: %s", endpoint.Protocol)
 		return attempt
@@ -370,24 +336,8 @@ func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint
 	}
 
 	// 创建 Stream
-	var pkgStream stream.PackageStreamer
-	if endpoint.Protocol == "httppoll" || endpoint.Protocol == "http-long-polling" || endpoint.Protocol == "httplp" {
-		if httppollConn, ok := conn.(*HTTPLongPollingConn); ok {
-			baseURL := httppollConn.baseURL
-			pushURL := baseURL + "/_tunnox/v1/push"
-			pollURL := baseURL + "/_tunnox/v1/poll"
-			pkgStream = httppoll.NewStreamProcessor(ctx, baseURL, pushURL, pollURL, 0, "", httppollConn.instanceID, "")
-			if httppollConn.connectionID != "" {
-				pkgStream.(*httppoll.StreamProcessor).SetConnectionID(httppollConn.connectionID)
-			}
-		} else {
-			streamFactory := stream.NewDefaultStreamFactory(ctx)
-			pkgStream = streamFactory.CreateStreamProcessor(conn, conn)
-		}
-	} else {
-		streamFactory := stream.NewDefaultStreamFactory(ctx)
-		pkgStream = streamFactory.CreateStreamProcessor(conn, conn)
-	}
+	streamFactory := stream.NewDefaultStreamFactory(ctx)
+	pkgStream := streamFactory.CreateStreamProcessor(conn, conn)
 
 	attempt.Conn = conn
 	attempt.Stream = pkgStream

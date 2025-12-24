@@ -5,7 +5,7 @@ package metrics
 
 // ProtocolMetricsLabels 协议指标标签
 type ProtocolMetricsLabels struct {
-	Protocol string // 协议类型: tcp, websocket, quic, httppoll
+	Protocol string // 协议类型: tcp, websocket, quic
 	Type     string // 连接类型: control, data
 }
 

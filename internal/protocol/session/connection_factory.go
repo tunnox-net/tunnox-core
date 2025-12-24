@@ -19,38 +19,12 @@ func CreateTunnelConnection(
 	mappingID string,
 	tunnelID string,
 ) TunnelConnectionInterface {
-	// 从 stream 获取协议类型
-	protocol := extractProtocol(stream, netConn)
-
-	switch protocol {
-	case "httppoll", "http-long-polling", "httplp":
-		// HTTP 长轮询：使用 ConnectionID，没有 net.Conn
-		return NewHTTPPollTunnelConnection(connID, clientID, mappingID, tunnelID, stream)
-	default:
-		// TCP/WebSocket/QUIC：使用 net.Conn
-		return NewTCPTunnelConnection(connID, netConn, clientID, mappingID, tunnelID, stream)
-	}
+	// TCP/WebSocket/QUIC：使用 net.Conn
+	return NewTCPTunnelConnection(connID, netConn, clientID, mappingID, tunnelID, stream)
 }
 
-// extractProtocol 从 stream 或 net.Conn 提取协议类型
-func extractProtocol(stream stream.PackageStreamer, netConn net.Conn) string {
-	// 尝试从 stream 获取协议类型
-	if stream != nil {
-		reader := stream.GetReader()
-		if reader != nil {
-			// 尝试从 ServerHTTPLongPollingConn 获取
-			if httppollConn, ok := reader.(interface {
-				GetConnectionID() string
-				GetClientID() int64
-			}); ok {
-				// 检查是否有 ConnectionID（HTTP 长轮询特有）
-				if httppollConn.GetConnectionID() != "" {
-					return "httppoll"
-				}
-			}
-		}
-	}
-
+// extractProtocol 从 net.Conn 提取协议类型
+func extractProtocol(netConn net.Conn) string {
 	// 尝试从 net.Conn 获取协议类型
 	if netConn != nil {
 		addr := netConn.RemoteAddr()
@@ -65,8 +39,6 @@ func extractProtocol(stream stream.PackageStreamer, netConn net.Conn) string {
 				return "websocket"
 			case "quic":
 				return "quic"
-			case "httppoll":
-				return "httppoll"
 			}
 		}
 	}

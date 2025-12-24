@@ -21,7 +21,7 @@ import (
 func main() {
 	// 解析命令行参数
 	configFile := flag.String("config", "", "path to config file (optional)")
-	protocol := flag.String("p", "", "protocol: tcp/websocket/ws/kcp/quic/httppoll (overrides config)")
+	protocol := flag.String("p", "", "protocol: tcp/websocket/ws/kcp/quic (overrides config)")
 	serverAddr := flag.String("s", "", "server address (e.g., localhost:7001, overrides config)")
 	clientID := flag.Int64("id", 0, "client ID (overrides config)")
 	deviceID := flag.String("device", "", "device ID for anonymous mode (overrides config)")
@@ -323,7 +323,7 @@ func validateConfig(config *client.ClientConfig, setDefaults bool) error {
 		config.Server.Protocol = normalizeProtocol(config.Server.Protocol)
 
 		// 验证协议
-		validProtocols := []string{"tcp", "websocket", "kcp", "quic", "httppoll", "http-long-polling", "httplp"}
+		validProtocols := []string{"tcp", "websocket", "kcp", "quic"}
 		valid := false
 		for _, p := range validProtocols {
 			if config.Server.Protocol == p {
@@ -332,7 +332,7 @@ func validateConfig(config *client.ClientConfig, setDefaults bool) error {
 			}
 		}
 		if !valid {
-			return fmt.Errorf("invalid protocol: %s (must be one of: tcp, websocket, udp, quic, httppoll)", config.Server.Protocol)
+			return fmt.Errorf("invalid protocol: %s (must be one of: tcp, websocket, kcp, quic)", config.Server.Protocol)
 		}
 	}
 	// 如果协议为空且地址也为空，说明是自动连接模式，协议会在自动连接时确定
@@ -371,7 +371,7 @@ USAGE:
 OPTIONS:
     Connection:
       -config <file>     Path to config file (optional)
-      -p <protocol>      Protocol: tcp/websocket/ws/kcp/quic/httppoll
+      -p <protocol>      Protocol: tcp/websocket/ws/kcp/quic
       -s <address>       Server address (e.g., localhost:7001)
       -id <client_id>    Client ID for authenticated mode
       -token <token>     Auth token for authenticated mode

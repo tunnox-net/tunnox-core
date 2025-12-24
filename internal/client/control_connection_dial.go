@@ -90,18 +90,6 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 		conn, err = dialQUIC(c.Ctx(), address)
 	case "kcp":
 		conn, err = dialKCP(c.Ctx(), address)
-	case "httppoll", "http-long-polling", "httplp":
-		// HTTP 长轮询使用 AuthToken 或 SecretKey
-		token := c.config.AuthToken
-		if token == "" && c.config.Anonymous {
-			token = c.config.SecretKey
-		}
-		// 首次握手时，对于匿名客户端，必须使用 clientID=0
-		clientID := c.config.ClientID
-		if c.config.Anonymous {
-			clientID = 0
-		}
-		conn, err = dialHTTPLongPolling(c.Ctx(), address, clientID, token, c.GetInstanceID(), "")
 	default:
 		return fmt.Errorf("unsupported server protocol: %s", protocol)
 	}

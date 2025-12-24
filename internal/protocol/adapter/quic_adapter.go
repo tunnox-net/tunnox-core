@@ -191,8 +191,6 @@ func (a *QuicAdapter) acceptStream(conn *quic.Conn) {
 		return
 	}
 
-	corelog.Debugf("QUIC: stream accepted from %s", conn.RemoteAddr())
-
 	// Wrap stream as connection
 	streamConn := &QuicServerStreamConn{
 		stream:     stream,
@@ -204,7 +202,6 @@ func (a *QuicAdapter) acceptStream(conn *quic.Conn) {
 	// Send to accept channel
 	select {
 	case a.connChan <- streamConn:
-		corelog.Debugf("QUIC: stream queued for acceptance")
 	case <-a.Ctx().Done():
 		streamConn.Close()
 		return
@@ -313,8 +310,6 @@ func (c *QuicServerStreamConn) Close() error {
 
 		// Close stream
 		c.stream.Close()
-
-		corelog.Debugf("QUIC: server stream closed")
 	})
 	return err
 }

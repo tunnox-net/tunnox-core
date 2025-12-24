@@ -9,7 +9,6 @@ import (
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/protocol/httppoll"
 	"tunnox-core/internal/utils"
 )
 
@@ -116,16 +115,6 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	if req.EnableTrace {
 		corelog.Infof("[CMD_TRACE] [CLIENT] [SEND_COMPLETE] CommandID=%s, SendDuration=%v, Time=%s",
 			cmdPkt.CommandId, time.Since(cmdStartTime), time.Now().Format("15:04:05.000"))
-	}
-
-	// 优化：发送命令后立即触发 Poll 请求，以快速获取响应
-	if httppollStream, ok := controlStream.(*httppoll.StreamProcessor); ok {
-		triggerTime := time.Now()
-		pollRequestID := httppollStream.TriggerImmediatePoll()
-		if req.EnableTrace {
-			corelog.Infof("[CMD_TRACE] [CLIENT] [TRIGGER_POLL] CommandID=%s, PollRequestID=%s, Time=%s",
-				cmdPkt.CommandId, pollRequestID, triggerTime.Format("15:04:05.000"))
-		}
 	}
 
 	// 等待响应（支持context取消）
