@@ -41,6 +41,11 @@ func (c *CLI) cmdHelp(args []string) {
 	fmt.Println("    show-mapping <id>       Show mapping details")
 	fmt.Println("    delete-mapping <id>     Delete a mapping")
 	fmt.Println("")
+	fmt.Println("  HTTP Domain Mapping:")
+	fmt.Println("    register-domain, rd     Register a HTTP domain for local service")
+	fmt.Println("    list-domains, lsd       List registered HTTP domains")
+	fmt.Println("    delete-domain <id>      Delete a HTTP domain mapping")
+	fmt.Println("")
 	c.output.Info("Type 'help <command>' for detailed help on a specific command")
 	fmt.Println("")
 }
@@ -96,6 +101,38 @@ func (c *CLI) showCommandHelp(cmd string) {
 		c.output.Plain("  config reset <key>          Reset to default value")
 		c.output.Plain("  config save [path]          Save config to file")
 		c.output.Plain("  config reload [path]        Reload config from file")
+
+	case "register-domain", "regdom", "rd":
+		c.output.Plain("DESCRIPTION:")
+		c.output.Plain("  Register a HTTP domain mapping for your local service.")
+		c.output.Plain("  This allows you to expose a local HTTP/HTTPS service via a public domain.")
+		fmt.Println("")
+		c.output.Plain("USAGE:")
+		c.output.Plain("  register-domain")
+		fmt.Println("")
+		c.output.Plain("INTERACTIVE:")
+		c.output.Plain("  The command will prompt you for:")
+		c.output.Plain("  - Base domain (from available list)")
+		c.output.Plain("  - Subdomain (auto-generated or custom)")
+		c.output.Plain("  - Target URL (e.g., http://localhost:8080)")
+		c.output.Plain("  - Mapping TTL")
+
+	case "list-domains", "lsd":
+		c.output.Plain("DESCRIPTION:")
+		c.output.Plain("  Lists all registered HTTP domain mappings for this client.")
+		fmt.Println("")
+		c.output.Plain("USAGE:")
+		c.output.Plain("  list-domains")
+
+	case "delete-domain", "deldom":
+		c.output.Plain("DESCRIPTION:")
+		c.output.Plain("  Delete a HTTP domain mapping.")
+		fmt.Println("")
+		c.output.Plain("USAGE:")
+		c.output.Plain("  delete-domain <mapping-id>")
+		fmt.Println("")
+		c.output.Plain("ARGUMENTS:")
+		c.output.Plain("  <mapping-id>    The ID of the domain mapping to delete")
 
 	default:
 		c.output.Warning("No detailed help available for '%s'", cmd)

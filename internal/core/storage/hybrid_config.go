@@ -8,10 +8,13 @@ type DataCategory int
 const (
 	// DataCategoryRuntime 运行时数据（仅本地缓存）
 	DataCategoryRuntime DataCategory = iota
-	// DataCategoryPersistent 持久化数据（数据库+缓存）
+	// DataCategoryPersistent 持久化数据（数据库+本地缓存）
 	DataCategoryPersistent
-	// DataCategoryShared 共享数据（必须写入共享缓存，用于跨节点通信）
+	// DataCategoryShared 共享数据（仅共享缓存，用于纯运行时跨节点通信）
 	DataCategoryShared
+	// DataCategorySharedPersistent 共享且持久化数据（共享缓存+持久化存储）
+	// 热点缓存模式：读取时先查共享缓存，miss则查持久化存储并回填共享缓存
+	DataCategorySharedPersistent
 )
 
 // HybridConfig 混合存储配置
@@ -23,11 +26,19 @@ type HybridConfig struct {
 	// 这些数据不需要持久化，但需要在多节点间共享
 	SharedPrefixes []string
 
+	// 共享且持久化的数据前缀列表
+	// 这些数据既需要跨节点共享（写入 Redis），也需要持久化（写入数据库）
+	// 读取时采用热点缓存模式：共享缓存 -> 持久化存储 -> 回填共享缓存
+	SharedPersistentPrefixes []string
+
 	// 默认缓存 TTL
 	DefaultCacheTTL time.Duration
 
 	// 持久化数据的缓存 TTL
 	PersistentCacheTTL time.Duration
+
+	// 共享缓存的 TTL（用于热点缓存回填）
+	SharedCacheTTL time.Duration
 
 	// 是否启用持久化存储（false 则为纯内存模式）
 	EnablePersistent bool
@@ -45,15 +56,19 @@ func DefaultHybridConfig() *HybridConfig {
 			"tunnox:stats:persistent:", // 持久化统计数据
 		},
 		SharedPrefixes: []string{
-			"tunnox:conn_state:",      // 连接状态（跨节点查询）
-			"tunnox:client_conn:",     // 客户端连接索引（跨节点查询）
-			"tunnox:tunnel_waiting:",  // 隧道等待状态（跨节点路由）
-			"tunnox:client_mappings:", // 客户端映射索引（跨节点共享）
-			"tunnox:node:",            // 节点信息（地址、ID分配锁，跨节点共享）
+			"tunnox:conn_state:",     // 连接状态（跨节点查询，纯运行时）
+			"tunnox:client_conn:",    // 客户端连接索引（跨节点查询，纯运行时）
+			"tunnox:tunnel_waiting:", // 隧道等待状态（跨节点路由，纯运行时）
+			"tunnox:node:",           // 节点信息（地址、ID分配锁，跨节点共享）
+		},
+		SharedPersistentPrefixes: []string{
+			"tunnox:client_mappings:", // 客户端映射索引（跨节点共享 + 持久化）
+			"tunnox:user_mappings:",   // 用户映射索引（跨节点共享 + 持久化）
 		},
 		DefaultCacheTTL:    1 * time.Hour,
 		PersistentCacheTTL: 24 * time.Hour,
-		EnablePersistent:   false, // 默认纯内存模式
+		SharedCacheTTL:     1 * time.Hour, // 共享缓存热点 TTL
+		EnablePersistent:   false,         // 默认纯内存模式
 	}
 }
 

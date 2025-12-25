@@ -173,7 +173,10 @@ func (s *SessionManager) runCrossNodeDataForward(
 ) {
 	defer func() {
 		if crossConn != nil {
-			crossConn.Release()
+			// 重要：数据转发完成后，连接已经被使用（CloseWrite），
+			// 不能归还到连接池，必须直接关闭
+			crossConn.MarkBroken()
+			crossConn.Close()
 		}
 	}()
 

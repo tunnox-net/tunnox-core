@@ -248,6 +248,12 @@ func (c *CLI) executeCommand(commandLine string) {
 		c.cmdDeleteMapping(args)
 	case "config":
 		c.cmdConfig(args)
+	case "register-domain", "regdom", "rd":
+		c.cmdRegisterDomain(args)
+	case "list-domains", "lsd":
+		c.cmdListDomains(args)
+	case "delete-domain", "deldom":
+		c.cmdDeleteDomain(args)
 	default:
 		c.output.Error("Unknown command: %s", cmd)
 		c.output.Info("Type 'help' to see available commands")

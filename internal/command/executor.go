@@ -176,6 +176,17 @@ func (ce *CommandExecutor) executeWithMiddleware(ctx *types.CommandContext, hand
 
 // createCommandContext 创建命令上下文
 func (ce *CommandExecutor) createCommandContext(streamPacket *types.StreamPacket) *types.CommandContext {
+	// 尝试从 session 获取 ClientID
+	clientID := streamPacket.ClientID
+	if clientID == 0 && ce.session != nil {
+		// 尝试从 session 通过 ConnectionID 获取 ClientID
+		if clientIDGetter, ok := ce.session.(interface {
+			GetClientIDByConnectionID(connID string) int64
+		}); ok {
+			clientID = clientIDGetter.GetClientIDByConnectionID(streamPacket.ConnectionID)
+		}
+	}
+
 	return &types.CommandContext{
 		ConnectionID:    streamPacket.ConnectionID,
 		CommandType:     streamPacket.Packet.CommandPacket.CommandType,
@@ -187,6 +198,7 @@ func (ce *CommandExecutor) createCommandContext(streamPacket *types.StreamPacket
 		Context:         ce.Ctx(), // 使用 CommandExecutor 的 context，确保能接收退出信号
 		IsAuthenticated: false,
 		UserID:          "",
+		ClientID:        clientID,
 		StartTime:       time.Now(),
 		EndTime:         time.Time{},
 	}

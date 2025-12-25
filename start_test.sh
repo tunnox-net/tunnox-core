@@ -112,12 +112,11 @@ echo -e "${YELLOW}Step 6: Copying client to /Users/roger.tong/GolandProjects/tun
 cp bin/client /Users/roger.tong/GolandProjects/tunnox-core/client
 echo -e "${GREEN}✓ Client copied for targetclient${NC}"
 
-# 7. 启动 targetclient（启用调试 API）
-echo -e "${YELLOW}Step 7: Starting targetclient (with debug API)...${NC}"
+# 7. 启动 targetclient
+echo -e "${YELLOW}Step 7: Starting targetclient...${NC}"
 cd /Users/roger.tong/GolandProjects/tunnox-core
 # 使用配置的日志路径，不重定向（客户端会自己处理日志）
-# 启用调试 API，端口 18081
-./client -daemon -debug-api -debug-api-port 18081 < /dev/null > /dev/null 2>&1 &
+./client -daemon < /dev/null > /dev/null 2>&1 &
 TARGET_CLIENT_PID=$!
 sleep 3
 if ! ps -p $TARGET_CLIENT_PID > /dev/null 2>&1; then
@@ -126,7 +125,7 @@ if ! ps -p $TARGET_CLIENT_PID > /dev/null 2>&1; then
     tail -20 /tmp/tunnox-target-client.log 2>/dev/null || echo "No log"
     exit 1
 fi
-echo -e "${GREEN}✓ Target client started (PID: $TARGET_CLIENT_PID, Debug API: http://127.0.0.1:18081)${NC}"
+echo -e "${GREEN}✓ Target client started (PID: $TARGET_CLIENT_PID)${NC}"
 
 # 8. Copy client 到 listenclient 目录
 echo -e "${YELLOW}Step 8: Copying client to /Users/roger.tong/GolandProjects/docs (listenclient)...${NC}"
@@ -159,8 +158,5 @@ echo -e "${GREEN}✓ Listen client started (PID: $LISTEN_CLIENT_PID)${NC}"
     echo "  Server: /Users/roger.tong/GolandProjects/tunnox-core/cmd/server/logs/server.log"
     echo "  Target Client: /tmp/tunnox-target-client.log"
     echo "  Listen Client: /tmp/tunnox-listen-client.log"
-    echo ""
-    echo "Debug API:"
-    echo "  Target Client: http://127.0.0.1:18081/api/v1/status"
     exit 0
 

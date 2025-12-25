@@ -73,5 +73,11 @@ func (s *Server) setupConnectionCodeCommands() error {
 		return fmt.Errorf("failed to register mapping command handlers: %w", err)
 	}
 
+	// 注册 HTTP 域名命令处理器
+	httpDomainHandlers := NewHTTPDomainCommandHandlers(s.session, []string{"tunnox.net", "tunnel.test.local"})
+	if err := httpDomainHandlers.RegisterHandlers(cmdRegistry); err != nil {
+		return fmt.Errorf("failed to register HTTP domain command handlers: %w", err)
+	}
+
 	return nil
 }

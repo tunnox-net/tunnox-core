@@ -24,6 +24,8 @@ type TunnelPoolConfig struct {
 	IdleTimeout time.Duration
 	// DialTimeout 建立隧道的超时时间
 	DialTimeout time.Duration
+	// HealthCheckOnGet 是否在获取连接时进行健康检查
+	HealthCheckOnGet bool
 	// Enabled 是否启用连接池
 	Enabled bool
 }
@@ -35,6 +37,7 @@ func DefaultTunnelPoolConfig() *TunnelPoolConfig {
 		MaxConnsPerMapping: 20,
 		IdleTimeout:        60 * time.Second,
 		DialTimeout:        30 * time.Second,
+		HealthCheckOnGet:   true, // 默认启用健康检查
 		Enabled:            false, // 默认禁用，因为隧道连接是有状态的，不能简单复用
 	}
 }
@@ -50,9 +53,10 @@ type TunnelPool struct {
 	poolsMu sync.RWMutex
 
 	// 统计信息
-	totalCreated  atomic.Int64
-	totalReused   atomic.Int64
-	totalReleased atomic.Int64
+	totalCreated   atomic.Int64
+	totalReused    atomic.Int64
+	totalReleased  atomic.Int64
+	totalDiscarded atomic.Int64 // 健康检查失败被丢弃的连接数
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -122,8 +126,8 @@ func (p *TunnelPool) Get(mappingID, secretKey string) (*PooledTunnelConn, error)
 
 	pool := p.getOrCreateMappingPool(mappingID, secretKey)
 
-	// 尝试从池中获取空闲连接
-	if conn := pool.getIdle(); conn != nil {
+	// 尝试从池中获取健康的空闲连接
+	if conn := p.getHealthyIdleConn(pool); conn != nil {
 		p.totalReused.Add(1)
 		corelog.Debugf("TunnelPool[%s]: reused idle connection, tunnelID=%s", mappingID, conn.tunnelID)
 		return conn, nil
@@ -134,7 +138,7 @@ func (p *TunnelPool) Get(mappingID, secretKey string) (*PooledTunnelConn, error)
 		// 等待空闲连接（带超时）
 		select {
 		case <-pool.idleCh:
-			if conn := pool.getIdle(); conn != nil {
+			if conn := p.getHealthyIdleConn(pool); conn != nil {
 				p.totalReused.Add(1)
 				return conn, nil
 			}
@@ -147,6 +151,32 @@ func (p *TunnelPool) Get(mappingID, secretKey string) (*PooledTunnelConn, error)
 
 	// 创建新连接
 	return p.createNewConn(mappingID, secretKey)
+}
+
+// getHealthyIdleConn 从池中获取健康的空闲连接
+// 会循环检查直到找到健康连接或池为空
+func (p *TunnelPool) getHealthyIdleConn(pool *MappingPool) *PooledTunnelConn {
+	for {
+		conn := pool.getIdle()
+		if conn == nil {
+			return nil
+		}
+
+		// 如果未启用健康检查，直接返回
+		if !p.config.HealthCheckOnGet {
+			return conn
+		}
+
+		// 健康检查
+		if p.isConnHealthy(conn) {
+			return conn
+		}
+
+		// 连接不健康，关闭并继续尝试下一个
+		corelog.Debugf("TunnelPool[%s]: discarding unhealthy connection, tunnelID=%s", conn.mappingID, conn.tunnelID)
+		p.totalDiscarded.Add(1)
+		p.closeConn(conn)
+	}
 }
 
 // GetInterface 获取一个隧道连接（接口方法）
@@ -213,8 +243,8 @@ func (p *TunnelPool) Shutdown() {
 	}
 	p.pools = make(map[string]*MappingPool)
 
-	corelog.Infof("TunnelPool: shutdown complete, created=%d, reused=%d, released=%d",
-		p.totalCreated.Load(), p.totalReused.Load(), p.totalReleased.Load())
+	corelog.Infof("TunnelPool: shutdown complete, created=%d, reused=%d, released=%d, discarded=%d",
+		p.totalCreated.Load(), p.totalReused.Load(), p.totalReleased.Load(), p.totalDiscarded.Load())
 }
 
 // Stats 返回统计信息
@@ -233,11 +263,12 @@ func (p *TunnelPool) Stats() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"enabled":       p.config.Enabled,
-		"totalCreated":  p.totalCreated.Load(),
-		"totalReused":   p.totalReused.Load(),
-		"totalReleased": p.totalReleased.Load(),
-		"pools":         poolStats,
+		"enabled":        p.config.Enabled,
+		"totalCreated":   p.totalCreated.Load(),
+		"totalReused":    p.totalReused.Load(),
+		"totalReleased":  p.totalReleased.Load(),
+		"totalDiscarded": p.totalDiscarded.Load(),
+		"pools":          poolStats,
 	}
 }
 
@@ -327,7 +358,7 @@ func (p *TunnelPool) closeConn(conn *PooledTunnelConn) {
 	corelog.Debugf("TunnelPool[%s]: closed connection, tunnelID=%s", conn.mappingID, conn.tunnelID)
 }
 
-// isConnValid 检查连接是否有效
+// isConnValid 检查连接是否有效（快速检查，用于归还时）
 func (p *TunnelPool) isConnValid(conn *PooledTunnelConn) bool {
 	if conn.conn == nil {
 		return false
@@ -338,10 +369,70 @@ func (p *TunnelPool) isConnValid(conn *PooledTunnelConn) bool {
 		return false
 	}
 
-	// 尝试读取检测连接状态（非阻塞）
-	// 注意：这里不做实际的健康检查，因为会影响性能
-	// 连接的有效性会在实际使用时发现
+	return true
+}
 
+// isConnHealthy 检查连接是否健康（用于取出时）
+// 通过设置短超时的读取操作来检测连接是否已断开
+func (p *TunnelPool) isConnHealthy(conn *PooledTunnelConn) bool {
+	if conn.conn == nil {
+		return false
+	}
+
+	// 1. 检查空闲时间
+	if time.Since(conn.lastUsedAt) > p.config.IdleTimeout {
+		corelog.Debugf("TunnelPool[%s]: connection idle timeout, tunnelID=%s, idleTime=%v",
+			conn.mappingID, conn.tunnelID, time.Since(conn.lastUsedAt))
+		return false
+	}
+
+	// 2. 检测底层连接是否仍然有效
+	// 使用非阻塞方式检测：设置极短的读取超时，尝试读取
+	// 如果连接已断开，会立即返回 EOF 或错误
+	// 如果连接正常但没有数据，会返回超时错误（这是正常的）
+	if tcpConn, ok := conn.conn.(*net.TCPConn); ok {
+		// 设置 1ms 读取超时
+		tcpConn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+		defer tcpConn.SetReadDeadline(time.Time{}) // 重置为无超时
+
+		buf := make([]byte, 1)
+		_, err := tcpConn.Read(buf)
+
+		if err != nil {
+			// 超时错误是正常的（没有数据可读，但连接有效）
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				return true
+			}
+			// 其他错误说明连接已断开
+			corelog.Debugf("TunnelPool[%s]: connection health check failed, tunnelID=%s, err=%v",
+				conn.mappingID, conn.tunnelID, err)
+			return false
+		}
+
+		// 如果读到了数据，说明有意外的数据到达，连接状态异常
+		corelog.Warnf("TunnelPool[%s]: unexpected data received during health check, tunnelID=%s",
+			conn.mappingID, conn.tunnelID)
+		return false
+	}
+
+	// 对于非 TCP 连接（如 QUIC wrapper），尝试通过 SyscallConn 检查
+	if syscallConn, ok := conn.conn.(interface {
+		SyscallConn() (interface{ Control(func(fd uintptr)) error }, error)
+	}); ok {
+		rawConn, err := syscallConn.SyscallConn()
+		if err == nil {
+			var connErr error
+			rawConn.Control(func(fd uintptr) {
+				// 这里可以使用 syscall 检查连接状态
+				// 但为了跨平台兼容性，我们只依赖上面的读取检查
+			})
+			if connErr != nil {
+				return false
+			}
+		}
+	}
+
+	// 默认认为有效（保守策略，实际使用时会发现问题）
 	return true
 }
 

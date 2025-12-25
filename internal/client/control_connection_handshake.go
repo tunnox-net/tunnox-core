@@ -20,21 +20,30 @@ func (c *TunnoxClient) sendHandshake() error {
 // saveAnonymousCredentials 保存匿名客户端凭据到配置文件
 // 注意：只保存 ClientID 和 SecretKey，不保存 Server.Address 和 Server.Protocol
 // 这些字段应该由配置文件或命令行参数指定，不应该被自动连接覆盖
-// 只有在命令行参数中指定了服务器地址或协议且连接成功时，才允许更新服务器配置
+// 只有在以下情况才允许更新服务器配置：
+// 1. 命令行参数中指定了服务器地址或协议
+// 2. 使用了自动连接检测（首次连接）
 func (c *TunnoxClient) saveAnonymousCredentials() error {
 	if !c.config.Anonymous || c.config.ClientID == 0 {
 		return nil // 非匿名客户端或无ClientID，无需保存
 	}
 
 	// 使用ConfigManager保存配置
-	// 只有在命令行参数中指定了服务器地址或协议时，才允许更新服务器配置
+	// 允许更新服务器配置的条件：
+	// - 命令行参数中指定了服务器地址或协议
+	// - 使用了自动连接检测（首次连接成功后应保存检测到的最佳协议）
 	configMgr := NewConfigManager()
-	allowUpdateServerConfig := c.serverAddressFromCLI || c.serverProtocolFromCLI
+	allowUpdateServerConfig := c.serverAddressFromCLI || c.serverProtocolFromCLI || c.usedAutoConnection
 	if err := configMgr.SaveConfigWithOptions(c.config, allowUpdateServerConfig); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	corelog.Infof("Client: anonymous credentials saved to config file")
+	if c.usedAutoConnection {
+		corelog.Infof("Client: anonymous credentials and auto-detected server config saved (protocol=%s, address=%s)",
+			c.config.Server.Protocol, c.config.Server.Address)
+	} else {
+		corelog.Infof("Client: anonymous credentials saved to config file")
+	}
 	return nil
 }
 

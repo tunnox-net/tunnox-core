@@ -20,10 +20,11 @@ func (c *TunnoxClient) connectWithAutoDetection() error {
 		return fmt.Errorf("auto connection failed: %w", err)
 	}
 
-	// 更新配置（仅更新内存中的配置，不保存到文件）
-	// 注意：自动连接检测到的地址和协议不应该保存到配置文件
+	// 更新配置（更新内存中的配置）
+	// 标记使用了自动连接，后续保存凭据时会同时保存服务器配置
 	c.config.Server.Protocol = attempt.Endpoint.Protocol
 	c.config.Server.Address = attempt.Endpoint.Address
+	c.usedAutoConnection = true // 标记使用了自动连接检测
 
 	corelog.Infof("Client: auto-detected server endpoint - %s://%s", attempt.Endpoint.Protocol, attempt.Endpoint.Address)
 

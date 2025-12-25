@@ -126,6 +126,14 @@ const (
 	HTTPProxyRequest  CommandType = 80 // HTTP 代理请求
 	HTTPProxyResponse CommandType = 81 // HTTP 代理响应
 
+	// HTTP 域名映射管理命令
+	HTTPDomainGetBaseDomains CommandType = 82 // 获取可用的基础域名列表
+	HTTPDomainCheckSubdomain CommandType = 83 // 检查子域名可用性
+	HTTPDomainGenSubdomain   CommandType = 84 // 生成随机子域名
+	HTTPDomainCreate         CommandType = 85 // 创建 HTTP 域名映射
+	HTTPDomainDelete         CommandType = 86 // 删除 HTTP 域名映射
+	HTTPDomainList           CommandType = 87 // 列出 HTTP 域名映射
+
 	// ==================== SOCKS5 代理类命令 (90-99) ====================
 	SOCKS5TunnelRequestCmd CommandType = 90 // SOCKS5 隧道请求（ClientA -> Server）
 )
@@ -319,4 +327,103 @@ type TunnelBufferedPacket struct {
 	SeqNum uint64 `json:"seq_num"`
 	Data   []byte `json:"data"`
 	SentAt int64  `json:"sent_at"` // Unix timestamp
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// HTTP 域名映射相关命令
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// HTTPDomainBaseDomainInfo 基础域名信息
+type HTTPDomainBaseDomainInfo struct {
+	Domain      string `json:"domain"`       // 基础域名，如 "tunnox.net"
+	Description string `json:"description"`  // 描述
+	IsDefault   bool   `json:"is_default"`   // 是否为默认域名
+}
+
+// HTTPDomainGetBaseDomainsRequest 获取可用基础域名请求
+type HTTPDomainGetBaseDomainsRequest struct{}
+
+// HTTPDomainGetBaseDomainsResponse 获取可用基础域名响应
+type HTTPDomainGetBaseDomainsResponse struct {
+	Success     bool                       `json:"success"`
+	BaseDomains []HTTPDomainBaseDomainInfo `json:"base_domains"`
+	Error       string                     `json:"error,omitempty"`
+}
+
+// HTTPDomainCheckSubdomainRequest 检查子域名可用性请求
+type HTTPDomainCheckSubdomainRequest struct {
+	Subdomain  string `json:"subdomain"`   // 子域名，如 "myapp"
+	BaseDomain string `json:"base_domain"` // 基础域名，如 "tunnox.net"
+}
+
+// HTTPDomainCheckSubdomainResponse 检查子域名可用性响应
+type HTTPDomainCheckSubdomainResponse struct {
+	Success    bool   `json:"success"`
+	Available  bool   `json:"available"`
+	FullDomain string `json:"full_domain"` // 完整域名，如 "myapp.tunnox.net"
+	Error      string `json:"error,omitempty"`
+}
+
+// HTTPDomainGenSubdomainRequest 生成随机子域名请求
+type HTTPDomainGenSubdomainRequest struct {
+	BaseDomain string `json:"base_domain"` // 基础域名
+}
+
+// HTTPDomainGenSubdomainResponse 生成随机子域名响应
+type HTTPDomainGenSubdomainResponse struct {
+	Success    bool   `json:"success"`
+	Subdomain  string `json:"subdomain"`   // 生成的子域名
+	FullDomain string `json:"full_domain"` // 完整域名
+	Error      string `json:"error,omitempty"`
+}
+
+// HTTPDomainCreateRequest 创建 HTTP 域名映射请求
+type HTTPDomainCreateRequest struct {
+	TargetURL   string `json:"target_url"`            // 目标 URL，如 "http://localhost:3000"
+	Subdomain   string `json:"subdomain"`             // 子域名
+	BaseDomain  string `json:"base_domain"`           // 基础域名
+	MappingTTL  int    `json:"mapping_ttl,omitempty"` // 映射有效期（秒），0表示使用默认值
+	Description string `json:"description,omitempty"` // 描述
+}
+
+// HTTPDomainCreateResponse 创建 HTTP 域名映射响应
+type HTTPDomainCreateResponse struct {
+	Success    bool   `json:"success"`
+	MappingID  string `json:"mapping_id"`
+	FullDomain string `json:"full_domain"` // 完整域名
+	TargetURL  string `json:"target_url"`
+	ExpiresAt  string `json:"expires_at,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+// HTTPDomainDeleteRequest 删除 HTTP 域名映射请求
+type HTTPDomainDeleteRequest struct {
+	MappingID string `json:"mapping_id"` // 映射ID
+}
+
+// HTTPDomainDeleteResponse 删除 HTTP 域名映射响应
+type HTTPDomainDeleteResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+}
+
+// HTTPDomainListRequest 列出 HTTP 域名映射请求
+type HTTPDomainListRequest struct{}
+
+// HTTPDomainMappingInfo HTTP 域名映射信息
+type HTTPDomainMappingInfo struct {
+	MappingID  string `json:"mapping_id"`
+	FullDomain string `json:"full_domain"` // 完整域名
+	TargetURL  string `json:"target_url"`
+	Status     string `json:"status"`
+	CreatedAt  string `json:"created_at"`
+	ExpiresAt  string `json:"expires_at,omitempty"`
+}
+
+// HTTPDomainListResponse 列出 HTTP 域名映射响应
+type HTTPDomainListResponse struct {
+	Success  bool                    `json:"success"`
+	Mappings []HTTPDomainMappingInfo `json:"mappings"`
+	Total    int                     `json:"total"`
+	Error    string                  `json:"error,omitempty"`
 }

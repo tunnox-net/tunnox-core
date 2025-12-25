@@ -120,6 +120,7 @@ type Session interface {
 // StreamPacket 包装结构，包含连接信息
 type StreamPacket struct {
 	ConnectionID string
+	ClientID     int64 // 发送方客户端ID（认证后可用）
 	Packet       *packet.TransferPacket
 	Timestamp    time.Time
 }
@@ -211,6 +212,7 @@ type CommandContext struct {
 	// 具体的类型化字段
 	IsAuthenticated bool      // 是否已认证
 	UserID          string    // 用户ID
+	ClientID        int64     // 客户端ID（认证后的客户端标识）
 	StartTime       time.Time // 开始时间
 	EndTime         time.Time // 结束时间
 }

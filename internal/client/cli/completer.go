@@ -74,6 +74,13 @@ func (c *CommandCompleter) BuildCompleter() *readline.PrefixCompleter {
 		),
 	)
 
+	// HTTP 域名命令
+	items = append(items,
+		readline.PcItem("register-domain"),
+		readline.PcItem("list-domains"),
+		readline.PcItem("delete-domain"),
+	)
+
 	return readline.NewPrefixCompleter(items...)
 }
 
@@ -105,5 +112,8 @@ func GetAllCommands() []string {
 		"show-mapping", "show",
 		"delete-mapping", "del", "rm",
 		"config",
+		"register-domain", "regdom", "rd",
+		"list-domains", "lsd",
+		"delete-domain", "deldom",
 	}
 }

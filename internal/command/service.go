@@ -208,6 +208,7 @@ func (cs *commandService) handleCommandEvent(event events.Event) error {
 		Context:         context.Background(),
 		IsAuthenticated: false,
 		UserID:          "",
+		ClientID:        cmdEvent.ClientID, // 从事件中获取客户端ID
 		StartTime:       time.Now(),
 		EndTime:         time.Time{},
 	}

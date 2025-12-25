@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"tunnox-core/internal/client"
-	clientapi "tunnox-core/internal/client/api"
 	"tunnox-core/internal/client/cli"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
@@ -30,8 +29,6 @@ func main() {
 	logFile := flag.String("log", "", "log file path (overrides config file)")
 	daemon := flag.Bool("daemon", false, "run in daemon mode (no interactive CLI)")
 	interactive := flag.Bool("interactive", true, "run in interactive mode with CLI (default)")
-	debugAPI := flag.Bool("debug-api", false, "enable debug API server (for testing)")
-	debugAPIPort := flag.Int("debug-api-port", 18081, "debug API server port (default: 18081)")
 	help := flag.Bool("h", false, "show help")
 
 	flag.Parse()
@@ -116,17 +113,6 @@ func main() {
 	serverAddressFromCLI := *serverAddr != ""
 	serverProtocolFromCLI := *protocol != ""
 	tunnoxClient := client.NewClientWithCLIFlags(ctx, config, serverAddressFromCLI, serverProtocolFromCLI)
-
-	// 启动调试 API 服务器（如果启用）
-	if *debugAPI {
-		debugAPIServer := clientapi.NewDebugAPIServer(tunnoxClient, *debugAPIPort)
-		if err := debugAPIServer.Start(); err != nil {
-			corelog.Errorf("Failed to start debug API server: %v", err)
-		} else {
-			corelog.Infof("Debug API server started on http://127.0.0.1:%d", *debugAPIPort)
-		}
-		defer debugAPIServer.Stop()
-	}
 
 	// 根据运行模式决定连接策略
 	if runInteractive {
@@ -382,8 +368,6 @@ OPTIONS:
     Mode:
       -interactive       Run in interactive mode with CLI (default)
       -daemon            Run in daemon mode (no CLI, for background service)
-      -debug-api         Enable debug API server (for testing)
-      -debug-api-port    Debug API server port (default: 18081)
 
     Help:
       -h                 Show this help

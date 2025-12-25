@@ -26,6 +26,9 @@ type TunnoxClient struct {
 	serverAddressFromCLI  bool
 	serverProtocolFromCLI bool
 
+	// 标记是否使用了自动连接检测（首次连接成功后应保存服务器配置）
+	usedAutoConnection bool
+
 	// 客户端实例标识（进程级别的唯一标识）
 	instanceID string
 

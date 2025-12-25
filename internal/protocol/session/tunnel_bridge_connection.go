@@ -153,7 +153,9 @@ func (b *TunnelBridge) GetCrossNodeConnection() *CrossNodeConn {
 	return b.crossNodeConn
 }
 
-// ReleaseCrossNodeConnection 释放跨节点连接（归还到池）
+// ReleaseCrossNodeConnection 释放跨节点连接
+// 注意：跨节点连接用于数据转发后已经被 CloseWrite()，
+// 不能归还到连接池，必须直接关闭
 func (b *TunnelBridge) ReleaseCrossNodeConnection() {
 	b.crossNodeConnMu.Lock()
 	conn := b.crossNodeConn
@@ -161,6 +163,9 @@ func (b *TunnelBridge) ReleaseCrossNodeConnection() {
 	b.crossNodeConnMu.Unlock()
 
 	if conn != nil {
-		conn.Release()
+		// 数据转发完成后，连接已经被使用（CloseWrite），
+		// 不能归还到连接池，必须直接关闭
+		conn.MarkBroken()
+		conn.Close()
 	}
 }

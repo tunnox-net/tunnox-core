@@ -59,6 +59,7 @@ type CommandReceivedEvent struct {
 	SenderID     string             `json:"sender_id"`
 	ReceiverID   string             `json:"receiver_id"`
 	CommandBody  string             `json:"command_body"`
+	ClientID     int64              `json:"client_id"` // 发送命令的客户端ID
 }
 
 // NewCommandReceivedEvent 创建命令接收事件

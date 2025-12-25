@@ -424,6 +424,15 @@ func (s *SessionManager) getControlConnectionByConnID(connID string) *ControlCon
 	return s.controlConnMap[connID]
 }
 
+// GetClientIDByConnectionID 根据连接ID获取客户端ID（用于命令上下文填充）
+func (s *SessionManager) GetClientIDByConnectionID(connID string) int64 {
+	conn := s.getControlConnectionByConnID(connID)
+	if conn != nil {
+		return conn.ClientID
+	}
+	return 0
+}
+
 // ============================================================================
 // Tunnel Connection 管理
 // ============================================================================
