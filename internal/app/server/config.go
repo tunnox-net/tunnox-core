@@ -183,9 +183,6 @@ func ValidateConfig(config *Config) error {
 		"websocket": {
 			Enabled: true,
 		},
-		"httppoll": {
-			Enabled: true,
-		},
 	}
 
 	// 合并默认配置
@@ -288,9 +285,6 @@ func GetDefaultConfig() *Config {
 					Host:    "0.0.0.0",
 				},
 				"websocket": {
-					Enabled: true,
-				},
-				"httppoll": {
 					Enabled: true,
 				},
 			},
@@ -421,8 +415,6 @@ server:
       port: 8443
       host: "0.0.0.0"
     websocket:
-      enabled: true
-    httppoll:
       enabled: true
 
 # ============================================

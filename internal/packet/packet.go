@@ -335,9 +335,9 @@ type TunnelBufferedPacket struct {
 
 // HTTPDomainBaseDomainInfo 基础域名信息
 type HTTPDomainBaseDomainInfo struct {
-	Domain      string `json:"domain"`       // 基础域名，如 "tunnox.net"
-	Description string `json:"description"`  // 描述
-	IsDefault   bool   `json:"is_default"`   // 是否为默认域名
+	Domain      string `json:"domain"`      // 基础域名，如 "tunnox.net"
+	Description string `json:"description"` // 描述
+	IsDefault   bool   `json:"is_default"`  // 是否为默认域名
 }
 
 // HTTPDomainGetBaseDomainsRequest 获取可用基础域名请求

@@ -250,4 +250,3 @@ func (c *TunnoxClient) DeleteHTTPDomain(mappingID string) error {
 	corelog.Infof("Client.DeleteHTTPDomain: deleted mapping %s", mappingID)
 	return nil
 }
-

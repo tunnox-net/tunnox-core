@@ -41,7 +41,7 @@ func (m *StreamManager) CreateStream(id string, reader io.Reader, writer io.Writ
 		return nil, fmt.Errorf("stream with id %s already exists", id)
 	}
 
-	// 检查 reader 或 writer 是否已经是 PackageStreamer（如 HTTP Long Polling 的 ServerStreamProcessor）
+	// 检查 reader 或 writer 是否已经是 PackageStreamer（如 WebSocket 的 ServerStreamProcessor）
 	// 注意：需要递归检查，因为可能被包装在适配器中
 	var stream PackageStreamer
 	if streamer, ok := reader.(PackageStreamer); ok {

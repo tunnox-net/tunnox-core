@@ -41,7 +41,6 @@ go build -o bin/tunnox-client ./cmd/client
 - WebSocket: 8443
 - KCP: 8000 (基于 UDP)
 - QUIC: 443
-- HTTP Long Polling: 9000 (Management API)
 
 ### 步骤 3：启动目标端客户端
 
@@ -148,7 +147,7 @@ log:
 A: 不需要，Tunnox Core 默认使用内存存储，零依赖启动。
 
 **Q: 如何选择传输协议？**
-A: TCP 最稳定，推荐日常使用；KCP 低延迟，适合实时应用；QUIC 性能更好，适合移动网络；WebSocket 可穿透防火墙；HTTP Long Polling 适合严格防火墙环境。
+A: TCP 最稳定，推荐日常使用；KCP 低延迟，适合实时应用；QUIC 性能更好，适合移动网络；WebSocket 可穿透防火墙。
 
 **Q: 连接码有效期多久？**
 A: 默认 24 小时，使用后自动失效。

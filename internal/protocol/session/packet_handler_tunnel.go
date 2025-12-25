@@ -170,8 +170,7 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		conn := s.getConnectionByConnID(connPacket.ConnectionID)
 		if conn != nil && conn.Stream != nil {
 			// 尝试从 Stream 直接获取 clientID
-			// 1. 尝试从 ServerStreamProcessor 获取（直接实现）
-			// 2. 尝试从 httppollStreamAdapter 获取（包装了 ServerStreamProcessor）
+			// 从 ServerStreamProcessor 获取（直接实现）
 			var clientID int64
 			if streamWithClientID, ok := conn.Stream.(interface {
 				GetClientID() int64

@@ -104,11 +104,11 @@ type HTTPDomainMapping struct {
 
 // InMemoryDomainRegistry 内存中的域名注册表
 type InMemoryDomainRegistry struct {
-	mu           sync.RWMutex
-	mappings     map[string]*HTTPDomainMapping // mappingID -> mapping
-	domainIndex  map[string]string             // fullDomain -> mappingID
-	baseDomains  []string                      // 允许的基础域名
-	nextID       int64
+	mu          sync.RWMutex
+	mappings    map[string]*HTTPDomainMapping // mappingID -> mapping
+	domainIndex map[string]string             // fullDomain -> mappingID
+	baseDomains []string                      // 允许的基础域名
+	nextID      int64
 }
 
 // NewInMemoryDomainRegistry 创建内存域名注册表
@@ -273,4 +273,3 @@ func marshalResponse(resp interface{}) string {
 	data, _ := json.Marshal(resp)
 	return string(data)
 }
-

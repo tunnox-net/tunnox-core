@@ -285,4 +285,3 @@ func (r *TCPConnectionReuse) GetReuseCount(conn TunnelConnectionInterface) int {
 func (r *TCPConnectionReuse) GetMaxReuseCount() int {
 	return r.maxReuse
 }
-

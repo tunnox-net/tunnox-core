@@ -41,7 +41,6 @@ The server will start automatically, listening on:
 - WebSocket: 8443
 - KCP: 8000 (UDP-based)
 - QUIC: 443
-- HTTP Long Polling: 9000 (Management API)
 
 ### Step 3: Start Target Client
 
@@ -148,7 +147,7 @@ Start with config file:
 A: No, Tunnox Core uses memory storage by default, zero dependencies required.
 
 **Q: How to choose transport protocol?**
-A: TCP is most stable, recommended for daily use; KCP has low latency, suitable for real-time applications; QUIC has better performance, suitable for mobile networks; WebSocket can traverse firewalls; HTTP Long Polling is suitable for strict firewall environments.
+A: TCP is most stable, recommended for daily use; KCP has low latency, suitable for real-time applications; QUIC has better performance, suitable for mobile networks; WebSocket can traverse firewalls.
 
 **Q: How long is the connection code valid?**
 A: Default 24 hours, automatically expires after use.

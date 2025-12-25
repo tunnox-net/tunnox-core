@@ -277,8 +277,8 @@ func UDPBidirectionalCopy(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteClo
 		defer wg.Done()
 
 		// 🚀 优化1：使用缓冲区池复用内存
-		readBuf := make([]byte, 65536)      // UDP 读缓冲
-		writeBuf := make([]byte, 512*1024)  // 512KB 写缓冲（容纳更多包）
+		readBuf := make([]byte, 65536)     // UDP 读缓冲
+		writeBuf := make([]byte, 512*1024) // 512KB 写缓冲（容纳更多包）
 		writePos := 0
 
 		for {
@@ -342,7 +342,7 @@ func UDPBidirectionalCopy(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteClo
 		// 🚀 优化4：批量读取 + 智能解包
 		readBuf := make([]byte, 512*1024) // 512KB 大缓冲区
 		udpBuf := make([]byte, 65536)     // UDP 单包缓冲
-		buffered := 0                      // 缓冲区中的有效数据量
+		buffered := 0                     // 缓冲区中的有效数据量
 
 		for {
 			// 🚀 批量读取：尽可能多地读取数据

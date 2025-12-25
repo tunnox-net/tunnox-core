@@ -25,7 +25,7 @@ Tunnox Core is a NAT traversal tool developed in Go, providing secure and stable
 ### Key Features
 
 - **Zero Dependencies**: No database, Redis, or other external storage required, ready to use out of the box
-- **Multi-Protocol Transport**: TCP, WebSocket, KCP, QUIC, and HTTP Long Polling support
+- **Multi-Protocol Transport**: TCP, WebSocket, KCP, QUIC support
 - **End-to-End Encryption**: AES-256-GCM encryption for secure data transmission
 - **Data Compression**: Gzip compression to reduce bandwidth consumption
 - **Traffic Control**: Token bucket algorithm for precise bandwidth limiting
@@ -69,7 +69,6 @@ Tunnox supports five transport protocols, allowing flexible selection based on n
 | **WebSocket** | HTTP compatible, strong firewall traversal | Enterprise networks, CDN acceleration |
 | **KCP** | UDP-based, low latency, fast retransmission | Real-time applications, gaming, unstable networks |
 | **QUIC** | Multiplexing, built-in encryption, 0-RTT connection | Mobile networks, high-performance scenarios |
-| **HTTP Long Polling** | Pure HTTP, strongest traversal capability | Strict firewall environments, HTTP/HTTPS-only networks |
 
 ### Core Components
 
@@ -146,7 +145,6 @@ Default listening ports:
 - WebSocket: 8443
 - KCP: 8000 (UDP-based)
 - QUIC: 443
-- HTTP Long Polling: via Management API port (9000)
 
 Logs output to: `~/logs/server.log`
 
@@ -373,7 +371,7 @@ tunnox-core/
 ### Implemented Features
 
 **Transport Protocols** ✅
-- Complete implementation of TCP, WebSocket, KCP, QUIC, HTTP Long Polling
+- Complete implementation of TCP, WebSocket, KCP, QUIC
 - Protocol adapter framework and unified interface
 - Client multi-protocol auto-connection feature
 
@@ -387,7 +385,7 @@ tunnox-core/
 - TCP/HTTP/SOCKS5 mapping handlers
 - SOCKS5 proxy support (dynamic target addresses)
 - HTTP domain proxy support
-- Multi-protocol transport support (TCP/WebSocket/KCP/QUIC/HTTP Long Polling)
+- Multi-protocol transport support (TCP/WebSocket/KCP/QUIC)
 - Multi-protocol auto-connection (automatically selects best available protocol)
 - Auto-reconnect and keepalive
 - Interactive CLI interface
@@ -712,7 +710,7 @@ device_id: "my-device"
 
 server:
   address: "127.0.0.1:8000"
-  protocol: "tcp"  # tcp/websocket/kcp/quic/httppoll
+  protocol: "tcp"  # tcp/websocket/kcp/quic
 
 log:
   level: "info"
@@ -726,7 +724,7 @@ log:
 # Use command-line parameters, no config file needed
 ./bin/tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous -device my-device
 
-# Supported protocols: tcp, websocket, kcp, quic, httppoll
+# Supported protocols: tcp, websocket, kcp, quic
 ./bin/tunnox-client -s 127.0.0.1:8000 -p kcp -anonymous
 ```
 
@@ -935,7 +933,7 @@ A: Anonymous mode requires no registration, uses device ID to connect, suitable 
 
 **Q: Which protocols are supported?**
 
-A: TCP, WebSocket, KCP, QUIC, and HTTP Long Polling. TCP (stable), KCP (low latency), or QUIC (high performance) are recommended.
+A: TCP, WebSocket, KCP, QUIC. TCP (stable), KCP (low latency), or QUIC (high performance) are recommended.
 
 **Q: How to choose transport protocol?**
 
@@ -944,7 +942,6 @@ A:
 - **WebSocket**: Can traverse HTTP proxies and firewalls, suitable for enterprise networks
 - **KCP**: UDP-based, low latency, fast retransmission, suitable for real-time applications and gaming
 - **QUIC**: Multiplexing, 0-RTT connection, suitable for mobile and high-performance scenarios
-- **HTTP Long Polling**: Pure HTTP, strongest traversal capability, suitable for strict firewall environments
 
 **Q: How is the performance?**
 

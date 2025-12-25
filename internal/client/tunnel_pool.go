@@ -37,7 +37,7 @@ func DefaultTunnelPoolConfig() *TunnelPoolConfig {
 		MaxConnsPerMapping: 20,
 		IdleTimeout:        60 * time.Second,
 		DialTimeout:        30 * time.Second,
-		HealthCheckOnGet:   true, // 默认启用健康检查
+		HealthCheckOnGet:   true,  // 默认启用健康检查
 		Enabled:            false, // 默认禁用，因为隧道连接是有状态的，不能简单复用
 	}
 }

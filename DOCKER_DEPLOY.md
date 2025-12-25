@@ -155,7 +155,7 @@ docker run -d \
 | 变量名 | 说明 | 默认值 | 必填 |
 |--------|------|--------|------|
 | `TUNNOX_SERVER` | 服务器地址 | `core:7000` | 否 |
-| `TUNNOX_PROTOCOL` | 传输协议 (tcp/websocket/kcp/quic/httppoll) | `tcp` | 否 |
+| `TUNNOX_PROTOCOL` | 传输协议 (tcp/websocket/kcp/quic) | `tcp` | 否 |
 
 ## Docker Compose 示例
 

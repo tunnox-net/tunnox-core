@@ -141,11 +141,6 @@ func displayManagementAPI(s *Server, reset func(...interface{}) string) {
 		fmt.Printf("    • %s %s\n", "WebSocket", bannerFaint("(ws://"+s.config.Management.Listen+"/_tunnox)"))
 	}
 
-	// 检查 HTTPPoll 是否启用
-	if httpPollConfig, exists := s.config.Server.Protocols["httppoll"]; exists && httpPollConfig.Enabled {
-		fmt.Printf("    • %s %s\n", "HTTP Long Poll", bannerFaint("(POST/GET /_tunnox/v1/push|poll)"))
-	}
-
 	if s.config.Management.PProf.Enabled {
 		fmt.Printf("    • %s %s\n", "PProf", bannerFaint("(/tunnox/v1/debug/pprof/)"))
 	}

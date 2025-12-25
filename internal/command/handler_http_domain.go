@@ -650,4 +650,3 @@ func init() {
 	// 初始化随机数种子
 	rand.Seed(time.Now().UnixNano())
 }
-

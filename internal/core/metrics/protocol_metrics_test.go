@@ -14,11 +14,11 @@ func TestProtocolMetricsLabels_ToMap(t *testing.T) {
 		{
 			name: "both protocol and type",
 			labels: &ProtocolMetricsLabels{
-				Protocol: "httppoll",
+				Protocol: "websocket",
 				Type:     "control",
 			},
 			expected: map[string]string{
-				"protocol": "httppoll",
+				"protocol": "websocket",
 				"type":     "control",
 			},
 		},
@@ -69,13 +69,13 @@ func TestProtocolMetrics(t *testing.T) {
 	SetGlobalMetrics(m)
 
 	t.Run("IncrementProtocolConnection", func(t *testing.T) {
-		err := IncrementProtocolConnection("httppoll", "control")
+		err := IncrementProtocolConnection("websocket", "control")
 		if err != nil {
 			t.Fatalf("IncrementProtocolConnection failed: %v", err)
 		}
 
 		value, err := m.GetCounter("protocol_connections", map[string]string{
-			"protocol": "httppoll",
+			"protocol": "websocket",
 			"type":     "control",
 		})
 		if err != nil {
@@ -128,13 +128,13 @@ func TestProtocolMetrics(t *testing.T) {
 	})
 
 	t.Run("IncrementProtocolError", func(t *testing.T) {
-		err := IncrementProtocolError("httppoll", "control", "timeout")
+		err := IncrementProtocolError("websocket", "control", "timeout")
 		if err != nil {
 			t.Fatalf("IncrementProtocolError failed: %v", err)
 		}
 
 		value, err := m.GetCounter("protocol_errors", map[string]string{
-			"protocol":   "httppoll",
+			"protocol":   "websocket",
 			"type":       "control",
 			"error_type": "timeout",
 		})
@@ -155,13 +155,13 @@ func TestProtocolMetrics(t *testing.T) {
 	})
 
 	t.Run("IncrementProtocolRetransmission", func(t *testing.T) {
-		err := IncrementProtocolRetransmission("httppoll", "data")
+		err := IncrementProtocolRetransmission("websocket", "data")
 		if err != nil {
 			t.Fatalf("IncrementProtocolRetransmission failed: %v", err)
 		}
 
 		value, err := m.GetCounter("protocol_retransmissions", map[string]string{
-			"protocol": "httppoll",
+			"protocol": "websocket",
 			"type":     "data",
 		})
 		if err != nil {
@@ -173,13 +173,13 @@ func TestProtocolMetrics(t *testing.T) {
 	})
 
 	t.Run("IncrementProtocolFragmentHit", func(t *testing.T) {
-		err := IncrementProtocolFragmentHit("httppoll")
+		err := IncrementProtocolFragmentHit("websocket")
 		if err != nil {
 			t.Fatalf("IncrementProtocolFragmentHit failed: %v", err)
 		}
 
 		value, err := m.GetCounter("protocol_fragment_hits", map[string]string{
-			"protocol": "httppoll",
+			"protocol": "websocket",
 		})
 		if err != nil {
 			t.Fatalf("GetCounter failed: %v", err)
@@ -190,13 +190,13 @@ func TestProtocolMetrics(t *testing.T) {
 	})
 
 	t.Run("IncrementProtocolFragmentMiss", func(t *testing.T) {
-		err := IncrementProtocolFragmentMiss("httppoll")
+		err := IncrementProtocolFragmentMiss("websocket")
 		if err != nil {
 			t.Fatalf("IncrementProtocolFragmentMiss failed: %v", err)
 		}
 
 		value, err := m.GetCounter("protocol_fragment_misses", map[string]string{
-			"protocol": "httppoll",
+			"protocol": "websocket",
 		})
 		if err != nil {
 			t.Fatalf("GetCounter failed: %v", err)
@@ -250,7 +250,7 @@ func TestProtocolMetrics_NilMetrics(t *testing.T) {
 		}
 		// 实际上，这些函数会调用 GetGlobalMetrics()，如果为 nil 会返回 nil error
 		// 所以这个测试主要是验证函数不会 panic
-		err := IncrementProtocolConnection("httppoll", "control")
+		err := IncrementProtocolConnection("websocket", "control")
 		// 如果 metrics 为 nil，函数应该返回 nil error（不报错）
 		if err != nil {
 			t.Errorf("IncrementProtocolConnection should not fail with nil metrics, got: %v", err)

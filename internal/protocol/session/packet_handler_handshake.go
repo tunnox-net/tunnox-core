@@ -230,7 +230,7 @@ func (s *SessionManager) sendHandshakeResponse(conn ControlConnectionInterface, 
 		return fmt.Errorf("stream is nil")
 	}
 
-	// 调试：检查是否是 httppollStreamAdapter，如果是，检查其内部的 ServerStreamProcessor
+	// 调试：检查 stream 类型
 	corelog.Infof("sendHandshakeResponse: stream type=%T, connID=%s", stream, conn.GetConnID())
 	type streamProcessorGetter interface {
 		GetStreamProcessor() interface {

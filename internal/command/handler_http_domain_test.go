@@ -397,4 +397,3 @@ func TestHTTPDomainCreateHandler_SubdomainNotAvailable(t *testing.T) {
 		t.Errorf("Expected non-empty error message")
 	}
 }
-

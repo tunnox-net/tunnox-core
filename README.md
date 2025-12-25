@@ -25,7 +25,7 @@ Tunnox Core 是一个基于 Go 开发的内网穿透工具，提供安全、稳�
 ### 核心特性
 
 - **零依赖启动**：无需数据库、Redis 等外部存储，开箱即用
-- **多协议传输**：支持 TCP、WebSocket、KCP、QUIC、HTTP Long Polling 五种传输协议
+- **多协议传输**：支持 TCP、WebSocket、KCP、QUIC 四种传输协议
 - **端到端加密**：AES-256-GCM 加密，保障数据传输安全
 - **数据压缩**：Gzip 压缩，降低带宽消耗
 - **流量控制**：令牌桶算法实现精确的带宽限制
@@ -69,7 +69,6 @@ Tunnox 支持五种传输协议，可根据网络环境灵活选择：
 | **WebSocket** | HTTP 兼容，防火墙穿透强 | 企业网络，CDN 加速 |
 | **KCP** | 基于 UDP，低延迟，快速重传 | 实时应用，游戏服务，不稳定网络 |
 | **QUIC** | 多路复用，内置加密，0-RTT 连接 | 移动网络，高性能场景 |
-| **HTTP Long Polling** | 纯 HTTP，最强穿透能力 | 严格防火墙环境，仅 HTTP/HTTPS 可用的网络 |
 
 ### 核心组件
 
@@ -146,7 +145,6 @@ go build -o bin/tunnox-client ./cmd/client
 - WebSocket: 8443
 - KCP: 8000 (基于 UDP)
 - QUIC: 443
-- HTTP Long Polling: 通过 Management API 端口 (9000)
 
 日志输出到：`~/logs/server.log`
 
@@ -253,7 +251,7 @@ device_id: "my-device"
 
 server:
   address: "127.0.0.1:8000"
-  protocol: "tcp"  # tcp/websocket/kcp/quic/httppoll
+  protocol: "tcp"  # tcp/websocket/kcp/quic
 
 log:
   level: "info"
@@ -267,7 +265,7 @@ log:
 # 使用命令行参数，无需配置文件
 ./bin/tunnox-client -s 127.0.0.1:8000 -p tcp -anonymous -device my-device
 
-# 支持的协议：tcp, websocket, kcp, quic, httppoll
+# 支持的协议：tcp, websocket, kcp, quic
 ./bin/tunnox-client -s 127.0.0.1:8000 -p kcp -anonymous
 ```
 
@@ -394,7 +392,7 @@ tunnox-core/
 ### 已实现功能
 
 **传输协议** ✅
-- TCP、WebSocket、KCP、QUIC、HTTP Long Polling 五种协议完整实现
+- TCP、WebSocket、KCP、QUIC 四种协议完整实现
 - 协议适配器框架和统一接口
 - 客户端多协议自动连接功能
 
@@ -408,7 +406,7 @@ tunnox-core/
 - TCP/HTTP/SOCKS5 映射处理器
 - SOCKS5 代理支持（动态目标地址）
 - HTTP 域名代理支持
-- 多协议传输支持（TCP/WebSocket/KCP/QUIC/HTTP Long Polling）
+- 多协议传输支持（TCP/WebSocket/KCP/QUIC）
 - 多协议自动连接（自动选择最佳可用协议）
 - 自动重连和心跳保活
 - 交互式 CLI 界面
@@ -978,7 +976,7 @@ A: 匿名模式无需注册，使用设备 ID 即可连接，适合快速测试�
 
 **Q: 支持哪些协议？**
 
-A: 支持 TCP、WebSocket、KCP、QUIC、HTTP Long Polling 五种传输协议。推荐使用 TCP（稳定）、KCP（低延迟）或 QUIC（高性能）。
+A: 支持 TCP、WebSocket、KCP、QUIC 四种传输协议。推荐使用 TCP（稳定）、KCP（低延迟）或 QUIC（高性能）。
 
 **Q: 如何选择传输协议？**
 
@@ -987,7 +985,6 @@ A:
 - **WebSocket**：可穿透 HTTP 代理和防火墙，适合企业网络
 - **KCP**：基于 UDP，低延迟，快速重传，适合实时应用和游戏
 - **QUIC**：多路复用，0-RTT 连接，适合移动网络和高性能场景
-- **HTTP Long Polling**：纯 HTTP，最强穿透能力，适合严格防火墙环境
 
 **Q: 性能如何？**
 

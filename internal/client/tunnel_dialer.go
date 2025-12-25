@@ -1,7 +1,6 @@
 package client
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -121,33 +120,6 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 			corelog.Infof("Client: received TunnelOpenAck, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
 			ackPkt = pkt
 			break
-		}
-
-		// 收到其他类型的包（可能是 MySQL 握手包等原始数据）
-		// 对于 HTTP 长轮询连接，这些数据应该被保留在 readBuffer 中，供流模式使用
-		// 但由于 ReadPacket 已经消耗了数据，我们需要将数据放回 readBuffer
-		if httppollConn, ok := conn.(interface {
-			Unread(data []byte)
-		}); ok {
-			// 尝试从 Payload 恢复数据（如果 Payload 存在）
-			if len(pkt.Payload) > 0 {
-				// 构造完整的数据包：包类型(1字节) + 包体大小(4字节) + 包体
-				restoreData := make([]byte, 1+4+len(pkt.Payload))
-				restoreData[0] = byte(pkt.PacketType)
-				binary.BigEndian.PutUint32(restoreData[1:5], uint32(len(pkt.Payload)))
-				copy(restoreData[5:], pkt.Payload)
-				corelog.Infof("Client: restoring %d bytes to readBuffer (packet type=%d, payload len=%d), tunnelID=%s, mappingID=%s",
-					len(restoreData), baseType, len(pkt.Payload), tunnelID, mappingID)
-				httppollConn.Unread(restoreData)
-			} else {
-				// 如果没有 Payload，至少恢复包类型和包体大小
-				restoreData := make([]byte, 5)
-				restoreData[0] = byte(pkt.PacketType)
-				binary.BigEndian.PutUint32(restoreData[1:5], 0)
-				corelog.Infof("Client: restoring packet header (5 bytes) to readBuffer, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
-				httppollConn.Unread(restoreData)
-			}
-			continue
 		}
 
 		// 收到其他类型的包，返回错误

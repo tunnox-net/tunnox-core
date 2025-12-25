@@ -44,13 +44,11 @@ func (c *SOCKS5TunnelCreatorImpl) CreateSOCKS5Tunnel(
 	// 1. 生成隧道ID
 	tunnelID := c.idGenerator()
 
-
 	// 2. 建立到 Server 的隧道连接（包含 SOCKS5 动态目标地址）
 	serverConn, _, err := c.client.dialTunnelWithTarget(tunnelID, mappingID, secretKey, targetHost, targetPort)
 	if err != nil {
 		return fmt.Errorf("failed to dial tunnel: %w", err)
 	}
-
 
 	// 3. 开始双向数据转发
 	go c.forwardData(tunnelID, userConn, serverConn)

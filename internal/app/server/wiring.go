@@ -184,9 +184,8 @@ func (s *Server) setupProtocolAdapters() error {
 
 	for protocolName, config := range enabledProtocols {
 		// 跳过通过 HTTP 服务提供的协议（它们不需要独立的协议适配器）
-		// 或已废弃的协议
-		if protocolName == "websocket" || protocolName == "httppoll" {
-			corelog.Debugf("Skipping %s protocol adapter (provided by HTTP service or deprecated)", protocolName)
+		if protocolName == "websocket" {
+			corelog.Debugf("Skipping %s protocol adapter (provided by HTTP service)", protocolName)
 			continue
 		}
 

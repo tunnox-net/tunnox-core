@@ -9,7 +9,7 @@ import (
 type CopyStrategy interface {
 	// Copy 执行双向数据拷贝
 	// connA: 本地连接（如 MySQL 客户端连接）
-	// connB: 隧道连接（如 HTTP-poll 连接）
+	// connB: 隧道连接（如 WebSocket 连接）
 	// options: 拷贝选项
 	// 返回拷贝结果
 	Copy(connA, connB io.ReadWriteCloser, options *BidirectionalCopyOptions) *BidirectionalCopyResult

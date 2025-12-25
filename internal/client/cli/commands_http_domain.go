@@ -380,4 +380,3 @@ func isValidSubdomain(s string) bool {
 
 	return true
 }
-

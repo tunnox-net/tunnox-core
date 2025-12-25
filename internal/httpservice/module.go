@@ -11,7 +11,7 @@ import (
 )
 
 // HTTPModule HTTP 服务模块接口
-// 所有 HTTP 子服务（Management API、HTTPPoll、Domain Proxy 等）都需要实现此接口
+// 所有 HTTP 子服务（Management API、WebSocket、Domain Proxy 等）都需要实现此接口
 type HTTPModule interface {
 	// Name 模块名称（用于日志和配置）
 	Name() string

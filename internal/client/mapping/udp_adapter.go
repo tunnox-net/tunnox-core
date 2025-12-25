@@ -36,8 +36,8 @@ type UDPVirtualConn struct {
 }
 
 const (
-	udpReadChanSize  = 4096  // 增加缓冲区以支持高性能场景
-	udpWriteChanSize = 4096  // 增加缓冲区以支持高性能场景
+	udpReadChanSize  = 4096 // 增加缓冲区以支持高性能场景
+	udpWriteChanSize = 4096 // 增加缓冲区以支持高性能场景
 	udpSessionTTL    = 60 * time.Second
 )
 
