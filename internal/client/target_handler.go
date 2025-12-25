@@ -326,9 +326,8 @@ func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	})
 
 	// 5. 双向转发（UDP需要特殊处理数据包边界）
-	transformer, _ := transform.NewTransformer(transformConfig)
-	utils.BidirectionalCopy(targetConn, tunnelRWC, &utils.BidirectionalCopyOptions{
-		Transformer: transformer,
-		LogPrefix:   fmt.Sprintf("Client[UDP-target][%s]", tunnelID),
+	// UDP使用包导向的拷贝函数，保持数据包边界
+	utils.UDPBidirectionalCopy(targetConn, tunnelRWC, &utils.BidirectionalCopyOptions{
+		LogPrefix: fmt.Sprintf("Client[UDP-target][%s]", tunnelID),
 	})
 }

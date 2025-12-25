@@ -29,6 +29,20 @@ func (s *DefaultCopyStrategy) Copy(connA, connB io.ReadWriteCloser, options *Bid
 	return BidirectionalCopy(connA, connB, options)
 }
 
+// UDPCopyStrategy UDP 拷贝策略（保持包边界）
+// 使用长度前缀协议来保持 UDP 包边界
+type UDPCopyStrategy struct{}
+
+// NewUDPCopyStrategy 创建 UDP 拷贝策略
+func NewUDPCopyStrategy() CopyStrategy {
+	return &UDPCopyStrategy{}
+}
+
+// Copy 执行 UDP 双向数据拷贝（保持包边界）
+func (s *UDPCopyStrategy) Copy(connA, connB io.ReadWriteCloser, options *BidirectionalCopyOptions) *BidirectionalCopyResult {
+	return UDPBidirectionalCopy(connA, connB, options)
+}
+
 // CopyStrategyFactory 拷贝策略工厂
 type CopyStrategyFactory struct{}
 
@@ -38,7 +52,10 @@ func NewCopyStrategyFactory() *CopyStrategyFactory {
 }
 
 // CreateStrategy 根据协议创建对应的拷贝策略
-// protocol: 协议名称（如 "tcp", "websocket" 等）
+// protocol: 协议名称（如 "tcp", "websocket", "udp" 等）
 func (f *CopyStrategyFactory) CreateStrategy(protocol string) CopyStrategy {
+	if protocol == "udp" {
+		return NewUDPCopyStrategy()
+	}
 	return NewDefaultCopyStrategy()
 }

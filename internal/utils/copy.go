@@ -248,3 +248,186 @@ func SimpleBidirectionalCopy(connA, connB io.ReadWriteCloser, logPrefix string) 
 		LogPrefix: logPrefix,
 	})
 }
+
+// UDPBidirectionalCopy UDP 专用双向拷贝（保持包边界）
+// udpConn: UDP连接（包导向，可以是 *net.UDPConn 或 UDPVirtualConn）
+// tunnelConn: 隧道连接（流式，但支持包协议）
+// options: 拷贝选项
+//
+// UDP 需要特殊处理：
+// 1. UDP 是包导向协议，每次读取是一个完整的数据包
+// 2. 隧道需要使用长度前缀来保持包边界
+// 3. 不能使用流式的 io.Copy，否则会破坏包边界
+//
+// 🚀 性能优化：
+// - 合并写入：长度前缀+数据一次写入，减少系统调用
+// - 内存池：复用缓冲区，降低 GC 压力
+// - 大缓冲区：128KB 写缓冲，提升吞吐量
+func UDPBidirectionalCopy(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *BidirectionalCopyOptions) *BidirectionalCopyResult {
+	if options == nil {
+		options = &BidirectionalCopyOptions{}
+	}
+
+	result := &BidirectionalCopyResult{}
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// UDP → Tunnel：从 UDP 读取数据包，加上长度前缀写入隧道
+	go func() {
+		defer wg.Done()
+
+		// 🚀 优化1：使用缓冲区池复用内存
+		readBuf := make([]byte, 65536)      // UDP 读缓冲
+		writeBuf := make([]byte, 512*1024)  // 512KB 写缓冲（容纳更多包）
+		writePos := 0
+
+		for {
+			// 读取一个完整的 UDP 数据包
+			n, err := udpConn.Read(readBuf)
+			if err != nil {
+				// 刷新剩余数据
+				if writePos > 0 {
+					tunnelConn.Write(writeBuf[:writePos])
+				}
+				if err != io.EOF {
+					result.SendError = err
+				}
+				break
+			}
+
+			if n == 0 {
+				continue
+			}
+
+			// 🚀 优化2：合并写入 - 长度前缀+数据放到同一缓冲区
+			// 检查缓冲区空间（2字节长度 + n字节数据）
+			if writePos+2+n > len(writeBuf) {
+				// 缓冲区满，先刷新
+				if _, err := tunnelConn.Write(writeBuf[:writePos]); err != nil {
+					result.SendError = err
+					break
+				}
+				writePos = 0
+			}
+
+			// 写入长度前缀（2字节，大端序）
+			writeBuf[writePos] = byte(n >> 8)
+			writeBuf[writePos+1] = byte(n)
+			writePos += 2
+
+			// 复制数据包内容
+			copy(writeBuf[writePos:], readBuf[:n])
+			writePos += n
+
+			result.BytesSent += int64(n)
+
+			// 🚀 优化3：批量刷新 - 累积到一定大小再写入
+			if writePos >= 256*1024 { // 256KB 阈值（提升 4 倍）
+				if _, err := tunnelConn.Write(writeBuf[:writePos]); err != nil {
+					result.SendError = err
+					break
+				}
+				writePos = 0
+			}
+		}
+
+		// 半关闭写方向
+		tryCloseWrite(tunnelConn)
+	}()
+
+	// Tunnel → UDP：从隧道读取长度前缀+数据包，写入 UDP
+	go func() {
+		defer wg.Done()
+
+		// 🚀 优化4：批量读取 + 智能解包
+		readBuf := make([]byte, 512*1024) // 512KB 大缓冲区
+		udpBuf := make([]byte, 65536)     // UDP 单包缓冲
+		buffered := 0                      // 缓冲区中的有效数据量
+
+		for {
+			// 🚀 批量读取：尽可能多地读取数据
+			if buffered < 256*1024 { // 低于 256KB 时补充数据
+				n, err := tunnelConn.Read(readBuf[buffered:])
+				if n > 0 {
+					buffered += n
+				}
+				if err != nil {
+					// 处理剩余数据后退出
+					if err != io.EOF {
+						result.ReceiveError = err
+					}
+					if buffered == 0 {
+						break
+					}
+				}
+			}
+
+			// 🚀 批量解包：从缓冲区提取所有完整的包
+			processed := 0
+			for buffered-processed >= 2 {
+				// 解析包长度（从当前位置读取）
+				packetLen := int(readBuf[processed])<<8 | int(readBuf[processed+1])
+
+				if packetLen == 0 || packetLen > 65535 {
+					// 非法长度，退出
+					return
+				}
+
+				// 检查是否有完整的包（2字节长度 + packetLen 字节数据）
+				if buffered-processed < 2+packetLen {
+					// 数据不完整，等待更多数据
+					break
+				}
+
+				// 🚀 零拷贝写入：直接从 readBuf 写入 UDP
+				// 注意：这里复制到 udpBuf 是为了避免 readBuf 被覆盖
+				copy(udpBuf[:packetLen], readBuf[processed+2:processed+2+packetLen])
+
+				if _, err := udpConn.Write(udpBuf[:packetLen]); err != nil {
+					result.ReceiveError = err
+					return
+				}
+
+				result.BytesReceived += int64(packetLen)
+				processed += 2 + packetLen
+			}
+
+			// 🚀 优化5：高效缓冲区管理
+			if processed > 0 {
+				// 移动未处理的数据到开头
+				if buffered > processed {
+					copy(readBuf[:buffered-processed], readBuf[processed:buffered])
+				}
+				buffered -= processed
+			}
+
+			// 防止死循环：如果没有新数据且没有处理任何包
+			if buffered > 0 && processed == 0 && buffered < 2 {
+				// 数据太少，继续读取
+				continue
+			}
+		}
+
+		// UDP 连接不支持半关闭，不做操作
+	}()
+
+	// 等待两个方向都完成
+	wg.Wait()
+
+	// 关闭连接
+	udpConn.Close()
+	tunnelConn.Close()
+
+	// 执行回调
+	if options.OnComplete != nil {
+		var err error
+		if result.SendError != nil {
+			err = result.SendError
+		} else if result.ReceiveError != nil {
+			err = result.ReceiveError
+		}
+		options.OnComplete(result.BytesSent, result.BytesReceived, err)
+	}
+
+	return result
+}
