@@ -165,6 +165,8 @@ func (s *SessionManager) forwardToSourceNode(
 //
 // 关键点：必须使用 conn.Stream 的 GetReader()/GetWriter()，而不是原始 netConn
 // 因为 Target 客户端通过 tunnelStream 读写数据（带协议层），我们需要在同一层对接
+//
+// 🔧 修复：使用半关闭语义避免高并发时连接过早关闭
 func (s *SessionManager) runCrossNodeDataForward(
 	tunnelID string,
 	conn *types.Connection,
@@ -180,10 +182,22 @@ func (s *SessionManager) runCrossNodeDataForward(
 		}
 	}()
 
+	// 🔧 关键修复：确保数据转发完成后关闭本地连接
+	// 这样 Target 客户端的 BidirectionalCopy 才能正确收到 EOF 并结束
+	defer func() {
+		if netConn != nil {
+			netConn.Close()
+		}
+		if conn != nil && conn.Stream != nil {
+			conn.Stream.Close()
+		}
+	}()
+
 	// 获取本地连接
 	// 重要：优先使用 conn.Stream 的 GetReader()/GetWriter()
 	// 这样才能和 Target 客户端的 tunnelStream 正确对接
 	var localConn io.ReadWriter
+	var localNetConn net.Conn // 用于半关闭
 	if conn != nil && conn.Stream != nil {
 		reader := conn.Stream.GetReader()
 		writer := conn.Stream.GetWriter()
@@ -195,6 +209,7 @@ func (s *SessionManager) runCrossNodeDataForward(
 	// 如果 Stream 不可用，回退到 netConn（但这可能导致协议层不匹配）
 	if localConn == nil && netConn != nil {
 		localConn = netConn
+		localNetConn = netConn
 		corelog.Warnf("CrossNodeDataForward[%s]: falling back to netConn as localConn (may cause protocol mismatch)", tunnelID)
 	}
 
@@ -211,25 +226,39 @@ func (s *SessionManager) runCrossNodeDataForward(
 	}
 
 	// 双向数据转发
-	errChan := make(chan error, 2)
+	done := make(chan struct{}, 2)
 
 	// 本地 -> 跨节点
 	go func() {
-		_, err := io.Copy(tcpConn, localConn)
-		// 关闭写方向，通知对端 EOF
+		defer func() { done <- struct{}{} }()
+		n, err := io.Copy(tcpConn, localConn)
+		if err != nil && err != io.EOF {
+			corelog.Debugf("CrossNodeDataForward[%s]: local->crossNode error: %v", tunnelID, err)
+		}
+		corelog.Debugf("CrossNodeDataForward[%s]: local->crossNode finished, bytes=%d", tunnelID, n)
+		// 🔧 关键：使用半关闭通知对端 EOF
 		tcpConn.CloseWrite()
-		errChan <- err
 	}()
 
 	// 跨节点 -> 本地
 	go func() {
-		_, err := io.Copy(localConn, tcpConn)
-		errChan <- err
+		defer func() { done <- struct{}{} }()
+		n, err := io.Copy(localConn, tcpConn)
+		if err != nil && err != io.EOF {
+			corelog.Debugf("CrossNodeDataForward[%s]: crossNode->local error: %v", tunnelID, err)
+		}
+		corelog.Debugf("CrossNodeDataForward[%s]: crossNode->local finished, bytes=%d", tunnelID, n)
+		// 🔧 关键：对本地连接使用半关闭（如果支持）
+		if localNetConn != nil {
+			if tcpLocal, ok := localNetConn.(*net.TCPConn); ok {
+				tcpLocal.CloseWrite()
+			}
+		}
 	}()
 
 	// 等待两个方向都完成
-	<-errChan
-	<-errChan
+	<-done
+	<-done
 }
 
 // readWriterWrapper 包装 Reader 和 Writer

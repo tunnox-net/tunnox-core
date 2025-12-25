@@ -160,8 +160,17 @@ func (l *CrossNodeListener) handleTargetReady(ctx context.Context, conn *net.TCP
 }
 
 // runBridgeForward 运行 Bridge 数据转发
+// 🔧 修复：使用半关闭语义避免高并发时连接过早关闭
 func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBridge, crossConn *CrossNodeConn) {
 	defer bridge.ReleaseCrossNodeConnection()
+
+	// 🔧 关键修复：数据转发完成后关闭 Bridge，触发生命周期结束
+	// 这样 bridge.Start() 会从 <-b.Ctx().Done() 返回，runBridgeLifecycle 会从 map 中删除 bridge
+	// 防止高并发场景下 bridge 泄漏导致后续请求因 tunnelID 重复而失败
+	defer func() {
+		corelog.Infof("CrossNodeListener[%s]: closing bridge after data forward completion", tunnelID)
+		bridge.Close()
+	}()
 
 	// 获取源端数据转发器（支持所有协议）
 	sourceForwarder := bridge.getSourceForwarder()
@@ -170,6 +179,10 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 			tunnelID, bridge.sourceConn != nil, bridge.sourceStream != nil)
 		return
 	}
+
+	// 🔧 关键修复：确保数据转发完成后关闭源端连接
+	// 这样 Listen 端客户端的 BidirectionalCopy 才能正确收到 EOF 并结束
+	defer sourceForwarder.Close()
 
 	// 获取跨节点 TCP 连接
 	tcpConn := crossConn.GetTCPConn()
@@ -181,18 +194,17 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 	corelog.Infof("CrossNodeListener[%s]: starting data forward", tunnelID)
 
 	// 双向数据转发
-	done := make(chan struct{})
+	done := make(chan struct{}, 2)
 
 	// 源端 -> 跨节点
 	go func() {
 		defer func() { done <- struct{}{} }()
 		n, err := io.Copy(tcpConn, sourceForwarder)
 		if err != nil && err != io.EOF {
-			corelog.Errorf("CrossNodeListener[%s]: source->crossNode error: %v", tunnelID, err)
-		} else {
-			corelog.Infof("CrossNodeListener[%s]: source->crossNode finished, bytes=%d", tunnelID, n)
+			corelog.Debugf("CrossNodeListener[%s]: source->crossNode error: %v", tunnelID, err)
 		}
-		// 关闭写方向，通知对端 EOF
+		corelog.Infof("CrossNodeListener[%s]: source->crossNode finished, bytes=%d", tunnelID, n)
+		// 🔧 关键：使用半关闭通知对端 EOF
 		tcpConn.CloseWrite()
 	}()
 
@@ -201,9 +213,15 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 		defer func() { done <- struct{}{} }()
 		n, err := io.Copy(sourceForwarder, tcpConn)
 		if err != nil && err != io.EOF {
-			corelog.Errorf("CrossNodeListener[%s]: crossNode->source error: %v", tunnelID, err)
-		} else {
-			corelog.Infof("CrossNodeListener[%s]: crossNode->source finished, bytes=%d", tunnelID, n)
+			corelog.Debugf("CrossNodeListener[%s]: crossNode->source error: %v", tunnelID, err)
+		}
+		corelog.Infof("CrossNodeListener[%s]: crossNode->source finished, bytes=%d", tunnelID, n)
+		// 🔧 关键：对源端连接使用半关闭（如果支持）
+		// sourceForwarder 可能是 PackageStreamer 或 net.Conn
+		if closer, ok := sourceForwarder.(interface{ CloseWrite() error }); ok {
+			closer.CloseWrite()
+		} else if tcpSource, ok := sourceForwarder.(*net.TCPConn); ok {
+			tcpSource.CloseWrite()
 		}
 	}()
 

@@ -131,9 +131,20 @@ func (s *SessionManager) runBridgeLifecycle(tunnelID string, bridge *TunnelBridg
 		corelog.Errorf("Tunnel[%s]: bridge failed: %v", tunnelID, err)
 	}
 
+	// 清理 bridge
 	s.bridgeLock.Lock()
 	delete(s.tunnelBridges, tunnelID)
 	s.bridgeLock.Unlock()
+	corelog.Infof("Tunnel[%s]: bridge removed from map", tunnelID)
+
+	// 清理路由表
+	if s.tunnelRouting != nil {
+		if err := s.tunnelRouting.RemoveWaitingTunnel(s.Ctx(), tunnelID); err != nil {
+			corelog.Warnf("Tunnel[%s]: failed to remove routing state: %v", tunnelID, err)
+		} else {
+			corelog.Infof("Tunnel[%s]: routing state removed", tunnelID)
+		}
+	}
 }
 
 // GetTunnelBridgeByConnectionID 通过 ConnectionID 查找 tunnel bridge
