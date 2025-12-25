@@ -234,6 +234,10 @@ func (api *CloudControlAPI) GetPortMapping(mappingID string) (*models.PortMappin
 	return api.mappingService.GetPortMapping(mappingID)
 }
 
+func (api *CloudControlAPI) GetPortMappingByDomain(fullDomain string) (*models.PortMapping, error) {
+	return api.mappingService.GetPortMappingByDomain(fullDomain)
+}
+
 func (api *CloudControlAPI) UpdatePortMapping(mapping *models.PortMapping) error {
 	return api.mappingService.UpdatePortMapping(mapping)
 }

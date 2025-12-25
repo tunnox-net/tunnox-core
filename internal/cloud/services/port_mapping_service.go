@@ -135,6 +135,15 @@ func (s *portMappingService) GetPortMapping(mappingID string) (*models.PortMappi
 	return mapping, nil
 }
 
+// GetPortMappingByDomain 通过域名查找 HTTP 映射
+func (s *portMappingService) GetPortMappingByDomain(fullDomain string) (*models.PortMapping, error) {
+	mapping, err := s.mappingRepo.GetPortMappingByDomain(fullDomain)
+	if err != nil {
+		return nil, s.baseService.WrapError(err, "get port mapping by domain")
+	}
+	return mapping, nil
+}
+
 // UpdatePortMapping 更新端口映射
 func (s *portMappingService) UpdatePortMapping(mapping *models.PortMapping) error {
 	s.baseService.SetUpdatedTimestamp(&mapping.UpdatedAt)

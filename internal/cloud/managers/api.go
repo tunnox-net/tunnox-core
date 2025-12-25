@@ -45,6 +45,7 @@ type CloudControlAPI interface {
 	CreatePortMapping(mapping *models.PortMapping) (*models.PortMapping, error)
 	GetUserPortMappings(userID string) ([]*models.PortMapping, error)
 	GetPortMapping(mappingID string) (*models.PortMapping, error)
+	GetPortMappingByDomain(fullDomain string) (*models.PortMapping, error) // 通过域名查找 HTTP 映射
 	UpdatePortMapping(mapping *models.PortMapping) error
 	DeletePortMapping(mappingID string) error
 	UpdatePortMappingStatus(mappingID string, status models.MappingStatus) error

@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/stream"
 
 	"tunnox-core/internal/stream/transform"
 	"tunnox-core/internal/utils"
@@ -61,26 +62,78 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 // handleTCPTargetTunnel 处理TCP目标端隧道
 func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int,
 	transformConfig *transform.TransformConfig) {
-	// 1. 连接到目标服务
 	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
-	corelog.Infof("Client[TCP-target][%s]: connecting to target %s", tunnelID, targetAddr)
-	targetConn, err := net.DialTimeout("tcp", targetAddr, 30*time.Second)
-	if err != nil {
-		corelog.Errorf("Client: failed to connect to target %s: %v", targetAddr, err)
-		return
+	corelog.Infof("Client[TCP-target][%s]: connecting to target %s and dialing tunnel in parallel", tunnelID, targetAddr)
+
+	// 并行执行：连接目标服务 和 建立隧道连接
+	type targetResult struct {
+		conn net.Conn
+		err  error
 	}
+	type tunnelResult struct {
+		conn   net.Conn
+		stream stream.PackageStreamer
+		err    error
+	}
+
+	targetCh := make(chan targetResult, 1)
+	tunnelCh := make(chan tunnelResult, 1)
+
+	// 1. 并行连接目标服务
+	go func() {
+		conn, err := net.DialTimeout("tcp", targetAddr, 30*time.Second)
+		targetCh <- targetResult{conn: conn, err: err}
+	}()
+
+	// 2. 并行建立隧道连接
+	go func() {
+		conn, stream, err := c.dialTunnel(tunnelID, mappingID, secretKey)
+		tunnelCh <- tunnelResult{conn: conn, stream: stream, err: err}
+	}()
+
+	// 等待两个操作完成
+	var targetConn net.Conn
+	var tunnelConn net.Conn
+	var tunnelStream stream.PackageStreamer
+
+	for i := 0; i < 2; i++ {
+		select {
+		case tr := <-targetCh:
+			if tr.err != nil {
+				corelog.Errorf("Client[TCP-target][%s]: failed to connect to target %s: %v", tunnelID, targetAddr, tr.err)
+				// 等待隧道结果并关闭
+				select {
+				case tunRes := <-tunnelCh:
+					if tunRes.conn != nil {
+						tunRes.conn.Close()
+					}
+				case <-time.After(5 * time.Second):
+				}
+				return
+			}
+			targetConn = tr.conn
+		case tunRes := <-tunnelCh:
+			if tunRes.err != nil {
+				corelog.Errorf("Client[TCP-target][%s]: failed to dial tunnel: %v", tunnelID, tunRes.err)
+				// 等待目标连接结果并关闭
+				select {
+				case tgtRes := <-targetCh:
+					if tgtRes.conn != nil {
+						tgtRes.conn.Close()
+					}
+				case <-time.After(5 * time.Second):
+				}
+				return
+			}
+			tunnelConn = tunRes.conn
+			tunnelStream = tunRes.stream
+		}
+	}
+
 	defer targetConn.Close()
-
-
-	// 2. 建立隧道连接
-	tunnelConn, tunnelStream, err := c.dialTunnel(tunnelID, mappingID, secretKey)
-	if err != nil {
-		corelog.Errorf("Client: failed to dial tunnel: %v", err)
-		return
-	}
 	defer tunnelConn.Close()
 
-	corelog.Infof("Client: TCP tunnel %s established for target %s", tunnelID, targetAddr)
+	corelog.Infof("Client[TCP-target][%s]: tunnel established for target %s", tunnelID, targetAddr)
 
 	// 3. 通过接口抽象获取 Reader/Writer（不依赖具体协议）
 	// 优先使用 tunnelStream 的 Reader/Writer（支持压缩/加密）
@@ -150,32 +203,81 @@ func (c *TunnoxClient) handleSOCKS5TargetTunnel(tunnelID, mappingID, secretKey, 
 // handleUDPTargetTunnel 处理UDP目标端隧道
 func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int,
 	transformConfig *transform.TransformConfig) {
-	// 1. 连接到目标UDP服务
 	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
-	corelog.Infof("Client[UDP-target][%s]: connecting to target %s", tunnelID, targetAddr)
+	corelog.Infof("Client[UDP-target][%s]: connecting to target %s and dialing tunnel in parallel", tunnelID, targetAddr)
 
-	udpAddr, err := net.ResolveUDPAddr("udp", targetAddr)
-	if err != nil {
-		corelog.Errorf("Client: failed to resolve UDP address %s: %v", targetAddr, err)
-		return
+	// 并行执行：连接目标服务 和 建立隧道连接
+	type targetResult struct {
+		conn *net.UDPConn
+		err  error
+	}
+	type tunnelResult struct {
+		conn   net.Conn
+		stream stream.PackageStreamer
+		err    error
 	}
 
-	targetConn, err := net.DialUDP("udp", nil, udpAddr)
-	if err != nil {
-		corelog.Errorf("Client: failed to connect to UDP target %s: %v", targetAddr, err)
-		return
+	targetCh := make(chan targetResult, 1)
+	tunnelCh := make(chan tunnelResult, 1)
+
+	// 1. 并行连接目标服务
+	go func() {
+		udpAddr, err := net.ResolveUDPAddr("udp", targetAddr)
+		if err != nil {
+			targetCh <- targetResult{err: fmt.Errorf("failed to resolve UDP address: %w", err)}
+			return
+		}
+		conn, err := net.DialUDP("udp", nil, udpAddr)
+		targetCh <- targetResult{conn: conn, err: err}
+	}()
+
+	// 2. 并行建立隧道连接
+	go func() {
+		conn, stream, err := c.dialTunnel(tunnelID, mappingID, secretKey)
+		tunnelCh <- tunnelResult{conn: conn, stream: stream, err: err}
+	}()
+
+	// 等待两个操作完成
+	var targetConn *net.UDPConn
+	var tunnelConn net.Conn
+	var tunnelStream stream.PackageStreamer
+
+	for i := 0; i < 2; i++ {
+		select {
+		case tr := <-targetCh:
+			if tr.err != nil {
+				corelog.Errorf("Client[UDP-target][%s]: failed to connect to target %s: %v", tunnelID, targetAddr, tr.err)
+				select {
+				case tunRes := <-tunnelCh:
+					if tunRes.conn != nil {
+						tunRes.conn.Close()
+					}
+				case <-time.After(5 * time.Second):
+				}
+				return
+			}
+			targetConn = tr.conn
+		case tunRes := <-tunnelCh:
+			if tunRes.err != nil {
+				corelog.Errorf("Client[UDP-target][%s]: failed to dial tunnel: %v", tunnelID, tunRes.err)
+				select {
+				case tgtRes := <-targetCh:
+					if tgtRes.conn != nil {
+						tgtRes.conn.Close()
+					}
+				case <-time.After(5 * time.Second):
+				}
+				return
+			}
+			tunnelConn = tunRes.conn
+			tunnelStream = tunRes.stream
+		}
 	}
+
 	defer targetConn.Close()
-
-	// 2. 建立隧道连接
-	tunnelConn, tunnelStream, err := c.dialTunnel(tunnelID, mappingID, secretKey)
-	if err != nil {
-		corelog.Errorf("Client: failed to dial tunnel: %v", err)
-		return
-	}
 	defer tunnelConn.Close()
 
-	corelog.Infof("Client: UDP tunnel %s established for target %s", tunnelID, targetAddr)
+	corelog.Infof("Client[UDP-target][%s]: tunnel established for target %s", tunnelID, targetAddr)
 
 	// 3. 获取 Reader/Writer
 	tunnelReader := tunnelStream.GetReader()

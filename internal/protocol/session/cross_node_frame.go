@@ -12,10 +12,12 @@ import (
 
 // 帧类型常量
 const (
-	FrameTypeData        byte = 0x01 // 数据帧
-	FrameTypeTargetReady byte = 0x02 // Target 就绪通知
-	FrameTypeClose       byte = 0x03 // 关闭通知
-	FrameTypeAck         byte = 0x04 // 确认帧
+	FrameTypeData         byte = 0x01 // 数据帧
+	FrameTypeTargetReady  byte = 0x02 // Target 就绪通知
+	FrameTypeClose        byte = 0x03 // 关闭通知
+	FrameTypeAck          byte = 0x04 // 确认帧
+	FrameTypeHTTPProxy    byte = 0x05 // HTTP 代理请求
+	FrameTypeHTTPResponse byte = 0x06 // HTTP 代理响应
 )
 
 // 帧头大小常量
@@ -178,4 +180,18 @@ func DecodeTargetReadyMessage(data []byte) (tunnelID, targetNodeID string, err e
 	}
 	err = coreerrors.New(coreerrors.CodeInvalidPacket, "invalid target ready message format")
 	return
+}
+
+// HTTPProxyMessage 跨节点 HTTP 代理消息
+type HTTPProxyMessage struct {
+	RequestID string `json:"request_id"` // 请求ID
+	ClientID  int64  `json:"client_id"`  // 目标客户端ID
+	Request   []byte `json:"request"`    // 序列化的 HTTPProxyRequest
+}
+
+// HTTPProxyResponseMessage 跨节点 HTTP 代理响应消息
+type HTTPProxyResponseMessage struct {
+	RequestID string `json:"request_id"` // 请求ID
+	Response  []byte `json:"response"`   // 序列化的 HTTPProxyResponse
+	Error     string `json:"error"`      // 错误信息
 }

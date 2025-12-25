@@ -111,27 +111,52 @@ func getHTTPProxyManager() *HTTPProxyManager {
 }
 
 // SendHTTPProxyRequest 发送 HTTP 代理请求到 Client
+// 支持跨节点转发：如果客户端在其他节点，会自动转发请求
 func (s *SessionManager) SendHTTPProxyRequest(
 	clientID int64,
 	request *httpservice.HTTPProxyRequest,
 ) (*httpservice.HTTPProxyResponse, error) {
-	// 1. 获取控制连接
+	// 1. 先尝试在本地节点查找控制连接
 	conn := s.GetControlConnectionByClientID(clientID)
-	if conn == nil {
+	if conn != nil && conn.Stream != nil {
+		// 客户端在本地节点，直接发送
+		return s.sendHTTPProxyRequestLocal(conn, request)
+	}
+
+	// 2. 客户端不在本地，尝试跨节点转发
+	if s.connStateStore == nil || s.crossNodePool == nil {
 		return nil, coreerrors.Newf(coreerrors.CodeClientNotFound, "client %d not connected", clientID)
 	}
 
-	if conn.Stream == nil {
-		return nil, coreerrors.Newf(coreerrors.CodeConnectionError, "client %d stream is nil", clientID)
+	// 3. 查找客户端所在节点
+	targetNodeID, _, err := s.connStateStore.FindClientNode(s.Ctx(), clientID)
+	if err != nil {
+		return nil, coreerrors.Newf(coreerrors.CodeClientNotFound, "client %d not connected: %v", clientID, err)
 	}
 
-	// 2. 序列化请求
+	// 4. 如果在本地节点但连接不存在，说明连接状态不一致
+	if targetNodeID == s.nodeID {
+		return nil, coreerrors.Newf(coreerrors.CodeClientNotFound, "client %d not connected (state inconsistent)", clientID)
+	}
+
+	corelog.Infof("SessionManager: forwarding HTTP proxy request to node %s for client %d", targetNodeID, clientID)
+
+	// 5. 跨节点转发
+	return s.sendHTTPProxyRequestCrossNode(targetNodeID, clientID, request)
+}
+
+// sendHTTPProxyRequestLocal 在本地节点发送 HTTP 代理请求
+func (s *SessionManager) sendHTTPProxyRequestLocal(
+	conn *ControlConnection,
+	request *httpservice.HTTPProxyRequest,
+) (*httpservice.HTTPProxyResponse, error) {
+	// 1. 序列化请求
 	reqBody, err := json.Marshal(request)
 	if err != nil {
 		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidRequest, "failed to marshal request")
 	}
 
-	// 3. 构建命令包
+	// 2. 构建命令包
 	cmdPkt := &packet.TransferPacket{
 		PacketType: packet.JsonCommand,
 		CommandPacket: &packet.CommandPacket{
@@ -141,27 +166,112 @@ func (s *SessionManager) SendHTTPProxyRequest(
 		},
 	}
 
-	// 4. 计算超时
+	// 3. 计算超时
 	timeout := time.Duration(request.Timeout) * time.Second
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
 
-	// 5. 获取代理管理器并注册等待
+	// 4. 获取代理管理器并注册等待
 	proxyMgr := getHTTPProxyManager()
 
-	// 6. 发送命令
+	// 5. 发送命令
 	if _, err := conn.Stream.WritePacket(cmdPkt, true, 0); err != nil {
 		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send proxy request")
 	}
 
-	// 7. 等待响应
+	// 6. 等待响应
 	resp, err := proxyMgr.WaitForResponse(s.Ctx(), request.RequestID, timeout)
 	if err != nil {
 		return nil, err
 	}
 
 	return resp, nil
+}
+
+// sendHTTPProxyRequestCrossNode 跨节点发送 HTTP 代理请求
+func (s *SessionManager) sendHTTPProxyRequestCrossNode(
+	targetNodeID string,
+	clientID int64,
+	request *httpservice.HTTPProxyRequest,
+) (*httpservice.HTTPProxyResponse, error) {
+	// 1. 获取到目标节点的连接
+	crossConn, err := s.crossNodePool.Get(s.Ctx(), targetNodeID)
+	if err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to get cross-node connection")
+	}
+	defer s.crossNodePool.Put(crossConn)
+
+	// 2. 序列化请求
+	reqBody, err := json.Marshal(request)
+	if err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidRequest, "failed to marshal request")
+	}
+
+	// 3. 构建跨节点 HTTP 代理消息
+	proxyMsg := &HTTPProxyMessage{
+		RequestID: request.RequestID,
+		ClientID:  clientID,
+		Request:   reqBody,
+	}
+
+	msgBody, err := json.Marshal(proxyMsg)
+	if err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidRequest, "failed to marshal proxy message")
+	}
+
+	// 4. 发送 HTTP 代理请求帧
+	tcpConn := crossConn.GetTCPConn()
+	if tcpConn == nil {
+		crossConn.MarkBroken()
+		return nil, coreerrors.New(coreerrors.CodeNetworkError, "cross-node connection is nil")
+	}
+
+	// 使用空的 tunnelID（HTTP 代理不需要 tunnelID）
+	var emptyTunnelID [16]byte
+	if err := WriteFrame(tcpConn, emptyTunnelID, FrameTypeHTTPProxy, msgBody); err != nil {
+		crossConn.MarkBroken()
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send HTTP proxy request")
+	}
+
+	// 5. 等待响应
+	timeout := time.Duration(request.Timeout) * time.Second
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+
+	// 设置读取超时
+	tcpConn.SetReadDeadline(time.Now().Add(timeout))
+	defer tcpConn.SetReadDeadline(time.Time{})
+
+	// 6. 读取响应帧
+	_, frameType, respData, err := ReadFrame(tcpConn)
+	if err != nil {
+		crossConn.MarkBroken()
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to read HTTP proxy response")
+	}
+
+	if frameType != FrameTypeHTTPResponse {
+		crossConn.MarkBroken()
+		return nil, coreerrors.Newf(coreerrors.CodeInvalidPacket, "unexpected frame type: %d", frameType)
+	}
+
+	// 7. 解析响应
+	var respMsg HTTPProxyResponseMessage
+	if err := json.Unmarshal(respData, &respMsg); err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidPacket, "failed to unmarshal response message")
+	}
+
+	if respMsg.Error != "" {
+		return nil, coreerrors.New(coreerrors.CodeInternal, respMsg.Error)
+	}
+
+	var resp httpservice.HTTPProxyResponse
+	if err := json.Unmarshal(respMsg.Response, &resp); err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidPacket, "failed to unmarshal HTTP response")
+	}
+
+	return &resp, nil
 }
 
 // HandleHTTPProxyResponse 处理 HTTP 代理响应（由命令处理器调用）

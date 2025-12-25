@@ -54,6 +54,25 @@ func (r *PortMappingRepo) GetPortMapping(mappingID string) (*models.PortMapping,
 	return r.Get(mappingID, constants.KeyPrefixPortMapping)
 }
 
+// GetPortMappingByDomain 通过域名查找 HTTP 映射
+func (r *PortMappingRepo) GetPortMappingByDomain(fullDomain string) (*models.PortMapping, error) {
+	// 从全局映射列表中查找
+	allMappings, err := r.ListAllMappings()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list mappings: %w", err)
+	}
+
+	for _, mapping := range allMappings {
+		if mapping.Protocol == models.ProtocolHTTP {
+			if mapping.FullDomain() == fullDomain {
+				return mapping, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("mapping not found for domain: %s", fullDomain)
+}
+
 // DeletePortMapping 删除端口映射
 func (r *PortMappingRepo) DeletePortMapping(mappingID string) error {
 	return r.Delete(mappingID, constants.KeyPrefixPortMapping)

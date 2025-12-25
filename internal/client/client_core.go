@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"tunnox-core/internal/client/mapping"
 	corelog "tunnox-core/internal/core/log"
 
 	"net"
@@ -53,6 +54,9 @@ type TunnoxClient struct {
 
 	// 命令响应管理器（用于指令通道命令）
 	commandResponseManager *CommandResponseManager
+
+	// 隧道连接池（用于复用隧道连接，提高并发性能）
+	tunnelPool *TunnelPool
 
 	// 配置请求控制（防止重复请求）
 	configRequesting atomic.Bool
@@ -123,9 +127,17 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 	}
 	client.apiClient = NewManagementAPIClient(managementAPIAddr, config.ClientID, config.AuthToken)
 
+	// 初始化隧道连接池
+	client.tunnelPool = NewTunnelPool(client, DefaultTunnelPoolConfig())
+
 	// 添加清理处理器
 	client.AddCleanHandler(func() error {
 		corelog.Infof("Client: cleaning up client resources")
+
+		// 关闭隧道连接池
+		if client.tunnelPool != nil {
+			client.tunnelPool.Shutdown()
+		}
 
 		// 关闭 SOCKS5 管理器
 		if client.socks5Manager != nil {
@@ -272,5 +284,51 @@ func (c *TunnoxClient) GetStatus() *Status {
 		Protocol:     protocol,
 		Uptime:       time.Since(c.startTime),
 		MappingCount: statusInfo.ActiveMappings,
+	}
+}
+
+// GetTunnelPool 获取隧道连接池
+func (c *TunnoxClient) GetTunnelPool() *TunnelPool {
+	return c.tunnelPool
+}
+
+// GetTunnelPoolStats 获取连接池统计信息
+func (c *TunnoxClient) GetTunnelPoolStats() map[string]interface{} {
+	if c.tunnelPool == nil {
+		return nil
+	}
+	return c.tunnelPool.Stats()
+}
+
+// IsTunnelPoolEnabled 是否启用了连接池
+func (c *TunnoxClient) IsTunnelPoolEnabled() bool {
+	return c.tunnelPool != nil && c.tunnelPool.config.Enabled
+}
+
+// DialTunnelPooled 从连接池获取隧道连接
+func (c *TunnoxClient) DialTunnelPooled(mappingID, secretKey string) (mapping.PooledTunnelConnInterface, error) {
+	if c.tunnelPool == nil || !c.tunnelPool.config.Enabled {
+		return nil, nil
+	}
+	return c.tunnelPool.Get(mappingID, secretKey)
+}
+
+// ReturnTunnelToPool 归还连接到池中
+func (c *TunnoxClient) ReturnTunnelToPool(conn mapping.PooledTunnelConnInterface) {
+	if c.tunnelPool == nil {
+		return
+	}
+	if pooledConn, ok := conn.(*PooledTunnelConn); ok {
+		c.tunnelPool.Put(pooledConn)
+	}
+}
+
+// CloseTunnelFromPool 关闭连接（不归还到池）
+func (c *TunnoxClient) CloseTunnelFromPool(conn mapping.PooledTunnelConnInterface) {
+	if c.tunnelPool == nil {
+		return
+	}
+	if pooledConn, ok := conn.(*PooledTunnelConn); ok {
+		c.tunnelPool.Close(pooledConn)
 	}
 }

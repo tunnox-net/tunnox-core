@@ -136,6 +136,11 @@ func (c *CloudControl) GetPortMapping(mappingID string) (*models.PortMapping, er
 	return c.mappingRepo.GetPortMapping(mappingID)
 }
 
+// GetPortMappingByDomain 通过域名查找 HTTP 映射
+func (c *CloudControl) GetPortMappingByDomain(fullDomain string) (*models.PortMapping, error) {
+	return c.mappingRepo.GetPortMappingByDomain(fullDomain)
+}
+
 // UpdatePortMapping 更新端口映射
 func (c *CloudControl) UpdatePortMapping(mapping *models.PortMapping) error {
 	mapping.UpdatedAt = time.Now()

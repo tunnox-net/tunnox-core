@@ -193,30 +193,21 @@ func (c *NodeComponent) Initialize(ctx context.Context, deps *Dependencies) erro
 }
 
 func (c *NodeComponent) getNodeAddress(deps *Dependencies) string {
-	// 使用 Management API 的监听地址作为节点地址
-	nodeAddress := deps.Config.Management.Listen
-
-	// 尝试从 RemoteStorage 获取真实的外部地址
-	if deps.Storage != nil {
-		if hybrid, ok := deps.Storage.(*storage.HybridStorage); ok {
-			if remoteStorage := hybrid.GetRemoteStorage(); remoteStorage != nil {
-				corelog.Infof("RemoteStorage found, trying to get client address...")
-				if clientAddr, err := remoteStorage.GetClientAddress(); err == nil && clientAddr != "" {
-					// 提取端口号
-					_, port, _ := net.SplitHostPort(deps.Config.Management.Listen)
-					if port != "" {
-						nodeAddress = fmt.Sprintf("%s:%s", clientAddr, port)
-					} else {
-						nodeAddress = clientAddr
-					}
-					corelog.Infof("Node external address detected: %s", nodeAddress)
-				} else if err != nil {
-					corelog.Warnf("Failed to get client address from RemoteStorage: %v", err)
-				}
-			}
-		}
+	// 通过 UDP 探测获取本机出口 IP（与 SessionComponent 使用相同的方法）
+	localIP := getLocalOutboundIP()
+	if localIP == "" {
+		corelog.Warnf("Failed to detect local IP, using Management.Listen as fallback")
+		return deps.Config.Management.Listen
 	}
 
+	// 提取 Management API 的端口号
+	_, port, err := net.SplitHostPort(deps.Config.Management.Listen)
+	if err != nil || port == "" {
+		port = "9000" // 默认端口
+	}
+
+	nodeAddress := fmt.Sprintf("%s:%s", localIP, port)
+	corelog.Infof("Node address detected via UDP probe: %s", nodeAddress)
 	return nodeAddress
 }
 
