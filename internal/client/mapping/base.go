@@ -259,7 +259,8 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 
 	// 6. 双向转发（Transformer只处理限速，压缩/加密已在StreamProcessor中）
 	strategyFactory := utils.NewCopyStrategyFactory()
-	protocol := h.client.GetServerProtocol()
+	// 使用映射的协议类型（tcp/udp/socks5），而不是服务端连接协议
+	protocol := h.config.Protocol
 	copyStrategy := strategyFactory.CreateStrategy(protocol)
 
 	corelog.Infof("BaseMappingHandler[%s]: starting bidirectional copy for tunnel %s", h.config.MappingID, tunnelID)
