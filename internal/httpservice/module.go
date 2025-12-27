@@ -6,6 +6,7 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/health"
+	"tunnox-core/internal/protocol/httptypes"
 
 	"github.com/gorilla/mux"
 )
@@ -62,7 +63,7 @@ type SessionManagerInterface interface {
 	GetNodeID() string
 
 	// SendHTTPProxyRequest 发送 HTTP 代理请求（命令模式）
-	SendHTTPProxyRequest(clientID int64, request *HTTPProxyRequest) (*HTTPProxyResponse, error)
+	SendHTTPProxyRequest(clientID int64, request *httptypes.HTTPProxyRequest) (*httptypes.HTTPProxyResponse, error)
 
 	// RequestTunnelForHTTP 请求为 HTTP 代理创建隧道连接（隧道模式）
 	RequestTunnelForHTTP(clientID int64, mappingID string, targetURL string, method string) (TunnelConnectionInterface, error)

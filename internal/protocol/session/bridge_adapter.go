@@ -2,7 +2,6 @@ package session
 
 import (
 	"context"
-	"tunnox-core/internal/bridge"
 	"tunnox-core/internal/packet"
 )
 
@@ -28,10 +27,6 @@ type BridgeManager interface {
 
 	// PublishMessage 发布消息到指定主题
 	PublishMessage(ctx context.Context, topic string, payload []byte) error
-
-	// CreateCrossNodeSession 创建跨节点转发会话
-	// 用于当 TargetClient 连接到的节点与 Bridge 所在节点不同时
-	CreateCrossNodeSession(ctx context.Context, targetNodeID, targetNodeAddr string, metadata *bridge.SessionMetadata) (*bridge.ForwardSession, error)
 
 	// GetNodeID 获取当前节点ID
 	GetNodeID() string

@@ -17,17 +17,15 @@ type Middleware = types.Middleware
 
 // 导出常量
 const (
-	CategoryConnection = types.CategoryConnection
-	CategoryMapping    = types.CategoryMapping
-	CategoryTransport  = types.CategoryTransport
-	CategoryManagement = types.CategoryManagement
-	CategoryRPC        = types.CategoryRPC
+	CategoryConnection   = types.CategoryConnection
+	CategoryMapping      = types.CategoryMapping
+	CategoryTransport    = types.CategoryTransport
+	CategoryManagement   = types.CategoryManagement
+	CategoryRPC          = types.CategoryRPC
+	CategoryNotification = types.CategoryNotification
 
 	DirectionOneway = types.DirectionOneway
 	DirectionDuplex = types.DirectionDuplex
-
-	// 移除 Oneway = types.ResponseOneway
-	// 移除 Duplex = types.ResponseDuplex
 )
 
 // CommandType 重新定义的命令类型
@@ -300,6 +298,31 @@ var (
 		Direction:   DirectionDuplex,
 		Name:        "rpc_list",
 		Description: "列出RPC服务",
+	}
+
+	// ==================== 通知类命令 ====================
+	NotifyClientCmd = CommandType{
+		ID:          packet.NotifyClient,
+		Category:    CategoryNotification,
+		Direction:   DirectionOneway,
+		Name:        "notify_client",
+		Description: "服务端推送通知到客户端",
+	}
+
+	NotifyClientAckCmd = CommandType{
+		ID:          packet.NotifyClientAck,
+		Category:    CategoryNotification,
+		Direction:   DirectionOneway,
+		Name:        "notify_client_ack",
+		Description: "客户端确认通知",
+	}
+
+	SendNotifyToClientCmd = CommandType{
+		ID:          packet.SendNotifyToClient,
+		Category:    CategoryNotification,
+		Direction:   DirectionDuplex,
+		Name:        "send_notify_to_client",
+		Description: "C2C通知（客户端到客户端）",
 	}
 )
 

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	corelog "tunnox-core/internal/core/log"
 
-	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/protocol/httptypes"
 )
 
 // handleCommand 处理命令
@@ -34,13 +34,17 @@ func (c *TunnoxClient) handleCommand(pkt *packet.TransferPacket) {
 	case packet.HTTPProxyRequest:
 		// HTTP 代理请求
 		c.handleHTTPProxyRequest(pkt.CommandPacket)
+
+	case packet.NotifyClient:
+		// 服务端推送的通知
+		c.handleNotification(pkt.CommandPacket.CommandBody)
 	}
 }
 
 // handleHTTPProxyRequest 处理 HTTP 代理请求
 func (c *TunnoxClient) handleHTTPProxyRequest(cmd *packet.CommandPacket) {
 	// 解析请求
-	var req httpservice.HTTPProxyRequest
+	var req httptypes.HTTPProxyRequest
 	if err := json.Unmarshal([]byte(cmd.CommandBody), &req); err != nil {
 		corelog.Errorf("Client: failed to parse HTTP proxy request: %v", err)
 		c.sendHTTPProxyErrorResponse(cmd.CommandId, "invalid request format")
@@ -71,7 +75,7 @@ func (c *TunnoxClient) handleHTTPProxyRequest(cmd *packet.CommandPacket) {
 }
 
 // sendHTTPProxyResponse 发送 HTTP 代理响应
-func (c *TunnoxClient) sendHTTPProxyResponse(commandID string, resp *httpservice.HTTPProxyResponse) {
+func (c *TunnoxClient) sendHTTPProxyResponse(commandID string, resp *httptypes.HTTPProxyResponse) {
 	respBody, err := json.Marshal(resp)
 	if err != nil {
 		corelog.Errorf("Client: failed to marshal HTTP proxy response: %v", err)
@@ -106,7 +110,7 @@ func (c *TunnoxClient) sendHTTPProxyResponse(commandID string, resp *httpservice
 
 // sendHTTPProxyErrorResponse 发送 HTTP 代理错误响应
 func (c *TunnoxClient) sendHTTPProxyErrorResponse(commandID string, errMsg string) {
-	resp := &httpservice.HTTPProxyResponse{
+	resp := &httptypes.HTTPProxyResponse{
 		RequestID: commandID,
 		Error:     errMsg,
 	}
@@ -139,4 +143,90 @@ func (c *TunnoxClient) handleKickCommand(cmdBody string) {
 func (c *TunnoxClient) getHTTPProxyExecutor() *HTTPProxyExecutor {
 	// 使用默认配置创建执行器
 	return NewHTTPProxyExecutor(nil)
+}
+
+// handleNotification 处理服务端推送的通知
+func (c *TunnoxClient) handleNotification(cmdBody string) {
+	var notification packet.ClientNotification
+	if err := json.Unmarshal([]byte(cmdBody), &notification); err != nil {
+		corelog.Errorf("Client: failed to parse notification: %v", err)
+		return
+	}
+
+	corelog.Debugf("Client: received notification id=%s, type=%s, sender=%d",
+		notification.NotifyID, notification.Type.String(), notification.SenderClientID)
+
+	// 检查是否过期
+	if notification.IsExpired() {
+		corelog.Warnf("Client: notification %s has expired, ignoring", notification.NotifyID)
+		return
+	}
+
+	// 分发通知到处理器
+	if c.notificationDispatcher != nil {
+		c.notificationDispatcher.Dispatch(&notification)
+	}
+
+	// 如果需要确认，发送确认响应
+	if notification.RequireAck {
+		c.sendNotificationAck(notification.NotifyID, true, true, "")
+	}
+}
+
+// sendNotificationAck 发送通知确认
+func (c *TunnoxClient) sendNotificationAck(notifyID string, received, processed bool, errMsg string) {
+	ackReq := &packet.NotifyAckRequest{
+		NotifyID:  notifyID,
+		Received:  received,
+		Processed: processed,
+		Error:     errMsg,
+	}
+
+	ackBody, err := json.Marshal(ackReq)
+	if err != nil {
+		corelog.Errorf("Client: failed to marshal notification ack: %v", err)
+		return
+	}
+
+	ackPkt := &packet.TransferPacket{
+		PacketType: packet.JsonCommand,
+		CommandPacket: &packet.CommandPacket{
+			CommandType: packet.NotifyClientAck,
+			CommandBody: string(ackBody),
+		},
+	}
+
+	c.mu.RLock()
+	controlStream := c.controlStream
+	c.mu.RUnlock()
+
+	if controlStream == nil {
+		corelog.Errorf("Client: control stream is nil, cannot send notification ack")
+		return
+	}
+
+	if _, err := controlStream.WritePacket(ackPkt, true, 0); err != nil {
+		corelog.Errorf("Client: failed to send notification ack: %v", err)
+	} else {
+		corelog.Debugf("Client: sent notification ack for %s", notifyID)
+	}
+}
+
+// AddNotificationHandler 添加通知处理器
+func (c *TunnoxClient) AddNotificationHandler(handler NotificationHandler) {
+	if c.notificationDispatcher != nil {
+		c.notificationDispatcher.AddHandler(handler)
+	}
+}
+
+// RemoveNotificationHandler 移除通知处理器
+func (c *TunnoxClient) RemoveNotificationHandler(handler NotificationHandler) {
+	if c.notificationDispatcher != nil {
+		c.notificationDispatcher.RemoveHandler(handler)
+	}
+}
+
+// SetDefaultNotificationHandler 设置默认通知处理器（记录日志）
+func (c *TunnoxClient) SetDefaultNotificationHandler() {
+	c.AddNotificationHandler(&DefaultNotificationHandler{})
 }

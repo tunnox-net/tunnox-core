@@ -255,7 +255,11 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 		corelog.Errorf("BaseMappingHandler[%s]: tunnelReader or tunnelWriter is nil after setup", h.config.MappingID)
 		return
 	}
-	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, tunnelCloser)
+	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, tunnelCloser)
+	if err != nil {
+		corelog.Errorf("BaseMappingHandler[%s]: failed to create tunnel ReadWriteCloser: %v", h.config.MappingID, err)
+		return
+	}
 
 	// 6. 双向转发（Transformer只处理限速，压缩/加密已在StreamProcessor中）
 	strategyFactory := utils.NewCopyStrategyFactory()
@@ -273,8 +277,62 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	corelog.Infof("BaseMappingHandler[%s]: bidirectional copy finished for tunnel %s, sent=%d, received=%d, sendErr=%v, recvErr=%v",
 		h.config.MappingID, tunnelID, result.BytesSent, result.BytesReceived, result.SendError, result.ReceiveError)
 
-	// 7. 更新连接计数统计
+	// 7. 发送隧道关闭通知给 targetClient
+	if h.config.TargetClientID > 0 {
+		reason := h.determineCloseReason(result.SendError, result.ReceiveError)
+		if err := h.client.SendTunnelCloseNotify(h.config.TargetClientID, tunnelID, h.config.MappingID, reason); err != nil {
+			corelog.Warnf("BaseMappingHandler[%s]: failed to send tunnel close notify: %v", h.config.MappingID, err)
+		}
+	}
+
+	// 8. 更新连接计数统计
 	h.trafficStats.ConnectionCount.Add(1)
+}
+
+// determineCloseReason 根据错误类型判断关闭原因
+func (h *BaseMappingHandler) determineCloseReason(sendErr, recvErr error) string {
+	// 无错误，正常关闭
+	if sendErr == nil && recvErr == nil {
+		return "normal"
+	}
+
+	// 检查常见错误类型
+	for _, err := range []error{sendErr, recvErr} {
+		if err == nil {
+			continue
+		}
+		errStr := err.Error()
+		// EOF 表示对端正常关闭
+		if errStr == "EOF" || errStr == "io: read/write on closed pipe" {
+			return "peer_closed"
+		}
+		// 网络错误
+		if contains(errStr, "connection reset") || contains(errStr, "broken pipe") {
+			return "network_error"
+		}
+		if contains(errStr, "timeout") || contains(errStr, "deadline exceeded") {
+			return "timeout"
+		}
+		if contains(errStr, "use of closed") {
+			return "closed"
+		}
+	}
+
+	return "error"
+}
+
+// contains 检查字符串是否包含子串（避免导入 strings 包）
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsImpl(s, substr))
+}
+
+func containsImpl(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 // checkConnectionQuota 检查连接数配额

@@ -152,7 +152,7 @@ func registerInfrastructureServices(container *container.Container, config *mana
 			return nil, fmt.Errorf("repository is not of type *repos.Repository")
 		}
 
-		connRepo := repos.NewConnectionRepo(repo)
+		connRepo := repos.NewConnectionRepo(parentCtx, repo)
 		return connRepo, nil
 	})
 

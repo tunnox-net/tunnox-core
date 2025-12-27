@@ -6,8 +6,8 @@ import (
 	"tunnox-core/internal/core/events"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
-	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/protocol/httptypes"
 )
 
 // ============================================================================
@@ -149,7 +149,7 @@ func (s *SessionManager) handleHTTPProxyResponsePacket(connPacket *types.StreamP
 	}
 
 	// 解析响应
-	var resp httpservice.HTTPProxyResponse
+	var resp httptypes.HTTPProxyResponse
 	if err := json.Unmarshal([]byte(cmd.CommandBody), &resp); err != nil {
 		corelog.Errorf("SessionManager: failed to parse HTTP proxy response: %v", err)
 		return err

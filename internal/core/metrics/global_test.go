@@ -23,7 +23,9 @@ func TestSetGlobalMetrics(t *testing.T) {
 	defer metrics.Close()
 
 	// 测试设置全局 Metrics
-	SetGlobalMetrics(metrics)
+	if err := SetGlobalMetrics(metrics); err != nil {
+		t.Fatalf("SetGlobalMetrics failed: %v", err)
+	}
 
 	// 验证全局 Metrics 已设置
 	if GetGlobalMetrics() != metrics {
@@ -44,7 +46,7 @@ func TestSetGlobalMetrics(t *testing.T) {
 	}
 }
 
-func TestMustGetGlobalMetrics_Panic(t *testing.T) {
+func TestTryGetGlobalMetrics_Error(t *testing.T) {
 	// 清理全局状态
 	globalMu.Lock()
 	oldMetrics := globalMetrics
@@ -55,23 +57,18 @@ func TestMustGetGlobalMetrics_Panic(t *testing.T) {
 		globalMu.Lock()
 		globalMetrics = oldMetrics
 		globalMu.Unlock()
-
-		// 恢复 panic
-		if r := recover(); r == nil {
-			t.Error("MustGetGlobalMetrics should panic when metrics not initialized")
-		}
 	}()
 
-	// 应该 panic
-	_ = MustGetGlobalMetrics()
+	// 应该返回 ErrNotInitialized
+	_, err := TryGetGlobalMetrics()
+	if err != ErrNotInitialized {
+		t.Errorf("TryGetGlobalMetrics should return ErrNotInitialized, got: %v", err)
+	}
 }
 
-func TestSetGlobalMetrics_NilPanic(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("SetGlobalMetrics should panic when called with nil")
-		}
-	}()
-
-	SetGlobalMetrics(nil)
+func TestSetGlobalMetrics_NilError(t *testing.T) {
+	err := SetGlobalMetrics(nil)
+	if err != ErrNilMetrics {
+		t.Errorf("SetGlobalMetrics(nil) should return ErrNilMetrics, got: %v", err)
+	}
 }

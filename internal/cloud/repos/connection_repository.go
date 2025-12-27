@@ -20,12 +20,12 @@ type ConnectionRepo struct {
 }
 
 // NewConnectionRepo 创建连接数据访问层
-func NewConnectionRepo(repo *Repository) *ConnectionRepo {
+func NewConnectionRepo(parentCtx context.Context, repo *Repository) *ConnectionRepo {
 	genericRepo := NewGenericRepository[*models.ConnectionInfo](repo, func(connInfo *models.ConnectionInfo) (string, error) {
 		return connInfo.ConnID, nil
 	})
 	cr := &ConnectionRepo{GenericRepositoryImpl: genericRepo}
-	cr.Dispose.SetCtx(context.Background(), cr.onClose)
+	cr.Dispose.SetCtx(parentCtx, cr.onClose)
 	return cr
 }
 

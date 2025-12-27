@@ -17,7 +17,7 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("CreateConnection_and_GetConnection", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo)
+		connRepo := repos.NewConnectionRepo(context.Background(), repo)
 
 		connInfo := &models.ConnectionInfo{
 			ConnID:    "test-conn-1",
@@ -45,7 +45,7 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("UpdateConnection", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo)
+		connRepo := repos.NewConnectionRepo(context.Background(), repo)
 
 		connInfo := &models.ConnectionInfo{
 			ConnID:    "test-conn-2",
@@ -77,7 +77,7 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("DeleteConnection", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo)
+		connRepo := repos.NewConnectionRepo(context.Background(), repo)
 
 		connInfo := &models.ConnectionInfo{
 			ConnID:    "test-conn-3",
@@ -102,7 +102,7 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("ListConnections", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo)
+		connRepo := repos.NewConnectionRepo(context.Background(), repo)
 
 		// 创建映射ID
 		mappingID := "test-mapping-4"
@@ -143,7 +143,7 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("ListClientConns", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo)
+		connRepo := repos.NewConnectionRepo(context.Background(), repo)
 
 		// 创建客户端ID
 		clientID := int64(1)
@@ -183,7 +183,7 @@ func TestConnectionRepository(t *testing.T) {
 	t.Run("UpdateStats", func(t *testing.T) {
 		storage := storage.NewMemoryStorage(context.Background())
 		repo := repos.NewRepository(storage)
-		connRepo := repos.NewConnectionRepo(repo)
+		connRepo := repos.NewConnectionRepo(context.Background(), repo)
 
 		// 创建连接信息
 		connInfo := &models.ConnectionInfo{
@@ -389,7 +389,7 @@ func TestBuiltInCloudControl_ConnectionManagement_WithRepository(t *testing.T) {
 
 func TestConnectionRepository_Dispose(t *testing.T) {
 	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
-	connRepo := repos.NewConnectionRepo(repo)
+	connRepo := repos.NewConnectionRepo(context.Background(), repo)
 	require.NotNil(t, connRepo)
 
 	// 验证初始状态
@@ -409,7 +409,7 @@ func TestConnectionRepository_Dispose(t *testing.T) {
 
 func TestConnectionRepository_Dispose_Concurrent(t *testing.T) {
 	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
-	connRepo := repos.NewConnectionRepo(repo)
+	connRepo := repos.NewConnectionRepo(context.Background(), repo)
 	require.NotNil(t, connRepo)
 
 	done := make(chan struct{})

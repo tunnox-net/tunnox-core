@@ -3,10 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
-	"net"
 	"time"
-	"tunnox-core/api/proto/bridge"
-	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/httpservice"
@@ -15,8 +12,6 @@ import (
 	"tunnox-core/internal/httpservice/modules/websocket"
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/stream"
-
-	"google.golang.org/grpc"
 )
 
 // registerServices 注册所有服务到服务管理器
@@ -43,12 +38,6 @@ func (s *Server) registerServices() {
 	if s.messageBroker != nil {
 		brokerService := NewBrokerService("Message-Broker", s.messageBroker)
 		s.serviceManager.RegisterService(brokerService)
-	}
-
-	// 注册 BridgeManager 服务（如果已初始化）
-	if s.bridgeManager != nil {
-		bridgeService := NewBridgeService("Bridge-Manager", s.bridgeManager)
-		s.serviceManager.RegisterService(bridgeService)
 	}
 
 	// 注册 HTTP 服务（如果已初始化）
@@ -88,86 +77,6 @@ func (s *Server) createMessageBroker(ctx context.Context) broker.MessageBroker {
 	}
 
 	return mb
-}
-
-// createBridgeManager 创建桥接管理器
-func (s *Server) createBridgeManager(ctx context.Context) *internalbridge.BridgeManager {
-	// Bridge Manager 只在集群模式下需要（即启用了 Redis）
-	if !s.config.Redis.Enabled {
-		corelog.Debug("Redis not enabled, BridgeManager will not be created")
-		return nil
-	}
-
-	if s.messageBroker == nil {
-		corelog.Warn("MessageBroker not initialized, BridgeManager will not be created")
-		return nil
-	}
-
-	// 使用默认的桥接池配置
-	poolConfig := &internalbridge.PoolConfig{
-		MinConnsPerNode:     2,
-		MaxConnsPerNode:     10,
-		MaxIdleTime:         300 * time.Second,
-		MaxStreamsPerConn:   100,
-		DialTimeout:         10 * time.Second,
-		HealthCheckInterval: 30 * time.Second,
-	}
-
-	// 创建简单的节点注册表（实际应该从 Storage 或 Cloud 获取）
-	nodeRegistry := NewSimpleNodeRegistry()
-
-	managerConfig := &internalbridge.BridgeManagerConfig{
-		NodeID:         s.nodeID,
-		PoolConfig:     poolConfig,
-		MessageBroker:  s.messageBroker,
-		NodeRegistry:   nodeRegistry,
-		RequestTimeout: 30 * time.Second,
-	}
-
-	manager, err := internalbridge.NewBridgeManager(ctx, managerConfig)
-	if err != nil {
-		corelog.Fatalf("Failed to create bridge manager: %v", err)
-	}
-
-	return manager
-}
-
-// startGRPCServer 启动 gRPC 服务器
-func (s *Server) startGRPCServer() *grpc.Server {
-	// gRPC 服务器只在集群模式下需要（即启用了 Redis）
-	if !s.config.Redis.Enabled {
-		corelog.Debug("Redis not enabled, skipping gRPC server startup")
-		return nil
-	}
-
-	if s.bridgeManager == nil {
-		corelog.Warn("BridgeManager not initialized, skipping gRPC server startup")
-		return nil
-	}
-
-	// 使用默认端口 50051
-	port := 50051
-	host := "0.0.0.0"
-	addr := fmt.Sprintf("%s:%d", host, port)
-
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		corelog.Fatalf("Failed to listen on %s: %v", addr, err)
-	}
-
-	grpcServer := grpc.NewServer()
-	// 使用 serviceManager 的 context 作为父 context，确保能接收退出信号
-	bridgeServer := internalbridge.NewGRPCBridgeServer(s.serviceManager.GetContext(), s.nodeID, s.bridgeManager)
-	bridge.RegisterBridgeServiceServer(grpcServer, bridgeServer)
-
-	// 在后台启动 gRPC 服务器
-	go func() {
-		if err := grpcServer.Serve(listener); err != nil {
-			corelog.Errorf("gRPC server error: %v", err)
-		}
-	}()
-
-	return grpcServer
 }
 
 // setupProtocolAdapters 设置协议适配器

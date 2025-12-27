@@ -156,11 +156,12 @@ type CommandHandler interface {
 type CommandCategory int
 
 const (
-	CategoryConnection CommandCategory = iota // 连接管理类命令
-	CategoryMapping                           // 端口映射类命令
-	CategoryTransport                         // 数据传输类命令
-	CategoryManagement                        // 系统管理类命令
-	CategoryRPC                               // RPC调用类命令
+	CategoryConnection   CommandCategory = iota // 连接管理类命令
+	CategoryMapping                             // 端口映射类命令
+	CategoryTransport                           // 数据传输类命令
+	CategoryManagement                          // 系统管理类命令
+	CategoryRPC                                 // RPC调用类命令
+	CategoryNotification                        // 通知类命令
 )
 
 func (c CommandCategory) String() string {
@@ -175,6 +176,8 @@ func (c CommandCategory) String() string {
 		return "management"
 	case CategoryRPC:
 		return "rpc"
+	case CategoryNotification:
+		return "notification"
 	default:
 		return "unknown"
 	}

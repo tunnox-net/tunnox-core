@@ -47,12 +47,17 @@ func NewStatsManager(
 
 	// 创建统计计数器
 	if manager.useCounter {
-		manager.counter = stats.NewStatsCounter(storage, parentCtx)
-
-		// 初始化计数器
-		if err := manager.counter.Initialize(); err != nil {
-			dispose.Warnf("StatsManager: failed to initialize counter: %v", err)
+		counter, err := stats.NewStatsCounter(storage, parentCtx)
+		if err != nil {
+			dispose.Warnf("StatsManager: failed to create counter: %v", err)
 			manager.useCounter = false // 降级到全量计算模式
+		} else {
+			manager.counter = counter
+			// 初始化计数器
+			if err := manager.counter.Initialize(); err != nil {
+				dispose.Warnf("StatsManager: failed to initialize counter: %v", err)
+				manager.useCounter = false // 降级到全量计算模式
+			}
 		}
 	}
 

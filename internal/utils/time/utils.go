@@ -129,3 +129,80 @@ var CommonTimeFormats = map[string]string{
 	"rfc822":   time.RFC822,
 	"unix":     "unix",
 }
+
+// ============================================================================
+// SafeTimer - 避免 time.After 内存泄漏的工具
+// ============================================================================
+
+// SafeTimer 安全的定时器，用于替代循环中的 time.After
+// 使用方法:
+//
+//	timer := NewSafeTimer(5 * time.Second)
+//	defer timer.Stop()
+//	for {
+//	    timer.Reset(5 * time.Second)
+//	    select {
+//	    case <-ctx.Done():
+//	        return
+//	    case <-timer.C():
+//	        // 超时处理
+//	    case msg := <-msgChan:
+//	        // 消息处理
+//	    }
+//	}
+type SafeTimer struct {
+	timer *time.Timer
+}
+
+// NewSafeTimer 创建新的安全定时器
+func NewSafeTimer(d time.Duration) *SafeTimer {
+	return &SafeTimer{
+		timer: time.NewTimer(d),
+	}
+}
+
+// C 返回定时器通道
+func (t *SafeTimer) C() <-chan time.Time {
+	return t.timer.C
+}
+
+// Reset 重置定时器
+// 注意：在 select 中使用时，应该在循环开始时调用 Reset
+func (t *SafeTimer) Reset(d time.Duration) {
+	// 先停止并清空通道
+	if !t.timer.Stop() {
+		// 如果定时器已经触发，需要排空通道
+		select {
+		case <-t.timer.C:
+		default:
+		}
+	}
+	t.timer.Reset(d)
+}
+
+// Stop 停止定时器
+func (t *SafeTimer) Stop() {
+	if !t.timer.Stop() {
+		select {
+		case <-t.timer.C:
+		default:
+		}
+	}
+}
+
+// SafeAfter 安全的 time.After 替代品，用于非循环场景
+// 返回定时器和通道，调用者必须在不再需要时调用 Stop
+func SafeAfter(d time.Duration) (*time.Timer, <-chan time.Time) {
+	timer := time.NewTimer(d)
+	return timer, timer.C
+}
+
+// StopTimer 安全停止定时器
+func StopTimer(timer *time.Timer) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+}

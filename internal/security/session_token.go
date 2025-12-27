@@ -68,7 +68,10 @@ func NewSessionTokenManager(config *SessionTokenConfig) *SessionTokenManager {
 // GenerateSessionToken 生成会话Token
 func (m *SessionTokenManager) GenerateSessionToken(clientID int64, ip string, tlsFingerprint string) (*SessionToken, error) {
 	now := time.Now()
-	tokenID := generateSessionTokenID()
+	tokenID, err := generateSessionTokenID()
+	if err != nil {
+		return nil, err
+	}
 
 	token := &SessionToken{
 		TokenID:        tokenID,
@@ -190,10 +193,10 @@ func (m *SessionTokenManager) DecodeToken(tokenStr string) (*SessionToken, error
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // generateSessionTokenID 生成Session Token ID
-func generateSessionTokenID() string {
+func generateSessionTokenID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("crypto/rand failed in generateSessionTokenID: %v", err))
+		return "", fmt.Errorf("crypto/rand failed in generateSessionTokenID: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }

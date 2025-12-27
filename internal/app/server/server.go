@@ -7,7 +7,6 @@ import (
 	"time"
 	corelog "tunnox-core/internal/core/log"
 
-	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
@@ -22,8 +21,6 @@ import (
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/security"
 	"tunnox-core/internal/utils"
-
-	"google.golang.org/grpc"
 )
 
 // Server 服务器结构
@@ -42,8 +39,6 @@ type Server struct {
 	cloudBuiltin    *managers.BuiltinCloudControl
 	authHandler     *ServerAuthHandler
 	messageBroker   broker.MessageBroker
-	bridgeManager   *internalbridge.BridgeManager
-	grpcServer      *grpc.Server
 	httpService     *httpservice.HTTPService
 
 	// 服务
@@ -141,11 +136,6 @@ func (s *Server) Stop() error {
 	// 等待活跃隧道完成传输（最多30秒）
 	if s.session != nil {
 		s.session.WaitForTunnelsToComplete(30)
-	}
-
-	// 停止 gRPC 服务器
-	if s.grpcServer != nil {
-		s.grpcServer.GracefulStop()
 	}
 
 	// 使用服务管理器停止所有服务

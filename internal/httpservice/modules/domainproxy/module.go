@@ -15,6 +15,7 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/httpservice"
+	"tunnox-core/internal/protocol/httptypes"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -366,7 +367,7 @@ func (m *DomainProxyModule) lookupMapping(host string) (*models.PortMapping, err
 }
 
 // buildProxyRequest 构建代理请求
-func (m *DomainProxyModule) buildProxyRequest(r *http.Request, mapping *models.PortMapping) (*httpservice.HTTPProxyRequest, error) {
+func (m *DomainProxyModule) buildProxyRequest(r *http.Request, mapping *models.PortMapping) (*httptypes.HTTPProxyRequest, error) {
 	// 读取请求体
 	var body []byte
 	if r.Body != nil {
@@ -404,7 +405,7 @@ func (m *DomainProxyModule) buildProxyRequest(r *http.Request, mapping *models.P
 	headers["X-Forwarded-Host"] = r.Host
 	headers["X-Forwarded-Proto"] = scheme
 
-	return &httpservice.HTTPProxyRequest{
+	return &httptypes.HTTPProxyRequest{
 		RequestID: uuid.New().String(),
 		Method:    r.Method,
 		URL:       targetURL,
@@ -415,7 +416,7 @@ func (m *DomainProxyModule) buildProxyRequest(r *http.Request, mapping *models.P
 }
 
 // writeProxyResponse 写入代理响应
-func (m *DomainProxyModule) writeProxyResponse(w http.ResponseWriter, resp *httpservice.HTTPProxyResponse) {
+func (m *DomainProxyModule) writeProxyResponse(w http.ResponseWriter, resp *httptypes.HTTPProxyResponse) {
 	if resp == nil {
 		http.Error(w, "Empty response from backend", http.StatusBadGateway)
 		return

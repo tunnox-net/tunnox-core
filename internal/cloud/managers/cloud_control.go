@@ -53,7 +53,7 @@ func NewCloudControl(config *ControlConfig, storage storage.Storage) *CloudContr
 	clientRepo := repos.NewClientRepository(repo)
 	mappingRepo := repos.NewPortMappingRepo(repo)
 	nodeRepo := repos.NewNodeRepository(repo)
-	connRepo := repos.NewConnectionRepo(repo)
+	connRepo := repos.NewConnectionRepo(ctx, repo)
 
 	// 创建ID管理器
 	idManager := idgen.NewIDManager(storage, ctx)

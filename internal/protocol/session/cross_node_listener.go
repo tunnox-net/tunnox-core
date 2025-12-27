@@ -10,7 +10,7 @@ import (
 
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
-	"tunnox-core/internal/httpservice"
+	"tunnox-core/internal/protocol/httptypes"
 )
 
 // CrossNodeListener 跨节点连接监听器
@@ -258,7 +258,7 @@ func (l *CrossNodeListener) handleHTTPProxy(ctx context.Context, conn *net.TCPCo
 		proxyMsg.ClientID, proxyMsg.RequestID)
 
 	// 2. 解析 HTTPProxyRequest
-	var request httpservice.HTTPProxyRequest
+	var request httptypes.HTTPProxyRequest
 	if err := json.Unmarshal(proxyMsg.Request, &request); err != nil {
 		corelog.Errorf("CrossNodeListener: failed to unmarshal HTTPProxyRequest: %v", err)
 		l.sendHTTPProxyError(conn, proxyMsg.RequestID, "failed to unmarshal HTTP request")
@@ -311,7 +311,7 @@ func (l *CrossNodeListener) sendHTTPProxyError(conn *net.TCPConn, requestID stri
 }
 
 // sendHTTPProxyResponse 发送 HTTP 代理响应
-func (l *CrossNodeListener) sendHTTPProxyResponse(conn *net.TCPConn, requestID string, resp *httpservice.HTTPProxyResponse) {
+func (l *CrossNodeListener) sendHTTPProxyResponse(conn *net.TCPConn, requestID string, resp *httptypes.HTTPProxyResponse) {
 	// 序列化 HTTPProxyResponse
 	respBody, err := json.Marshal(resp)
 	if err != nil {

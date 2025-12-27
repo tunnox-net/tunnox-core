@@ -1,6 +1,7 @@
 package managers
 
 import (
+	"context"
 	"testing"
 	"time"
 	"tunnox-core/internal/cloud/models"
@@ -8,7 +9,7 @@ import (
 
 func TestBuiltInCloudControl_JWTTokenManagement(t *testing.T) {
 	config := DefaultConfig()
-	api := NewBuiltinCloudControl(config)
+	api := NewBuiltinCloudControl(context.Background(), config)
 
 	t.Run("GenerateJWTToken", func(t *testing.T) {
 		// 先创建一个客户端
@@ -141,7 +142,7 @@ func TestBuiltInCloudControl_JWTTokenManagement(t *testing.T) {
 
 func TestBuiltInCloudControl_ConnectionManagement(t *testing.T) {
 	config := DefaultConfig()
-	api := NewBuiltinCloudControl(config)
+	api := NewBuiltinCloudControl(context.Background(), config)
 
 	t.Run("RegisterConnection and GetConnections", func(t *testing.T) {
 		// 先创建两个客户端
@@ -241,7 +242,7 @@ func TestBuiltInCloudControl_ConnectionManagement(t *testing.T) {
 
 func TestBuiltInCloudControl_AuthenticationWithJWT(t *testing.T) {
 	config := DefaultConfig()
-	api := NewBuiltinCloudControl(config)
+	api := NewBuiltinCloudControl(context.Background(), config)
 
 	t.Run("Authenticate with JWT token", func(t *testing.T) {
 		// 先创建一个客户端

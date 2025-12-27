@@ -136,6 +136,11 @@ const (
 
 	// ==================== SOCKS5 代理类命令 (90-99) ====================
 	SOCKS5TunnelRequestCmd CommandType = 90 // SOCKS5 隧道请求（ClientA -> Server）
+
+	// ==================== 通知类命令 (100-109) ====================
+	NotifyClient       CommandType = 100 // 服务端 -> 客户端 推送通知
+	NotifyClientAck    CommandType = 101 // 客户端 -> 服务端 通知确认（可选）
+	SendNotifyToClient CommandType = 102 // 客户端 -> 服务端 -> 目标客户端（C2C通知）
 )
 
 // InitPacket 初始化数据包

@@ -2,6 +2,7 @@ package stats
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,6 +14,11 @@ const (
 	PersistentStatsKey = "tunnox:stats:persistent:global"
 	// RuntimeStatsKey 运行时统计数据的key
 	RuntimeStatsKey = "tunnox:stats:runtime:global"
+)
+
+var (
+	// ErrStorageNoHashSupport 当存储不支持 Hash 操作时返回
+	ErrStorageNoHashSupport = errors.New("storage does not support hash operations (required for StatsCounter)")
 )
 
 // StatsCounter 统计计数器
@@ -51,7 +57,7 @@ func (sc *StatsCounter) getHashStore() (interface {
 }
 
 // NewStatsCounter 创建统计计数器
-func NewStatsCounter(storage storage.Storage, ctx context.Context) *StatsCounter {
+func NewStatsCounter(storage storage.Storage, ctx context.Context) (*StatsCounter, error) {
 	// 验证存储支持 HashStore 接口（通过方法检查）
 	if _, ok := storage.(interface {
 		SetHash(key string, field string, value interface{}) error
@@ -59,7 +65,7 @@ func NewStatsCounter(storage storage.Storage, ctx context.Context) *StatsCounter
 		GetAllHash(key string) (map[string]interface{}, error)
 		DeleteHash(key string, field string) error
 	}); !ok {
-		panic("storage does not support hash operations (required for StatsCounter)")
+		return nil, ErrStorageNoHashSupport
 	}
 
 	counter := &StatsCounter{
@@ -72,7 +78,7 @@ func NewStatsCounter(storage storage.Storage, ctx context.Context) *StatsCounter
 	// 初始化本地缓存
 	counter.localCache = NewStatsCache(counter.cacheTTL)
 
-	return counter
+	return counter, nil
 }
 
 // ═══════════════════════════════════════════════════════════════════

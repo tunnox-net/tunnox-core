@@ -306,3 +306,17 @@ func SendKickCommand(conn *ControlConnection, reason, code string) {
 		corelog.Infof("ClientRegistry: sent kick command to client %d (connID=%s): %s", conn.ClientID, conn.ConnID, reason)
 	}
 }
+
+// ListAuthenticated 列出所有已认证的连接
+func (r *ClientRegistry) ListAuthenticated() []*ControlConnection {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	var result []*ControlConnection
+	for _, conn := range r.connMap {
+		if conn.Authenticated {
+			result = append(result, conn)
+		}
+	}
+	return result
+}

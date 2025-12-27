@@ -69,8 +69,14 @@ func NewReconnectTokenManager(config *ReconnectTokenConfig, storage storage.Stor
 // GenerateReconnectToken 生成重连Token
 func (m *ReconnectTokenManager) GenerateReconnectToken(clientID int64, nodeID string) (*ReconnectToken, error) {
 	now := time.Now()
-	tokenID := generateTokenID()
-	nonce := generateNonce()
+	tokenID, err := generateTokenID()
+	if err != nil {
+		return nil, err
+	}
+	nonce, err := generateNonce()
+	if err != nil {
+		return nil, err
+	}
 
 	token := &ReconnectToken{
 		TokenID:   tokenID,
@@ -196,19 +202,19 @@ func (m *ReconnectTokenManager) DecodeToken(tokenStr string) (*ReconnectToken, e
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // generateTokenID 生成Token ID
-func generateTokenID() string {
+func generateTokenID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("crypto/rand failed in generateTokenID: %v", err))
+		return "", fmt.Errorf("crypto/rand failed in generateTokenID: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }
 
 // generateNonce 生成随机Nonce
-func generateNonce() string {
+func generateNonce() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		panic(fmt.Sprintf("crypto/rand failed in generateNonce: %v", err))
+		return "", fmt.Errorf("crypto/rand failed in generateNonce: %w", err)
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }

@@ -10,15 +10,15 @@ import (
 
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
-	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/protocol/httptypes"
 )
 
 // HTTPProxyManager HTTP 代理管理器
 // 管理 HTTP 代理请求的发送和响应等待
 type HTTPProxyManager struct {
 	// 等待响应的请求
-	pendingRequests map[string]chan *httpservice.HTTPProxyResponse
+	pendingRequests map[string]chan *httptypes.HTTPProxyResponse
 	pendingMu       sync.RWMutex
 
 	// 默认超时
@@ -28,14 +28,14 @@ type HTTPProxyManager struct {
 // NewHTTPProxyManager 创建 HTTP 代理管理器
 func NewHTTPProxyManager() *HTTPProxyManager {
 	return &HTTPProxyManager{
-		pendingRequests: make(map[string]chan *httpservice.HTTPProxyResponse),
+		pendingRequests: make(map[string]chan *httptypes.HTTPProxyResponse),
 		defaultTimeout:  30 * time.Second,
 	}
 }
 
 // RegisterPendingRequest 注册等待响应的请求
-func (m *HTTPProxyManager) RegisterPendingRequest(requestID string) chan *httpservice.HTTPProxyResponse {
-	ch := make(chan *httpservice.HTTPProxyResponse, 1)
+func (m *HTTPProxyManager) RegisterPendingRequest(requestID string) chan *httptypes.HTTPProxyResponse {
+	ch := make(chan *httptypes.HTTPProxyResponse, 1)
 
 	m.pendingMu.Lock()
 	m.pendingRequests[requestID] = ch
@@ -52,7 +52,7 @@ func (m *HTTPProxyManager) UnregisterPendingRequest(requestID string) {
 }
 
 // HandleResponse 处理 HTTP 代理响应
-func (m *HTTPProxyManager) HandleResponse(resp *httpservice.HTTPProxyResponse) {
+func (m *HTTPProxyManager) HandleResponse(resp *httptypes.HTTPProxyResponse) {
 	m.pendingMu.RLock()
 	ch, exists := m.pendingRequests[resp.RequestID]
 	m.pendingMu.RUnlock()
@@ -74,7 +74,7 @@ func (m *HTTPProxyManager) WaitForResponse(
 	ctx context.Context,
 	requestID string,
 	timeout time.Duration,
-) (*httpservice.HTTPProxyResponse, error) {
+) (*httptypes.HTTPProxyResponse, error) {
 	ch := m.RegisterPendingRequest(requestID)
 	defer m.UnregisterPendingRequest(requestID)
 
@@ -114,8 +114,8 @@ func getHTTPProxyManager() *HTTPProxyManager {
 // 支持跨节点转发：如果客户端在其他节点，会自动转发请求
 func (s *SessionManager) SendHTTPProxyRequest(
 	clientID int64,
-	request *httpservice.HTTPProxyRequest,
-) (*httpservice.HTTPProxyResponse, error) {
+	request *httptypes.HTTPProxyRequest,
+) (*httptypes.HTTPProxyResponse, error) {
 	// 1. 先尝试在本地节点查找控制连接
 	conn := s.GetControlConnectionByClientID(clientID)
 	if conn != nil && conn.Stream != nil {
@@ -148,8 +148,8 @@ func (s *SessionManager) SendHTTPProxyRequest(
 // sendHTTPProxyRequestLocal 在本地节点发送 HTTP 代理请求
 func (s *SessionManager) sendHTTPProxyRequestLocal(
 	conn *ControlConnection,
-	request *httpservice.HTTPProxyRequest,
-) (*httpservice.HTTPProxyResponse, error) {
+	request *httptypes.HTTPProxyRequest,
+) (*httptypes.HTTPProxyResponse, error) {
 	// 1. 序列化请求
 	reqBody, err := json.Marshal(request)
 	if err != nil {
@@ -193,8 +193,8 @@ func (s *SessionManager) sendHTTPProxyRequestLocal(
 func (s *SessionManager) sendHTTPProxyRequestCrossNode(
 	targetNodeID string,
 	clientID int64,
-	request *httpservice.HTTPProxyRequest,
-) (*httpservice.HTTPProxyResponse, error) {
+	request *httptypes.HTTPProxyRequest,
+) (*httptypes.HTTPProxyResponse, error) {
 	// 1. 获取到目标节点的连接
 	crossConn, err := s.crossNodePool.Get(s.Ctx(), targetNodeID)
 	if err != nil {
@@ -266,7 +266,7 @@ func (s *SessionManager) sendHTTPProxyRequestCrossNode(
 		return nil, coreerrors.New(coreerrors.CodeInternal, respMsg.Error)
 	}
 
-	var resp httpservice.HTTPProxyResponse
+	var resp httptypes.HTTPProxyResponse
 	if err := json.Unmarshal(respMsg.Response, &resp); err != nil {
 		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidPacket, "failed to unmarshal HTTP response")
 	}
@@ -275,7 +275,7 @@ func (s *SessionManager) sendHTTPProxyRequestCrossNode(
 }
 
 // HandleHTTPProxyResponse 处理 HTTP 代理响应（由命令处理器调用）
-func (s *SessionManager) HandleHTTPProxyResponse(resp *httpservice.HTTPProxyResponse) {
+func (s *SessionManager) HandleHTTPProxyResponse(resp *httptypes.HTTPProxyResponse) {
 	proxyMgr := getHTTPProxyManager()
 	proxyMgr.HandleResponse(resp)
 }
@@ -373,7 +373,7 @@ func (s *SessionManager) RequestTunnelForHTTP(
 	}
 
 	// 3. 构建隧道打开请求
-	tunnelReq := &httpservice.HTTPTunnelRequest{
+	tunnelReq := &httptypes.HTTPTunnelRequest{
 		TunnelID:  tunnelID,
 		MappingID: mappingID,
 		TargetURL: targetURL,

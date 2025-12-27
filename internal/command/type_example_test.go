@@ -267,7 +267,7 @@ func CreateTypedResponse(handler types.CommandHandler, data interface{}) (*types
 }
 
 // 示例：如何使用类型信息进行统一的命令处理
-func ExampleUsage() {
+func Example_usage() {
 	// 创建不同类型的处理器
 	connectHandler := NewConnectHandler()
 	heartbeatHandler := NewHeartbeatHandler()

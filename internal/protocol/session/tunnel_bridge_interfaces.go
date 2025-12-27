@@ -123,10 +123,14 @@ func createDataForwarder(conn net.Conn, s stream.PackageStreamer) DataForwarder 
 
 		if reader != nil && writer != nil {
 			// 优先使用标准的 io.ReadWriteCloser 方式
-			return utils.NewReadWriteCloser(reader, writer, func() error {
+			rwc, err := utils.NewReadWriteCloser(reader, writer, func() error {
 				s.Close()
 				return nil
 			})
+			if err == nil {
+				return rwc
+			}
+			// 如果创建失败，继续尝试其他方式
 		}
 
 		// 如果 stream 实现了完整的 StreamDataForwarder 接口（如 HTTP 长轮询）

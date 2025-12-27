@@ -1,17 +1,13 @@
 package stats
 
-import "time"
+import (
+	"time"
+	"tunnox-core/internal/cloud/models"
+)
 
-// TrafficStats 流量统计
-type TrafficStats struct {
-	BytesSent       int64     `json:"bytes_sent"`       // 发送字节数
-	BytesReceived   int64     `json:"bytes_received"`   // 接收字节数
-	Connections     int64     `json:"connections"`      // 连接数
-	PacketsSent     int64     `json:"packets_sent"`     // 发送包数
-	PacketsReceived int64     `json:"packets_received"` // 接收包数
-	Errors          int64     `json:"errors"`           // 错误数
-	LastUpdated     time.Time `json:"last_updated"`     // 最后更新时间
-}
+// TrafficStats 流量统计类型别名
+// 为了向后兼容，使用类型别名指向 models.TrafficStats
+type TrafficStats = models.TrafficStats
 
 // UserStats 用户统计信息
 type UserStats struct {

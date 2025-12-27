@@ -50,7 +50,6 @@ func (b *ServerBuilder) WithDefaults() *ServerBuilder {
 		With(&HandlersComponent{}).
 		With(&ProtocolComponent{}).
 		With(&MessageBrokerComponent{}).
-		With(&BridgeComponent{}).
 		With(&HTTPServiceComponent{})
 }
 
@@ -102,8 +101,6 @@ func (b *ServerBuilder) Build(parentCtx context.Context) (*Server, error) {
 		protocolMgr:           b.deps.ProtocolMgr,
 		protocolFactory:       b.deps.ProtocolFactory,
 		messageBroker:         b.deps.MessageBroker,
-		bridgeManager:         b.deps.BridgeManager,
-		grpcServer:            b.deps.GRPCServer,
 		httpService:           b.deps.HTTPService,
 		authHandler:           b.deps.AuthHandler,
 	}

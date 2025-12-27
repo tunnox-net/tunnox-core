@@ -14,8 +14,8 @@ type BuiltinCloudControl struct {
 	*CloudControl
 }
 
-func NewBuiltinCloudControl(config *ControlConfig) *BuiltinCloudControl {
-	memoryStorage := storage.NewMemoryStorage(context.Background())
+func NewBuiltinCloudControl(parentCtx context.Context, config *ControlConfig) *BuiltinCloudControl {
+	memoryStorage := storage.NewMemoryStorage(parentCtx)
 	base := NewCloudControl(config, memoryStorage)
 	control := &BuiltinCloudControl{
 		CloudControl: base,

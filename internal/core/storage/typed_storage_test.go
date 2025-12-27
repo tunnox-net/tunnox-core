@@ -11,13 +11,16 @@ func TestTypedStorage_String(t *testing.T) {
 	storage := NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	stringStorage := NewStringStorage(storage)
+	stringStorage, err := NewStringStorage(storage)
+	if err != nil {
+		t.Fatalf("NewStringStorage failed: %v", err)
+	}
 
 	// 测试 Set 和 Get
 	key := "test:string"
 	value := "hello world"
 
-	err := stringStorage.Set(key, value, 0)
+	err = stringStorage.Set(key, value, 0)
 	if err != nil {
 		t.Fatalf("Set failed: %v", err)
 	}
@@ -37,12 +40,15 @@ func TestTypedStorage_Int64(t *testing.T) {
 	storage := NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	int64Storage := NewInt64Storage(storage)
+	int64Storage, err := NewInt64Storage(storage)
+	if err != nil {
+		t.Fatalf("NewInt64Storage failed: %v", err)
+	}
 
 	key := "test:int64"
 	value := int64(123456789)
 
-	err := int64Storage.Set(key, value, 0)
+	err = int64Storage.Set(key, value, 0)
 	if err != nil {
 		t.Fatalf("Set failed: %v", err)
 	}
@@ -62,12 +68,15 @@ func TestTypedStorage_Bool(t *testing.T) {
 	storage := NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	boolStorage := NewBoolStorage(storage)
+	boolStorage, err := NewBoolStorage(storage)
+	if err != nil {
+		t.Fatalf("NewBoolStorage failed: %v", err)
+	}
 
 	key := "test:bool"
 	value := true
 
-	err := boolStorage.Set(key, value, 0)
+	err = boolStorage.Set(key, value, 0)
 	if err != nil {
 		t.Fatalf("Set failed: %v", err)
 	}
@@ -87,13 +96,16 @@ func TestTypedStorage_List(t *testing.T) {
 	storage := NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	stringStorage := NewStringStorage(storage)
+	stringStorage, err := NewStringStorage(storage)
+	if err != nil {
+		t.Fatalf("NewStringStorage failed: %v", err)
+	}
 
 	key := "test:list"
 	values := []string{"item1", "item2", "item3"}
 
 	// 测试 SetList
-	err := stringStorage.SetList(key, values, 0)
+	err = stringStorage.SetList(key, values, 0)
 	if err != nil {
 		t.Fatalf("SetList failed: %v", err)
 	}
@@ -132,7 +144,10 @@ func TestTypedStorage_Hash(t *testing.T) {
 	storage := NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	int64Storage := NewInt64Storage(storage)
+	int64Storage, err := NewInt64Storage(storage)
+	if err != nil {
+		t.Fatalf("NewInt64Storage failed: %v", err)
+	}
 
 	key := "test:hash"
 	field1 := "score1"
@@ -141,7 +156,7 @@ func TestTypedStorage_Hash(t *testing.T) {
 	value2 := int64(200)
 
 	// 测试 SetHash
-	err := int64Storage.SetHash(key, field1, value1)
+	err = int64Storage.SetHash(key, field1, value1)
 	if err != nil {
 		t.Fatalf("SetHash failed: %v", err)
 	}
@@ -185,7 +200,10 @@ func TestTypedStorage_SetNX(t *testing.T) {
 	storage := NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	stringStorage := NewStringStorage(storage)
+	stringStorage, err := NewStringStorage(storage)
+	if err != nil {
+		t.Fatalf("NewStringStorage failed: %v", err)
+	}
 
 	key := "test:setnx"
 	value1 := "first"
@@ -233,14 +251,17 @@ func TestTypedStorage_TTL(t *testing.T) {
 	storage := NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	stringStorage := NewStringStorage(storage)
+	stringStorage, err := NewStringStorage(storage)
+	if err != nil {
+		t.Fatalf("NewStringStorage failed: %v", err)
+	}
 
 	key := "test:ttl"
 	value := "expires soon"
 	ttl := 100 * time.Millisecond
 
 	// 设置带 TTL 的值
-	err := stringStorage.Set(key, value, ttl)
+	err = stringStorage.Set(key, value, ttl)
 	if err != nil {
 		t.Fatalf("Set failed: %v", err)
 	}
@@ -272,8 +293,11 @@ func TestTypedStorage_TypeSafety(t *testing.T) {
 	storage.Set(key, int64(123), 0)
 
 	// 尝试用字符串存储读取应该失败
-	stringStorage := NewStringStorage(storage)
-	_, err := stringStorage.Get(key)
+	stringStorage, err := NewStringStorage(storage)
+	if err != nil {
+		t.Fatalf("NewStringStorage failed: %v", err)
+	}
+	_, err = stringStorage.Get(key)
 	if err == nil {
 		t.Error("Expected type mismatch error")
 	}
@@ -416,7 +440,10 @@ func BenchmarkTypedStorage_Set(b *testing.B) {
 	storage := NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	stringStorage := NewStringStorage(storage)
+	stringStorage, err := NewStringStorage(storage)
+	if err != nil {
+		b.Fatalf("NewStringStorage failed: %v", err)
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -430,7 +457,10 @@ func BenchmarkTypedStorage_Get(b *testing.B) {
 	storage := NewMemoryStorage(context.Background())
 	defer storage.Close()
 
-	stringStorage := NewStringStorage(storage)
+	stringStorage, err := NewStringStorage(storage)
+	if err != nil {
+		b.Fatalf("NewStringStorage failed: %v", err)
+	}
 	stringStorage.Set("bench:key", "value", 0)
 
 	b.ResetTimer()

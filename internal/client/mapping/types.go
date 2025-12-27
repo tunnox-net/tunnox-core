@@ -54,6 +54,13 @@ type ClientInterface interface {
 
 	// GetServerProtocol 获取服务器协议（用于选择拷贝策略）
 	GetServerProtocol() string
+
+	// SendTunnelCloseNotify 发送隧道关闭通知给对端客户端
+	// targetClientID: 目标客户端ID（接收通知的客户端）
+	// tunnelID: 隧道ID
+	// mappingID: 映射ID
+	// reason: 关闭原因
+	SendTunnelCloseNotify(targetClientID int64, tunnelID, mappingID, reason string) error
 }
 
 // TrafficStats 流量统计（本地缓存）

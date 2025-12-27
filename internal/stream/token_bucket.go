@@ -75,11 +75,14 @@ func (tb *TokenBucket) WaitForTokens(tokensNeeded int) error {
 			// 释放锁，等待时间
 			tb.mu.Unlock()
 
+			// 使用 time.NewTimer 避免 time.After 内存泄漏
+			timer := time.NewTimer(waitTime)
 			select {
-			case <-time.After(waitTime):
+			case <-timer.C:
 				// 重新获取锁
 				tb.mu.Lock()
 			case <-tb.Ctx().Done():
+				timer.Stop()
 				// 重新获取锁
 				tb.mu.Lock()
 				return errors.ErrContextCancelled

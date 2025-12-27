@@ -3,8 +3,19 @@ package models
 import (
 	"time"
 	"tunnox-core/internal/cloud/configs"
-	"tunnox-core/internal/cloud/stats"
 )
+
+// TrafficStats 流量统计（从 stats 包复制，避免循环依赖）
+// 客户端和服务端共用的纯数据类型
+type TrafficStats struct {
+	BytesSent       int64     `json:"bytes_sent"`       // 发送字节数
+	BytesReceived   int64     `json:"bytes_received"`   // 接收字节数
+	Connections     int64     `json:"connections"`      // 连接数
+	PacketsSent     int64     `json:"packets_sent"`     // 发送包数
+	PacketsReceived int64     `json:"packets_received"` // 接收包数
+	Errors          int64     `json:"errors"`           // 错误数
+	LastUpdated     time.Time `json:"last_updated"`     // 最后更新时间
+}
 
 // NodeRegisterRequest 节点注册请求
 type NodeRegisterRequest struct {
@@ -159,7 +170,7 @@ type PortMapping struct {
 	CreatedAt    time.Time          `json:"created_at"`            // 创建时间
 	UpdatedAt    time.Time          `json:"updated_at"`            // 更新时间
 	LastActive   *time.Time         `json:"last_active,omitempty"` // 最后活跃时间
-	TrafficStats stats.TrafficStats `json:"traffic_stats"`         // 流量统计
+	TrafficStats TrafficStats `json:"traffic_stats"` // 流量统计
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// 元数据

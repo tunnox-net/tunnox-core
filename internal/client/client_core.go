@@ -79,6 +79,12 @@ type TunnoxClient struct {
 
 	// 启动时间（用于计算运行时间）
 	startTime time.Time
+
+	// 通知处理
+	notificationDispatcher *NotificationDispatcher
+
+	// 目标端隧道管理器（用于接收隧道关闭通知时关闭对应隧道）
+	targetTunnelManager *TargetTunnelManager
 }
 
 // GetInstanceID 获取客户端实例标识
@@ -114,6 +120,8 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 		localTrafficStats:      make(map[string]*localMappingStats),
 		commandResponseManager: NewCommandResponseManager(),
 		startTime:              time.Now(),
+		notificationDispatcher: NewNotificationDispatcher(),
+		targetTunnelManager:    NewTargetTunnelManager(),
 	}
 
 	corelog.Infof("Client: instance ID generated: %s", instanceID)
@@ -132,6 +140,9 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 
 	// 初始化隧道连接池
 	client.tunnelPool = NewTunnelPool(client, DefaultTunnelPoolConfig())
+
+	// 注册目标端通知处理器（处理隧道关闭通知）
+	client.notificationDispatcher.AddHandler(NewTargetNotificationHandler(client.targetTunnelManager))
 
 	// 添加清理处理器
 	client.AddCleanHandler(func() error {

@@ -11,7 +11,7 @@ import (
 
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
-	"tunnox-core/internal/httpservice"
+	"tunnox-core/internal/protocol/httptypes"
 )
 
 // HTTPProxyExecutor HTTP 代理执行器
@@ -62,7 +62,7 @@ func NewHTTPProxyExecutor(config *HTTPProxyConfig) *HTTPProxyExecutor {
 }
 
 // Execute 执行 HTTP 代理请求
-func (e *HTTPProxyExecutor) Execute(req *httpservice.HTTPProxyRequest) (*httpservice.HTTPProxyResponse, error) {
+func (e *HTTPProxyExecutor) Execute(req *httptypes.HTTPProxyRequest) (*httptypes.HTTPProxyResponse, error) {
 	if !e.config.Enabled {
 		return nil, coreerrors.New(coreerrors.CodeForbidden, "HTTP proxy is disabled")
 	}
@@ -106,7 +106,7 @@ func (e *HTTPProxyExecutor) Execute(req *httpservice.HTTPProxyRequest) (*httpser
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		corelog.Warnf("HTTPProxyExecutor: request failed: %v", err)
-		return &httpservice.HTTPProxyResponse{
+		return &httptypes.HTTPProxyResponse{
 			RequestID: req.RequestID,
 			Error:     err.Error(),
 		}, nil
@@ -122,7 +122,7 @@ func (e *HTTPProxyExecutor) Execute(req *httpservice.HTTPProxyRequest) (*httpser
 	body, err := io.ReadAll(io.LimitReader(httpResp.Body, maxSize))
 	if err != nil {
 		corelog.Warnf("HTTPProxyExecutor: failed to read response body: %v", err)
-		return &httpservice.HTTPProxyResponse{
+		return &httptypes.HTTPProxyResponse{
 			RequestID: req.RequestID,
 			Error:     "failed to read response body: " + err.Error(),
 		}, nil
@@ -138,7 +138,7 @@ func (e *HTTPProxyExecutor) Execute(req *httpservice.HTTPProxyRequest) (*httpser
 
 	corelog.Debugf("HTTPProxyExecutor: request completed, status=%d, body_size=%d", httpResp.StatusCode, len(body))
 
-	return &httpservice.HTTPProxyResponse{
+	return &httptypes.HTTPProxyResponse{
 		RequestID:  req.RequestID,
 		StatusCode: httpResp.StatusCode,
 		Headers:    headers,

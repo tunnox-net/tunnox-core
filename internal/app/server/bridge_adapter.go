@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
@@ -14,11 +13,9 @@ import (
 
 // BridgeAdapter 适配器，通过MessageBroker实现跨服务器隧道转发
 type BridgeAdapter struct {
-	messageBroker  broker.MessageBroker
-	nodeID         string
-	ctx            context.Context                      // context 用于接收退出信号
-	bridgeManager  *internalbridge.BridgeManager        // 可选：真正的 BridgeManager（用于跨节点转发）
-	connectionPool *internalbridge.BridgeConnectionPool // 可选：连接池（用于跨节点转发）
+	messageBroker broker.MessageBroker
+	nodeID        string
+	ctx           context.Context // context 用于接收退出信号
 }
 
 // NewBridgeAdapter 创建BridgeAdapter（不依赖BridgeManager，直接使用MessageBroker）
@@ -31,15 +28,6 @@ func NewBridgeAdapter(ctx context.Context, messageBroker broker.MessageBroker, n
 		nodeID:        nodeID,
 		ctx:           ctx,
 	}
-}
-
-// SetBridgeManager 设置真正的 BridgeManager（用于跨节点转发）
-func (a *BridgeAdapter) SetBridgeManager(bm *internalbridge.BridgeManager) {
-	a.bridgeManager = bm
-	if bm != nil {
-		a.connectionPool = bm.GetConnectionPool()
-	}
-	corelog.Infof("BridgeAdapter: BridgeManager set (pool available: %v)", a.connectionPool != nil)
 }
 
 // BroadcastTunnelOpen 广播隧道打开请求到其他节点
@@ -133,23 +121,6 @@ func (a *BridgeAdapter) PublishMessage(ctx context.Context, topic string, payloa
 	}
 
 	return nil
-}
-
-// CreateCrossNodeSession 创建跨节点转发会话
-// 实现 session.BridgeManager 接口
-func (a *BridgeAdapter) CreateCrossNodeSession(ctx context.Context, targetNodeID, targetNodeAddr string, metadata *internalbridge.SessionMetadata) (*internalbridge.ForwardSession, error) {
-	if a.connectionPool == nil {
-		return nil, fmt.Errorf("connection pool not available (BridgeManager not set)")
-	}
-
-	session, err := a.connectionPool.CreateSession(ctx, targetNodeID, targetNodeAddr, metadata)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create cross-node session: %w", err)
-	}
-
-	corelog.Infof("BridgeAdapter: created cross-node session %s to node %s at %s",
-		session.StreamID(), targetNodeID, targetNodeAddr)
-	return session, nil
 }
 
 // GetNodeID 获取当前节点ID

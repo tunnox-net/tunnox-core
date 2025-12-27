@@ -1,12 +1,20 @@
 package utils
 
 import (
+	"errors"
 	"io"
 	"net"
 	"sync"
 
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/stream/transform"
+)
+
+var (
+	// ErrNilReader 当 Reader 为 nil 时返回
+	ErrNilReader = errors.New("Reader cannot be nil")
+	// ErrNilWriter 当 Writer 为 nil 时返回
+	ErrNilWriter = errors.New("Writer cannot be nil")
 )
 
 // CloseWriter 支持半关闭（关闭写方向）的接口
@@ -43,35 +51,35 @@ func (rw *readWriteCloser) CloseWrite() error {
 }
 
 // NewReadWriteCloser 创建 ReadWriteCloser 适配器
-// 如果 Reader 或 Writer 为 nil，会返回错误（通过 panic 或返回 nil）
-func NewReadWriteCloser(r io.Reader, w io.Writer, closeFunc func() error) io.ReadWriteCloser {
+// 如果 Reader 或 Writer 为 nil，会返回错误
+func NewReadWriteCloser(r io.Reader, w io.Writer, closeFunc func() error) (io.ReadWriteCloser, error) {
 	if r == nil {
-		panic("NewReadWriteCloser: Reader cannot be nil")
+		return nil, ErrNilReader
 	}
 	if w == nil {
-		panic("NewReadWriteCloser: Writer cannot be nil")
+		return nil, ErrNilWriter
 	}
 	return &readWriteCloser{
 		Reader:    r,
 		Writer:    w,
 		closeFunc: closeFunc,
-	}
+	}, nil
 }
 
 // NewReadWriteCloserWithCloseWrite 创建支持半关闭的 ReadWriteCloser 适配器
-func NewReadWriteCloserWithCloseWrite(r io.Reader, w io.Writer, closeFunc func() error, closeWriteFunc func() error) io.ReadWriteCloser {
+func NewReadWriteCloserWithCloseWrite(r io.Reader, w io.Writer, closeFunc func() error, closeWriteFunc func() error) (io.ReadWriteCloser, error) {
 	if r == nil {
-		panic("NewReadWriteCloserWithCloseWrite: Reader cannot be nil")
+		return nil, ErrNilReader
 	}
 	if w == nil {
-		panic("NewReadWriteCloserWithCloseWrite: Writer cannot be nil")
+		return nil, ErrNilWriter
 	}
 	return &readWriteCloser{
 		Reader:         r,
 		Writer:         w,
 		closeFunc:      closeFunc,
 		closeWriteFunc: closeWriteFunc,
-	}
+	}, nil
 }
 
 // BidirectionalCopyOptions 双向拷贝配置选项

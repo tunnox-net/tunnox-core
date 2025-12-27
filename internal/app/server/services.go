@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/protocol/adapter"
+	"tunnox-core/internal/protocol/httptypes"
 	"tunnox-core/internal/protocol/session"
 )
 
@@ -48,7 +48,7 @@ func (a *SessionManagerAdapter) GetNodeID() string {
 }
 
 // SendHTTPProxyRequest 发送 HTTP 代理请求
-func (a *SessionManagerAdapter) SendHTTPProxyRequest(clientID int64, request *httpservice.HTTPProxyRequest) (*httpservice.HTTPProxyResponse, error) {
+func (a *SessionManagerAdapter) SendHTTPProxyRequest(clientID int64, request *httptypes.HTTPProxyRequest) (*httptypes.HTTPProxyResponse, error) {
 	return a.sessionMgr.SendHTTPProxyRequest(clientID, request)
 }
 
@@ -231,11 +231,6 @@ func NewStorageService(name string, storage storage.Storage) *BaseService {
 // NewBrokerService 创建消息代理服务
 func NewBrokerService(name string, broker broker.MessageBroker) *BaseService {
 	return NewBaseService(name, broker)
-}
-
-// NewBridgeService 创建桥接服务
-func NewBridgeService(name string, manager *bridge.BridgeManager) *BaseService {
-	return NewBaseService(name, manager)
 }
 
 // NewHTTPServiceAdapter 创建 HTTP 服务适配器

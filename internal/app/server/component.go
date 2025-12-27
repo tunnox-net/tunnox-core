@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	internalbridge "tunnox-core/internal/bridge"
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/repos"
@@ -17,8 +16,6 @@ import (
 	"tunnox-core/internal/protocol"
 	"tunnox-core/internal/protocol/session"
 	"tunnox-core/internal/security"
-
-	"google.golang.org/grpc"
 )
 
 // ============================================================================
@@ -80,9 +77,7 @@ type Dependencies struct {
 
 	// 消息和桥接
 	MessageBroker broker.MessageBroker
-	BridgeManager *internalbridge.BridgeManager
 	BridgeAdapter *BridgeAdapter
-	GRPCServer    *grpc.Server
 
 	// HTTP 服务
 	HTTPService *httpservice.HTTPService

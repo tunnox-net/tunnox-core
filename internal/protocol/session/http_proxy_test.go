@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"tunnox-core/internal/httpservice"
+	"tunnox-core/internal/protocol/httptypes"
 )
 
 func TestHTTPProxyManager_RegisterAndUnregister(t *testing.T) {
@@ -44,7 +44,7 @@ func TestHTTPProxyManager_HandleResponse(t *testing.T) {
 	defer manager.UnregisterPendingRequest(requestID)
 
 	// 发送响应
-	resp := &httpservice.HTTPProxyResponse{
+	resp := &httptypes.HTTPProxyResponse{
 		RequestID:  requestID,
 		StatusCode: 200,
 		Headers:    map[string]string{"Content-Type": "application/json"},
@@ -68,7 +68,7 @@ func TestHTTPProxyManager_HandleResponseNoRequest(t *testing.T) {
 	manager := NewHTTPProxyManager()
 
 	// 发送响应（没有注册请求）
-	resp := &httpservice.HTTPProxyResponse{
+	resp := &httptypes.HTTPProxyResponse{
 		RequestID:  "non-existent-request",
 		StatusCode: 200,
 	}
@@ -86,7 +86,7 @@ func TestHTTPProxyManager_WaitForResponse_Success(t *testing.T) {
 	// 在后台发送响应
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		resp := &httpservice.HTTPProxyResponse{
+		resp := &httptypes.HTTPProxyResponse{
 			RequestID:  requestID,
 			StatusCode: 201,
 		}

@@ -65,6 +65,13 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
 	corelog.Infof("Client[TCP-target][%s]: connecting to target %s and dialing tunnel in parallel", tunnelID, targetAddr)
 
+	// 注册隧道到管理器（用于接收关闭通知时关闭隧道）
+	tunnelCtx, tunnelCancel := c.targetTunnelManager.RegisterTunnel(tunnelID, c.Ctx())
+	defer func() {
+		tunnelCancel()
+		c.targetTunnelManager.UnregisterTunnel(tunnelID)
+	}()
+
 	// 并行执行：连接目标服务 和 建立隧道连接
 	type targetResult struct {
 		conn net.Conn
@@ -98,6 +105,24 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 
 	for i := 0; i < 2; i++ {
 		select {
+		case <-tunnelCtx.Done():
+			corelog.Infof("Client[TCP-target][%s]: tunnel cancelled before connection established", tunnelID)
+			// 清理已建立的连接
+			select {
+			case tr := <-targetCh:
+				if tr.conn != nil {
+					tr.conn.Close()
+				}
+			default:
+			}
+			select {
+			case tunRes := <-tunnelCh:
+				if tunRes.conn != nil {
+					tunRes.conn.Close()
+				}
+			default:
+			}
+			return
 		case tr := <-targetCh:
 			if tr.err != nil {
 				corelog.Errorf("Client[TCP-target][%s]: failed to connect to target %s: %v", tunnelID, targetAddr, tr.err)
@@ -134,6 +159,14 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	defer tunnelConn.Close()
 
 	corelog.Infof("Client[TCP-target][%s]: tunnel established for target %s", tunnelID, targetAddr)
+
+	// 监听隧道取消信号，收到时关闭连接以中断数据传输
+	go func() {
+		<-tunnelCtx.Done()
+		corelog.Infof("Client[TCP-target][%s]: received close notification, closing connections", tunnelID)
+		targetConn.Close()
+		tunnelConn.Close()
+	}()
 
 	// 3. 通过接口抽象获取 Reader/Writer（不依赖具体协议）
 	// 优先使用 tunnelStream 的 Reader/Writer（支持压缩/加密）
@@ -177,13 +210,17 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 		corelog.Errorf("Client[TCP-target][%s]: tunnelReader or tunnelWriter is nil after setup, reader=%v, writer=%v", tunnelID, tunnelReader != nil, tunnelWriter != nil)
 		return
 	}
-	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
+	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
 		tunnelStream.Close()
 		if tunnelConn != nil {
 			tunnelConn.Close()
 		}
 		return nil
 	})
+	if err != nil {
+		corelog.Errorf("Client[TCP-target][%s]: failed to create tunnel ReadWriteCloser: %v", tunnelID, err)
+		return
+	}
 
 	// 5. 创建转换器并启动双向转发
 	transformer, _ := transform.NewTransformer(transformConfig)
@@ -205,6 +242,13 @@ func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	transformConfig *transform.TransformConfig) {
 	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
 	corelog.Infof("Client[UDP-target][%s]: connecting to target %s and dialing tunnel in parallel", tunnelID, targetAddr)
+
+	// 注册隧道到管理器（用于接收关闭通知时关闭隧道）
+	tunnelCtx, tunnelCancel := c.targetTunnelManager.RegisterTunnel(tunnelID, c.Ctx())
+	defer func() {
+		tunnelCancel()
+		c.targetTunnelManager.UnregisterTunnel(tunnelID)
+	}()
 
 	// 并行执行：连接目标服务 和 建立隧道连接
 	type targetResult struct {
@@ -244,6 +288,23 @@ func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, tar
 
 	for i := 0; i < 2; i++ {
 		select {
+		case <-tunnelCtx.Done():
+			corelog.Infof("Client[UDP-target][%s]: tunnel cancelled before connection established", tunnelID)
+			select {
+			case tr := <-targetCh:
+				if tr.conn != nil {
+					tr.conn.Close()
+				}
+			default:
+			}
+			select {
+			case tunRes := <-tunnelCh:
+				if tunRes.conn != nil {
+					tunRes.conn.Close()
+				}
+			default:
+			}
+			return
 		case tr := <-targetCh:
 			if tr.err != nil {
 				corelog.Errorf("Client[UDP-target][%s]: failed to connect to target %s: %v", tunnelID, targetAddr, tr.err)
@@ -278,6 +339,14 @@ func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	defer tunnelConn.Close()
 
 	corelog.Infof("Client[UDP-target][%s]: tunnel established for target %s", tunnelID, targetAddr)
+
+	// 监听隧道取消信号，收到时关闭连接以中断数据传输
+	go func() {
+		<-tunnelCtx.Done()
+		corelog.Infof("Client[UDP-target][%s]: received close notification, closing connections", tunnelID)
+		targetConn.Close()
+		tunnelConn.Close()
+	}()
 
 	// 3. 获取 Reader/Writer
 	tunnelReader := tunnelStream.GetReader()
@@ -317,13 +386,17 @@ func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, tar
 		return
 	}
 
-	tunnelRWC := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
+	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
 		tunnelStream.Close()
 		if tunnelConn != nil {
 			tunnelConn.Close()
 		}
 		return nil
 	})
+	if err != nil {
+		corelog.Errorf("Client[UDP-target][%s]: failed to create tunnel ReadWriteCloser: %v", tunnelID, err)
+		return
+	}
 
 	// 5. 双向转发（UDP需要特殊处理数据包边界）
 	// UDP使用包导向的拷贝函数，保持数据包边界

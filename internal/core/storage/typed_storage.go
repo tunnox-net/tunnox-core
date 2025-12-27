@@ -2,8 +2,14 @@ package storage
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
+)
+
+var (
+	// ErrStorageNotFullStorage 当存储不支持 FullStorage 接口时返回
+	ErrStorageNotFullStorage = errors.New("storage does not implement FullStorage interface")
 )
 
 // TypedStorage 泛型类型安全存储接口
@@ -48,20 +54,18 @@ type typedStorageAdapter[T any] struct {
 // NewTypedStorage 创建泛型类型安全存储
 // 使用示例:
 //
-//	stringStorage := NewTypedStorage[string](storage)
-//	int64Storage := NewTypedStorage[int64](storage)
-//	userStorage := NewTypedStorage[*models.User](storage)
-func NewTypedStorage[T any](storage Storage) TypedStorage[T] {
+//	stringStorage, err := NewTypedStorage[string](storage)
+//	int64Storage, err := NewTypedStorage[int64](storage)
+//	userStorage, err := NewTypedStorage[*models.User](storage)
+func NewTypedStorage[T any](storage Storage) (TypedStorage[T], error) {
 	// 将 Storage 转换为 FullStorage（所有现有实现都实现了 FullStorage）
 	fullStorage, ok := storage.(FullStorage)
 	if !ok {
-		// 如果存储不支持 FullStorage，创建一个适配器
-		// 注意：这需要存储实现所有扩展接口
-		panic("storage does not implement FullStorage interface")
+		return nil, ErrStorageNotFullStorage
 	}
 	return &typedStorageAdapter[T]{
 		storage: fullStorage,
-	}
+	}, nil
 }
 
 // Set 类型安全的设置操作
@@ -328,31 +332,31 @@ type Float64Storage = TypedStorage[float64]
 // ============================================================================
 
 // NewStringStorage 创建字符串存储
-func NewStringStorage(storage Storage) StringStorage {
+func NewStringStorage(storage Storage) (StringStorage, error) {
 	return NewTypedStorage[string](storage)
 }
 
 // NewInt64Storage 创建 Int64 存储
-func NewInt64Storage(storage Storage) Int64Storage {
+func NewInt64Storage(storage Storage) (Int64Storage, error) {
 	return NewTypedStorage[int64](storage)
 }
 
 // NewIntStorage 创建 Int 存储
-func NewIntStorage(storage Storage) IntStorage {
+func NewIntStorage(storage Storage) (IntStorage, error) {
 	return NewTypedStorage[int](storage)
 }
 
 // NewBoolStorage 创建布尔值存储
-func NewBoolStorage(storage Storage) BoolStorage {
+func NewBoolStorage(storage Storage) (BoolStorage, error) {
 	return NewTypedStorage[bool](storage)
 }
 
 // NewBytesStorage 创建字节数组存储
-func NewBytesStorage(storage Storage) BytesStorage {
+func NewBytesStorage(storage Storage) (BytesStorage, error) {
 	return NewTypedStorage[[]byte](storage)
 }
 
 // NewFloat64Storage 创建 Float64 存储
-func NewFloat64Storage(storage Storage) Float64Storage {
+func NewFloat64Storage(storage Storage) (Float64Storage, error) {
 	return NewTypedStorage[float64](storage)
 }
