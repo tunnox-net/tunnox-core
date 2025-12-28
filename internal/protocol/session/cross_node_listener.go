@@ -160,6 +160,8 @@ func (l *CrossNodeListener) handleTargetReady(ctx context.Context, conn *net.TCP
 // runBridgeForward 运行 Bridge 数据转发
 // 🔥 重构：使用 FrameStream 封装帧协议，实现连接复用
 func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBridge, crossConn *CrossNodeConn) {
+	corelog.Infof("CrossNodeListener[%s]: runBridgeForward starting", tunnelID)
+
 	// 🔧 关键修复：数据转发完成后关闭 Bridge，触发生命周期结束
 	// 这样 bridge.Start() 会从 <-b.Ctx().Done() 返回，runBridgeLifecycle 会从 map 中删除 bridge
 	// 防止高并发场景下 bridge 泄漏导致后续请求因 tunnelID 重复而失败
@@ -170,8 +172,16 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 	if sourceForwarder == nil {
 		corelog.Errorf("CrossNodeListener[%s]: sourceForwarder is nil, bridge.sourceConn=%v, bridge.sourceStream=%v",
 			tunnelID, bridge.sourceConn != nil, bridge.sourceStream != nil)
+		// 打印更多调试信息
+		if bridge.sourceStream != nil {
+			reader := bridge.sourceStream.GetReader()
+			writer := bridge.sourceStream.GetWriter()
+			corelog.Errorf("CrossNodeListener[%s]: sourceStream.GetReader()=%v, sourceStream.GetWriter()=%v",
+				tunnelID, reader != nil, writer != nil)
+		}
 		return
 	}
+	corelog.Infof("CrossNodeListener[%s]: sourceForwarder obtained successfully", tunnelID)
 
 	// 🔧 关键修复：确保数据转发完成后关闭源端连接
 	// 这样 Listen 端客户端的 BidirectionalCopy 才能正确收到 EOF 并结束
@@ -209,27 +219,38 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 	done := make(chan struct{}, 2)
 	var closeOnce sync.Once
 	var bytesSent, bytesRecv int64
+	var sendErr, recvErr error
+
+	corelog.Infof("CrossNodeListener[%s]: starting bidirectional copy, sourceForwarder=%T, frameStream=%T",
+		tunnelID, sourceForwarder, frameStream)
 
 	// 源端 -> 跨节点
 	go func() {
+		corelog.Infof("CrossNodeListener[%s]: source->crossNode goroutine started", tunnelID)
 		defer func() {
+			corelog.Infof("CrossNodeListener[%s]: source->crossNode finished, bytes=%d, err=%v", tunnelID, bytesSent, sendErr)
 			closeOnce.Do(func() { _ = frameStream.Close() })
 			done <- struct{}{}
 		}()
-		bytesSent, _ = io.Copy(frameStream, sourceForwarder)
+		// 使用带日志的读取器包装 sourceForwarder
+		logReader := &loggedReader{reader: sourceForwarder, tunnelID: tunnelID, direction: "source->crossNode"}
+		bytesSent, sendErr = io.Copy(frameStream, logReader)
 	}()
 
 	// 跨节点 -> 源端
 	go func() {
+		corelog.Infof("CrossNodeListener[%s]: crossNode->source goroutine started", tunnelID)
 		defer func() {
+			corelog.Infof("CrossNodeListener[%s]: crossNode->source finished, bytes=%d, err=%v", tunnelID, bytesRecv, recvErr)
 			closeOnce.Do(func() { _ = frameStream.Close() })
 			done <- struct{}{}
 		}()
-		bytesRecv, _ = io.Copy(sourceForwarder, frameStream)
+		bytesRecv, recvErr = io.Copy(sourceForwarder, frameStream)
 	}()
 
 	// 等待两个方向都完成
 	<-done
+	corelog.Infof("CrossNodeListener[%s]: first direction completed", tunnelID)
 	<-done
 	corelog.Infof("CrossNodeListener[%s]: forward completed, sent=%d, recv=%d", tunnelID, bytesSent, bytesRecv)
 }
@@ -341,4 +362,22 @@ func (l *CrossNodeListener) sendHTTPProxyResponse(conn *net.TCPConn, requestID s
 	} else {
 		corelog.Infof("CrossNodeListener: sent HTTP proxy response for requestID=%s", requestID)
 	}
+}
+
+// loggedReader 带日志的读取器（用于调试）
+type loggedReader struct {
+	reader    io.Reader
+	tunnelID  string
+	direction string
+}
+
+func (r *loggedReader) Read(p []byte) (n int, err error) {
+	n, err = r.reader.Read(p)
+	if n > 0 {
+		corelog.Infof("loggedReader[%s][%s]: read %d bytes", r.tunnelID, r.direction, n)
+	}
+	if err != nil {
+		corelog.Infof("loggedReader[%s][%s]: read error: %v", r.tunnelID, r.direction, err)
+	}
+	return
 }

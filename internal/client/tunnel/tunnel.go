@@ -91,6 +91,7 @@ type TunnelConfig struct {
 	ID           string
 	MappingID    string
 	Role         TunnelRole
+	Protocol     string             // 协议类型: "tcp", "udp" 等
 	LocalConn    io.ReadWriteCloser
 	TunnelConn   net.Conn
 	TunnelRWC    io.ReadWriteCloser
@@ -108,6 +109,7 @@ type Tunnel struct {
 	id        string
 	mappingID string
 	role      TunnelRole
+	protocol  string // 协议类型: "tcp", "udp" 等
 
 	// 连接
 	localConn  io.ReadWriteCloser
@@ -142,6 +144,7 @@ func NewTunnel(config *TunnelConfig) *Tunnel {
 		id:           config.ID,
 		mappingID:    config.MappingID,
 		role:         config.Role,
+		protocol:     config.Protocol,
 		localConn:    config.LocalConn,
 		tunnelConn:   config.TunnelConn,
 		tunnelRWC:    config.TunnelRWC,
@@ -226,11 +229,24 @@ func (t *Tunnel) monitorTimeout() {
 func (t *Tunnel) runDataCopy() {
 	startTime := time.Now()
 
-	options := &utils.BidirectionalCopyOptions{
-		LogPrefix: fmt.Sprintf("Tunnel[%s][%s]", t.role, t.id),
-	}
+	logPrefix := fmt.Sprintf("Tunnel[%s][%s]", t.role, t.id)
 
-	result := utils.BidirectionalCopy(t.localConn, t.tunnelRWC, options)
+	var result *utils.BidirectionalCopyResult
+
+	// 根据协议类型选择不同的复制函数
+	if t.protocol == "udp" {
+		// UDP 协议使用带长度前缀的复制函数
+		options := &utils.BidirectionalCopyOptions{
+			LogPrefix: logPrefix,
+		}
+		result = utils.UDPBidirectionalCopy(t.localConn, t.tunnelRWC, options)
+	} else {
+		// TCP 和其他协议使用普通复制
+		options := &utils.BidirectionalCopyOptions{
+			LogPrefix: logPrefix,
+		}
+		result = utils.BidirectionalCopy(t.localConn, t.tunnelRWC, options)
+	}
 
 	// 更新流量统计
 	t.bytesSent.Add(result.BytesSent)

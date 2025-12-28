@@ -312,6 +312,12 @@ func UDPBidirectionalCopy(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteClo
 		options = &BidirectionalCopyOptions{}
 	}
 
+	logPrefix := options.LogPrefix
+	if logPrefix == "" {
+		logPrefix = "UDPBidirectionalCopy"
+	}
+	corelog.Infof("%s: starting", logPrefix)
+
 	result := &BidirectionalCopyResult{}
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -319,22 +325,19 @@ func UDPBidirectionalCopy(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteClo
 	// UDP → Tunnel：从 UDP 读取数据包，加上长度前缀写入隧道
 	go func() {
 		defer wg.Done()
+		corelog.Infof("%s: UDP->tunnel goroutine started", logPrefix)
 
-		// 🚀 优化1：使用缓冲区池复用内存
-		readBuf := make([]byte, 65536)     // UDP 读缓冲
-		writeBuf := make([]byte, 512*1024) // 512KB 写缓冲（容纳更多包）
-		writePos := 0
+		// UDP 读缓冲和写缓冲（长度前缀 + 数据）
+		readBuf := make([]byte, 65536)
+		writeBuf := make([]byte, 65536+2) // 2 字节长度前缀 + 最大 UDP 包
 
 		for {
 			// 读取一个完整的 UDP 数据包
 			n, err := udpConn.Read(readBuf)
 			if err != nil {
-				// 刷新剩余数据
-				if writePos > 0 {
-					tunnelConn.Write(writeBuf[:writePos])
-				}
 				if err != io.EOF {
 					result.SendError = err
+					corelog.Errorf("%s: UDP->tunnel read error: %v", logPrefix, err)
 				}
 				break
 			}
@@ -343,38 +346,26 @@ func UDPBidirectionalCopy(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteClo
 				continue
 			}
 
-			// 🚀 优化2：合并写入 - 长度前缀+数据放到同一缓冲区
-			// 检查缓冲区空间（2字节长度 + n字节数据）
-			if writePos+2+n > len(writeBuf) {
-				// 缓冲区满，先刷新
-				if _, err := tunnelConn.Write(writeBuf[:writePos]); err != nil {
-					result.SendError = err
-					break
-				}
-				writePos = 0
+			corelog.Debugf("%s: UDP->tunnel read %d bytes from UDP", logPrefix, n)
+
+			// 写入长度前缀（2字节，大端序）+ 数据
+			writeBuf[0] = byte(n >> 8)
+			writeBuf[1] = byte(n)
+			copy(writeBuf[2:], readBuf[:n])
+
+			// 立即发送（确保实时性）
+			nw, err := tunnelConn.Write(writeBuf[:2+n])
+			if err != nil {
+				result.SendError = err
+				corelog.Errorf("%s: UDP->tunnel write error: %v", logPrefix, err)
+				break
 			}
-
-			// 写入长度前缀（2字节，大端序）
-			writeBuf[writePos] = byte(n >> 8)
-			writeBuf[writePos+1] = byte(n)
-			writePos += 2
-
-			// 复制数据包内容
-			copy(writeBuf[writePos:], readBuf[:n])
-			writePos += n
+			corelog.Debugf("%s: UDP->tunnel wrote %d bytes to tunnel (2 prefix + %d data)", logPrefix, nw, n)
 
 			result.BytesSent += int64(n)
-
-			// 🚀 优化3：批量刷新 - 累积到一定大小再写入
-			if writePos >= 256*1024 { // 256KB 阈值（提升 4 倍）
-				if _, err := tunnelConn.Write(writeBuf[:writePos]); err != nil {
-					result.SendError = err
-					break
-				}
-				writePos = 0
-			}
 		}
 
+		corelog.Infof("%s: UDP->tunnel goroutine finished, sent=%d bytes", logPrefix, result.BytesSent)
 		// 半关闭写方向
 		tryCloseWrite(tunnelConn)
 	}()
@@ -382,6 +373,7 @@ func UDPBidirectionalCopy(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteClo
 	// Tunnel → UDP：从隧道读取长度前缀+数据包，写入 UDP
 	go func() {
 		defer wg.Done()
+		corelog.Infof("%s: tunnel->UDP goroutine started", logPrefix)
 
 		// 🚀 优化4：批量读取 + 智能解包
 		readBuf := make([]byte, 512*1024) // 512KB 大缓冲区
@@ -391,11 +383,14 @@ func UDPBidirectionalCopy(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteClo
 		for {
 			// 🚀 批量读取：尽可能多地读取数据
 			if buffered < 256*1024 { // 低于 256KB 时补充数据
+				corelog.Debugf("%s: tunnel->UDP reading from tunnelConn (buffered=%d)", logPrefix, buffered)
 				n, err := tunnelConn.Read(readBuf[buffered:])
+				corelog.Debugf("%s: tunnel->UDP read returned n=%d, err=%v", logPrefix, n, err)
 				if n > 0 {
 					buffered += n
 				}
 				if err != nil {
+					corelog.Infof("%s: tunnel->UDP read error: %v (buffered=%d)", logPrefix, err, buffered)
 					// 处理剩余数据后退出
 					if err != io.EOF {
 						result.ReceiveError = err
@@ -411,9 +406,11 @@ func UDPBidirectionalCopy(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteClo
 			for buffered-processed >= 2 {
 				// 解析包长度（从当前位置读取）
 				packetLen := int(readBuf[processed])<<8 | int(readBuf[processed+1])
+				corelog.Debugf("%s: tunnel->UDP parsing packet, packetLen=%d, buffered=%d, processed=%d", logPrefix, packetLen, buffered, processed)
 
 				if packetLen == 0 || packetLen > 65535 {
 					// 非法长度，退出
+					corelog.Errorf("%s: tunnel->UDP invalid packet length: %d", logPrefix, packetLen)
 					return
 				}
 

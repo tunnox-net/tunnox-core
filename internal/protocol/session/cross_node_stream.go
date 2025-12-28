@@ -55,6 +55,8 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 
+	corelog.Debugf("FrameStream[%s]: Read called, bufLen=%d", TunnelIDToString(s.tunnelID), len(p))
+
 	// 如果已经收到 EOF，直接返回
 	if s.readEOF {
 		return 0, io.EOF
@@ -69,6 +71,7 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 			s.readBuf = nil
 			s.readOff = 0
 		}
+		corelog.Debugf("FrameStream[%s]: Read from buffer, n=%d", TunnelIDToString(s.tunnelID), n)
 		return n, nil
 	}
 
@@ -77,9 +80,13 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 	if tcpConn == nil {
 		return 0, coreerrors.New(coreerrors.CodeNetworkError, "connection is nil")
 	}
+	corelog.Debugf("FrameStream[%s]: about to read frame from tcpConn", TunnelIDToString(s.tunnelID))
 
 	for {
+		corelog.Debugf("FrameStream[%s]: calling ReadFrame...", TunnelIDToString(s.tunnelID))
 		tunnelID, frameType, data, err := ReadFrame(tcpConn)
+		corelog.Debugf("FrameStream[%s]: ReadFrame returned, err=%v, tunnelID=%s, frameType=0x%02x, dataLen=%d",
+			TunnelIDToString(s.tunnelID), err, TunnelIDToString(tunnelID), frameType, len(data))
 		if err != nil {
 			// 网络错误，标记连接损坏
 			s.conn.MarkBroken()
@@ -106,11 +113,13 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 		}
 
 		// TunnelID 匹配，处理帧
+		corelog.Debugf("FrameStream[%s]: processing frame, type=0x%02x, dataLen=%d", TunnelIDToString(s.tunnelID), frameType, len(data))
 		switch frameType {
 		case FrameTypeData:
 			// 数据帧：缓存数据并返回
 			if len(data) == 0 {
 				// 空数据帧，继续读取下一帧
+				corelog.Debugf("FrameStream[%s]: empty data frame, continue", TunnelIDToString(s.tunnelID))
 				continue
 			}
 			s.readBuf = data
@@ -121,6 +130,7 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 				s.readBuf = nil
 				s.readOff = 0
 			}
+			corelog.Debugf("FrameStream[%s]: returning %d bytes", TunnelIDToString(s.tunnelID), n)
 			return n, nil
 
 		case FrameTypeClose:
@@ -150,6 +160,8 @@ func (s *FrameStream) Write(p []byte) (n int, err error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
+
+	corelog.Infof("FrameStream[%s]: Write called, len=%d", TunnelIDToString(s.tunnelID), len(p))
 
 	tcpConn := s.conn.GetTCPConn()
 	if tcpConn == nil {

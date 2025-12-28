@@ -263,6 +263,7 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 		ID:           tunnelID,
 		MappingID:    h.config.MappingID,
 		Role:         tunnel.TunnelRoleListen,
+		Protocol:     h.adapter.GetProtocol(), // 传递协议类型，UDP 使用特殊处理
 		LocalConn:    localConn,
 		TunnelConn:   tunnelConn,
 		TunnelRWC:    tunnelRWC,

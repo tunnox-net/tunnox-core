@@ -8,6 +8,7 @@ import (
 	"net"
 
 	coreerrors "tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // 帧类型常量
@@ -49,12 +50,16 @@ func WriteFrame(conn *net.TCPConn, tunnelID [16]byte, frameType byte, data []byt
 	header[16] = frameType
 	binary.BigEndian.PutUint32(header[17:21], uint32(len(data)))
 
+	corelog.Debugf("WriteFrame: tunnelID=%s, frameType=0x%02x, dataLen=%d", TunnelIDToString(tunnelID), frameType, len(data))
+
 	// 使用 net.Buffers 一次写入（减少系统调用）
 	bufs := net.Buffers{header, data}
-	_, err := bufs.WriteTo(conn)
+	n, err := bufs.WriteTo(conn)
 	if err != nil {
+		corelog.Errorf("WriteFrame: failed, tunnelID=%s, err=%v", TunnelIDToString(tunnelID), err)
 		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write frame")
 	}
+	corelog.Debugf("WriteFrame: success, tunnelID=%s, bytesWritten=%d", TunnelIDToString(tunnelID), n)
 
 	return nil
 }
@@ -102,12 +107,16 @@ func ReadFrameFromReader(r io.Reader) (tunnelID [16]byte, frameType byte, data [
 		return
 	}
 
+	corelog.Debugf("ReadFrame: waiting for frame header...")
+
 	// 读取帧头
 	header := make([]byte, FrameHeaderSize)
 	if _, err = io.ReadFull(r, header); err != nil {
 		if err == io.EOF {
+			corelog.Debugf("ReadFrame: EOF received")
 			return
 		}
+		corelog.Errorf("ReadFrame: failed to read header, err=%v", err)
 		err = coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to read frame header")
 		return
 	}
@@ -116,6 +125,9 @@ func ReadFrameFromReader(r io.Reader) (tunnelID [16]byte, frameType byte, data [
 	copy(tunnelID[:], header[0:16])
 	frameType = header[16]
 	length := binary.BigEndian.Uint32(header[17:21])
+
+	corelog.Debugf("ReadFrame: header received, tunnelID=%s, frameType=0x%02x, length=%d",
+		TunnelIDToString(tunnelID), frameType, length)
 
 	// 检查长度
 	if length > MaxFrameSize {
@@ -127,9 +139,11 @@ func ReadFrameFromReader(r io.Reader) (tunnelID [16]byte, frameType byte, data [
 	if length > 0 {
 		data = make([]byte, length)
 		if _, err = io.ReadFull(r, data); err != nil {
+			corelog.Errorf("ReadFrame: failed to read data, err=%v", err)
 			err = coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to read frame data")
 			return
 		}
+		corelog.Debugf("ReadFrame: data received, len=%d", len(data))
 	}
 
 	return
