@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	coreerrors "tunnox-core/internal/core/errors"
-	corelog "tunnox-core/internal/core/log"
 )
 
 // TunnelStateTracker 用于跟踪 tunnel 状态（检查 tunnel 是否已关闭）
@@ -55,8 +54,6 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 
-	corelog.Debugf("FrameStream[%s]: Read called, bufLen=%d", TunnelIDToString(s.tunnelID), len(p))
-
 	// 如果已经收到 EOF，直接返回
 	if s.readEOF {
 		return 0, io.EOF
@@ -66,12 +63,10 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 	if s.readBuf != nil && s.readOff < len(s.readBuf) {
 		n = copy(p, s.readBuf[s.readOff:])
 		s.readOff += n
-		// 如果缓冲区读完了，清空缓冲区
 		if s.readOff >= len(s.readBuf) {
 			s.readBuf = nil
 			s.readOff = 0
 		}
-		corelog.Debugf("FrameStream[%s]: Read from buffer, n=%d", TunnelIDToString(s.tunnelID), n)
 		return n, nil
 	}
 
@@ -80,46 +75,27 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 	if tcpConn == nil {
 		return 0, coreerrors.New(coreerrors.CodeNetworkError, "connection is nil")
 	}
-	corelog.Debugf("FrameStream[%s]: about to read frame from tcpConn", TunnelIDToString(s.tunnelID))
 
 	for {
-		corelog.Debugf("FrameStream[%s]: calling ReadFrame...", TunnelIDToString(s.tunnelID))
 		tunnelID, frameType, data, err := ReadFrame(tcpConn)
-		corelog.Debugf("FrameStream[%s]: ReadFrame returned, err=%v, tunnelID=%s, frameType=0x%02x, dataLen=%d",
-			TunnelIDToString(s.tunnelID), err, TunnelIDToString(tunnelID), frameType, len(data))
 		if err != nil {
-			// 网络错误，标记连接损坏
 			s.conn.MarkBroken()
-			corelog.Debugf("FrameStream[%s]: read frame error: %v", TunnelIDToString(s.tunnelID), err)
 			return 0, err
 		}
 
 		// 检查 TunnelID 是否匹配
 		if tunnelID != s.tunnelID {
-			// 收到其他 tunnel 的帧，检查该 tunnel 是否已关闭
 			otherTunnelIDStr := TunnelIDToString(tunnelID)
 			if s.tracker != nil && s.tracker.IsTunnelClosed(otherTunnelIDStr) {
-				// 该 tunnel 已关闭，这是残留帧，丢弃并继续读下一帧
-				corelog.Debugf("FrameStream[%s]: discarding frame from closed tunnel %s (residual data)",
-					TunnelIDToString(s.tunnelID), otherTunnelIDStr)
-				continue
-			} else {
-				// 该 tunnel 还活着，这可能是协议错误
-				corelog.Warnf("FrameStream[%s]: received frame for different active tunnel: %s",
-					TunnelIDToString(s.tunnelID), otherTunnelIDStr)
-				// 也丢弃，继续读下一帧（避免数据错乱）
-				continue
+				continue // 残留帧，丢弃
 			}
+			continue // 其他 tunnel 的帧，丢弃
 		}
 
 		// TunnelID 匹配，处理帧
-		corelog.Debugf("FrameStream[%s]: processing frame, type=0x%02x, dataLen=%d", TunnelIDToString(s.tunnelID), frameType, len(data))
 		switch frameType {
 		case FrameTypeData:
-			// 数据帧：缓存数据并返回
 			if len(data) == 0 {
-				// 空数据帧，继续读取下一帧
-				corelog.Debugf("FrameStream[%s]: empty data frame, continue", TunnelIDToString(s.tunnelID))
 				continue
 			}
 			s.readBuf = data
@@ -130,18 +106,13 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 				s.readBuf = nil
 				s.readOff = 0
 			}
-			corelog.Debugf("FrameStream[%s]: returning %d bytes", TunnelIDToString(s.tunnelID), n)
 			return n, nil
 
 		case FrameTypeClose:
-			// 关闭帧：tunnel 正常结束
 			s.readEOF = true
-			corelog.Debugf("FrameStream[%s]: received Close frame, EOF", TunnelIDToString(s.tunnelID))
 			return 0, io.EOF
 
 		default:
-			// 未预期的帧类型，继续读取下一帧
-			corelog.Warnf("FrameStream[%s]: unexpected frame type: 0x%02x", TunnelIDToString(s.tunnelID), frameType)
 			continue
 		}
 	}
@@ -161,8 +132,6 @@ func (s *FrameStream) Write(p []byte) (n int, err error) {
 		return 0, nil
 	}
 
-	corelog.Infof("FrameStream[%s]: Write called, len=%d", TunnelIDToString(s.tunnelID), len(p))
-
 	tcpConn := s.conn.GetTCPConn()
 	if tcpConn == nil {
 		return 0, coreerrors.New(coreerrors.CodeNetworkError, "connection is nil")
@@ -171,7 +140,6 @@ func (s *FrameStream) Write(p []byte) (n int, err error) {
 	// 封装成 FrameTypeData 帧并发送
 	// 如果数据超过 MaxFrameSize，自动分片发送
 	if len(p) > MaxFrameSize {
-		// 分片写入
 		written := 0
 		for written < len(p) {
 			chunkSize := MaxFrameSize
@@ -191,7 +159,6 @@ func (s *FrameStream) Write(p []byte) (n int, err error) {
 	// 单帧写入
 	if err := WriteFrame(tcpConn, s.tunnelID, FrameTypeData, p); err != nil {
 		s.conn.MarkBroken()
-		corelog.Debugf("FrameStream[%s]: write frame error: %v", TunnelIDToString(s.tunnelID), err)
 		return 0, err
 	}
 
@@ -217,12 +184,10 @@ func (s *FrameStream) Close() error {
 	// 发送 FrameTypeClose 帧（空数据）
 	if err := WriteFrame(tcpConn, s.tunnelID, FrameTypeClose, nil); err != nil {
 		s.conn.MarkBroken()
-		corelog.Debugf("FrameStream[%s]: failed to send Close frame: %v", TunnelIDToString(s.tunnelID), err)
 		return err
 	}
 
 	s.writeEOF = true
-	corelog.Debugf("FrameStream[%s]: sent Close frame", TunnelIDToString(s.tunnelID))
 	return nil
 }
 

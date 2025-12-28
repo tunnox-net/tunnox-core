@@ -171,10 +171,7 @@ func (s *SessionManager) runCrossNodeDataForward(
 	netConn net.Conn,
 	crossConn *CrossNodeConn,
 ) {
-	corelog.Infof("CrossNodeDataForward[%s]: starting", tunnelID)
-
 	// 🔧 关键修复：确保数据转发完成后关闭本地连接
-	// 这样 Target 客户端的 BidirectionalCopy 才能正确收到 EOF 并结束
 	defer func() {
 		if netConn != nil {
 			netConn.Close()
@@ -184,32 +181,25 @@ func (s *SessionManager) runCrossNodeDataForward(
 		}
 	}()
 
-	// 获取本地连接
-	// 重要：优先使用 conn.Stream 的 GetReader()/GetWriter()
-	// 这样才能和 Target 客户端的 tunnelStream 正确对接
+	// 获取本地连接：优先使用 conn.Stream 的 GetReader()/GetWriter()
 	var localConn io.ReadWriter
 	if conn != nil && conn.Stream != nil {
 		reader := conn.Stream.GetReader()
 		writer := conn.Stream.GetWriter()
-		corelog.Infof("CrossNodeDataForward[%s]: conn.Stream available, reader=%v, writer=%v", tunnelID, reader != nil, writer != nil)
 		if reader != nil && writer != nil {
-			localConn = &readWriterWrapper{reader: reader, writer: writer, tunnelID: tunnelID}
+			localConn = &readWriterWrapper{reader: reader, writer: writer}
 		}
-	} else {
-		corelog.Infof("CrossNodeDataForward[%s]: conn.Stream not available, conn=%v, conn.Stream=%v", tunnelID, conn != nil, conn != nil && conn.Stream != nil)
 	}
 
-	// 如果 Stream 不可用，回退到 netConn（但这可能导致协议层不匹配）
+	// 如果 Stream 不可用，回退到 netConn
 	if localConn == nil && netConn != nil {
 		localConn = netConn
-		corelog.Warnf("CrossNodeDataForward[%s]: falling back to netConn as localConn (may cause protocol mismatch)", tunnelID)
 	}
 
 	if localConn == nil {
 		corelog.Errorf("CrossNodeDataForward[%s]: no valid localConn", tunnelID)
 		return
 	}
-	corelog.Infof("CrossNodeDataForward[%s]: localConn ready, starting bidirectional copy", tunnelID)
 
 	// 解析 TunnelID
 	tunnelIDBytes, err := TunnelIDFromString(tunnelID)
@@ -234,53 +224,39 @@ func (s *SessionManager) runCrossNodeDataForward(
 	// 双向数据转发
 	done := make(chan struct{}, 2)
 	var closeOnce sync.Once
-	var bytesSent, bytesRecv int64
 
 	go func() {
 		defer func() {
-			corelog.Infof("CrossNodeDataForward[%s]: local->crossNode finished, sent=%d", tunnelID, bytesSent)
 			closeOnce.Do(func() { _ = frameStream.Close() })
 			done <- struct{}{}
 		}()
-		corelog.Infof("CrossNodeDataForward[%s]: local->crossNode goroutine started", tunnelID)
-		bytesSent, _ = io.Copy(frameStream, localConn)
+		_, _ = io.Copy(frameStream, localConn)
 	}()
 
 	go func() {
 		defer func() {
-			corelog.Infof("CrossNodeDataForward[%s]: crossNode->local finished, recv=%d", tunnelID, bytesRecv)
 			closeOnce.Do(func() { _ = frameStream.Close() })
 			done <- struct{}{}
 		}()
-		corelog.Infof("CrossNodeDataForward[%s]: crossNode->local goroutine started", tunnelID)
-		bytesRecv, _ = io.Copy(localConn, frameStream)
+		_, _ = io.Copy(localConn, frameStream)
 	}()
 
 	<-done
 	<-done
-	corelog.Infof("CrossNodeDataForward[%s]: completed, sent=%d, recv=%d", tunnelID, bytesSent, bytesRecv)
 }
 
 // readWriterWrapper 包装 Reader 和 Writer
 type readWriterWrapper struct {
-	reader   io.Reader
-	writer   io.Writer
-	tunnelID string // 用于调试
+	reader io.Reader
+	writer io.Writer
 }
 
 func (w *readWriterWrapper) Read(p []byte) (n int, err error) {
-	n, err = w.reader.Read(p)
-	if n > 0 || err != nil {
-		corelog.Debugf("readWriterWrapper[%s]: Read returned n=%d, err=%v", w.tunnelID, n, err)
-	}
-	return
+	return w.reader.Read(p)
 }
 
 func (w *readWriterWrapper) Write(p []byte) (n int, err error) {
-	corelog.Debugf("readWriterWrapper[%s]: Write called, len=%d", w.tunnelID, len(p))
-	n, err = w.writer.Write(p)
-	corelog.Debugf("readWriterWrapper[%s]: Write returned n=%d, err=%v", w.tunnelID, n, err)
-	return
+	return w.writer.Write(p)
 }
 
 // getNodeAddress 获取节点地址
