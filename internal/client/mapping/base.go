@@ -120,69 +120,34 @@ func (h *BaseMappingHandler) acceptLoop() {
 	corelog.Infof("BaseMappingHandler[%s]: acceptLoop started", mappingID)
 	defer corelog.Infof("BaseMappingHandler[%s]: acceptLoop exited", mappingID)
 
-	// 启动心跳 goroutine 用于诊断
-	heartbeatDone := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(5 * time.Second) // 缩短到5秒以便更快发现问题
-		defer ticker.Stop()
-		heartbeatCount := 0
-		for {
-			select {
-			case <-heartbeatDone:
-				corelog.Infof("BaseMappingHandler[%s]: heartbeat goroutine exiting (heartbeatDone closed)", mappingID)
-				return
-			case <-h.Ctx().Done():
-				corelog.Infof("BaseMappingHandler[%s]: heartbeat goroutine exiting (context done, err=%v)", mappingID, h.Ctx().Err())
-				return
-			case <-ticker.C:
-				heartbeatCount++
-				corelog.Infof("BaseMappingHandler[%s]: heartbeat #%d - acceptLoop alive, ctx.Err=%v, isClosed=%v",
-					mappingID, heartbeatCount, h.Ctx().Err(), h.IsClosed())
-			}
-		}
-	}()
-	defer close(heartbeatDone)
-
-	loopCount := 0
 	for {
-		loopCount++
-
 		// 检查 context 是否已取消
 		select {
 		case <-h.Ctx().Done():
-			corelog.Infof("BaseMappingHandler[%s]: acceptLoop context done, exiting (loop=%d)", mappingID, loopCount)
 			return
 		default:
 		}
 
 		// 接受连接（委托给adapter，带超时）
-		corelog.Debugf("BaseMappingHandler[%s]: waiting for Accept()... (loop=%d)", mappingID, loopCount)
-		acceptStart := time.Now()
 		localConn, err := h.adapter.Accept()
-		acceptDuration := time.Since(acceptStart)
 
 		if err != nil {
 			// 先检查 context 是否已取消
 			if h.Ctx().Err() != nil {
-				corelog.Infof("BaseMappingHandler[%s]: acceptLoop context canceled after Accept error, exiting (loop=%d, err=%v, duration=%v)",
-					mappingID, loopCount, err, acceptDuration)
 				return
 			}
 
 			// 检查是否是超时错误（正常情况，继续等待）
 			if netErr, ok := err.(interface{ Timeout() bool }); ok && netErr.Timeout() {
-				// Accept 超时是正常的，继续循环
-				corelog.Debugf("BaseMappingHandler[%s]: Accept() timeout (loop=%d, duration=%v)", mappingID, loopCount, acceptDuration)
 				continue
 			}
 
 			// 其他错误，记录并短暂等待后重试
-			corelog.Errorf("BaseMappingHandler[%s]: accept error (loop=%d, duration=%v): %v", mappingID, loopCount, acceptDuration, err)
+			corelog.Errorf("BaseMappingHandler[%s]: accept error: %v", mappingID, err)
 			time.Sleep(100 * time.Millisecond) // 避免错误循环
 			continue
 		}
 
-		corelog.Debugf("BaseMappingHandler[%s]: Accept() returned successfully (loop=%d, duration=%v)", mappingID, loopCount, acceptDuration)
 		corelog.Infof("BaseMappingHandler[%s]: new connection accepted", mappingID)
 		// 处理连接（公共）
 		go h.handleConnection(localConn)

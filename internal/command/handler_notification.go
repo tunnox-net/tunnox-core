@@ -7,6 +7,7 @@ import (
 
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/utils"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -47,8 +48,7 @@ func (h *NotifyClientAckHandler) Handle(ctx *CommandContext) (*CommandResponse, 
 	corelog.Debugf("Received notification ack from client %d for notify_id: %s, received: %v, processed: %v",
 		ctx.ClientID, ackReq.NotifyID, ackReq.Received, ackReq.Processed)
 
-	// TODO: 根据业务需求处理确认逻辑
-	// 例如：更新通知状态、触发后续流程等
+	// 通知确认目前仅记录日志，后续可扩展为：更新通知状态、触发后续流程等
 
 	resp := &packet.NotifyAckResponse{
 		Success: true,
@@ -199,18 +199,6 @@ func (h *SendNotifyToClientHandler) Handle(ctx *CommandContext) (*CommandRespons
 
 // generateNotifyID 生成通知ID
 func generateNotifyID() string {
-	// 使用时间戳+随机数生成唯一ID
-	return fmt.Sprintf("notify-%d-%d",
-		currentTimeMillis(),
-		randomInt(100000, 999999))
-}
-
-// currentTimeMillis 获取当前毫秒时间戳
-func currentTimeMillis() int64 {
-	return time.Now().UnixMilli()
-}
-
-// randomInt 生成指定范围的随机数
-func randomInt(min, max int) int {
-	return min + int(time.Now().UnixNano()%int64(max-min))
+	randomPart, _ := utils.GenerateRandomInt(100000, 999999)
+	return fmt.Sprintf("notify-%d-%d", time.Now().UnixMilli(), randomPart)
 }

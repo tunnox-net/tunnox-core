@@ -11,6 +11,7 @@ import (
 	"tunnox-core/internal/core/dispose"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/utils"
 )
 
 // NotificationService 通知服务
@@ -162,7 +163,7 @@ func (ns *NotificationService) SendTunnelClosedNotification(targetClientID int64
 		BytesSent: bytesSent,
 		BytesRecv: bytesRecv,
 		Duration:  durationMs,
-		ClosedAt:  ns.currentTimeMillis(),
+		ClosedAt:  time.Now().UnixMilli(),
 	}
 	payloadBytes, _ := json.Marshal(payload)
 
@@ -194,19 +195,8 @@ func (ns *NotificationService) SendMappingEvent(targetClientID int64, eventType 
 
 // generateNotifyID 生成通知ID
 func (ns *NotificationService) generateNotifyID() string {
-	return fmt.Sprintf("notify-%d-%d",
-		ns.currentTimeMillis(),
-		ns.randomInt(100000, 999999))
-}
-
-// currentTimeMillis 获取当前毫秒时间戳
-func (ns *NotificationService) currentTimeMillis() int64 {
-	return time.Now().UnixMilli()
-}
-
-// randomInt 生成指定范围的随机数
-func (ns *NotificationService) randomInt(min, max int) int {
-	return min + int(time.Now().UnixNano()%int64(max-min))
+	randomPart, _ := utils.GenerateRandomInt(100000, 999999)
+	return fmt.Sprintf("notify-%d-%d", time.Now().UnixMilli(), randomPart)
 }
 
 // 确保实现 command.NotificationRouter 接口

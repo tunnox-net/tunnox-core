@@ -39,47 +39,27 @@ func (a *TCPMappingAdapter) StartListener(config config.MappingConfig) error {
 // Accept 接受TCP连接
 func (a *TCPMappingAdapter) Accept() (io.ReadWriteCloser, error) {
 	if a.listener == nil {
-		corelog.Errorf("TCPMappingAdapter: listener is nil!")
 		return nil, fmt.Errorf("TCP listener not initialized")
 	}
 
-	listenAddr := a.listener.Addr()
-	acceptStart := time.Now()
-	corelog.Debugf("TCPMappingAdapter: calling listener.Accept() on %v at %v", listenAddr, acceptStart.Format("15:04:05.000"))
-
-	// 设置 Accept 超时（5秒），用于诊断和避免永久阻塞
+	// 设置 Accept 超时（5秒），避免永久阻塞
 	tcpListener, isTCP := a.listener.(*net.TCPListener)
-	if !isTCP {
-		corelog.Warnf("TCPMappingAdapter: listener is not *net.TCPListener, type=%T, Accept may block forever!", a.listener)
-	} else {
+	if isTCP {
 		if err := tcpListener.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 			corelog.Warnf("TCPMappingAdapter: failed to set deadline: %v", err)
 		}
 	}
 
 	conn, err := a.listener.Accept()
-	acceptDuration := time.Since(acceptStart)
 
 	// 清除超时设置
 	if isTCP && tcpListener != nil {
-		if clearErr := tcpListener.SetDeadline(time.Time{}); clearErr != nil {
-			corelog.Debugf("TCPMappingAdapter: failed to clear deadline: %v", clearErr)
-		}
+		_ = tcpListener.SetDeadline(time.Time{})
 	}
-
-	corelog.Debugf("TCPMappingAdapter: Accept() returned after %v, err=%v", acceptDuration, err)
 
 	if err != nil {
-		// 检查是否是超时错误
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			// 超时是正常的，只在 debug 级别记录
-			corelog.Debugf("TCPMappingAdapter: Accept() timeout on %v, will retry", listenAddr)
-			return nil, err
-		}
-		corelog.Debugf("TCPMappingAdapter: listener.Accept() returned error: %v", err)
 		return nil, err
 	}
-	corelog.Debugf("TCPMappingAdapter: accepted connection from %v", conn.RemoteAddr())
 
 	// 🚀 性能优化: 设置 TCP 参数
 	if tcpConn, ok := conn.(*net.TCPConn); ok {

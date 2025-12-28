@@ -224,9 +224,6 @@ func (t *Tunnel) monitorTimeout() {
 
 // runDataCopy 运行双向数据复制
 func (t *Tunnel) runDataCopy() {
-	corelog.Infof("Tunnel[%s][%s]: runDataCopy started, localConn=%T, tunnelRWC=%T",
-		t.role, t.id, t.localConn, t.tunnelRWC)
-
 	startTime := time.Now()
 
 	options := &utils.BidirectionalCopyOptions{
@@ -234,10 +231,6 @@ func (t *Tunnel) runDataCopy() {
 	}
 
 	result := utils.BidirectionalCopy(t.localConn, t.tunnelRWC, options)
-
-	elapsed := time.Since(startTime)
-	corelog.Infof("Tunnel[%s][%s]: BidirectionalCopy returned after %v, sent=%d, recv=%d, sendErr=%v, recvErr=%v",
-		t.role, t.id, elapsed, result.BytesSent, result.BytesReceived, result.SendError, result.ReceiveError)
 
 	// 更新流量统计
 	t.bytesSent.Add(result.BytesSent)
@@ -254,21 +247,20 @@ func (t *Tunnel) runDataCopy() {
 			err = result.ReceiveError
 		}
 
-		corelog.Warnf("Tunnel[%s][%s]: data copy error - sendErr=%v, recvErr=%v",
-			t.role, t.id, result.SendError, result.ReceiveError)
-
 		// 检查是否是正常的 EOF
 		if err == io.EOF || (err != nil && err.Error() == "EOF") {
 			reason = CloseReasonLocalClosed
-			corelog.Infof("Tunnel[%s][%s]: treating EOF as LocalClosed", t.role, t.id)
+		} else {
+			corelog.Warnf("Tunnel[%s][%s]: data copy error - sendErr=%v, recvErr=%v",
+				t.role, t.id, result.SendError, result.ReceiveError)
 		}
 	} else {
 		reason = CloseReasonNormal
-		corelog.Infof("Tunnel[%s][%s]: data copy completed normally (no errors)", t.role, t.id)
 	}
 
-	corelog.Infof("Tunnel[%s][%s]: data copy finished, reason=%s, error=%v, duration=%v",
-		t.role, t.id, reason, err, elapsed)
+	elapsed := time.Since(startTime)
+	corelog.Infof("Tunnel[%s][%s]: data copy finished, reason=%s, sent=%d, recv=%d, duration=%v",
+		t.role, t.id, reason, result.BytesSent, result.BytesReceived, elapsed)
 
 	t.Close(reason, err)
 }

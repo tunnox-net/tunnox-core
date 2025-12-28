@@ -157,8 +157,7 @@ func (s *FrameStream) Write(p []byte) (n int, err error) {
 	}
 
 	// 封装成 FrameTypeData 帧并发送
-	// 注意：大数据可能需要分片，这里简化处理
-	// TODO: 如果 p 超过 MaxFrameSize，需要分片
+	// 如果数据超过 MaxFrameSize，自动分片发送
 	if len(p) > MaxFrameSize {
 		// 分片写入
 		written := 0

@@ -168,21 +168,15 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func() error) {
 	go func() {
 		select {
 		case <-c.ctx.Done():
-			Debugf("Dispose: context done, attempting to acquire lock...")
 			c.currentLock.Lock()
-			Debugf("Dispose: lock acquired, running cleanup")
 			defer c.currentLock.Unlock()
 
 			if !c.closed {
-				Debugf("Dispose: not closed yet, running clean handlers")
 				result := c.runCleanHandlers()
 				if result.HasErrors() {
 					Errorf("Context cancellation cleanup failed: %v", result.Error())
 				}
 				c.closed = true
-				Debugf("Dispose: cleanup complete")
-			} else {
-				Debugf("Dispose: already closed, skipping cleanup")
 			}
 		}
 	}()
