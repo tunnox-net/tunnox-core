@@ -122,20 +122,19 @@ func (l *CrossNodeListener) handleConnection(ctx context.Context, conn net.Conn)
 
 // handleTargetReady 处理 TargetTunnelReady 消息
 func (l *CrossNodeListener) handleTargetReady(ctx context.Context, conn *net.TCPConn, tunnelIDStr string, data []byte) {
-	corelog.Infof("CrossNodeListener: handleTargetReady called, tunnelIDStr=%s, dataLen=%d", tunnelIDStr, len(data))
-
 	// 解析消息 - 从消息体获取完整的 tunnelID（帧头中的可能被截断）
 	fullTunnelID, targetNodeID, err := DecodeTargetReadyMessage(data)
 	if err != nil {
 		corelog.Errorf("CrossNodeListener: failed to decode target ready message: %v", err)
 		return
 	}
-	corelog.Infof("CrossNodeListener: decoded TargetReady message, fullTunnelID=%s, targetNodeID=%s", fullTunnelID, targetNodeID)
 
 	// 使用消息体中的完整 tunnelID
 	if fullTunnelID != "" {
 		tunnelIDStr = fullTunnelID
 	}
+
+	corelog.Infof("CrossNodeListener: target ready, tunnelID=%s, targetNode=%s", tunnelIDStr, targetNodeID)
 
 	// 查找对应的 Bridge
 	l.sessionMgr.bridgeLock.RLock()
@@ -143,10 +142,9 @@ func (l *CrossNodeListener) handleTargetReady(ctx context.Context, conn *net.TCP
 	l.sessionMgr.bridgeLock.RUnlock()
 
 	if !exists {
-		corelog.Errorf("CrossNodeListener: bridge not found for tunnelID=%s, available bridges: %v", tunnelIDStr, l.getBridgeIDs())
+		corelog.Errorf("CrossNodeListener: bridge not found for tunnelID=%s", tunnelIDStr)
 		return
 	}
-	corelog.Infof("CrossNodeListener: found bridge for tunnelID=%s", tunnelIDStr)
 
 	// 创建 CrossNodeConn 并设置到 Bridge
 	crossConn := NewCrossNodeConn(ctx, targetNodeID, conn, nil)
@@ -165,10 +163,7 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 	// 🔧 关键修复：数据转发完成后关闭 Bridge，触发生命周期结束
 	// 这样 bridge.Start() 会从 <-b.Ctx().Done() 返回，runBridgeLifecycle 会从 map 中删除 bridge
 	// 防止高并发场景下 bridge 泄漏导致后续请求因 tunnelID 重复而失败
-	defer func() {
-		corelog.Infof("CrossNodeListener[%s]: closing bridge after data forward completion", tunnelID)
-		bridge.Close()
-	}()
+	defer bridge.Close()
 
 	// 获取源端数据转发器（支持所有协议）
 	sourceForwarder := bridge.getSourceForwarder()
@@ -210,56 +205,33 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 		bridge.ReleaseCrossNodeConnection()
 	}()
 
-	corelog.Infof("CrossNodeListener[%s]: starting data forward", tunnelID)
-
 	// 双向数据转发（使用 FrameStream，自动处理帧协议）
 	done := make(chan struct{}, 2)
 	var closeOnce sync.Once
+	var bytesSent, bytesRecv int64
 
 	// 源端 -> 跨节点
 	go func() {
 		defer func() {
-			// 任一方向完成，立即发送 Close 帧通知对端
-			closeOnce.Do(func() {
-				if err := frameStream.Close(); err != nil {
-					corelog.Warnf("CrossNodeListener[%s]: failed to send Close frame: %v", tunnelID, err)
-				} else {
-					corelog.Debugf("CrossNodeListener[%s]: sent Close frame", tunnelID)
-				}
-			})
+			closeOnce.Do(func() { _ = frameStream.Close() })
 			done <- struct{}{}
 		}()
-		n, err := io.Copy(frameStream, sourceForwarder)
-		if err != nil && err != io.EOF {
-			corelog.Debugf("CrossNodeListener[%s]: source->crossNode error: %v", tunnelID, err)
-		}
-		corelog.Infof("CrossNodeListener[%s]: source->crossNode finished, bytes=%d", tunnelID, n)
+		bytesSent, _ = io.Copy(frameStream, sourceForwarder)
 	}()
 
 	// 跨节点 -> 源端
 	go func() {
 		defer func() {
-			// 任一方向完成，立即发送 Close 帧通知对端
-			closeOnce.Do(func() {
-				if err := frameStream.Close(); err != nil {
-					corelog.Warnf("CrossNodeListener[%s]: failed to send Close frame: %v", tunnelID, err)
-				} else {
-					corelog.Debugf("CrossNodeListener[%s]: sent Close frame", tunnelID)
-				}
-			})
+			closeOnce.Do(func() { _ = frameStream.Close() })
 			done <- struct{}{}
 		}()
-		n, err := io.Copy(sourceForwarder, frameStream)
-		if err != nil && err != io.EOF {
-			corelog.Debugf("CrossNodeListener[%s]: crossNode->source error: %v", tunnelID, err)
-		}
-		corelog.Infof("CrossNodeListener[%s]: crossNode->source finished, bytes=%d", tunnelID, n)
+		bytesRecv, _ = io.Copy(sourceForwarder, frameStream)
 	}()
 
 	// 等待两个方向都完成
 	<-done
 	<-done
-	corelog.Infof("CrossNodeListener[%s]: data forward completed", tunnelID)
+	corelog.Infof("CrossNodeListener[%s]: forward completed, sent=%d, recv=%d", tunnelID, bytesSent, bytesRecv)
 }
 
 // getBridgeIDs 获取所有 bridge ID（用于调试）
@@ -274,7 +246,7 @@ func (l *CrossNodeListener) getBridgeIDs() []string {
 }
 
 // handleHTTPProxy 处理跨节点 HTTP 代理请求
-func (l *CrossNodeListener) handleHTTPProxy(ctx context.Context, conn *net.TCPConn, data []byte) {
+func (l *CrossNodeListener) handleHTTPProxy(_ context.Context, conn *net.TCPConn, data []byte) {
 	corelog.Infof("CrossNodeListener: handling HTTP proxy request, dataLen=%d", len(data))
 
 	// 1. 解析 HTTP 代理消息

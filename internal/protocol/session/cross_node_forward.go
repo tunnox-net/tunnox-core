@@ -125,7 +125,7 @@ func (s *SessionManager) forwardToSourceNode(
 	netConn net.Conn,
 	routingState *TunnelWaitingState,
 ) error {
-	corelog.Infof("CrossNode[%s]: forwardToSourceNode called, sourceNodeID=%s", req.TunnelID, routingState.SourceNodeID)
+	corelog.Infof("CrossNode[%s]: forwarding to sourceNode=%s", req.TunnelID, routingState.SourceNodeID)
 
 	// 0. 先发送 TunnelOpenAck 给 Target 客户端
 	s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{
@@ -139,19 +139,16 @@ func (s *SessionManager) forwardToSourceNode(
 		corelog.Errorf("CrossNode[%s]: failed to get cross-node connection: %v", req.TunnelID, err)
 		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to get cross-node connection")
 	}
-	corelog.Infof("CrossNode[%s]: got cross-node connection to %s", req.TunnelID, routingState.SourceNodeID)
 
 	// 2. 发送 TargetTunnelReady 消息
 	tunnelID, _ := TunnelIDFromString(req.TunnelID)
 	readyData := EncodeTargetReadyMessage(req.TunnelID, s.nodeID)
-	corelog.Infof("CrossNode[%s]: sending TargetReady message, tunnelID=%v, dataLen=%d", req.TunnelID, tunnelID, len(readyData))
 	if err := WriteFrame(crossConn.GetTCPConn(), tunnelID, FrameTypeTargetReady, readyData); err != nil {
 		corelog.Errorf("CrossNode[%s]: failed to send target ready message: %v", req.TunnelID, err)
 		crossConn.MarkBroken()
 		s.crossNodePool.CloseConn(crossConn)
 		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send target ready message")
 	}
-	corelog.Infof("CrossNode[%s]: TargetReady message sent successfully", req.TunnelID)
 
 	// 3. 启动数据转发（零拷贝）
 	go s.runCrossNodeDataForward(req.TunnelID, conn, netConn, crossConn)
@@ -215,72 +212,43 @@ func (s *SessionManager) runCrossNodeDataForward(
 		return
 	}
 
-	// 🔥 创建 FrameStream（封装帧协议，传入 SessionManager 用于状态跟踪）
+	// 创建 FrameStream（封装帧协议，传入 SessionManager 用于状态跟踪）
 	frameStream := NewFrameStreamWithTracker(crossConn, tunnelIDBytes, s)
 
-	// 🔥 数据转发完成后：清理资源并归还连接
+	// 数据转发完成后：清理资源并归还连接
 	defer func() {
-		// 标记 tunnel 为已关闭状态（用于过滤残留帧）
 		s.MarkTunnelClosed(tunnelID)
-
-		// 归还连接到池
 		if !frameStream.IsBroken() {
-			corelog.Debugf("CrossNodeDataForward[%s]: releasing connection to pool", tunnelID)
 			crossConn.Release()
 		} else {
-			corelog.Warnf("CrossNodeDataForward[%s]: connection broken, closing", tunnelID)
 			crossConn.Close()
 		}
 	}()
 
-	// 双向数据转发（使用 FrameStream，自动处理帧协议）
+	// 双向数据转发
 	done := make(chan struct{}, 2)
 	var closeOnce sync.Once
+	var bytesSent, bytesRecv int64
 
-	// 本地 -> 跨节点
 	go func() {
 		defer func() {
-			// 任一方向完成，立即发送 Close 帧通知对端
-			closeOnce.Do(func() {
-				if err := frameStream.Close(); err != nil {
-					corelog.Warnf("CrossNodeDataForward[%s]: failed to send Close frame: %v", tunnelID, err)
-				} else {
-					corelog.Debugf("CrossNodeDataForward[%s]: sent Close frame", tunnelID)
-				}
-			})
+			closeOnce.Do(func() { _ = frameStream.Close() })
 			done <- struct{}{}
 		}()
-		n, err := io.Copy(frameStream, localConn)
-		if err != nil && err != io.EOF {
-			corelog.Debugf("CrossNodeDataForward[%s]: local->crossNode error: %v", tunnelID, err)
-		}
-		corelog.Debugf("CrossNodeDataForward[%s]: local->crossNode finished, bytes=%d", tunnelID, n)
+		bytesSent, _ = io.Copy(frameStream, localConn)
 	}()
 
-	// 跨节点 -> 本地
 	go func() {
 		defer func() {
-			// 任一方向完成，立即发送 Close 帧通知对端
-			closeOnce.Do(func() {
-				if err := frameStream.Close(); err != nil {
-					corelog.Warnf("CrossNodeDataForward[%s]: failed to send Close frame: %v", tunnelID, err)
-				} else {
-					corelog.Debugf("CrossNodeDataForward[%s]: sent Close frame", tunnelID)
-				}
-			})
+			closeOnce.Do(func() { _ = frameStream.Close() })
 			done <- struct{}{}
 		}()
-		n, err := io.Copy(localConn, frameStream)
-		if err != nil && err != io.EOF {
-			corelog.Debugf("CrossNodeDataForward[%s]: crossNode->local error: %v", tunnelID, err)
-		}
-		corelog.Debugf("CrossNodeDataForward[%s]: crossNode->local finished, bytes=%d", tunnelID, n)
+		bytesRecv, _ = io.Copy(localConn, frameStream)
 	}()
 
-	// 等待两个方向都完成
 	<-done
 	<-done
-	corelog.Debugf("CrossNodeDataForward[%s]: data forward completed", tunnelID)
+	corelog.Infof("CrossNodeDataForward[%s]: completed, sent=%d, recv=%d", tunnelID, bytesSent, bytesRecv)
 }
 
 // readWriterWrapper 包装 Reader 和 Writer
