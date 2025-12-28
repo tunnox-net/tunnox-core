@@ -449,8 +449,9 @@ func configureLogging(config *client.ClientConfig, interactive bool) (string, er
 		// CLI模式：只写文件，不输出到控制台
 		logConfig.Output = "file"
 	} else {
-		// Daemon模式：同时写文件和输出到控制台
-		logConfig.Output = "both"
+		// Daemon模式：只写文件，避免 stderr 输出干扰进程管理
+		// 进程状态应该通过日志文件或健康检查端点来监控
+		logConfig.Output = "file"
 	}
 
 	// 确定日志文件路径

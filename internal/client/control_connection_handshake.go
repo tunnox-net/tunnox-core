@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
@@ -187,16 +186,10 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 			c.config.ClientID, c.config.AuthToken)
 	}
 
-	// ✅ 握手成功后，请求映射配置（仅对控制连接）
-	// 这样客户端重启后能自动恢复映射列表
-	// 延迟一小段时间，确保连接完全稳定后再发送请求
-	if stream == c.controlStream && c.config.ClientID > 0 {
-		go func() {
-			// 等待 500ms，确保连接稳定
-			time.Sleep(500 * time.Millisecond)
-			c.requestMappingConfig()
-		}()
-	}
+	// ✅ 握手成功后不再主动请求映射配置
+	// 服务端会在握手成功后通过 pushConfigToClient 主动推送配置
+	// 移除客户端主动请求逻辑，避免 ConfigSet 重复发送
+	// 详见：packet_handler_handshake.go:166
 
 	return nil
 }

@@ -93,9 +93,15 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// 检查是否已存在，存在则先停止
+	// 检查是否已存在
 	if handler, exists := c.mappingHandlers[mappingCfg.MappingID]; exists {
-		corelog.Infof("Client: updating mapping %s", mappingCfg.MappingID)
+		// 比较配置是否相同，如果相同则跳过（避免重复的 ConfigSet 导致 listener 重启）
+		existingConfig := handler.GetConfig()
+		if isMappingConfigEqual(existingConfig, mappingCfg) {
+			corelog.Debugf("Client: mapping %s config unchanged, skipping update", mappingCfg.MappingID)
+			return
+		}
+		corelog.Infof("Client: updating mapping %s (config changed)", mappingCfg.MappingID)
 		handler.Stop()
 		delete(c.mappingHandlers, mappingCfg.MappingID)
 	}
@@ -141,6 +147,25 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 
 	c.mappingHandlers[mappingCfg.MappingID] = handler
 	corelog.Infof("Client: %s mapping %s started successfully on port %d", protocol, mappingCfg.MappingID, mappingCfg.LocalPort)
+}
+
+// isMappingConfigEqual 比较两个映射配置是否相同
+// 只比较影响运行时行为的关键字段
+func isMappingConfigEqual(a, b clientconfig.MappingConfig) bool {
+	return a.MappingID == b.MappingID &&
+		a.Protocol == b.Protocol &&
+		a.LocalPort == b.LocalPort &&
+		a.TargetHost == b.TargetHost &&
+		a.TargetPort == b.TargetPort &&
+		a.TargetClientID == b.TargetClientID &&
+		a.SecretKey == b.SecretKey &&
+		a.BandwidthLimit == b.BandwidthLimit &&
+		a.MaxConnections == b.MaxConnections &&
+		a.EnableCompression == b.EnableCompression &&
+		a.CompressionLevel == b.CompressionLevel &&
+		a.EnableEncryption == b.EnableEncryption &&
+		a.EncryptionMethod == b.EncryptionMethod &&
+		a.EncryptionKey == b.EncryptionKey
 }
 
 // RemoveMapping 移除映射

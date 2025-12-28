@@ -227,9 +227,9 @@ func (c *TunnoxClient) reconnect() {
 		}
 		corelog.Infof("Client: reconnect successful after %d attempts", attempts+1)
 
-		if c.config.ClientID > 0 {
-			go c.requestMappingConfig()
-		}
+		// 重连成功后不再主动请求映射配置
+		// 服务端会在握手成功后通过 pushConfigToClient 主动推送配置
+		// 详见：packet_handler_handshake.go:166
 
 		return
 	}

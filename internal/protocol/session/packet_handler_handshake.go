@@ -182,6 +182,14 @@ func (s *SessionManager) pushConfigToClient(conn ControlConnectionInterface) {
 		return
 	}
 
+	// 检查配置是否为空（没有映射）
+	// 如果是空配置，跳过推送，避免不必要的 ConfigSet
+	// 后续创建映射时 NotifyClientUpdate 会推送正确的配置
+	if configBody == "" || configBody == `{"mappings":[]}` || configBody == `{"mappings":null}` {
+		corelog.Debugf("SessionManager: skipping empty config push to client %d (no mappings yet)", conn.GetClientID())
+		return
+	}
+
 	// 发送配置
 	responseCmd := &packet.CommandPacket{
 		CommandType: packet.ConfigSet,
