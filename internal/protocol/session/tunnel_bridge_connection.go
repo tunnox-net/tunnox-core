@@ -154,18 +154,14 @@ func (b *TunnelBridge) GetCrossNodeConnection() *CrossNodeConn {
 }
 
 // ReleaseCrossNodeConnection 释放跨节点连接
-// 注意：跨节点连接用于数据转发后已经被 CloseWrite()，
-// 不能归还到连接池，必须直接关闭
+// 🔥 重构：只清理 Bridge 中的引用，连接的生命周期由数据转发函数管理
+// 使用应用层EOF后，连接可以复用，由数据转发函数决定Release还是Close
 func (b *TunnelBridge) ReleaseCrossNodeConnection() {
 	b.crossNodeConnMu.Lock()
-	conn := b.crossNodeConn
-	b.crossNodeConn = nil
+	b.crossNodeConn = nil // 只清理引用，不关闭连接
 	b.crossNodeConnMu.Unlock()
 
-	if conn != nil {
-		// 数据转发完成后，连接已经被使用（CloseWrite），
-		// 不能归还到连接池，必须直接关闭
-		conn.MarkBroken()
-		conn.Close()
-	}
+	// 注意：连接的实际释放（Release或Close）已在数据转发函数中完成
+	// - runCrossNodeDataForward: 根据是否broken决定Release或Close
+	// - runBridgeForward: crossConn由CrossNodeListener传入，数据转发完成后自动处理
 }

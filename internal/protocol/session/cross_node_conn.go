@@ -118,6 +118,55 @@ func (c *CrossNodeConn) IsBroken() bool {
 	return c.broken
 }
 
+// IsHealthy 检查连接健康状态（用于连接池健康检查）
+// 🔥 新增：检查TCP连接是否真的可用
+func (c *CrossNodeConn) IsHealthy() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// 1. 检查是否已标记为broken
+	if c.broken {
+		return false
+	}
+
+	// 2. 检查TCP连接是否存在
+	if c.tcpConn == nil {
+		return false
+	}
+
+	// 3. 检查连接是否超过最大空闲时间（5分钟）
+	maxIdleTime := 5 * time.Minute
+	if time.Since(c.lastUsed) > maxIdleTime {
+		corelog.Debugf("CrossNodeConn[%s]: connection idle for %v, marking as unhealthy",
+			c.nodeID, time.Since(c.lastUsed))
+		return false
+	}
+
+	// 4. 尝试设置读超时来检测连接是否可用
+	// 设置一个很短的超时，尝试读取0字节
+	oldDeadline := time.Time{}
+	c.tcpConn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+	defer c.tcpConn.SetReadDeadline(oldDeadline)
+
+	// 尝试从连接读取（应该超时或返回0）
+	one := make([]byte, 1)
+	_, err := c.tcpConn.Read(one)
+	if err != nil {
+		// 检查是否是超时错误（正常情况）
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return true // 超时说明连接正常，只是没有数据
+		}
+		// 其他错误说明连接已断开
+		corelog.Debugf("CrossNodeConn[%s]: health check failed: %v", c.nodeID, err)
+		return false
+	}
+
+	// 如果读到了数据，这不正常（应该没有数据可读）
+	// 但也说明连接是通的，标记为健康但记录警告
+	corelog.Warnf("CrossNodeConn[%s]: unexpected data during health check", c.nodeID)
+	return true
+}
+
 // markInUse 标记为使用中
 func (c *CrossNodeConn) markInUse() {
 	c.mu.Lock()

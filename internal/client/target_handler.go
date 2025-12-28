@@ -163,9 +163,11 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	// 监听隧道取消信号，收到时关闭连接以中断数据传输
 	go func() {
 		<-tunnelCtx.Done()
-		corelog.Infof("Client[TCP-target][%s]: received close notification, closing connections", tunnelID)
-		targetConn.Close()
-		tunnelConn.Close()
+		corelog.Warnf("Client[TCP-target][%s]: received close notification (context canceled), closing connections", tunnelID)
+		err := targetConn.Close()
+		corelog.Infof("Client[TCP-target][%s]: targetConn.Close() returned: %v", tunnelID, err)
+		err = tunnelConn.Close()
+		corelog.Infof("Client[TCP-target][%s]: tunnelConn.Close() returned: %v", tunnelID, err)
 	}()
 
 	// 3. 通过接口抽象获取 Reader/Writer（不依赖具体协议）
@@ -223,11 +225,18 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	}
 
 	// 5. 创建转换器并启动双向转发
+	corelog.Infof("Client[TCP-target][%s]: starting BidirectionalCopy, targetConn=%T, tunnelRWC=%T", tunnelID, targetConn, tunnelRWC)
+	startTime := time.Now()
+
 	transformer, _ := transform.NewTransformer(transformConfig)
-	utils.BidirectionalCopy(targetConn, tunnelRWC, &utils.BidirectionalCopyOptions{
+	result := utils.BidirectionalCopy(targetConn, tunnelRWC, &utils.BidirectionalCopyOptions{
 		Transformer: transformer,
 		LogPrefix:   fmt.Sprintf("Client[TCP-target][%s]", tunnelID),
 	})
+
+	elapsed := time.Since(startTime)
+	corelog.Infof("Client[TCP-target][%s]: BidirectionalCopy completed after %v, sent=%d, recv=%d, sendErr=%v, recvErr=%v",
+		tunnelID, elapsed, result.BytesSent, result.BytesReceived, result.SendError, result.ReceiveError)
 }
 
 // handleSOCKS5TargetTunnel 处理SOCKS5目标端隧道（与TCP流程一致）

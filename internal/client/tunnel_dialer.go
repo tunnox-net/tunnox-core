@@ -19,6 +19,8 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 
 // dialTunnelWithTarget 建立隧道连接（支持 SOCKS5 动态目标地址）
 func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targetHost string, targetPort int) (net.Conn, stream.PackageStreamer, error) {
+	corelog.Debugf("Client[%s]: dialTunnelWithTarget START, tunnelID=%s, mappingID=%s", tunnelID, tunnelID, mappingID)
+
 	// 根据协议建立到服务器的连接
 	var (
 		conn net.Conn
@@ -26,6 +28,8 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 	)
 
 	protocol := strings.ToLower(c.config.Server.Protocol)
+	corelog.Debugf("Client[%s]: about to dial server, protocol=%s, address=%s", tunnelID, protocol, c.config.Server.Address)
+
 	switch protocol {
 	case "tcp", "":
 		// TCP 连接使用 DialContext 以支持 context 取消
@@ -44,12 +48,16 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 	}
 
 	if err != nil {
+		corelog.Errorf("Client[%s]: dial server failed: %v", tunnelID, err)
 		return nil, nil, fmt.Errorf("failed to dial server (%s): %w", protocol, err)
 	}
+	corelog.Debugf("Client[%s]: dial server SUCCESS, local=%s, remote=%s", tunnelID, conn.LocalAddr(), conn.RemoteAddr())
 
 	// 创建 StreamProcessor
+	corelog.Debugf("Client[%s]: creating StreamProcessor", tunnelID)
 	streamFactory := stream.NewDefaultStreamFactory(c.Ctx())
 	tunnelStream := streamFactory.CreateStreamProcessor(conn, conn)
+	corelog.Debugf("Client[%s]: StreamProcessor created", tunnelID)
 
 	// ✅ 新连接需要先进行握手认证（标识为隧道连接）
 	if err := c.sendHandshakeOnStream(tunnelStream, "tunnel"); err != nil {

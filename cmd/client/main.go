@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -18,6 +19,20 @@ import (
 )
 
 func main() {
+	// 🔥 全局 panic recovery - 捕获并记录所有未处理的 panic
+	defer func() {
+		if r := recover(); r != nil {
+			// 尝试记录到日志（如果日志已初始化）
+			corelog.Errorf("FATAL: main goroutine panic recovered: %v", r)
+			corelog.Errorf("Stack trace:\n%s", string(debug.Stack()))
+
+			// 同时输出到 stderr 以确保可见
+			fmt.Fprintf(os.Stderr, "\n❌ PANIC: %v\n", r)
+			fmt.Fprintf(os.Stderr, "Stack trace:\n%s\n", string(debug.Stack()))
+			os.Exit(2)
+		}
+	}()
+
 	// 解析命令行参数
 	configFile := flag.String("config", "", "path to config file (optional)")
 	protocol := flag.String("p", "", "protocol: tcp/websocket/ws/kcp/quic (overrides config)")

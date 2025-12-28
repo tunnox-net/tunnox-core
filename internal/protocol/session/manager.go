@@ -138,6 +138,10 @@ type SessionManager struct {
 	tunnelStateManager *TunnelStateManager
 	migrationManager   *TunnelMigrationManager
 
+	// 已关闭的 tunnel 跟踪（用于过滤残留帧）
+	closedTunnels map[string]time.Time // tunnelID -> 关闭时间
+	closedTunnelsMu sync.RWMutex
+
 	dispose.Dispose
 }
 
@@ -194,6 +198,9 @@ func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.C
 
 		// 隧道桥接
 		tunnelBridges: make(map[string]*TunnelBridge),
+
+		// 已关闭的 tunnel 跟踪
+		closedTunnels: make(map[string]time.Time),
 
 		idManager:     idManager,
 		streamMgr:     streamMgr,
@@ -442,4 +449,24 @@ func (s *SessionManager) GetTunnelRegistry() *TunnelRegistry {
 // GetPacketRouter 获取数据包路由器
 func (s *SessionManager) GetPacketRouter() *PacketRouter {
 	return s.packetRouter
+}
+
+// ============================================================================
+// TunnelStateTracker 实现（用于过滤残留帧）
+// ============================================================================
+
+// MarkTunnelClosed 标记 tunnel 为已关闭状态
+func (s *SessionManager) MarkTunnelClosed(tunnelID string) {
+	s.closedTunnelsMu.Lock()
+	defer s.closedTunnelsMu.Unlock()
+	s.closedTunnels[tunnelID] = time.Now()
+	corelog.Debugf("SessionManager: marked tunnel %s as closed", tunnelID)
+}
+
+// IsTunnelClosed 检查 tunnel 是否已关闭
+func (s *SessionManager) IsTunnelClosed(tunnelID string) bool {
+	s.closedTunnelsMu.RLock()
+	defer s.closedTunnelsMu.RUnlock()
+	_, exists := s.closedTunnels[tunnelID]
+	return exists
 }

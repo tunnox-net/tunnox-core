@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"tunnox-core/internal/cloud/constants"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream/transform"
 )
 
@@ -139,34 +140,48 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 		options.Transformer = &transform.NoOpTransformer{}
 	}
 
+	logPrefix := options.LogPrefix
+	if logPrefix == "" {
+		logPrefix = "BidirectionalCopy"
+	}
+
 	result := &BidirectionalCopyResult{}
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	corelog.Debugf("%s: starting bidirectional copy", logPrefix)
+
 	// A → B：从 A 读取数据写入 B
 	go func() {
 		defer wg.Done()
+		corelog.Debugf("%s: A→B goroutine started", logPrefix)
 
 		writerB, err := options.Transformer.WrapWriter(connB)
 		if err != nil {
+			corelog.Errorf("%s: A→B failed to wrap writer: %v", logPrefix, err)
 			result.SendError = err
 			return
 		}
 
 		buf := make([]byte, constants.CopyBufferSize)
 		var totalWritten int64
+		var readCount int
 		for {
 			nr, readErr := connA.Read(buf)
+			readCount++
+
 			if nr > 0 {
 				nw, writeErr := writerB.Write(buf[:nr])
 				if nw > 0 {
 					totalWritten += int64(nw)
 				}
 				if writeErr != nil {
+					corelog.Errorf("%s: A→B write error after %d bytes: %v", logPrefix, totalWritten, writeErr)
 					result.SendError = writeErr
 					break
 				}
 				if nw != nr {
+					corelog.Errorf("%s: A→B short write: read=%d, wrote=%d", logPrefix, nr, nw)
 					result.SendError = io.ErrShortWrite
 					break
 				}
@@ -174,44 +189,57 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 			if readErr != nil {
 				result.BytesSent = totalWritten
 				if readErr != io.EOF {
+					corelog.Errorf("%s: A→B read error after %d bytes: %v", logPrefix, totalWritten, readErr)
 					result.SendError = readErr
+				} else {
+					corelog.Infof("%s: A→B read EOF after %d bytes (%d reads)", logPrefix, totalWritten, readCount)
 				}
 				break
 			}
 		}
 
 		// 关闭 writerB（刷新缓冲区）
+		corelog.Debugf("%s: A→B closing writerB", logPrefix)
 		writerB.Close()
 
 		// 🔧 关键修复：使用半关闭通知 B 端 EOF，而不是完全关闭
 		// 这样 B→A 方向仍可继续接收响应数据
+		corelog.Debugf("%s: A→B attempting half-close on connB", logPrefix)
 		tryCloseWrite(connB)
+		corelog.Infof("%s: A→B goroutine finished, sent=%d bytes", logPrefix, totalWritten)
 	}()
 
 	// B → A：从 B 读取数据写入 A
 	go func() {
 		defer wg.Done()
+		corelog.Debugf("%s: B→A goroutine started", logPrefix)
 
 		readerB, err := options.Transformer.WrapReader(connB)
 		if err != nil {
+			corelog.Errorf("%s: B→A failed to wrap reader: %v", logPrefix, err)
 			result.ReceiveError = err
 			return
 		}
 
 		buf := make([]byte, constants.CopyBufferSize)
 		var totalWritten int64
+		var readCount int
 		for {
 			nr, readErr := readerB.Read(buf)
+			readCount++
+
 			if nr > 0 {
 				nw, writeErr := connA.Write(buf[:nr])
 				if nw > 0 {
 					totalWritten += int64(nw)
 				}
 				if writeErr != nil {
+					corelog.Errorf("%s: B→A write error after %d bytes: %v", logPrefix, totalWritten, writeErr)
 					result.ReceiveError = writeErr
 					break
 				}
 				if nw != nr {
+					corelog.Errorf("%s: B→A short write: read=%d, wrote=%d", logPrefix, nr, nw)
 					result.ReceiveError = io.ErrShortWrite
 					break
 				}
@@ -219,20 +247,28 @@ func BidirectionalCopy(connA, connB io.ReadWriteCloser, options *BidirectionalCo
 			if readErr != nil {
 				result.BytesReceived = totalWritten
 				if readErr != io.EOF {
+					corelog.Errorf("%s: B→A read error after %d bytes: %v", logPrefix, totalWritten, readErr)
 					result.ReceiveError = readErr
+				} else {
+					corelog.Infof("%s: B→A read EOF after %d bytes (%d reads)", logPrefix, totalWritten, readCount)
 				}
 				break
 			}
 		}
 
 		// 🔧 关键修复：使用半关闭通知 A 端 EOF
+		corelog.Debugf("%s: B→A attempting half-close on connA", logPrefix)
 		tryCloseWrite(connA)
+		corelog.Infof("%s: B→A goroutine finished, received=%d bytes", logPrefix, totalWritten)
 	}()
 
 	// 等待两个方向都完成
+	corelog.Debugf("%s: waiting for both directions to complete", logPrefix)
 	wg.Wait()
+	corelog.Infof("%s: both directions completed, sent=%d, received=%d", logPrefix, result.BytesSent, result.BytesReceived)
 
 	// 🔧 在两个方向都完成后，安全地关闭连接
+	corelog.Debugf("%s: closing both connections", logPrefix)
 	connA.Close()
 	connB.Close()
 

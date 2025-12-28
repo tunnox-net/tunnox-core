@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/config"
@@ -23,8 +24,9 @@ func NewTCPMappingAdapter() *TCPMappingAdapter {
 
 // StartListener 启动TCP监听
 func (a *TCPMappingAdapter) StartListener(config config.MappingConfig) error {
-	addr := fmt.Sprintf(":%d", config.LocalPort)
-	listener, err := net.Listen("tcp", addr)
+	// 明确使用 IPv4 地址，避免 IPv6 双栈可能的问题
+	addr := fmt.Sprintf("127.0.0.1:%d", config.LocalPort)
+	listener, err := net.Listen("tcp4", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}
@@ -37,13 +39,36 @@ func (a *TCPMappingAdapter) StartListener(config config.MappingConfig) error {
 // Accept 接受TCP连接
 func (a *TCPMappingAdapter) Accept() (io.ReadWriteCloser, error) {
 	if a.listener == nil {
+		corelog.Errorf("TCPMappingAdapter: listener is nil!")
 		return nil, fmt.Errorf("TCP listener not initialized")
 	}
 
+	addr := a.listener.Addr()
+	corelog.Debugf("TCPMappingAdapter: calling listener.Accept() on %v", addr)
+
+	// 设置 Accept 超时（5秒），用于诊断和避免永久阻塞
+	if tcpListener, ok := a.listener.(*net.TCPListener); ok {
+		tcpListener.SetDeadline(time.Now().Add(5 * time.Second))
+	}
+
 	conn, err := a.listener.Accept()
+
+	// 清除超时设置
+	if tcpListener, ok := a.listener.(*net.TCPListener); ok {
+		tcpListener.SetDeadline(time.Time{})
+	}
+
 	if err != nil {
+		// 检查是否是超时错误
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			// 超时是正常的，只在 debug 级别记录
+			corelog.Debugf("TCPMappingAdapter: Accept() timeout on %v, will retry", addr)
+			return nil, err
+		}
+		corelog.Debugf("TCPMappingAdapter: listener.Accept() returned error: %v", err)
 		return nil, err
 	}
+	corelog.Debugf("TCPMappingAdapter: accepted connection from %v", conn.RemoteAddr())
 
 	// 🚀 性能优化: 设置 TCP 参数
 	if tcpConn, ok := conn.(*net.TCPConn); ok {

@@ -2,6 +2,7 @@ package client
 
 import (
 	"io"
+	"runtime/debug"
 	"time"
 	corelog "tunnox-core/internal/core/log"
 
@@ -12,6 +13,12 @@ import (
 // readLoop 读取循环（接收服务器命令）
 func (c *TunnoxClient) readLoop() {
 	defer func() {
+		// 🔥 Panic recovery - 捕获并记录 readLoop 中的 panic
+		if r := recover(); r != nil {
+			corelog.Errorf("FATAL: readLoop panic recovered: %v", r)
+			corelog.Errorf("Stack trace:\n%s", string(debug.Stack()))
+		}
+
 		if c.shouldReconnect() {
 			go c.reconnect()
 		}

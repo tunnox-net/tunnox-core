@@ -128,6 +128,12 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 	// 创建映射处理器（使用BaseMappingHandler）
 	handler := mapping.NewBaseMappingHandler(c, mappingCfg, adapter)
 
+	// 注册 TunnelManager 到 NotificationDispatcher（用于接收关闭通知）
+	if tunnelManager := handler.GetTunnelManager(); tunnelManager != nil {
+		c.notificationDispatcher.AddHandler(tunnelManager)
+		corelog.Infof("Client: registered TunnelManager for mapping %s to NotificationDispatcher", mappingCfg.MappingID)
+	}
+
 	if err := handler.Start(); err != nil {
 		corelog.Errorf("Client: ❌ failed to start %s mapping %s: %v", protocol, mappingCfg.MappingID, err)
 		return
@@ -143,6 +149,12 @@ func (c *TunnoxClient) RemoveMapping(mappingID string) {
 	defer c.mu.Unlock()
 
 	if handler, exists := c.mappingHandlers[mappingID]; exists {
+		// 从 NotificationDispatcher 移除 TunnelManager
+		if tunnelManager := handler.GetTunnelManager(); tunnelManager != nil {
+			c.notificationDispatcher.RemoveHandler(tunnelManager)
+			corelog.Infof("Client: removed TunnelManager for mapping %s from NotificationDispatcher", mappingID)
+		}
+
 		handler.Stop()
 		delete(c.mappingHandlers, mappingID)
 		corelog.Infof("Client: mapping %s stopped", mappingID)

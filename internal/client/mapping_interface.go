@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 
+	"tunnox-core/internal/client/tunnel"
 	"tunnox-core/internal/config"
 )
 
@@ -12,4 +13,5 @@ type MappingHandler interface {
 	Stop()
 	GetConfig() config.MappingConfig
 	GetContext() context.Context
+	GetTunnelManager() tunnel.TunnelManager
 }

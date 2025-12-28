@@ -24,11 +24,12 @@ type CrossNodePoolConfig struct {
 }
 
 // DefaultCrossNodePoolConfig 返回默认配置
+// 🔥 优化：提高并发能力，支持高并发场景
 func DefaultCrossNodePoolConfig() CrossNodePoolConfig {
 	return CrossNodePoolConfig{
-		MinConns:    2,
-		MaxConns:    10,
-		IdleTimeout: 5 * time.Minute,
+		MinConns:    5,              // 🔥 增加到5，保持热连接减少延迟
+		MaxConns:    100,            // 🔥 增加到100，支持高并发（每个隧道复用连接）
+		IdleTimeout: 10 * time.Minute, // 🔥 增加到10分钟，减少频繁重建
 		DialTimeout: 5 * time.Second,
 	}
 }
@@ -312,21 +313,31 @@ func NewNodeConnectionPool(
 
 // Get 获取连接
 func (p *NodeConnectionPool) Get(ctx context.Context) (*CrossNodeConn, error) {
-	// 先尝试从池中获取
-	select {
-	case conn := <-p.conns:
-		if conn != nil && !conn.IsBroken() {
-			conn.markInUse()
-			atomic.AddInt32(&p.inUse, 1)
-			return conn, nil
+	// 🔥 优化：支持多次重试，从池中获取健康的连接
+	maxRetries := 3
+	for retry := 0; retry < maxRetries; retry++ {
+		// 先尝试从池中获取
+		select {
+		case conn := <-p.conns:
+			if conn != nil {
+				// 🔥 新增：完整的健康检查
+				if conn.IsHealthy() {
+					conn.markInUse()
+					atomic.AddInt32(&p.inUse, 1)
+					corelog.Debugf("NodeConnectionPool[%s]: reused connection from pool", p.nodeID)
+					return conn, nil
+				}
+				// 连接不健康，关闭并继续重试
+				corelog.Debugf("NodeConnectionPool[%s]: connection unhealthy, closing (retry %d/%d)",
+					p.nodeID, retry+1, maxRetries)
+				conn.Close()
+				atomic.AddInt32(&p.active, -1)
+				continue
+			}
+		default:
+			// 池中没有可用连接，跳出重试循环
+			break
 		}
-		// 连接已损坏，关闭并继续
-		if conn != nil {
-			conn.Close()
-			atomic.AddInt32(&p.active, -1)
-		}
-	default:
-		// 池中没有可用连接
 	}
 
 	// 检查是否可以创建新连接
@@ -334,15 +345,18 @@ func (p *NodeConnectionPool) Get(ctx context.Context) (*CrossNodeConn, error) {
 		// 等待可用连接
 		select {
 		case conn := <-p.conns:
-			if conn != nil && !conn.IsBroken() {
-				conn.markInUse()
-				atomic.AddInt32(&p.inUse, 1)
-				return conn, nil
-			}
 			if conn != nil {
+				// 🔥 等待时获取的连接也要做健康检查
+				if conn.IsHealthy() {
+					conn.markInUse()
+					atomic.AddInt32(&p.inUse, 1)
+					return conn, nil
+				}
 				conn.Close()
 				atomic.AddInt32(&p.active, -1)
 			}
+			// 连接不健康，递归重试
+			return p.Get(ctx)
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-time.After(p.config.DialTimeout):
@@ -351,6 +365,7 @@ func (p *NodeConnectionPool) Get(ctx context.Context) (*CrossNodeConn, error) {
 	}
 
 	// 创建新连接
+	corelog.Debugf("NodeConnectionPool[%s]: creating new connection (active=%d)", p.nodeID, atomic.LoadInt32(&p.active))
 	return p.createConnection(ctx)
 }
 

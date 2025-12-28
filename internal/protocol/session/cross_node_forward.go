@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	coreerrors "tunnox-core/internal/core/errors"
@@ -173,15 +174,6 @@ func (s *SessionManager) runCrossNodeDataForward(
 	netConn net.Conn,
 	crossConn *CrossNodeConn,
 ) {
-	defer func() {
-		if crossConn != nil {
-			// 重要：数据转发完成后，连接已经被使用（CloseWrite），
-			// 不能归还到连接池，必须直接关闭
-			crossConn.MarkBroken()
-			crossConn.Close()
-		}
-	}()
-
 	// 🔧 关键修复：确保数据转发完成后关闭本地连接
 	// 这样 Target 客户端的 BidirectionalCopy 才能正确收到 EOF 并结束
 	defer func() {
@@ -197,7 +189,6 @@ func (s *SessionManager) runCrossNodeDataForward(
 	// 重要：优先使用 conn.Stream 的 GetReader()/GetWriter()
 	// 这样才能和 Target 客户端的 tunnelStream 正确对接
 	var localConn io.ReadWriter
-	var localNetConn net.Conn // 用于半关闭
 	if conn != nil && conn.Stream != nil {
 		reader := conn.Stream.GetReader()
 		writer := conn.Stream.GetWriter()
@@ -209,7 +200,6 @@ func (s *SessionManager) runCrossNodeDataForward(
 	// 如果 Stream 不可用，回退到 netConn（但这可能导致协议层不匹配）
 	if localConn == nil && netConn != nil {
 		localConn = netConn
-		localNetConn = netConn
 		corelog.Warnf("CrossNodeDataForward[%s]: falling back to netConn as localConn (may cause protocol mismatch)", tunnelID)
 	}
 
@@ -218,47 +208,79 @@ func (s *SessionManager) runCrossNodeDataForward(
 		return
 	}
 
-	// 获取跨节点 TCP 连接（用于零拷贝）
-	tcpConn := crossConn.GetTCPConn()
-	if tcpConn == nil {
-		corelog.Errorf("CrossNodeDataForward[%s]: tcpConn is nil", tunnelID)
+	// 解析 TunnelID
+	tunnelIDBytes, err := TunnelIDFromString(tunnelID)
+	if err != nil {
+		corelog.Errorf("CrossNodeDataForward[%s]: invalid tunnel ID: %v", tunnelID, err)
 		return
 	}
 
-	// 双向数据转发
+	// 🔥 创建 FrameStream（封装帧协议，传入 SessionManager 用于状态跟踪）
+	frameStream := NewFrameStreamWithTracker(crossConn, tunnelIDBytes, s)
+
+	// 🔥 数据转发完成后：清理资源并归还连接
+	defer func() {
+		// 标记 tunnel 为已关闭状态（用于过滤残留帧）
+		s.MarkTunnelClosed(tunnelID)
+
+		// 归还连接到池
+		if !frameStream.IsBroken() {
+			corelog.Debugf("CrossNodeDataForward[%s]: releasing connection to pool", tunnelID)
+			crossConn.Release()
+		} else {
+			corelog.Warnf("CrossNodeDataForward[%s]: connection broken, closing", tunnelID)
+			crossConn.Close()
+		}
+	}()
+
+	// 双向数据转发（使用 FrameStream，自动处理帧协议）
 	done := make(chan struct{}, 2)
+	var closeOnce sync.Once
 
 	// 本地 -> 跨节点
 	go func() {
-		defer func() { done <- struct{}{} }()
-		n, err := io.Copy(tcpConn, localConn)
+		defer func() {
+			// 任一方向完成，立即发送 Close 帧通知对端
+			closeOnce.Do(func() {
+				if err := frameStream.Close(); err != nil {
+					corelog.Warnf("CrossNodeDataForward[%s]: failed to send Close frame: %v", tunnelID, err)
+				} else {
+					corelog.Debugf("CrossNodeDataForward[%s]: sent Close frame", tunnelID)
+				}
+			})
+			done <- struct{}{}
+		}()
+		n, err := io.Copy(frameStream, localConn)
 		if err != nil && err != io.EOF {
 			corelog.Debugf("CrossNodeDataForward[%s]: local->crossNode error: %v", tunnelID, err)
 		}
 		corelog.Debugf("CrossNodeDataForward[%s]: local->crossNode finished, bytes=%d", tunnelID, n)
-		// 🔧 关键：使用半关闭通知对端 EOF
-		tcpConn.CloseWrite()
 	}()
 
 	// 跨节点 -> 本地
 	go func() {
-		defer func() { done <- struct{}{} }()
-		n, err := io.Copy(localConn, tcpConn)
+		defer func() {
+			// 任一方向完成，立即发送 Close 帧通知对端
+			closeOnce.Do(func() {
+				if err := frameStream.Close(); err != nil {
+					corelog.Warnf("CrossNodeDataForward[%s]: failed to send Close frame: %v", tunnelID, err)
+				} else {
+					corelog.Debugf("CrossNodeDataForward[%s]: sent Close frame", tunnelID)
+				}
+			})
+			done <- struct{}{}
+		}()
+		n, err := io.Copy(localConn, frameStream)
 		if err != nil && err != io.EOF {
 			corelog.Debugf("CrossNodeDataForward[%s]: crossNode->local error: %v", tunnelID, err)
 		}
 		corelog.Debugf("CrossNodeDataForward[%s]: crossNode->local finished, bytes=%d", tunnelID, n)
-		// 🔧 关键：对本地连接使用半关闭（如果支持）
-		if localNetConn != nil {
-			if tcpLocal, ok := localNetConn.(*net.TCPConn); ok {
-				tcpLocal.CloseWrite()
-			}
-		}
 	}()
 
 	// 等待两个方向都完成
 	<-done
 	<-done
+	corelog.Debugf("CrossNodeDataForward[%s]: data forward completed", tunnelID)
 }
 
 // readWriterWrapper 包装 Reader 和 Writer

@@ -8,6 +8,7 @@ import (
 	"time"
 	corelog "tunnox-core/internal/core/log"
 
+	"tunnox-core/internal/client/tunnel"
 	"tunnox-core/internal/config"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/stream/transform"
@@ -21,10 +22,11 @@ import (
 type BaseMappingHandler struct {
 	*dispose.ManagerBase
 
-	adapter     MappingAdapter              // 协议适配器（多态）
-	client      ClientInterface             // 客户端接口
-	config      config.MappingConfig        // 映射配置
-	transformer transform.StreamTransformer // 加密压缩转换器
+	adapter       MappingAdapter              // 协议适配器（多态）
+	client        ClientInterface             // 客户端接口
+	config        config.MappingConfig        // 映射配置
+	transformer   transform.StreamTransformer // 加密压缩转换器
+	tunnelManager tunnel.TunnelManager        // 隧道管理器（Listen角色）
 
 	// 商业化控制
 	rateLimiter       *rate.Limiter // 速率限制器（Token Bucket）
@@ -49,6 +51,9 @@ func NewBaseMappingHandler(
 		config:       config,
 		trafficStats: &TrafficStats{},
 	}
+
+	// 创建隧道管理器（Listen角色）
+	handler.tunnelManager = tunnel.NewTunnelManager(handler.Ctx(), tunnel.TunnelRoleListen)
 
 	// 创建速率限制器（如果配置了带宽限制）
 	if config.BandwidthLimit > 0 {
@@ -75,6 +80,11 @@ func NewBaseMappingHandler(
 
 		// 最后一次上报流量统计
 		handler.reportStats()
+
+		// 关闭隧道管理器
+		if handler.tunnelManager != nil {
+			handler.tunnelManager.Close()
+		}
 
 		// 关闭协议适配器
 		return adapter.Close()
@@ -106,25 +116,39 @@ func (h *BaseMappingHandler) Start() error {
 
 // acceptLoop 接受连接循环
 func (h *BaseMappingHandler) acceptLoop() {
+	corelog.Infof("BaseMappingHandler[%s]: acceptLoop started", h.config.MappingID)
+	defer corelog.Infof("BaseMappingHandler[%s]: acceptLoop exited", h.config.MappingID)
+
 	for {
 		select {
 		case <-h.Ctx().Done():
+			corelog.Infof("BaseMappingHandler[%s]: acceptLoop context done, exiting", h.config.MappingID)
 			return
 		default:
 		}
 
-		// 接受连接（委托给adapter）
+		// 接受连接（委托给adapter，带超时）
+		corelog.Debugf("BaseMappingHandler[%s]: waiting for Accept()...", h.config.MappingID)
 		localConn, err := h.adapter.Accept()
+
 		if err != nil {
 			if h.Ctx().Err() != nil {
 				return
 			}
-			// 记录错误但继续接受
+
+			// 检查是否是超时错误（正常情况，继续等待）
+			if netErr, ok := err.(interface{ Timeout() bool }); ok && netErr.Timeout() {
+				// Accept 超时是正常的，继续循环
+				continue
+			}
+
+			// 其他错误，记录并短暂等待后重试
 			corelog.Errorf("BaseMappingHandler[%s]: accept error: %v", h.config.MappingID, err)
 			time.Sleep(100 * time.Millisecond) // 避免错误循环
 			continue
 		}
 
+		corelog.Debugf("BaseMappingHandler[%s]: Accept() returned successfully", h.config.MappingID)
 		corelog.Infof("BaseMappingHandler[%s]: new connection accepted", h.config.MappingID)
 		// 处理连接（公共）
 		go h.handleConnection(localConn)
@@ -133,13 +157,12 @@ func (h *BaseMappingHandler) acceptLoop() {
 
 // handleConnection 处理单个连接
 func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
-	defer localConn.Close()
-
 	corelog.Infof("BaseMappingHandler[%s]: new connection received", h.config.MappingID)
 
 	// 1. 配额检查：连接数限制
 	if err := h.checkConnectionQuota(); err != nil {
 		corelog.Warnf("BaseMappingHandler[%s]: quota check failed: %v", h.config.MappingID, err)
+		localConn.Close()
 		return
 	}
 
@@ -152,141 +175,134 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	// 2. 连接预处理（委托给adapter）
 	if err := h.adapter.PrepareConnection(localConn); err != nil {
 		corelog.Errorf("BaseMappingHandler[%s]: prepare connection failed: %v", h.config.MappingID, err)
+		localConn.Close()
 		return
 	}
 
 	// 3. 配额检查：流量限制
 	if err := h.client.CheckMappingQuota(h.config.MappingID); err != nil {
 		corelog.Warnf("BaseMappingHandler[%s]: mapping quota exceeded: %v", h.config.MappingID, err)
+		localConn.Close()
 		return
 	}
 
-	// 4. 尝试使用连接池获取隧道连接
-	var tunnelReader io.Reader
-	var tunnelWriter io.Writer
-	var tunnelCloser func() error
-	var tunnelID string
+	// 4. 生成隧道ID并建立隧道连接
+	tunnelID := h.generateTunnelID()
+	corelog.Infof("BaseMappingHandler[%s]: dialing tunnel %s", h.config.MappingID, tunnelID)
 
-	if h.client.IsTunnelPoolEnabled() {
-		// 使用连接池
-		pooledConn, err := h.client.DialTunnelPooled(h.config.MappingID, h.config.SecretKey)
-		if err != nil {
-			corelog.Errorf("BaseMappingHandler[%s]: get pooled tunnel failed: %v", h.config.MappingID, err)
-			return
-		}
-		if pooledConn != nil {
-			tunnelID = pooledConn.TunnelID()
-			tunnelReader = pooledConn.GetReader()
-			tunnelWriter = pooledConn.GetWriter()
-			// 使用完后归还到池中（而不是关闭）
-			tunnelCloser = func() error {
-				h.client.ReturnTunnelToPool(pooledConn)
-				return nil
-			}
-			corelog.Infof("BaseMappingHandler[%s]: using pooled tunnel %s", h.config.MappingID, tunnelID)
-		}
+	tunnelConn, tunnelStream, err := h.client.DialTunnel(
+		tunnelID,
+		h.config.MappingID,
+		h.config.SecretKey,
+	)
+	if err != nil {
+		corelog.Errorf("BaseMappingHandler[%s]: dial tunnel failed: %v", h.config.MappingID, err)
+		localConn.Close()
+		return
 	}
 
-	// 如果连接池未启用或获取失败，使用传统方式
-	if tunnelReader == nil || tunnelWriter == nil {
-		tunnelID = h.generateTunnelID()
-		corelog.Infof("BaseMappingHandler[%s]: dialing tunnel %s", h.config.MappingID, tunnelID)
-		tunnelConn, tunnelStream, err := h.client.DialTunnel(
-			tunnelID,
-			h.config.MappingID,
-			h.config.SecretKey,
-		)
-		if err != nil {
-			corelog.Errorf("BaseMappingHandler[%s]: dial tunnel failed: %v", h.config.MappingID, err)
-			return
-		}
+	corelog.Infof("BaseMappingHandler[%s]: tunnel %s established", h.config.MappingID, tunnelID)
 
-		corelog.Infof("BaseMappingHandler[%s]: tunnel %s established", h.config.MappingID, tunnelID)
+	// 5. 获取隧道 Reader/Writer
+	tunnelReader := tunnelStream.GetReader()
+	tunnelWriter := tunnelStream.GetWriter()
 
-		// 获取 Reader/Writer
-		tunnelReader = tunnelStream.GetReader()
-		tunnelWriter = tunnelStream.GetWriter()
-
-		// 如果 GetReader/GetWriter 返回 nil，尝试使用 tunnelConn
-		if tunnelReader == nil {
-			if tunnelConn != nil {
-				if reader, ok := tunnelConn.(io.Reader); ok && reader != nil {
-					tunnelReader = reader
-					corelog.Infof("BaseMappingHandler[%s]: using tunnelConn as Reader (via interface)", h.config.MappingID)
-				} else {
-					corelog.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Reader or reader is nil", h.config.MappingID)
-					tunnelConn.Close()
-					return
-				}
+	// 如果 GetReader/GetWriter 返回 nil，尝试使用 tunnelConn
+	if tunnelReader == nil {
+		if tunnelConn != nil {
+			if reader, ok := tunnelConn.(io.Reader); ok && reader != nil {
+				tunnelReader = reader
 			} else {
-				corelog.Errorf("BaseMappingHandler[%s]: tunnelConn is nil and GetReader() returned nil", h.config.MappingID)
-				return
-			}
-		}
-		if tunnelWriter == nil {
-			if tunnelConn != nil {
-				if writer, ok := tunnelConn.(io.Writer); ok && writer != nil {
-					tunnelWriter = writer
-					corelog.Infof("BaseMappingHandler[%s]: using tunnelConn as Writer (via interface)", h.config.MappingID)
-				} else {
-					corelog.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Writer or writer is nil", h.config.MappingID)
-					tunnelConn.Close()
-					return
-				}
-			} else {
-				corelog.Errorf("BaseMappingHandler[%s]: tunnelConn is nil and GetWriter() returned nil", h.config.MappingID)
-				return
-			}
-		}
-
-		tunnelCloser = func() error {
-			tunnelStream.Close()
-			if tunnelConn != nil {
+				corelog.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Reader", h.config.MappingID)
 				tunnelConn.Close()
+				localConn.Close()
+				return
 			}
-			return nil
+		} else {
+			corelog.Errorf("BaseMappingHandler[%s]: tunnelConn is nil and GetReader() returned nil", h.config.MappingID)
+			localConn.Close()
+			return
+		}
+	}
+	if tunnelWriter == nil {
+		if tunnelConn != nil {
+			if writer, ok := tunnelConn.(io.Writer); ok && writer != nil {
+				tunnelWriter = writer
+			} else {
+				corelog.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Writer", h.config.MappingID)
+				tunnelConn.Close()
+				localConn.Close()
+				return
+			}
+		} else {
+			corelog.Errorf("BaseMappingHandler[%s]: tunnelConn is nil and GetWriter() returned nil", h.config.MappingID)
+			localConn.Close()
+			return
 		}
 	}
 
-	defer tunnelCloser()
-
-	// 5. 包装隧道连接成ReadWriteCloser
-	if tunnelReader == nil || tunnelWriter == nil {
-		corelog.Errorf("BaseMappingHandler[%s]: tunnelReader or tunnelWriter is nil after setup", h.config.MappingID)
-		return
+	// 6. 包装隧道连接成 ReadWriteCloser
+	tunnelCloser := func() error {
+		tunnelStream.Close()
+		if tunnelConn != nil {
+			tunnelConn.Close()
+		}
+		return nil
 	}
+
 	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, tunnelCloser)
 	if err != nil {
 		corelog.Errorf("BaseMappingHandler[%s]: failed to create tunnel ReadWriteCloser: %v", h.config.MappingID, err)
+		tunnelCloser()
+		localConn.Close()
 		return
 	}
 
-	// 6. 双向转发（Transformer只处理限速，压缩/加密已在StreamProcessor中）
-	strategyFactory := utils.NewCopyStrategyFactory()
-	// 使用映射的协议类型（tcp/udp/socks5），而不是服务端连接协议
-	protocol := h.config.Protocol
-	copyStrategy := strategyFactory.CreateStrategy(protocol)
+	// 7. 创建新的 Tunnel 结构
+	var tun *tunnel.Tunnel
+	tun = tunnel.NewTunnel(&tunnel.TunnelConfig{
+		ID:           tunnelID,
+		MappingID:    h.config.MappingID,
+		Role:         tunnel.TunnelRoleListen,
+		LocalConn:    localConn,
+		TunnelConn:   tunnelConn,
+		TunnelRWC:    tunnelRWC,
+		TargetClient: h.config.TargetClientID,
+		Manager:      h.tunnelManager,
+		Client:       h,
+		OnClosed: func(reason tunnel.CloseReason, err error) {
+			// 更新流量统计
+			stats := tun.GetStats()
+			h.trafficStats.BytesSent.Add(stats.BytesSent)
+			h.trafficStats.BytesReceived.Add(stats.BytesRecv)
+			h.trafficStats.ConnectionCount.Add(1)
 
-	corelog.Infof("BaseMappingHandler[%s]: starting bidirectional copy for tunnel %s", h.config.MappingID, tunnelID)
-
-	result := copyStrategy.Copy(localConn, tunnelRWC, &utils.BidirectionalCopyOptions{
-		Transformer: h.transformer,
-		LogPrefix:   fmt.Sprintf("BaseMappingHandler[%s][%s]", h.config.MappingID, tunnelID),
+			corelog.Infof("BaseMappingHandler[%s]: tunnel %s closed, reason=%s, sent=%d, recv=%d",
+				h.config.MappingID, tunnelID, reason, stats.BytesSent, stats.BytesRecv)
+		},
 	})
 
-	corelog.Infof("BaseMappingHandler[%s]: bidirectional copy finished for tunnel %s, sent=%d, received=%d, sendErr=%v, recvErr=%v",
-		h.config.MappingID, tunnelID, result.BytesSent, result.BytesReceived, result.SendError, result.ReceiveError)
-
-	// 7. 发送隧道关闭通知给 targetClient
-	if h.config.TargetClientID > 0 {
-		reason := h.determineCloseReason(result.SendError, result.ReceiveError)
-		if err := h.client.SendTunnelCloseNotify(h.config.TargetClientID, tunnelID, h.config.MappingID, reason); err != nil {
-			corelog.Warnf("BaseMappingHandler[%s]: failed to send tunnel close notify: %v", h.config.MappingID, err)
-		}
+	// 8. 注册到 TunnelManager
+	if err := h.tunnelManager.RegisterTunnel(tun); err != nil {
+		corelog.Errorf("BaseMappingHandler[%s]: failed to register tunnel: %v", h.config.MappingID, err)
+		localConn.Close()
+		tunnelRWC.Close()
+		return
 	}
 
-	// 8. 更新连接计数统计
-	h.trafficStats.ConnectionCount.Add(1)
+	// 9. 启动 Tunnel（自动管理生命周期）
+	if err := tun.Start(); err != nil {
+		corelog.Errorf("BaseMappingHandler[%s]: failed to start tunnel: %v", h.config.MappingID, err)
+		h.tunnelManager.UnregisterTunnel(tunnelID)
+		localConn.Close()
+		tunnelRWC.Close()
+		return
+	}
+
+	corelog.Infof("BaseMappingHandler[%s]: tunnel %s started successfully", h.config.MappingID, tunnelID)
+
+	// Tunnel会在独立的goroutine中管理自己的生命周期，handleConnection可以立即返回
+	// 注意：不要在这里等待Tunnel完成，否则可能会影响accept循环
 }
 
 // determineCloseReason 根据错误类型判断关闭原因
@@ -455,6 +471,16 @@ func (h *BaseMappingHandler) GetConfig() config.MappingConfig {
 // GetContext 获取上下文
 func (h *BaseMappingHandler) GetContext() context.Context {
 	return h.Ctx()
+}
+
+// SendTunnelCloseNotify 发送隧道关闭通知给对端（实现 tunnel.ClientInterface）
+func (h *BaseMappingHandler) SendTunnelCloseNotify(targetClientID int64, tunnelID, mappingID, reason string) error {
+	return h.client.SendTunnelCloseNotify(targetClientID, tunnelID, mappingID, reason)
+}
+
+// GetTunnelManager 获取隧道管理器（用于注册到 NotificationDispatcher）
+func (h *BaseMappingHandler) GetTunnelManager() tunnel.TunnelManager {
+	return h.tunnelManager
 }
 
 // controlledConn 包装的连接（带速率限制和流量统计）
