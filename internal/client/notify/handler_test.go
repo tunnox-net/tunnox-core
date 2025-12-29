@@ -1,4 +1,4 @@
-package client
+package notify
 
 import (
 	"encoding/json"
@@ -11,8 +11,8 @@ import (
 	"tunnox-core/internal/packet"
 )
 
-// testNotificationHandler 测试用通知处理器
-type testNotificationHandler struct {
+// testHandler 测试用通知处理器
+type testHandler struct {
 	mu             sync.Mutex
 	systemMessages []struct{ title, message, level string }
 	quotaWarnings  []struct{ quotaType, message string }
@@ -37,23 +37,23 @@ type testNotificationHandler struct {
 	genericNotifications []*packet.ClientNotification
 }
 
-func newTestNotificationHandler() *testNotificationHandler {
-	return &testNotificationHandler{}
+func newTestHandler() *testHandler {
+	return &testHandler{}
 }
 
-func (h *testNotificationHandler) OnSystemMessage(title, message, level string) {
+func (h *testHandler) OnSystemMessage(title, message, level string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.systemMessages = append(h.systemMessages, struct{ title, message, level string }{title, message, level})
 }
 
-func (h *testNotificationHandler) OnQuotaWarning(quotaType string, usagePercent float64, message string) {
+func (h *testHandler) OnQuotaWarning(quotaType string, usagePercent float64, message string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.quotaWarnings = append(h.quotaWarnings, struct{ quotaType, message string }{quotaType, message})
 }
 
-func (h *testNotificationHandler) OnMappingEvent(eventType packet.NotificationType, mappingID, status, message string) {
+func (h *testHandler) OnMappingEvent(eventType packet.NotificationType, mappingID, status, message string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.mappingEvents = append(h.mappingEvents, struct {
@@ -62,13 +62,13 @@ func (h *testNotificationHandler) OnMappingEvent(eventType packet.NotificationTy
 	}{eventType, mappingID, status, message})
 }
 
-func (h *testNotificationHandler) OnTunnelClosed(tunnelID, mappingID, reason string, bytesSent, bytesRecv, durationMs int64) {
+func (h *testHandler) OnTunnelClosed(tunnelID, mappingID, reason string, bytesSent, bytesRecv, durationMs int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.tunnelClosedEvents = append(h.tunnelClosedEvents, struct{ tunnelID, mappingID, reason string }{tunnelID, mappingID, reason})
 }
 
-func (h *testNotificationHandler) OnTunnelOpened(tunnelID, mappingID string, peerClientID int64) {
+func (h *testHandler) OnTunnelOpened(tunnelID, mappingID string, peerClientID int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.tunnelOpenedEvents = append(h.tunnelOpenedEvents, struct {
@@ -77,7 +77,7 @@ func (h *testNotificationHandler) OnTunnelOpened(tunnelID, mappingID string, pee
 	}{tunnelID, mappingID, peerClientID})
 }
 
-func (h *testNotificationHandler) OnTunnelError(tunnelID, mappingID, errorCode, errorMessage string, recoverable bool) {
+func (h *testHandler) OnTunnelError(tunnelID, mappingID, errorCode, errorMessage string, recoverable bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.tunnelErrorEvents = append(h.tunnelErrorEvents, struct {
@@ -86,7 +86,7 @@ func (h *testNotificationHandler) OnTunnelError(tunnelID, mappingID, errorCode, 
 	}{tunnelID, errorCode, errorMessage, recoverable})
 }
 
-func (h *testNotificationHandler) OnCustomNotification(senderClientID int64, action string, data map[string]string, raw string) {
+func (h *testHandler) OnCustomNotification(senderClientID int64, action string, data map[string]string, raw string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.customNotifications = append(h.customNotifications, struct {
@@ -96,15 +96,15 @@ func (h *testNotificationHandler) OnCustomNotification(senderClientID int64, act
 	}{senderClientID, action, data})
 }
 
-func (h *testNotificationHandler) OnGenericNotification(notification *packet.ClientNotification) {
+func (h *testHandler) OnGenericNotification(notification *packet.ClientNotification) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.genericNotifications = append(h.genericNotifications, notification)
 }
 
-func TestNotificationDispatcher_SystemMessage(t *testing.T) {
-	dispatcher := NewNotificationDispatcher()
-	handler := newTestNotificationHandler()
+func TestDispatcher_SystemMessage(t *testing.T) {
+	dispatcher := NewDispatcher()
+	handler := newTestHandler()
 	dispatcher.AddHandler(handler)
 
 	payload := packet.SystemMessagePayload{
@@ -123,9 +123,9 @@ func TestNotificationDispatcher_SystemMessage(t *testing.T) {
 	assert.Equal(t, "info", handler.systemMessages[0].level)
 }
 
-func TestNotificationDispatcher_TunnelClosed(t *testing.T) {
-	dispatcher := NewNotificationDispatcher()
-	handler := newTestNotificationHandler()
+func TestDispatcher_TunnelClosed(t *testing.T) {
+	dispatcher := NewDispatcher()
+	handler := newTestHandler()
 	dispatcher.AddHandler(handler)
 
 	payload := packet.TunnelClosedPayload{
@@ -147,9 +147,9 @@ func TestNotificationDispatcher_TunnelClosed(t *testing.T) {
 	assert.Equal(t, "normal", handler.tunnelClosedEvents[0].reason)
 }
 
-func TestNotificationDispatcher_CustomNotification(t *testing.T) {
-	dispatcher := NewNotificationDispatcher()
-	handler := newTestNotificationHandler()
+func TestDispatcher_CustomNotification(t *testing.T) {
+	dispatcher := NewDispatcher()
+	handler := newTestHandler()
 	dispatcher.AddHandler(handler)
 
 	payload := packet.CustomPayload{
@@ -168,10 +168,10 @@ func TestNotificationDispatcher_CustomNotification(t *testing.T) {
 	assert.Equal(t, "value", handler.customNotifications[0].data["key"])
 }
 
-func TestNotificationDispatcher_MultipleHandlers(t *testing.T) {
-	dispatcher := NewNotificationDispatcher()
-	handler1 := newTestNotificationHandler()
-	handler2 := newTestNotificationHandler()
+func TestDispatcher_MultipleHandlers(t *testing.T) {
+	dispatcher := NewDispatcher()
+	handler1 := newTestHandler()
+	handler2 := newTestHandler()
 	dispatcher.AddHandler(handler1)
 	dispatcher.AddHandler(handler2)
 
@@ -190,9 +190,9 @@ func TestNotificationDispatcher_MultipleHandlers(t *testing.T) {
 	assert.Len(t, handler2.systemMessages, 1)
 }
 
-func TestNotificationDispatcher_RemoveHandler(t *testing.T) {
-	dispatcher := NewNotificationDispatcher()
-	handler := newTestNotificationHandler()
+func TestDispatcher_RemoveHandler(t *testing.T) {
+	dispatcher := NewDispatcher()
+	handler := newTestHandler()
 	dispatcher.AddHandler(handler)
 	dispatcher.RemoveHandler(handler)
 
@@ -210,17 +210,17 @@ func TestNotificationDispatcher_RemoveHandler(t *testing.T) {
 	assert.Len(t, handler.systemMessages, 0)
 }
 
-func TestNotificationDispatcher_NilNotification(t *testing.T) {
-	dispatcher := NewNotificationDispatcher()
-	handler := newTestNotificationHandler()
+func TestDispatcher_NilNotification(t *testing.T) {
+	dispatcher := NewDispatcher()
+	handler := newTestHandler()
 	dispatcher.AddHandler(handler)
 
 	// 不应该 panic
 	dispatcher.Dispatch(nil)
 }
 
-func TestNotificationDispatcher_NoHandlers(t *testing.T) {
-	dispatcher := NewNotificationDispatcher()
+func TestDispatcher_NoHandlers(t *testing.T) {
+	dispatcher := NewDispatcher()
 
 	notification := packet.NewNotification(packet.NotifyTypeSystemMessage, "{}")
 
@@ -228,9 +228,9 @@ func TestNotificationDispatcher_NoHandlers(t *testing.T) {
 	dispatcher.Dispatch(notification)
 }
 
-func TestNotificationDispatcher_MappingEvent(t *testing.T) {
-	dispatcher := NewNotificationDispatcher()
-	handler := newTestNotificationHandler()
+func TestDispatcher_MappingEvent(t *testing.T) {
+	dispatcher := NewDispatcher()
+	handler := newTestHandler()
 	dispatcher.AddHandler(handler)
 
 	payload := packet.MappingEventPayload{
@@ -250,9 +250,9 @@ func TestNotificationDispatcher_MappingEvent(t *testing.T) {
 	assert.Equal(t, "active", handler.mappingEvents[0].status)
 }
 
-func TestNotificationDispatcher_QuotaWarning(t *testing.T) {
-	dispatcher := NewNotificationDispatcher()
-	handler := newTestNotificationHandler()
+func TestDispatcher_QuotaWarning(t *testing.T) {
+	dispatcher := NewDispatcher()
+	handler := newTestHandler()
 	dispatcher.AddHandler(handler)
 
 	payload := packet.QuotaWarningPayload{
@@ -270,8 +270,8 @@ func TestNotificationDispatcher_QuotaWarning(t *testing.T) {
 	assert.Equal(t, "Approaching limit", handler.quotaWarnings[0].message)
 }
 
-func TestDefaultNotificationHandler(t *testing.T) {
-	handler := &DefaultNotificationHandler{}
+func TestDefaultHandler(t *testing.T) {
+	handler := &DefaultHandler{}
 
 	// 验证所有方法都不会 panic
 	handler.OnSystemMessage("Title", "Message", "info")

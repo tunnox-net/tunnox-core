@@ -2,15 +2,16 @@ package client
 
 import (
 	"context"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
-	"tunnox-core/internal/client/mapping"
-	corelog "tunnox-core/internal/core/log"
 
-	"net"
+	"tunnox-core/internal/client/mapping"
+	"tunnox-core/internal/client/notify"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 
 	"github.com/google/uuid"
@@ -81,7 +82,7 @@ type TunnoxClient struct {
 	startTime time.Time
 
 	// 通知处理
-	notificationDispatcher *NotificationDispatcher
+	notificationDispatcher *notify.Dispatcher
 
 	// 目标端隧道管理器（用于接收隧道关闭通知时关闭对应隧道）
 	targetTunnelManager *TargetTunnelManager
@@ -120,7 +121,7 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 		localTrafficStats:      make(map[string]*localMappingStats),
 		commandResponseManager: NewCommandResponseManager(),
 		startTime:              time.Now(),
-		notificationDispatcher: NewNotificationDispatcher(),
+		notificationDispatcher: notify.NewDispatcher(),
 		targetTunnelManager:    NewTargetTunnelManager(),
 	}
 

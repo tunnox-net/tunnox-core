@@ -2,8 +2,9 @@ package client
 
 import (
 	"encoding/json"
-	corelog "tunnox-core/internal/core/log"
 
+	"tunnox-core/internal/client/notify"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/httptypes"
 )
@@ -213,14 +214,14 @@ func (c *TunnoxClient) sendNotificationAck(notifyID string, received, processed 
 }
 
 // AddNotificationHandler 添加通知处理器
-func (c *TunnoxClient) AddNotificationHandler(handler NotificationHandler) {
+func (c *TunnoxClient) AddNotificationHandler(handler notify.Handler) {
 	if c.notificationDispatcher != nil {
 		c.notificationDispatcher.AddHandler(handler)
 	}
 }
 
 // RemoveNotificationHandler 移除通知处理器
-func (c *TunnoxClient) RemoveNotificationHandler(handler NotificationHandler) {
+func (c *TunnoxClient) RemoveNotificationHandler(handler notify.Handler) {
 	if c.notificationDispatcher != nil {
 		c.notificationDispatcher.RemoveHandler(handler)
 	}
@@ -228,5 +229,5 @@ func (c *TunnoxClient) RemoveNotificationHandler(handler NotificationHandler) {
 
 // SetDefaultNotificationHandler 设置默认通知处理器（记录日志）
 func (c *TunnoxClient) SetDefaultNotificationHandler() {
-	c.AddNotificationHandler(&DefaultNotificationHandler{})
+	c.AddNotificationHandler(&notify.DefaultHandler{})
 }
