@@ -273,10 +273,12 @@ func (h *ActivateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 	}
 
 	resp := MappingActivateResponse{
-		MappingID:     mapping.ID,
-		TargetAddress: mapping.TargetAddress,
-		ListenAddress: mapping.ListenAddress,
-		ExpiresAt:     expiresAtStr,
+		MappingID:      mapping.ID,
+		TargetAddress:  mapping.TargetAddress,
+		ListenAddress:  mapping.ListenAddress,
+		ExpiresAt:      expiresAtStr,
+		TargetClientID: mapping.TargetClientID, // SOCKS5 映射需要
+		SecretKey:      mapping.SecretKey,      // SOCKS5 映射需要
 	}
 
 	respBody, _ := json.Marshal(resp)

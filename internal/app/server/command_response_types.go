@@ -28,10 +28,12 @@ type ConnectionCodeListResponse struct {
 
 // MappingActivateResponse 映射激活响应
 type MappingActivateResponse struct {
-	MappingID     string `json:"mapping_id"`
-	TargetAddress string `json:"target_address"`
-	ListenAddress string `json:"listen_address"`
-	ExpiresAt     string `json:"expires_at,omitempty"`
+	MappingID      string `json:"mapping_id"`
+	TargetAddress  string `json:"target_address"`
+	ListenAddress  string `json:"listen_address"`
+	ExpiresAt      string `json:"expires_at,omitempty"`
+	TargetClientID int64  `json:"target_client_id"` // SOCKS5 映射需要目标客户端ID
+	SecretKey      string `json:"secret_key"`       // SOCKS5 映射需要密钥
 }
 
 // MappingItem 映射项

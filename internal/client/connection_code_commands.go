@@ -57,10 +57,12 @@ type ActivateConnectionCodeRequest struct {
 
 // ActivateConnectionCodeResponse 激活连接码响应
 type ActivateConnectionCodeResponse struct {
-	MappingID     string `json:"mapping_id"`
-	TargetAddress string `json:"target_address"`
-	ListenAddress string `json:"listen_address"`
-	ExpiresAt     string `json:"expires_at"`
+	MappingID      string `json:"mapping_id"`
+	TargetAddress  string `json:"target_address"`
+	ListenAddress  string `json:"listen_address"`
+	ExpiresAt      string `json:"expires_at"`
+	TargetClientID int64  `json:"target_client_id"` // SOCKS5 映射需要目标客户端ID
+	SecretKey      string `json:"secret_key"`       // SOCKS5 映射需要密钥
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -144,16 +146,22 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 			MappingID:      resp.MappingID,
 			Protocol:       protocol,
 			LocalPort:      port,
-			TargetHost:     "", // 目标地址由服务端管理
-			TargetPort:     0,  // 目标端口由服务端管理
-			SecretKey:      "", // SecretKey由服务端管理，客户端不需要
+			TargetHost:     "",                 // 目标地址由服务端管理
+			TargetPort:     0,                  // 目标端口由服务端管理
+			TargetClientID: resp.TargetClientID, // SOCKS5 需要目标客户端ID
+			SecretKey:      resp.SecretKey,      // SOCKS5 需要密钥
 			MaxConnections: 100,
 			BandwidthLimit: 0, // 无限制
 		}
 
-		// 启动映射处理器
-		c.addOrUpdateMapping(mappingCfg)
-		corelog.Infof("Client.ActivateConnectionCode: mapping handler started for %s on %s", resp.MappingID, resp.ListenAddress)
+		// 根据协议类型分发到正确的处理器
+		if protocol == "socks5" && port > 0 {
+			c.addOrUpdateSOCKS5Mapping(mappingCfg)
+			corelog.Infof("Client.ActivateConnectionCode: SOCKS5 mapping handler started for %s on %s", resp.MappingID, resp.ListenAddress)
+		} else {
+			c.addOrUpdateMapping(mappingCfg)
+			corelog.Infof("Client.ActivateConnectionCode: mapping handler started for %s on %s", resp.MappingID, resp.ListenAddress)
+		}
 	}
 
 	return &resp, nil

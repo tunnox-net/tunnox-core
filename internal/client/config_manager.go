@@ -17,22 +17,14 @@ type ConfigManager struct {
 }
 
 // NewConfigManager 创建配置管理器
+// 只从工作目录读取和保存配置文件
 func NewConfigManager() *ConfigManager {
-	execDir := getExecutableDir()
 	workDir := getWorkingDir()
-	homeDir := getUserHomeDir()
+	configPath := filepath.Join(workDir, "client-config.yaml")
 
 	return &ConfigManager{
-		searchPaths: []string{
-			filepath.Join(execDir, "client-config.yaml"),
-			filepath.Join(workDir, "client-config.yaml"),
-			filepath.Join(homeDir, ".tunnox", "client-config.yaml"),
-		},
-		savePaths: []string{
-			filepath.Join(execDir, "client-config.yaml"),
-			filepath.Join(workDir, "client-config.yaml"),
-			filepath.Join(homeDir, ".tunnox", "client-config.yaml"),
-		},
+		searchPaths: []string{configPath},
+		savePaths:   []string{configPath},
 	}
 }
 
