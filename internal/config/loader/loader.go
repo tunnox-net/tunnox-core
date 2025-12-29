@@ -4,6 +4,7 @@ package loader
 import (
 	"sort"
 
+	"tunnox-core/internal/config/inference"
 	"tunnox-core/internal/config/schema"
 	"tunnox-core/internal/config/source"
 	coreerrors "tunnox-core/internal/core/errors"
@@ -12,7 +13,8 @@ import (
 
 // Loader loads configuration from multiple sources in priority order
 type Loader struct {
-	sources []source.Source
+	sources       []source.Source
+	skipInference bool
 }
 
 // NewLoader creates a new Loader
@@ -25,6 +27,11 @@ func NewLoader() *Loader {
 // AddSource adds a configuration source
 func (l *Loader) AddSource(s source.Source) {
 	l.sources = append(l.sources, s)
+}
+
+// SetSkipInference disables the inference phase
+func (l *Loader) SetSkipInference(skip bool) {
+	l.skipInference = skip
 }
 
 // Load loads configuration from all sources in priority order
@@ -51,17 +58,25 @@ func (l *Loader) Load() (*schema.Root, error) {
 		}
 	}
 
+	// Apply inference phase (post-processing)
+	if !l.skipInference {
+		engine := inference.NewEngine()
+		result := engine.Infer(cfg)
+		inference.PrintReport(result)
+	}
+
 	return cfg, nil
 }
 
 // LoaderBuilder helps build a Loader with common configurations
 type LoaderBuilder struct {
-	loader       *Loader
-	prefix       string
-	configFile   string
-	appType      string
-	appEnv       string
-	enableDotEnv bool
+	loader        *Loader
+	prefix        string
+	configFile    string
+	appType       string
+	appEnv        string
+	enableDotEnv  bool
+	skipInference bool
 }
 
 // NewLoaderBuilder creates a new LoaderBuilder
@@ -103,6 +118,12 @@ func (b *LoaderBuilder) WithDotEnv(enabled bool) *LoaderBuilder {
 	return b
 }
 
+// WithSkipInference enables or disables the inference phase
+func (b *LoaderBuilder) WithSkipInference(skip bool) *LoaderBuilder {
+	b.skipInference = skip
+	return b
+}
+
 // Build creates the configured Loader
 func (b *LoaderBuilder) Build() *Loader {
 	// 1. Add default source (lowest priority)
@@ -123,6 +144,9 @@ func (b *LoaderBuilder) Build() *Loader {
 
 	// 4. Add environment variable source (highest priority before CLI)
 	b.loader.AddSource(source.NewEnvSource(b.prefix))
+
+	// 5. Configure inference phase
+	b.loader.SetSkipInference(b.skipInference)
 
 	return b.loader
 }

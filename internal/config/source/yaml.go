@@ -63,6 +63,46 @@ func (s *YAMLSource) LoadInto(cfg *schema.Root) error {
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return coreerrors.Wrapf(err, coreerrors.CodeInvalidParam, "failed to parse YAML file %q", expandedPath)
 		}
+
+		// Track which fields were explicitly set
+		if err := trackExplicitlySetFields(data, cfg); err != nil {
+			// Non-fatal: just log and continue
+			continue
+		}
+	}
+
+	return nil
+}
+
+// trackExplicitlySetFields parses YAML to track which fields were explicitly set
+func trackExplicitlySetFields(data []byte, cfg *schema.Root) error {
+	// Parse into a raw map to check field presence
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	trueVal := true
+
+	// Check storage.type
+	if storage, ok := raw["storage"].(map[string]interface{}); ok {
+		if _, hasType := storage["type"]; hasType {
+			cfg.Storage.TypeSet = &trueVal
+		}
+
+		// Check storage.persistence.enabled
+		if persistence, ok := storage["persistence"].(map[string]interface{}); ok {
+			if _, hasEnabled := persistence["enabled"]; hasEnabled {
+				cfg.Storage.Persistence.EnabledSet = &trueVal
+			}
+		}
+
+		// Check storage.remote.enabled
+		if remote, ok := storage["remote"].(map[string]interface{}); ok {
+			if _, hasEnabled := remote["enabled"]; hasEnabled {
+				cfg.Storage.Remote.EnabledSet = &trueVal
+			}
+		}
 	}
 
 	return nil

@@ -257,6 +257,13 @@ func main() {
 	fmt.Println("\n🛑 Shutting down client...")
 	tunnoxClient.Stop()
 	corelog.Infof("Client: shutdown complete")
+
+	// 检查是否被踢下线，设置相应的退出码
+	// 退出码 2 表示被 DUPLICATE_LOGIN 踢下线
+	if tunnoxClient.WasKicked() {
+		corelog.Warnf("Client: exiting with code 2 (kicked by server)")
+		os.Exit(2)
+	}
 }
 
 // loadOrCreateConfig 加载或创建配置
@@ -702,4 +709,11 @@ func runTraditionalInteractive(ctx context.Context, config *client.ClientConfig)
 	// 停止客户端
 	fmt.Println("\n🛑 Shutting down client...")
 	tunnoxClient.Stop()
+
+	// 检查是否被踢下线，设置相应的退出码
+	// 退出码 2 表示被 DUPLICATE_LOGIN 踢下线
+	if tunnoxClient.WasKicked() {
+		corelog.Warnf("Client: exiting with code 2 (kicked by server)")
+		os.Exit(2)
+	}
 }

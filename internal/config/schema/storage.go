@@ -9,6 +9,10 @@ type StorageConfig struct {
 	Persistence PersistenceConfig   `yaml:"persistence" json:"persistence"`
 	Remote      RemoteStorageConfig `yaml:"remote" json:"remote"`
 	Hybrid      HybridStorageConfig `yaml:"hybrid" json:"hybrid"`
+
+	// TypeSet tracks whether Type was explicitly set by user (for inference)
+	// nil means not explicitly set, non-nil means explicitly set
+	TypeSet *bool `yaml:"-" json:"-"`
 }
 
 // RedisConfig contains Redis settings
@@ -31,6 +35,9 @@ type PersistenceConfig struct {
 	File         string        `yaml:"file" json:"file"`
 	AutoSave     bool          `yaml:"auto_save" json:"auto_save"`
 	SaveInterval time.Duration `yaml:"save_interval" json:"save_interval"`
+
+	// EnabledSet tracks whether Enabled was explicitly set by user (for inference)
+	EnabledSet *bool `yaml:"-" json:"-"`
 }
 
 // RemoteStorageConfig contains remote gRPC storage settings
@@ -40,6 +47,9 @@ type RemoteStorageConfig struct {
 	Timeout     time.Duration          `yaml:"timeout" json:"timeout"`
 	MaxRetries  int                    `yaml:"max_retries" json:"max_retries"`
 	TLS         RemoteStorageTLSConfig `yaml:"tls" json:"tls"`
+
+	// EnabledSet tracks whether Enabled was explicitly set by user (for inference)
+	EnabledSet *bool `yaml:"-" json:"-"`
 }
 
 // RemoteStorageTLSConfig contains TLS settings for remote storage

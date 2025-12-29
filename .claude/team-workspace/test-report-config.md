@@ -195,13 +195,13 @@ go test ./internal/config/... -cover
 
 ### 测试场景文件
 
-- **测试脚本**: `/Users/roger.tong/GolandProjects/tunnox/test/scenarios/config_system.py`
-- **K8s 资源目录**: `/Users/roger.tong/GolandProjects/tunnox/test/k8s/config-system/`
+- **测试脚本**: `/Users/roger.tong/GolandProjects/tunnox/tests/scenarios/config_system.py`
+- **K8s 资源目录**: `/Users/roger.tong/GolandProjects/tunnox/tests/k8s/config-system/`
 
 ### 运行 E2E 测试
 
 ```bash
-cd /Users/roger.tong/GolandProjects/tunnox/test
+cd /Users/roger.tong/GolandProjects/tunnox/tests
 
 # 完整运行（包含构建）
 python3 -m scenarios.config_system

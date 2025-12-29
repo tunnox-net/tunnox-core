@@ -102,17 +102,17 @@ func (s *EnvSource) LoadInto(cfg *schema.Root) error {
 	s.loadInt("HTTP_RATE_LIMIT_RPS", &cfg.HTTP.RateLimit.RequestsPerSecond)
 
 	// Storage
-	s.loadString("STORAGE_TYPE", &cfg.Storage.Type)
+	s.loadStringWithTrack("STORAGE_TYPE", &cfg.Storage.Type, &cfg.Storage.TypeSet)
 	s.loadBool("REDIS_ENABLED", &cfg.Storage.Redis.Enabled)
 	s.loadString("REDIS_ADDR", &cfg.Storage.Redis.Addr)
 	s.loadSecret("REDIS_PASSWORD", &cfg.Storage.Redis.Password)
 	s.loadInt("REDIS_DB", &cfg.Storage.Redis.DB)
 	s.loadInt("REDIS_POOL_SIZE", &cfg.Storage.Redis.PoolSize)
-	s.loadBool("PERSISTENCE_ENABLED", &cfg.Storage.Persistence.Enabled)
+	s.loadBoolWithTrack("PERSISTENCE_ENABLED", &cfg.Storage.Persistence.Enabled, &cfg.Storage.Persistence.EnabledSet)
 	s.loadString("PERSISTENCE_FILE", &cfg.Storage.Persistence.File)
 	s.loadBool("PERSISTENCE_AUTO_SAVE", &cfg.Storage.Persistence.AutoSave)
 	s.loadDuration("PERSISTENCE_SAVE_INTERVAL", &cfg.Storage.Persistence.SaveInterval)
-	s.loadBool("STORAGE_REMOTE_ENABLED", &cfg.Storage.Remote.Enabled)
+	s.loadBoolWithTrack("STORAGE_REMOTE_ENABLED", &cfg.Storage.Remote.Enabled, &cfg.Storage.Remote.EnabledSet)
 	s.loadString("STORAGE_GRPC_ADDRESS", &cfg.Storage.Remote.GRPCAddress)
 	s.loadDuration("STORAGE_TIMEOUT", &cfg.Storage.Remote.Timeout)
 
@@ -186,6 +186,14 @@ func (s *EnvSource) loadString(key string, target *string) {
 	}
 }
 
+func (s *EnvSource) loadStringWithTrack(key string, target *string, setFlag **bool) {
+	if v, ok := s.getEnvWithFallback(key); ok {
+		*target = v
+		trueVal := true
+		*setFlag = &trueVal
+	}
+}
+
 func (s *EnvSource) loadSecret(key string, target *schema.Secret) {
 	if v, ok := s.getEnvWithFallback(key); ok {
 		*target = schema.Secret(v)
@@ -196,6 +204,16 @@ func (s *EnvSource) loadBool(key string, target *bool) {
 	if v, ok := s.getEnvWithFallback(key); ok {
 		if b, err := strconv.ParseBool(v); err == nil {
 			*target = b
+		}
+	}
+}
+
+func (s *EnvSource) loadBoolWithTrack(key string, target *bool, setFlag **bool) {
+	if v, ok := s.getEnvWithFallback(key); ok {
+		if b, err := strconv.ParseBool(v); err == nil {
+			*target = b
+			trueVal := true
+			*setFlag = &trueVal
 		}
 	}
 }

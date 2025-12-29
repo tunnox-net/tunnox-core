@@ -18,27 +18,34 @@ func (c *TunnoxClient) sendHandshake() error {
 
 // saveConnectionConfig 保存连接配置到配置文件
 // 无论匿名还是注册模式，连接成功后都保存配置，供下次启动使用
-// 保存条件：命令行参数指定了服务器地址/协议，或使用了自动连接检测
+// 保存条件：
+// 1. 命令行参数指定了服务器地址/协议，或使用了自动连接检测
+// 2. 匿名模式下获取到了新的 ClientID 和 SecretKey（首次认证成功后）
 func (c *TunnoxClient) saveConnectionConfig() error {
 	// 检查是否需要保存配置
-	// 只有通过命令行参数指定或使用自动连接时才保存
-	shouldSave := c.serverAddressFromCLI || c.serverProtocolFromCLI || c.usedAutoConnection
-	if !shouldSave {
-		return nil // 从配置文件加载的配置，无需重复保存
+	// 条件1: 命令行参数指定或使用自动连接
+	shouldSaveServerConfig := c.serverAddressFromCLI || c.serverProtocolFromCLI || c.usedAutoConnection
+
+	// 条件2: 匿名模式下有 ClientID 和 SecretKey（需要保存以便重连时使用）
+	shouldSaveCredentials := c.config.Anonymous && c.config.ClientID > 0 && c.config.SecretKey != ""
+
+	if !shouldSaveServerConfig && !shouldSaveCredentials {
+		return nil // 无需保存
 	}
 
 	// 使用ConfigManager保存配置
 	configMgr := NewConfigManager()
-	if err := configMgr.SaveConfigWithOptions(c.config, true); err != nil {
+	// 只有在需要保存服务器配置时才允许更新服务器地址和协议
+	if err := configMgr.SaveConfigWithOptions(c.config, shouldSaveServerConfig); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
 	if c.config.Anonymous {
-		corelog.Infof("Client: connection config saved (anonymous mode, protocol=%s, address=%s)",
-			c.config.Server.Protocol, c.config.Server.Address)
+		corelog.Infof("Client: connection config saved (anonymous mode, ClientID=%d, protocol=%s, address=%s)",
+			c.config.ClientID, c.config.Server.Protocol, c.config.Server.Address)
 	} else {
-		corelog.Infof("Client: connection config saved (registered mode, protocol=%s, address=%s)",
-			c.config.Server.Protocol, c.config.Server.Address)
+		corelog.Infof("Client: connection config saved (registered mode, ClientID=%d, protocol=%s, address=%s)",
+			c.config.ClientID, c.config.Server.Protocol, c.config.Server.Address)
 	}
 	return nil
 }

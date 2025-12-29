@@ -77,6 +77,7 @@ func (g *StorageIDGenerator[T]) getKey(id T) string {
 }
 
 // Generate 生成ID
+// 使用 SetNX 原子操作避免竞态条件：高并发时 IsUsed 检查和 markAsUsed 标记之间可能有其他协程抢占
 func (g *StorageIDGenerator[T]) Generate() (T, error) {
 	var zero T
 
@@ -110,19 +111,18 @@ func (g *StorageIDGenerator[T]) Generate() (T, error) {
 			return zero, fmt.Errorf("unsupported ID type: %T", zero)
 		}
 
-		// 检查ID是否已被使用
-		used, err := g.IsUsed(candidate)
+		// 使用原子操作标记ID为已使用
+		// SetNX 保证 check 和 set 是原子的，避免竞态条件
+		success, err := g.tryMarkAsUsed(candidate)
 		if err != nil {
+			corelog.Warnf("IDGenerator: tryMarkAsUsed failed for %v: %v", candidate, err)
 			continue
 		}
 
-		if !used {
-			// 标记ID为已使用
-			if err := g.markAsUsed(candidate); err != nil {
-				continue
-			}
+		if success {
 			return candidate, nil
 		}
+		// ID 已被其他协程占用，重试生成新 ID
 	}
 
 	return zero, ErrIDExhausted
@@ -140,8 +140,9 @@ func (g *StorageIDGenerator[T]) IsUsed(id T) (bool, error) {
 	return g.storage.Exists(key)
 }
 
-// markAsUsed 标记ID为已使用
-func (g *StorageIDGenerator[T]) markAsUsed(id T) error {
+// tryMarkAsUsed 尝试原子标记ID为已使用
+// 返回 (true, nil) 表示成功标记，(false, nil) 表示 ID 已被占用，(false, err) 表示操作失败
+func (g *StorageIDGenerator[T]) tryMarkAsUsed(id T) (bool, error) {
 	key := g.getKey(id)
 	info := &IDUsageInfo{
 		ID:        fmt.Sprintf("%v", id),
@@ -151,10 +152,45 @@ func (g *StorageIDGenerator[T]) markAsUsed(id T) error {
 
 	data, err := json.Marshal(info)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	return g.storage.Set(key, string(data), 0) // 永久存储
+	// 检查 storage 是否支持 CASStore 接口（SetNX 原子操作）
+	if casStore, ok := g.storage.(storage.CASStore); ok {
+		// 使用 SetNX 原子操作：仅当 key 不存在时设置成功
+		return casStore.SetNX(key, string(data), 0)
+	}
+
+	// 回退到非原子操作（单节点内存存储场景，有锁保护）
+	// 注意：这种方式在分布式场景下仍有竞态风险，但内存存储通常是单节点的
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	exists, err := g.storage.Exists(key)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return false, nil
+	}
+
+	if err := g.storage.Set(key, string(data), 0); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// markAsUsed 标记ID为已使用（保留用于兼容性）
+// 注意：此方法不是原子操作，建议使用 tryMarkAsUsed
+func (g *StorageIDGenerator[T]) markAsUsed(id T) error {
+	success, err := g.tryMarkAsUsed(id)
+	if err != nil {
+		return err
+	}
+	if !success {
+		return fmt.Errorf("ID %v already in use", id)
+	}
+	return nil
 }
 
 // GetUsedCount 获取已使用的ID数量（简化实现）

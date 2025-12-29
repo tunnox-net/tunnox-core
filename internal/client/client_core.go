@@ -189,6 +189,12 @@ func (c *TunnoxClient) Stop() {
 	c.Close()
 }
 
+// WasKicked 检查是否因被踢下线而断开连接
+// 用于 main.go 判断退出码
+func (c *TunnoxClient) WasKicked() bool {
+	return c.kicked
+}
+
 // GetContext 获取上下文（供映射处理器使用）
 func (c *TunnoxClient) GetContext() context.Context {
 	return c.Ctx()

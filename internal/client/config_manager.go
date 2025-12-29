@@ -73,20 +73,35 @@ func (cm *ConfigManager) SaveConfig(config *ClientConfig) error {
 // SaveConfigWithOptions 保存配置（带选项）
 // allowUpdateServerConfig: 是否允许更新 Server.Address 和 Server.Protocol
 func (cm *ConfigManager) SaveConfigWithOptions(config *ClientConfig, allowUpdateServerConfig bool) error {
-	// 如果不允许更新服务器配置，先尝试从已存在的配置文件中加载，保留 Server.Address 和 Server.Protocol
-	if !allowUpdateServerConfig {
-		var existingConfig *ClientConfig
-		for _, path := range cm.searchPaths {
-			if cfg, err := cm.loadConfigFromFile(path); err == nil {
-				existingConfig = cfg
-				break
-			}
+	// 尝试从已存在的配置文件中加载，以便合并配置
+	var existingConfig *ClientConfig
+	for _, path := range cm.searchPaths {
+		if cfg, err := cm.loadConfigFromFile(path); err == nil {
+			existingConfig = cfg
+			break
 		}
+	}
 
-		// 如果存在已加载的配置，保留其 Server.Address 和 Server.Protocol
-		if existingConfig != nil {
+	if existingConfig != nil {
+		// 如果不允许更新服务器配置，保留现有的服务器地址和协议
+		if !allowUpdateServerConfig {
 			config.Server.Address = existingConfig.Server.Address
 			config.Server.Protocol = existingConfig.Server.Protocol
+		}
+
+		// 合并凭据配置：优先使用传入的有效值，否则保留现有值
+		// 这确保了首次获取的 ClientID 和 SecretKey 不会在后续保存时丢失
+		if config.ClientID == 0 && existingConfig.ClientID > 0 {
+			config.ClientID = existingConfig.ClientID
+		}
+		if config.SecretKey == "" && existingConfig.SecretKey != "" {
+			config.SecretKey = existingConfig.SecretKey
+		}
+		if config.AuthToken == "" && existingConfig.AuthToken != "" {
+			config.AuthToken = existingConfig.AuthToken
+		}
+		if config.DeviceID == "" && existingConfig.DeviceID != "" {
+			config.DeviceID = existingConfig.DeviceID
 		}
 	}
 
