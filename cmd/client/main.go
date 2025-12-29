@@ -10,7 +10,6 @@ import (
 	"runtime/debug"
 	"strings"
 	"syscall"
-	"time"
 
 	"tunnox-core/internal/client"
 	"tunnox-core/internal/client/cli"
@@ -137,114 +136,9 @@ func main() {
 
 	// 根据运行模式决定连接策略
 	if runInteractive {
-		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-		// 交互模式：必须连接成功才能进入CLI
-		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-		// 尝试连接
-		needsAutoConnect := config.Server.Address == "" && config.Server.Protocol == ""
-		if needsAutoConnect {
-			// 自动连接模式
-			fmt.Fprintf(os.Stderr, "\n🔍 Connecting to Tunnox service...\n")
-		} else {
-			// 指定服务器连接 - 智能显示地址
-			serverDisplay := config.Server.Address
-			if strings.Contains(serverDisplay, "://") {
-				// 地址已包含协议，直接显示
-				fmt.Fprintf(os.Stderr, "\n🔗 Connecting to %s...\n", serverDisplay)
-			} else {
-				// 地址不包含协议，添加协议前缀
-				fmt.Fprintf(os.Stderr, "\n🔗 Connecting to %s://%s...\n", config.Server.Protocol, serverDisplay)
-			}
-		}
-
-		if err := tunnoxClient.Connect(); err != nil {
-			// 检查是否是因为 context 取消导致的错误
-			if ctx.Err() == context.Canceled {
-				fmt.Fprintf(os.Stderr, "\n⚠️  Connection cancelled\n")
-				os.Exit(0)
-			}
-			// 连接失败，CLI模式下直接退出
-			fmt.Fprintf(os.Stderr, "\n❌ Connection failed\n")
-			fmt.Fprintf(os.Stderr, "💡 Please check your network or specify server with -s flag\n")
-			os.Exit(1)
-		}
-
-		// 连接成功，启动CLI
-		fmt.Fprintf(os.Stderr, "✅ Connected successfully\n\n")
-
-		// 启动CLI
-		corelog.Infof("Client: initializing CLI...")
-		tunnoxCLI, err := cli.NewCLI(ctx, tunnoxClient)
-		if err != nil {
-			corelog.Errorf("Client: CLI initialization failed: %v", err)
-			fmt.Fprintf(os.Stderr, "❌ Failed to initialize CLI: %v\n", err)
-			os.Exit(1)
-		}
-
-		// 启动自动重连监控（交互模式也需要自动重连）
-		go monitorConnectionAndReconnect(ctx, tunnoxClient)
-
-		// 在goroutine中处理信号
-		go func() {
-			sigChan := make(chan os.Signal, 1)
-			signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-			select {
-			case sig := <-sigChan:
-				corelog.Infof("Client: received signal %v, shutting down...", sig)
-				cancel()
-				tunnoxCLI.Stop()
-			case <-ctx.Done():
-				tunnoxCLI.Stop()
-			}
-		}()
-
-		// 启动CLI（阻塞）
-		corelog.Infof("Client: calling CLI.Start()...")
-		tunnoxCLI.Start()
-		corelog.Infof("Client: CLI.Start() returned")
-
+		runInteractiveMode(ctx, cancel, tunnoxClient, config)
 	} else {
-		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-		// 守护进程模式：必须连接成功，支持自动重连
-		// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-		fmt.Println("🔄 Running in daemon mode...")
-
-		// 验证必须配置
-		if config.Server.Address == "" {
-			fmt.Fprintf(os.Stderr, "❌ Error: server address is required in daemon mode\n")
-			os.Exit(1)
-		}
-
-		// 连接到服务器（带重试）
-		if err := connectWithRetry(tunnoxClient, 5); err != nil {
-			// 检查是否是因为 context 取消导致的错误
-			if ctx.Err() == context.Canceled {
-				fmt.Fprintf(os.Stderr, "\n⚠️  Connection cancelled by user\n")
-				os.Exit(0)
-			}
-			fmt.Fprintf(os.Stderr, "❌ Failed to connect to server after retries: %v\n", err)
-			os.Exit(1)
-		}
-
-		fmt.Println("✅ Connected to server successfully!")
-		fmt.Println("   Press Ctrl+C to stop")
-		fmt.Println()
-
-		// 启动自动重连监控
-		go monitorConnectionAndReconnect(ctx, tunnoxClient)
-
-		// 等待信号
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-		select {
-		case sig := <-sigChan:
-			corelog.Infof("Client: received signal %v, shutting down...", sig)
-		case <-ctx.Done():
-			corelog.Infof("Client: context cancelled, shutting down...")
-		}
+		runDaemonMode(ctx, tunnoxClient, config)
 	}
 
 	// 停止客户端
@@ -260,423 +154,108 @@ func main() {
 	}
 }
 
-// loadOrCreateConfig 加载或创建配置
-func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64, secretKey string, isCLIMode bool) (*client.ClientConfig, error) {
-	// 使用配置管理器加载配置
-	configManager := client.NewConfigManager()
-	config, err := configManager.LoadConfig(configFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
-
-	// 保存配置文件中的原始值（在命令行参数覆盖之前）
-	configFileHasAddress := config.Server.Address != ""
-	configFileHasProtocol := config.Server.Protocol != ""
-
-	// 命令行参数覆盖配置文件
-	if protocol != "" {
-		config.Server.Protocol = normalizeProtocol(protocol)
-	}
-	if serverAddr != "" {
-		config.Server.Address = serverAddr
-	}
-	if clientID > 0 {
-		config.ClientID = clientID
-	}
-	if secretKey != "" {
-		config.SecretKey = secretKey
-	}
-
-	// 检测是否需要自动连接（符合设计文档的条件）：
-	// 1. 以cli的方式启动（runInteractive == true）
-	// 2. 配置文件中没有指定服务器地址（检查原始值，而不是被命令行覆盖后的值）
-	// 3. 配置文件中没有指定协议（检查原始值，而不是被命令行覆盖后的值）
-	// 4. 命令行参数中没有指定服务器地址（-s 参数）
-	// 5. 命令行参数中没有指定协议（-p 参数）
-	// 注意：如果配置文件中指定了地址或协议，或者命令行中指定了地址或协议，都不能启用自动连接
-	needsAutoConnect := isCLIMode &&
-		!configFileHasAddress &&
-		!configFileHasProtocol &&
-		serverAddr == "" &&
-		protocol == ""
-
-	// 验证配置（如果不需要自动连接，则设置默认值）
-	if err := validateConfig(config, !needsAutoConnect); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
-	}
-
-	return config, nil
-}
-
-// validateConfig 验证配置
-func validateConfig(config *client.ClientConfig, setDefaults bool) error {
-	// 如果需要设置默认值（非自动连接模式）
-	if setDefaults {
-		// 如果地址为空，使用默认 WebSocket 地址
-		if config.Server.Address == "" {
-			config.Server.Address = "https://gw.tunnox.net/_tunnox"
-			config.Server.Protocol = "websocket"
-		}
-
-		// 如果协议为空，使用默认 WebSocket 协议
-		if config.Server.Protocol == "" {
-			config.Server.Protocol = "websocket"
-		}
-	}
-
-	// 规范化协议名称（如果有协议）
-	if config.Server.Protocol != "" {
-		config.Server.Protocol = normalizeProtocol(config.Server.Protocol)
-
-		// 验证协议
-		validProtocols := []string{"tcp", "websocket", "kcp", "quic"}
-		valid := false
-		for _, p := range validProtocols {
-			if config.Server.Protocol == p {
-				valid = true
-				break
-			}
-		}
-		if !valid {
-			return fmt.Errorf("invalid protocol: %s (must be one of: tcp, websocket, kcp, quic)", config.Server.Protocol)
-		}
-	}
-	// 如果协议为空且地址也为空，说明是自动连接模式，协议会在自动连接时确定
-
-	// ClientID 和 SecretKey 可以为空，首次连接时由服务端分配
-	return nil
-}
-
-// normalizeProtocol 规范化协议名称
-func normalizeProtocol(protocol string) string {
-	protocol = strings.ToLower(strings.TrimSpace(protocol))
-	// 支持简写
-	if protocol == "ws" {
-		return "websocket"
-	}
-	return protocol
-}
-
-// showHelp 显示帮助信息
-func showHelp() {
-	fmt.Println(`Tunnox Client - Port Mapping Client
-
-USAGE:
-    tunnox-client [OPTIONS]
-
-OPTIONS:
-    Connection:
-      -config <file>     Path to config file (optional)
-      -p <protocol>      Protocol: tcp/websocket/ws/kcp/quic
-      -s <address>       Server address (e.g., localhost:7001)
-      -id <client_id>    Client ID (auto-assigned on first connect)
-      -key <secret>      Secret key (auto-assigned on first connect)
-      -log <file>        Log file path (overrides config file)
-
-    Mode:
-      -interactive       Run in interactive mode with CLI (default)
-      -daemon            Run in daemon mode (no CLI, for background service)
-
-    Help:
-      -h                 Show this help
-
-EXAMPLES:
-    # Interactive mode (default) - with CLI
-    tunnox-client -p quic -s localhost:7003
-
-    # Daemon mode - no CLI, runs in background
-    tunnox-client -p quic -s localhost:7003 -daemon
-
-    # Use config file
-    tunnox-client -config client-config.yaml
-
-    # Quick start with QUIC (recommended)
-    tunnox-client -p quic -s localhost:7003
-
-INTERACTIVE MODE:
-    In interactive mode, you can use commands like:
-      - generate-code     Generate a connection code (TargetClient)
-      - use-code <code>   Use a connection code (ListenClient)
-      - list-mappings     List all tunnel mappings
-      - help              Show all available commands
-      - exit              Quit the client
-
-DAEMON MODE:
-    Use -daemon flag for:
-      - Running as a system service
-      - Background processes
-      - Automated deployments
-
-NOTES:
-    - Command line options override config file settings
-    - Default mode is interactive (with CLI)
-    - Default server: https://gw.tunnox.net/_tunnox (WebSocket)
-    - Default protocol is websocket if not specified
-    - ClientID and SecretKey are auto-assigned on first connection`)
-}
-
-// configureLogging 配置日志输出
-//
-// 返回：日志文件路径（如果输出到文件）和可能的错误
-// CLI模式：只写文件，不输出到控制台（避免干扰用户）
-// Daemon模式：同时写文件和输出到控制台
-func configureLogging(config *client.ClientConfig, interactive bool) (string, error) {
-	logConfig := &client.LogConfig{
-		Level:  "info",
-		Format: "text",
-	}
-
-	// 从配置文件读取日志配置（如果有）
-	if config.Log.Level != "" {
-		logConfig.Level = config.Log.Level
-	}
-	if config.Log.Format != "" {
-		logConfig.Format = config.Log.Format
-	}
-
-	// 根据运行模式设置日志输出
-	if interactive {
-		// CLI模式：只写文件，不输出到控制台
-		logConfig.Output = "file"
+// runInteractiveMode 运行交互模式
+func runInteractiveMode(ctx context.Context, cancel context.CancelFunc, tunnoxClient *client.TunnoxClient, config *client.ClientConfig) {
+	// 尝试连接
+	needsAutoConnect := config.Server.Address == "" && config.Server.Protocol == ""
+	if needsAutoConnect {
+		// 自动连接模式
+		fmt.Fprintf(os.Stderr, "\n🔍 Connecting to Tunnox service...\n")
 	} else {
-		// Daemon模式：只写文件，避免 stderr 输出干扰进程管理
-		// 进程状态应该通过日志文件或健康检查端点来监控
-		logConfig.Output = "file"
-	}
-
-	// 确定日志文件路径
-	logFile := config.Log.File
-	if logFile == "" {
-		// 使用默认路径列表（按优先级）
-		candidates := utils.GetDefaultClientLogPath(interactive)
-		var err error
-		logFile, err = utils.ResolveLogPath(candidates)
-		if err != nil {
-			return "", fmt.Errorf("failed to resolve log path: %w", err)
-		}
-	} else {
-		// 展开路径（支持 ~ 和相对路径）
-		expandedPath, err := utils.ExpandPath(logFile)
-		if err != nil {
-			return "", fmt.Errorf("failed to expand log file path %q: %w", logFile, err)
-		}
-		logFile = expandedPath
-
-		// 确保日志目录存在
-		logDir := filepath.Dir(logFile)
-		if err := os.MkdirAll(logDir, 0755); err != nil {
-			return "", fmt.Errorf("failed to create log directory %q: %w", logDir, err)
+		// 指定服务器连接 - 智能显示地址
+		serverDisplay := config.Server.Address
+		if strings.Contains(serverDisplay, "://") {
+			// 地址已包含协议，直接显示
+			fmt.Fprintf(os.Stderr, "\n🔗 Connecting to %s...\n", serverDisplay)
+		} else {
+			// 地址不包含协议，添加协议前缀
+			fmt.Fprintf(os.Stderr, "\n🔗 Connecting to %s://%s...\n", config.Server.Protocol, serverDisplay)
 		}
 	}
 
-	logConfig.File = logFile
-
-	// 初始化日志
-	if err := utils.InitLogger((*utils.LogConfig)(logConfig)); err != nil {
-		return "", err
-	}
-
-	// 返回日志文件路径（总是输出到文件）
-	if logConfig.File != "" {
-		return logConfig.File, nil
-	}
-	return "", nil
-}
-
-// connectWithRetry 带重试的连接
-func connectWithRetry(tunnoxClient *client.TunnoxClient, maxRetries int) error {
-	for i := 0; i < maxRetries; i++ {
-		if i > 0 {
-			fmt.Printf("🔄 Retry %d/%d...\n", i, maxRetries)
-			time.Sleep(time.Duration(i) * 2 * time.Second) // 指数退避
-		}
-
-		if err := tunnoxClient.Connect(); err != nil {
-			if i == maxRetries-1 {
-				return err
-			}
-			fmt.Printf("⚠️  Connection failed: %v\n", err)
-			continue
-		}
-
-		return nil
-	}
-
-	return fmt.Errorf("max retries exceeded")
-}
-
-// monitorConnectionAndReconnect 监控连接状态并自动重连
-// 注意：此函数仅作为备用重连机制，主要重连由 readLoop 退出时触发
-// 如果 readLoop 的重连机制正常工作，此函数通常不会触发
-func monitorConnectionAndReconnect(ctx context.Context, tunnoxClient *client.TunnoxClient) {
-	ticker := time.NewTicker(30 * time.Second) // ✅ 增加检查间隔，避免与 readLoop 重连冲突
-	defer ticker.Stop()
-
-	consecutiveFailures := 0
-	maxFailures := 3
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			// 检查连接状态
-			// ✅ 仅在连接断开且持续一段时间后才触发重连（给 readLoop 的重连机制时间）
-			if !tunnoxClient.IsConnected() {
-				consecutiveFailures++
-				corelog.Warnf("Connection lost (failure %d/%d), attempting to reconnect via monitor...",
-					consecutiveFailures, maxFailures)
-
-				// ✅ 使用 Reconnect() 方法，它内部已经有防重复重连机制
-				if err := tunnoxClient.Reconnect(); err != nil {
-					corelog.Errorf("Reconnection failed: %v", err)
-
-					if consecutiveFailures >= maxFailures {
-						corelog.Errorf("Max reconnection attempts reached, giving up")
-						return
-					}
-				} else {
-					corelog.Infof("Reconnected successfully via monitor")
-					consecutiveFailures = 0
-				}
-			} else {
-				// 连接正常，重置失败计数
-				if consecutiveFailures > 0 {
-					consecutiveFailures = 0
-				}
-			}
-		}
-	}
-}
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 快捷命令支持
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// isQuickCommand 检查是否是快捷命令
-func isQuickCommand(arg string) bool {
-	quickCommands := []string{
-		// 快捷隧道命令
-		"http", "tcp", "udp", "socks",
-		// 连接码命令
-		"code",
-		// 守护进程命令
-		"start", "stop", "status",
-		// 配置命令
-		"config",
-		// 交互模式
-		"shell",
-		// 版本和帮助
-		"version", "--version", "-v",
-		"help", "--help",
-	}
-	arg = strings.ToLower(arg)
-	for _, cmd := range quickCommands {
-		if arg == cmd {
-			return true
-		}
-	}
-	return false
-}
-
-// runQuickCommand 执行快捷命令
-func runQuickCommand(args []string) {
-	// 创建上下文
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// 设置信号处理
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		select {
-		case <-sigChan:
-			cancel()
-		case <-ctx.Done():
-		}
-	}()
-
-	// 从配置文件加载配置（如果存在）
-	configManager := client.NewConfigManager()
-	config, err := configManager.LoadConfig("")
-	if err != nil {
-		// 配置加载失败，使用默认配置
-		config = &client.ClientConfig{}
-	}
-
-	// 创建快捷命令执行器
-	runner := cli.NewQuickCommandRunner(ctx, config)
-
-	// 执行命令
-	shouldContinue, err := runner.Run(args)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Error: %v\n", err)
-		os.Exit(1)
-	}
-
-	// 如果需要继续传统流程（例如 shell 命令）
-	if shouldContinue && len(args) > 0 && args[0] == "shell" {
-		// 重新进入传统的交互式流程
-		// 设置参数以模拟无参数启动
-		os.Args = []string{os.Args[0]}
-		// 递归调用 main 不太好，这里直接返回，让 shell 命令走传统流程
-		runTraditionalInteractive(ctx, config)
-		return
-	}
-}
-
-// runTraditionalInteractive 运行传统交互式模式
-func runTraditionalInteractive(ctx context.Context, config *client.ClientConfig) {
-	// 配置日志（静默模式）
-	logConfig := &utils.LogConfig{
-		Level:  "info",
-		Output: "file",
-	}
-	candidates := utils.GetDefaultClientLogPath(true)
-	logFile, err := utils.ResolveLogPath(candidates)
-	if err == nil {
-		logConfig.File = logFile
-	}
-	utils.InitLogger(logConfig)
-
-	// 创建客户端
-	tunnoxClient := client.NewClient(ctx, config)
-
-	// 连接
-	fmt.Fprintf(os.Stderr, "\n🔍 Connecting to Tunnox service...\n")
 	if err := tunnoxClient.Connect(); err != nil {
+		// 检查是否是因为 context 取消导致的错误
 		if ctx.Err() == context.Canceled {
 			fmt.Fprintf(os.Stderr, "\n⚠️  Connection cancelled\n")
-			return
+			os.Exit(0)
 		}
-		fmt.Fprintf(os.Stderr, "\n❌ Connection failed: %v\n", err)
+		// 连接失败，CLI模式下直接退出
+		fmt.Fprintf(os.Stderr, "\n❌ Connection failed\n")
 		fmt.Fprintf(os.Stderr, "💡 Please check your network or specify server with -s flag\n")
 		os.Exit(1)
 	}
 
+	// 连接成功，启动CLI
 	fmt.Fprintf(os.Stderr, "✅ Connected successfully\n\n")
 
-	// 启动 CLI
+	// 启动CLI
+	corelog.Infof("Client: initializing CLI...")
 	tunnoxCLI, err := cli.NewCLI(ctx, tunnoxClient)
 	if err != nil {
+		corelog.Errorf("Client: CLI initialization failed: %v", err)
 		fmt.Fprintf(os.Stderr, "❌ Failed to initialize CLI: %v\n", err)
 		os.Exit(1)
 	}
 
+	// 启动自动重连监控（交互模式也需要自动重连）
+	go monitorConnectionAndReconnect(ctx, tunnoxClient)
+
+	// 在goroutine中处理信号
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+		select {
+		case sig := <-sigChan:
+			corelog.Infof("Client: received signal %v, shutting down...", sig)
+			cancel()
+			tunnoxCLI.Stop()
+		case <-ctx.Done():
+			tunnoxCLI.Stop()
+		}
+	}()
+
+	// 启动CLI（阻塞）
+	corelog.Infof("Client: calling CLI.Start()...")
+	tunnoxCLI.Start()
+	corelog.Infof("Client: CLI.Start() returned")
+}
+
+// runDaemonMode 运行守护进程模式
+func runDaemonMode(ctx context.Context, tunnoxClient *client.TunnoxClient, config *client.ClientConfig) {
+	fmt.Println("🔄 Running in daemon mode...")
+
+	// 验证必须配置
+	if config.Server.Address == "" {
+		fmt.Fprintf(os.Stderr, "❌ Error: server address is required in daemon mode\n")
+		os.Exit(1)
+	}
+
+	// 连接到服务器（带重试）
+	if err := connectWithRetry(tunnoxClient, 5); err != nil {
+		// 检查是否是因为 context 取消导致的错误
+		if ctx.Err() == context.Canceled {
+			fmt.Fprintf(os.Stderr, "\n⚠️  Connection cancelled by user\n")
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr, "❌ Failed to connect to server after retries: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("✅ Connected to server successfully!")
+	fmt.Println("   Press Ctrl+C to stop")
+	fmt.Println()
+
 	// 启动自动重连监控
 	go monitorConnectionAndReconnect(ctx, tunnoxClient)
 
-	// 启动 CLI（阻塞）
-	tunnoxCLI.Start()
+	// 等待信号
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	// 停止客户端
-	fmt.Println("\n🛑 Shutting down client...")
-	tunnoxClient.Stop()
-
-	// 检查是否被踢下线，设置相应的退出码
-	// 退出码 2 表示被 DUPLICATE_LOGIN 踢下线
-	if tunnoxClient.WasKicked() {
-		corelog.Warnf("Client: exiting with code 2 (kicked by server)")
-		os.Exit(2)
+	select {
+	case sig := <-sigChan:
+		corelog.Infof("Client: received signal %v, shutting down...", sig)
+	case <-ctx.Done():
+		corelog.Infof("Client: context cancelled, shutting down...")
 	}
 }

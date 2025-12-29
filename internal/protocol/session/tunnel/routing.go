@@ -1,18 +1,20 @@
-package session
+// Package tunnel 提供隧道桥接和路由功能
+package tunnel
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
 	"time"
+
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
 
-// TunnelWaitingState 隧道等待状态（用于跨服务器隧道建立）
+// WaitingState 隧道等待状态（用于跨服务器隧道建立）
 // 当源端客户端发起TunnelOpen到ServerA，ServerA创建Bridge并等待目标端连接
 // 如果目标端连接到了ServerB，ServerB需要知道如何将连接路由回ServerA
-type TunnelWaitingState struct {
+type WaitingState struct {
 	TunnelID  string `json:"tunnel_id"`
 	MappingID string `json:"mapping_id"`
 	SecretKey string `json:"secret_key"`
@@ -31,20 +33,20 @@ type TunnelWaitingState struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// TunnelRoutingTable 隧道路由表（Redis-based）
+// RoutingTable 隧道路由表（Redis-based）
 // 负责记录和查询跨服务器隧道的等待状态
-type TunnelRoutingTable struct {
+type RoutingTable struct {
 	storage storage.Storage
 	ttl     time.Duration // Tunnel等待状态的TTL，默认30秒
 }
 
-// NewTunnelRoutingTable 创建隧道路由表
-func NewTunnelRoutingTable(storage storage.Storage, ttl time.Duration) *TunnelRoutingTable {
+// NewRoutingTable 创建隧道路由表
+func NewRoutingTable(storage storage.Storage, ttl time.Duration) *RoutingTable {
 	if ttl == 0 {
 		ttl = 30 * time.Second
 	}
 
-	return &TunnelRoutingTable{
+	return &RoutingTable{
 		storage: storage,
 		ttl:     ttl,
 	}
@@ -52,7 +54,7 @@ func NewTunnelRoutingTable(storage storage.Storage, ttl time.Duration) *TunnelRo
 
 // RegisterWaitingTunnel 注册等待中的隧道
 // 当源端Server创建TunnelBridge后调用，记录路由信息到Redis
-func (t *TunnelRoutingTable) RegisterWaitingTunnel(ctx context.Context, state *TunnelWaitingState) error {
+func (t *RoutingTable) RegisterWaitingTunnel(ctx context.Context, state *WaitingState) error {
 	if state.TunnelID == "" {
 		return fmt.Errorf("tunnel_id is required")
 	}
@@ -77,7 +79,7 @@ func (t *TunnelRoutingTable) RegisterWaitingTunnel(ctx context.Context, state *T
 
 // LookupWaitingTunnel 查找等待中的隧道
 // 当目标端Server收到TunnelOpen连接时调用，查询源端Server位置
-func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID string) (*TunnelWaitingState, error) {
+func (t *RoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID string) (*WaitingState, error) {
 	if tunnelID == "" {
 		return nil, fmt.Errorf("tunnel_id is required")
 	}
@@ -86,20 +88,20 @@ func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID s
 	value, err := t.storage.Get(key)
 	if err != nil {
 		if err == storage.ErrKeyNotFound {
-			return nil, ErrTunnelNotFound
+			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to get tunnel state: %w", err)
 	}
 
 	// Storage.Get 返回的是反序列化后的 map[string]interface{}
 	// 需要重新序列化再反序列化为具体类型
-	var state TunnelWaitingState
+	var state WaitingState
 
 	switch v := value.(type) {
-	case *TunnelWaitingState:
+	case *WaitingState:
 		// 直接返回（内存存储可能直接返回原始类型）
 		state = *v
-	case TunnelWaitingState:
+	case WaitingState:
 		// 值类型
 		state = v
 	case map[string]interface{}:
@@ -129,7 +131,7 @@ func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID s
 	if time.Now().After(state.ExpiresAt) {
 		// 已过期，删除并返回错误
 		t.storage.Delete(key)
-		return nil, ErrTunnelExpired
+		return nil, ErrExpired
 	}
 
 	return &state, nil
@@ -137,7 +139,7 @@ func (t *TunnelRoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID s
 
 // RemoveWaitingTunnel 移除等待中的隧道
 // 当隧道成功建立或超时后调用，清理Redis中的记录
-func (t *TunnelRoutingTable) RemoveWaitingTunnel(ctx context.Context, tunnelID string) error {
+func (t *RoutingTable) RemoveWaitingTunnel(ctx context.Context, tunnelID string) error {
 	if tunnelID == "" {
 		return fmt.Errorf("tunnel_id is required")
 	}
@@ -154,7 +156,7 @@ func (t *TunnelRoutingTable) RemoveWaitingTunnel(ctx context.Context, tunnelID s
 
 // CleanupExpiredTunnels 清理过期的隧道（可选，Redis TTL会自动清理）
 // 这个方法主要用于统计和监控
-func (t *TunnelRoutingTable) CleanupExpiredTunnels(ctx context.Context) (int, error) {
+func (t *RoutingTable) CleanupExpiredTunnels(ctx context.Context) (int, error) {
 	// Redis会自动清理过期的key，这里只是为了统计
 	// 实际生产环境中可以通过Redis的SCAN命令遍历所有tunnox:tunnel_waiting:*的key
 	// 但为了性能考虑，这里暂不实现全量扫描
@@ -162,12 +164,12 @@ func (t *TunnelRoutingTable) CleanupExpiredTunnels(ctx context.Context) (int, er
 }
 
 // makeKey 生成Redis key
-func (t *TunnelRoutingTable) makeKey(tunnelID string) string {
+func (t *RoutingTable) makeKey(tunnelID string) string {
 	return fmt.Sprintf("tunnox:tunnel_waiting:%s", tunnelID)
 }
 
 // GetNodeAddress 获取节点地址
-func (t *TunnelRoutingTable) GetNodeAddress(nodeID string) (string, error) {
+func (t *RoutingTable) GetNodeAddress(nodeID string) (string, error) {
 	if t.storage == nil {
 		return "", fmt.Errorf("storage not configured")
 	}
@@ -189,7 +191,7 @@ func (t *TunnelRoutingTable) GetNodeAddress(nodeID string) (string, error) {
 }
 
 // RegisterNodeAddress 注册节点地址
-func (t *TunnelRoutingTable) RegisterNodeAddress(nodeID, addr string) error {
+func (t *RoutingTable) RegisterNodeAddress(nodeID, addr string) error {
 	if t.storage == nil {
 		return fmt.Errorf("storage not configured")
 	}
@@ -199,8 +201,21 @@ func (t *TunnelRoutingTable) RegisterNodeAddress(nodeID, addr string) error {
 	return t.storage.Set(key, addr, time.Hour)
 }
 
-// ErrTunnelNotFound Tunnel未找到错误
-var ErrTunnelNotFound = fmt.Errorf("tunnel not found in routing table")
+// ============================================================================
+// 访问器方法
+// ============================================================================
 
-// ErrTunnelExpired Tunnel已过期错误
-var ErrTunnelExpired = fmt.Errorf("tunnel waiting state expired")
+// GetStorage 获取底层存储（用于跨包访问）
+func (t *RoutingTable) GetStorage() storage.Storage {
+	return t.storage
+}
+
+// ============================================================================
+// 错误定义
+// ============================================================================
+
+// ErrNotFound Tunnel未找到错误
+var ErrNotFound = fmt.Errorf("tunnel not found in routing table")
+
+// ErrExpired Tunnel已过期错误
+var ErrExpired = fmt.Errorf("tunnel waiting state expired")

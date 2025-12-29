@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
 )
@@ -19,7 +19,7 @@ type CommandRequest struct {
 	EnableTrace bool
 }
 
-// CommandResponseData 命令响应数据（避免与command_response_manager中的CommandResponse冲突）
+// CommandResponseData 命令响应数据
 type CommandResponseData struct {
 	Success bool
 	Data    string

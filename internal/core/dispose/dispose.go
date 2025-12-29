@@ -106,19 +106,26 @@ func (c *Dispose) CloseWithError() error {
 func (c *Dispose) runCleanHandlers() *DisposeResult {
 	result := &DisposeResult{Errors: make([]*DisposeError, 0)}
 
-	if (c.cleanHandlers != nil) && (len(c.cleanHandlers) > 0) {
-		for i, handler := range c.cleanHandlers {
-			if err := handler(); err != nil {
-				disposeErr := &DisposeError{
-					HandlerIndex: i,
-					Err:          err,
-				}
-				result.Errors = append(result.Errors, disposeErr)
-				c.errors = append(c.errors, disposeErr)
+	// 复制 cleanHandlers 以避免并发访问问题
+	c.linkLock.Lock()
+	handlers := make([]func() error, len(c.cleanHandlers))
+	copy(handlers, c.cleanHandlers)
+	c.linkLock.Unlock()
 
-				// 记录错误日志，但不中断其他清理过程
-				Errorf("Cleanup handler[%d] failed: %v", i, err)
+	for i, handler := range handlers {
+		if handler == nil {
+			continue
+		}
+		if err := handler(); err != nil {
+			disposeErr := &DisposeError{
+				HandlerIndex: i,
+				Err:          err,
 			}
+			result.Errors = append(result.Errors, disposeErr)
+			c.errors = append(c.errors, disposeErr)
+
+			// 记录错误日志，但不中断其他清理过程
+			Errorf("Cleanup handler[%d] failed: %v", i, err)
 		}
 	}
 

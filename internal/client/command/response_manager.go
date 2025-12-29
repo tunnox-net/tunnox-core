@@ -1,4 +1,4 @@
-package client
+package command
 
 import (
 	"context"
@@ -6,21 +6,21 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
 
-// CommandResponseManager 命令响应管理器
+// ResponseManager 命令响应管理器
 // 用于管理客户端发送的命令请求和对应的响应
-type CommandResponseManager struct {
-	pendingRequests map[string]chan *CommandResponse
+type ResponseManager struct {
+	pendingRequests map[string]chan *Response
 	mu              sync.RWMutex
 	timeout         time.Duration
 }
 
-// CommandResponse 命令响应
-type CommandResponse struct {
+// Response 命令响应
+type Response struct {
 	Success   bool                   `json:"success"`
 	Data      string                 `json:"data,omitempty"`
 	Error     string                 `json:"error,omitempty"`
@@ -29,26 +29,26 @@ type CommandResponse struct {
 	RawData   map[string]interface{} `json:"-"` // 原始数据（用于解析）
 }
 
-// NewCommandResponseManager 创建命令响应管理器
-func NewCommandResponseManager() *CommandResponseManager {
-	return &CommandResponseManager{
-		pendingRequests: make(map[string]chan *CommandResponse),
+// NewResponseManager 创建命令响应管理器
+func NewResponseManager() *ResponseManager {
+	return &ResponseManager{
+		pendingRequests: make(map[string]chan *Response),
 		timeout:         30 * time.Second,
 	}
 }
 
 // RegisterRequest 注册请求，返回响应通道
-func (m *CommandResponseManager) RegisterRequest(commandID string) chan *CommandResponse {
+func (m *ResponseManager) RegisterRequest(commandID string) chan *Response {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	responseChan := make(chan *CommandResponse, 1)
+	responseChan := make(chan *Response, 1)
 	m.pendingRequests[commandID] = responseChan
 	return responseChan
 }
 
 // UnregisterRequest 注销请求
-func (m *CommandResponseManager) UnregisterRequest(commandID string) {
+func (m *ResponseManager) UnregisterRequest(commandID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -59,7 +59,7 @@ func (m *CommandResponseManager) UnregisterRequest(commandID string) {
 }
 
 // HandleResponse 处理响应数据包
-func (m *CommandResponseManager) HandleResponse(pkt *packet.TransferPacket) bool {
+func (m *ResponseManager) HandleResponse(pkt *packet.TransferPacket) bool {
 	handleStartTime := time.Now()
 
 	// 忽略压缩/加密标志，只检查基础类型
@@ -100,7 +100,7 @@ func (m *CommandResponseManager) HandleResponse(pkt *packet.TransferPacket) bool
 	var rawData map[string]interface{}
 	if err := json.Unmarshal([]byte(pkt.CommandPacket.CommandBody), &rawData); err != nil {
 		corelog.Warnf("Failed to parse command response: %v", err)
-		resp := &CommandResponse{
+		resp := &Response{
 			Success: false,
 			Error:   fmt.Sprintf("failed to parse response: %v", err),
 		}
@@ -111,7 +111,7 @@ func (m *CommandResponseManager) HandleResponse(pkt *packet.TransferPacket) bool
 		return false
 	}
 
-	resp := &CommandResponse{
+	resp := &Response{
 		RawData: rawData,
 	}
 
@@ -175,7 +175,7 @@ func (m *CommandResponseManager) HandleResponse(pkt *packet.TransferPacket) bool
 }
 
 // WaitForResponse 等待响应（带超时和context取消支持）
-func (m *CommandResponseManager) WaitForResponse(commandID string, responseChan chan *CommandResponse) (*CommandResponse, error) {
+func (m *ResponseManager) WaitForResponse(commandID string, responseChan chan *Response) (*Response, error) {
 	waitStartTime := time.Now()
 	corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
 		commandID, waitStartTime.Format("15:04:05.000"))
@@ -202,7 +202,7 @@ func (m *CommandResponseManager) WaitForResponse(commandID string, responseChan 
 }
 
 // WaitForResponseWithContext 等待响应（带超时和context取消支持）
-func (m *CommandResponseManager) WaitForResponseWithContext(ctx context.Context, commandID string, responseChan chan *CommandResponse) (*CommandResponse, error) {
+func (m *ResponseManager) WaitForResponseWithContext(ctx context.Context, commandID string, responseChan chan *Response) (*Response, error) {
 	waitStartTime := time.Now()
 	corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
 		commandID, waitStartTime.Format("15:04:05.000"))

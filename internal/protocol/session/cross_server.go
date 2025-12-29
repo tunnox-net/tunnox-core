@@ -116,9 +116,9 @@ func (s *SessionManager) registerCrossServerConnection(
 		return fmt.Errorf("failed to marshal connection info: %w", err)
 	}
 
-	if s.tunnelRouting != nil && s.tunnelRouting.storage != nil {
+	if s.tunnelRouting != nil && s.tunnelRouting.GetStorage() != nil {
 		key := fmt.Sprintf("tunnox:cross_server_conn:%s", tunnelID)
-		if err := s.tunnelRouting.storage.Set(key, data, 30*time.Second); err != nil {
+		if err := s.tunnelRouting.GetStorage().Set(key, data, 30*time.Second); err != nil {
 			return fmt.Errorf("failed to store connection info: %w", err)
 		}
 	}

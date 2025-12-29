@@ -160,30 +160,30 @@ func (s *SessionManager) GetTunnelBridgeByConnectionID(connID string) TunnelBrid
 	// 遍历所有 bridge，检查 sourceConn 或 targetConn 的 ConnectionID
 	for tunnelID, bridge := range s.tunnelBridges {
 		// 检查 sourceTunnelConn 的 ConnectionID
-		if bridge.sourceTunnelConn != nil {
-			if bridge.sourceTunnelConn.GetConnectionID() == connID {
+		if sourceTunnelConn := bridge.GetSourceTunnelConn(); sourceTunnelConn != nil {
+			if sourceTunnelConn.GetConnectionID() == connID {
 				corelog.Infof("GetTunnelBridgeByConnectionID: found bridge by sourceTunnelConn, tunnelID=%s, connID=%s", tunnelID, connID)
 				return bridge
 			}
 		}
 		// 检查 targetTunnelConn 的 ConnectionID
-		if bridge.targetTunnelConn != nil {
-			if bridge.targetTunnelConn.GetConnectionID() == connID {
+		if targetTunnelConn := bridge.GetTargetTunnelConn(); targetTunnelConn != nil {
+			if targetTunnelConn.GetConnectionID() == connID {
 				corelog.Infof("GetTunnelBridgeByConnectionID: found bridge by targetTunnelConn, tunnelID=%s, connID=%s", tunnelID, connID)
 				return bridge
 			}
 		}
 		// 向后兼容：检查旧接口
-		if bridge.sourceConn != nil {
-			if srcConn, ok := bridge.sourceConn.(interface{ GetConnectionID() string }); ok {
+		if sourceConn := bridge.GetSourceNetConn(); sourceConn != nil {
+			if srcConn, ok := sourceConn.(interface{ GetConnectionID() string }); ok {
 				if srcConn.GetConnectionID() == connID {
 					corelog.Infof("GetTunnelBridgeByConnectionID: found bridge by sourceConn (legacy), tunnelID=%s, connID=%s", tunnelID, connID)
 					return bridge
 				}
 			}
 		}
-		if bridge.targetConn != nil {
-			if tgtConn, ok := bridge.targetConn.(interface{ GetConnectionID() string }); ok {
+		if targetConn := bridge.GetTargetNetConn(); targetConn != nil {
+			if tgtConn, ok := targetConn.(interface{ GetConnectionID() string }); ok {
 				if tgtConn.GetConnectionID() == connID {
 					corelog.Infof("GetTunnelBridgeByConnectionID: found bridge by targetConn (legacy), tunnelID=%s, connID=%s", tunnelID, connID)
 					return bridge
@@ -211,7 +211,7 @@ func (s *SessionManager) GetTunnelBridgeByMappingID(mappingID string, clientID i
 
 	// 遍历所有 bridge，找到匹配 mappingID 的
 	for tunnelID, bridge := range s.tunnelBridges {
-		if bridge.mappingID == mappingID {
+		if bridge.GetMappingID() == mappingID {
 			// 如果提供了 clientID，进行验证（可选）
 			if clientID > 0 && s.cloudControl != nil {
 				mapping, err := s.cloudControl.GetPortMapping(mappingID)

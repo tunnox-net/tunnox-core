@@ -29,7 +29,9 @@ func (s *BaseService) HandleErrorWithIDRelease(err error, id interface{}, releas
 
 	// 释放ID
 	if releaseFunc != nil {
-		_ = releaseFunc(id)
+		if releaseErr := releaseFunc(id); releaseErr != nil {
+			corelog.Warnf("HandleErrorWithIDRelease: failed to release ID %v: %v", id, releaseErr)
+		}
 	}
 
 	// 根据原始错误类型选择合适的错误码
@@ -48,7 +50,9 @@ func (s *BaseService) HandleErrorWithIDReleaseInt64(err error, id int64, release
 
 	// 释放ID
 	if releaseFunc != nil {
-		_ = releaseFunc(id)
+		if releaseErr := releaseFunc(id); releaseErr != nil {
+			corelog.Warnf("HandleErrorWithIDReleaseInt64: failed to release ID %d: %v", id, releaseErr)
+		}
 	}
 
 	// 根据原始错误类型选择合适的错误码
@@ -67,7 +71,9 @@ func (s *BaseService) HandleErrorWithIDReleaseString(err error, id string, relea
 
 	// 释放ID
 	if releaseFunc != nil {
-		_ = releaseFunc(id)
+		if releaseErr := releaseFunc(id); releaseErr != nil {
+			corelog.Warnf("HandleErrorWithIDReleaseString: failed to release ID %s: %v", id, releaseErr)
+		}
 	}
 
 	// 根据原始错误类型选择合适的错误码

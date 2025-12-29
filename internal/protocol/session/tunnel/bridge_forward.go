@@ -1,4 +1,5 @@
-package session
+// Package tunnel 提供隧道桥接和路由功能
+package tunnel
 
 import (
 	"fmt"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"tunnox-core/internal/cloud/constants"
-	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
@@ -126,10 +126,10 @@ func (a *streamDataForwarderAdapter) Close() error {
 // 数据转发器工厂
 // ============================================================================
 
-// createDataForwarder 创建数据转发器
+// CreateDataForwarder 创建数据转发器
 // 优先使用 stream 的底层 Reader/Writer，这是最通用的方式
 // 只有实现了完整 StreamDataForwarder 接口的特殊协议才使用适配器
-func createDataForwarder(conn interface{}, s stream.PackageStreamer) DataForwarder {
+func CreateDataForwarder(conn interface{}, s stream.PackageStreamer) DataForwarder {
 	if s != nil {
 		// 获取底层 Reader/Writer（对于 TCP，这就是原始的 net.Conn）
 		reader := s.GetReader()
@@ -165,8 +165,8 @@ func createDataForwarder(conn interface{}, s stream.PackageStreamer) DataForward
 // 数据拷贝和转发
 // ============================================================================
 
-// copyWithControl 带流量统计和限速的数据拷贝（极致性能优化版）
-func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction string, counter *atomic.Int64) int64 {
+// CopyWithControl 带流量统计和限速的数据拷贝（极致性能优化版）
+func (b *Bridge) CopyWithControl(dst io.Writer, src io.Reader, direction string, counter *atomic.Int64) int64 {
 	buf := make([]byte, constants.CopyBufferSize)
 	var total int64
 	var batchCounter int64 // 批量统计，减少原子操作
@@ -236,7 +236,7 @@ func (b *TunnelBridge) copyWithControl(dst io.Writer, src io.Reader, direction s
 // dynamicSourceWriter 动态获取 sourceForwarder 的 Writer 包装器
 // 用于在 target->source 方向时，每次写入都使用最新的 sourceForwarder
 type dynamicSourceWriter struct {
-	bridge *TunnelBridge
+	bridge *Bridge
 }
 
 func (w *dynamicSourceWriter) Write(p []byte) (n int, err error) {
@@ -255,7 +255,7 @@ func (w *dynamicSourceWriter) Write(p []byte) (n int, err error) {
 // ============================================================================
 
 // Start 启动桥接（高性能版本）
-func (b *TunnelBridge) Start() error {
+func (b *Bridge) Start() error {
 	// 等待目标端连接建立（超时30秒）
 	select {
 	case <-b.ready:
@@ -278,10 +278,10 @@ func (b *TunnelBridge) Start() error {
 
 	// 检查数据转发器是否可用
 	if b.sourceForwarder == nil {
-		b.sourceForwarder = createDataForwarder(b.sourceConn, b.sourceStream)
+		b.sourceForwarder = CreateDataForwarder(b.sourceConn, b.sourceStream)
 	}
 	if b.targetForwarder == nil {
-		b.targetForwarder = createDataForwarder(b.targetConn, b.targetStream)
+		b.targetForwarder = CreateDataForwarder(b.targetConn, b.targetStream)
 	}
 
 	// 如果源端或目标端没有数据转发器，只管理连接生命周期
@@ -316,7 +316,7 @@ func (b *TunnelBridge) Start() error {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
-			b.copyWithControl(b.targetForwarder, sourceForwarder, "source->target", &b.bytesSent)
+			b.CopyWithControl(b.targetForwarder, sourceForwarder, "source->target", &b.bytesSent)
 
 			// 检查连接是否更新
 			b.sourceConnMu.RLock()
@@ -334,7 +334,7 @@ func (b *TunnelBridge) Start() error {
 		defer closeBridge()
 
 		dynamicWriter := &dynamicSourceWriter{bridge: b}
-		b.copyWithControl(dynamicWriter, b.targetForwarder, "target->source", &b.bytesReceived)
+		b.CopyWithControl(dynamicWriter, b.targetForwarder, "target->source", &b.bytesReceived)
 	}()
 
 	// 启动定期流量统计上报
@@ -343,75 +343,4 @@ func (b *TunnelBridge) Start() error {
 	}
 
 	return nil
-}
-
-// ============================================================================
-// 流量统计
-// ============================================================================
-
-// periodicTrafficReport 定期上报流量统计
-func (b *TunnelBridge) periodicTrafficReport() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			b.reportTrafficStats()
-		case <-b.Ctx().Done():
-			// 最终上报
-			b.reportTrafficStats()
-			return
-		}
-	}
-}
-
-// reportTrafficStats 上报流量统计到CloudControl
-func (b *TunnelBridge) reportTrafficStats() {
-	if b.cloudControl == nil || b.mappingID == "" {
-		return
-	}
-
-	// 获取当前累计值
-	currentSent := b.bytesSent.Load()
-	currentReceived := b.bytesReceived.Load()
-
-	// 获取上次上报的值
-	lastSent := b.lastReportedSent.Load()
-	lastReceived := b.lastReportedReceived.Load()
-
-	// 计算增量
-	deltaSent := currentSent - lastSent
-	deltaReceived := currentReceived - lastReceived
-
-	// 如果没有增量，不上报
-	if deltaSent == 0 && deltaReceived == 0 {
-		return
-	}
-
-	// 获取当前映射的统计数据
-	mapping, err := b.cloudControl.GetPortMapping(b.mappingID)
-	if err != nil {
-		corelog.Errorf("TunnelBridge[%s]: failed to get mapping for traffic stats: %v", b.tunnelID, err)
-		return
-	}
-
-	// 累加增量到映射统计
-	trafficStats := mapping.TrafficStats
-	trafficStats.BytesSent += deltaSent
-	trafficStats.BytesReceived += deltaReceived
-	trafficStats.LastUpdated = time.Now()
-
-	// 更新映射统计
-	if err := b.cloudControl.UpdatePortMappingStats(b.mappingID, &trafficStats); err != nil {
-		corelog.Errorf("TunnelBridge[%s]: failed to update traffic stats: %v", b.tunnelID, err)
-		return
-	}
-
-	// 更新上次上报的值
-	b.lastReportedSent.Store(currentSent)
-	b.lastReportedReceived.Store(currentReceived)
-
-	corelog.Infof("TunnelBridge[%s]: traffic stats updated - mapping=%s, delta_sent=%d, delta_received=%d, total_sent=%d, total_received=%d",
-		b.tunnelID, b.mappingID, deltaSent, deltaReceived, trafficStats.BytesSent, trafficStats.BytesReceived)
 }

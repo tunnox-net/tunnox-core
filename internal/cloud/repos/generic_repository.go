@@ -135,10 +135,12 @@ func (r *GenericRepositoryImpl[T]) List(listKey string) ([]T, error) {
 	}
 
 	var entities []T
-	for _, item := range data {
+	for i, item := range data {
 		if entityData, ok := item.(string); ok {
 			var entity T
 			if err := json.Unmarshal([]byte(entityData), &entity); err != nil {
+				// 记录解析错误，但继续处理其他项
+				dispose.Warnf("List: failed to unmarshal item[%d] in %s: %v", i, listKey, err)
 				continue
 			}
 			entities = append(entities, entity)

@@ -62,6 +62,21 @@ func (c *Conn) NodeID() string {
 	return c.nodeID
 }
 
+// GetNodeID 返回目标节点 ID（接口兼容）
+func (c *Conn) GetNodeID() string {
+	return c.nodeID
+}
+
+// GetReader 获取读取器
+func (c *Conn) GetReader() interface{} {
+	return c.tcpConn
+}
+
+// GetWriter 获取写入器
+func (c *Conn) GetWriter() interface{} {
+	return c.tcpConn
+}
+
 // Read 实现 io.Reader
 func (c *Conn) Read(p []byte) (n int, err error) {
 	if c.tcpConn == nil {

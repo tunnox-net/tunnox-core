@@ -5,65 +5,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
+	"tunnox-core/internal/client/command"
 	clientconfig "tunnox-core/internal/config"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 连接码命令请求/响应类型
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// GenerateConnectionCodeRequest 生成连接码请求
-type GenerateConnectionCodeRequest struct {
-	TargetAddress string `json:"target_address"`        // 目标地址（如 tcp://192.168.1.10:8080）
-	ActivationTTL int    `json:"activation_ttl"`        // 激活有效期（秒）
-	MappingTTL    int    `json:"mapping_ttl"`           // 映射有效期（秒）
-	Description   string `json:"description,omitempty"` // 描述（可选）
-}
-
-// GenerateConnectionCodeResponse 生成连接码响应
-type GenerateConnectionCodeResponse struct {
-	Code          string `json:"code"`
-	TargetAddress string `json:"target_address"`
-	ExpiresAt     string `json:"expires_at"`
-	Description   string `json:"description,omitempty"`
-}
-
-// ListConnectionCodesResponseCmd 连接码列表响应（通过指令通道）
-type ListConnectionCodesResponseCmd struct {
-	Codes []ConnectionCodeInfoCmd `json:"codes"`
-	Total int                     `json:"total"`
-}
-
-// ConnectionCodeInfoCmd 连接码信息（通过指令通道）
-type ConnectionCodeInfoCmd struct {
-	Code          string `json:"code"`
-	TargetAddress string `json:"target_address"`
-	Status        string `json:"status"`
-	CreatedAt     string `json:"created_at"`
-	ExpiresAt     string `json:"expires_at"`
-	Activated     bool   `json:"activated"`
-	ActivatedBy   *int64 `json:"activated_by,omitempty"`
-	Description   string `json:"description,omitempty"`
-}
-
-// ActivateConnectionCodeRequest 激活连接码请求
-type ActivateConnectionCodeRequest struct {
-	Code          string `json:"code"`
-	ListenAddress string `json:"listen_address"` // 监听地址（如 127.0.0.1:8888）
-}
-
-// ActivateConnectionCodeResponse 激活连接码响应
-type ActivateConnectionCodeResponse struct {
-	MappingID      string `json:"mapping_id"`
-	TargetAddress  string `json:"target_address"`
-	ListenAddress  string `json:"listen_address"`
-	ExpiresAt      string `json:"expires_at"`
-	TargetClientID int64  `json:"target_client_id"` // SOCKS5 映射需要目标客户端ID
-	SecretKey      string `json:"secret_key"`       // SOCKS5 映射需要密钥
-}
+// 类型别名 - 为了向后兼容，保留在 client 包中
+type (
+	GenerateConnectionCodeRequest  = command.GenerateConnectionCodeRequest
+	GenerateConnectionCodeResponse = command.GenerateConnectionCodeResponse
+	ListConnectionCodesResponseCmd = command.ListConnectionCodesResponse
+	ConnectionCodeInfoCmd          = command.ConnectionCodeInfo
+	ActivateConnectionCodeRequest  = command.ActivateConnectionCodeRequest
+	ActivateConnectionCodeResponse = command.ActivateConnectionCodeResponse
+)
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 连接码命令发送方法
@@ -168,34 +125,17 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// 映射列表命令
+// 映射列表命令 - 类型别名
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// ListMappingsRequest 列出映射请求
-type ListMappingsRequest struct {
-	Direction string `json:"direction,omitempty"` // outbound | inbound
-	Type      string `json:"type,omitempty"`      // 映射类型过滤
-	Status    string `json:"status,omitempty"`    // 状态过滤
-}
-
-// ListMappingsResponseCmd 列出映射响应（通过指令通道）
-type ListMappingsResponseCmd struct {
-	Mappings []MappingInfoCmd `json:"mappings"`
-	Total    int              `json:"total"`
-}
-
-// MappingInfoCmd 映射信息（通过指令通道）
-type MappingInfoCmd struct {
-	MappingID     string `json:"mapping_id"`
-	Type          string `json:"type"` // outbound | inbound
-	TargetAddress string `json:"target_address"`
-	ListenAddress string `json:"listen_address"`
-	Status        string `json:"status"`
-	ExpiresAt     string `json:"expires_at"`
-	CreatedAt     string `json:"created_at"`
-	BytesSent     int64  `json:"bytes_sent"`
-	BytesReceived int64  `json:"bytes_received"`
-}
+type (
+	ListMappingsRequest     = command.ListMappingsRequest
+	ListMappingsResponseCmd = command.ListMappingsResponse
+	MappingInfoCmd          = command.MappingInfo
+	GetMappingRequest       = command.GetMappingRequest
+	GetMappingResponseCmd   = command.GetMappingResponse
+	DeleteMappingRequest    = command.DeleteMappingRequest
+)
 
 // ListMappings 通过指令通道列出映射
 // 使用 TunnoxClient 自身的 context，遵循 dispose 层次结构
@@ -245,16 +185,6 @@ func (c *TunnoxClient) updateTrafficStatsFromMappings(mappings []MappingInfoCmd)
 	}
 }
 
-// GetMappingRequest 获取映射详情请求
-type GetMappingRequest struct {
-	MappingID string `json:"mapping_id"`
-}
-
-// GetMappingResponseCmd 获取映射详情响应（通过指令通道）
-type GetMappingResponseCmd struct {
-	Mapping MappingInfoCmd `json:"mapping"`
-}
-
 // GetMapping 通过指令通道获取映射详情
 // 使用 TunnoxClient 自身的 context，遵循 dispose 层次结构
 func (c *TunnoxClient) GetMapping(mappingID string) (*MappingInfoCmd, error) {
@@ -281,11 +211,6 @@ func (c *TunnoxClient) GetMappingWithContext(ctx context.Context, mappingID stri
 	c.updateTrafficStatsFromMappings([]MappingInfoCmd{resp.Mapping})
 
 	return &resp.Mapping, nil
-}
-
-// DeleteMappingRequest 删除映射请求
-type DeleteMappingRequest struct {
-	MappingID string `json:"mapping_id"`
 }
 
 // DeleteMapping 通过指令通道删除映射

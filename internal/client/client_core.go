@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"tunnox-core/internal/client/command"
 	"tunnox-core/internal/client/mapping"
 	"tunnox-core/internal/client/notify"
 	"tunnox-core/internal/client/socks5"
@@ -58,7 +59,7 @@ type TunnoxClient struct {
 	apiClient *ManagementAPIClient
 
 	// 命令响应管理器（用于指令通道命令）
-	commandResponseManager *CommandResponseManager
+	commandResponseManager *command.ResponseManager
 
 	// 隧道连接池（用于复用隧道连接，提高并发性能）
 	tunnelPool *TunnelPool
@@ -120,7 +121,7 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 		instanceID:             instanceID,
 		mappingHandlers:        make(map[string]MappingHandler),
 		localTrafficStats:      make(map[string]*localMappingStats),
-		commandResponseManager: NewCommandResponseManager(),
+		commandResponseManager: command.NewResponseManager(),
 		startTime:              time.Now(),
 		notificationDispatcher: notify.NewDispatcher(),
 		targetTunnelManager:    NewTargetTunnelManager(),
