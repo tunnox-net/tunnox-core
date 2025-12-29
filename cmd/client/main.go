@@ -618,11 +618,20 @@ func runQuickCommand(args []string) {
 		}
 	}()
 
-	// 创建默认配置（匿名模式）
-	config := &client.ClientConfig{
-		Anonymous: true,
-		DeviceID:  "anonymous-device",
-		// Server 字段留空以触发自动连接
+	// 从配置文件加载配置（如果存在）
+	configManager := client.NewConfigManager()
+	config, err := configManager.LoadConfig("")
+	if err != nil {
+		// 配置加载失败，使用默认配置
+		config = &client.ClientConfig{
+			Anonymous: true,
+			DeviceID:  "anonymous-device",
+		}
+	}
+
+	// 确保匿名模式有设备ID
+	if config.Anonymous && config.DeviceID == "" {
+		config.DeviceID = "anonymous-device"
 	}
 
 	// 创建快捷命令执行器

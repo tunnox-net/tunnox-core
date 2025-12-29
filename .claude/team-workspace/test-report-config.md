@@ -191,6 +191,146 @@ go test ./internal/config/... -bench=. -benchmem
 go test ./internal/config/... -cover
 ```
 
+## E2E 端到端测试
+
+### 测试场景文件
+
+- **测试脚本**: `/Users/roger.tong/GolandProjects/tunnox/test/scenarios/config_system.py`
+- **K8s 资源目录**: `/Users/roger.tong/GolandProjects/tunnox/test/k8s/config-system/`
+
+### 运行 E2E 测试
+
+```bash
+cd /Users/roger.tong/GolandProjects/tunnox/test
+
+# 完整运行（包含构建）
+python3 -m scenarios.config_system
+
+# 跳过构建（使用现有镜像）
+python3 -m scenarios.config_system --skip-build
+
+# 调试模式（保留环境）
+python3 -m scenarios.config_system --skip-cleanup
+```
+
+### E2E 测试场景
+
+| 测试 | 描述 | K8s 资源 | 验证点 |
+|------|------|----------|--------|
+| 零配置启动 | 服务端无配置文件启动 | `zero-config-server.yaml` | TCP:8000, Health:9090, /healthz, /ready |
+| 环境变量配置 | TUNNOX_ 前缀环境变量覆盖 | `env-override-server.yaml` | TCP:9100, Mgmt:9200, Health:9300 |
+| ConfigMap 配置 | 挂载 /etc/tunnox/config.yaml | `configmap-server.yaml` | TCP:9400, Mgmt:9500, Health:9600 |
+| 配置优先级 | 环境变量 > ConfigMap | `priority-server.yaml` | 验证 9700/9800/9900 而非 7000/7100/7200 |
+| 健康检查端点 | 自定义端点路径 | `health-endpoints-server.yaml` | /custom-healthz, /custom-ready |
+
+### K8s 资源文件
+
+1. **zero-config-server.yaml** - 零配置测试
+   - 不挂载配置文件
+   - 不设置环境变量
+   - 验证默认端口生效
+
+2. **env-override-server.yaml** - 环境变量测试
+   - 设置 `TUNNOX_SERVER_TCP_PORT=9100`
+   - 设置 `TUNNOX_MANAGEMENT_LISTEN=0.0.0.0:9200`
+   - 设置 `TUNNOX_HEALTH_LISTEN=0.0.0.0:9300`
+
+3. **configmap-server.yaml** - ConfigMap 测试
+   - ConfigMap 包含完整 config.yaml
+   - 挂载到 /etc/tunnox/config.yaml
+   - 使用 `-config` 参数加载
+
+4. **priority-server.yaml** - 优先级测试
+   - ConfigMap 配置端口 7000/7100/7200
+   - 环境变量覆盖为 9700/9800/9900
+   - 验证环境变量优先生效
+
+5. **health-endpoints-server.yaml** - 健康端点测试
+   - 配置自定义端点路径
+   - /custom-healthz, /custom-ready, /custom-startup
+
+### 测试输出示例
+
+```
+============================================================
+场景: config_system
+开始时间: 2025-12-29 10:00:00
+============================================================
+
+[CLEANUP_BEFORE] 开始...
+[CLEANUP_BEFORE] 完成
+
+[BUILD] 开始...
+  构建 tunnox_core...
+[BUILD] 完成
+
+[DEPLOY] 开始...
+  部署资源: config-system/zero-config-server.yaml
+  部署资源: config-system/env-override-server.yaml
+  部署资源: config-system/configmap-server.yaml
+  部署资源: config-system/priority-server.yaml
+  部署资源: config-system/health-endpoints-server.yaml
+[DEPLOY] 完成
+
+[WAIT_READY] 开始...
+  等待 zero-config-server 就绪...
+  等待 env-override-server 就绪...
+  等待 configmap-server 就绪...
+  等待 priority-server 就绪...
+  等待 health-endpoints-server 就绪...
+[WAIT_READY] 完成
+
+[TEST] 开始...
+[TEST 1/5] 零配置启动测试
+  [1.1] 验证服务启动成功
+    Pod 状态: Running
+  [1.2] 验证默认端口配置
+    健康检查端口 9090: OK
+    管理端口 9000: OK
+    TCP 端口 8000: OK
+  [SUCCESS] 零配置启动测试通过
+
+[TEST 2/5] 环境变量配置测试
+  [2.1] 验证环境变量覆盖的端口
+    TCP 端口已覆盖为 9100
+    Management 端口已覆盖为 9200
+    健康检查端口已覆盖为 9300
+  [SUCCESS] 环境变量配置测试通过
+
+[TEST 3/5] ConfigMap YAML 配置测试
+  [3.1] 验证 ConfigMap 配置生效
+    TCP 端口配置为 9400
+    Management 端口配置为 9500
+    健康检查端口配置为 9600
+  [3.2] 验证 ConfigMap 挂载
+    ConfigMap 挂载: OK
+  [SUCCESS] ConfigMap YAML 配置测试通过
+
+[TEST 4/5] 配置优先级测试
+  [4.1] 验证环境变量优先于 ConfigMap
+    TCP 端口: 环境变量 9700 覆盖了 ConfigMap 7000
+    Management 端口: 环境变量 9800 覆盖了 ConfigMap 7100
+    健康检查端口: 环境变量 9900 覆盖了 ConfigMap 7200
+  [SUCCESS] 配置优先级测试通过
+
+[TEST 5/5] 健康检查端点测试
+  [5.1] 验证默认健康检查端点
+    /healthz (liveness): OK
+    /ready (readiness): OK
+  [5.2] 验证自定义健康检查端点
+    /custom-healthz: OK
+    /custom-ready: OK
+  [SUCCESS] 健康检查端点测试通过
+
+[SUCCESS] 所有配置系统测试通过
+[TEST] 完成
+
+场景: config_system
+状态: 成功
+耗时: 180.00s
+============================================================
+```
+
 ## 结论
 
 所有 P0 场景测试全部通过，配置系统功能完整、稳定。主要验证了：
@@ -201,3 +341,11 @@ go test ./internal/config/... -cover
 4. **向后兼容**: 支持无前缀环境变量（带警告）
 5. **验证完整**: 端口、必填字段、依赖关系均有验证
 6. **性能良好**: 配置加载约 19us，验证约 500ns
+
+### E2E 测试覆盖
+
+7. **零配置启动**: 服务端无需配置文件即可启动
+8. **环境变量覆盖**: K8s env 正确覆盖默认配置
+9. **ConfigMap 挂载**: YAML 配置通过 ConfigMap 正确加载
+10. **优先级正确**: 环境变量 > ConfigMap > 默认值
+11. **健康检查**: 默认和自定义端点均正常工作

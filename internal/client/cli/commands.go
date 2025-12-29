@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -188,8 +189,12 @@ func (c *CLI) cmdStatus(args []string) {
 
 	// 如果已连接，先更新流量统计并获取映射信息
 	var inboundCount, outboundCount int
+	var mappingFetchFailed bool
 	if isConnected {
-		resp, err := c.client.ListMappings(&client.ListMappingsRequest{})
+		// 使用短超时（3秒）避免界面卡住
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		resp, err := c.client.ListMappingsWithContext(ctx, &client.ListMappingsRequest{})
+		cancel()
 		if err == nil {
 			// 统计 inbound 和 outbound 映射数量
 			for _, m := range resp.Mappings {
@@ -199,6 +204,8 @@ func (c *CLI) cmdStatus(args []string) {
 					outboundCount++
 				}
 			}
+		} else {
+			mappingFetchFailed = true
 		}
 	}
 
@@ -206,10 +213,15 @@ func (c *CLI) cmdStatus(args []string) {
 	statusInfo := c.client.GetStatusInfo()
 
 	// 显示映射数量（区分 inbound 和 outbound）
-	mappingInfo := fmt.Sprintf("%d", statusInfo.ActiveMappings)
-	if inboundCount > 0 || outboundCount > 0 {
+	var mappingInfo string
+	if mappingFetchFailed {
+		// 服务端响应超时，使用本地缓存的数据
+		mappingInfo = fmt.Sprintf("%d (fetch timeout)", statusInfo.ActiveMappings)
+	} else if inboundCount > 0 || outboundCount > 0 {
 		mappingInfo = fmt.Sprintf("%d (Inbound: %d, Outbound: %d)",
 			inboundCount+outboundCount, inboundCount, outboundCount)
+	} else {
+		mappingInfo = fmt.Sprintf("%d", statusInfo.ActiveMappings)
 	}
 
 	// 格式化流量统计

@@ -345,5 +345,6 @@ func hashString(s string) string {
 	if hash < 0 {
 		hash = -hash
 	}
-	return fmt.Sprintf("%x", hash)[:8]
+	// 使用 %08x 确保至少 8 位，避免短字符串越界
+	return fmt.Sprintf("%08x", hash)
 }
