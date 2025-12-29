@@ -26,8 +26,8 @@ func TestTunnelManager_RegisterTunnel(t *testing.T) {
 
 	// 创建隧道
 	tunnel := NewTunnel(&TunnelConfig{
-		ID:        "test-tunnel-1",
-		Protocol:  "tcp",
+		ID:       "test-tunnel-1",
+		Protocol: "tcp",
 	})
 
 	// 注册

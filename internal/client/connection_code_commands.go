@@ -103,8 +103,8 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 			MappingID:      resp.MappingID,
 			Protocol:       protocol,
 			LocalPort:      port,
-			TargetHost:     "",                 // 目标地址由服务端管理
-			TargetPort:     0,                  // 目标端口由服务端管理
+			TargetHost:     "",                  // 目标地址由服务端管理
+			TargetPort:     0,                   // 目标端口由服务端管理
 			TargetClientID: resp.TargetClientID, // SOCKS5 需要目标客户端ID
 			SecretKey:      resp.SecretKey,      // SOCKS5 需要密钥
 			MaxConnections: 100,

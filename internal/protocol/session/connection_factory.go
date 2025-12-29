@@ -1,9 +1,9 @@
 package session
 
 import (
+	"net"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
-	"net"
 )
 
 // ============================================================================

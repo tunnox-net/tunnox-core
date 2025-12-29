@@ -199,7 +199,6 @@ func (s *SocksAdapter) handleSocksConnection(clientConn net.Conn) {
 	s.relay(clientConn, remoteConn)
 }
 
-
 // dialThroughTunnel 通过隧道连接到目标地址
 // 这里需要与 Session 集成，实际建立到远端的连接
 func (s *SocksAdapter) dialThroughTunnel(targetAddr string) (net.Conn, error) {
