@@ -17,17 +17,17 @@ func (c *TunnoxClient) sendHandshake() error {
 }
 
 // saveConnectionConfig 保存连接配置到配置文件
-// 无论匿名还是注册模式，连接成功后都保存配置，供下次启动使用
+// 连接成功后保存配置，供下次启动使用
 // 保存条件：
 // 1. 命令行参数指定了服务器地址/协议，或使用了自动连接检测
-// 2. 匿名模式下获取到了新的 ClientID 和 SecretKey（首次认证成功后）
+// 2. 获取到了 ClientID 和 SecretKey（首次认证成功后）
 func (c *TunnoxClient) saveConnectionConfig() error {
 	// 检查是否需要保存配置
 	// 条件1: 命令行参数指定或使用自动连接
 	shouldSaveServerConfig := c.serverAddressFromCLI || c.serverProtocolFromCLI || c.usedAutoConnection
 
-	// 条件2: 匿名模式下有 ClientID 和 SecretKey（需要保存以便重连时使用）
-	shouldSaveCredentials := c.config.Anonymous && c.config.ClientID > 0 && c.config.SecretKey != ""
+	// 条件2: 有 ClientID 和 SecretKey（需要保存以便重连时使用）
+	shouldSaveCredentials := c.config.ClientID > 0 && c.config.SecretKey != ""
 
 	if !shouldSaveServerConfig && !shouldSaveCredentials {
 		return nil // 无需保存
@@ -40,13 +40,8 @@ func (c *TunnoxClient) saveConnectionConfig() error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	if c.config.Anonymous {
-		corelog.Infof("Client: connection config saved (anonymous mode, ClientID=%d, protocol=%s, address=%s)",
-			c.config.ClientID, c.config.Server.Protocol, c.config.Server.Address)
-	} else {
-		corelog.Infof("Client: connection config saved (registered mode, ClientID=%d, protocol=%s, address=%s)",
-			c.config.ClientID, c.config.Server.Protocol, c.config.Server.Address)
-	}
+	corelog.Infof("Client: connection config saved (ClientID=%d, protocol=%s, address=%s)",
+		c.config.ClientID, c.config.Server.Protocol, c.config.Server.Address)
 	return nil
 }
 
@@ -56,38 +51,26 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 
 	var req *packet.HandshakeRequest
 
-	// 认证策略：
-	// 1. 匿名客户端 + 有ClientID和SecretKey → 使用ClientID+SecretKey认证
-	// 2. 匿名客户端 + 无ClientID → 首次握手，服务端分配凭据
-	// 3. 注册客户端 → 使用ClientID+AuthToken认证
-	if c.config.Anonymous {
-		if c.config.ClientID > 0 && c.config.SecretKey != "" {
-			// 匿名客户端使用持久化凭据重新认证
-			req = &packet.HandshakeRequest{
-				ClientID:       c.config.ClientID,
-				Token:          c.config.SecretKey, // ✅ 使用SecretKey而不是DeviceID
-				Version:        "2.0",
-				Protocol:       c.config.Server.Protocol,
-				ConnectionType: connectionType, // ✅ 标识连接类型
-			}
-		} else {
-			// 首次匿名握手，请求分配凭据
-			req = &packet.HandshakeRequest{
-				ClientID:       0,
-				Token:          fmt.Sprintf("anonymous:%s", c.config.DeviceID),
-				Version:        "2.0",
-				Protocol:       c.config.Server.Protocol,
-				ConnectionType: connectionType, // ✅ 标识连接类型
-			}
-		}
-	} else {
-		// 注册客户端使用AuthToken
+	// 统一认证策略：
+	// 1. 有 ClientID + SecretKey → 使用这两个字段认证
+	// 2. 无 ClientID → 首次握手，请求服务端分配凭据
+	if c.config.ClientID > 0 && c.config.SecretKey != "" {
+		// 使用持久化凭据认证
 		req = &packet.HandshakeRequest{
 			ClientID:       c.config.ClientID,
-			Token:          c.config.AuthToken,
+			Token:          c.config.SecretKey,
 			Version:        "2.0",
 			Protocol:       c.config.Server.Protocol,
-			ConnectionType: connectionType, // ✅ 标识连接类型
+			ConnectionType: connectionType,
+		}
+	} else {
+		// 首次握手，请求分配凭据
+		req = &packet.HandshakeRequest{
+			ClientID:       0,
+			Token:          "new-client", // 标识首次连接
+			Version:        "2.0",
+			Protocol:       c.config.Server.Protocol,
+			ConnectionType: connectionType,
 		}
 	}
 
@@ -149,43 +132,24 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		return fmt.Errorf("handshake failed: %s", resp.Error)
 	}
 
-	// 匿名模式下，服务器会返回分配的凭据（仅对控制连接有用）
-	if c.config.Anonymous && stream == c.controlStream {
-		// ✅ 优先使用结构化字段
-		if resp.ClientID > 0 && resp.SecretKey != "" {
-			c.config.ClientID = resp.ClientID
-			c.config.SecretKey = resp.SecretKey
-			corelog.Infof("Client: received anonymous credentials - ClientID=%d, SecretKey=***", resp.ClientID)
+	// 首次连接时，服务器会返回分配的凭据（仅对控制连接有用）
+	if stream == c.controlStream && resp.ClientID > 0 && resp.SecretKey != "" {
+		// 更新本地凭据
+		c.config.ClientID = resp.ClientID
+		c.config.SecretKey = resp.SecretKey
+		corelog.Infof("Client: received credentials - ClientID=%d, SecretKey=***", resp.ClientID)
 
-			// ✅ 更新 SOCKS5Manager 的 clientID
-			if c.socks5Manager != nil {
-				c.socks5Manager.SetClientID(resp.ClientID)
-				corelog.Debugf("Client: updated SOCKS5Manager clientID to %d", resp.ClientID)
-			}
-		} else if resp.Message != "" {
-			// 兼容旧版本：从Message解析ClientID
-			var assignedClientID int64
-			if _, err := fmt.Sscanf(resp.Message, "Anonymous client authenticated, client_id=%d", &assignedClientID); err == nil {
-				c.config.ClientID = assignedClientID
-				// ✅ 更新 SOCKS5Manager 的 clientID
-				if c.socks5Manager != nil {
-					c.socks5Manager.SetClientID(assignedClientID)
-					corelog.Debugf("Client: updated SOCKS5Manager clientID to %d", assignedClientID)
-				}
-			}
+		// 更新 SOCKS5Manager 的 clientID
+		if c.socks5Manager != nil {
+			c.socks5Manager.SetClientID(resp.ClientID)
+			corelog.Debugf("Client: updated SOCKS5Manager clientID to %d", resp.ClientID)
 		}
 	}
 
 	// 打印认证信息
-	if c.config.Anonymous {
-		corelog.Infof("Client: authenticated as anonymous client, ClientID=%d, DeviceID=%s",
-			c.config.ClientID, c.config.DeviceID)
-	} else {
-		corelog.Infof("Client: authenticated successfully, ClientID=%d, Token=%s",
-			c.config.ClientID, c.config.AuthToken)
-	}
+	corelog.Infof("Client: authenticated successfully, ClientID=%d", c.config.ClientID)
 
-	// ✅ 握手成功后保存配置（无论匿名还是注册模式）
+	// 握手成功后保存配置
 	// 仅对控制连接保存，避免隧道连接重复保存
 	if stream == c.controlStream {
 		if err := c.saveConnectionConfig(); err != nil {

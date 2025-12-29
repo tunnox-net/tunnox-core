@@ -58,13 +58,7 @@ type defaultConfig struct {
 		Address  string `yaml:"address"`
 		Protocol string `yaml:"protocol"`
 	} `yaml:"server"`
-	Client struct {
-		ClientID  int64  `yaml:"client_id,omitempty"`
-		DeviceID  string `yaml:"device_id,omitempty"`
-		AuthToken string `yaml:"auth_token,omitempty"`
-	} `yaml:"client"`
-	Anonymous bool `yaml:"anonymous"`
-	Log       struct {
+	Log struct {
 		Level  string `yaml:"level"`
 		Format string `yaml:"format"`
 		Output string `yaml:"output"`
@@ -97,8 +91,6 @@ func runConfigInit(cmd *cobra.Command, args []string) {
 	config := defaultConfig{}
 	config.Server.Address = "https://gw.tunnox.net/_tunnox"
 	config.Server.Protocol = "websocket"
-	config.Anonymous = true
-	config.Client.DeviceID = "my-device"
 	config.Log.Level = "info"
 	config.Log.Format = "text"
 	config.Log.Output = "file"
@@ -118,12 +110,9 @@ func runConfigInit(cmd *cobra.Command, args []string) {
 # - address: Server address (can include protocol prefix like https://)
 # - protocol: Transport protocol (tcp/websocket/kcp/quic)
 #
-# Client settings
-# - client_id: Client ID for authenticated mode (optional)
-# - device_id: Device ID for anonymous mode
-# - auth_token: JWT token for authenticated mode (optional)
-#
-# anonymous: Use anonymous mode (no authentication required)
+# Client settings (auto-assigned on first connection)
+# - client_id: Client ID (server-assigned)
+# - secret_key: Authentication key (server-assigned)
 #
 # Log settings
 # - level: Log level (debug/info/warn/error)
@@ -180,17 +169,16 @@ func runConfigShow(cmd *cobra.Command, args []string) {
 	output.KeyValue("protocol", protocol)
 
 	output.Section("Client")
-	clientID := "N/A"
+	clientID := "N/A (will be assigned on first connection)"
 	if config.ClientID > 0 {
 		clientID = fmt.Sprintf("%d", config.ClientID)
 	}
-	deviceID := config.DeviceID
-	if deviceID == "" {
-		deviceID = "N/A"
+	secretKey := "***"
+	if config.SecretKey == "" {
+		secretKey = "N/A (will be assigned on first connection)"
 	}
 	output.KeyValue("client_id", clientID)
-	output.KeyValue("device_id", deviceID)
-	output.KeyValue("anonymous", fmt.Sprintf("%v", config.Anonymous))
+	output.KeyValue("secret_key", secretKey)
 
 	output.Section("Log")
 	logLevel := config.Log.Level

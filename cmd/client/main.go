@@ -49,10 +49,8 @@ func main() {
 	configFile := flag.String("config", "", "path to config file (optional)")
 	protocol := flag.String("p", "", "protocol: tcp/websocket/ws/kcp/quic (overrides config)")
 	serverAddr := flag.String("s", "", "server address (e.g., localhost:7001, overrides config)")
-	clientID := flag.Int64("id", 0, "client ID (overrides config)")
-	deviceID := flag.String("device", "", "device ID for anonymous mode (overrides config)")
-	authToken := flag.String("token", "", "auth token (overrides config)")
-	anonymous := flag.Bool("anonymous", false, "use anonymous mode (overrides config)")
+	clientID := flag.Int64("id", 0, "client ID (overrides config, auto-assigned on first connect)")
+	secretKey := flag.String("key", "", "secret key (overrides config, auto-assigned on first connect)")
 	logFile := flag.String("log", "", "log file path (overrides config file)")
 	daemon := flag.Bool("daemon", false, "run in daemon mode (no interactive CLI)")
 	interactive := flag.Bool("interactive", true, "run in interactive mode with CLI (default)")
@@ -70,7 +68,7 @@ func main() {
 	runInteractive := *interactive && !*daemon
 
 	// 加载配置
-	config, err := loadOrCreateConfig(*configFile, *protocol, *serverAddr, *clientID, *deviceID, *authToken, *anonymous, runInteractive)
+	config, err := loadOrCreateConfig(*configFile, *protocol, *serverAddr, *clientID, *secretKey, runInteractive)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
 		os.Exit(1)
@@ -109,11 +107,7 @@ func main() {
 			serverDisplay = fmt.Sprintf("%s://%s", config.Server.Protocol, serverDisplay)
 		}
 		fmt.Printf("   Server:   %s\n", serverDisplay)
-		if config.Anonymous {
-			fmt.Printf("   Mode:     Anonymous (device: %s)\n", config.DeviceID)
-		} else {
-			fmt.Printf("   Mode:     Authenticated (client_id: %d)\n", config.ClientID)
-		}
+		fmt.Printf("   ClientID: %d\n", config.ClientID)
 		if logFilePath != "" {
 			fmt.Printf("   Logs:     %s\n", logFilePath)
 		}
@@ -267,7 +261,7 @@ func main() {
 }
 
 // loadOrCreateConfig 加载或创建配置
-func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64, deviceID, authToken string, anonymous bool, isCLIMode bool) (*client.ClientConfig, error) {
+func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64, secretKey string, isCLIMode bool) (*client.ClientConfig, error) {
 	// 使用配置管理器加载配置
 	configManager := client.NewConfigManager()
 	config, err := configManager.LoadConfig(configFile)
@@ -288,17 +282,9 @@ func loadOrCreateConfig(configFile, protocol, serverAddr string, clientID int64,
 	}
 	if clientID > 0 {
 		config.ClientID = clientID
-		config.Anonymous = false
 	}
-	if deviceID != "" {
-		config.DeviceID = deviceID
-	}
-	if authToken != "" {
-		config.AuthToken = authToken
-		config.Anonymous = false
-	}
-	if anonymous {
-		config.Anonymous = true
+	if secretKey != "" {
+		config.SecretKey = secretKey
 	}
 
 	// 检测是否需要自动连接（符合设计文档的条件）：
@@ -357,17 +343,7 @@ func validateConfig(config *client.ClientConfig, setDefaults bool) error {
 	}
 	// 如果协议为空且地址也为空，说明是自动连接模式，协议会在自动连接时确定
 
-	// 验证认证配置
-	if !config.Anonymous {
-		if config.ClientID == 0 {
-			return fmt.Errorf("client_id is required for authenticated mode")
-		}
-	} else {
-		if config.DeviceID == "" {
-			config.DeviceID = "anonymous-device"
-		}
-	}
-
+	// ClientID 和 SecretKey 可以为空，首次连接时由服务端分配
 	return nil
 }
 
@@ -393,10 +369,8 @@ OPTIONS:
       -config <file>     Path to config file (optional)
       -p <protocol>      Protocol: tcp/websocket/ws/kcp/quic
       -s <address>       Server address (e.g., localhost:7001)
-      -id <client_id>    Client ID for authenticated mode
-      -token <token>     Auth token for authenticated mode
-      -device <id>       Device ID for anonymous mode
-      -anonymous         Use anonymous mode
+      -id <client_id>    Client ID (auto-assigned on first connect)
+      -key <secret>      Secret key (auto-assigned on first connect)
       -log <file>        Log file path (overrides config file)
 
     Mode:
@@ -408,19 +382,16 @@ OPTIONS:
 
 EXAMPLES:
     # Interactive mode (default) - with CLI
-    tunnox-client -p quic -s localhost:7003 -anonymous
+    tunnox-client -p quic -s localhost:7003
 
     # Daemon mode - no CLI, runs in background
-    tunnox-client -p quic -s localhost:7003 -anonymous -daemon
+    tunnox-client -p quic -s localhost:7003 -daemon
 
     # Use config file
     tunnox-client -config client-config.yaml
 
     # Quick start with QUIC (recommended)
-    tunnox-client -p quic -s localhost:7003 -anonymous
-
-    # Authenticated mode
-    tunnox-client -p quic -s localhost:7003 -id 10000001 -token "your-jwt-token"
+    tunnox-client -p quic -s localhost:7003
 
 INTERACTIVE MODE:
     In interactive mode, you can use commands like:
@@ -435,13 +406,13 @@ DAEMON MODE:
       - Running as a system service
       - Background processes
       - Automated deployments
-    
+
 NOTES:
     - Command line options override config file settings
     - Default mode is interactive (with CLI)
     - Default server: https://gw.tunnox.net/_tunnox (WebSocket)
     - Default protocol is websocket if not specified
-    - Anonymous mode is used if no client_id/token is provided`)
+    - ClientID and SecretKey are auto-assigned on first connection`)
 }
 
 // configureLogging 配置日志输出
@@ -630,15 +601,7 @@ func runQuickCommand(args []string) {
 	config, err := configManager.LoadConfig("")
 	if err != nil {
 		// 配置加载失败，使用默认配置
-		config = &client.ClientConfig{
-			Anonymous: true,
-			DeviceID:  "anonymous-device",
-		}
-	}
-
-	// 确保匿名模式有设备ID
-	if config.Anonymous && config.DeviceID == "" {
-		config.DeviceID = "anonymous-device"
+		config = &client.ClientConfig{}
 	}
 
 	// 创建快捷命令执行器

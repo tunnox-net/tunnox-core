@@ -24,7 +24,6 @@ import (
 var (
 	serverAddr  string
 	transport   string
-	anonymous   bool
 	configFile  string
 	logFile     string
 	interactive bool
@@ -73,7 +72,6 @@ func init() {
 	// 全局标志
 	rootCmd.PersistentFlags().StringVarP(&serverAddr, "server", "s", "", "Server address (e.g., localhost:7001)")
 	rootCmd.PersistentFlags().StringVarP(&transport, "transport", "t", "", "Transport protocol: tcp/websocket/ws/kcp/quic")
-	rootCmd.PersistentFlags().BoolVar(&anonymous, "anonymous", false, "Use anonymous mode")
 	rootCmd.PersistentFlags().StringVarP(&configFile, "config", "c", "", "Config file path")
 	rootCmd.PersistentFlags().StringVar(&logFile, "log", "", "Log file path")
 	rootCmd.PersistentFlags().BoolVarP(&interactive, "interactive", "i", false, "Start interactive CLI after command")
@@ -253,9 +251,6 @@ func loadConfig() (*client.ClientConfig, error) {
 	if serverAddr != "" {
 		config.Server.Address = serverAddr
 	}
-	if anonymous {
-		config.Anonymous = true
-	}
 
 	// 设置默认值
 	if config.Server.Address == "" {
@@ -291,16 +286,7 @@ func validateConfig(config *client.ClientConfig) error {
 		}
 	}
 
-	if !config.Anonymous {
-		if config.ClientID == 0 {
-			return fmt.Errorf("client_id is required for authenticated mode")
-		}
-	} else {
-		if config.DeviceID == "" {
-			config.DeviceID = "anonymous-device"
-		}
-	}
-
+	// ClientID 和 SecretKey 可以为空，首次连接时由服务端分配
 	return nil
 }
 

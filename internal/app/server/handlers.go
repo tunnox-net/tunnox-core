@@ -84,12 +84,16 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 	var authError error
 
 	// 4. 认证客户端
-	if req.ClientID == 0 && strings.HasPrefix(req.Token, "anonymous:") {
-		// 首次匿名握手：生成新凭据
+	// 统一认证模型：
+	// - ClientID == 0 且 Token == "new-client"：首次连接，分配新凭据
+	// - ClientID > 0 且 Token 是 SecretKey：使用持久化凭据认证
+	isFirstConnection := req.ClientID == 0 && (req.Token == "new-client" || strings.HasPrefix(req.Token, "anonymous:"))
+	if isFirstConnection {
+		// 首次握手：生成新凭据
 		anonClient, err := h.cloudControl.GenerateAnonymousCredentials()
 		if err != nil {
 			authError = err
-			corelog.Errorf("ServerAuthHandler: failed to generate anonymous credentials: %v", err)
+			corelog.Errorf("ServerAuthHandler: failed to generate credentials: %v", err)
 			// 记录失败
 			if h.bruteForceProtector != nil {
 				h.bruteForceProtector.RecordFailure(ip)
@@ -100,7 +104,7 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 			}, err
 		}
 		clientID = anonClient.ID
-		corelog.Infof("ServerAuthHandler: generated anonymous client ID: %d", clientID)
+		corelog.Infof("ServerAuthHandler: generated new client ID: %d", clientID)
 	} else {
 		// 注册客户端或匿名客户端重新认证（使用ClientID+Token）
 		// 对于匿名客户端，Token是SecretKey
@@ -109,10 +113,10 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 		// 先获取客户端信息以判断类型
 		client, err := h.cloudControl.GetClient(req.ClientID)
 		if err != nil || client == nil {
-			// ✅ 客户端不存在：如果是匿名客户端（Token不是"anonymous:"开头且长度合理），自动生成新客户端
+			// 客户端不存在：如果是持久化凭据重新认证（Token不是"new-client"且长度合理），自动生成新客户端
 			// 这通常发生在服务端重启导致数据丢失，或客户端配置的ID无效时
-			if !strings.HasPrefix(req.Token, "anonymous:") && len(req.Token) >= 16 {
-				// 可能是匿名客户端的SecretKey，自动生成新匿名客户端
+			if req.Token != "new-client" && !strings.HasPrefix(req.Token, "anonymous:") && len(req.Token) >= 16 {
+				// 可能是客户端的SecretKey，自动生成新客户端
 				corelog.Warnf("ServerAuthHandler: client %d not found, auto-generating new anonymous client (likely server restart or invalid config)", req.ClientID)
 				anonClient, genErr := h.cloudControl.GenerateAnonymousCredentials()
 				if genErr != nil {
@@ -223,19 +227,17 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 		Message: "Handshake successful",
 	}
 
-	// ✅ 匿名客户端首次握手或重新认证：返回分配的凭据
+	// 首次握手或重新分配凭据：返回分配的凭据
 	// 判断条件：
-	// 1. 首次握手（ClientID==0 且 Token 以 "anonymous:" 开头）- 此时 clientID 是新生成的
+	// 1. 首次握手（ClientID==0）- 此时 clientID 是新生成的
 	// 2. 新生成的客户端（clientID != req.ClientID 且 clientID > 0）
-	// 3. 匿名客户端重新认证（clientID > 0 且 clientID == req.ClientID）- 需要返回 SecretKey 供客户端更新协议层
-	isFirstHandshake := req.ClientID == 0 && strings.HasPrefix(req.Token, "anonymous:")
+	// 3. 重新认证 - 需要返回 SecretKey 供客户端更新
 	isNewClient := clientID != req.ClientID && clientID > 0
-	isAnonymousReauth := clientID > 0 && clientID == req.ClientID && !strings.HasPrefix(req.Token, "anonymous:")
 
-	corelog.Debugf("ServerAuthHandler: handshake response check - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v, req.ClientID=%d, clientID=%d",
-		isFirstHandshake, isNewClient, isAnonymousReauth, req.ClientID, clientID)
+	corelog.Debugf("ServerAuthHandler: handshake response check - isFirstConnection=%v, isNewClient=%v, req.ClientID=%d, clientID=%d",
+		isFirstConnection, isNewClient, req.ClientID, clientID)
 
-	if isFirstHandshake || isNewClient || isAnonymousReauth {
+	if isFirstConnection || isNewClient {
 		// 获取匿名客户端信息（包含SecretKey）
 		anonClient, err := h.cloudControl.GetClient(clientID)
 		if err != nil {
@@ -256,8 +258,8 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 			}
 		}
 	} else {
-		corelog.Debugf("ServerAuthHandler: not returning ClientID/SecretKey - isFirstHandshake=%v, isNewClient=%v, isAnonymousReauth=%v",
-			isFirstHandshake, isNewClient, isAnonymousReauth)
+		corelog.Debugf("ServerAuthHandler: not returning ClientID/SecretKey - isFirstConnection=%v, isNewClient=%v",
+			isFirstConnection, isNewClient)
 	}
 
 	return response, nil

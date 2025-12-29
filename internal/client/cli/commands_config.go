@@ -70,17 +70,16 @@ func (c *CLI) cmdConfigList(args []string) {
 	c.output.KeyValue("management_api_address", managementAPIAddr)
 
 	c.output.Section("Client")
-	clientID := "N/A"
+	clientID := "N/A (will be assigned on first connection)"
 	if config.ClientID > 0 {
 		clientID = fmt.Sprintf("%d", config.ClientID)
 	}
-	deviceID := config.DeviceID
-	if deviceID == "" {
-		deviceID = "N/A"
+	secretKey := "***"
+	if config.SecretKey == "" {
+		secretKey = "N/A (will be assigned on first connection)"
 	}
 	c.output.KeyValue("client_id", clientID)
-	c.output.KeyValue("device_id", deviceID)
-	c.output.KeyValue("anonymous", fmt.Sprintf("%v", config.Anonymous))
+	c.output.KeyValue("secret_key", secretKey)
 
 	c.output.Section("Log")
 	c.output.KeyValue("level", "info")
@@ -134,17 +133,15 @@ func (c *CLI) cmdConfigGet(args []string) {
 		if config.ClientID > 0 {
 			value = fmt.Sprintf("%d", config.ClientID)
 		} else {
-			value = "N/A"
+			value = "N/A (will be assigned on first connection)"
 		}
 		found = true
-	case "client.device_id":
-		value = config.DeviceID
-		if value == "" {
-			value = "N/A"
+	case "client.secret_key":
+		if config.SecretKey != "" {
+			value = "***"
+		} else {
+			value = "N/A (will be assigned on first connection)"
 		}
-		found = true
-	case "client.anonymous":
-		value = fmt.Sprintf("%v", config.Anonymous)
 		found = true
 	case "log.level":
 		value = config.Log.Level

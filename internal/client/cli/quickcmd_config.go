@@ -61,12 +61,9 @@ func (r *QuickCommandRunner) runConfigInitCommand(args []string) (bool, error) {
 # - address: Server address (can include protocol prefix like https://)
 # - protocol: Transport protocol (tcp/websocket/kcp/quic)
 #
-# Client settings
-# - client_id: Client ID for authenticated mode (optional)
-# - device_id: Device ID for anonymous mode
-# - auth_token: JWT token for authenticated mode (optional)
-#
-# anonymous: Use anonymous mode (no authentication required)
+# Client settings (auto-assigned on first connection)
+# - client_id: Client ID (server-assigned)
+# - secret_key: Authentication key (server-assigned)
 #
 # Log settings
 # - level: Log level (debug/info/warn/error)
@@ -77,9 +74,6 @@ func (r *QuickCommandRunner) runConfigInitCommand(args []string) (bool, error) {
 server:
   address: https://gw.tunnox.net/_tunnox
   protocol: websocket
-client:
-  device_id: my-device
-anonymous: true
 log:
   level: info
   format: text
@@ -129,17 +123,16 @@ func (r *QuickCommandRunner) runConfigShowCommand(args []string) (bool, error) {
 	r.output.KeyValue("protocol", protocol)
 
 	r.output.Section("Client")
-	clientID := "N/A"
+	clientID := "N/A (will be assigned on first connection)"
 	if r.config.ClientID > 0 {
 		clientID = fmt.Sprintf("%d", r.config.ClientID)
 	}
-	deviceID := r.config.DeviceID
-	if deviceID == "" {
-		deviceID = "N/A"
+	secretKey := "***"
+	if r.config.SecretKey == "" {
+		secretKey = "N/A (will be assigned on first connection)"
 	}
 	r.output.KeyValue("client_id", clientID)
-	r.output.KeyValue("device_id", deviceID)
-	r.output.KeyValue("anonymous", fmt.Sprintf("%v", r.config.Anonymous))
+	r.output.KeyValue("secret_key", secretKey)
 
 	r.output.Section("Log")
 	logLevel := r.config.Log.Level

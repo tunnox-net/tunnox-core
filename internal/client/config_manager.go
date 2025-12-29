@@ -53,12 +53,11 @@ func (cm *ConfigManager) LoadConfig(cmdConfigPath string) (*ClientConfig, error)
 		}
 	}
 
-	// 3. 所有路径都没有配置文件，返回空配置（不设置默认地址）
-	// 这样可以在 CLI 模式下触发自动连接
+	// 3. 所有路径都没有配置文件，返回空配置
+	// 首次连接时服务端会分配 clientId + secretKey
 	corelog.Infof("ConfigManager: no config file found, using empty config")
 	return &ClientConfig{
-		Anonymous: true,
-		DeviceID:  "anonymous-device",
+		// 不设置 ClientID 和 SecretKey，首次连接时服务端会分配
 		// 不设置 Server.Address，让自动连接机制处理
 	}, nil
 }
@@ -96,12 +95,6 @@ func (cm *ConfigManager) SaveConfigWithOptions(config *ClientConfig, allowUpdate
 		}
 		if config.SecretKey == "" && existingConfig.SecretKey != "" {
 			config.SecretKey = existingConfig.SecretKey
-		}
-		if config.AuthToken == "" && existingConfig.AuthToken != "" {
-			config.AuthToken = existingConfig.AuthToken
-		}
-		if config.DeviceID == "" && existingConfig.DeviceID != "" {
-			config.DeviceID = existingConfig.DeviceID
 		}
 	}
 
@@ -224,10 +217,7 @@ func getUserHomeDir() string {
 
 // getDefaultConfig 获取默认配置
 func getDefaultConfig() *ClientConfig {
-	config := &ClientConfig{
-		Anonymous: true,
-		DeviceID:  "anonymous-device",
-	}
+	config := &ClientConfig{}
 	// 默认使用 WebSocket 连接到公共服务器
 	config.Server.Address = "https://gw.tunnox.net/_tunnox"
 	config.Server.Protocol = "websocket"

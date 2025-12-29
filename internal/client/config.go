@@ -1,15 +1,11 @@
 package client
 
 // ClientConfig 客户端配置
+// 统一认证模型：首次连接由服务端分配 clientId + secretKey，后续连接使用这两个字段认证
 type ClientConfig struct {
-	// 注册客户端认证
-	ClientID  int64  `yaml:"client_id"`
-	AuthToken string `yaml:"auth_token"`
-
-	// 匿名客户端认证
-	Anonymous bool   `yaml:"anonymous"`
-	DeviceID  string `yaml:"device_id"`
-	SecretKey string `yaml:"secret_key"` // 匿名客户端的密钥（服务端分配后保存）
+	// 认证凭据（服务端分配，首次连接后持久化）
+	ClientID  int64  `yaml:"client_id"`  // 客户端唯一标识
+	SecretKey string `yaml:"secret_key"` // 认证密钥
 
 	Server struct {
 		Address  string `yaml:"address"`  // 服务器地址，例如 "localhost:7000"

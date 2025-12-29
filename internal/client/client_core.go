@@ -138,7 +138,7 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 	if managementAPIAddr == "" {
 		managementAPIAddr = "localhost:8080"
 	}
-	client.apiClient = NewManagementAPIClient(managementAPIAddr, config.ClientID, config.AuthToken)
+	client.apiClient = NewManagementAPIClient(managementAPIAddr, config.ClientID, config.SecretKey)
 
 	// 初始化隧道连接池
 	client.tunnelPool = NewTunnelPool(client, DefaultTunnelPoolConfig())
@@ -265,7 +265,6 @@ func (c *TunnoxClient) GetStatusInfo() *StatusInfo {
 type Status struct {
 	Connected    bool
 	ClientID     int64
-	DeviceID     string
 	ServerAddr   string
 	Protocol     string
 	Uptime       time.Duration
@@ -288,20 +287,11 @@ func (c *TunnoxClient) GetStatus() *Status {
 		protocol = "tcp"
 	}
 
-	clientID := int64(0)
-	deviceID := ""
-	if config.ClientID > 0 {
-		clientID = config.ClientID
-	} else if config.Anonymous {
-		deviceID = config.DeviceID
-	}
-
 	statusInfo := c.GetStatusInfo()
 
 	return &Status{
 		Connected:    connected,
-		ClientID:     clientID,
-		DeviceID:     deviceID,
+		ClientID:     config.ClientID,
 		ServerAddr:   serverAddr,
 		Protocol:     protocol,
 		Uptime:       time.Since(c.startTime),

@@ -47,7 +47,7 @@ func TestLoadOrCreateConfig_AutoConnectConditions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config, err := loadOrCreateConfig(tt.configFile, "", tt.serverAddr, 0, "", "", false, tt.isCLIMode)
+			config, err := loadOrCreateConfig(tt.configFile, "", tt.serverAddr, 0, "", tt.isCLIMode)
 			if err != nil {
 				t.Fatalf("loadOrCreateConfig failed: %v", err)
 			}
@@ -65,9 +65,7 @@ func TestLoadOrCreateConfig_AutoConnectConditions(t *testing.T) {
 // TestValidateConfig_AutoConnectMode 测试自动连接模式下的配置验证
 func TestValidateConfig_AutoConnectMode(t *testing.T) {
 	config := &client.ClientConfig{
-		Anonymous: true,
-		DeviceID:  "test-device",
-		// Address 和 Protocol 都为空，模拟自动连接模式
+		// ClientID 和 SecretKey 为空，Address 和 Protocol 为空，模拟自动连接模式
 	}
 
 	// 自动连接模式（setDefaults=false）
@@ -85,9 +83,7 @@ func TestValidateConfig_AutoConnectMode(t *testing.T) {
 // TestValidateConfig_NonAutoConnectMode 测试非自动连接模式下的配置验证
 func TestValidateConfig_NonAutoConnectMode(t *testing.T) {
 	config := &client.ClientConfig{
-		Anonymous: true,
-		DeviceID:  "test-device",
-		// Address 和 Protocol 都为空
+		// ClientID 和 SecretKey 为空，Address 和 Protocol 为空
 	}
 
 	// 非自动连接模式（setDefaults=true），应该设置默认值

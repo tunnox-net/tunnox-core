@@ -15,10 +15,7 @@ func TestNewAutoConnector(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := &ClientConfig{
-		Anonymous: true,
-		DeviceID:  "test-device",
-	}
+	config := &ClientConfig{}
 	client := NewClient(ctx, config)
 	defer client.Close()
 
@@ -77,10 +74,7 @@ func TestAutoConnector_ContextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	config := &ClientConfig{
-		Anonymous: true,
-		DeviceID:  "test-device",
-	}
+	config := &ClientConfig{}
 	client := NewClient(ctx, config)
 	defer client.Close()
 

@@ -105,13 +105,9 @@ func (r *QuickCommandRunner) runStartCommand(args []string) (bool, error) {
 	// 显示连接信息
 	fmt.Println("Tunnox Client Running")
 	fmt.Println("=====================")
-	fmt.Printf("   Server:   %s\n", r.config.Server.Address)
-	fmt.Printf("   Protocol: %s\n", r.config.Server.Protocol)
-	if r.config.Anonymous {
-		fmt.Printf("   Mode:     Anonymous (device: %s)\n", r.config.DeviceID)
-	} else {
-		fmt.Printf("   Mode:     Authenticated (client_id: %d)\n", r.config.ClientID)
-	}
+	fmt.Printf("   Server:    %s\n", r.config.Server.Address)
+	fmt.Printf("   Protocol:  %s\n", r.config.Server.Protocol)
+	fmt.Printf("   Client ID: %d\n", r.config.ClientID)
 	fmt.Println()
 	fmt.Println("   Press Ctrl+C to stop")
 	fmt.Println()
@@ -163,12 +159,7 @@ func (r *QuickCommandRunner) runStatusCommand(args []string) (bool, error) {
 	}
 
 	fmt.Printf("  Server:           %s://%s\n", config.Server.Protocol, config.Server.Address)
-
-	if config.Anonymous {
-		fmt.Printf("  Mode:             Anonymous (device: %s)\n", config.DeviceID)
-	} else {
-		fmt.Printf("  Mode:             Authenticated (client_id: %d)\n", config.ClientID)
-	}
+	fmt.Printf("  Client ID:        %d\n", config.ClientID)
 
 	fmt.Printf("  Active Mappings:  %d\n", statusInfo.ActiveMappings)
 	fmt.Printf("  Bytes Sent:       %s\n", formatDataSize(statusInfo.TotalBytesSent))

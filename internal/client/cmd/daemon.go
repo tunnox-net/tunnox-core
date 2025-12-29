@@ -84,13 +84,9 @@ func runStart(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("Tunnox Client Starting...\n")
-	fmt.Printf("   Protocol: %s\n", config.Server.Protocol)
-	fmt.Printf("   Server:   %s://%s\n", config.Server.Protocol, config.Server.Address)
-	if config.Anonymous {
-		fmt.Printf("   Mode:     Anonymous (device: %s)\n", config.DeviceID)
-	} else {
-		fmt.Printf("   Mode:     Authenticated (client_id: %d)\n", config.ClientID)
-	}
+	fmt.Printf("   Protocol:  %s\n", config.Server.Protocol)
+	fmt.Printf("   Server:    %s://%s\n", config.Server.Protocol, config.Server.Address)
+	fmt.Printf("   Client ID: %d\n", config.ClientID)
 	fmt.Println()
 
 	// 创建客户端
@@ -158,13 +154,7 @@ func runStatus(cmd *cobra.Command, args []string) {
 	}
 
 	fmt.Printf("  Server:           %s://%s\n", config.Server.Protocol, config.Server.Address)
-
-	if config.Anonymous {
-		fmt.Printf("  Mode:             Anonymous (device: %s)\n", config.DeviceID)
-	} else {
-		fmt.Printf("  Mode:             Authenticated (client_id: %d)\n", config.ClientID)
-	}
-
+	fmt.Printf("  Client ID:        %d\n", config.ClientID)
 	fmt.Printf("  Active Mappings:  %d\n", statusInfo.ActiveMappings)
 	fmt.Printf("  Bytes Sent:       %s\n", formatBytes(statusInfo.TotalBytesSent))
 	fmt.Printf("  Bytes Received:   %s\n", formatBytes(statusInfo.TotalBytesReceived))
