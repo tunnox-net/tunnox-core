@@ -7,7 +7,7 @@ import (
 )
 
 // ============================================================================
-// TCP 连接管理器实现
+// TCP 连接状态管理器
 // ============================================================================
 
 // TCPConnectionState TCP 连接状态管理器
@@ -62,6 +62,10 @@ func (s *TCPConnectionState) GetCreatedTime() time.Time {
 func (s *TCPConnectionState) IsStale(timeout time.Duration) bool {
 	return time.Since(s.lastActive) > timeout
 }
+
+// ============================================================================
+// TCP 超时管理器
+// ============================================================================
 
 // TCPConnectionTimeout TCP 超时管理器
 type TCPConnectionTimeout struct {
@@ -160,6 +164,10 @@ func (t *TCPConnectionTimeout) ResetDeadline() error {
 	return t.conn.SetDeadline(time.Time{})
 }
 
+// ============================================================================
+// TCP 错误处理器
+// ============================================================================
+
 // TCPConnectionError TCP 错误处理器
 type TCPConnectionError struct {
 	lastError error
@@ -238,6 +246,10 @@ func (e *TCPConnectionError) GetLastError() error {
 func (e *TCPConnectionError) ClearError() {
 	e.lastError = nil
 }
+
+// ============================================================================
+// TCP 连接复用策略
+// ============================================================================
 
 // TCPConnectionReuse TCP 连接复用策略
 type TCPConnectionReuse struct {

@@ -3,48 +3,150 @@ package session
 import (
 	"net"
 	"time"
+
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/stream"
 )
 
+// ============================================================================
+// 通用连接接口（协议无关）
+// ============================================================================
+
+// TunnelConnectionInterface 隧道连接接口（所有协议通用）
+// 抽象了不同协议的连接管理差异
+type TunnelConnectionInterface interface {
+	// 基础信息
+	GetConnectionID() string // 连接标识（协议特定实现）
+	GetClientID() int64      // 客户端ID（所有协议通用）
+	GetMappingID() string    // 映射ID（所有协议通用）
+	GetTunnelID() string     // 隧道ID（所有协议通用）
+	GetProtocol() string     // 协议类型（tcp/websocket/quic）
+
+	// 流接口
+	GetStream() stream.PackageStreamer // 获取流（所有协议通用）
+	GetNetConn() net.Conn              // 获取底层连接（TCP/WebSocket/QUIC 返回 net.Conn）
+
+	// 连接状态管理（统一接口）
+	ConnectionState() ConnectionStateManager     // 获取连接状态管理器
+	ConnectionTimeout() ConnectionTimeoutManager // 获取超时管理器
+	ConnectionError() ConnectionErrorHandler     // 获取错误处理器
+	ConnectionReuse() ConnectionReuseStrategy    // 获取复用策略
+
+	// 生命周期
+	Close() error   // 关闭连接（所有协议通用）
+	IsClosed() bool // 检查是否已关闭
+}
+
 // ControlConnectionInterface 控制连接接口
 type ControlConnectionInterface interface {
-	// GetConnID 获取连接ID
 	GetConnID() string
-
-	// GetStream 获取流（返回接口类型）
 	GetStream() stream.PackageStreamer
-
-	// GetRemoteAddr 获取远程地址
 	GetRemoteAddr() net.Addr
-
-	// Close 关闭连接
 	Close() error
-
-	// GetClientID 获取客户端ID
 	GetClientID() int64
-
-	// SetClientID 设置客户端ID
 	SetClientID(clientID int64)
-
-	// GetUserID 获取用户ID
 	GetUserID() string
-
-	// SetUserID 设置用户ID
 	SetUserID(userID string)
-
-	// IsAuthenticated 是否已认证
 	IsAuthenticated() bool
-
-	// SetAuthenticated 设置认证状态
 	SetAuthenticated(authenticated bool)
-
-	// GetProtocol 获取协议类型
 	GetProtocol() string
-
-	// UpdateActivity 更新活跃时间
 	UpdateActivity()
 }
+
+// ============================================================================
+// 连接状态管理接口
+// ============================================================================
+
+// ConnectionStateManager 连接状态管理器接口
+type ConnectionStateManager interface {
+	IsConnected() bool
+	IsClosed() bool
+	GetState() ConnectionStateType
+	SetState(state ConnectionStateType)
+	UpdateActivity()
+	GetLastActiveTime() time.Time
+	GetCreatedTime() time.Time
+	IsStale(timeout time.Duration) bool
+}
+
+// ConnectionStateType 连接状态类型
+type ConnectionStateType int
+
+const (
+	StateConnecting ConnectionStateType = iota // 连接中
+	StateConnected                             // 已连接
+	StateStreaming                             // 流模式（隧道数据传输）
+	StateClosing                               // 关闭中
+	StateClosed                                // 已关闭
+)
+
+// ============================================================================
+// 超时管理接口
+// ============================================================================
+
+// ConnectionTimeoutManager 连接超时管理器接口
+type ConnectionTimeoutManager interface {
+	SetReadDeadline(t time.Time) error
+	SetWriteDeadline(t time.Time) error
+	SetDeadline(t time.Time) error
+	GetReadTimeout() time.Duration
+	GetWriteTimeout() time.Duration
+	GetIdleTimeout() time.Duration
+	IsReadTimeout(err error) bool
+	IsWriteTimeout(err error) bool
+	IsIdleTimeout() bool
+	ResetReadDeadline() error
+	ResetWriteDeadline() error
+	ResetDeadline() error
+}
+
+// ============================================================================
+// 错误处理接口
+// ============================================================================
+
+// ConnectionErrorHandler 连接错误处理器接口
+type ConnectionErrorHandler interface {
+	HandleError(err error) error
+	IsRetryable(err error) bool
+	ShouldClose(err error) bool
+	IsTemporary(err error) bool
+	ClassifyError(err error) ErrorType
+	GetLastError() error
+	ClearError()
+}
+
+// ErrorType 错误类型
+type ErrorType int
+
+const (
+	ErrorNone     ErrorType = iota // 无错误
+	ErrorNetwork                   // 网络错误（可重试）
+	ErrorTimeout                   // 超时错误（可重试）
+	ErrorProtocol                  // 协议错误（不可重试）
+	ErrorAuth                      // 认证错误（不可重试）
+	ErrorClosed                    // 连接已关闭（不可重试）
+	ErrorUnknown                   // 未知错误
+)
+
+// ============================================================================
+// 连接复用策略接口
+// ============================================================================
+
+// ConnectionReuseStrategy 连接复用策略接口
+type ConnectionReuseStrategy interface {
+	CanReuse(conn TunnelConnectionInterface, tunnelID string) bool
+	ShouldCreateNew(tunnelID string) bool
+	MarkAsReusable(conn TunnelConnectionInterface)
+	MarkAsUsed(conn TunnelConnectionInterface, tunnelID string)
+	Release(conn TunnelConnectionInterface)
+	GetReuseCount(conn TunnelConnectionInterface) int
+	GetMaxReuseCount() int
+}
+
+// ============================================================================
+// ControlConnection 指令连接
+// ============================================================================
 
 // ControlConnection 指令连接（长连接，每个客户端1条）
 // 用途：命令传输、配置推送、心跳保活
@@ -74,12 +176,10 @@ func NewControlConnection(connID string, stream stream.PackageStreamer, remoteAd
 	}
 }
 
-// UpdateActivity 更新活跃时间
 func (c *ControlConnection) UpdateActivity() {
 	c.LastActiveAt = time.Now()
 }
 
-// IsStale 判断连接是否因超时而失效
 func (c *ControlConnection) IsStale(timeout time.Duration) bool {
 	if c == nil {
 		return true
@@ -87,7 +187,6 @@ func (c *ControlConnection) IsStale(timeout time.Duration) bool {
 	return time.Since(c.LastActiveAt) > timeout
 }
 
-// GetStream 获取Stream（实现 Connection 接口）
 func (c *ControlConnection) GetStream() stream.PackageStreamer {
 	if c == nil {
 		return nil
@@ -95,7 +194,6 @@ func (c *ControlConnection) GetStream() stream.PackageStreamer {
 	return c.Stream
 }
 
-// GetClientID 获取客户端ID（实现 ControlConnectionInterface 接口）
 func (c *ControlConnection) GetClientID() int64 {
 	if c == nil {
 		return 0
@@ -103,7 +201,6 @@ func (c *ControlConnection) GetClientID() int64 {
 	return c.ClientID
 }
 
-// GetUserID 获取用户ID（实现 ControlConnectionInterface 接口）
 func (c *ControlConnection) GetUserID() string {
 	if c == nil {
 		return ""
@@ -111,7 +208,6 @@ func (c *ControlConnection) GetUserID() string {
 	return c.UserID
 }
 
-// IsAuthenticated 是否已认证（实现 ControlConnectionInterface 接口）
 func (c *ControlConnection) IsAuthenticated() bool {
 	if c == nil {
 		return false
@@ -119,7 +215,6 @@ func (c *ControlConnection) IsAuthenticated() bool {
 	return c.Authenticated
 }
 
-// GetProtocol 获取协议类型（实现 ControlConnectionInterface 接口）
 func (c *ControlConnection) GetProtocol() string {
 	if c == nil {
 		return ""
@@ -127,7 +222,6 @@ func (c *ControlConnection) GetProtocol() string {
 	return c.Protocol
 }
 
-// SetClientID 设置客户端ID（实现 ControlConnectionInterface 接口）
 func (c *ControlConnection) SetClientID(clientID int64) {
 	if c == nil {
 		return
@@ -135,7 +229,6 @@ func (c *ControlConnection) SetClientID(clientID int64) {
 	c.ClientID = clientID
 }
 
-// SetUserID 设置用户ID（实现 ControlConnectionInterface 接口）
 func (c *ControlConnection) SetUserID(userID string) {
 	if c == nil {
 		return
@@ -143,7 +236,6 @@ func (c *ControlConnection) SetUserID(userID string) {
 	c.UserID = userID
 }
 
-// SetAuthenticated 设置认证状态（实现 ControlConnectionInterface 接口）
 func (c *ControlConnection) SetAuthenticated(authenticated bool) {
 	if c == nil {
 		return
@@ -151,7 +243,6 @@ func (c *ControlConnection) SetAuthenticated(authenticated bool) {
 	c.Authenticated = authenticated
 }
 
-// Close 关闭连接（实现 Connection 接口）
 func (c *ControlConnection) Close() error {
 	if c == nil || c.Stream == nil {
 		return nil
@@ -160,7 +251,6 @@ func (c *ControlConnection) Close() error {
 	return nil
 }
 
-// GetConnID 获取连接ID
 func (c *ControlConnection) GetConnID() string {
 	if c == nil {
 		return ""
@@ -168,7 +258,6 @@ func (c *ControlConnection) GetConnID() string {
 	return c.ConnID
 }
 
-// GetRemoteAddr 获取远程地址（实现 Connection 接口）
 func (c *ControlConnection) GetRemoteAddr() net.Addr {
 	if c == nil {
 		return nil
@@ -176,13 +265,16 @@ func (c *ControlConnection) GetRemoteAddr() net.Addr {
 	return c.RemoteAddr
 }
 
-// GetRemoteAddrString 获取远程地址字符串（向后兼容）
 func (c *ControlConnection) GetRemoteAddrString() string {
 	if c == nil || c.RemoteAddr == nil {
 		return ""
 	}
 	return c.RemoteAddr.String()
 }
+
+// ============================================================================
+// TunnelConnection 映射连接
+// ============================================================================
 
 // TunnelConnection 映射连接（短连接，按需建立）
 // 用途：纯数据透传
@@ -201,7 +293,7 @@ type TunnelConnection struct {
 	// 底层连接（用于兼容）
 	baseConn *types.Connection
 
-	// ✨ Phase 2: 隧道迁移支持
+	// Phase 2: 隧道迁移支持
 	sendBuffer    *TunnelSendBuffer    // 发送缓冲区（支持重传）
 	receiveBuffer *TunnelReceiveBuffer // 接收缓冲区（支持重组）
 	enableSeqNum  bool                 // 是否启用序列号（默认false，保持兼容）
@@ -217,25 +309,20 @@ func NewTunnelConnection(connID string, stream stream.PackageStreamer, remoteAdd
 		Authenticated: false,
 		CreatedAt:     time.Now(),
 		LastActiveAt:  time.Now(),
-
-		// ✨ Phase 2: 初始化缓冲区（默认不启用）
 		sendBuffer:    NewTunnelSendBuffer(),
 		receiveBuffer: NewTunnelReceiveBuffer(),
 		enableSeqNum:  false, // 默认禁用，保持向后兼容
 	}
 }
 
-// EnableSequenceNumbers 启用序列号支持（用于支持迁移的隧道）
 func (t *TunnelConnection) EnableSequenceNumbers() {
 	t.enableSeqNum = true
 }
 
-// IsSequenceNumbersEnabled 检查是否启用序列号
 func (t *TunnelConnection) IsSequenceNumbersEnabled() bool {
 	return t.enableSeqNum
 }
 
-// GetStream 获取Stream（实现 Connection 接口）
 func (t *TunnelConnection) GetStream() stream.PackageStreamer {
 	if t == nil {
 		return nil
@@ -243,7 +330,6 @@ func (t *TunnelConnection) GetStream() stream.PackageStreamer {
 	return t.Stream
 }
 
-// GetConnID 获取连接ID（实现 Connection 接口）
 func (t *TunnelConnection) GetConnID() string {
 	if t == nil {
 		return ""
@@ -251,7 +337,6 @@ func (t *TunnelConnection) GetConnID() string {
 	return t.ConnID
 }
 
-// GetRemoteAddr 获取远程地址（实现 Connection 接口）
 func (t *TunnelConnection) GetRemoteAddr() net.Addr {
 	if t == nil {
 		return nil
@@ -259,7 +344,6 @@ func (t *TunnelConnection) GetRemoteAddr() net.Addr {
 	return t.RemoteAddr
 }
 
-// GetTunnelID 获取隧道ID（实现 TunnelConnectionInterface 接口）
 func (t *TunnelConnection) GetTunnelID() string {
 	if t == nil {
 		return ""
@@ -267,7 +351,6 @@ func (t *TunnelConnection) GetTunnelID() string {
 	return t.TunnelID
 }
 
-// GetMappingID 获取映射ID（实现 TunnelConnectionInterface 接口）
 func (t *TunnelConnection) GetMappingID() string {
 	if t == nil {
 		return ""
@@ -275,7 +358,6 @@ func (t *TunnelConnection) GetMappingID() string {
 	return t.MappingID
 }
 
-// IsAuthenticated 是否已认证（实现 TunnelConnectionInterface 接口）
 func (t *TunnelConnection) IsAuthenticated() bool {
 	if t == nil {
 		return false
@@ -283,7 +365,6 @@ func (t *TunnelConnection) IsAuthenticated() bool {
 	return t.Authenticated
 }
 
-// GetProtocol 获取协议类型（实现 TunnelConnectionInterface 接口）
 func (t *TunnelConnection) GetProtocol() string {
 	if t == nil {
 		return ""
@@ -291,7 +372,6 @@ func (t *TunnelConnection) GetProtocol() string {
 	return t.Protocol
 }
 
-// UpdateActivity 更新活跃时间（实现 TunnelConnectionInterface 接口）
 func (t *TunnelConnection) UpdateActivity() {
 	if t == nil {
 		return
@@ -299,7 +379,6 @@ func (t *TunnelConnection) UpdateActivity() {
 	t.LastActiveAt = time.Now()
 }
 
-// Close 关闭连接（实现 Connection 接口）
 func (t *TunnelConnection) Close() error {
 	if t == nil || t.Stream == nil {
 		return nil
@@ -309,9 +388,103 @@ func (t *TunnelConnection) Close() error {
 }
 
 // ClientConnection 通用客户端连接别名
-// 这是设计的一部分，用于提供更通用的接口名称
-// 底层实现为 ControlConnection（指令连接）
 type ClientConnection = ControlConnection
 
 // NewClientConnection 创建客户端连接的别名
 var NewClientConnection = NewControlConnection
+
+// ============================================================================
+// 连接工厂
+// ============================================================================
+
+// StreamProcessorAccessor 类型别名
+type StreamProcessorAccessor = stream.StreamProcessorAccessor
+
+// CreateTunnelConnection 从现有连接创建统一接口的隧道连接
+func CreateTunnelConnection(
+	connID string,
+	netConn net.Conn,
+	stream stream.PackageStreamer,
+	clientID int64,
+	mappingID string,
+	tunnelID string,
+) TunnelConnectionInterface {
+	return NewTCPTunnelConnection(connID, netConn, clientID, mappingID, tunnelID, stream)
+}
+
+// extractProtocol 从 net.Conn 提取协议类型
+func extractProtocol(netConn net.Conn) string {
+	if netConn != nil {
+		addr := netConn.RemoteAddr()
+		if addr != nil {
+			network := addr.Network()
+			switch network {
+			case "tcp", "tcp4", "tcp6":
+				return "tcp"
+			case "kcp":
+				return "kcp"
+			case "ws", "wss":
+				return "websocket"
+			case "quic":
+				return "quic"
+			}
+		}
+	}
+	return "tcp"
+}
+
+// extractClientID 从 stream 或 net.Conn 提取 clientID
+func extractClientID(stream stream.PackageStreamer, netConn net.Conn) int64 {
+	if stream != nil {
+		reader := stream.GetReader()
+		if reader != nil {
+			if clientIDConn, ok := reader.(interface {
+				GetClientID() int64
+			}); ok {
+				clientID := clientIDConn.GetClientID()
+				if clientID > 0 {
+					return clientID
+				}
+			}
+		}
+
+		if streamWithClientID, ok := stream.(interface {
+			GetClientID() int64
+		}); ok {
+			clientID := streamWithClientID.GetClientID()
+			if clientID > 0 {
+				return clientID
+			}
+		}
+
+		type streamProcessorGetter interface {
+			GetStreamProcessor() StreamProcessorAccessor
+		}
+		if adapter, ok := stream.(streamProcessorGetter); ok {
+			streamProc := adapter.GetStreamProcessor()
+			if streamProc != nil {
+				clientID := streamProc.GetClientID()
+				if clientID > 0 {
+					return clientID
+				}
+			}
+		}
+	}
+
+	return 0
+}
+
+// CreateTunnelConnectionFromExisting 从现有连接创建统一接口（自动提取信息）
+func CreateTunnelConnectionFromExisting(
+	connID string,
+	netConn net.Conn,
+	stream stream.PackageStreamer,
+	mappingID string,
+	tunnelID string,
+) TunnelConnectionInterface {
+	clientID := extractClientID(stream, netConn)
+	if clientID == 0 {
+		corelog.Warnf("CreateTunnelConnectionFromExisting: failed to extract clientID, connID=%s", connID)
+	}
+	return CreateTunnelConnection(connID, netConn, stream, clientID, mappingID, tunnelID)
+}

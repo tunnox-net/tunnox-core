@@ -9,6 +9,7 @@ import (
 
 	"tunnox-core/internal/client/mapping"
 	"tunnox-core/internal/client/notify"
+	"tunnox-core/internal/client/socks5"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/core/dispose"
 	corelog "tunnox-core/internal/core/log"
@@ -42,7 +43,7 @@ type TunnoxClient struct {
 	mu              sync.RWMutex
 
 	// SOCKS5 代理管理器（运行在入口端 ClientA）
-	socks5Manager *SOCKS5Manager
+	socks5Manager *socks5.Manager
 
 	// 商业化控制：配额缓存
 	cachedQuota      *models.UserQuota
@@ -129,7 +130,7 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 
 	// 初始化 SOCKS5 管理器（延迟初始化隧道创建器，等待 clientID 确定）
 	tunnelCreator := NewSOCKS5TunnelCreatorImpl(client)
-	client.socks5Manager = NewSOCKS5Manager(client.Ctx(), config.ClientID, tunnelCreator)
+	client.socks5Manager = socks5.NewManager(client.Ctx(), config.ClientID, tunnelCreator)
 
 	// 初始化API客户端（用于CLI）
 	// 假设Management API在服务器地址的8080端口

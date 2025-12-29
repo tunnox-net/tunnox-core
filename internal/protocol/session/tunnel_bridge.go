@@ -6,13 +6,34 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
-	corelog "tunnox-core/internal/core/log"
+	"time"
 
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 
 	"golang.org/x/time/rate"
 )
+
+// ============================================================================
+// 接口定义
+// ============================================================================
+
+// TunnelBridgeAccessor 隧道桥接访问器接口（用于API层和跨包访问）
+// 避免循环依赖，提供最小化的访问接口
+type TunnelBridgeAccessor interface {
+	GetTunnelID() string
+	GetSourceConnectionID() string
+	GetTargetConnectionID() string
+	GetMappingID() string
+	GetClientID() int64
+	IsActive() bool
+	Close() error
+}
+
+// ============================================================================
+// 结构体定义
+// ============================================================================
 
 // TunnelBridge 隧道桥接器
 // 负责在两个隧道连接之间进行数据桥接（源端客户端 <-> 目标端客户端）
@@ -71,6 +92,10 @@ type TunnelBridgeConfig struct {
 	BandwidthLimit int64           // 字节/秒，0表示不限制
 	CloudControl   CloudControlAPI // 用于上报流量统计（可选）
 }
+
+// ============================================================================
+// 构造函数和生命周期
+// ============================================================================
 
 // NewTunnelBridge 创建隧道桥接器
 func NewTunnelBridge(parentCtx context.Context, config *TunnelBridgeConfig) *TunnelBridge {
@@ -173,4 +198,232 @@ func NewTunnelBridge(parentCtx context.Context, config *TunnelBridgeConfig) *Tun
 func (b *TunnelBridge) Close() error {
 	b.ManagerBase.Close()
 	return nil
+}
+
+// ============================================================================
+// 访问器方法 (实现 TunnelBridgeAccessor 接口)
+// ============================================================================
+
+// GetTunnelID 获取隧道ID
+func (b *TunnelBridge) GetTunnelID() string {
+	if b == nil {
+		return ""
+	}
+	return b.tunnelID
+}
+
+// GetSourceConnectionID 获取源连接ID
+func (b *TunnelBridge) GetSourceConnectionID() string {
+	if b == nil {
+		return ""
+	}
+	b.tunnelConnMu.RLock()
+	defer b.tunnelConnMu.RUnlock()
+	if b.sourceTunnelConn != nil {
+		return b.sourceTunnelConn.GetConnectionID()
+	}
+	return ""
+}
+
+// GetTargetConnectionID 获取目标连接ID
+func (b *TunnelBridge) GetTargetConnectionID() string {
+	if b == nil {
+		return ""
+	}
+	b.tunnelConnMu.RLock()
+	defer b.tunnelConnMu.RUnlock()
+	if b.targetTunnelConn != nil {
+		return b.targetTunnelConn.GetConnectionID()
+	}
+	return ""
+}
+
+// GetMappingID 获取映射ID
+func (b *TunnelBridge) GetMappingID() string {
+	if b == nil {
+		return ""
+	}
+	return b.mappingID
+}
+
+// GetClientID 获取客户端ID
+func (b *TunnelBridge) GetClientID() int64 {
+	if b == nil {
+		return 0
+	}
+	b.tunnelConnMu.RLock()
+	defer b.tunnelConnMu.RUnlock()
+	if b.sourceTunnelConn != nil {
+		return b.sourceTunnelConn.GetClientID()
+	}
+	return 0
+}
+
+// IsActive 检查桥接是否活跃
+func (b *TunnelBridge) IsActive() bool {
+	if b == nil {
+		return false
+	}
+	return !b.IsClosed()
+}
+
+// ============================================================================
+// 连接管理
+// ============================================================================
+
+// SetTargetConnection 设置目标端连接（统一接口）
+func (b *TunnelBridge) SetTargetConnection(conn TunnelConnectionInterface) {
+	b.tunnelConnMu.Lock()
+	b.targetTunnelConn = conn
+	if conn != nil {
+		b.targetConn = conn.GetNetConn()
+		b.targetStream = conn.GetStream()
+		b.targetForwarder = createDataForwarder(b.targetConn, b.targetStream)
+	}
+	b.tunnelConnMu.Unlock()
+	close(b.ready)
+}
+
+// SetTargetConnectionLegacy 设置目标端连接（向后兼容）
+func (b *TunnelBridge) SetTargetConnectionLegacy(targetConn net.Conn, targetStream stream.PackageStreamer) {
+	b.targetConn = targetConn
+	b.targetStream = targetStream
+	b.targetForwarder = createDataForwarder(targetConn, targetStream)
+
+	// 创建统一接口
+	if targetConn != nil || targetStream != nil {
+		connID := ""
+		if targetConn != nil {
+			connID = targetConn.RemoteAddr().String()
+		}
+		clientID := extractClientID(targetStream, targetConn)
+		b.tunnelConnMu.Lock()
+		b.targetTunnelConn = CreateTunnelConnection(
+			connID,
+			targetConn,
+			targetStream,
+			clientID,
+			b.mappingID,
+			b.tunnelID,
+		)
+		b.tunnelConnMu.Unlock()
+	}
+
+	close(b.ready)
+}
+
+// SetSourceConnection 设置源端连接（统一接口）
+func (b *TunnelBridge) SetSourceConnection(conn TunnelConnectionInterface) {
+	b.tunnelConnMu.Lock()
+	b.sourceTunnelConn = conn
+	if conn != nil {
+		b.sourceConn = conn.GetNetConn()
+		b.sourceStream = conn.GetStream()
+		b.sourceForwarder = createDataForwarder(b.sourceConn, b.sourceStream)
+	} else {
+		b.sourceForwarder = nil
+	}
+	b.tunnelConnMu.Unlock()
+}
+
+// SetSourceConnectionLegacy 设置源端连接（向后兼容）
+func (b *TunnelBridge) SetSourceConnectionLegacy(sourceConn net.Conn, sourceStream stream.PackageStreamer) {
+	b.sourceConnMu.Lock()
+	b.sourceConn = sourceConn
+	b.sourceForwarder = createDataForwarder(sourceConn, sourceStream)
+	b.sourceConnMu.Unlock()
+	if sourceStream != nil {
+		b.sourceStream = sourceStream
+	}
+
+	// 创建统一接口
+	if sourceConn != nil || sourceStream != nil {
+		connID := ""
+		if sourceConn != nil {
+			connID = sourceConn.RemoteAddr().String()
+		}
+		clientID := extractClientID(sourceStream, sourceConn)
+		b.tunnelConnMu.Lock()
+		b.sourceTunnelConn = CreateTunnelConnection(
+			connID,
+			sourceConn,
+			sourceStream,
+			clientID,
+			b.mappingID,
+			b.tunnelID,
+		)
+		b.tunnelConnMu.Unlock()
+	}
+}
+
+// getSourceConn 获取源端连接（线程安全）
+func (b *TunnelBridge) getSourceConn() net.Conn {
+	b.sourceConnMu.RLock()
+	defer b.sourceConnMu.RUnlock()
+	return b.sourceConn
+}
+
+// getSourceForwarder 获取源端数据转发器（线程安全）
+func (b *TunnelBridge) getSourceForwarder() DataForwarder {
+	b.sourceConnMu.RLock()
+	defer b.sourceConnMu.RUnlock()
+	return b.sourceForwarder
+}
+
+// WaitForTarget 等待目标端连接就绪
+func (b *TunnelBridge) WaitForTarget(timeout time.Duration) error {
+	select {
+	case <-b.ready:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("timeout waiting for target connection")
+	case <-b.Ctx().Done():
+		return b.Ctx().Err()
+	}
+}
+
+// IsTargetReady 检查目标端是否就绪
+func (b *TunnelBridge) IsTargetReady() bool {
+	select {
+	case <-b.ready:
+		return true
+	default:
+		return false
+	}
+}
+
+// NotifyTargetReady 通知目标端就绪（用于跨节点场景）
+func (b *TunnelBridge) NotifyTargetReady() {
+	select {
+	case <-b.ready:
+		// 已经关闭，忽略
+	default:
+		close(b.ready)
+	}
+}
+
+// ============================================================================
+// 跨节点连接管理
+// ============================================================================
+
+// SetCrossNodeConnection 设置跨节点连接
+func (b *TunnelBridge) SetCrossNodeConnection(conn *CrossNodeConn) {
+	b.crossNodeConnMu.Lock()
+	b.crossNodeConn = conn
+	b.crossNodeConnMu.Unlock()
+}
+
+// GetCrossNodeConnection 获取跨节点连接
+func (b *TunnelBridge) GetCrossNodeConnection() *CrossNodeConn {
+	b.crossNodeConnMu.RLock()
+	defer b.crossNodeConnMu.RUnlock()
+	return b.crossNodeConn
+}
+
+// ReleaseCrossNodeConnection 释放跨节点连接
+// 只清理 Bridge 中的引用，连接的生命周期由数据转发函数管理
+func (b *TunnelBridge) ReleaseCrossNodeConnection() {
+	b.crossNodeConnMu.Lock()
+	b.crossNodeConn = nil // 只清理引用，不关闭连接
+	b.crossNodeConnMu.Unlock()
 }
