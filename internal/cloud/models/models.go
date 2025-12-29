@@ -167,10 +167,10 @@ type PortMapping struct {
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// 时间戳和统计
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	CreatedAt    time.Time          `json:"created_at"`            // 创建时间
-	UpdatedAt    time.Time          `json:"updated_at"`            // 更新时间
-	LastActive   *time.Time         `json:"last_active,omitempty"` // 最后活跃时间
-	TrafficStats TrafficStats `json:"traffic_stats"` // 流量统计
+	CreatedAt    time.Time    `json:"created_at"`            // 创建时间
+	UpdatedAt    time.Time    `json:"updated_at"`            // 更新时间
+	LastActive   *time.Time   `json:"last_active,omitempty"` // 最后活跃时间
+	TrafficStats TrafficStats `json:"traffic_stats"`         // 流量统计
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// 元数据

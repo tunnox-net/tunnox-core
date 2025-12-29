@@ -6,6 +6,9 @@ import (
 	"tunnox-core/internal/constants"
 )
 
+// 编译时接口断言，确保 NodeRepository 实现了 INodeRepository 接口
+var _ INodeRepository = (*NodeRepository)(nil)
+
 // NodeRepository 节点数据访问
 type NodeRepository struct {
 	*GenericRepositoryImpl[*models.Node]

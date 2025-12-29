@@ -32,18 +32,18 @@ var DefaultReconnectConfig = ReconnectConfig{
 	Backoff:                 2.0,
 	JitterFactor:            0.3, // 30% 随机抖动
 	CircuitBreakerEnabled:   true,
-	CircuitBreakerThreshold: 10,               // 连续失败10次后熔断
-	CircuitBreakerTimeout:   5 * time.Minute,  // 熔断5分钟后重试
+	CircuitBreakerThreshold: 10,              // 连续失败10次后熔断
+	CircuitBreakerTimeout:   5 * time.Minute, // 熔断5分钟后重试
 }
 
 // CircuitBreaker 熔断器
 type CircuitBreaker struct {
-	mu               sync.Mutex
-	failureCount     int       // 连续失败次数
-	lastFailureTime  time.Time // 最后失败时间
-	state            string    // closed, open, half-open
-	threshold        int       // 熔断阈值
-	timeout          time.Duration
+	mu              sync.Mutex
+	failureCount    int       // 连续失败次数
+	lastFailureTime time.Time // 最后失败时间
+	state           string    // closed, open, half-open
+	threshold       int       // 熔断阈值
+	timeout         time.Duration
 }
 
 // NewCircuitBreaker 创建熔断器

@@ -154,6 +154,8 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func() error) {
 
 	curParent := parent
 	if curParent == nil {
+		// 防御性代码：当调用方传入 nil 时，使用 context.Background()
+		// 注意：正常情况下调用方应该传入有效的 parent context
 		curParent = context.Background()
 	}
 

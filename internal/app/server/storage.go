@@ -1,9 +1,9 @@
 package server
 
 import (
-	"fmt"
 	"time"
 
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -33,8 +33,7 @@ func createStorage(factory *storage.StorageFactory, config *Config) (storage.Sto
 
 // createRemoteStorage 创建远程存储（连接 tunnox-storage 服务）
 func createRemoteStorage(factory *storage.StorageFactory, config *Config) (storage.Storage, error) {
-	fmt.Printf("✅ Using Remote Storage\n")
-	fmt.Printf("   → URL: %s\n", config.Storage.URL)
+	corelog.Infof("Using Remote Storage, URL: %s", config.Storage.URL)
 
 	// 本地缓存类型（用于持久化数据的缓存）
 	cacheType := "memory"
@@ -48,10 +47,9 @@ func createRemoteStorage(factory *storage.StorageFactory, config *Config) (stora
 			DB:       config.Redis.DB,
 			PoolSize: 10,
 		}
-		fmt.Printf("   → Local Cache: Memory\n")
-		fmt.Printf("   → Shared Cache: Redis (%s) - cross-node sharing enabled\n", config.Redis.Addr)
+		corelog.Infof("Remote Storage config: Local Cache=Memory, Shared Cache=Redis(%s)", config.Redis.Addr)
 	} else {
-		fmt.Printf("   → Cache: Memory - single node mode\n")
+		corelog.Infof("Remote Storage config: Cache=Memory (single node mode)")
 	}
 
 	hybridConfig := &storage.HybridStorageConfig{
@@ -72,18 +70,16 @@ func createRemoteStorage(factory *storage.StorageFactory, config *Config) (stora
 
 // createRedisStorage 创建 Redis 存储（集群模式）
 func createRedisStorage(factory *storage.StorageFactory, config *Config) (storage.Storage, error) {
-	fmt.Printf("✅ Using Redis Storage (Cluster Mode)\n")
-	fmt.Printf("   → Addr: %s\n", config.Redis.Addr)
-	fmt.Printf("   → Cache: Redis\n")
+	corelog.Infof("Using Redis Storage (Cluster Mode), Addr: %s", config.Redis.Addr)
 
 	// 集群模式下不启用 JSON 持久化（避免多节点写冲突）
 	// 如果需要持久化，应该使用远程存储
 	enablePersistent := false
 	if config.Storage.Enabled {
-		fmt.Printf("   → Persistent: Remote (%s)\n", config.Storage.URL)
+		corelog.Infof("Redis Storage config: Cache=Redis, Persistent=Remote(%s)", config.Storage.URL)
 		enablePersistent = true
 	} else {
-		fmt.Printf("   → Persistent: Disabled (cluster mode, use remote storage for persistence)\n")
+		corelog.Infof("Redis Storage config: Cache=Redis, Persistent=Disabled (cluster mode)")
 	}
 
 	redisConfig := &storage.RedisConfig{
@@ -115,11 +111,9 @@ func createRedisStorage(factory *storage.StorageFactory, config *Config) (storag
 
 // createPersistentStorage 创建持久化存储（单节点模式）
 func createPersistentStorage(factory *storage.StorageFactory, config *Config) (storage.Storage, error) {
-	fmt.Printf("✅ Using Persistent Storage (Standalone Mode)\n")
-	fmt.Printf("   → Cache: Memory\n")
-	fmt.Printf("   → Persistent: Local JSON (%s)\n", config.Persistence.File)
+	corelog.Infof("Using Persistent Storage (Standalone Mode), Cache=Memory, Persistent=LocalJSON(%s)", config.Persistence.File)
 	if config.Persistence.AutoSave {
-		fmt.Printf("   → Auto-save: Enabled (interval: %ds)\n", config.Persistence.SaveInterval)
+		corelog.Infof("Persistent Storage auto-save enabled, interval: %ds", config.Persistence.SaveInterval)
 	}
 
 	hybridConfig := &storage.HybridStorageConfig{
@@ -139,9 +133,7 @@ func createPersistentStorage(factory *storage.StorageFactory, config *Config) (s
 
 // createMemoryStorage 创建纯内存存储
 func createMemoryStorage(factory *storage.StorageFactory) (storage.Storage, error) {
-	fmt.Printf("✅ Using Memory Storage (No Persistence)\n")
-	fmt.Printf("   → Cache: Memory\n")
-	fmt.Printf("   → Persistent: Disabled\n")
+	corelog.Infof("Using Memory Storage (No Persistence), Cache=Memory")
 
 	hybridConfig := &storage.HybridStorageConfig{
 		CacheType:        "memory",

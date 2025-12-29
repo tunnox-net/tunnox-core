@@ -70,13 +70,19 @@ func (s *SessionManager) handleConfigPushBroadcast(msg *broker.ConfigPushMessage
 
 	// 推送配置
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
 		select {
-		case <-ctx.Done():
+		case <-s.Ctx().Done():
+			return
 		default:
-			targetConn.Stream.WritePacket(pkt, true, 0)
+			// 使用带超时的 context，避免阻塞过久
+			ctx, cancel := context.WithTimeout(s.Ctx(), 5*time.Second)
+			defer cancel()
+
+			select {
+			case <-ctx.Done():
+			default:
+				targetConn.Stream.WritePacket(pkt, true, 0)
+			}
 		}
 	}()
 }

@@ -1,5 +1,40 @@
 package configs
 
+import (
+	"time"
+	"tunnox-core/internal/cloud/constants"
+)
+
+// ControlConfig 云控配置
+type ControlConfig struct {
+	APIEndpoint string        `json:"api_endpoint"`
+	APIKey      string        `json:"api_key,omitempty"`
+	APISecret   string        `json:"api_secret,omitempty"`
+	Timeout     time.Duration `json:"timeout"`
+	NodeID      string        `json:"node_id,omitempty"`
+	NodeName    string        `json:"node_name,omitempty"`
+	UseBuiltIn  bool          `json:"use_built_in"`
+
+	// JWT配置
+	JWTSecretKey      string        `json:"jwt_secret_key"`     // JWT签名密钥
+	JWTExpiration     time.Duration `json:"jwt_expiration"`     // JWT过期时间
+	RefreshExpiration time.Duration `json:"refresh_expiration"` // 刷新Token过期时间
+	JWTIssuer         string        `json:"jwt_issuer"`         // JWT签发者
+}
+
+// DefaultControlConfig 返回默认配置
+func DefaultControlConfig() *ControlConfig {
+	return &ControlConfig{
+		APIEndpoint:       "http://localhost:8080",
+		Timeout:           30 * time.Second,
+		UseBuiltIn:        true,
+		JWTSecretKey:      "your-secret-key",
+		JWTExpiration:     constants.DefaultDataTTL,
+		RefreshExpiration: 7 * constants.DefaultDataTTL, // 7天
+		JWTIssuer:         "tunnox",
+	}
+}
+
 // ClientConfig 客户端配置
 type ClientConfig struct {
 	EnableCompression bool  `json:"enable_compression"` // 是否启用压缩

@@ -13,6 +13,9 @@ import (
 	"tunnox-core/internal/core/dispose"
 )
 
+// 编译时接口断言，确保 ConnectionRepo 实现了 IConnectionRepository 接口
+var _ IConnectionRepository = (*ConnectionRepo)(nil)
+
 // ConnectionRepo 连接数据访问
 type ConnectionRepo struct {
 	*GenericRepositoryImpl[*models.ConnectionInfo]

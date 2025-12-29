@@ -133,8 +133,8 @@ func (cm *ConfigManager) watchConfigChanges() {
 	for {
 		select {
 		case <-ticker.C:
-			ctx := context.Background()
-			if err := cm.LoadConfig(ctx); err != nil {
+			// 使用 ConfigManager 自身的 context，遵循 dispose 层次结构
+			if err := cm.LoadConfig(cm.Ctx()); err != nil {
 				// 记录错误但不中断监听
 				continue
 			}

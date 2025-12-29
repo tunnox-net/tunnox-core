@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/cloud/distributed"
-	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/storage"
@@ -15,17 +15,14 @@ import (
 // CloudControl 基础云控实现，所有存储操作通过 Storage 接口
 // 业务逻辑、资源管理、定时清理等通用逻辑全部在这里实现
 // 子类只需注入不同的 Storage 实现
+//
+// 架构说明：CloudControl 通过 Service 层访问数据，遵循 Manager -> Service -> Repository 架构
 
 type CloudControl struct {
-	*dispose.ResourceBase
+	*dispose.ManagerBase
 	config            *ControlConfig
 	storage           storage.Storage
 	idManager         *idgen.IDManager
-	userRepo          *repos.UserRepository
-	clientRepo        *repos.ClientRepository
-	mappingRepo       *repos.PortMappingRepo
-	nodeRepo          *repos.NodeRepository
-	connRepo          *repos.ConnectionRepo
 	jwtManager        *JWTManager
 	configManager     *ConfigManager
 	cleanupManager    *CleanupManager
@@ -37,50 +34,68 @@ type CloudControl struct {
 	lock              distributed.DistributedLock
 	cleanupTicker     *time.Ticker
 	done              chan bool
+
+	// Service 层引用，用于 auth_manager 等需要直接访问 Service 的场景
+	userService        services.UserService
+	clientService      services.ClientService
+	nodeService        services.NodeService
+	portMappingService services.PortMappingService
 }
 
-func NewCloudControl(config *ControlConfig, storage storage.Storage) *CloudControl {
-	ctx := context.Background()
-	repo := repos.NewRepository(storage)
+// CloudControlDeps 云控依赖项，包含所有需要的 Service 实例
+type CloudControlDeps struct {
+	UserService        services.UserService
+	ClientService      services.ClientService
+	PortMappingService services.PortMappingService
+	NodeService        services.NodeService
+	ConnectionService  services.ConnectionService
+	AnonymousService   services.AnonymousService
+	StatsService       services.StatsService
+}
 
+// NewCloudControl 创建新的云控实例
+// 参数 deps 包含所有需要的 Service 实例，遵循依赖注入原则
+func NewCloudControl(parentCtx context.Context, config *ControlConfig, storage storage.Storage, deps *CloudControlDeps) *CloudControl {
 	// 使用锁工厂创建分布式锁
 	lockFactory := distributed.NewLockFactory(storage)
 	owner := fmt.Sprintf("cloud_control_%d", time.Now().UnixNano())
 	lock := lockFactory.CreateDefaultLock(owner)
 
-	// 创建仓库实例
-	userRepo := repos.NewUserRepository(repo)
-	clientRepo := repos.NewClientRepository(repo)
-	mappingRepo := repos.NewPortMappingRepo(repo)
-	nodeRepo := repos.NewNodeRepository(repo)
-	connRepo := repos.NewConnectionRepo(ctx, repo)
-
 	// 创建ID管理器
-	idManager := idgen.NewIDManager(storage, ctx)
+	idManager := idgen.NewIDManager(storage, parentCtx)
+
+	// 创建 StatsManager（需要 Services）
+	statsManager := NewStatsManager(
+		deps.UserService,
+		deps.ClientService,
+		deps.PortMappingService,
+		deps.StatsService,
+		storage,
+		parentCtx,
+	)
 
 	base := &CloudControl{
-		ResourceBase:      dispose.NewResourceBase("CloudControl"),
+		ManagerBase:       dispose.NewManager("CloudControl", parentCtx),
 		config:            config,
 		storage:           storage,
 		idManager:         idManager,
-		userRepo:          userRepo,
-		clientRepo:        clientRepo,
-		mappingRepo:       mappingRepo,
-		nodeRepo:          nodeRepo,
-		connRepo:          connRepo,
-		jwtManager:        NewJWTManager(config, repo, ctx),
-		configManager:     NewConfigManager(storage, config, ctx),
-		cleanupManager:    NewCleanupManager(storage, lock, ctx),
-		statsManager:      NewStatsManager(userRepo, clientRepo, mappingRepo, nodeRepo, storage, ctx),
-		anonymousManager:  NewAnonymousManager(clientRepo, mappingRepo, idManager, ctx),
-		nodeManager:       NewNodeManager(nodeRepo, ctx),
-		searchManager:     NewSearchManager(userRepo, clientRepo, mappingRepo, ctx),
-		connectionManager: NewConnectionManager(connRepo, idManager, ctx),
+		jwtManager:        NewJWTManager(config, storage, parentCtx),
+		configManager:     NewConfigManager(storage, config, parentCtx),
+		cleanupManager:    NewCleanupManager(storage, lock, parentCtx),
+		statsManager:      statsManager,
+		anonymousManager:  NewAnonymousManager(deps.AnonymousService, parentCtx),
+		nodeManager:       NewNodeManager(deps.NodeService, parentCtx),
+		searchManager:     NewSearchManager(deps.UserService, deps.ClientService, deps.PortMappingService, parentCtx),
+		connectionManager: NewConnectionManager(deps.ConnectionService, parentCtx),
 		lock:              lock,
 		cleanupTicker:     time.NewTicker(60 * time.Second), // 默认清理间隔
 		done:              make(chan bool),
+		// Service 层引用
+		userService:        deps.UserService,
+		clientService:      deps.ClientService,
+		nodeService:        deps.NodeService,
+		portMappingService: deps.PortMappingService,
 	}
-	base.Initialize(ctx)
 	return base
 }
 
@@ -114,12 +129,8 @@ func (c *CloudControl) Close() error {
 		close(c.done)
 	}
 
-	// 调用 ResourceBase 的清理逻辑
-	result := c.ResourceBase.Dispose.Close()
-	if result.HasErrors() {
-		return result
-	}
-	return nil
+	// 调用 ManagerBase 的清理逻辑
+	return c.ManagerBase.Close()
 }
 
 // SetNotifier 设置通知器

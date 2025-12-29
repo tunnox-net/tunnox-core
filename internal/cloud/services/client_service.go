@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
@@ -34,9 +33,9 @@ type clientService struct {
 	mappingRepo *repos.PortMappingRepo
 
 	// 其他依赖
-	idManager    *idgen.IDManager
-	statsMgr     *managers.StatsManager
-	statsCounter *stats.StatsCounter
+	idManager     *idgen.IDManager
+	statsProvider StatsProvider
+	statsCounter  *stats.StatsCounter
 }
 
 // NewClientService 创建客户端服务
@@ -48,7 +47,7 @@ type clientService struct {
 //   - clientRepo: 旧版Repository（兼容性，逐步迁移）
 //   - mappingRepo: 映射Repository
 //   - idManager: ID管理器
-//   - statsMgr: 统计管理器
+//   - statsProvider: 统计数据提供者（接口，由 managers.StatsManager 实现）
 //   - parentCtx: 父上下文
 //
 // 返回：
@@ -60,20 +59,20 @@ func NewClientService(
 	clientRepo *repos.ClientRepository,
 	mappingRepo *repos.PortMappingRepo,
 	idManager *idgen.IDManager,
-	statsMgr *managers.StatsManager,
+	statsProvider StatsProvider,
 	parentCtx context.Context,
 ) ClientService {
 	service := &clientService{
-		ServiceBase:  dispose.NewService("ClientService", parentCtx),
-		baseService:  NewBaseService(),
-		configRepo:   configRepo,
-		stateRepo:    stateRepo,
-		tokenRepo:    tokenRepo,
-		clientRepo:   clientRepo,
-		mappingRepo:  mappingRepo,
-		idManager:    idManager,
-		statsMgr:     statsMgr,
-		statsCounter: statsMgr.GetCounter(),
+		ServiceBase:   dispose.NewService("ClientService", parentCtx),
+		baseService:   NewBaseService(),
+		configRepo:    configRepo,
+		stateRepo:     stateRepo,
+		tokenRepo:     tokenRepo,
+		clientRepo:    clientRepo,
+		mappingRepo:   mappingRepo,
+		idManager:     idManager,
+		statsProvider: statsProvider,
+		statsCounter:  statsProvider.GetCounter(),
 	}
 	return service
 }

@@ -8,7 +8,7 @@ import (
 // 处理来自 listenClient 的隧道关闭通知
 // 通过嵌入 DefaultNotificationHandler 复用默认实现，只覆写需要特殊处理的方法
 type TargetNotificationHandler struct {
-	DefaultNotificationHandler         // 嵌入默认处理器
+	DefaultNotificationHandler // 嵌入默认处理器
 	tunnelManager              *TargetTunnelManager
 }
 

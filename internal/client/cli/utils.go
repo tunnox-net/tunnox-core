@@ -27,7 +27,7 @@ func ParseIntWithDefault(s string, defaultVal int) (int, error) {
 	return val, nil
 }
 
-// Truncate 截断字符串到指定长度
+// Truncate 截断字符串到指定长度（导出）
 func Truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s

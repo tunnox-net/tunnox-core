@@ -179,10 +179,14 @@ func (b *BaseCommandHandler[TRequest, TResponse]) IsDuplex() bool {
 }
 
 // GetContext 获取上下文
+// 优先从 session 获取 context，如果 session 未设置则返回 context.Background()
+// 注意：调用方应确保在使用 handler 前通过 SetSession 设置 session
 func (b *BaseCommandHandler[TRequest, TResponse]) GetContext() context.Context {
 	if b.session != nil {
 		return b.session.(interface{ Ctx() context.Context }).Ctx()
 	}
+	// session 未设置时使用 context.Background() 作为后备
+	// 这种情况通常只在测试或简单场景中出现
 	return context.Background()
 }
 

@@ -239,8 +239,18 @@ func (sm *ServiceManager) StopAllServices() error {
 
 	corelog.Infof("Stopping %d services...", len(sm.services))
 
-	// 创建超时上下文
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), sm.config.GracefulShutdownTimeout)
+	// 创建超时上下文，从 ServiceManager 的 context 派生
+	// 注意：如果 sm.ctx 已被取消，则使用独立的超时 context
+	var shutdownCtx context.Context
+	var cancel context.CancelFunc
+	select {
+	case <-sm.ctx.Done():
+		// 主 context 已取消，使用独立的超时 context
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), sm.config.GracefulShutdownTimeout)
+	default:
+		// 主 context 仍然有效，从它派生
+		shutdownCtx, cancel = context.WithTimeout(sm.ctx, sm.config.GracefulShutdownTimeout)
+	}
 	defer cancel()
 
 	var lastErr error
@@ -266,8 +276,7 @@ func (sm *ServiceManager) Run() error {
 
 	// 启动所有服务
 	if err := sm.StartAllServices(); err != nil {
-		// 确保错误信息输出到控制台
-		fmt.Fprintf(os.Stderr, "ERROR: Failed to start services: %v\n", err)
+		corelog.Default().Errorf("Failed to start services: %v", err)
 		return fmt.Errorf("failed to start services: %v", err)
 	}
 
@@ -287,8 +296,7 @@ func (sm *ServiceManager) RunWithContext(ctx context.Context) error {
 
 	// 启动所有服务
 	if err := sm.StartAllServices(); err != nil {
-		// 确保错误信息输出到控制台
-		fmt.Fprintf(os.Stderr, "ERROR: Failed to start services: %v\n", err)
+		corelog.Default().Errorf("Failed to start services: %v", err)
 		return fmt.Errorf("failed to start services: %v", err)
 	}
 
@@ -359,12 +367,16 @@ func (sm *ServiceManager) ForceShutdown() error {
 	corelog.Infof("Force shutdown initiated")
 
 	// 强制停止所有服务
+	// 注意：强制关闭时使用 context.Background() 是合理的，因为主 context 可能已被取消
 	sm.mu.RLock()
 	for name, service := range sm.services {
 		corelog.Infof("Force stopping service: %s", name)
-		if err := service.Stop(context.Background()); err != nil {
+		// 使用短超时的独立 context，确保强制关闭能在有限时间内完成
+		forceCtx, forceCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := service.Stop(forceCtx); err != nil {
 			corelog.Errorf("Force stop service %s error: %v", name, err)
 		}
+		forceCancel()
 	}
 	sm.mu.RUnlock()
 

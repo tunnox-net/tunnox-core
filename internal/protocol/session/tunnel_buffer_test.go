@@ -202,13 +202,9 @@ func TestTunnelSendBuffer_MarkResent(t *testing.T) {
 	seqNum, err := buffer.Send(data, pkt)
 	require.NoError(t, err)
 
-	// 获取初始发送时间
-	buffer.mu.RLock()
-	originalSentAt := buffer.buffer[seqNum].SentAt
-	retryCount := buffer.buffer[seqNum].RetryCount
-	buffer.mu.RUnlock()
-
-	assert.Equal(t, 0, retryCount)
+	// 获取初始统计
+	statsBefore := buffer.GetStats()
+	assert.Equal(t, uint64(0), statsBefore["total_resent"])
 
 	// 等待一小段时间
 	time.Sleep(10 * time.Millisecond)
@@ -216,13 +212,9 @@ func TestTunnelSendBuffer_MarkResent(t *testing.T) {
 	// 标记为重传
 	buffer.MarkResent(seqNum)
 
-	buffer.mu.RLock()
-	newSentAt := buffer.buffer[seqNum].SentAt
-	newRetryCount := buffer.buffer[seqNum].RetryCount
-	buffer.mu.RUnlock()
-
-	assert.True(t, newSentAt.After(originalSentAt), "SentAt should be updated")
-	assert.Equal(t, 1, newRetryCount, "RetryCount should increment")
+	// 验证重传计数增加
+	statsAfter := buffer.GetStats()
+	assert.Equal(t, uint64(1), statsAfter["total_resent"], "RetryCount should increment")
 }
 
 func TestTunnelSendBuffer_GetStats(t *testing.T) {

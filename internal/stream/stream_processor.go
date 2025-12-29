@@ -196,14 +196,19 @@ func (ps *StreamProcessor) ReadAvailable(maxLength int) ([]byte, error) {
 		maxLength = 32 * 1024
 	}
 
-	// 分配缓冲区
-	buffer := make([]byte, maxLength)
+	// 使用内存池分配缓冲区
+	buffer := ps.bufferMgr.Allocate(maxLength)
 
 	// 直接读取可用数据，不循环等待
 	n, err := ps.reader.Read(buffer)
 	if n > 0 {
-		return buffer[:n], err
+		// 复制数据后释放内存池 buffer
+		result := make([]byte, n)
+		copy(result, buffer[:n])
+		ps.bufferMgr.Release(buffer)
+		return result, err
 	}
+	ps.bufferMgr.Release(buffer)
 	return nil, err
 }
 
@@ -329,31 +334,51 @@ func (ps *StreamProcessor) readPacketBodySize() (uint32, error) {
 	return binary.BigEndian.Uint32(sizeBuffer), nil
 }
 
-// readPacketBody 读取包体数据，优化版本避免内存复制
+// readPacketBody 读取包体数据，使用内存池优化
+// 通过 bufferMgr 复用缓冲区，减少 GC 压力
 func (ps *StreamProcessor) readPacketBody(bodySize uint32) ([]byte, error) {
-	// 直接分配最终大小的 buffer，避免二次分配和复制
-	// 这样可以减少 50% 的内存使用和 GC 压力
-	result := make([]byte, bodySize)
+	// 安全检查：防止恶意大包导致 OOM
+	if bodySize > constants.MaxPacketBodySize {
+		return nil, errors.NewPacketError("read_packet_body",
+			fmt.Sprintf("packet body size %d exceeds maximum allowed %d", bodySize, constants.MaxPacketBodySize), nil)
+	}
+
+	// 使用内存池获取缓冲区，减少内存分配
+	buffer := ps.bufferMgr.Allocate(int(bodySize))
 
 	totalRead := 0
 	for totalRead < int(bodySize) {
-		n, err := ps.reader.Read(result[totalRead:])
+		n, err := ps.reader.Read(buffer[totalRead:])
 		if err != nil {
+			ps.bufferMgr.Release(buffer)
 			return nil, errors.NewStreamError("read_packet_body", "failed to read packet body", err)
 		}
 		totalRead += n
 	}
 
-	return result[:totalRead], nil
+	// 复制数据到新 slice，然后释放内存池 buffer
+	// 这样调用方可以安全持有返回的数据，同时内存池 buffer 可以被复用
+	result := make([]byte, totalRead)
+	copy(result, buffer[:totalRead])
+	ps.bufferMgr.Release(buffer)
+
+	return result, nil
 }
 
 // decompressData 解压数据
+// 预分配缓冲区以减少扩容次数，假设压缩比约为 3:1
 func (ps *StreamProcessor) decompressData(compressedData []byte) ([]byte, error) {
 	gzipReader := compression.NewGzipReader(bytes.NewReader(compressedData), ps.ResourceBase.Dispose.Ctx())
 	defer gzipReader.Close()
 
-	var decompressedData bytes.Buffer
-	_, err := io.Copy(&decompressedData, gzipReader)
+	// 预分配缓冲区，假设压缩比约为 3:1，减少扩容次数
+	estimatedSize := len(compressedData) * 3
+	if estimatedSize > constants.MaxPacketBodySize {
+		estimatedSize = constants.MaxPacketBodySize
+	}
+	decompressedData := bytes.NewBuffer(make([]byte, 0, estimatedSize))
+
+	_, err := io.Copy(decompressedData, gzipReader)
 	if err != nil {
 		return nil, errors.NewCompressionError("decompress", "decompression failed", err)
 	}

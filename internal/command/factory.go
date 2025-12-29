@@ -7,8 +7,17 @@ import (
 )
 
 // CreateDefaultRegistry 创建默认的命令注册表
+// 注意：此函数使用 context.Background() 作为根 context，
+// 仅在程序入口点或测试中使用。其他场景请使用 CreateDefaultRegistryWithContext
 func CreateDefaultRegistry() types.CommandRegistry {
 	registry := NewCommandRegistry(context.Background())
+	RegisterDefaultHandlers(registry)
+	return registry
+}
+
+// CreateDefaultRegistryWithContext 创建默认的命令注册表（支持 context 传递）
+func CreateDefaultRegistryWithContext(parentCtx context.Context) types.CommandRegistry {
+	registry := NewCommandRegistry(parentCtx)
 	RegisterDefaultHandlers(registry)
 	return registry
 }

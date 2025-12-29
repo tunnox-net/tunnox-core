@@ -135,6 +135,8 @@ func (cu *CommandUtils) Execute() (*CommandResponse, error) {
 	}
 
 	// 设置默认上下文
+	// 注意：推荐调用方使用 WithContext 传入正确的 parent context
+	// 此处使用 context.Background() 仅作为后备，用于简单场景或测试
 	if cu.ctx == nil {
 		cu.ctx = context.Background()
 	}

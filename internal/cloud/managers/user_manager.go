@@ -1,51 +1,48 @@
 package managers
 
 import (
-	"time"
+	"fmt"
 
 	"tunnox-core/internal/cloud/models"
 )
 
 // CreateUser 创建用户
+// 注意：此方法委托给 UserService 处理，遵循 Manager -> Service -> Repository 架构
 func (c *CloudControl) CreateUser(username, email string) (*models.User, error) {
-	userID, _ := c.idManager.GenerateUserID()
-	now := time.Now()
-	user := &models.User{
-		ID:        userID,
-		Username:  username,
-		Email:     email,
-		CreatedAt: now,
-		UpdatedAt: now,
+	if c.userService == nil {
+		return nil, fmt.Errorf("userService not initialized")
 	}
-	if err := c.userRepo.CreateUser(user); err != nil {
-		return nil, err
-	}
-
-	// 更新统计计数器
-	if c.statsManager != nil && c.statsManager.GetCounter() != nil {
-		_ = c.statsManager.GetCounter().IncrUser(1)
-	}
-
-	return user, nil
+	return c.userService.CreateUser(username, email)
 }
 
 // GetUser 获取用户
 func (c *CloudControl) GetUser(userID string) (*models.User, error) {
-	return c.userRepo.GetUser(userID)
+	if c.userService == nil {
+		return nil, fmt.Errorf("userService not initialized")
+	}
+	return c.userService.GetUser(userID)
 }
 
 // UpdateUser 更新用户
 func (c *CloudControl) UpdateUser(user *models.User) error {
-	user.UpdatedAt = time.Now()
-	return c.userRepo.UpdateUser(user)
+	if c.userService == nil {
+		return fmt.Errorf("userService not initialized")
+	}
+	return c.userService.UpdateUser(user)
 }
 
 // DeleteUser 删除用户
 func (c *CloudControl) DeleteUser(userID string) error {
-	return c.userRepo.DeleteUser(userID)
+	if c.userService == nil {
+		return fmt.Errorf("userService not initialized")
+	}
+	return c.userService.DeleteUser(userID)
 }
 
 // ListUsers 列出用户
 func (c *CloudControl) ListUsers(userType models.UserType) ([]*models.User, error) {
-	return c.userRepo.ListUsers(userType)
+	if c.userService == nil {
+		return nil, fmt.Errorf("userService not initialized")
+	}
+	return c.userService.ListUsers(userType)
 }

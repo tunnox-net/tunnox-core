@@ -16,7 +16,9 @@ type BuiltinCloudControl struct {
 
 func NewBuiltinCloudControl(parentCtx context.Context, config *ControlConfig) *BuiltinCloudControl {
 	memoryStorage := storage.NewMemoryStorage(parentCtx)
-	base := NewCloudControl(config, memoryStorage)
+	// 创建默认的 CloudControlDeps（使用 nil 服务，后续可按需初始化）
+	deps := &CloudControlDeps{}
+	base := NewCloudControl(parentCtx, config, memoryStorage, deps)
 	control := &BuiltinCloudControl{
 		CloudControl: base,
 	}
@@ -24,12 +26,24 @@ func NewBuiltinCloudControl(parentCtx context.Context, config *ControlConfig) *B
 }
 
 // NewBuiltinCloudControlWithStorage 创建内置云控实例，使用指定的存储实例（主要用于测试）
-func NewBuiltinCloudControlWithStorage(config *ControlConfig, storage storage.Storage) *BuiltinCloudControl {
-	base := NewCloudControl(config, storage)
+// 注意：此方法不初始化 Services，建议使用 factories.NewBuiltinCloudControlWithStorageAndServices
+func NewBuiltinCloudControlWithStorage(parentCtx context.Context, config *ControlConfig, stor storage.Storage) *BuiltinCloudControl {
+	// 创建默认的 CloudControlDeps（使用 nil 服务，后续可按需初始化）
+	deps := &CloudControlDeps{}
+	base := NewCloudControl(parentCtx, config, stor, deps)
 	control := &BuiltinCloudControl{
 		CloudControl: base,
 	}
 	return control
+}
+
+// NewBuiltinCloudControlWithDeps 创建内置云控实例，使用指定的存储和依赖
+// 这是完整版本，包含所有 Services 支持
+func NewBuiltinCloudControlWithDeps(parentCtx context.Context, config *ControlConfig, stor storage.Storage, deps *CloudControlDeps) *BuiltinCloudControl {
+	base := NewCloudControl(parentCtx, config, stor, deps)
+	return &BuiltinCloudControl{
+		CloudControl: base,
+	}
 }
 
 // 只在这里实现 BuiltinCloudControl 特有的逻辑，通用逻辑全部在 CloudControl
@@ -70,7 +84,7 @@ func (b *BuiltinCloudControl) cleanupRoutine() {
 			corelog.Debugf("Performing cleanup tasks...")
 			// 这里可以添加具体的清理逻辑
 
-		case <-b.CloudControl.ResourceBase.Dispose.Ctx().Done():
+		case <-b.CloudControl.ManagerBase.Ctx().Done():
 			corelog.Infof("Cleanup routine stopped")
 			return
 		}
@@ -85,16 +99,23 @@ func (b *BuiltinCloudControl) Close() error {
 
 // RegisterNodeDirect 直接注册节点（用于服务器启动时注册自己）
 func (b *BuiltinCloudControl) RegisterNodeDirect(node *models.Node) error {
-	if b.CloudControl == nil || b.CloudControl.nodeRepo == nil {
-		return fmt.Errorf("nodeRepo not initialized")
+	if b.CloudControl == nil || b.CloudControl.nodeManager == nil {
+		return fmt.Errorf("nodeManager not initialized")
 	}
-	// 保存节点记录（创建或更新）
-	if err := b.CloudControl.nodeRepo.SaveNode(node); err != nil {
-		return fmt.Errorf("failed to save node: %w", err)
+	// 通过 NodeManager 注册节点
+	// 版本从 Meta 中获取（如果有），否则留空
+	version := ""
+	if node.Meta != nil {
+		version = node.Meta["version"]
 	}
-	// 添加到节点列表
-	if err := b.CloudControl.nodeRepo.AddNodeToList(node); err != nil {
-		return fmt.Errorf("failed to add node to list: %w", err)
+	req := &models.NodeRegisterRequest{
+		Address: node.Address,
+		Version: version,
+		Meta:    node.Meta,
+	}
+	_, err := b.CloudControl.NodeRegister(req)
+	if err != nil {
+		return fmt.Errorf("failed to register node: %w", err)
 	}
 	return nil
 }

@@ -13,6 +13,9 @@ import (
 	"tunnox-core/internal/utils"
 )
 
+// 编译时接口断言，确保 PortMappingRepo 实现了 IPortMappingRepository 接口
+var _ IPortMappingRepository = (*PortMappingRepo)(nil)
+
 // PortMappingRepo 端口映射数据访问
 type PortMappingRepo struct {
 	*GenericRepositoryImpl[*models.PortMapping]

@@ -10,6 +10,9 @@ import (
 	"tunnox-core/internal/core/storage"
 )
 
+// 编译时接口断言，确保 ConnectionCodeRepository 实现了 IConnectionCodeRepository 接口
+var _ IConnectionCodeRepository = (*ConnectionCodeRepository)(nil)
+
 // ConnectionCodeRepository 连接码仓库
 //
 // 职责：

@@ -6,8 +6,9 @@ import (
 	"net"
 	"strings"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
+	"tunnox-core/internal/client/transport"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 )
 
@@ -65,25 +66,19 @@ func (c *TunnoxClient) Connect() error {
 		var resultConn net.Conn
 		var resultErr error
 
-		switch strings.ToLower(protocol) {
-		case "tcp":
-			// TCP 连接使用 DialTimeout，但需要支持 context 取消
-			dialer := &net.Dialer{
-				Timeout: 20 * time.Second,
-			}
-			resultConn, resultErr = dialer.DialContext(connectCtx, "tcp", c.config.Server.Address)
-			if resultErr == nil {
+		normalizedProtocol := strings.ToLower(protocol)
+
+		// 检查协议是否可用
+		if !transport.IsProtocolAvailable(normalizedProtocol) {
+			availableProtocols := transport.GetAvailableProtocolNames()
+			resultErr = fmt.Errorf("protocol %q is not available (compiled protocols: %v)", normalizedProtocol, availableProtocols)
+		} else {
+			// 使用统一的协议注册表拨号
+			resultConn, resultErr = transport.Dial(connectCtx, normalizedProtocol, c.config.Server.Address)
+			if resultErr == nil && normalizedProtocol == "tcp" {
 				// 配置 TCP 连接选项
 				SetKeepAliveIfSupported(resultConn, true)
 			}
-		case "websocket":
-			resultConn, resultErr = dialWebSocket(connectCtx, c.config.Server.Address)
-		case "quic":
-			resultConn, resultErr = dialQUIC(connectCtx, c.config.Server.Address)
-		case "kcp":
-			resultConn, resultErr = dialKCP(connectCtx, c.config.Server.Address)
-		default:
-			resultErr = fmt.Errorf("unsupported server protocol: %s", protocol)
 		}
 
 		select {

@@ -3,8 +3,8 @@ package services
 import (
 	"context"
 	"fmt"
+	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/container"
-	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
@@ -29,12 +29,13 @@ type CloudControlAPI struct {
 }
 
 // NewCloudControlAPI 创建新的云控API
-func NewCloudControlAPI(config *managers.ControlConfig, storage storageCore.Storage, parentCtx context.Context) (*CloudControlAPI, error) {
+// factories 参数包含创建 managers 实例的工厂函数，用于解决循环依赖
+func NewCloudControlAPI(config *configs.ControlConfig, storage storageCore.Storage, factories *ManagerFactories, parentCtx context.Context) (*CloudControlAPI, error) {
 	// 创建依赖注入容器
 	container := container.NewContainer(parentCtx)
 
 	// 注册基础设施服务
-	if err := registerInfrastructureServices(container, config, storage, parentCtx); err != nil {
+	if err := registerInfrastructureServices(container, config, storage, factories, parentCtx); err != nil {
 		return nil, fmt.Errorf("failed to register infrastructure services: %w", err)
 	}
 

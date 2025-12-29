@@ -8,6 +8,7 @@ import (
 	"time"
 	corelog "tunnox-core/internal/core/log"
 
+	"tunnox-core/internal/cloud/factories"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
@@ -125,16 +126,21 @@ func (c *CloudControlComponent) Initialize(ctx context.Context, deps *Dependenci
 	if deps.Storage == nil {
 		return fmt.Errorf("storage is required")
 	}
+	if deps.Repository == nil {
+		return fmt.Errorf("repository is required")
+	}
 
 	cloudControlConfig := managers.DefaultConfig()
 	cloudControlConfig.NodeID = deps.NodeID // 使用运行时分配的 NodeID
 
-	cloudControl := managers.NewBuiltinCloudControlWithStorage(cloudControlConfig, deps.Storage)
+	// 使用带完整 Services 的工厂方法创建 CloudControl
+	// 使用共享的 Repository 确保 Management API 和 CloudControl 使用同一套数据
+	cloudControl := factories.NewBuiltinCloudControlWithRepo(ctx, cloudControlConfig, deps.Storage, deps.Repository)
 
 	deps.CloudControl = cloudControl
 	deps.CloudBuiltin = cloudControl
 
-	corelog.Infof("CloudControl initialized")
+	corelog.Infof("CloudControl initialized with shared repository")
 	return nil
 }
 

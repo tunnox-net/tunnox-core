@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strings"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
@@ -120,14 +121,45 @@ func (s *userService) ListUsers(userType models.UserType) ([]*models.User, error
 
 // SearchUsers 搜索用户
 func (s *userService) SearchUsers(keyword string) ([]*models.User, error) {
-	// 暂时返回空列表，因为UserRepository没有Search方法
-	// 搜索功能尚未实现，可在此扩展
-	return []*models.User{}, nil
+	// 获取所有用户
+	allUsers, err := s.userRepo.ListAllUsers()
+	if err != nil {
+		return nil, s.baseService.WrapError(err, "list all users for search")
+	}
+
+	// 如果关键词为空，返回空列表
+	if keyword == "" {
+		return []*models.User{}, nil
+	}
+
+	// 大小写不敏感搜索
+	keyword = strings.ToLower(keyword)
+
+	// 过滤匹配的用户
+	matchedUsers := make([]*models.User, 0)
+	for _, user := range allUsers {
+		// 匹配用户名或邮箱（不区分大小写）
+		if strings.Contains(strings.ToLower(user.Username), keyword) ||
+			strings.Contains(strings.ToLower(user.Email), keyword) ||
+			strings.Contains(strings.ToLower(user.ID), keyword) {
+			matchedUsers = append(matchedUsers, user)
+		}
+	}
+
+	return matchedUsers, nil
 }
 
 // GetUserStats 获取用户统计信息
 func (s *userService) GetUserStats(userID string) (*stats.UserStats, error) {
-	// 这里需要根据实际的repository方法来实现
-	// 暂时返回nil，实际项目中需要实现具体的统计逻辑
-	return nil, fmt.Errorf("user stats not implemented")
+	// 验证用户存在
+	_, err := s.userRepo.GetUser(userID)
+	if err != nil {
+		return nil, s.baseService.WrapErrorWithID(err, "get user for stats", userID)
+	}
+
+	// 返回基本统计信息
+	// 注意：完整的统计信息（如 TotalClients、OnlineClients 等）需要通过 StatsManager 获取
+	return &stats.UserStats{
+		UserID: userID,
+	}, nil
 }

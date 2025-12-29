@@ -2,8 +2,9 @@ package stream
 
 import (
 	"context"
-	"fmt"
 	"io"
+
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream/compression"
 	"tunnox-core/internal/stream/encryption"
 )
@@ -85,7 +86,7 @@ func (sf *DefaultStreamFactory) CreateStreamProcessorWithConfig(reader io.Reader
 		encryptor, err := encryption.NewEncryptor(encryptConfig)
 		if err != nil {
 			// 加密初始化失败，记录错误但继续
-			fmt.Printf("Failed to create encryptor: %v\n", err)
+			corelog.Default().Warnf("Failed to create encryptor: %v", err)
 		} else {
 			// 包装reader和writer
 			if decryptReader, err := encryptor.NewDecryptReader(reader); err == nil {

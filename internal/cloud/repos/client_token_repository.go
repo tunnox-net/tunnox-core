@@ -11,6 +11,9 @@ import (
 	"tunnox-core/internal/core/storage"
 )
 
+// 编译时接口断言，确保 ClientTokenRepository 实现了 IClientTokenRepository 接口
+var _ IClientTokenRepository = (*ClientTokenRepository)(nil)
+
 // ClientTokenRepository 客户端Token数据访问层
 //
 // 职责：

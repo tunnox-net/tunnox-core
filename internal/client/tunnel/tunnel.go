@@ -19,7 +19,7 @@ type TunnelRole int
 
 const (
 	TunnelRoleListen TunnelRole = iota // 监听端发起的 tunnel
-	TunnelRoleTarget                    // 目标端接收的 tunnel
+	TunnelRoleTarget                   // 目标端接收的 tunnel
 )
 
 func (r TunnelRole) String() string {
@@ -91,7 +91,7 @@ type TunnelConfig struct {
 	ID           string
 	MappingID    string
 	Role         TunnelRole
-	Protocol     string             // 协议类型: "tcp", "udp" 等
+	Protocol     string // 协议类型: "tcp", "udp" 等
 	LocalConn    io.ReadWriteCloser
 	TunnelConn   net.Conn
 	TunnelRWC    io.ReadWriteCloser

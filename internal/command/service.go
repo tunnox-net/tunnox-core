@@ -128,6 +128,7 @@ type ResponseSender interface {
 
 // commandService 命令服务实现
 type commandService struct {
+	*dispose.ServiceBase
 	registry       *CommandRegistry
 	executor       *CommandExecutor
 	middleware     []Middleware
@@ -135,8 +136,6 @@ type commandService struct {
 	responseSender ResponseSender
 	eventBus       events.EventBus
 	mu             sync.RWMutex
-
-	dispose.Dispose
 }
 
 // NewCommandService 创建新的命令服务
@@ -145,14 +144,15 @@ func NewCommandService(parentCtx context.Context) CommandService {
 	executor := NewCommandExecutor(registry, parentCtx)
 
 	service := &commandService{
-		registry:   registry,
-		executor:   executor,
-		middleware: make([]Middleware, 0),
-		stats:      &CommandStats{},
+		ServiceBase: dispose.NewService("CommandService", parentCtx),
+		registry:    registry,
+		executor:    executor,
+		middleware:  make([]Middleware, 0),
+		stats:       &CommandStats{},
 	}
 
-	// 设置Dispose上下文和清理回调
-	service.SetCtx(parentCtx, service.onClose)
+	// 添加清理回调
+	service.AddCleanHandler(service.onClose)
 
 	return service
 }
@@ -196,7 +196,7 @@ func (cs *commandService) handleCommandEvent(event events.Event) error {
 	corelog.Infof("Handling command event for connection: %s, command: %v",
 		cmdEvent.ConnectionID, cmdEvent.CommandType)
 
-	// 创建命令上下文
+	// 创建命令上下文，使用 commandService 的 context 作为父 context
 	ctx := &CommandContext{
 		ConnectionID:    cmdEvent.ConnectionID,
 		CommandType:     cmdEvent.CommandType,
@@ -205,7 +205,7 @@ func (cs *commandService) handleCommandEvent(event events.Event) error {
 		SenderID:        cmdEvent.SenderID,
 		ReceiverID:      cmdEvent.ReceiverID,
 		RequestBody:     cmdEvent.CommandBody,
-		Context:         context.Background(),
+		Context:         cs.Ctx(), // 使用 commandService 的 context，遵循 dispose 层次结构
 		IsAuthenticated: false,
 		UserID:          "",
 		ClientID:        cmdEvent.ClientID, // 从事件中获取客户端ID
@@ -390,7 +390,7 @@ func (cs *commandService) onClose() error {
 
 // Close 关闭服务
 func (cs *commandService) Close() error {
-	return cs.Dispose.CloseWithError()
+	return cs.ServiceBase.Close()
 }
 
 // buildPipeline 构建命令处理管道

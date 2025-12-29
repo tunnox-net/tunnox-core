@@ -139,7 +139,7 @@ type SessionManager struct {
 	migrationManager   *TunnelMigrationManager
 
 	// 已关闭的 tunnel 跟踪（用于过滤残留帧）
-	closedTunnels map[string]time.Time // tunnelID -> 关闭时间
+	closedTunnels   map[string]time.Time // tunnelID -> 关闭时间
 	closedTunnelsMu sync.RWMutex
 
 	dispose.Dispose

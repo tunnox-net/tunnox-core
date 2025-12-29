@@ -2,10 +2,10 @@ package services
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
-	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 )
 
@@ -117,18 +117,63 @@ func (s *clientService) GetClientPortMappings(clientID int64) ([]*models.PortMap
 
 // SearchClients 搜索客户端
 func (s *clientService) SearchClients(keyword string) ([]*models.Client, error) {
-	// 暂时返回空列表
-	corelog.Warnf("SearchClients not implemented yet")
-	return []*models.Client{}, nil
+	// 获取所有客户端配置
+	configs, err := s.configRepo.ListConfigs()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list client configs for search: %w", err)
+	}
+
+	// 如果关键词为空，返回空列表
+	if keyword == "" {
+		return []*models.Client{}, nil
+	}
+
+	// 大小写不敏感搜索
+	keyword = strings.ToLower(keyword)
+
+	// 并发聚合匹配的客户端
+	matchedClients := make([]*models.Client, 0)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, cfg := range configs {
+		// 检查名称是否匹配（不区分大小写）
+		if !strings.Contains(strings.ToLower(cfg.Name), keyword) &&
+			!strings.Contains(strings.ToLower(fmt.Sprintf("%d", cfg.ID)), keyword) {
+			continue
+		}
+
+		wg.Add(1)
+		go func(config *models.ClientConfig) {
+			defer wg.Done()
+
+			// 获取状态和Token
+			var state *models.ClientRuntimeState
+			var token *models.ClientToken
+
+			state, _ = s.stateRepo.GetState(config.ID)
+			token, _ = s.tokenRepo.GetToken(config.ID)
+
+			// 聚合
+			client := models.FromConfigAndState(config, state, token)
+
+			mu.Lock()
+			matchedClients = append(matchedClients, client)
+			mu.Unlock()
+		}(cfg)
+	}
+
+	wg.Wait()
+	return matchedClients, nil
 }
 
 // GetClientStats 获取客户端统计信息
 func (s *clientService) GetClientStats(clientID int64) (*stats.ClientStats, error) {
-	if s.statsMgr == nil {
-		return nil, fmt.Errorf("stats manager not available")
+	if s.statsProvider == nil {
+		return nil, fmt.Errorf("stats provider not available")
 	}
 
-	clientStats, err := s.statsMgr.GetClientStats(clientID)
+	clientStats, err := s.statsProvider.GetClientStats(clientID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get client stats for %d: %w", clientID, err)
 	}

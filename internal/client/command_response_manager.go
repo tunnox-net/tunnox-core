@@ -76,7 +76,7 @@ func (m *CommandResponseManager) HandleResponse(pkt *packet.TransferPacket) bool
 		return false
 	}
 
-	corelog.Infof("[CMD_TRACE] [CLIENT] [RESP_HANDLE_START] CommandID=%s, Time=%s",
+	corelog.Debugf("[CMD_TRACE] [CLIENT] [RESP_HANDLE_START] CommandID=%s, Time=%s",
 		commandID, handleStartTime.Format("15:04:05.000"))
 
 	m.mu.RLock()
@@ -92,7 +92,7 @@ func (m *CommandResponseManager) HandleResponse(pkt *packet.TransferPacket) bool
 	// 注意：不能通过尝试接收来检查通道是否关闭，因为这会消费掉响应
 	// 通道关闭检查在发送前进行（通过检查 pendingRequests）
 
-	corelog.Infof("[CMD_TRACE] [CLIENT] [RESP_HANDLE_FOUND] CommandID=%s, Time=%s",
+	corelog.Debugf("[CMD_TRACE] [CLIENT] [RESP_HANDLE_FOUND] CommandID=%s, Time=%s",
 		commandID, time.Now().Format("15:04:05.000"))
 
 	// 解析响应（服务端返回的格式：{"success": true, "data": {...}, "command_id": "...", "request_id": "..."}）
@@ -163,7 +163,7 @@ func (m *CommandResponseManager) HandleResponse(pkt *packet.TransferPacket) bool
 	select {
 	case responseChan <- resp:
 		handleDuration := time.Since(handleStartTime)
-		corelog.Infof("[CMD_TRACE] [CLIENT] [RESP_HANDLE_COMPLETE] CommandID=%s, Success=%v, HandleDuration=%v, Time=%s",
+		corelog.Debugf("[CMD_TRACE] [CLIENT] [RESP_HANDLE_COMPLETE] CommandID=%s, Success=%v, HandleDuration=%v, Time=%s",
 			commandID, resp.Success, handleDuration, time.Now().Format("15:04:05.000"))
 		return true
 	default:
@@ -177,7 +177,7 @@ func (m *CommandResponseManager) HandleResponse(pkt *packet.TransferPacket) bool
 // WaitForResponse 等待响应（带超时和context取消支持）
 func (m *CommandResponseManager) WaitForResponse(commandID string, responseChan chan *CommandResponse) (*CommandResponse, error) {
 	waitStartTime := time.Now()
-	corelog.Infof("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
+	corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
 		commandID, waitStartTime.Format("15:04:05.000"))
 	timeout := time.After(m.timeout)
 
@@ -189,7 +189,7 @@ func (m *CommandResponseManager) WaitForResponse(commandID string, responseChan 
 				commandID, waitDuration, time.Now().Format("15:04:05.000"))
 			return nil, fmt.Errorf("response channel closed")
 		}
-		corelog.Infof("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, Success=%v, Time=%s",
+		corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, Success=%v, Time=%s",
 			commandID, waitDuration, resp.Success, time.Now().Format("15:04:05.000"))
 		return resp, nil
 	case <-timeout:
@@ -204,7 +204,7 @@ func (m *CommandResponseManager) WaitForResponse(commandID string, responseChan 
 // WaitForResponseWithContext 等待响应（带超时和context取消支持）
 func (m *CommandResponseManager) WaitForResponseWithContext(ctx context.Context, commandID string, responseChan chan *CommandResponse) (*CommandResponse, error) {
 	waitStartTime := time.Now()
-	corelog.Infof("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
+	corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
 		commandID, waitStartTime.Format("15:04:05.000"))
 	timeout := time.After(m.timeout)
 
@@ -216,7 +216,7 @@ func (m *CommandResponseManager) WaitForResponseWithContext(ctx context.Context,
 				commandID, waitDuration, time.Now().Format("15:04:05.000"))
 			return nil, fmt.Errorf("response channel closed")
 		}
-		corelog.Infof("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, Success=%v, Time=%s",
+		corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, Success=%v, Time=%s",
 			commandID, waitDuration, resp.Success, time.Now().Format("15:04:05.000"))
 		return resp, nil
 	case <-timeout:
@@ -227,7 +227,7 @@ func (m *CommandResponseManager) WaitForResponseWithContext(ctx context.Context,
 		return nil, fmt.Errorf("command timeout after %v", m.timeout)
 	case <-ctx.Done():
 		waitDuration := time.Since(waitStartTime)
-		corelog.Infof("[CMD_TRACE] [CLIENT] [WAIT_CANCELLED] CommandID=%s, WaitDuration=%v, Time=%s",
+		corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_CANCELLED] CommandID=%s, WaitDuration=%v, Time=%s",
 			commandID, waitDuration, time.Now().Format("15:04:05.000"))
 		m.UnregisterRequest(commandID)
 		return nil, fmt.Errorf("command cancelled: %w", ctx.Err())

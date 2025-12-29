@@ -151,7 +151,6 @@ func (m *DefaultTunnelManager) OnPeerClosed(tunnelID string, reason string, stat
 	tunnel.NotifyPeerClosed(reason, stats)
 }
 
-
 // Close 关闭管理器
 func (m *DefaultTunnelManager) Close() error {
 	corelog.Infof("TunnelManager[%s]: closing", m.role)

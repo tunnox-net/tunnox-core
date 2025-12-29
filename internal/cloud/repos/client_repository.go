@@ -11,6 +11,9 @@ import (
 	"tunnox-core/internal/core/storage"
 )
 
+// 编译时接口断言，确保 ClientRepository 实现了 IClientRepository 接口
+var _ IClientRepository = (*ClientRepository)(nil)
+
 // ClientRepository 客户端数据访问
 type ClientRepository struct {
 	*GenericRepositoryImpl[*models.Client]

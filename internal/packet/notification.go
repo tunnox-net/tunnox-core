@@ -11,12 +11,12 @@ type NotificationType uint8
 
 const (
 	// 系统通知 (1-19)
-	NotifyTypeSystemMessage    NotificationType = 1  // 系统消息
-	NotifyTypeSystemMaintain   NotificationType = 2  // 系统维护通知
-	NotifyTypeQuotaWarning     NotificationType = 3  // 配额预警
-	NotifyTypeQuotaExhausted   NotificationType = 4  // 配额耗尽
-	NotifyTypeVersionUpdate    NotificationType = 5  // 版本更新通知
-	NotifyTypeSecurityAlert    NotificationType = 6  // 安全告警
+	NotifyTypeSystemMessage     NotificationType = 1 // 系统消息
+	NotifyTypeSystemMaintain    NotificationType = 2 // 系统维护通知
+	NotifyTypeQuotaWarning      NotificationType = 3 // 配额预警
+	NotifyTypeQuotaExhausted    NotificationType = 4 // 配额耗尽
+	NotifyTypeVersionUpdate     NotificationType = 5 // 版本更新通知
+	NotifyTypeSecurityAlert     NotificationType = 6 // 安全告警
 	NotifyTypeAnnounceBroadcast NotificationType = 7 // 公告广播
 
 	// 映射通知 (20-39)
@@ -65,9 +65,9 @@ type ClientNotification struct {
 
 // NotifyAckRequest 通知确认请求
 type NotifyAckRequest struct {
-	NotifyID  string `json:"notify_id"`  // 被确认的通知ID
-	Received  bool   `json:"received"`   // 是否成功接收
-	Processed bool   `json:"processed"`  // 是否已处理
+	NotifyID  string `json:"notify_id"`       // 被确认的通知ID
+	Received  bool   `json:"received"`        // 是否成功接收
+	Processed bool   `json:"processed"`       // 是否已处理
 	Error     string `json:"error,omitempty"` // 处理错误（如有）
 }
 
@@ -120,22 +120,22 @@ type QuotaWarningPayload struct {
 
 // MappingEventPayload 映射事件载荷
 type MappingEventPayload struct {
-	MappingID      string `json:"mapping_id"`
-	MappingName    string `json:"mapping_name,omitempty"`
-	Protocol       string `json:"protocol"`        // tcp, http, socks5
-	SourcePort     int    `json:"source_port"`
-	TargetHost     string `json:"target_host"`
-	TargetPort     int    `json:"target_port"`
-	Status         string `json:"status"`          // active, inactive, expired
-	ByClientID     int64  `json:"by_client_id,omitempty"` // 操作者客户端ID
-	Message        string `json:"message,omitempty"`
+	MappingID   string `json:"mapping_id"`
+	MappingName string `json:"mapping_name,omitempty"`
+	Protocol    string `json:"protocol"` // tcp, http, socks5
+	SourcePort  int    `json:"source_port"`
+	TargetHost  string `json:"target_host"`
+	TargetPort  int    `json:"target_port"`
+	Status      string `json:"status"`                 // active, inactive, expired
+	ByClientID  int64  `json:"by_client_id,omitempty"` // 操作者客户端ID
+	Message     string `json:"message,omitempty"`
 }
 
 // TunnelClosedPayload 隧道关闭载荷（快速通知）
 type TunnelClosedPayload struct {
 	TunnelID     string `json:"tunnel_id"`
 	MappingID    string `json:"mapping_id"`
-	Reason       string `json:"reason"`       // normal, error, timeout, peer_closed, migration
+	Reason       string `json:"reason"` // normal, error, timeout, peer_closed, migration
 	ErrorMessage string `json:"error_message,omitempty"`
 	BytesSent    int64  `json:"bytes_sent"`
 	BytesRecv    int64  `json:"bytes_recv"`
@@ -148,8 +148,8 @@ type TunnelOpenedPayload struct {
 	TunnelID      string `json:"tunnel_id"`
 	MappingID     string `json:"mapping_id"`
 	PeerClientID  int64  `json:"peer_client_id"`
-	LocalEndpoint string `json:"local_endpoint"`  // 本地端点
-	PeerEndpoint  string `json:"peer_endpoint"`   // 对端端点
+	LocalEndpoint string `json:"local_endpoint"` // 本地端点
+	PeerEndpoint  string `json:"peer_endpoint"`  // 对端端点
 	OpenedAt      int64  `json:"opened_at"`
 }
 
@@ -175,9 +175,9 @@ type VersionUpdatePayload struct {
 
 // CustomPayload 自定义载荷（C2C通知）
 type CustomPayload struct {
-	Action string            `json:"action"`           // 自定义动作
-	Data   map[string]string `json:"data,omitempty"`   // 键值对数据
-	Raw    string            `json:"raw,omitempty"`    // 原始数据
+	Action string            `json:"action"`         // 自定义动作
+	Data   map[string]string `json:"data,omitempty"` // 键值对数据
+	Raw    string            `json:"raw,omitempty"`  // 原始数据
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

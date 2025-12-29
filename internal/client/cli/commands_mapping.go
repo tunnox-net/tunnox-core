@@ -47,6 +47,17 @@ func (c *CLI) cmdUseCode(args []string) {
 			continue
 		}
 
+		// 清理地址，移除可能的控制字符
+		addr = strings.TrimSpace(addr)
+
+		// 如果用户输入了协议前缀（如 socks5://127.0.0.1:10800），移除协议部分
+		if strings.Contains(addr, "://") {
+			parts := strings.SplitN(addr, "://", 2)
+			if len(parts) == 2 {
+				addr = strings.TrimSpace(parts[1])
+			}
+		}
+
 		// 验证地址格式（如果只输入了端口号，会在后续处理中补全）
 		// 这里先检查是否包含冒号，如果没有，假设是端口号
 		if !strings.Contains(addr, ":") {

@@ -11,11 +11,11 @@ const (
 	CommandResp   Type = 0x11 // 命令响应
 
 	// 转发类数据包（透传）
-	TunnelOpen     Type = 0x20 // 隧道打开（一次性，携带 MappingID）
-	TunnelOpenAck  Type = 0x21 // 隧道打开确认
-	TunnelData     Type = 0x22 // 隧道数据（纯透传）
-	TunnelClose    Type = 0x23 // 隧道关闭
-	DataStreamEOF  Type = 0x24 // 数据流EOF标志（应用层half-close，用于跨节点连接复用）
+	TunnelOpen    Type = 0x20 // 隧道打开（一次性，携带 MappingID）
+	TunnelOpenAck Type = 0x21 // 隧道打开确认
+	TunnelData    Type = 0x22 // 隧道数据（纯透传）
+	TunnelClose   Type = 0x23 // 隧道关闭
+	DataStreamEOF Type = 0x24 // 数据流EOF标志（应用层half-close，用于跨节点连接复用）
 
 	// 数据包特性标志（可组合）
 	Compressed Type = 0x40 // 压缩标志

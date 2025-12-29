@@ -7,6 +7,9 @@ import (
 	"tunnox-core/internal/constants"
 )
 
+// 编译时接口断言，确保 ClientConfigRepository 实现了 IClientConfigRepository 接口
+var _ IClientConfigRepository = (*ClientConfigRepository)(nil)
+
 // ClientConfigRepository 客户端配置数据访问层
 //
 // 职责：

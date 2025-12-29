@@ -6,8 +6,9 @@ import (
 	"net"
 	"strings"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
+	"tunnox-core/internal/client/transport"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 )
@@ -28,24 +29,19 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 	)
 
 	protocol := strings.ToLower(c.config.Server.Protocol)
+	if protocol == "" {
+		protocol = "tcp"
+	}
 	corelog.Debugf("Client[%s]: about to dial server, protocol=%s, address=%s", tunnelID, protocol, c.config.Server.Address)
 
-	switch protocol {
-	case "tcp", "":
-		// TCP 连接使用 DialContext 以支持 context 取消
-		dialer := &net.Dialer{
-			Timeout: 10 * time.Second,
-		}
-		conn, err = dialer.DialContext(c.Ctx(), "tcp", c.config.Server.Address)
-	case "websocket":
-		conn, err = dialWebSocket(c.Ctx(), c.config.Server.Address)
-	case "quic":
-		conn, err = dialQUIC(c.Ctx(), c.config.Server.Address)
-	case "kcp":
-		conn, err = dialKCP(c.Ctx(), c.config.Server.Address)
-	default:
-		return nil, nil, fmt.Errorf("unsupported server protocol: %s", protocol)
+	// 检查协议是否可用
+	if !transport.IsProtocolAvailable(protocol) {
+		availableProtocols := transport.GetAvailableProtocolNames()
+		return nil, nil, fmt.Errorf("protocol %q is not available (compiled protocols: %v)", protocol, availableProtocols)
 	}
+
+	// 使用统一的协议注册表拨号
+	conn, err = transport.Dial(c.Ctx(), protocol, c.config.Server.Address)
 
 	if err != nil {
 		corelog.Errorf("Client[%s]: dial server failed: %v", tunnelID, err)

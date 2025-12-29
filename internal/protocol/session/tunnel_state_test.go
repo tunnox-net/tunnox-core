@@ -152,13 +152,13 @@ func TestRestoreToSendBuffer(t *testing.T) {
 	assert.Equal(t, 2, sendBuffer.GetBufferedCount())
 	assert.Equal(t, 10, sendBuffer.GetBufferSize()) // 2 * 5 bytes
 
-	// 验证包是否存在
-	sendBuffer.mu.RLock()
-	assert.NotNil(t, sendBuffer.buffer[5])
-	assert.NotNil(t, sendBuffer.buffer[6])
-	assert.Equal(t, []byte("data5"), sendBuffer.buffer[5].Data)
-	assert.Equal(t, []byte("data6"), sendBuffer.buffer[6].Data)
-	sendBuffer.mu.RUnlock()
+	// 验证包是否存在（通过公共 API）
+	sendBuffer.RLock()
+	assert.NotNil(t, sendBuffer.Buffer[5])
+	assert.NotNil(t, sendBuffer.Buffer[6])
+	assert.Equal(t, []byte("data5"), sendBuffer.Buffer[5].Data)
+	assert.Equal(t, []byte("data6"), sendBuffer.Buffer[6].Data)
+	sendBuffer.RUnlock()
 }
 
 func TestTunnelState_FullCycle(t *testing.T) {

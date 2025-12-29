@@ -337,4 +337,3 @@ func (l *CrossNodeListener) sendHTTPProxyResponse(conn *net.TCPConn, requestID s
 		corelog.Infof("CrossNodeListener: sent HTTP proxy response for requestID=%s", requestID)
 	}
 }
-

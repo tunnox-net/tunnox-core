@@ -123,6 +123,22 @@ func TestParseTargetAddress(t *testing.T) {
 			wantErr:   false,
 		},
 		{
+			name:      "socks5 proxy dynamic target (port 0)",
+			addr:      "socks5://0.0.0.0:0",
+			wantHost:  "0.0.0.0",
+			wantPort:  0,
+			wantProto: "socks5",
+			wantErr:   false,
+		},
+		{
+			name:      "socks5 with valid port",
+			addr:      "socks5://127.0.0.1:1080",
+			wantHost:  "127.0.0.1",
+			wantPort:  1080,
+			wantProto: "socks5",
+			wantErr:   false,
+		},
+		{
 			name:        "missing port",
 			addr:        "tcp://10.51.22.69",
 			wantErr:     true,

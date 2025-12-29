@@ -27,8 +27,9 @@ type CommandResponseData struct {
 }
 
 // sendCommandAndWaitResponse 发送命令并等待响应（统一处理所有命令发送逻辑）
+// 使用 TunnoxClient 自身的 context，遵循 dispose 层次结构
 func (c *TunnoxClient) sendCommandAndWaitResponse(req *CommandRequest) (*CommandResponseData, error) {
-	return c.sendCommandAndWaitResponseWithContext(context.Background(), req)
+	return c.sendCommandAndWaitResponseWithContext(c.Ctx(), req)
 }
 
 // sendCommandAndWaitResponseWithContext 发送命令并等待响应（支持context取消）
@@ -88,7 +89,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	var cmdStartTime time.Time
 	if req.EnableTrace {
 		cmdStartTime = time.Now()
-		corelog.Infof("[CMD_TRACE] [CLIENT] [SEND_START] CommandID=%s, CommandType=%d, Time=%s",
+		corelog.Debugf("[CMD_TRACE] [CLIENT] [SEND_START] CommandID=%s, CommandType=%d, Time=%s",
 			cmdPkt.CommandId, cmdPkt.CommandType, cmdStartTime.Format("15:04:05.000"))
 	}
 
@@ -113,7 +114,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	}
 
 	if req.EnableTrace {
-		corelog.Infof("[CMD_TRACE] [CLIENT] [SEND_COMPLETE] CommandID=%s, SendDuration=%v, Time=%s",
+		corelog.Debugf("[CMD_TRACE] [CLIENT] [SEND_COMPLETE] CommandID=%s, SendDuration=%v, Time=%s",
 			cmdPkt.CommandId, time.Since(cmdStartTime), time.Now().Format("15:04:05.000"))
 	}
 
@@ -121,7 +122,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	var waitStartTime time.Time
 	if req.EnableTrace {
 		waitStartTime = time.Now()
-		corelog.Infof("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
+		corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
 			cmdPkt.CommandId, waitStartTime.Format("15:04:05.000"))
 	}
 
@@ -135,7 +136,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	}
 
 	if req.EnableTrace {
-		corelog.Infof("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, TotalDuration=%v, Time=%s",
+		corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, TotalDuration=%v, Time=%s",
 			cmdPkt.CommandId, time.Since(waitStartTime), time.Since(cmdStartTime), time.Now().Format("15:04:05.000"))
 	}
 

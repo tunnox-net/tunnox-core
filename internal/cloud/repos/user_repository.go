@@ -6,6 +6,9 @@ import (
 	"tunnox-core/internal/constants"
 )
 
+// 编译时接口断言，确保 UserRepository 实现了 IUserRepository 接口
+var _ IUserRepository = (*UserRepository)(nil)
+
 // UserRepository 用户数据访问
 type UserRepository struct {
 	*GenericRepositoryImpl[*models.User]

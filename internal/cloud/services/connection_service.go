@@ -45,19 +45,9 @@ func (s *connectionService) RegisterConnection(mappingID string, connInfo *model
 	connInfo.UpdatedAt = time.Now()
 	connInfo.Status = "active"
 
-	// 保存到存储
+	// 保存到存储（CreateConnection 内部会自动添加到映射和客户端连接列表）
 	if err := s.connRepo.CreateConnection(connInfo); err != nil {
 		return s.baseService.HandleErrorWithIDReleaseString(err, connID, s.idManager.ReleaseConnectionID, "create connection")
-	}
-
-	// 添加到映射连接列表
-	if err := s.connRepo.AddConnectionToMapping(mappingID, connInfo); err != nil {
-		s.baseService.LogWarning("add connection to mapping list", err)
-	}
-
-	// 添加到客户端连接列表
-	if err := s.connRepo.AddConnectionToClient(connInfo.ClientID, connInfo); err != nil {
-		s.baseService.LogWarning("add connection to client list", err)
 	}
 
 	s.baseService.LogCreated("connection", fmt.Sprintf("%s for mapping: %s", connID, mappingID))
@@ -66,25 +56,9 @@ func (s *connectionService) RegisterConnection(mappingID string, connInfo *model
 
 // UnregisterConnection 注销连接
 func (s *connectionService) UnregisterConnection(connID string) error {
-	// 获取连接信息
-	connInfo, err := s.connRepo.GetConnection(connID)
-	if err != nil {
-		return s.baseService.WrapErrorWithID(err, "get connection", connID)
-	}
-
-	// 删除连接
+	// 删除连接（DeleteConnection 内部会自动从映射和客户端列表中移除）
 	if err := s.connRepo.DeleteConnection(connID); err != nil {
 		return s.baseService.WrapErrorWithID(err, "delete connection", connID)
-	}
-
-	// 从映射连接列表中移除
-	if err := s.connRepo.RemoveConnectionFromMapping(connInfo.MappingID, connInfo); err != nil {
-		s.baseService.LogWarning("remove connection from mapping list", err)
-	}
-
-	// 从客户端连接列表中移除
-	if err := s.connRepo.RemoveConnectionFromClient(connInfo.ClientID, connInfo); err != nil {
-		s.baseService.LogWarning("remove connection from client list", err)
 	}
 
 	// 释放连接ID

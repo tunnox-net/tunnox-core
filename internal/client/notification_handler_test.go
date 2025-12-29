@@ -13,15 +13,28 @@ import (
 
 // testNotificationHandler 测试用通知处理器
 type testNotificationHandler struct {
-	mu                    sync.Mutex
-	systemMessages        []struct{ title, message, level string }
-	quotaWarnings         []struct{ quotaType, message string }
-	mappingEvents         []struct{ eventType packet.NotificationType; mappingID, status, message string }
-	tunnelClosedEvents    []struct{ tunnelID, mappingID, reason string }
-	tunnelOpenedEvents    []struct{ tunnelID, mappingID string; peerClientID int64 }
-	tunnelErrorEvents     []struct{ tunnelID, errorCode, errorMessage string; recoverable bool }
-	customNotifications   []struct{ senderClientID int64; action string; data map[string]string }
-	genericNotifications  []*packet.ClientNotification
+	mu             sync.Mutex
+	systemMessages []struct{ title, message, level string }
+	quotaWarnings  []struct{ quotaType, message string }
+	mappingEvents  []struct {
+		eventType                  packet.NotificationType
+		mappingID, status, message string
+	}
+	tunnelClosedEvents []struct{ tunnelID, mappingID, reason string }
+	tunnelOpenedEvents []struct {
+		tunnelID, mappingID string
+		peerClientID        int64
+	}
+	tunnelErrorEvents []struct {
+		tunnelID, errorCode, errorMessage string
+		recoverable                       bool
+	}
+	customNotifications []struct {
+		senderClientID int64
+		action         string
+		data           map[string]string
+	}
+	genericNotifications []*packet.ClientNotification
 }
 
 func newTestNotificationHandler() *testNotificationHandler {
@@ -43,7 +56,10 @@ func (h *testNotificationHandler) OnQuotaWarning(quotaType string, usagePercent 
 func (h *testNotificationHandler) OnMappingEvent(eventType packet.NotificationType, mappingID, status, message string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.mappingEvents = append(h.mappingEvents, struct{ eventType packet.NotificationType; mappingID, status, message string }{eventType, mappingID, status, message})
+	h.mappingEvents = append(h.mappingEvents, struct {
+		eventType                  packet.NotificationType
+		mappingID, status, message string
+	}{eventType, mappingID, status, message})
 }
 
 func (h *testNotificationHandler) OnTunnelClosed(tunnelID, mappingID, reason string, bytesSent, bytesRecv, durationMs int64) {
@@ -55,19 +71,29 @@ func (h *testNotificationHandler) OnTunnelClosed(tunnelID, mappingID, reason str
 func (h *testNotificationHandler) OnTunnelOpened(tunnelID, mappingID string, peerClientID int64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.tunnelOpenedEvents = append(h.tunnelOpenedEvents, struct{ tunnelID, mappingID string; peerClientID int64 }{tunnelID, mappingID, peerClientID})
+	h.tunnelOpenedEvents = append(h.tunnelOpenedEvents, struct {
+		tunnelID, mappingID string
+		peerClientID        int64
+	}{tunnelID, mappingID, peerClientID})
 }
 
 func (h *testNotificationHandler) OnTunnelError(tunnelID, mappingID, errorCode, errorMessage string, recoverable bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.tunnelErrorEvents = append(h.tunnelErrorEvents, struct{ tunnelID, errorCode, errorMessage string; recoverable bool }{tunnelID, errorCode, errorMessage, recoverable})
+	h.tunnelErrorEvents = append(h.tunnelErrorEvents, struct {
+		tunnelID, errorCode, errorMessage string
+		recoverable                       bool
+	}{tunnelID, errorCode, errorMessage, recoverable})
 }
 
 func (h *testNotificationHandler) OnCustomNotification(senderClientID int64, action string, data map[string]string, raw string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.customNotifications = append(h.customNotifications, struct{ senderClientID int64; action string; data map[string]string }{senderClientID, action, data})
+	h.customNotifications = append(h.customNotifications, struct {
+		senderClientID int64
+		action         string
+		data           map[string]string
+	}{senderClientID, action, data})
 }
 
 func (h *testNotificationHandler) OnGenericNotification(notification *packet.ClientNotification) {

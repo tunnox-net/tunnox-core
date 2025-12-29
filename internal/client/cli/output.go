@@ -12,13 +12,23 @@ import (
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 var (
-	// 颜色函数
+	// 颜色函数（私有）
 	colorSuccess = color.New(color.FgGreen).SprintFunc()
 	colorError   = color.New(color.FgRed).SprintFunc()
 	colorWarning = color.New(color.FgYellow).SprintFunc()
 	colorInfo    = color.New(color.FgCyan).SprintFunc()
 	colorBold    = color.New(color.Bold).SprintFunc()
 	colorFaint   = color.New(color.Faint).SprintFunc()
+)
+
+// 导出的颜色函数，供其他包使用
+var (
+	ColorSuccess = colorSuccess
+	ColorError   = colorError
+	ColorWarning = colorWarning
+	ColorInfo    = colorInfo
+	ColorBold    = colorBold
+	ColorFaint   = colorFaint
 )
 
 // Output 提供结构化的输出接口

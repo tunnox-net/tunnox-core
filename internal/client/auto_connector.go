@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"sort"
 	"sync"
 	"time"
 
+	"tunnox-core/internal/client/transport"
 	"tunnox-core/internal/core/dispose"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 )
 
@@ -19,16 +20,25 @@ type ServerEndpoint struct {
 	Address  string // 完整地址
 }
 
-// DefaultServerEndpoints 默认服务器端点列表（按优先级排序）
-// 使用常量文件中定义的公共服务端点
-var DefaultServerEndpoints = []ServerEndpoint{
-	{Protocol: "quic", Address: PublicServiceQUIC1},           // quic://tunnox.mydtc.net:8443
-	{Protocol: "quic", Address: PublicServiceQUIC2},           // quic://gw.tunnox.net:8443
-	{Protocol: "tcp", Address: PublicServiceTCP1},             // tcp://tunnox.mydtc.net:8080
-	{Protocol: "tcp", Address: PublicServiceTCP2},             // tcp://gw.tunnox.net:8080
-	{Protocol: "websocket", Address: PublicServiceWebSocket1}, // ws://tunnox.mydtc.net
-	{Protocol: "websocket", Address: PublicServiceWebSocket2}, // wss://ws.tunnox.net
-	{Protocol: "kcp", Address: PublicServiceKCP},
+// DefaultServerEndpoints 返回默认服务器端点列表（按优先级排序，仅包含已编译的协议）
+// WebSocket 优先因为穿透性最好
+func DefaultServerEndpoints() []ServerEndpoint {
+	// 定义所有可能的端点（按优先级排序）
+	allEndpoints := []ServerEndpoint{
+		{Protocol: "websocket", Address: PublicServiceWebSocket}, // wss://ws.tunnox.net
+		{Protocol: "quic", Address: PublicServiceQUIC},           // gw.tunnox.net:8443
+		{Protocol: "tcp", Address: PublicServiceTCP},             // gw.tunnox.net:8080
+		{Protocol: "kcp", Address: PublicServiceKCP},             // gw.tunnox.net:8000
+	}
+
+	// 过滤出已编译的协议
+	var available []ServerEndpoint
+	for _, ep := range allEndpoints {
+		if transport.IsProtocolAvailable(ep.Protocol) {
+			available = append(available, ep)
+		}
+	}
+	return available
 }
 
 // ConnectionAttempt 连接尝试结果
@@ -44,6 +54,214 @@ type ConnectionAttempt struct {
 type AutoConnector struct {
 	*dispose.ServiceBase
 	client *TunnoxClient
+}
+
+// NewAutoConnector 创建自动连接器
+func NewAutoConnector(ctx context.Context, client *TunnoxClient) *AutoConnector {
+	ac := &AutoConnector{
+		ServiceBase: dispose.NewService("AutoConnector", ctx),
+		client:      client,
+	}
+
+	ac.AddCleanHandler(func() error {
+		return nil
+	})
+
+	return ac
+}
+
+// ConnectWithAutoDetection 自动检测并连接，返回第一个成功的连接尝试（包含已建立的连接和完成的握手）
+// 策略：并发尝试所有协议，第一个成功的立即返回
+func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*ConnectionAttempt, error) {
+	// 定义每轮的超时时间
+	roundTimeouts := []time.Duration{
+		time.Duration(AutoConnectRound1Timeout) * time.Second,
+		time.Duration(AutoConnectRound2Timeout) * time.Second,
+	}
+
+	// 尝试多轮连接
+	for round := 0; round < len(roundTimeouts); round++ {
+		timeout := roundTimeouts[round]
+
+		// 显示当前轮次信息
+		endpoints := DefaultServerEndpoints()
+		if len(endpoints) == 0 {
+			return nil, fmt.Errorf("no protocols available (none compiled in)")
+		}
+		if round == 0 {
+			protocols := make([]string, len(endpoints))
+			for i, ep := range endpoints {
+				protocols[i] = ep.Protocol
+			}
+			fmt.Fprintf(os.Stderr, "   Trying protocols: %v\n", protocols)
+		} else {
+			fmt.Fprintf(os.Stderr, "   Retrying (round %d/%d, timeout: %ds)...\n", round+1, len(roundTimeouts), int(timeout.Seconds()))
+		}
+
+		// 尝试当前轮次 - 使用快速返回策略
+		attempt, err := ac.tryRoundFastReturn(ctx, timeout, round+1)
+		if err == nil && attempt != nil {
+			return attempt, nil
+		}
+
+		// 如果context被取消，立即返回
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+
+		corelog.Debugf("AutoConnector: round %d failed: %v", round+1, err)
+	}
+
+	// 所有轮次都失败
+	return nil, fmt.Errorf("all connection attempts failed after %d rounds", len(roundTimeouts))
+}
+
+// tryRoundFastReturn 尝试一轮连接（并发尝试所有协议，第一个成功就返回）
+func (ac *AutoConnector) tryRoundFastReturn(ctx context.Context, timeout time.Duration, roundNum int) (*ConnectionAttempt, error) {
+	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// 使用channel接收第一个成功的连接
+	successChan := make(chan *ConnectionAttempt, 1)
+	// 用于收集所有需要清理的连接
+	var cleanupMu sync.Mutex
+	var toCleanup []*ConnectionAttempt
+
+	var wg sync.WaitGroup
+
+	// 为每个端点启动连接尝试（连接+握手一起）
+	endpoints := DefaultServerEndpoints()
+	for i, endpoint := range endpoints {
+		wg.Add(1)
+		go func(ep ServerEndpoint, idx int) {
+			defer wg.Done()
+
+			// 尝试连接并握手
+			attempt := ac.tryConnectAndHandshake(attemptCtx, ep)
+			attempt.Index = idx
+
+			if attempt.Err == nil {
+				// 连接成功，尝试发送到成功channel
+				select {
+				case successChan <- attempt:
+					// 成功发送，取消其他尝试
+					cancel()
+				default:
+					// 已经有成功的连接了，需要清理这个
+					cleanupMu.Lock()
+					toCleanup = append(toCleanup, attempt)
+					cleanupMu.Unlock()
+				}
+			}
+		}(endpoint, i)
+	}
+
+	// 等待第一个成功或所有尝试完成
+	go func() {
+		wg.Wait()
+		close(successChan)
+	}()
+
+	// 等待结果
+	select {
+	case attempt, ok := <-successChan:
+		if ok && attempt != nil {
+			// 显示成功信息
+			fmt.Fprintf(os.Stderr, "   Protocol: %s\n", attempt.Endpoint.Protocol)
+			corelog.Infof("AutoConnector: connected via %s://%s", attempt.Endpoint.Protocol, attempt.Endpoint.Address)
+
+			// 异步清理其他成功的连接
+			go func() {
+				wg.Wait() // 等待所有goroutine完成
+				cleanupMu.Lock()
+				defer cleanupMu.Unlock()
+				for _, a := range toCleanup {
+					ac.closeAttempt(a)
+				}
+			}()
+
+			return attempt, nil
+		}
+	case <-attemptCtx.Done():
+		// 超时或取消
+	}
+
+	return nil, fmt.Errorf("all protocols failed in round %d", roundNum)
+}
+
+// tryConnectAndHandshake 尝试连接到指定端点并完成握手
+func (ac *AutoConnector) tryConnectAndHandshake(ctx context.Context, endpoint ServerEndpoint) *ConnectionAttempt {
+	attempt := &ConnectionAttempt{
+		Endpoint: endpoint,
+	}
+
+	// 检查 context 是否已经被取消
+	select {
+	case <-ctx.Done():
+		attempt.Err = ctx.Err()
+		return attempt
+	default:
+	}
+
+	// 使用较短的连接超时
+	dialTimeout := time.Duration(AutoConnectDialTimeout) * time.Second
+	dialCtx, dialCancel := context.WithTimeout(ctx, dialTimeout)
+	defer dialCancel()
+
+	// 使用统一的协议注册表拨号
+	conn, err := transport.Dial(dialCtx, endpoint.Protocol, endpoint.Address)
+	if err != nil {
+		attempt.Err = fmt.Errorf("dial %s failed: %w", endpoint.Protocol, err)
+		return attempt
+	}
+
+	// TCP 特殊处理：设置 KeepAlive
+	if endpoint.Protocol == "tcp" {
+		SetKeepAliveIfSupported(conn, true)
+	}
+
+	// 检查 context 是否已经被取消
+	select {
+	case <-ctx.Done():
+		conn.Close()
+		attempt.Err = ctx.Err()
+		return attempt
+	default:
+	}
+
+	// 创建 Stream（使用父context，不受连接超时影响）
+	streamFactory := stream.NewDefaultStreamFactory(ctx)
+	pkgStream := streamFactory.CreateStreamProcessor(conn, conn)
+
+	// 设置握手超时
+	handshakeTimeout := time.Duration(AutoConnectHandshakeTimeout) * time.Second
+	handshakeCtx, handshakeCancel := context.WithTimeout(ctx, handshakeTimeout)
+	defer handshakeCancel()
+
+	// 临时设置配置以发送握手
+	originalProtocol := ac.client.config.Server.Protocol
+	originalAddress := ac.client.config.Server.Address
+	ac.client.config.Server.Protocol = endpoint.Protocol
+	ac.client.config.Server.Address = endpoint.Address
+
+	// 发送握手
+	handshakeErr := ac.sendHandshakeWithContext(handshakeCtx, pkgStream, "control")
+
+	// 恢复配置
+	ac.client.config.Server.Protocol = originalProtocol
+	ac.client.config.Server.Address = originalAddress
+
+	if handshakeErr != nil {
+		pkgStream.Close()
+		conn.Close()
+		attempt.Err = fmt.Errorf("handshake failed: %w", handshakeErr)
+		return attempt
+	}
+
+	// 连接和握手都成功
+	attempt.Conn = conn
+	attempt.Stream = pkgStream
+	return attempt
 }
 
 // sendHandshakeWithContext 在指定的stream上发送握手请求（带context超时控制）
@@ -68,283 +286,6 @@ func (ac *AutoConnector) sendHandshakeWithContext(ctx context.Context, stream st
 	}
 }
 
-// NewAutoConnector 创建自动连接器
-func NewAutoConnector(ctx context.Context, client *TunnoxClient) *AutoConnector {
-	ac := &AutoConnector{
-		ServiceBase: dispose.NewService("AutoConnector", ctx),
-		client:      client,
-	}
-
-	ac.AddCleanHandler(func() error {
-		return nil
-	})
-
-	return ac
-}
-
-// ConnectWithAutoDetection 自动检测并连接，返回第一个成功的连接尝试（包含已建立的连接）
-// 实现多轮重试机制：
-// - 第1轮：每个协议5秒超时
-// - 第2轮：每个协议10秒超时
-// - 第3轮：每个协议15秒超时
-func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*ConnectionAttempt, error) {
-	// 定义每轮的超时时间
-	roundTimeouts := []time.Duration{
-		time.Duration(AutoConnectRound1Timeout) * time.Second,
-		time.Duration(AutoConnectRound2Timeout) * time.Second,
-		time.Duration(AutoConnectRound3Timeout) * time.Second,
-	}
-
-	// 尝试多轮连接
-	for round := 0; round < len(roundTimeouts); round++ {
-		timeout := roundTimeouts[round]
-
-		// 显示当前轮次信息
-		if round == 0 {
-			fmt.Fprintf(os.Stderr, "   Trying protocols: quic, tcp, websocket, kcp\n")
-		} else {
-			fmt.Fprintf(os.Stderr, "   Retrying (round %d/%d, timeout: %ds)...\n", round+1, len(roundTimeouts), int(timeout.Seconds()))
-		}
-
-		// 尝试当前轮次
-		attempt, err := ac.tryRound(ctx, timeout, round+1)
-		if err == nil && attempt != nil {
-			return attempt, nil
-		}
-
-		// 如果context被取消，立即返回
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-	}
-
-	// 所有轮次都失败
-	return nil, fmt.Errorf("all connection attempts failed after %d rounds", len(roundTimeouts))
-}
-
-// tryRound 尝试一轮连接（并发尝试所有协议）
-func (ac *AutoConnector) tryRound(ctx context.Context, timeout time.Duration, roundNum int) (*ConnectionAttempt, error) {
-	attemptCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	resultChan := make(chan *ConnectionAttempt, len(DefaultServerEndpoints))
-	var wg sync.WaitGroup
-
-	// 为每个端点启动连接尝试
-	for i, endpoint := range DefaultServerEndpoints {
-		wg.Add(1)
-		go func(ep ServerEndpoint, idx int) {
-			defer wg.Done()
-
-			attempt := ac.tryConnectWithTimeout(attemptCtx, ep, timeout)
-			attempt.Index = idx
-
-			// 发送结果
-			select {
-			case resultChan <- attempt:
-			case <-attemptCtx.Done():
-				// Context已取消，清理资源
-				ac.closeAttempt(attempt)
-			}
-		}(endpoint, i)
-	}
-
-	// 等待所有连接尝试完成或context取消
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	// 收集所有成功的连接
-	successfulAttempts := make([]*ConnectionAttempt, 0)
-
-	for attempt := range resultChan {
-		if attempt.Err == nil {
-			successfulAttempts = append(successfulAttempts, attempt)
-		}
-	}
-
-	// 如果没有成功的连接，返回错误
-	if len(successfulAttempts) == 0 {
-		return nil, fmt.Errorf("all protocols failed in round %d", roundNum)
-	}
-
-	// 按优先级排序（Index越小优先级越高）
-	sort.Slice(successfulAttempts, func(i, j int) bool {
-		return successfulAttempts[i].Index < successfulAttempts[j].Index
-	})
-
-	// 按优先级顺序尝试握手，直到成功
-	var lastHandshakeErr error
-	for _, attempt := range successfulAttempts {
-		// 设置配置
-		originalProtocol := ac.client.config.Server.Protocol
-		originalAddress := ac.client.config.Server.Address
-		ac.client.config.Server.Protocol = attempt.Endpoint.Protocol
-		ac.client.config.Server.Address = attempt.Endpoint.Address
-
-		// 使用固定的握手超时时间（10秒）
-		handshakeCtx, handshakeCancel := context.WithTimeout(ctx, 10*time.Second)
-		handshakeErr := ac.sendHandshakeWithContext(handshakeCtx, attempt.Stream, "control")
-		handshakeCancel()
-
-		ac.client.config.Server.Protocol = originalProtocol
-		ac.client.config.Server.Address = originalAddress
-
-		if handshakeErr == nil {
-			// 握手成功，显示成功信息
-			fmt.Fprintf(os.Stderr, "   Protocol: %s\n", attempt.Endpoint.Protocol)
-
-			// 关闭其他连接
-			for _, otherAttempt := range successfulAttempts {
-				if otherAttempt != attempt {
-					ac.closeAttempt(otherAttempt)
-				}
-			}
-
-			return attempt, nil
-		}
-
-		// 握手失败，记录错误并尝试下一个
-		lastHandshakeErr = handshakeErr
-		ac.closeAttempt(attempt)
-	}
-
-	// 所有握手都失败
-	return nil, fmt.Errorf("all handshakes failed in round %d, last error: %w", roundNum, lastHandshakeErr)
-}
-
-// tryConnectWithTimeout 尝试连接到指定端点（带超时）
-// 连接建立使用超时context，但Stream创建使用父context以避免过早关闭
-func (ac *AutoConnector) tryConnectWithTimeout(ctx context.Context, endpoint ServerEndpoint, timeout time.Duration) *ConnectionAttempt {
-	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	// 使用超时context建立连接，但使用父context创建Stream
-	return ac.tryConnectWithStreamContext(timeoutCtx, ctx, endpoint)
-}
-
-// tryConnectWithStreamContext 使用connCtx建立连接，使用streamCtx创建Stream
-func (ac *AutoConnector) tryConnectWithStreamContext(connCtx, streamCtx context.Context, endpoint ServerEndpoint) *ConnectionAttempt {
-	attempt := &ConnectionAttempt{
-		Endpoint: endpoint,
-	}
-
-	// 检查 context 是否已经被取消
-	select {
-	case <-connCtx.Done():
-		attempt.Err = connCtx.Err()
-		return attempt
-	default:
-	}
-
-	// 根据协议尝试连接
-	var conn net.Conn
-	var err error
-
-	switch endpoint.Protocol {
-	case "tcp":
-		// TCP 连接使用 DialContext 以支持 context 取消
-		dialer := &net.Dialer{}
-		conn, err = dialer.DialContext(connCtx, "tcp", endpoint.Address)
-		if err == nil {
-			SetKeepAliveIfSupported(conn, true)
-		}
-	case "websocket":
-		conn, err = dialWebSocket(connCtx, endpoint.Address)
-	case "quic":
-		conn, err = dialQUIC(connCtx, endpoint.Address)
-	case "kcp":
-		conn, err = dialKCP(connCtx, endpoint.Address)
-	default:
-		attempt.Err = fmt.Errorf("unsupported protocol: %s", endpoint.Protocol)
-		return attempt
-	}
-
-	if err != nil {
-		attempt.Err = err
-		return attempt
-	}
-
-	// 检查 context 是否已经被取消
-	select {
-	case <-connCtx.Done():
-		conn.Close()
-		attempt.Err = connCtx.Err()
-		return attempt
-	default:
-	}
-
-	// 创建 Stream（使用streamCtx，不受连接超时影响）
-	streamFactory := stream.NewDefaultStreamFactory(streamCtx)
-	pkgStream := streamFactory.CreateStreamProcessor(conn, conn)
-
-	attempt.Conn = conn
-	attempt.Stream = pkgStream
-	return attempt
-}
-
-// tryConnect 尝试连接到指定端点
-func (ac *AutoConnector) tryConnect(ctx context.Context, endpoint ServerEndpoint) *ConnectionAttempt {
-	attempt := &ConnectionAttempt{
-		Endpoint: endpoint,
-	}
-
-	// 检查 context 是否已经被取消
-	select {
-	case <-ctx.Done():
-		attempt.Err = ctx.Err()
-		return attempt
-	default:
-	}
-
-	// 根据协议尝试连接
-	var conn net.Conn
-	var err error
-
-	switch endpoint.Protocol {
-	case "tcp":
-		// TCP 连接使用 DialContext 以支持 context 取消
-		dialer := &net.Dialer{}
-		conn, err = dialer.DialContext(ctx, "tcp", endpoint.Address)
-		if err == nil {
-			SetKeepAliveIfSupported(conn, true)
-		}
-	case "websocket":
-		conn, err = dialWebSocket(ctx, endpoint.Address)
-	case "quic":
-		conn, err = dialQUIC(ctx, endpoint.Address)
-	case "kcp":
-		conn, err = dialKCP(ctx, endpoint.Address)
-	default:
-		attempt.Err = fmt.Errorf("unsupported protocol: %s", endpoint.Protocol)
-		return attempt
-	}
-
-	if err != nil {
-		attempt.Err = err
-		return attempt
-	}
-
-	// 检查 context 是否已经被取消
-	select {
-	case <-ctx.Done():
-		conn.Close()
-		attempt.Err = ctx.Err()
-		return attempt
-	default:
-	}
-
-	// 创建 Stream
-	streamFactory := stream.NewDefaultStreamFactory(ctx)
-	pkgStream := streamFactory.CreateStreamProcessor(conn, conn)
-
-	attempt.Conn = conn
-	attempt.Stream = pkgStream
-	return attempt
-}
-
-// closeAttempt 关闭连接尝试的资源
 // closeAttempt 关闭连接尝试的资源
 func (ac *AutoConnector) closeAttempt(attempt *ConnectionAttempt) {
 	if attempt == nil {

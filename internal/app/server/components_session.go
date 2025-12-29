@@ -139,8 +139,11 @@ func (c *HandlersComponent) Initialize(ctx context.Context, deps *Dependencies) 
 	if deps.SessionMgr == nil {
 		return fmt.Errorf("SessionManager is required")
 	}
+	if deps.Repository == nil {
+		return fmt.Errorf("Repository is required")
+	}
 
-	// 创建 ConnectionCodeService
+	// 使用共享的 Repository 创建相关组件
 	connCodeRepo := repos.NewConnectionCodeRepository(deps.Repository)
 	portMappingRepo := repos.NewPortMappingRepo(deps.Repository)
 	portMappingService := services.NewPortMappingService(portMappingRepo, deps.IDManager, nil, ctx)

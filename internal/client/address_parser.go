@@ -36,6 +36,7 @@ func parseListenAddress(addr string) (string, int, error) {
 }
 
 // parseTargetAddress 解析目标地址 "tcp://10.51.22.69:3306" -> ("10.51.22.69", 3306, "tcp", nil)
+// 特殊格式：socks5://0.0.0.0:0 表示 SOCKS5 代理模式（动态目标）
 func parseTargetAddress(addr string) (string, int, string, error) {
 	if addr == "" {
 		return "", 0, "", fmt.Errorf("target address is empty")
@@ -76,8 +77,20 @@ func parseTargetAddress(addr string) (string, int, string, error) {
 	if err != nil {
 		return "", 0, "", fmt.Errorf("invalid port in target address %q: %w", addr, err)
 	}
-	if err := validatePort(port); err != nil {
-		return "", 0, "", err
+
+	// SOCKS5 协议特殊处理：socks5://0.0.0.0:0 是有效的（表示动态目标代理模式）
+	if protocol == "socks5" {
+		// 对于 SOCKS5，端口 0 是允许的（表示动态目标）
+		if port != 0 {
+			if err := validatePort(port); err != nil {
+				return "", 0, "", err
+			}
+		}
+	} else {
+		if err := validatePort(port); err != nil {
+			return "", 0, "", err
+		}
 	}
+
 	return host, port, protocol, nil
 }

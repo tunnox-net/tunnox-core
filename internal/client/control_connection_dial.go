@@ -2,11 +2,10 @@ package client
 
 import (
 	"fmt"
-	"net"
 	"strings"
-	"time"
-	corelog "tunnox-core/internal/core/log"
 
+	"tunnox-core/internal/client/transport"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 )
 
@@ -74,28 +73,23 @@ func (c *TunnoxClient) connectWithAutoDetection() error {
 func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 	corelog.Infof("Client: connecting to server %s://%s", protocol, address)
 
-	var (
-		conn net.Conn
-		err  error
-	)
-	switch strings.ToLower(protocol) {
-	case "tcp":
-		conn, err = net.DialTimeout("tcp", address, 10*time.Second)
-		if err == nil {
-			// 使用接口而不是具体类型
-			SetKeepAliveIfSupported(conn, true)
-		}
-	case "websocket":
-		conn, err = dialWebSocket(c.Ctx(), address)
-	case "quic":
-		conn, err = dialQUIC(c.Ctx(), address)
-	case "kcp":
-		conn, err = dialKCP(c.Ctx(), address)
-	default:
-		return fmt.Errorf("unsupported server protocol: %s", protocol)
+	protocol = strings.ToLower(protocol)
+
+	// 检查协议是否可用
+	if !transport.IsProtocolAvailable(protocol) {
+		availableProtocols := transport.GetAvailableProtocolNames()
+		return fmt.Errorf("protocol %q is not available (compiled protocols: %v)", protocol, availableProtocols)
 	}
+
+	// 使用统一的协议注册表拨号
+	conn, err := transport.Dial(c.Ctx(), protocol, address)
 	if err != nil {
 		return fmt.Errorf("failed to dial server (%s): %w", protocol, err)
+	}
+
+	// TCP 特殊处理：设置 KeepAlive
+	if protocol == "tcp" {
+		SetKeepAliveIfSupported(conn, true)
 	}
 
 	c.config.Server.Protocol = strings.ToLower(protocol)

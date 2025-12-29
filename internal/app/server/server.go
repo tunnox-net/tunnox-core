@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
+
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/broker"
@@ -150,7 +150,7 @@ func (s *Server) Stop() error {
 func (s *Server) Run() error {
 	// 设置协议适配器（但不启动服务）
 	if err := s.setupProtocolAdapters(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: Failed to setup protocol adapters: %v\n", err)
+		corelog.Default().Errorf("Failed to setup protocol adapters: %v", err)
 		return fmt.Errorf("failed to setup protocol adapters: %v", err)
 	}
 

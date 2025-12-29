@@ -19,6 +19,10 @@ const (
 
 	// PacketBodySizeBytes 包体大小字段字节数
 	PacketBodySizeBytes = 4
+
+	// MaxPacketBodySize 最大包体大小（16MB），防止恶意大包攻击和内存耗尽
+	// 与 BufferPool.MaxBufferSize 对齐，超过此大小的包将被拒绝
+	MaxPacketBodySize = 16 * 1024 * 1024
 )
 
 // 键值前缀常量，用于标准化Repository的键值命名空间

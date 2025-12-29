@@ -190,8 +190,9 @@ type MappingInfoCmd struct {
 }
 
 // ListMappings 通过指令通道列出映射
+// 使用 TunnoxClient 自身的 context，遵循 dispose 层次结构
 func (c *TunnoxClient) ListMappings(req *ListMappingsRequest) (*ListMappingsResponseCmd, error) {
-	return c.ListMappingsWithContext(context.Background(), req)
+	return c.ListMappingsWithContext(c.Ctx(), req)
 }
 
 // ListMappingsWithContext 通过指令通道列出映射（支持context取消）
@@ -247,8 +248,9 @@ type GetMappingResponseCmd struct {
 }
 
 // GetMapping 通过指令通道获取映射详情
+// 使用 TunnoxClient 自身的 context，遵循 dispose 层次结构
 func (c *TunnoxClient) GetMapping(mappingID string) (*MappingInfoCmd, error) {
-	return c.GetMappingWithContext(context.Background(), mappingID)
+	return c.GetMappingWithContext(c.Ctx(), mappingID)
 }
 
 // GetMappingWithContext 通过指令通道获取映射详情（支持context取消）
@@ -279,8 +281,9 @@ type DeleteMappingRequest struct {
 }
 
 // DeleteMapping 通过指令通道删除映射
+// 使用 TunnoxClient 自身的 context，遵循 dispose 层次结构
 func (c *TunnoxClient) DeleteMapping(mappingID string) error {
-	return c.DeleteMappingWithContext(context.Background(), mappingID)
+	return c.DeleteMappingWithContext(c.Ctx(), mappingID)
 }
 
 // DeleteMappingWithContext 通过指令通道删除映射（支持context取消）

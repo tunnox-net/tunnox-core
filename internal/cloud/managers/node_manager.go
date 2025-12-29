@@ -2,58 +2,33 @@ package managers
 
 import (
 	"context"
-	"fmt"
 	"tunnox-core/internal/cloud/models"
-	"tunnox-core/internal/cloud/repos"
+	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
 )
 
 // NodeManager 节点管理器
+// 通过 NodeService 接口访问节点数据，遵循 Manager -> Service -> Repository 架构
 type NodeManager struct {
 	*dispose.ManagerBase
-	nodeRepo *repos.NodeRepository
+	nodeService services.NodeService
 }
 
 // NewNodeManager 创建新的节点管理器
-func NewNodeManager(nodeRepo *repos.NodeRepository, parentCtx context.Context) *NodeManager {
+func NewNodeManager(nodeService services.NodeService, parentCtx context.Context) *NodeManager {
 	manager := &NodeManager{
 		ManagerBase: dispose.NewManager("NodeManager", parentCtx),
-		nodeRepo:    nodeRepo,
+		nodeService: nodeService,
 	}
 	return manager
 }
 
 // GetNodeServiceInfo 获取节点服务信息
 func (nm *NodeManager) GetNodeServiceInfo(nodeID string) (*models.NodeServiceInfo, error) {
-	node, err := nm.nodeRepo.GetNode(nodeID)
-	if err != nil {
-		return nil, err
-	}
-	if node == nil {
-		return nil, fmt.Errorf("node not found")
-	}
-
-	return &models.NodeServiceInfo{
-		NodeID:  node.ID,
-		Address: node.Address,
-	}, nil
+	return nm.nodeService.GetNodeServiceInfo(nodeID)
 }
 
 // GetAllNodeServiceInfo 获取所有节点服务信息
 func (nm *NodeManager) GetAllNodeServiceInfo() ([]*models.NodeServiceInfo, error) {
-	nodes, err := nm.nodeRepo.ListNodes()
-	if err != nil {
-		return nil, err
-	}
-
-	var nodeInfos []*models.NodeServiceInfo
-	for _, node := range nodes {
-		nodeInfo := &models.NodeServiceInfo{
-			NodeID:  node.ID,
-			Address: node.Address,
-		}
-		nodeInfos = append(nodeInfos, nodeInfo)
-	}
-
-	return nodeInfos, nil
+	return nm.nodeService.GetAllNodeServiceInfo()
 }

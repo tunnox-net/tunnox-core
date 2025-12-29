@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"time"
-	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
@@ -15,19 +14,19 @@ import (
 // authService 认证服务实现
 type authService struct {
 	*dispose.ServiceBase
-	clientRepo *repos.ClientRepository
-	nodeRepo   *repos.NodeRepository
-	jwtManager *managers.JWTManager
+	clientRepo  *repos.ClientRepository
+	nodeRepo    *repos.NodeRepository
+	jwtProvider JWTProvider
 }
 
 // NewauthService 创建新的认证服务实现
 func NewauthService(clientRepo *repos.ClientRepository, nodeRepo *repos.NodeRepository,
-	jwtManager *managers.JWTManager, parentCtx context.Context) *authService {
+	jwtProvider JWTProvider, parentCtx context.Context) *authService {
 	service := &authService{
 		ServiceBase: dispose.NewService("authService", parentCtx),
 		clientRepo:  clientRepo,
 		nodeRepo:    nodeRepo,
-		jwtManager:  jwtManager,
+		jwtProvider: jwtProvider,
 	}
 	return service
 }
@@ -90,7 +89,7 @@ func (s *authService) Authenticate(req *models.AuthRequest) (*models.AuthRespons
 	}
 
 	// 生成JWT令牌
-	jwtToken, err := s.jwtManager.GenerateTokenPair(s.Ctx(), client)
+	jwtToken, err := s.jwtProvider.GenerateTokenPair(s.Ctx(), client)
 	if err != nil {
 		return &models.AuthResponse{
 			Success: false,
@@ -99,10 +98,11 @@ func (s *authService) Authenticate(req *models.AuthRequest) (*models.AuthRespons
 	}
 
 	// 更新客户端的JWT信息
-	client.JWTToken = jwtToken.Token
-	client.TokenExpiresAt = &jwtToken.ExpiresAt
-	client.RefreshToken = jwtToken.RefreshToken
-	client.TokenID = jwtToken.TokenID
+	tokenExpiresAt := jwtToken.GetExpiresAt()
+	client.JWTToken = jwtToken.GetToken()
+	client.TokenExpiresAt = &tokenExpiresAt
+	client.RefreshToken = jwtToken.GetRefreshToken()
+	client.TokenID = jwtToken.GetTokenID()
 
 	if err := s.clientRepo.UpdateClient(client); err != nil {
 		corelog.Warnf("Failed to update client JWT info: %v", err)
@@ -112,10 +112,10 @@ func (s *authService) Authenticate(req *models.AuthRequest) (*models.AuthRespons
 
 	return &models.AuthResponse{
 		Success:   true,
-		Token:     jwtToken.Token,
+		Token:     jwtToken.GetToken(),
 		Client:    client,
 		Node:      node,
-		ExpiresAt: jwtToken.ExpiresAt,
+		ExpiresAt: jwtToken.GetExpiresAt(),
 		Message:   "Authentication successful",
 	}, nil
 }
@@ -123,7 +123,7 @@ func (s *authService) Authenticate(req *models.AuthRequest) (*models.AuthRespons
 // ValidateToken 验证令牌
 func (s *authService) ValidateToken(token string) (*models.AuthResponse, error) {
 	// 使用JWT管理器验证令牌
-	jwtClaims, err := s.jwtManager.ValidateAccessToken(s.Ctx(), token)
+	jwtClaims, err := s.jwtProvider.ValidateAccessToken(s.Ctx(), token)
 	if err != nil {
 		return &models.AuthResponse{
 			Success: false,
@@ -132,7 +132,7 @@ func (s *authService) ValidateToken(token string) (*models.AuthResponse, error) 
 	}
 
 	// 获取客户端信息
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(jwtClaims.ClientID))
+	client, err := s.clientRepo.GetClient(utils.Int64ToString(jwtClaims.GetClientID()))
 	if err != nil {
 		return &models.AuthResponse{
 			Success: false,
@@ -175,58 +175,58 @@ func (s *authService) GenerateJWTToken(clientID int64) (*JWTTokenInfo, error) {
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
 
-	jwtToken, err := s.jwtManager.GenerateTokenPair(s.Ctx(), client)
+	jwtToken, err := s.jwtProvider.GenerateTokenPair(s.Ctx(), client)
 	if err != nil {
 		return nil, err
 	}
 
 	return &JWTTokenInfo{
-		AccessToken:  jwtToken.Token,
-		RefreshToken: jwtToken.RefreshToken,
-		ExpiresAt:    jwtToken.ExpiresAt,
+		AccessToken:  jwtToken.GetToken(),
+		RefreshToken: jwtToken.GetRefreshToken(),
+		ExpiresAt:    jwtToken.GetExpiresAt(),
 		TokenType:    "Bearer",
-		ClientID:     jwtToken.ClientId,
+		ClientID:     jwtToken.GetClientId(),
 	}, nil
 }
 
 // RefreshJWTToken 刷新JWT令牌
 func (s *authService) RefreshJWTToken(refreshToken string) (*JWTTokenInfo, error) {
 	// 验证刷新令牌
-	refreshClaims, err := s.jwtManager.ValidateRefreshToken(s.Ctx(), refreshToken)
+	refreshClaims, err := s.jwtProvider.ValidateRefreshToken(s.Ctx(), refreshToken)
 	if err != nil {
 		return nil, fmt.Errorf("invalid refresh token: %w", err)
 	}
 
 	// 获取客户端信息
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(refreshClaims.ClientID))
+	client, err := s.clientRepo.GetClient(utils.Int64ToString(refreshClaims.GetClientID()))
 	if err != nil {
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
 
-	jwtToken, err := s.jwtManager.RefreshAccessToken(s.Ctx(), refreshToken, client)
+	jwtToken, err := s.jwtProvider.RefreshAccessToken(s.Ctx(), refreshToken, client)
 	if err != nil {
 		return nil, err
 	}
 
 	return &JWTTokenInfo{
-		AccessToken:  jwtToken.Token,
-		RefreshToken: jwtToken.RefreshToken,
-		ExpiresAt:    jwtToken.ExpiresAt,
+		AccessToken:  jwtToken.GetToken(),
+		RefreshToken: jwtToken.GetRefreshToken(),
+		ExpiresAt:    jwtToken.GetExpiresAt(),
 		TokenType:    "Bearer",
-		ClientID:     jwtToken.ClientId,
+		ClientID:     jwtToken.GetClientId(),
 	}, nil
 }
 
 // ValidateJWTToken 验证JWT令牌
 func (s *authService) ValidateJWTToken(token string) (*JWTTokenInfo, error) {
 	// 验证访问令牌
-	claims, err := s.jwtManager.ValidateAccessToken(s.Ctx(), token)
+	claims, err := s.jwtProvider.ValidateAccessToken(s.Ctx(), token)
 	if err != nil {
 		return nil, fmt.Errorf("invalid token: %w", err)
 	}
 
 	// 获取客户端信息
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(claims.ClientID))
+	client, err := s.clientRepo.GetClient(utils.Int64ToString(claims.GetClientID()))
 	if err != nil {
 		return nil, fmt.Errorf("client not found: %w", err)
 	}
@@ -243,16 +243,16 @@ func (s *authService) ValidateJWTToken(token string) (*JWTTokenInfo, error) {
 // RevokeJWTToken 撤销JWT令牌
 func (s *authService) RevokeJWTToken(token string) error {
 	// 验证令牌以获取TokenID
-	claims, err := s.jwtManager.ValidateAccessToken(s.Ctx(), token)
+	claims, err := s.jwtProvider.ValidateAccessToken(s.Ctx(), token)
 	if err != nil {
 		return fmt.Errorf("invalid token: %w", err)
 	}
 
 	// 从客户端信息中获取TokenID
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(claims.ClientID))
+	client, err := s.clientRepo.GetClient(utils.Int64ToString(claims.GetClientID()))
 	if err != nil {
 		return fmt.Errorf("client not found: %w", err)
 	}
 
-	return s.jwtManager.RevokeToken(s.Ctx(), client.TokenID)
+	return s.jwtProvider.RevokeToken(s.Ctx(), client.TokenID)
 }

@@ -1,10 +1,14 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"time"
+	"tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
 
@@ -150,4 +154,51 @@ func (s *BaseService) SetUpdatedTimestamp(updatedAt *time.Time) {
 	if updatedAt != nil {
 		*updatedAt = time.Now()
 	}
+}
+
+// simpleStatsProvider 简化版统计提供者
+// 仅提供 StatsCounter，用于 Services 初始化时的依赖注入
+// 这是为了打破 StatsManager <-> Services 之间的循环依赖
+type simpleStatsProvider struct {
+	counter *stats.StatsCounter
+}
+
+// NewSimpleStatsProvider 创建简化版统计提供者
+func NewSimpleStatsProvider(storage storage.Storage, parentCtx context.Context) (StatsProvider, error) {
+	counter, err := stats.NewStatsCounter(storage, parentCtx)
+	if err != nil {
+		dispose.Warnf("simpleStatsProvider: failed to create counter: %v", err)
+		// 返回一个空的 counter，降级模式
+		return &simpleStatsProvider{counter: nil}, nil
+	}
+
+	// 初始化计数器
+	if err := counter.Initialize(); err != nil {
+		dispose.Warnf("simpleStatsProvider: failed to initialize counter: %v", err)
+		// 返回一个空的 counter，降级模式
+		return &simpleStatsProvider{counter: nil}, nil
+	}
+
+	return &simpleStatsProvider{counter: counter}, nil
+}
+
+// GetCounter 获取统计计数器
+func (s *simpleStatsProvider) GetCounter() *stats.StatsCounter {
+	return s.counter
+}
+
+// GetUserStats 获取用户统计信息
+// 简化版返回基本统计信息，完整实现需要通过 StatsManager 获取
+func (s *simpleStatsProvider) GetUserStats(userID string) (*stats.UserStats, error) {
+	return &stats.UserStats{
+		UserID: userID,
+	}, nil
+}
+
+// GetClientStats 获取客户端统计信息
+// 简化版返回基本统计信息，完整实现需要通过 StatsManager 获取
+func (s *simpleStatsProvider) GetClientStats(clientID int64) (*stats.ClientStats, error) {
+	return &stats.ClientStats{
+		ClientID: clientID,
+	}, nil
 }

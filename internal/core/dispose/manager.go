@@ -141,6 +141,8 @@ func (rm *ResourceManager) DisposeAll() *DisposeResult {
 }
 
 // DisposeWithTimeout 带超时的资源释放
+// 注意：此处使用 context.Background() 是合理的，因为 ResourceManager 是资源释放的管理者，
+// 不属于 dispose 层次结构中的被管理资源。超时 context 用于控制释放操作的最大时间。
 func (rm *ResourceManager) DisposeWithTimeout(timeout time.Duration) *DisposeResult {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

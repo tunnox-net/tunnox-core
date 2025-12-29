@@ -17,6 +17,12 @@ type StreamTransformer interface {
 
 	// WrapWriter 包装 Writer（限速）
 	WrapWriter(w io.Writer) (io.WriteCloser, error)
+
+	// WrapReaderWithContext 包装 Reader（限速），支持 context 取消
+	WrapReaderWithContext(ctx context.Context, r io.Reader) (io.Reader, error)
+
+	// WrapWriterWithContext 包装 Writer（限速），支持 context 取消
+	WrapWriterWithContext(ctx context.Context, w io.Writer) (io.WriteCloser, error)
 }
 
 // TransformConfig 转换配置
@@ -33,6 +39,14 @@ func (t *NoOpTransformer) WrapReader(r io.Reader) (io.Reader, error) {
 }
 
 func (t *NoOpTransformer) WrapWriter(w io.Writer) (io.WriteCloser, error) {
+	return &nopWriteCloser{w}, nil
+}
+
+func (t *NoOpTransformer) WrapReaderWithContext(ctx context.Context, r io.Reader) (io.Reader, error) {
+	return r, nil
+}
+
+func (t *NoOpTransformer) WrapWriterWithContext(ctx context.Context, w io.Writer) (io.WriteCloser, error) {
 	return &nopWriteCloser{w}, nil
 }
 
@@ -67,32 +81,57 @@ func NewTransformer(config *TransformConfig) (StreamTransformer, error) {
 }
 
 // WrapReader 包装 Reader（添加限速）
+// 注意：此方法保留向后兼容，内部使用 context.Background() 作为超时基础
+// 推荐使用 WrapReaderWithContext 传入正确的 parent context
 func (t *RateLimitedTransformer) WrapReader(r io.Reader) (io.Reader, error) {
 	return &rateLimitedReader{
-		source:  r,
-		limiter: t.rateLimiter,
+		source:    r,
+		limiter:   t.rateLimiter,
+		parentCtx: context.Background(),
 	}, nil
 }
 
 // WrapWriter 包装 Writer（添加限速）
+// 注意：此方法保留向后兼容，内部使用 context.Background() 作为超时基础
+// 推荐使用 WrapWriterWithContext 传入正确的 parent context
 func (t *RateLimitedTransformer) WrapWriter(w io.Writer) (io.WriteCloser, error) {
 	return &rateLimitedWriter{
-		target:  w,
-		limiter: t.rateLimiter,
+		target:    w,
+		limiter:   t.rateLimiter,
+		parentCtx: context.Background(),
+	}, nil
+}
+
+// WrapReaderWithContext 包装 Reader（添加限速），支持 context 取消
+func (t *RateLimitedTransformer) WrapReaderWithContext(ctx context.Context, r io.Reader) (io.Reader, error) {
+	return &rateLimitedReader{
+		source:    r,
+		limiter:   t.rateLimiter,
+		parentCtx: ctx,
+	}, nil
+}
+
+// WrapWriterWithContext 包装 Writer（添加限速），支持 context 取消
+func (t *RateLimitedTransformer) WrapWriterWithContext(ctx context.Context, w io.Writer) (io.WriteCloser, error) {
+	return &rateLimitedWriter{
+		target:    w,
+		limiter:   t.rateLimiter,
+		parentCtx: ctx,
 	}, nil
 }
 
 // rateLimitedReader 限速Reader
 type rateLimitedReader struct {
-	source  io.Reader
-	limiter *rate.Limiter
+	source    io.Reader
+	limiter   *rate.Limiter
+	parentCtx context.Context
 }
 
 func (r *rateLimitedReader) Read(p []byte) (n int, err error) {
 	n, err = r.source.Read(p)
 	if n > 0 {
-		// 等待令牌（5秒超时）
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		// 等待令牌，使用 parentCtx 派生的超时 context
+		ctx, cancel := context.WithTimeout(r.parentCtx, 5*time.Second)
 		if waitErr := r.limiter.WaitN(ctx, n); waitErr != nil {
 			cancel()
 			return n, fmt.Errorf("rate limit wait failed: %w", waitErr)
@@ -104,13 +143,14 @@ func (r *rateLimitedReader) Read(p []byte) (n int, err error) {
 
 // rateLimitedWriter 限速Writer
 type rateLimitedWriter struct {
-	target  io.Writer
-	limiter *rate.Limiter
+	target    io.Writer
+	limiter   *rate.Limiter
+	parentCtx context.Context
 }
 
 func (w *rateLimitedWriter) Write(p []byte) (n int, err error) {
-	// 等待令牌（5秒超时）
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// 等待令牌，使用 parentCtx 派生的超时 context
+	ctx, cancel := context.WithTimeout(w.parentCtx, 5*time.Second)
 	if waitErr := w.limiter.WaitN(ctx, len(p)); waitErr != nil {
 		cancel()
 		return 0, fmt.Errorf("rate limit wait failed: %w", waitErr)

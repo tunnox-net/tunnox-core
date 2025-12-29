@@ -7,19 +7,20 @@ import (
 	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/models"
-	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
 // JWTManager JWT令牌管理器
+// 不再直接依赖 repos 包，而是使用 storage.Storage 接口
 type JWTManager struct {
 	*dispose.ManagerBase
-	config *ControlConfig
-	repo   *repos.Repository
-	cache  *TokenCacheManager
+	config  *ControlConfig
+	storage storage.Storage
+	cache   *TokenCacheManager
 }
 
 // JWTClaims JWT声明
@@ -31,12 +32,30 @@ type JWTClaims struct {
 	jwt.RegisteredClaims
 }
 
+// GetClientID 返回客户端ID
+func (c *JWTClaims) GetClientID() int64 { return c.ClientID }
+
+// GetUserID 返回用户ID
+func (c *JWTClaims) GetUserID() string { return c.UserID }
+
+// GetClientType 返回客户端类型
+func (c *JWTClaims) GetClientType() string { return c.ClientType }
+
+// GetNodeID 返回节点ID
+func (c *JWTClaims) GetNodeID() string { return c.NodeID }
+
 // RefreshTokenClaims 刷新Token声明
 type RefreshTokenClaims struct {
 	ClientID int64  `json:"client_id,string"`
 	TokenID  string `json:"token_id"`
 	jwt.RegisteredClaims
 }
+
+// GetClientID 返回客户端ID
+func (c *RefreshTokenClaims) GetClientID() int64 { return c.ClientID }
+
+// GetTokenID 返回令牌ID
+func (c *RefreshTokenClaims) GetTokenID() string { return c.TokenID }
 
 // TokenInfo 结构体
 type TokenInfo struct {
@@ -64,13 +83,28 @@ type JWTTokenInfo struct {
 	TokenID      string
 }
 
+// GetToken 返回访问令牌
+func (t *JWTTokenInfo) GetToken() string { return t.Token }
+
+// GetRefreshToken 返回刷新令牌
+func (t *JWTTokenInfo) GetRefreshToken() string { return t.RefreshToken }
+
+// GetExpiresAt 返回过期时间
+func (t *JWTTokenInfo) GetExpiresAt() time.Time { return t.ExpiresAt }
+
+// GetClientId 返回客户端ID
+func (t *JWTTokenInfo) GetClientId() int64 { return t.ClientId }
+
+// GetTokenID 返回令牌ID
+func (t *JWTTokenInfo) GetTokenID() string { return t.TokenID }
+
 // NewJWTManager 创建新的JWT管理器
-func NewJWTManager(config *ControlConfig, repo *repos.Repository, parentCtx context.Context) *JWTManager {
+func NewJWTManager(config *ControlConfig, storage storage.Storage, parentCtx context.Context) *JWTManager {
 	manager := &JWTManager{
 		ManagerBase: dispose.NewManager("JWTManager", parentCtx),
 		config:      config,
-		repo:        repo,
-		cache:       NewTokenCacheManager(repo.GetStorage(), parentCtx),
+		storage:     storage,
+		cache:       NewTokenCacheManager(storage, parentCtx),
 	}
 	return manager
 }
@@ -244,7 +278,15 @@ func (m *JWTManager) ValidateAccessToken(ctx context.Context, tokenString string
 
 	// 异步存储到缓存，不阻塞验证流程
 	go func() {
-		m.cache.StoreAccessToken(context.Background(), tokenString, tokenInfo)
+		select {
+		case <-m.Ctx().Done():
+			return
+		default:
+			// 使用带超时的 context，避免阻塞过久
+			storeCtx, cancel := context.WithTimeout(m.Ctx(), 5*time.Second)
+			defer cancel()
+			m.cache.StoreAccessToken(storeCtx, tokenString, tokenInfo)
+		}
 	}()
 
 	return claims, nil
@@ -323,7 +365,15 @@ func (m *JWTManager) ValidateRefreshToken(ctx context.Context, refreshTokenStrin
 
 	// 异步存储到缓存，不阻塞验证流程
 	go func() {
-		m.cache.StoreRefreshToken(context.Background(), refreshTokenString, refreshTokenInfo)
+		select {
+		case <-m.Ctx().Done():
+			return
+		default:
+			// 使用带超时的 context，避免阻塞过久
+			storeCtx, cancel := context.WithTimeout(m.Ctx(), 5*time.Second)
+			defer cancel()
+			m.cache.StoreRefreshToken(storeCtx, refreshTokenString, refreshTokenInfo)
+		}
 	}()
 
 	return claims, nil

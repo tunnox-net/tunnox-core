@@ -45,16 +45,21 @@ func (c *TunnoxClient) SendTunnelCloseNotify(targetClientID int64, tunnelID, map
 
 	// 发送命令（不等待响应，异步发送）
 	go func() {
-		_, err := c.sendCommandAndWaitResponse(&CommandRequest{
-			CommandType: packet.SendNotifyToClient,
-			RequestBody: c2cReq,
-		})
-		if err != nil {
-			corelog.Warnf("Client: failed to send tunnel close notify to client %d for tunnel %s: %v",
-				targetClientID, tunnelID, err)
-		} else {
-			corelog.Debugf("Client: sent tunnel close notify to client %d for tunnel %s",
-				targetClientID, tunnelID)
+		select {
+		case <-c.Ctx().Done():
+			return
+		default:
+			_, err := c.sendCommandAndWaitResponse(&CommandRequest{
+				CommandType: packet.SendNotifyToClient,
+				RequestBody: c2cReq,
+			})
+			if err != nil {
+				corelog.Warnf("Client: failed to send tunnel close notify to client %d for tunnel %s: %v",
+					targetClientID, tunnelID, err)
+			} else {
+				corelog.Debugf("Client: sent tunnel close notify to client %d for tunnel %s",
+					targetClientID, tunnelID)
+			}
 		}
 	}()
 

@@ -12,6 +12,9 @@ import (
 	"tunnox-core/internal/core/storage"
 )
 
+// 编译时接口断言，确保 ClientStateRepository 实现了 IClientStateRepository 接口
+var _ IClientStateRepository = (*ClientStateRepository)(nil)
+
 // ClientStateRepository 客户端状态数据访问层
 //
 // 职责：
