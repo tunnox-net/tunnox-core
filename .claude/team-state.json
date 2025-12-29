@@ -1,18 +1,33 @@
 {
-  "project": "config-system-refactor",
-  "phase": "requirements",
-  "created_at": "2025-12-29T10:00:00Z",
-  "updated_at": "2025-12-29T10:00:00Z",
-  "requirements": {
-    "status": "in_progress",
-    "document": ".claude/team-workspace/requirements.md"
-  },
-  "architecture": {
-    "status": "pending",
-    "document": ".claude/team-workspace/architecture.md"
-  },
-  "tasks": [],
-  "review_queue": [],
-  "test_queue": [],
-  "completed": []
+  "project": "fix-first-connection-credentials",
+  "phase": "development",
+  "created_at": "2025-12-30T00:15:00Z",
+  "updated_at": "2025-12-30T00:15:00Z",
+  "bug_description": "客户端首次连接私有服务器无法获取 clientId 和 secret_key",
+  "scenarios": [
+    "./tunnox-client -p tcp -s 192.168.194.149:8000",
+    "配置文件指定私服地址但无 client_id/secret_key"
+  ],
+  "tasks": [
+    {
+      "id": "T001",
+      "title": "开发定位并修复 Bug",
+      "status": "in_progress",
+      "assignee": "dev"
+    },
+    {
+      "id": "T002",
+      "title": "架构师 Review 代码",
+      "status": "blocked",
+      "assignee": "architect",
+      "dependencies": ["T001"]
+    },
+    {
+      "id": "T003",
+      "title": "QA 设计测试用例并验证",
+      "status": "blocked",
+      "assignee": "qa",
+      "dependencies": ["T002"]
+    }
+  ]
 }

@@ -46,8 +46,10 @@ func (c *TunnoxClient) saveConnectionConfig() error {
 }
 
 // sendHandshakeOnStream 在指定的stream上发送握手请求（用于隧道连接）
+// connectionType: "control" 表示控制连接，"tunnel" 表示隧道连接
 func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, connectionType string) error {
-	corelog.Infof("Client: sendHandshakeOnStream called, stream=%p, streamType=%T, connectionType=%s", stream, stream, connectionType)
+	isControlConnection := connectionType == "control"
+	corelog.Infof("Client: sendHandshakeOnStream called, stream=%p, streamType=%T, connectionType=%s, isControl=%v", stream, stream, connectionType, isControlConnection)
 
 	var req *packet.HandshakeRequest
 
@@ -133,7 +135,9 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 	}
 
 	// 首次连接时，服务器会返回分配的凭据（仅对控制连接有用）
-	if stream == c.controlStream && resp.ClientID > 0 && resp.SecretKey != "" {
+	// 使用 isControlConnection 判断而不是 stream == c.controlStream
+	// 因为在自动连接检测时，c.controlStream 还没有设置
+	if isControlConnection && resp.ClientID > 0 && resp.SecretKey != "" {
 		// 更新本地凭据
 		c.config.ClientID = resp.ClientID
 		c.config.SecretKey = resp.SecretKey
@@ -151,7 +155,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 
 	// 握手成功后保存配置
 	// 仅对控制连接保存，避免隧道连接重复保存
-	if stream == c.controlStream {
+	if isControlConnection {
 		if err := c.saveConnectionConfig(); err != nil {
 			corelog.Warnf("Client: failed to save connection config: %v", err)
 		}
