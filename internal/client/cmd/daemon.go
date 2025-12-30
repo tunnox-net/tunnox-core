@@ -89,8 +89,8 @@ func runStart(cmd *cobra.Command, args []string) {
 	fmt.Printf("   Client ID: %d\n", config.ClientID)
 	fmt.Println()
 
-	// 创建客户端
-	tunnoxClient = client.NewClientWithCLIFlags(ctx, config, serverAddr != "", transport != "")
+	// 创建客户端（传递配置文件路径，用于保存凭据）
+	tunnoxClient = client.NewClientWithCLIFlags(ctx, config, serverAddr != "", transport != "", configFile)
 
 	// 带重试的连接
 	fmt.Println("Running in daemon mode...")

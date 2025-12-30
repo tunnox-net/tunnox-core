@@ -351,3 +351,188 @@ func TestHybridStorage_CounterOperations(t *testing.T) {
 		t.Errorf("IncrBy returned %d, want 6", count)
 	}
 }
+
+// TestHybridStorage_SharedPersistentList_CacheMiss 测试 SharedPersistent 类型的列表数据
+// 在缓存 miss 后能否从持久化存储正确恢复
+// 这个测试复现了 mapping 索引丢失的 bug
+func TestHybridStorage_SharedPersistentList_CacheMiss(t *testing.T) {
+	ctx := context.Background()
+
+	// 使用临时文件作为持久化存储
+	tempFile := "/tmp/test_hybrid_storage_list.json"
+	persistent, err := NewJSONStorage(&JSONStorageConfig{
+		FilePath:     tempFile,
+		AutoSave:     true,
+		SaveInterval: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewJSONStorage failed: %v", err)
+	}
+	defer persistent.Close()
+
+	// 创建本地缓存
+	cache := NewMemoryStorage(ctx)
+
+	// 使用默认配置（包含 SharedPersistentPrefixes）
+	config := DefaultHybridConfig()
+	config.EnablePersistent = true
+
+	storage := NewHybridStorageWithSharedCache(ctx, cache, nil, persistent, config)
+	defer storage.Close()
+
+	// 使用 SharedPersistent 前缀的 key（tunnox:client_mappings:）
+	key := "tunnox:client_mappings:12345678"
+
+	// 验证 key 被正确识别为 SharedPersistent
+	if !storage.isSharedPersistent(key) {
+		t.Fatalf("Expected key %s to be SharedPersistent", key)
+	}
+
+	// 第一步：追加数据到列表
+	item1 := `{"id":"mapping1","target_client_id":12345678}`
+	item2 := `{"id":"mapping2","target_client_id":12345678}`
+
+	if err := storage.AppendToList(key, item1); err != nil {
+		t.Fatalf("AppendToList item1 failed: %v", err)
+	}
+	if err := storage.AppendToList(key, item2); err != nil {
+		t.Fatalf("AppendToList item2 failed: %v", err)
+	}
+
+	// 验证写入后立即读取正常
+	list, err := storage.GetList(key)
+	if err != nil {
+		t.Fatalf("GetList after write failed: %v", err)
+	}
+	if len(list) != 2 {
+		t.Errorf("Expected 2 items, got %d", len(list))
+	}
+	t.Logf("After write: list has %d items", len(list))
+
+	// 第二步：清空本地缓存（模拟缓存过期或服务重启）
+	if err := cache.Delete(key); err != nil && err != ErrKeyNotFound {
+		t.Fatalf("cache.Delete failed: %v", err)
+	}
+
+	// 验证缓存已清空
+	_, err = cache.Get(key)
+	if err != ErrKeyNotFound {
+		t.Fatalf("Expected cache to be empty, got err: %v", err)
+	}
+	t.Log("Cache cleared successfully")
+
+	// 第三步：重新读取（应该从持久化存储恢复）
+	list, err = storage.GetList(key)
+	if err != nil {
+		t.Fatalf("GetList after cache miss failed: %v", err)
+	}
+
+	// 这是关键断言：缓存 miss 后应该能从持久化存储恢复数据
+	if len(list) != 2 {
+		t.Errorf("After cache miss: expected 2 items, got %d", len(list))
+		t.Logf("Persistent storage data check...")
+
+		// 调试：直接从持久化存储读取
+		persistentValue, persistentErr := persistent.Get(key)
+		if persistentErr != nil {
+			t.Logf("Persistent Get error: %v", persistentErr)
+		} else {
+			t.Logf("Persistent value type: %T", persistentValue)
+			t.Logf("Persistent value: %v", persistentValue)
+		}
+	} else {
+		t.Logf("After cache miss: list has %d items (correct!)", len(list))
+	}
+}
+
+// TestHybridStorage_SharedPersistentList_SimulateRestart 模拟服务重启场景
+// 创建新的 HybridStorage 实例，验证能否读取之前持久化的数据
+func TestHybridStorage_SharedPersistentList_SimulateRestart(t *testing.T) {
+	ctx := context.Background()
+
+	// 使用临时文件作为持久化存储
+	tempFile := "/tmp/test_hybrid_storage_restart.json"
+
+	// 第一阶段：写入数据
+	{
+		persistent, err := NewJSONStorage(&JSONStorageConfig{
+			FilePath:     tempFile,
+			AutoSave:     true,
+			SaveInterval: 100 * time.Millisecond,
+		})
+		if err != nil {
+			t.Fatalf("NewJSONStorage failed: %v", err)
+		}
+
+		cache := NewMemoryStorage(ctx)
+		config := DefaultHybridConfig()
+		config.EnablePersistent = true
+
+		storage := NewHybridStorageWithSharedCache(ctx, cache, nil, persistent, config)
+
+		key := "tunnox:client_mappings:99999999"
+		item := `{"id":"pmap_test","target_client_id":99999999}`
+
+		if err := storage.AppendToList(key, item); err != nil {
+			t.Fatalf("AppendToList failed: %v", err)
+		}
+
+		// 验证写入成功
+		list, err := storage.GetList(key)
+		if err != nil {
+			t.Fatalf("GetList failed: %v", err)
+		}
+		if len(list) != 1 {
+			t.Fatalf("Expected 1 item, got %d", len(list))
+		}
+		t.Logf("Phase 1: wrote %d items", len(list))
+
+		// 关闭存储（模拟服务停止）
+		storage.Close()
+		persistent.Close()
+	}
+
+	// 第二阶段：重新打开（模拟服务重启），验证数据恢复
+	{
+		persistent, err := NewJSONStorage(&JSONStorageConfig{
+			FilePath:     tempFile,
+			AutoSave:     true,
+			SaveInterval: 100 * time.Millisecond,
+		})
+		if err != nil {
+			t.Fatalf("NewJSONStorage (restart) failed: %v", err)
+		}
+		defer persistent.Close()
+
+		// 新的缓存实例（空的）
+		cache := NewMemoryStorage(ctx)
+		config := DefaultHybridConfig()
+		config.EnablePersistent = true
+
+		storage := NewHybridStorageWithSharedCache(ctx, cache, nil, persistent, config)
+		defer storage.Close()
+
+		key := "tunnox:client_mappings:99999999"
+
+		// 从新实例读取（缓存为空，应该从持久化存储恢复）
+		list, err := storage.GetList(key)
+		if err != nil {
+			t.Fatalf("GetList after restart failed: %v", err)
+		}
+
+		if len(list) != 1 {
+			t.Errorf("After restart: expected 1 item, got %d", len(list))
+
+			// 调试信息
+			persistentValue, persistentErr := persistent.Get(key)
+			if persistentErr != nil {
+				t.Logf("Persistent Get error: %v", persistentErr)
+			} else {
+				t.Logf("Persistent value type: %T", persistentValue)
+				t.Logf("Persistent value: %v", persistentValue)
+			}
+		} else {
+			t.Logf("After restart: list has %d items (correct!)", len(list))
+		}
+	}
+}

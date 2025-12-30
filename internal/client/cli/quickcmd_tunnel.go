@@ -178,9 +178,9 @@ func (r *QuickCommandRunner) generateCodeAndWait(protocol, targetAddress string,
 func (r *QuickCommandRunner) connectToServer() error {
 	fmt.Fprintf(os.Stderr, "\n🔍 Connecting to Tunnox service...\n")
 
-	// 创建客户端
+	// 创建客户端（传递配置文件路径，用于保存凭据）
 	needsAutoConnect := r.config.Server.Address == "" && r.config.Server.Protocol == ""
-	r.client = client.NewClientWithCLIFlags(r.ctx, r.config, !needsAutoConnect, !needsAutoConnect)
+	r.client = client.NewClientWithCLIFlags(r.ctx, r.config, !needsAutoConnect, !needsAutoConnect, r.configFilePath)
 
 	// 连接
 	if err := r.client.Connect(); err != nil {

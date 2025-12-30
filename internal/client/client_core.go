@@ -29,6 +29,9 @@ type TunnoxClient struct {
 	serverAddressFromCLI  bool
 	serverProtocolFromCLI bool
 
+	// 配置文件路径（用于保存凭据，如果用户通过 -c 指定了配置文件，则保存到该文件）
+	configFilePath string
+
 	// 标记是否使用了自动连接检测（首次连接成功后应保存服务器配置）
 	usedAutoConnection bool
 
@@ -105,11 +108,12 @@ type localMappingStats struct {
 
 // NewClient 创建客户端
 func NewClient(ctx context.Context, config *ClientConfig) *TunnoxClient {
-	return NewClientWithCLIFlags(ctx, config, false, false)
+	return NewClientWithCLIFlags(ctx, config, false, false, "")
 }
 
 // NewClientWithCLIFlags 创建客户端（带命令行参数标志）
-func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddressFromCLI, serverProtocolFromCLI bool) *TunnoxClient {
+// configFilePath: 用户通过 -c 指定的配置文件路径（用于保存凭据）
+func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddressFromCLI, serverProtocolFromCLI bool, configFilePath string) *TunnoxClient {
 	// 生成客户端实例标识（进程级别的唯一UUID）
 	instanceID := uuid.New().String()
 
@@ -118,6 +122,7 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 		config:                 config,
 		serverAddressFromCLI:   serverAddressFromCLI,
 		serverProtocolFromCLI:  serverProtocolFromCLI,
+		configFilePath:         configFilePath,
 		instanceID:             instanceID,
 		mappingHandlers:        make(map[string]MappingHandler),
 		localTrafficStats:      make(map[string]*localMappingStats),

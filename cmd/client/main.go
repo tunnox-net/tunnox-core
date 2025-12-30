@@ -129,10 +129,10 @@ func main() {
 		}
 	}()
 
-	// 创建客户端（传递命令行参数信息）
+	// 创建客户端（传递命令行参数信息和配置文件路径，用于保存凭据）
 	serverAddressFromCLI := *serverAddr != ""
 	serverProtocolFromCLI := *protocol != ""
-	tunnoxClient := client.NewClientWithCLIFlags(ctx, config, serverAddressFromCLI, serverProtocolFromCLI)
+	tunnoxClient := client.NewClientWithCLIFlags(ctx, config, serverAddressFromCLI, serverProtocolFromCLI, *configFile)
 
 	// 根据运行模式决定连接策略
 	if runInteractive {

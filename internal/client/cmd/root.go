@@ -203,8 +203,8 @@ func runInteractiveCLI() {
 		os.Exit(1)
 	}
 
-	// 创建客户端
-	tunnoxClient = client.NewClientWithCLIFlags(ctx, config, serverAddr != "", transport != "")
+	// 创建客户端（传递配置文件路径，用于保存凭据）
+	tunnoxClient = client.NewClientWithCLIFlags(ctx, config, serverAddr != "", transport != "", configFile)
 
 	// 连接到服务器
 	fmt.Fprintf(os.Stderr, "\nConnecting to Tunnox service...\n")
@@ -363,7 +363,7 @@ func ensureConnected(ctx context.Context) error {
 		return err
 	}
 
-	tunnoxClient = client.NewClientWithCLIFlags(ctx, config, serverAddr != "", transport != "")
+	tunnoxClient = client.NewClientWithCLIFlags(ctx, config, serverAddr != "", transport != "", configFile)
 
 	fmt.Fprintf(os.Stderr, "Connecting to server...\n")
 	if err := tunnoxClient.Connect(); err != nil {

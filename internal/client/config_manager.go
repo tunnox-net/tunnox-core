@@ -28,6 +28,24 @@ func NewConfigManager() *ConfigManager {
 	}
 }
 
+// NewConfigManagerWithPath 创建配置管理器（使用指定的配置文件路径）
+// configFilePath: 用户通过 -c 指定的配置文件路径
+// 如果指定了路径，则优先使用该路径进行加载和保存
+func NewConfigManagerWithPath(configFilePath string) *ConfigManager {
+	if configFilePath == "" {
+		return NewConfigManager()
+	}
+
+	// 使用用户指定的路径作为首选
+	workDir := getWorkingDir()
+	defaultPath := filepath.Join(workDir, "client-config.yaml")
+
+	return &ConfigManager{
+		searchPaths: []string{configFilePath, defaultPath},
+		savePaths:   []string{configFilePath}, // 保存时只使用用户指定的路径
+	}
+}
+
 // LoadConfig 加载配置（按优先级尝试多个路径）
 func (cm *ConfigManager) LoadConfig(cmdConfigPath string) (*ClientConfig, error) {
 	// 1. 命令行指定的配置文件

@@ -297,6 +297,11 @@ func registerAnonymousService(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("failed to resolve client repository: %w", err)
 		}
 
+		configRepoInstance, err := container.Resolve("client_config_repository")
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve client config repository: %w", err)
+		}
+
 		mappingRepoInstance, err := container.Resolve("mapping_repository")
 		if err != nil {
 			return nil, fmt.Errorf("failed to resolve mapping repository: %w", err)
@@ -312,6 +317,11 @@ func registerAnonymousService(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("client repository is not of type *repos.ClientRepository")
 		}
 
+		configRepo, ok := configRepoInstance.(*repos.ClientConfigRepository)
+		if !ok {
+			return nil, fmt.Errorf("client config repository is not of type *repos.ClientConfigRepository")
+		}
+
 		mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
 		if !ok {
 			return nil, fmt.Errorf("mapping repository is not of type *repos.PortMappingRepo")
@@ -322,7 +332,7 @@ func registerAnonymousService(container *container.Container, parentCtx context.
 			return nil, fmt.Errorf("id manager is not of type *idgen.IDManager")
 		}
 
-		anonymousService := NewAnonymousService(clientRepo, mappingRepo, idManager, parentCtx)
+		anonymousService := NewAnonymousService(clientRepo, configRepo, mappingRepo, idManager, parentCtx)
 		return anonymousService, nil
 	})
 	return nil

@@ -18,19 +18,26 @@ import (
 
 // QuickCommandRunner 快捷命令执行器
 type QuickCommandRunner struct {
-	ctx         context.Context
-	client      *client.TunnoxClient
-	config      *client.ClientConfig
-	output      *Output
-	interactive bool
+	ctx            context.Context
+	client         *client.TunnoxClient
+	config         *client.ClientConfig
+	configFilePath string // 配置文件路径（用于保存凭据）
+	output         *Output
+	interactive    bool
 }
 
 // NewQuickCommandRunner 创建快捷命令执行器
 func NewQuickCommandRunner(ctx context.Context, cfg *client.ClientConfig) *QuickCommandRunner {
+	return NewQuickCommandRunnerWithConfigPath(ctx, cfg, "")
+}
+
+// NewQuickCommandRunnerWithConfigPath 创建快捷命令执行器（带配置文件路径）
+func NewQuickCommandRunnerWithConfigPath(ctx context.Context, cfg *client.ClientConfig, configFilePath string) *QuickCommandRunner {
 	return &QuickCommandRunner{
-		ctx:    ctx,
-		config: cfg,
-		output: NewOutput(false), // 启用颜色
+		ctx:            ctx,
+		config:         cfg,
+		configFilePath: configFilePath,
+		output:         NewOutput(false), // 启用颜色
 	}
 }
 

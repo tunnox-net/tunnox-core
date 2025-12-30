@@ -34,14 +34,15 @@ func (c *TunnoxClient) saveConnectionConfig() error {
 	}
 
 	// 使用ConfigManager保存配置
-	configMgr := NewConfigManager()
+	// 优先使用用户指定的配置文件路径，这样凭据会保存到用户的配置文件中
+	configMgr := NewConfigManagerWithPath(c.configFilePath)
 	// 只有在需要保存服务器配置时才允许更新服务器地址和协议
 	if err := configMgr.SaveConfigWithOptions(c.config, shouldSaveServerConfig); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	corelog.Infof("Client: connection config saved (ClientID=%d, protocol=%s, address=%s)",
-		c.config.ClientID, c.config.Server.Protocol, c.config.Server.Address)
+	corelog.Infof("Client: connection config saved (ClientID=%d, protocol=%s, address=%s, configFile=%s)",
+		c.config.ClientID, c.config.Server.Protocol, c.config.Server.Address, c.configFilePath)
 	return nil
 }
 

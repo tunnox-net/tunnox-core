@@ -24,17 +24,20 @@ type anonymousService struct {
 	*dispose.ServiceBase
 	baseService *BaseService
 	clientRepo  *repos.ClientRepository
+	configRepo  *repos.ClientConfigRepository // 新系统：用于 clientService.GetClient 读取
 	mappingRepo *repos.PortMappingRepo
 	idManager   *idgen.IDManager
 	notifier    localNotifier // 通知识别接口
 }
 
 // NewAnonymousService 创建匿名服务
-func NewAnonymousService(clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) AnonymousService {
+// configRepo: 新系统的客户端配置存储，确保 clientService.GetClient 能读取到匿名客户端
+func NewAnonymousService(clientRepo *repos.ClientRepository, configRepo *repos.ClientConfigRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) AnonymousService {
 	service := &anonymousService{
 		ServiceBase: dispose.NewService("AnonymousService", parentCtx),
 		baseService: NewBaseService(),
 		clientRepo:  clientRepo,
+		configRepo:  configRepo,
 		mappingRepo: mappingRepo,
 		idManager:   idManager,
 	}
@@ -75,9 +78,27 @@ func (s *anonymousService) GenerateAnonymousCredentials() (*models.Client, error
 	// 设置时间戳
 	s.baseService.SetTimestamps(&client.CreatedAt, &client.UpdatedAt)
 
-	// 保存到存储
+	// 保存到旧系统（兼容性）
 	if err := s.clientRepo.CreateClient(client); err != nil {
 		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "create anonymous client")
+	}
+
+	// 同时保存到新系统（确保 clientService.GetClient 能读取）
+	if s.configRepo != nil {
+		clientConfig := &models.ClientConfig{
+			ID:        client.ID,
+			UserID:    client.UserID,
+			Name:      client.Name,
+			AuthCode:  client.AuthCode,
+			SecretKey: client.SecretKey,
+			Type:      client.Type,
+			Config:    client.Config,
+			CreatedAt: client.CreatedAt,
+			UpdatedAt: client.UpdatedAt,
+		}
+		if err := s.configRepo.SaveConfig(clientConfig); err != nil {
+			corelog.Warnf("Failed to save anonymous client to new config system: %v", err)
+		}
 	}
 
 	s.baseService.LogCreated("anonymous client", fmt.Sprintf("%d", clientID))

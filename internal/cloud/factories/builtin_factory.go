@@ -49,7 +49,7 @@ func CreateBuiltinCloudControlDepsWithRepo(stor storage.Storage, repo *repos.Rep
 	mappingService := services.NewPortMappingService(mappingRepo, idManager, statsProvider.GetCounter(), parentCtx)
 	nodeService := services.NewNodeService(nodeRepo, idManager, parentCtx)
 	connService := services.NewConnectionService(connRepo, idManager, parentCtx)
-	anonymousService := services.NewAnonymousService(clientRepo, mappingRepo, idManager, parentCtx)
+	anonymousService := services.NewAnonymousService(clientRepo, configRepo, mappingRepo, idManager, parentCtx)
 	statsService := services.NewstatsService(userRepo, clientRepo, mappingRepo, nodeRepo, parentCtx)
 
 	return &managers.CloudControlDeps{
