@@ -39,6 +39,8 @@ type ListenerConfig struct {
 // TunnelCreator 隧道创建接口
 type TunnelCreator interface {
 	// CreateSOCKS5Tunnel 创建 SOCKS5 隧道
+	// onSuccess 回调在隧道建立成功后、数据转发开始前调用
+	// 用于发送 SOCKS5 成功响应
 	CreateSOCKS5Tunnel(
 		userConn net.Conn,
 		mappingID string,
@@ -46,6 +48,7 @@ type TunnelCreator interface {
 		targetHost string,
 		targetPort int,
 		secretKey string,
+		onSuccess func(),
 	) error
 }
 
@@ -146,6 +149,12 @@ func (l *Listener) handleConnection(conn net.Conn) {
 		return
 	}
 
+	// 发送成功响应的回调函数
+	// 只有在隧道建立成功后才调用，解决响应时机问题
+	sendSuccessCallback := func() {
+		l.SendSuccess(conn)
+	}
+
 	err = l.tunnelCreator.CreateSOCKS5Tunnel(
 		conn,
 		l.config.MappingID,
@@ -153,6 +162,7 @@ func (l *Listener) handleConnection(conn net.Conn) {
 		targetHost,
 		targetPort,
 		l.config.SecretKey,
+		sendSuccessCallback,
 	)
 	if err != nil {
 		corelog.Warnf("SOCKS5Listener: failed to create tunnel: %v", err)
@@ -260,8 +270,8 @@ func (l *Listener) Handshake(conn net.Conn) (string, int, error) {
 	}
 	targetPort := int(binary.BigEndian.Uint16(portBuf))
 
-	// 6. 发送成功响应
-	l.SendSuccess(conn)
+	// 注意：不在这里发送成功响应
+	// 成功响应应该在隧道建立成功后发送，由 handleConnection 负责
 
 	return targetHost, targetPort, nil
 }

@@ -34,6 +34,7 @@ func generateSOCKS5TunnelID() string {
 
 // CreateSOCKS5Tunnel 创建 SOCKS5 隧道
 // 实现 SOCKS5TunnelCreator 接口
+// onSuccess 回调在隧道建立成功后、数据转发开始前调用
 func (c *SOCKS5TunnelCreatorImpl) CreateSOCKS5Tunnel(
 	userConn net.Conn,
 	mappingID string,
@@ -41,6 +42,7 @@ func (c *SOCKS5TunnelCreatorImpl) CreateSOCKS5Tunnel(
 	targetHost string,
 	targetPort int,
 	secretKey string,
+	onSuccess func(),
 ) error {
 	// 1. 生成隧道ID
 	tunnelID := c.idGenerator()
@@ -53,7 +55,13 @@ func (c *SOCKS5TunnelCreatorImpl) CreateSOCKS5Tunnel(
 		return fmt.Errorf("failed to dial tunnel: %w", err)
 	}
 
-	// 3. 开始双向数据转发
+	// 3. 隧道建立成功，发送 SOCKS5 成功响应
+	// 必须在数据转发开始前发送，否则浏览器不会发送 HTTP 请求
+	if onSuccess != nil {
+		onSuccess()
+	}
+
+	// 4. 开始双向数据转发
 	go c.forwardData(tunnelID, userConn, serverConn, tunnelStream)
 
 	return nil
