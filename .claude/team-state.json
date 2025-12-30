@@ -1,33 +1,43 @@
 {
   "project": "fix-first-connection-credentials",
-  "phase": "development",
+  "phase": "completed",
   "created_at": "2025-12-30T00:15:00Z",
-  "updated_at": "2025-12-30T00:15:00Z",
+  "updated_at": "2025-12-30T01:30:00Z",
   "bug_description": "客户端首次连接私有服务器无法获取 clientId 和 secret_key",
   "scenarios": [
     "./tunnox-client -p tcp -s 192.168.194.149:8000",
     "配置文件指定私服地址但无 client_id/secret_key"
   ],
+  "root_cause": "在 auto_connector.go 中，握手在 c.controlStream 设置之前执行，导致 stream == c.controlStream 永远为 false",
+  "fix": "将 stream == c.controlStream 改为 connectionType == \"control\"",
+  "modified_files": [
+    "internal/client/control_connection_handshake.go"
+  ],
   "tasks": [
     {
       "id": "T001",
       "title": "开发定位并修复 Bug",
-      "status": "in_progress",
+      "status": "completed",
       "assignee": "dev"
     },
     {
       "id": "T002",
       "title": "架构师 Review 代码",
-      "status": "blocked",
+      "status": "completed",
       "assignee": "architect",
-      "dependencies": ["T001"]
+      "review_result": "approved"
     },
     {
       "id": "T003",
       "title": "QA 设计测试用例并验证",
-      "status": "blocked",
+      "status": "completed",
       "assignee": "qa",
-      "dependencies": ["T002"]
+      "test_result": {
+        "compile": "pass",
+        "unit_tests": "pass (41 packages)",
+        "go_vet": "pass",
+        "code_review": "pass"
+      }
     }
   ]
 }

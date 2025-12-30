@@ -174,6 +174,7 @@ func (r *RemoteStorage) onClose() error {
 }
 
 // withRetry 带重试的操作执行器
+// 注意：ErrKeyNotFound 不会触发重试，因为它是正常的"未找到"响应
 func (r *RemoteStorage) withRetry(operation func() error) error {
 	var lastErr error
 	for i := 0; i < r.config.MaxRetries; i++ {
@@ -184,6 +185,10 @@ func (r *RemoteStorage) withRetry(operation func() error) error {
 		}
 
 		if err := operation(); err != nil {
+			// ErrKeyNotFound 是正常响应，不需要重试
+			if err == ErrKeyNotFound {
+				return err
+			}
 			lastErr = err
 			// 检查是否是连接错误，如果是则重连
 			r.connMu.Lock()
@@ -385,6 +390,7 @@ func (r *RemoteStorage) QueryByField(keyPrefix string, fieldName string, fieldVa
 			FieldName:  fieldName,
 			FieldValue: valueData,
 		})
+
 		if err != nil {
 			return err
 		}

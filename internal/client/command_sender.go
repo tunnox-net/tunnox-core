@@ -86,13 +86,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	}
 
 	// 发送命令
-	var cmdStartTime time.Time
-	if req.EnableTrace {
-		cmdStartTime = time.Now()
-		corelog.Debugf("[CMD_TRACE] [CLIENT] [SEND_START] CommandID=%s, CommandType=%d, Time=%s",
-			cmdPkt.CommandId, cmdPkt.CommandType, cmdStartTime.Format("15:04:05.000"))
-	}
-
+	cmdStartTime := time.Now()
 	_, err = controlStream.WritePacket(transferPkt, true, 0)
 	if err != nil {
 		if req.EnableTrace {
@@ -113,19 +107,8 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 		return nil, fmt.Errorf("failed to send command: %w", err)
 	}
 
-	if req.EnableTrace {
-		corelog.Debugf("[CMD_TRACE] [CLIENT] [SEND_COMPLETE] CommandID=%s, SendDuration=%v, Time=%s",
-			cmdPkt.CommandId, time.Since(cmdStartTime), time.Now().Format("15:04:05.000"))
-	}
-
 	// 等待响应（支持context取消）
-	var waitStartTime time.Time
-	if req.EnableTrace {
-		waitStartTime = time.Now()
-		corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_START] CommandID=%s, Time=%s",
-			cmdPkt.CommandId, waitStartTime.Format("15:04:05.000"))
-	}
-
+	waitStartTime := time.Now()
 	cmdResp, err := c.commandResponseManager.WaitForResponseWithContext(ctx, cmdPkt.CommandId, responseChan)
 	if err != nil {
 		if req.EnableTrace {
