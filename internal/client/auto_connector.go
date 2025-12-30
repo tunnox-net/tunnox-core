@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"sync"
 	"time"
 
@@ -93,9 +92,9 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 			for i, ep := range endpoints {
 				protocols[i] = ep.Protocol
 			}
-			fmt.Fprintf(os.Stderr, "   Trying protocols: %v\n", protocols)
+			corelog.Debugf("AutoConnector: trying protocols: %v", protocols)
 		} else {
-			fmt.Fprintf(os.Stderr, "   Retrying (round %d/%d, timeout: %ds)...\n", round+1, len(roundTimeouts), int(timeout.Seconds()))
+			corelog.Debugf("AutoConnector: retrying (round %d/%d, timeout: %ds)", round+1, len(roundTimeouts), int(timeout.Seconds()))
 		}
 
 		// 尝试当前轮次 - 使用快速返回策略
@@ -166,8 +165,6 @@ func (ac *AutoConnector) tryRoundFastReturn(ctx context.Context, timeout time.Du
 	select {
 	case attempt, ok := <-successChan:
 		if ok && attempt != nil {
-			// 显示成功信息
-			fmt.Fprintf(os.Stderr, "   Protocol: %s\n", attempt.Endpoint.Protocol)
 			corelog.Infof("AutoConnector: connected via %s://%s", attempt.Endpoint.Protocol, attempt.Endpoint.Address)
 
 			// 异步清理其他成功的连接

@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"sync"
 	"time"
 
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/stream"
+	"tunnox-core/internal/utils"
 )
 
 // SOCKS5TunnelCreatorImpl SOCKS5 隧道创建器实现
@@ -45,43 +46,61 @@ func (c *SOCKS5TunnelCreatorImpl) CreateSOCKS5Tunnel(
 	tunnelID := c.idGenerator()
 
 	// 2. 建立到 Server 的隧道连接（包含 SOCKS5 动态目标地址）
-	serverConn, _, err := c.client.dialTunnelWithTarget(tunnelID, mappingID, secretKey, targetHost, targetPort)
+	// 重要：必须使用 tunnelStream 进行数据传输，而不是直接使用 serverConn
+	// 因为 serverConn 已经被 tunnelStream 包装，并且已经执行了握手和 TunnelOpen 协议
+	serverConn, tunnelStream, err := c.client.dialTunnelWithTarget(tunnelID, mappingID, secretKey, targetHost, targetPort)
 	if err != nil {
 		return fmt.Errorf("failed to dial tunnel: %w", err)
 	}
 
 	// 3. 开始双向数据转发
-	go c.forwardData(tunnelID, userConn, serverConn)
+	go c.forwardData(tunnelID, userConn, serverConn, tunnelStream)
 
 	return nil
 }
 
 // forwardData 双向数据转发
-func (c *SOCKS5TunnelCreatorImpl) forwardData(tunnelID string, userConn, serverConn net.Conn) {
-	var wg sync.WaitGroup
-	wg.Add(2)
+// 使用 SimpleBidirectionalCopy 实现正确的半关闭语义，
+// 解决 HTTP 请求发送完毕后响应数据无法传回的问题
+func (c *SOCKS5TunnelCreatorImpl) forwardData(tunnelID string, userConn, serverConn net.Conn, tunnelStream stream.PackageStreamer) {
+	logPrefix := fmt.Sprintf("SOCKS5Tunnel[%s]", tunnelID)
 
-	// 用户 -> 服务器
-	go func() {
-		defer wg.Done()
-		_, err := io.Copy(serverConn, userConn)
-		if err != nil && err != io.EOF {
-			corelog.Debugf("SOCKS5Tunnel[%s]: user->server error: %v", tunnelID, err)
-		}
+	// 从 tunnelStream 获取 Reader/Writer（支持压缩/加密）
+	tunnelReader := tunnelStream.GetReader()
+	tunnelWriter := tunnelStream.GetWriter()
+
+	// 如果 GetReader/GetWriter 返回 nil，回退到直接使用 serverConn
+	if tunnelReader == nil {
+		tunnelReader = serverConn
+	}
+	if tunnelWriter == nil {
+		tunnelWriter = serverConn
+	}
+
+	// 包装成 ReadWriteCloser（确保关闭时同时关闭 stream 和 conn）
+	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
+		tunnelStream.Close()
 		serverConn.Close()
-	}()
-
-	// 服务器 -> 用户
-	go func() {
-		defer wg.Done()
-		_, err := io.Copy(userConn, serverConn)
-		if err != nil && err != io.EOF {
-			corelog.Debugf("SOCKS5Tunnel[%s]: server->user error: %v", tunnelID, err)
-		}
+		return nil
+	})
+	if err != nil {
+		corelog.Errorf("SOCKS5Tunnel[%s]: failed to create tunnel ReadWriteCloser: %v", tunnelID, err)
+		serverConn.Close()
 		userConn.Close()
-	}()
+		return
+	}
 
-	wg.Wait()
+	result := utils.SimpleBidirectionalCopy(userConn, tunnelRWC, logPrefix)
+
+	if result.SendError != nil && result.SendError != io.EOF {
+		corelog.Warnf("SOCKS5Tunnel[%s]: user->server error: %v", tunnelID, result.SendError)
+	}
+	if result.ReceiveError != nil && result.ReceiveError != io.EOF {
+		corelog.Warnf("SOCKS5Tunnel[%s]: server->user error: %v", tunnelID, result.ReceiveError)
+	}
+
+	corelog.Debugf("SOCKS5Tunnel[%s]: completed, sent=%d, received=%d",
+		tunnelID, result.BytesSent, result.BytesReceived)
 }
 
 // SOCKS5TunnelRequest SOCKS5 隧道请求
