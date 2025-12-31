@@ -11,7 +11,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // PortMappingService 端口映射服务接口（避免循环依赖）
@@ -157,14 +157,14 @@ func (s *Service) CreateConnectionCode(req *CreateRequest) (*models.TunnelConnec
 		return true, nil // 已存在
 	})
 	if err != nil {
-		return nil, coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to generate unique code")
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to generate unique code")
 	}
 
 	// 4. 创建连接码对象
 	now := time.Now()
 	id, err := s.generateID("conncode")
 	if err != nil {
-		return nil, coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to generate ID")
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to generate ID")
 	}
 
 	connCode := &models.TunnelConnectionCode{
@@ -227,9 +227,9 @@ func (s *Service) cleanupExpiredEntities(ctx context.Context) {
 //
 // 格式：prefix_xxxxxxxx（8位16进制随机字符）
 func (s *Service) generateID(prefix string) (string, error) {
-	randomPart, err := utils.GenerateRandomStringWithCharset(8, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	randomPart, err := random.StringWithCharset(8, "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	if err != nil {
-		return "", coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to generate random ID")
+		return "", coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to generate random ID")
 	}
 	return prefix + "_" + randomPart, nil
 }

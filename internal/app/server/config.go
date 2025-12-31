@@ -1,6 +1,8 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"tunnox-core/internal/constants"
@@ -91,6 +93,12 @@ type PlatformConfig struct {
 	Timeout int    `yaml:"timeout"` // 秒
 }
 
+// SecurityConfig 安全配置
+type SecurityConfig struct {
+	ReconnectTokenSecret string `yaml:"reconnect_token_secret"` // 重连Token HMAC密钥，为空时自动生成
+	ReconnectTokenTTL    int    `yaml:"reconnect_token_ttl"`    // 重连Token有效期（秒），默认30
+}
+
 // Config 应用配置
 type Config struct {
 	Server      ServerConfig      `yaml:"server"`
@@ -100,6 +108,7 @@ type Config struct {
 	Persistence PersistenceConfig `yaml:"persistence"`
 	Storage     StorageConfig     `yaml:"storage"`
 	Platform    PlatformConfig    `yaml:"platform"`
+	Security    SecurityConfig    `yaml:"security"`
 }
 
 // LoadConfig 加载配置文件
@@ -261,7 +270,30 @@ func ValidateConfig(config *Config) error {
 		config.Platform.Timeout = 10
 	}
 
+	// 验证 Security 配置
+	if config.Security.ReconnectTokenSecret == "" {
+		// 未配置密钥时自动生成随机密钥
+		secret, err := generateRandomSecret(32)
+		if err != nil {
+			return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to generate random secret")
+		}
+		config.Security.ReconnectTokenSecret = secret
+		corelog.Warnf("security.reconnect_token_secret not configured, using auto-generated random secret (not recommended for production cluster)")
+	}
+	if config.Security.ReconnectTokenTTL <= 0 {
+		config.Security.ReconnectTokenTTL = 30 // 默认30秒
+	}
+
 	return nil
+}
+
+// generateRandomSecret 生成随机密钥
+func generateRandomSecret(length int) (string, error) {
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // GetDefaultConfig 获取默认配置
@@ -335,6 +367,10 @@ func GetDefaultConfig() *Config {
 			URL:     "http://tunnox-platform:8080",
 			Token:   "",
 			Timeout: 10,
+		},
+		Security: SecurityConfig{
+			ReconnectTokenSecret: "", // 为空时自动生成
+			ReconnectTokenTTL:    30,
 		},
 	}
 }
@@ -482,5 +518,12 @@ platform:
   url: "http://tunnox-platform:8080"
   token: ""
   timeout: 10  # seconds
+
+# ============================================
+# 安全配置
+# ============================================
+security:
+  reconnect_token_secret: ""  # 重连Token HMAC密钥，为空时自动生成随机密钥
+  reconnect_token_ttl: 30     # 重连Token有效期（秒）
 `
 }

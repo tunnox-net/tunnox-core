@@ -8,7 +8,7 @@ import (
 
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -68,7 +68,7 @@ func (s *Service) GetConnectionCode(code string) (*models.TunnelConnectionCode, 
 //
 // 返回指定ListenClient创建的所有映射（我在访问谁）
 func (s *Service) ListOutboundMappings(listenClientID int64) ([]*models.PortMapping, error) {
-	clientKey := utils.Int64ToString(listenClientID)
+	clientKey := random.Int64ToString(listenClientID)
 	corelog.Debugf("ConnectionCodeService.ListOutboundMappings: querying mappings for client %d (key=%s)", listenClientID, clientKey)
 
 	allMappings, err := s.portMappingRepo.GetClientPortMappings(clientKey)
@@ -97,7 +97,7 @@ func (s *Service) ListOutboundMappings(listenClientID int64) ([]*models.PortMapp
 //
 // 返回访问指定TargetClient的所有映射（谁在访问我）
 func (s *Service) ListInboundMappings(targetClientID int64) ([]*models.PortMapping, error) {
-	clientKey := utils.Int64ToString(targetClientID)
+	clientKey := random.Int64ToString(targetClientID)
 	corelog.Debugf("ConnectionCodeService.ListInboundMappings: querying mappings for client %d (key=%s)", targetClientID, clientKey)
 
 	allMappings, err := s.portMappingRepo.GetClientPortMappings(clientKey)

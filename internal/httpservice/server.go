@@ -70,12 +70,17 @@ func NewHTTPService(
 	}
 
 	// 创建 HTTP 服务器
+	maxHeaderBytes := int(config.MaxHeaderBytes)
+	if maxHeaderBytes <= 0 {
+		maxHeaderBytes = 1 << 20 // 默认 1MB
+	}
 	s.server = &http.Server{
-		Addr:         config.ListenAddr,
-		Handler:      s.router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:           config.ListenAddr,
+		Handler:        s.router,
+		ReadTimeout:    30 * time.Second,
+		WriteTimeout:   30 * time.Second,
+		IdleTimeout:    120 * time.Second,
+		MaxHeaderBytes: maxHeaderBytes,
 	}
 
 	// 添加清理处理器
@@ -131,6 +136,10 @@ func (s *HTTPService) Start() error {
 	// 注册通用中间件
 	s.router.Use(loggingMiddleware)
 	s.router.Use(corsMiddleware(&s.config.CORS))
+	// 注册请求体大小限制中间件
+	if s.config.MaxBodySize > 0 {
+		s.router.Use(bodySizeLimitMiddleware(s.config.MaxBodySize))
+	}
 
 	// 注册健康检查端点（不需要认证）
 	s.registerHealthRoutes()

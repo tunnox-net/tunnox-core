@@ -71,35 +71,26 @@ func (m *Storage) Set(key string, value any, ttl time.Duration) error {
 }
 
 // Get 获取值
+// 采用懒删除策略：检测到过期时只返回"不存在"，不执行删除
+// 删除操作由后台 CleanupExpired 定时器统一处理
 func (m *Storage) Get(key string) (any, error) {
 	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	if m.data == nil {
-		m.mu.RUnlock()
 		return nil, types.ErrKeyNotFound
 	}
 
 	item, exists := m.data[key]
 	if !exists {
-		m.mu.RUnlock()
 		return nil, types.ErrKeyNotFound
 	}
 
-	// 检查是否过期（在 RLock 下检查，不执行删除）
-	expired := !item.Expiration.IsZero() && time.Now().After(item.Expiration)
-	m.mu.RUnlock()
-
-	// 如果过期，需要升级为写锁来删除
-	if expired {
-		m.mu.Lock()
-		// 再次检查（可能已被其他 goroutine 删除）
-		if item, exists := m.data[key]; exists {
-			if !item.Expiration.IsZero() && time.Now().After(item.Expiration) {
-				delete(m.data, key)
-			}
-		}
-		m.mu.Unlock()
+	// 检查是否过期，过期则返回不存在（懒删除，不升级写锁）
+	if !item.Expiration.IsZero() && time.Now().After(item.Expiration) {
 		return nil, types.ErrKeyNotFound
 	}
+
 	return item.Value, nil
 }
 
@@ -113,34 +104,25 @@ func (m *Storage) Delete(key string) error {
 }
 
 // Exists 检查键是否存在
+// 采用懒删除策略：检测到过期时只返回 false，不执行删除
+// 删除操作由后台 CleanupExpired 定时器统一处理
 func (m *Storage) Exists(key string) (bool, error) {
 	m.mu.RLock()
+	defer m.mu.RUnlock()
+
 	if m.data == nil {
-		m.mu.RUnlock()
 		return false, nil
 	}
 
 	item, exists := m.data[key]
 	if !exists {
-		m.mu.RUnlock()
 		return false, nil
 	}
 
-	// 检查是否过期（在 RLock 下检查，不执行删除）
-	expired := !item.Expiration.IsZero() && time.Now().After(item.Expiration)
-	m.mu.RUnlock()
-
-	// 如果过期，需要升级为写锁来删除
-	if expired {
-		m.mu.Lock()
-		// 再次检查（可能已被其他 goroutine 删除）
-		if item, exists := m.data[key]; exists {
-			if !item.Expiration.IsZero() && time.Now().After(item.Expiration) {
-				delete(m.data, key)
-			}
-		}
-		m.mu.Unlock()
+	// 检查是否过期，过期则返回不存在（懒删除，不升级写锁）
+	if !item.Expiration.IsZero() && time.Now().After(item.Expiration) {
 		return false, nil
 	}
+
 	return true, nil
 }

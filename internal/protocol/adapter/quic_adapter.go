@@ -237,11 +237,13 @@ func (a *QuicAdapter) onClose() error {
 }
 
 // Dial 建立 QUIC 连接（客户端）
+// TODO: 跨节点通信场景下，考虑添加 TLS 配置支持（从 SessionManager 或配置文件获取）
+// 当前使用 InsecureSkipVerify=true，业务数据已有端到端加密（AES-256-GCM）保护
 func (a *QuicAdapter) Dial(address string) (io.ReadWriteCloser, error) {
 	corelog.Infof("QUIC adapter dialing %s", address)
 
 	tlsConf := &tls.Config{
-		InsecureSkipVerify: true, // 自签名证书
+		InsecureSkipVerify: true, // 自签名证书，跨节点通信暂用默认配置
 		NextProtos:         []string{"tunnox-quic"},
 	}
 
@@ -324,8 +326,8 @@ func (c *QuicStreamConn) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.closed)
 
-		// Close stream
-		(*c.stream).Close()
+		// Close stream and capture error
+		err = (*c.stream).Close()
 	})
 	return err
 }

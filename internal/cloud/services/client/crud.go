@@ -9,7 +9,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // ============================================================================
@@ -75,7 +75,7 @@ func (s *Service) CreateClient(userID, clientName string) (*models.Client, error
 	// 更新统计计数器
 	if s.statsCounter != nil {
 		if err := s.statsCounter.IncrClient(1); err != nil {
-			s.baseService.LogWarning("update client stats counter", err, utils.Int64ToString(clientID))
+			s.baseService.LogWarning("update client stats counter", err, random.Int64ToString(clientID))
 		}
 	}
 
@@ -208,7 +208,7 @@ func (s *Service) DeleteClient(clientID int64) error {
 	}
 
 	// ✅ 兼容性：从旧Repository删除
-	if err := s.clientRepo.DeleteClient(utils.Int64ToString(clientID)); err != nil {
+	if err := s.clientRepo.DeleteClient(random.Int64ToString(clientID)); err != nil {
 		s.baseService.LogWarning("delete from legacy client repo", err)
 	}
 
@@ -227,12 +227,12 @@ func (s *Service) DeleteClient(clientID int64) error {
 	// 更新统计计数器
 	if s.statsCounter != nil {
 		if err := s.statsCounter.IncrClient(-1); err != nil {
-			s.baseService.LogWarning("update client stats counter", err, utils.Int64ToString(clientID))
+			s.baseService.LogWarning("update client stats counter", err, random.Int64ToString(clientID))
 		}
 		// 如果客户端之前在线，减少在线数
 		if client.Status == models.ClientStatusOnline {
 			if err := s.statsCounter.IncrOnlineClients(-1); err != nil {
-				s.baseService.LogWarning("update online clients counter", err, utils.Int64ToString(clientID))
+				s.baseService.LogWarning("update online clients counter", err, random.Int64ToString(clientID))
 			}
 		}
 	}

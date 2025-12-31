@@ -2,6 +2,8 @@ package utils
 
 import (
 	"io"
+
+	"tunnox-core/internal/utils/iocopy"
 )
 
 // CopyStrategy 拷贝策略接口
@@ -12,7 +14,7 @@ type CopyStrategy interface {
 	// connB: 隧道连接（如 WebSocket 连接）
 	// options: 拷贝选项
 	// 返回拷贝结果
-	Copy(connA, connB io.ReadWriteCloser, options *BidirectionalCopyOptions) *BidirectionalCopyResult
+	Copy(connA, connB io.ReadWriteCloser, options *iocopy.Options) *iocopy.Result
 }
 
 // DefaultCopyStrategy 默认拷贝策略（适用于 TCP、WebSocket、QUIC 等）
@@ -25,8 +27,8 @@ func NewDefaultCopyStrategy() CopyStrategy {
 }
 
 // Copy 执行默认双向数据拷贝
-func (s *DefaultCopyStrategy) Copy(connA, connB io.ReadWriteCloser, options *BidirectionalCopyOptions) *BidirectionalCopyResult {
-	return BidirectionalCopy(connA, connB, options)
+func (s *DefaultCopyStrategy) Copy(connA, connB io.ReadWriteCloser, options *iocopy.Options) *iocopy.Result {
+	return iocopy.Bidirectional(connA, connB, options)
 }
 
 // UDPCopyStrategy UDP 拷贝策略（保持包边界）
@@ -39,8 +41,8 @@ func NewUDPCopyStrategy() CopyStrategy {
 }
 
 // Copy 执行 UDP 双向数据拷贝（保持包边界）
-func (s *UDPCopyStrategy) Copy(connA, connB io.ReadWriteCloser, options *BidirectionalCopyOptions) *BidirectionalCopyResult {
-	return UDPBidirectionalCopy(connA, connB, options)
+func (s *UDPCopyStrategy) Copy(connA, connB io.ReadWriteCloser, options *iocopy.Options) *iocopy.Result {
+	return iocopy.UDP(connA, connB, options)
 }
 
 // CopyStrategyFactory 拷贝策略工厂

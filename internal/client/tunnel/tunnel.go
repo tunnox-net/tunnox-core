@@ -12,7 +12,7 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/iocopy"
 )
 
 // TunnelRole 定义隧道角色
@@ -232,21 +232,21 @@ func (t *Tunnel) runDataCopy() {
 
 	logPrefix := fmt.Sprintf("Tunnel[%s][%s]", t.role, t.id)
 
-	var result *utils.BidirectionalCopyResult
+	var result *iocopy.Result
 
 	// 根据协议类型选择不同的复制函数
 	if t.protocol == "udp" {
 		// UDP 协议使用带长度前缀的复制函数
-		options := &utils.BidirectionalCopyOptions{
+		options := &iocopy.Options{
 			LogPrefix: logPrefix,
 		}
-		result = utils.UDPBidirectionalCopy(t.localConn, t.tunnelRWC, options)
+		result = iocopy.UDP(t.localConn, t.tunnelRWC, options)
 	} else {
 		// TCP 和其他协议使用普通复制
-		options := &utils.BidirectionalCopyOptions{
+		options := &iocopy.Options{
 			LogPrefix: logPrefix,
 		}
-		result = utils.BidirectionalCopy(t.localConn, t.tunnelRWC, options)
+		result = iocopy.Bidirectional(t.localConn, t.tunnelRWC, options)
 	}
 
 	// 更新流量统计

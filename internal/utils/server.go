@@ -99,12 +99,12 @@ func (h *HTTPService) Stop(ctx context.Context) error {
 
 // ServiceManager 服务管理器，支持多协议服务
 type ServiceManager struct {
-	Dispose
+	dispose.Dispose
 	config        *ServiceConfig
 	services      map[string]Service
 	resourceMgr   *dispose.ResourceManager
 	shutdownChan  chan struct{}
-	disposeResult *DisposeResult
+	disposeResult *dispose.DisposeResult
 	mu            sync.RWMutex
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -195,7 +195,7 @@ func (sm *ServiceManager) GetServiceCount() int {
 }
 
 // RegisterResource 注册资源到服务管理器
-func (sm *ServiceManager) RegisterResource(name string, resource Disposable) error {
+func (sm *ServiceManager) RegisterResource(name string, resource dispose.Disposable) error {
 	return sm.resourceMgr.Register(name, resource)
 }
 
@@ -358,7 +358,7 @@ func (sm *ServiceManager) gracefulShutdown() error {
 }
 
 // GetDisposeResult 获取资源释放结果
-func (sm *ServiceManager) GetDisposeResult() *DisposeResult {
+func (sm *ServiceManager) GetDisposeResult() *dispose.DisposeResult {
 	return sm.disposeResult
 }
 

@@ -13,7 +13,7 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream/transform"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/iocopy"
 
 	"golang.org/x/time/rate"
 )
@@ -98,7 +98,7 @@ func NewBaseMappingHandler(
 func (h *BaseMappingHandler) Start() error {
 	// 1. 创建Transformer（公共）
 	if err := h.createTransformer(); err != nil {
-		return coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to create transformer")
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to create transformer")
 	}
 
 	// 2. 启动监听（委托给adapter）
@@ -250,7 +250,7 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 		return nil
 	}
 
-	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, tunnelCloser)
+	tunnelRWC, err := iocopy.NewReadWriteCloser(tunnelReader, tunnelWriter, tunnelCloser)
 	if err != nil {
 		corelog.Errorf("BaseMappingHandler[%s]: failed to create tunnel ReadWriteCloser: %v", h.config.MappingID, err)
 		tunnelCloser()

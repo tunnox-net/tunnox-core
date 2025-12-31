@@ -5,7 +5,7 @@ import (
 	"tunnox-core/internal/config"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // NotifyClientUpdate 通知客户端更新配置
@@ -76,7 +76,7 @@ func (s *SessionManager) NotifyClientUpdate(clientID int64) {
 
 // sendConfigToLocalClient 向本地客户端发送配置更新
 func (s *SessionManager) sendConfigToLocalClient(clientID int64, conn *ControlConnection, payloadBytes []byte) {
-	cmdID, _ := utils.GenerateUUID()
+	cmdID, _ := random.UUID()
 	cmdPacket := &packet.CommandPacket{
 		CommandType: packet.ConfigSet,
 		CommandId:   cmdID,

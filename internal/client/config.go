@@ -12,10 +12,25 @@ type ClientConfig struct {
 		Protocol string `yaml:"protocol"` // tcp/websocket/quic
 	} `yaml:"server"`
 
+	// TLS 配置（QUIC 协议使用）
+	TLS TLSConfig `yaml:"tls"`
+
 	// 日志配置
 	Log LogConfig `yaml:"log"`
 
 	// 注意：映射配置由服务器通过指令连接动态推送，不在配置文件中
+}
+
+// TLSConfig TLS 配置
+type TLSConfig struct {
+	// 是否跳过证书验证（默认 true，适用于自签名证书）
+	InsecureSkipVerify bool `yaml:"insecure_skip_verify"`
+
+	// CA 证书文件路径（可选，用于验证服务器证书）
+	CACertFile string `yaml:"ca_cert_file,omitempty"`
+
+	// 服务器名称（用于证书验证，可选）
+	ServerName string `yaml:"server_name,omitempty"`
 }
 
 // LogConfig 日志配置

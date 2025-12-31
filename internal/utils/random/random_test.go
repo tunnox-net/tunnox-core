@@ -1,15 +1,15 @@
-package utils
+package random
 
 import (
 	"strings"
 	"testing"
 )
 
-func TestGenerateRandomBytes(t *testing.T) {
+func TestBytes(t *testing.T) {
 	length := 16
-	bytes, err := GenerateRandomBytes(length)
+	bytes, err := Bytes(length)
 	if err != nil {
-		t.Fatalf("GenerateRandomBytes failed: %v", err)
+		t.Fatalf("Bytes failed: %v", err)
 	}
 
 	if len(bytes) != length {
@@ -30,11 +30,11 @@ func TestGenerateRandomBytes(t *testing.T) {
 	}
 }
 
-func TestGenerateRandomString(t *testing.T) {
+func TestString(t *testing.T) {
 	length := 10
-	str, err := GenerateRandomString(length)
+	str, err := String(length)
 	if err != nil {
-		t.Fatalf("GenerateRandomString failed: %v", err)
+		t.Fatalf("String failed: %v", err)
 	}
 
 	if len(str) != length {
@@ -49,12 +49,12 @@ func TestGenerateRandomString(t *testing.T) {
 	}
 }
 
-func TestGenerateRandomStringWithCharset(t *testing.T) {
+func TestStringWithCharset(t *testing.T) {
 	length := 8
 	customCharset := "ABC123"
-	str, err := GenerateRandomStringWithCharset(length, customCharset)
+	str, err := StringWithCharset(length, customCharset)
 	if err != nil {
-		t.Fatalf("GenerateRandomStringWithCharset failed: %v", err)
+		t.Fatalf("StringWithCharset failed: %v", err)
 	}
 
 	if len(str) != length {
@@ -69,11 +69,11 @@ func TestGenerateRandomStringWithCharset(t *testing.T) {
 	}
 }
 
-func TestGenerateRandomDigits(t *testing.T) {
+func TestDigits(t *testing.T) {
 	length := 6
-	str, err := GenerateRandomDigits(length)
+	str, err := Digits(length)
 	if err != nil {
-		t.Fatalf("GenerateRandomDigits failed: %v", err)
+		t.Fatalf("Digits failed: %v", err)
 	}
 
 	if len(str) != length {
@@ -88,14 +88,14 @@ func TestGenerateRandomDigits(t *testing.T) {
 	}
 }
 
-func TestGenerateRandomInt64(t *testing.T) {
+func TestInt64(t *testing.T) {
 	min := int64(100)
 	max := int64(200)
 
 	for i := 0; i < 100; i++ {
-		val, err := GenerateRandomInt64(min, max)
+		val, err := Int64(min, max)
 		if err != nil {
-			t.Fatalf("GenerateRandomInt64 failed: %v", err)
+			t.Fatalf("Int64 failed: %v", err)
 		}
 
 		if val < min || val > max {
@@ -104,21 +104,21 @@ func TestGenerateRandomInt64(t *testing.T) {
 	}
 }
 
-func TestGenerateRandomInt64InvalidRange(t *testing.T) {
-	_, err := GenerateRandomInt64(200, 100)
+func TestInt64InvalidRange(t *testing.T) {
+	_, err := Int64(200, 100)
 	if err == nil {
 		t.Error("Expected error for invalid range")
 	}
 }
 
-func TestGenerateRandomInt(t *testing.T) {
+func TestInt(t *testing.T) {
 	min := 10
 	max := 50
 
 	for i := 0; i < 100; i++ {
-		val, err := GenerateRandomInt(min, max)
+		val, err := Int(min, max)
 		if err != nil {
-			t.Fatalf("GenerateRandomInt failed: %v", err)
+			t.Fatalf("Int failed: %v", err)
 		}
 
 		if val < min || val > max {
@@ -127,11 +127,11 @@ func TestGenerateRandomInt(t *testing.T) {
 	}
 }
 
-func TestGenerateRandomFloat64(t *testing.T) {
+func TestFloat64(t *testing.T) {
 	for i := 0; i < 100; i++ {
-		val, err := GenerateRandomFloat64()
+		val, err := Float64()
 		if err != nil {
-			t.Fatalf("GenerateRandomFloat64 failed: %v", err)
+			t.Fatalf("Float64 failed: %v", err)
 		}
 
 		if val < 0 || val > 1 {
@@ -140,14 +140,14 @@ func TestGenerateRandomFloat64(t *testing.T) {
 	}
 }
 
-func TestGenerateRandomFloat64Range(t *testing.T) {
+func TestFloat64Range(t *testing.T) {
 	min := 1.5
 	max := 3.5
 
 	for i := 0; i < 100; i++ {
-		val, err := GenerateRandomFloat64Range(min, max)
+		val, err := Float64Range(min, max)
 		if err != nil {
-			t.Fatalf("GenerateRandomFloat64Range failed: %v", err)
+			t.Fatalf("Float64Range failed: %v", err)
 		}
 
 		if val < min || val > max {
@@ -156,10 +156,10 @@ func TestGenerateRandomFloat64Range(t *testing.T) {
 	}
 }
 
-func TestGenerateUUID(t *testing.T) {
-	uuid, err := GenerateUUID()
+func TestUUID(t *testing.T) {
+	uuid, err := UUID()
 	if err != nil {
-		t.Fatalf("GenerateUUID failed: %v", err)
+		t.Fatalf("UUID failed: %v", err)
 	}
 
 	// UUID格式: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
@@ -189,29 +189,29 @@ func TestGenerateUUID(t *testing.T) {
 	}
 }
 
-func BenchmarkGenerateRandomString(b *testing.B) {
+func BenchmarkString(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		_, err := GenerateRandomString(16)
+		_, err := String(16)
 		if err != nil {
-			b.Fatalf("GenerateRandomString failed: %v", err)
+			b.Fatalf("String failed: %v", err)
 		}
 	}
 }
 
-func BenchmarkGenerateRandomInt64(b *testing.B) {
+func BenchmarkInt64(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		_, err := GenerateRandomInt64(1000, 9999)
+		_, err := Int64(1000, 9999)
 		if err != nil {
-			b.Fatalf("GenerateRandomInt64 failed: %v", err)
+			b.Fatalf("Int64 failed: %v", err)
 		}
 	}
 }
 
-func BenchmarkGenerateUUID(b *testing.B) {
+func BenchmarkUUID(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		_, err := GenerateUUID()
+		_, err := UUID()
 		if err != nil {
-			b.Fatalf("GenerateUUID failed: %v", err)
+			b.Fatalf("UUID failed: %v", err)
 		}
 	}
 }

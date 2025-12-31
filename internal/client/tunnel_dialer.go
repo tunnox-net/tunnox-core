@@ -75,7 +75,7 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 	if err != nil {
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to marshal tunnel open request")
+		return nil, nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal tunnel open request")
 	}
 	openPkt := &packet.TransferPacket{
 		PacketType: packet.TunnelOpen,

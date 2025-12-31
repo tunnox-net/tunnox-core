@@ -6,7 +6,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // ============================================================================
@@ -60,7 +60,7 @@ func (s *Service) UpdateClientStatus(clientID int64, status models.ClientStatus,
 
 	// ✅ 兼容性：同步到旧Repository
 	if s.clientRepo != nil {
-		if err := s.clientRepo.UpdateClientStatus(utils.Int64ToString(clientID), status, nodeID); err != nil {
+		if err := s.clientRepo.UpdateClientStatus(random.Int64ToString(clientID), status, nodeID); err != nil {
 			s.baseService.LogWarning("sync status to legacy repo", err)
 		}
 	}
@@ -70,12 +70,12 @@ func (s *Service) UpdateClientStatus(clientID int64, status models.ClientStatus,
 		if oldStatus != models.ClientStatusOnline && status == models.ClientStatusOnline {
 			// 从离线变为在线
 			if err := s.statsCounter.IncrOnlineClients(1); err != nil {
-				s.baseService.LogWarning("update online clients counter", err, utils.Int64ToString(clientID))
+				s.baseService.LogWarning("update online clients counter", err, random.Int64ToString(clientID))
 			}
 		} else if oldStatus == models.ClientStatusOnline && status != models.ClientStatusOnline {
 			// 从在线变为离线
 			if err := s.statsCounter.IncrOnlineClients(-1); err != nil {
-				s.baseService.LogWarning("update online clients counter", err, utils.Int64ToString(clientID))
+				s.baseService.LogWarning("update online clients counter", err, random.Int64ToString(clientID))
 			}
 		}
 	}
@@ -130,7 +130,7 @@ func (s *Service) ConnectClient(clientID int64, nodeID, connID, ipAddress, proto
 
 	// ✅ 兼容性：同步到旧Repository
 	if s.clientRepo != nil {
-		if err := s.clientRepo.UpdateClientStatus(utils.Int64ToString(clientID), models.ClientStatusOnline, nodeID); err != nil {
+		if err := s.clientRepo.UpdateClientStatus(random.Int64ToString(clientID), models.ClientStatusOnline, nodeID); err != nil {
 			s.baseService.LogWarning("sync connect to legacy repo", err)
 		}
 	}
@@ -141,7 +141,7 @@ func (s *Service) ConnectClient(clientID int64, nodeID, connID, ipAddress, proto
 		oldOnline := oldState != nil && oldState.Status == models.ClientStatusOnline
 		if !oldOnline {
 			if err := s.statsCounter.IncrOnlineClients(1); err != nil {
-				s.baseService.LogWarning("update online clients counter", err, utils.Int64ToString(clientID))
+				s.baseService.LogWarning("update online clients counter", err, random.Int64ToString(clientID))
 			}
 		}
 	}
@@ -185,7 +185,7 @@ func (s *Service) DisconnectClient(clientID int64) error {
 
 	// ✅ 兼容性：同步到旧Repository
 	if s.clientRepo != nil {
-		if err := s.clientRepo.UpdateClientStatus(utils.Int64ToString(clientID), models.ClientStatusOffline, ""); err != nil {
+		if err := s.clientRepo.UpdateClientStatus(random.Int64ToString(clientID), models.ClientStatusOffline, ""); err != nil {
 			s.baseService.LogWarning("sync disconnect to legacy repo", err)
 		}
 	}
@@ -193,7 +193,7 @@ func (s *Service) DisconnectClient(clientID int64) error {
 	// 更新统计计数器
 	if s.statsCounter != nil && state.Status == models.ClientStatusOnline {
 		if err := s.statsCounter.IncrOnlineClients(-1); err != nil {
-			s.baseService.LogWarning("update online clients counter", err, utils.Int64ToString(clientID))
+			s.baseService.LogWarning("update online clients counter", err, random.Int64ToString(clientID))
 		}
 	}
 

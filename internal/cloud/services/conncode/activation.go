@@ -10,7 +10,7 @@ import (
 	cloudutils "tunnox-core/internal/cloud/utils"
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -81,7 +81,7 @@ func (s *Service) ActivateConnectionCode(req *ActivateRequest) (*models.PortMapp
 	}
 
 	// 5. 检查映射配额
-	clientKey := utils.Int64ToString(req.ListenClientID)
+	clientKey := random.Int64ToString(req.ListenClientID)
 	mappings, err := s.portMappingRepo.GetClientPortMappings(clientKey)
 	if err != nil {
 		corelog.Warnf("ConnectionCodeService: failed to get client mappings for quota check: %v", err)

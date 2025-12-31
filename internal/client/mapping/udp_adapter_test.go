@@ -14,15 +14,13 @@ func TestNewUDPMappingAdapter(t *testing.T) {
 	if adapter == nil {
 		t.Fatal("NewUDPMappingAdapter returned nil")
 	}
-	if adapter.listener != nil {
-		t.Error("listener should be nil before StartListener")
+	if len(adapter.listeners) != 0 {
+		t.Error("listeners should be empty before StartListener")
 	}
 	if adapter.connChan == nil {
 		t.Error("connChan should not be nil")
 	}
-	if adapter.sessions == nil {
-		t.Error("sessions should not be nil")
-	}
+	// sync.Map 不需要检查 nil
 }
 
 func TestUDPMappingAdapter_GetProtocol(t *testing.T) {
@@ -53,8 +51,8 @@ func TestUDPMappingAdapter_StartListenerAndClose(t *testing.T) {
 		t.Fatalf("StartListener failed: %v", err)
 	}
 
-	if adapter.listener == nil {
-		t.Error("listener should not be nil after StartListener")
+	if len(adapter.listeners) == 0 {
+		t.Error("listeners should not be empty after StartListener")
 	}
 
 	// 关闭适配器
@@ -77,12 +75,11 @@ func TestUDPMappingAdapter_PrepareConnection(t *testing.T) {
 func TestUDPMappingAdapter_CloseWithoutListener(t *testing.T) {
 	adapter := NewUDPMappingAdapter()
 
-	// 关闭未初始化的适配器不应该报错（但会阻塞等待 goroutine）
-	// 这里测试需要小心处理
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		close(adapter.closeCh)
-	}()
+	// 关闭未初始化的适配器不应该报错
+	err := adapter.Close()
+	if err != nil {
+		t.Errorf("Close should not error: %v", err)
+	}
 }
 
 func TestUDPVirtualConn_ReadWrite(t *testing.T) {
@@ -101,11 +98,11 @@ func TestUDPVirtualConn_ReadWrite(t *testing.T) {
 	vc := &UDPVirtualConn{
 		listener:   conn,
 		remoteAddr: remoteAddr,
-		readChan:   make(chan []byte, udpReadChanSize),
+		readChan:   make(chan *udpPacket, udpReadChanSize),
 		writeChan:  make(chan []byte, udpWriteChanSize),
 		closeCh:    make(chan struct{}),
-		lastActive: time.Now(),
 	}
+	vc.lastActive.Store(time.Now().UnixNano())
 
 	// 测试写入
 	testData := []byte("hello")
@@ -119,7 +116,10 @@ func TestUDPVirtualConn_ReadWrite(t *testing.T) {
 
 	// 模拟读取：手动放入数据到 readChan
 	go func() {
-		vc.readChan <- []byte("world")
+		buf := getBuffer()
+		data := []byte("world")
+		copy(buf, data)
+		vc.readChan <- &udpPacket{data: buf[:len(data)], buffer: buf}
 	}()
 
 	buf := make([]byte, 10)
@@ -146,19 +146,22 @@ func TestUDPVirtualConn_ReadWrite(t *testing.T) {
 
 func TestUDPVirtualConn_LastActive(t *testing.T) {
 	vc := &UDPVirtualConn{
-		closeCh:    make(chan struct{}),
-		lastActive: time.Now().Add(-10 * time.Second),
+		closeCh: make(chan struct{}),
 	}
+	// 设置 10 秒前的时间
+	vc.lastActive.Store(time.Now().Add(-10 * time.Second).UnixNano())
 
 	// 获取上次活跃时间
-	lastActive := vc.getLastActive()
+	lastActiveNanos := vc.lastActive.Load()
+	lastActive := time.Unix(0, lastActiveNanos)
 	if time.Since(lastActive) < 9*time.Second {
-		t.Error("getLastActive returned wrong time")
+		t.Error("lastActive returned wrong time")
 	}
 
 	// 更新活跃时间
 	vc.updateLastActive()
-	lastActive = vc.getLastActive()
+	lastActiveNanos = vc.lastActive.Load()
+	lastActive = time.Unix(0, lastActiveNanos)
 	if time.Since(lastActive) > time.Second {
 		t.Error("updateLastActive did not update the time")
 	}
@@ -190,11 +193,11 @@ func TestUDPVirtualConn_Concurrent(t *testing.T) {
 	vc := &UDPVirtualConn{
 		listener:   conn,
 		remoteAddr: remoteAddr,
-		readChan:   make(chan []byte, udpReadChanSize),
+		readChan:   make(chan *udpPacket, udpReadChanSize),
 		writeChan:  make(chan []byte, udpWriteChanSize),
 		closeCh:    make(chan struct{}),
-		lastActive: time.Now(),
 	}
+	vc.lastActive.Store(time.Now().UnixNano())
 
 	var wg sync.WaitGroup
 	numGoroutines := 10
@@ -216,4 +219,74 @@ func TestUDPVirtualConn_Concurrent(t *testing.T) {
 
 	// 关闭
 	vc.Close()
+}
+
+func TestUDPVirtualConn_SetReadDeadline(t *testing.T) {
+	vc := &UDPVirtualConn{
+		readChan: make(chan *udpPacket, 1),
+		closeCh:  make(chan struct{}),
+	}
+
+	// 设置 deadline
+	deadline := time.Now().Add(100 * time.Millisecond)
+	err := vc.SetReadDeadline(deadline)
+	if err != nil {
+		t.Errorf("SetReadDeadline failed: %v", err)
+	}
+
+	// 验证 deadline 已设置
+	storedDeadline := vc.readDeadline.Load()
+	if storedDeadline != deadline.UnixNano() {
+		t.Error("deadline not stored correctly")
+	}
+
+	// 清除 deadline
+	err = vc.SetReadDeadline(time.Time{})
+	if err != nil {
+		t.Errorf("SetReadDeadline (clear) failed: %v", err)
+	}
+	if vc.readDeadline.Load() != 0 {
+		t.Error("deadline should be cleared")
+	}
+}
+
+func TestUDPVirtualConn_ReadWithTimeout(t *testing.T) {
+	vc := &UDPVirtualConn{
+		readChan: make(chan *udpPacket, 1),
+		closeCh:  make(chan struct{}),
+	}
+
+	// 设置很短的 deadline
+	vc.SetReadDeadline(time.Now().Add(50 * time.Millisecond))
+
+	buf := make([]byte, 10)
+	start := time.Now()
+	_, err := vc.Read(buf)
+	elapsed := time.Since(start)
+
+	// 应该超时
+	if err == nil {
+		t.Error("Read should timeout")
+	}
+
+	// 验证是超时错误
+	if netErr, ok := err.(net.Error); ok {
+		if !netErr.Timeout() {
+			t.Error("Error should be timeout")
+		}
+	} else {
+		t.Error("Error should implement net.Error")
+	}
+
+	// 超时时间应该在合理范围内
+	if elapsed < 40*time.Millisecond || elapsed > 200*time.Millisecond {
+		t.Errorf("Timeout elapsed time unexpected: %v", elapsed)
+	}
+}
+
+func TestSupportsReusePort(t *testing.T) {
+	// 测试平台检测函数
+	supported := supportsReusePort()
+	t.Logf("SO_REUSEPORT supported: %v", supported)
+	// 这里不做断言，因为不同平台结果不同
 }

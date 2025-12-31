@@ -7,6 +7,10 @@ type HTTPServiceConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	ListenAddr string `yaml:"listen_addr"`
 
+	// 请求限制
+	MaxHeaderBytes int64 `yaml:"max_header_bytes"` // 最大请求头大小（默认 1MB）
+	MaxBodySize    int64 `yaml:"max_body_size"`    // 最大请求体大小（默认 10MB）
+
 	// 模块配置
 	Modules ModulesConfig `yaml:"modules"`
 
@@ -89,8 +93,10 @@ type PProfConfig struct {
 // DefaultHTTPServiceConfig 返回默认配置
 func DefaultHTTPServiceConfig() *HTTPServiceConfig {
 	return &HTTPServiceConfig{
-		Enabled:    true,
-		ListenAddr: "0.0.0.0:9000",
+		Enabled:        true,
+		ListenAddr:     "0.0.0.0:9000",
+		MaxHeaderBytes: 1 << 20,  // 1MB
+		MaxBodySize:    10 << 20, // 10MB
 		Modules: ModulesConfig{
 			ManagementAPI: ManagementAPIModuleConfig{
 				Enabled: true,

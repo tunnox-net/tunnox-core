@@ -9,7 +9,7 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // CommandRequest 命令请求参数
@@ -51,7 +51,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	}
 
 	// 创建命令包
-	cmdID, err := utils.GenerateRandomString(16)
+	cmdID, err := random.String(16)
 	if err != nil {
 		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to generate command ID")
 	}

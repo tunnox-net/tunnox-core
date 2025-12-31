@@ -7,7 +7,7 @@ import (
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // readLoop 读取循环（接收服务器命令）
@@ -84,7 +84,7 @@ func (c *TunnoxClient) requestMappingConfig() {
 		return
 	}
 
-	commandID, err := utils.GenerateRandomString(16)
+	commandID, err := random.String(16)
 	if err != nil {
 		corelog.Errorf("Client: failed to generate command ID: %v", err)
 		return

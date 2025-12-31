@@ -12,7 +12,7 @@ import (
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/stream/transform"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/iocopy"
 )
 
 // handleTunnelOpenRequest 处理隧道打开请求（作为目标客户端）
@@ -123,7 +123,7 @@ func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	startTime := time.Now()
 
 	transformer, _ := transform.NewTransformer(transformConfig)
-	result := utils.BidirectionalCopy(targetConn, tunnelRWC, &utils.BidirectionalCopyOptions{
+	result := iocopy.Bidirectional(targetConn, tunnelRWC, &iocopy.Options{
 		Transformer: transformer,
 		LogPrefix:   fmt.Sprintf("%s[%s]", logPrefix, tunnelID),
 	})
@@ -203,7 +203,7 @@ func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	}
 
 	// 5. 双向转发（UDP需要特殊处理数据包边界）
-	utils.UDPBidirectionalCopy(targetConn, tunnelRWC, &utils.BidirectionalCopyOptions{
+	iocopy.UDP(targetConn, tunnelRWC, &iocopy.Options{
 		LogPrefix: fmt.Sprintf("%s[%s]", logPrefix, tunnelID),
 	})
 }
@@ -397,7 +397,7 @@ func createTunnelRWC(tunnelReader io.Reader, tunnelWriter io.Writer, tunnelStrea
 		return nil, false
 	}
 
-	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
+	tunnelRWC, err := iocopy.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
 		tunnelStream.Close()
 		if tunnelConn != nil {
 			tunnelConn.Close()

@@ -10,7 +10,7 @@ import (
 	"tunnox-core/internal/core/dispose"
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // JWTTokenInfo JWT令牌信息
@@ -45,7 +45,7 @@ func NewService(clientRepo *repos.ClientRepository, nodeRepo *repos.NodeReposito
 // Authenticate 认证客户端
 func (s *Service) Authenticate(req *models.AuthRequest) (*models.AuthResponse, error) {
 	// 获取客户端信息
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(req.ClientID))
+	client, err := s.clientRepo.GetClient(random.Int64ToString(req.ClientID))
 	if err != nil {
 		return &models.AuthResponse{
 			Success: false,
@@ -143,7 +143,7 @@ func (s *Service) ValidateToken(token string) (*models.AuthResponse, error) {
 	}
 
 	// 获取客户端信息
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(jwtClaims.GetClientID()))
+	client, err := s.clientRepo.GetClient(random.Int64ToString(jwtClaims.GetClientID()))
 	if err != nil {
 		return &models.AuthResponse{
 			Success: false,
@@ -181,7 +181,7 @@ func (s *Service) ValidateToken(token string) (*models.AuthResponse, error) {
 // GenerateJWTToken 生成JWT令牌
 func (s *Service) GenerateJWTToken(clientID int64) (*JWTTokenInfo, error) {
 	// 获取客户端信息
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
+	client, err := s.clientRepo.GetClient(random.Int64ToString(clientID))
 	if err != nil {
 		return nil, coreerrors.Wrap(err, coreerrors.CodeClientNotFound, "client not found")
 	}
@@ -209,7 +209,7 @@ func (s *Service) RefreshJWTToken(refreshToken string) (*JWTTokenInfo, error) {
 	}
 
 	// 获取客户端信息
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(refreshClaims.GetClientID()))
+	client, err := s.clientRepo.GetClient(random.Int64ToString(refreshClaims.GetClientID()))
 	if err != nil {
 		return nil, coreerrors.Wrap(err, coreerrors.CodeClientNotFound, "client not found")
 	}
@@ -237,7 +237,7 @@ func (s *Service) ValidateJWTToken(token string) (*JWTTokenInfo, error) {
 	}
 
 	// 获取客户端信息
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(claims.GetClientID()))
+	client, err := s.clientRepo.GetClient(random.Int64ToString(claims.GetClientID()))
 	if err != nil {
 		return nil, coreerrors.Wrap(err, coreerrors.CodeClientNotFound, "client not found")
 	}
@@ -260,7 +260,7 @@ func (s *Service) RevokeJWTToken(token string) error {
 	}
 
 	// 从客户端信息中获取TokenID
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(claims.GetClientID()))
+	client, err := s.clientRepo.GetClient(random.Int64ToString(claims.GetClientID()))
 	if err != nil {
 		return coreerrors.Wrap(err, coreerrors.CodeClientNotFound, "client not found")
 	}

@@ -97,7 +97,7 @@ func PromptSelect(prompt string, options []string) (int, error) {
 	// 保存终端状态
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		return -1, coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to enter raw mode")
+		return -1, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to enter raw mode")
 	}
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 

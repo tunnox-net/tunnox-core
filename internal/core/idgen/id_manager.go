@@ -6,7 +6,7 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // IDManager 统一ID管理器
@@ -200,12 +200,12 @@ func (m *IDManager) IsTunnelIDUsed(id string) (bool, error) {
 
 // GenerateAuthCode 生成认证码
 func (m *IDManager) GenerateAuthCode() (string, error) {
-	return utils.GenerateRandomDigits(6)
+	return random.Digits(6)
 }
 
 // GenerateSecretKey 生成密钥
 func (m *IDManager) GenerateSecretKey() (string, error) {
-	return utils.GenerateRandomString(32)
+	return random.String(32)
 }
 
 // Close 关闭ID管理器

@@ -11,7 +11,7 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // NOTE: mapping 连接实例的 ID 实现仍需完善
@@ -78,7 +78,7 @@ func (g *StorageIDGenerator[T]) getKey(id T) string {
 }
 
 // Generate 生成ID
-// 使用 SetNX 原子操作避免竞态条件：高并发时 IsUsed 检查和 markAsUsed 标记之间可能有其他协程抢占
+// 使用 SetNX 原子操作避免竞态条件：高并发时 IsUsed 检查和标记之间可能有其他协程抢占
 func (g *StorageIDGenerator[T]) Generate() (T, error) {
 	var zero T
 
@@ -89,7 +89,7 @@ func (g *StorageIDGenerator[T]) Generate() (T, error) {
 		switch any(zero).(type) {
 		case string:
 			// 生成随机字符串
-			orderedStr, err := utils.GenerateRandomString(RandomPartLength)
+			orderedStr, err := random.String(RandomPartLength)
 			if err != nil {
 				continue
 			}
@@ -102,7 +102,7 @@ func (g *StorageIDGenerator[T]) Generate() (T, error) {
 		case int64:
 			// 生成随机 int64（用于 ClientID）
 			// 在指定范围内生成完全随机的 ID
-			randomID, err := utils.GenerateRandomInt64(ClientIDMin, ClientIDMax)
+			randomID, err := random.Int64(ClientIDMin, ClientIDMax)
 			if err != nil {
 				continue
 			}
@@ -179,19 +179,6 @@ func (g *StorageIDGenerator[T]) tryMarkAsUsed(id T) (bool, error) {
 		return false, err
 	}
 	return true, nil
-}
-
-// markAsUsed 标记ID为已使用（保留用于兼容性）
-// 注意：此方法不是原子操作，建议使用 tryMarkAsUsed
-func (g *StorageIDGenerator[T]) markAsUsed(id T) error {
-	success, err := g.tryMarkAsUsed(id)
-	if err != nil {
-		return err
-	}
-	if !success {
-		return coreerrors.Newf(coreerrors.CodeConflict, "ID %v already in use", id)
-	}
-	return nil
 }
 
 // GetUsedCount 获取已使用的ID数量（简化实现）

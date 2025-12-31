@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 	"testing"
+
+	"tunnox-core/internal/utils/iocopy"
 )
 
 // mockReadWriteCloser 模拟 ReadWriteCloser
@@ -45,7 +47,7 @@ func TestDefaultCopyStrategy(t *testing.T) {
 	connB := newMockReadWriteCloser(nil)
 
 	// 执行拷贝
-	options := &BidirectionalCopyOptions{
+	options := &iocopy.Options{
 		LogPrefix: "TestDefaultCopyStrategy",
 	}
 	result := strategy.Copy(connA, connB, options)
@@ -69,7 +71,7 @@ func TestUDPCopyStrategy(t *testing.T) {
 	connB := newMockReadWriteCloser(nil)
 
 	// 执行拷贝
-	options := &BidirectionalCopyOptions{
+	options := &iocopy.Options{
 		LogPrefix: "TestUDPCopyStrategy",
 	}
 	result := strategy.Copy(connA, connB, options)
@@ -127,7 +129,7 @@ func TestCopyStrategyWithEmptyData(t *testing.T) {
 	connB := newMockReadWriteCloser(nil)
 
 	// 执行拷贝
-	options := &BidirectionalCopyOptions{
+	options := &iocopy.Options{
 		LogPrefix: "TestCopyStrategyWithEmptyData",
 	}
 	result := strategy.Copy(connA, connB, options)

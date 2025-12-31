@@ -10,7 +10,7 @@ import (
 	"tunnox-core/internal/cloud/constants"
 	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/iocopy"
 )
 
 // ============================================================================
@@ -137,7 +137,7 @@ func CreateDataForwarder(conn interface{}, s stream.PackageStreamer) DataForward
 
 		if reader != nil && writer != nil {
 			// 优先使用标准的 io.ReadWriteCloser 方式
-			rwc, err := utils.NewReadWriteCloser(reader, writer, func() error {
+			rwc, err := iocopy.NewReadWriteCloser(reader, writer, func() error {
 				s.Close()
 				return nil
 			})

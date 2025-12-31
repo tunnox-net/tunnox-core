@@ -214,7 +214,7 @@ func (m *DefaultTunnelManager) OnTunnelError(tunnelID, mappingID, errorCode, err
 
 		// 如果是致命错误，尝试关闭该 tunnel
 		if tunnel := m.GetTunnel(tunnelID); tunnel != nil {
-			tunnel.Close(CloseReasonError, coreerrors.Newf(coreerrors.CodeInternalError, "%s: %s", errorCode, errorMessage))
+			tunnel.Close(CloseReasonError, coreerrors.Newf(coreerrors.CodeInternal, "%s: %s", errorCode, errorMessage))
 		}
 	}
 }

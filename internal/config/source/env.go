@@ -7,22 +7,17 @@ import (
 	"time"
 
 	"tunnox-core/internal/config/schema"
-	corelog "tunnox-core/internal/core/log"
 )
 
 // EnvSource loads configuration from environment variables
 type EnvSource struct {
-	prefix         string
-	enableFallback bool            // enable backward compatible fallback without prefix
-	deprecatedVars map[string]bool // track deprecated variables that were used
+	prefix string
 }
 
 // NewEnvSource creates a new EnvSource with the specified prefix
 func NewEnvSource(prefix string) *EnvSource {
 	return &EnvSource{
-		prefix:         prefix,
-		enableFallback: true,
-		deprecatedVars: make(map[string]bool),
+		prefix: prefix,
 	}
 }
 
@@ -157,37 +152,23 @@ func (s *EnvSource) LoadInto(cfg *schema.Root) error {
 	return nil
 }
 
-// getEnvWithFallback gets environment variable with backward compatibility
-// P0: Support both prefixed and non-prefixed env vars during transition period
-func (s *EnvSource) getEnvWithFallback(key string) (string, bool) {
-	// First try with prefix
+// getEnv gets environment variable with the configured prefix
+func (s *EnvSource) getEnv(key string) (string, bool) {
 	prefixedKey := s.prefix + "_" + key
 	if v := os.Getenv(prefixedKey); v != "" {
 		return v, true
 	}
-
-	// Fallback to non-prefixed (deprecated, 6-month transition)
-	if s.enableFallback {
-		if v := os.Getenv(key); v != "" {
-			if !s.deprecatedVars[key] {
-				s.deprecatedVars[key] = true
-				corelog.Warnf("Environment variable %s is deprecated, use %s instead (6-month transition period)", key, prefixedKey)
-			}
-			return v, true
-		}
-	}
-
 	return "", false
 }
 
 func (s *EnvSource) loadString(key string, target *string) {
-	if v, ok := s.getEnvWithFallback(key); ok {
+	if v, ok := s.getEnv(key); ok {
 		*target = v
 	}
 }
 
 func (s *EnvSource) loadStringWithTrack(key string, target *string, setFlag **bool) {
-	if v, ok := s.getEnvWithFallback(key); ok {
+	if v, ok := s.getEnv(key); ok {
 		*target = v
 		trueVal := true
 		*setFlag = &trueVal
@@ -195,13 +176,13 @@ func (s *EnvSource) loadStringWithTrack(key string, target *string, setFlag **bo
 }
 
 func (s *EnvSource) loadSecret(key string, target *schema.Secret) {
-	if v, ok := s.getEnvWithFallback(key); ok {
+	if v, ok := s.getEnv(key); ok {
 		*target = schema.Secret(v)
 	}
 }
 
 func (s *EnvSource) loadBool(key string, target *bool) {
-	if v, ok := s.getEnvWithFallback(key); ok {
+	if v, ok := s.getEnv(key); ok {
 		if b, err := strconv.ParseBool(v); err == nil {
 			*target = b
 		}
@@ -209,7 +190,7 @@ func (s *EnvSource) loadBool(key string, target *bool) {
 }
 
 func (s *EnvSource) loadBoolWithTrack(key string, target *bool, setFlag **bool) {
-	if v, ok := s.getEnvWithFallback(key); ok {
+	if v, ok := s.getEnv(key); ok {
 		if b, err := strconv.ParseBool(v); err == nil {
 			*target = b
 			trueVal := true
@@ -219,7 +200,7 @@ func (s *EnvSource) loadBoolWithTrack(key string, target *bool, setFlag **bool) 
 }
 
 func (s *EnvSource) loadInt(key string, target *int) {
-	if v, ok := s.getEnvWithFallback(key); ok {
+	if v, ok := s.getEnv(key); ok {
 		if i, err := strconv.Atoi(v); err == nil {
 			*target = i
 		}
@@ -227,7 +208,7 @@ func (s *EnvSource) loadInt(key string, target *int) {
 }
 
 func (s *EnvSource) loadInt64(key string, target *int64) {
-	if v, ok := s.getEnvWithFallback(key); ok {
+	if v, ok := s.getEnv(key); ok {
 		if i, err := strconv.ParseInt(v, 10, 64); err == nil {
 			*target = i
 		}
@@ -235,7 +216,7 @@ func (s *EnvSource) loadInt64(key string, target *int64) {
 }
 
 func (s *EnvSource) loadDuration(key string, target *time.Duration) {
-	if v, ok := s.getEnvWithFallback(key); ok {
+	if v, ok := s.getEnv(key); ok {
 		if d, err := time.ParseDuration(v); err == nil {
 			*target = d
 		}
@@ -243,7 +224,7 @@ func (s *EnvSource) loadDuration(key string, target *time.Duration) {
 }
 
 func (s *EnvSource) loadStringSlice(key string, target *[]string) {
-	if v, ok := s.getEnvWithFallback(key); ok {
+	if v, ok := s.getEnv(key); ok {
 		parts := strings.Split(v, ",")
 		result := make([]string, 0, len(parts))
 		for _, part := range parts {
@@ -258,11 +239,3 @@ func (s *EnvSource) loadStringSlice(key string, target *[]string) {
 	}
 }
 
-// GetDeprecatedVars returns the list of deprecated environment variables that were used
-func (s *EnvSource) GetDeprecatedVars() []string {
-	vars := make([]string, 0, len(s.deprecatedVars))
-	for k := range s.deprecatedVars {
-		vars = append(vars, k)
-	}
-	return vars
-}

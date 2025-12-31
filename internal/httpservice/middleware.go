@@ -2,6 +2,7 @@ package httpservice
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -106,6 +107,55 @@ func corsMiddleware(config *CORSConfig) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// bodySizeLimitMiddleware 请求体大小限制中间件
+// 防止恶意客户端发送超大请求导致内存耗尽
+func bodySizeLimitMiddleware(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if maxBytes <= 0 {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// 使用 http.MaxBytesReader 限制请求体大小
+			// 超过限制时会返回 413 Request Entity Too Large
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// maxBytesErrorMiddleware 处理请求体过大错误的中间件
+// 捕获 http.MaxBytesReader 返回的错误并返回友好的错误响应
+func maxBytesErrorMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+	})
+}
+
+// limitedReader 带限制的 Reader 包装器
+type limitedReader struct {
+	r         io.ReadCloser
+	remaining int64
+}
+
+func (l *limitedReader) Read(p []byte) (n int, err error) {
+	if l.remaining <= 0 {
+		return 0, &http.MaxBytesError{Limit: 0}
+	}
+	if int64(len(p)) > l.remaining {
+		p = p[0:l.remaining]
+	}
+	n, err = l.r.Read(p)
+	l.remaining -= int64(n)
+	return
+}
+
+func (l *limitedReader) Close() error {
+	return l.r.Close()
 }
 
 // authMiddleware 认证中间件

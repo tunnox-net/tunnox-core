@@ -11,7 +11,7 @@ import (
 	"tunnox-core/internal/constants"
 	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // 编译时接口断言，确保 PortMappingRepo 实现了 IPortMappingRepository 接口
@@ -153,7 +153,7 @@ func (r *PortMappingRepo) GetClientPortMappings(clientID string) ([]*models.Port
 		if persistent != nil {
 			// 查询 ListenClientID 匹配的映射
 			clientIDInt64 := int64(0)
-			if id, err := utils.StringToInt64(clientID); err == nil {
+			if id, err := random.StringToInt64(clientID); err == nil {
 				clientIDInt64 = id
 			}
 

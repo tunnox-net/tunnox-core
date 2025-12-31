@@ -2,10 +2,12 @@
 package iocopy
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	"tunnox-core/internal/cloud/constants"
 	corelog "tunnox-core/internal/core/log"
@@ -86,6 +88,9 @@ func NewReadWriteCloserWithCloseWrite(r io.Reader, w io.Writer, closeFunc func()
 
 // Options 双向拷贝配置选项
 type Options struct {
+	// Context 用于取消和超时控制（可选，默认使用 context.Background()）
+	Context context.Context
+
 	// 流转换器（处理压缩、加密）
 	Transformer transform.StreamTransformer
 
@@ -141,6 +146,12 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 		options.Transformer = &transform.NoOpTransformer{}
 	}
 
+	// 如果没有提供 Context，使用 Background
+	ctx := options.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	logPrefix := options.LogPrefix
 	if logPrefix == "" {
 		logPrefix = "BidirectionalCopy"
@@ -157,7 +168,7 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 		defer wg.Done()
 		corelog.Debugf("%s: A→B goroutine started", logPrefix)
 
-		writerB, err := options.Transformer.WrapWriter(connB)
+		writerB, err := options.Transformer.WrapWriterWithContext(ctx, connB)
 		if err != nil {
 			corelog.Errorf("%s: A→B failed to wrap writer: %v", logPrefix, err)
 			result.SendError = err
@@ -215,7 +226,7 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 		defer wg.Done()
 		corelog.Debugf("%s: B→A goroutine started", logPrefix)
 
-		readerB, err := options.Transformer.WrapReader(connB)
+		readerB, err := options.Transformer.WrapReaderWithContext(ctx, connB)
 		if err != nil {
 			corelog.Errorf("%s: B→A failed to wrap reader: %v", logPrefix, err)
 			result.ReceiveError = err
@@ -317,19 +328,68 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// UDP → Tunnel：从 UDP 读取数据包，加上长度前缀写入隧道
+	// UDP → Tunnel：从 UDP 读取数据包，批量写入隧道
 	go func() {
 		defer wg.Done()
 
-		// UDP 读缓冲和写缓冲（长度前缀 + 数据）
+		// 批量写入参数
+		const (
+			batchBufSize  = 256 * 1024       // 256KB 批量缓冲
+			flushInterval = 1 * time.Millisecond // 1ms 刷新间隔，平衡延迟和吞吐
+			readTimeout   = 500 * time.Microsecond // 500μs 读超时，快速检测无数据
+		)
+
 		readBuf := make([]byte, 65536)
-		writeBuf := make([]byte, 65536+2) // 2 字节长度前缀 + 最大 UDP 包
+		batchBuf := make([]byte, batchBufSize)
+		batchPos := 0
+
+		// 刷新函数：将批量缓冲写入隧道
+		flush := func() error {
+			if batchPos > 0 {
+				_, err := tunnelConn.Write(batchBuf[:batchPos])
+				if err != nil {
+					return err
+				}
+				batchPos = 0
+			}
+			return nil
+		}
+
+		// 使用可复用 timer
+		flushTimer := time.NewTimer(flushInterval)
+		flushTimer.Stop()
+		defer flushTimer.Stop()
+
+		timerActive := false
 
 		for {
-			// 读取一个完整的 UDP 数据包
+			// 非阻塞尝试读取
+			if conn, ok := udpConn.(interface{ SetReadDeadline(time.Time) error }); ok {
+				conn.SetReadDeadline(time.Now().Add(readTimeout))
+			}
+
 			n, err := udpConn.Read(readBuf)
 			if err != nil {
-				if err != io.EOF {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					// 读超时，检查是否需要刷新
+					if timerActive {
+						select {
+						case <-flushTimer.C:
+							timerActive = false
+							if err := flush(); err != nil {
+								result.SendError = err
+								return
+							}
+						default:
+							// timer 还没到，继续读
+						}
+					}
+					continue
+				}
+				// 其他错误，刷新后退出
+				if flushErr := flush(); flushErr != nil {
+					result.SendError = flushErr
+				} else if err != io.EOF {
 					result.SendError = err
 				}
 				break
@@ -339,33 +399,113 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 				continue
 			}
 
-			// 写入长度前缀（2字节，大端序）+ 数据
-			writeBuf[0] = byte(n >> 8)
-			writeBuf[1] = byte(n)
-			copy(writeBuf[2:], readBuf[:n])
-
-			// 立即发送（确保实时性）
-			_, err = tunnelConn.Write(writeBuf[:2+n])
-			if err != nil {
-				result.SendError = err
-				break
+			// 检查批量缓冲是否有足够空间
+			packetSize := 2 + n
+			if batchPos+packetSize > batchBufSize {
+				// 缓冲区满，立即刷新
+				if err := flush(); err != nil {
+					result.SendError = err
+					break
+				}
+				// 停止 timer
+				if timerActive {
+					flushTimer.Stop()
+					timerActive = false
+				}
 			}
 
+			// 写入长度前缀（2字节，大端序）+ 数据到批量缓冲
+			batchBuf[batchPos] = byte(n >> 8)
+			batchBuf[batchPos+1] = byte(n)
+			copy(batchBuf[batchPos+2:], readBuf[:n])
+			batchPos += packetSize
+
 			result.BytesSent += int64(n)
+
+			// 启动刷新 timer（如果未激活）
+			if !timerActive {
+				flushTimer.Reset(flushInterval)
+				timerActive = true
+			}
+
+			// 如果批量缓冲超过一半，立即刷新（高吞吐模式）
+			if batchPos > batchBufSize/2 {
+				if err := flush(); err != nil {
+					result.SendError = err
+					break
+				}
+				if timerActive {
+					flushTimer.Stop()
+					timerActive = false
+				}
+			}
 		}
 
 		// 半关闭写方向
 		tryCloseWrite(tunnelConn)
 	}()
 
-	// Tunnel → UDP：从隧道读取长度前缀+数据包，写入 UDP
+	// Tunnel → UDP：从隧道读取长度前缀+数据包，批量写入 UDP
 	go func() {
 		defer wg.Done()
 
+		// 批量写入参数
+		const (
+			batchSize     = 32               // 批量发送的包数量
+			flushInterval = time.Millisecond // 1ms 刷新间隔
+		)
+
 		// 批量读取 + 智能解包
 		readBuf := make([]byte, 512*1024) // 512KB 大缓冲区
-		udpBuf := make([]byte, 65536)     // UDP 单包缓冲
 		buffered := 0                     // 缓冲区中的有效数据量
+
+		// 批量写入缓冲：预分配 batchSize 个包的空间
+		type pendingPacket struct {
+			data   []byte
+			offset int
+			length int
+		}
+		pendingPackets := make([]pendingPacket, 0, batchSize)
+
+		// 检测是否支持 sendmmsg (Linux + *net.UDPConn)
+		var batchWriter *udpBatchWriter
+		if realUDP, ok := udpConn.(*net.UDPConn); ok {
+			batchWriter = newUDPBatchWriter(realUDP, batchSize)
+		}
+
+		// 刷新函数：批量写入所有待发送的包
+		flush := func() error {
+			if len(pendingPackets) == 0 {
+				return nil
+			}
+
+			// 优先使用 sendmmsg 批量发送
+			if batchWriter != nil {
+				for _, pkt := range pendingPackets {
+					batchWriter.add(pkt.data[pkt.offset : pkt.offset+pkt.length])
+				}
+				n, err := batchWriter.flush()
+				result.BytesReceived += int64(n)
+				pendingPackets = pendingPackets[:0]
+				return err
+			}
+
+			// 回退：逐个发送
+			for _, pkt := range pendingPackets {
+				if _, err := udpConn.Write(pkt.data[pkt.offset : pkt.offset+pkt.length]); err != nil {
+					return err
+				}
+				result.BytesReceived += int64(pkt.length)
+			}
+			pendingPackets = pendingPackets[:0]
+			return nil
+		}
+
+		// 使用可复用 timer
+		flushTimer := time.NewTimer(flushInterval)
+		flushTimer.Stop()
+		defer flushTimer.Stop()
+		timerActive := false
 
 		for {
 			// 批量读取：尽可能多地读取数据
@@ -380,6 +520,10 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 						result.ReceiveError = err
 					}
 					if buffered == 0 {
+						// 刷新剩余的包
+						if flushErr := flush(); flushErr != nil && result.ReceiveError == nil {
+							result.ReceiveError = flushErr
+						}
 						break
 					}
 				}
@@ -392,7 +536,8 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 				packetLen := int(readBuf[processed])<<8 | int(readBuf[processed+1])
 
 				if packetLen == 0 || packetLen > 65535 {
-					// 非法长度，退出
+					// 非法长度，刷新后退出
+					flush()
 					return
 				}
 
@@ -402,22 +547,42 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 					break
 				}
 
-				// 零拷贝写入：直接从 readBuf 写入 UDP
-				// 注意：这里复制到 udpBuf 是为了避免 readBuf 被覆盖
-				copy(udpBuf[:packetLen], readBuf[processed+2:processed+2+packetLen])
+				// 添加到待发送队列（零拷贝：直接引用 readBuf）
+				pendingPackets = append(pendingPackets, pendingPacket{
+					data:   readBuf,
+					offset: processed + 2,
+					length: packetLen,
+				})
+				processed += 2 + packetLen
 
-				if _, err := udpConn.Write(udpBuf[:packetLen]); err != nil {
+				// 批量写入：达到批量大小时立即发送
+				if len(pendingPackets) >= batchSize {
+					if err := flush(); err != nil {
+						result.ReceiveError = err
+						return
+					}
+					if timerActive {
+						flushTimer.Stop()
+						timerActive = false
+					}
+				}
+			}
+
+			// 关键：在移动缓冲区数据之前，必须先 flush
+			// 否则 pendingPackets 引用的数据会被覆盖（零拷贝的代价）
+			if len(pendingPackets) > 0 && processed > 0 {
+				if err := flush(); err != nil {
 					result.ReceiveError = err
 					return
 				}
-
-				result.BytesReceived += int64(packetLen)
-				processed += 2 + packetLen
+				if timerActive {
+					flushTimer.Stop()
+					timerActive = false
+				}
 			}
 
-			// 优化5：高效缓冲区管理
+			// 高效缓冲区管理：移动未处理的数据到开头
 			if processed > 0 {
-				// 移动未处理的数据到开头
 				if buffered > processed {
 					copy(readBuf[:buffered-processed], readBuf[processed:buffered])
 				}
@@ -426,7 +591,6 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 
 			// 防止死循环：如果没有新数据且没有处理任何包
 			if buffered > 0 && processed == 0 && buffered < 2 {
-				// 数据太少，继续读取
 				continue
 			}
 		}

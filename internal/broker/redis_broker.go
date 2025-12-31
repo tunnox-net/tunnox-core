@@ -31,6 +31,7 @@ type RedisBroker struct {
 	mu          sync.RWMutex
 	nodeID      string
 	closed      bool
+	wg          sync.WaitGroup // 等待 receiveLoop 退出
 }
 
 // NewRedisBroker 创建 Redis 消息代理
@@ -150,6 +151,7 @@ func (r *RedisBroker) Subscribe(ctx context.Context, topic string) (<-chan *Mess
 
 	// 首次订阅时启动接收循环
 	if len(r.subscribers) == 1 {
+		r.wg.Add(1)
 		go r.receiveLoop()
 	}
 
@@ -159,18 +161,24 @@ func (r *RedisBroker) Subscribe(ctx context.Context, topic string) (<-chan *Mess
 
 // receiveLoop 接收 Redis 消息循环
 func (r *RedisBroker) receiveLoop() {
+	defer r.wg.Done()
+
 	corelog.Infof("RedisBroker: receive loop started")
+	defer corelog.Infof("RedisBroker: receive loop stopped")
 
 	for {
 		select {
 		case <-r.Ctx().Done():
-			corelog.Infof("RedisBroker: receive loop stopped")
 			return
 		default:
 			// 接收消息
 			msg, err := r.pubsub.ReceiveMessage(r.Ctx())
 			if err != nil {
-				if r.closed {
+				// 检查是否已关闭
+				r.mu.RLock()
+				closed := r.closed
+				r.mu.RUnlock()
+				if closed {
 					return
 				}
 				corelog.Errorf("RedisBroker: failed to receive message: %v", err)
@@ -188,10 +196,15 @@ func (r *RedisBroker) receiveLoop() {
 			// 移除 tunnox: 前缀获取原始 topic
 			topic := message.Topic
 
-			// 分发到订阅者
+			// 分发到订阅者（加锁保护，避免向已关闭 channel 发送）
 			r.mu.RLock()
 			ch, exists := r.subscribers[topic]
+			closed := r.closed
 			r.mu.RUnlock()
+
+			if closed {
+				return
+			}
 
 			if exists {
 				select {
@@ -256,39 +269,42 @@ func (r *RedisBroker) Ping(ctx context.Context) error {
 // Close 关闭消息代理
 func (r *RedisBroker) Close() error {
 	r.mu.Lock()
-
 	if r.closed {
 		r.mu.Unlock()
 		return nil
 	}
-
 	r.closed = true
 
-	// 关闭 PubSub
+	// 关闭 PubSub 使 ReceiveMessage 返回错误
 	if r.pubsub != nil {
 		if err := r.pubsub.Close(); err != nil {
 			corelog.Warnf("RedisBroker: failed to close pubsub: %v", err)
 		}
 	}
+	r.mu.Unlock()
 
-	// 关闭所有订阅者通道
+	// 先取消 context，通知 receiveLoop 退出
+	r.ServiceBase.Close()
+
+	// 等待 receiveLoop 完全退出
+	r.wg.Wait()
+
+	// 现在安全关闭 channels（receiveLoop 已退出，不会再发送）
+	r.mu.Lock()
 	for topic, ch := range r.subscribers {
 		close(ch)
 		corelog.Debugf("RedisBroker: closed subscriber for topic %s", topic)
 	}
 	r.subscribers = make(map[string]chan *Message)
+	r.mu.Unlock()
 
 	// 关闭 Redis 客户端
 	if err := r.client.Close(); err != nil {
 		corelog.Warnf("RedisBroker: failed to close Redis client: %v", err)
 	}
 
-	r.mu.Unlock()
-
 	corelog.Infof("RedisBroker closed for node: %s", r.nodeID)
-
-	// 调用基类 Close
-	return r.ServiceBase.Close()
+	return nil
 }
 
 // GetSubscriberCount 获取订阅者数量（用于测试）

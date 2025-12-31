@@ -87,15 +87,16 @@ func TestNewTransformer(t *testing.T) {
 	}
 }
 
-// TestNoOpTransformer_WrapReader 测试 NoOp 转换器的 WrapReader
+// TestNoOpTransformer_WrapReader 测试 NoOp 转换器的 WrapReaderWithContext
 func TestNoOpTransformer_WrapReader(t *testing.T) {
 	t.Parallel()
 
 	transformer := &NoOpTransformer{}
+	ctx := context.Background()
 	inputData := []byte("hello world")
 	reader := bytes.NewReader(inputData)
 
-	wrappedReader, err := transformer.WrapReader(reader)
+	wrappedReader, err := transformer.WrapReaderWithContext(ctx, reader)
 	require.NoError(t, err)
 	require.NotNil(t, wrappedReader)
 
@@ -105,14 +106,15 @@ func TestNoOpTransformer_WrapReader(t *testing.T) {
 	assert.Equal(t, inputData, output)
 }
 
-// TestNoOpTransformer_WrapWriter 测试 NoOp 转换器的 WrapWriter
+// TestNoOpTransformer_WrapWriter 测试 NoOp 转换器的 WrapWriterWithContext
 func TestNoOpTransformer_WrapWriter(t *testing.T) {
 	t.Parallel()
 
 	transformer := &NoOpTransformer{}
+	ctx := context.Background()
 	var buf bytes.Buffer
 
-	wrappedWriter, err := transformer.WrapWriter(&buf)
+	wrappedWriter, err := transformer.WrapWriterWithContext(ctx, &buf)
 	require.NoError(t, err)
 	require.NotNil(t, wrappedWriter)
 
@@ -201,8 +203,9 @@ func TestRateLimitedTransformer_WrapReader(t *testing.T) {
 			transformer, err := NewTransformer(config)
 			require.NoError(t, err)
 
+			ctx := context.Background()
 			reader := bytes.NewReader(tc.inputData)
-			wrappedReader, err := transformer.WrapReader(reader)
+			wrappedReader, err := transformer.WrapReaderWithContext(ctx, reader)
 			require.NoError(t, err)
 
 			output, err := io.ReadAll(wrappedReader)
@@ -242,8 +245,9 @@ func TestRateLimitedTransformer_WrapWriter(t *testing.T) {
 			transformer, err := NewTransformer(config)
 			require.NoError(t, err)
 
+			ctx := context.Background()
 			var buf bytes.Buffer
-			wrappedWriter, err := transformer.WrapWriter(&buf)
+			wrappedWriter, err := transformer.WrapWriterWithContext(ctx, &buf)
 			require.NoError(t, err)
 
 			n, err := wrappedWriter.Write(tc.inputData)
@@ -360,8 +364,9 @@ func TestRateLimitedWriter_CloseWithCloser(t *testing.T) {
 	require.NoError(t, err)
 
 	// 创建一个实现了 Close 方法的 Writer
+	ctx := context.Background()
 	closerWriter := &closerMockWriter{}
-	wrappedWriter, err := transformer.WrapWriter(closerWriter)
+	wrappedWriter, err := transformer.WrapWriterWithContext(ctx, closerWriter)
 	require.NoError(t, err)
 
 	// 写入数据
@@ -432,12 +437,13 @@ func TestTransformConfig(t *testing.T) {
 // BenchmarkNoOpTransformer_Read 基准测试 NoOp Reader
 func BenchmarkNoOpTransformer_Read(b *testing.B) {
 	transformer := &NoOpTransformer{}
+	ctx := context.Background()
 	data := bytes.Repeat([]byte("a"), 1024)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		wrappedReader, _ := transformer.WrapReader(reader)
+		wrappedReader, _ := transformer.WrapReaderWithContext(ctx, reader)
 		io.Copy(io.Discard, wrappedReader)
 	}
 }
@@ -445,12 +451,13 @@ func BenchmarkNoOpTransformer_Read(b *testing.B) {
 // BenchmarkNoOpTransformer_Write 基准测试 NoOp Writer
 func BenchmarkNoOpTransformer_Write(b *testing.B) {
 	transformer := &NoOpTransformer{}
+	ctx := context.Background()
 	data := bytes.Repeat([]byte("a"), 1024)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var buf bytes.Buffer
-		wrappedWriter, _ := transformer.WrapWriter(&buf)
+		wrappedWriter, _ := transformer.WrapWriterWithContext(ctx, &buf)
 		wrappedWriter.Write(data)
 		wrappedWriter.Close()
 	}
@@ -460,12 +467,13 @@ func BenchmarkNoOpTransformer_Write(b *testing.B) {
 func BenchmarkRateLimitedTransformer_Read(b *testing.B) {
 	config := &TransformConfig{BandwidthLimit: 100 * 1024 * 1024} // 100 MB/s
 	transformer, _ := NewTransformer(config)
+	ctx := context.Background()
 	data := bytes.Repeat([]byte("a"), 1024)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		reader := bytes.NewReader(data)
-		wrappedReader, _ := transformer.WrapReader(reader)
+		wrappedReader, _ := transformer.WrapReaderWithContext(ctx, reader)
 		io.Copy(io.Discard, wrappedReader)
 	}
 }
@@ -474,12 +482,13 @@ func BenchmarkRateLimitedTransformer_Read(b *testing.B) {
 func BenchmarkRateLimitedTransformer_Write(b *testing.B) {
 	config := &TransformConfig{BandwidthLimit: 100 * 1024 * 1024} // 100 MB/s
 	transformer, _ := NewTransformer(config)
+	ctx := context.Background()
 	data := bytes.Repeat([]byte("a"), 1024)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var buf bytes.Buffer
-		wrappedWriter, _ := transformer.WrapWriter(&buf)
+		wrappedWriter, _ := transformer.WrapWriterWithContext(ctx, &buf)
 		wrappedWriter.Write(data)
 		wrappedWriter.Close()
 	}

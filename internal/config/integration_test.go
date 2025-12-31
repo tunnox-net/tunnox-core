@@ -445,30 +445,22 @@ func TestIntegration_EnvTypeConversion(t *testing.T) {
 	}
 }
 
-func TestIntegration_EnvBackwardCompatibility(t *testing.T) {
-	// 测试：向后兼容 - 无前缀环境变量触发警告
-	// 注意：这个测试验证 EnvSource.GetDeprecatedVars() 功能
+func TestIntegration_EnvPrefixRequired(t *testing.T) {
+	// 测试：环境变量必须使用 TUNNOX_ 前缀
 
 	envSrc := source.NewEnvSource("TUNNOX")
 
-	// 设置一个无前缀的环境变量
+	// 设置一个无前缀的环境变量（应该被忽略）
 	os.Setenv("LOG_LEVEL", "warn")
 	defer os.Unsetenv("LOG_LEVEL")
 
 	cfg := &schema.Root{}
+	cfg.Log.Level = "info" // 设置初始值
 	_ = envSrc.LoadInto(cfg)
 
-	// 检查是否记录了已废弃的变量
-	deprecatedVars := envSrc.GetDeprecatedVars()
-	found := false
-	for _, v := range deprecatedVars {
-		if v == "LOG_LEVEL" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("LOG_LEVEL should be tracked as deprecated var when used without prefix")
+	// 无前缀的环境变量应该被忽略
+	if cfg.Log.Level != "info" {
+		t.Error("Non-prefixed env var should be ignored")
 	}
 }
 
@@ -1033,7 +1025,7 @@ func GenerateTestReport() string {
 	sb.WriteString("### 4. 环境变量测试\n")
 	sb.WriteString("- [x] TUNNOX_ 前缀正确识别\n")
 	sb.WriteString("- [x] 类型转换正确（string -> int, bool, duration）\n")
-	sb.WriteString("- [x] 向后兼容：无前缀环境变量触发警告\n\n")
+	sb.WriteString("- [x] 无前缀环境变量被忽略\n\n")
 
 	sb.WriteString("### 5. Secret 脱敏测试\n")
 	sb.WriteString("- [x] Secret 类型在日志中正确脱敏\n")

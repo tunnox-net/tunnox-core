@@ -7,7 +7,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
 	coreerrors "tunnox-core/internal/core/errors"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // ============================================================================
@@ -113,7 +113,7 @@ func (s *Service) ListUserClients(userID string) ([]*models.Client, error) {
 
 // GetClientPortMappings 获取客户端的端口映射
 func (s *Service) GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) {
-	mappings, err := s.mappingRepo.GetClientPortMappings(utils.Int64ToString(clientID))
+	mappings, err := s.mappingRepo.GetClientPortMappings(random.Int64ToString(clientID))
 	if err != nil {
 		return nil, coreerrors.Wrapf(err, coreerrors.CodeStorageError, "failed to get client port mappings for %d", clientID)
 	}

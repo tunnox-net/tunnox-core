@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/utils"
 )
 
@@ -13,7 +14,7 @@ func TestServiceManagerResourceRegistration(t *testing.T) {
 	// 创建服务管理器，使用独立的资源管理器
 	config := utils.DefaultServiceConfig()
 	config.EnableSignalHandling = false                 // 禁用信号处理以便测试
-	config.ResourceManager = utils.NewResourceManager() // 使用独立的资源管理器
+	config.ResourceManager = dispose.NewResourceManager() // 使用独立的资源管理器
 	manager := utils.NewServiceManager(config)
 
 	// 创建一些测试资源

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"tunnox-core/internal/core/dispose"
 )
 
 const (
@@ -18,7 +20,7 @@ const (
 type BufferPool struct {
 	pools map[int]*sync.Pool
 	mu    sync.RWMutex
-	Dispose
+	dispose.Dispose
 }
 
 // NewBufferPool 创建新的内存池
@@ -122,7 +124,7 @@ func (bp *BufferPool) Put(buf []byte) {
 // BufferManager 缓冲区管理器，提供高级的缓冲区操作接口
 type BufferManager struct {
 	pool *BufferPool
-	Dispose
+	dispose.Dispose
 }
 
 // NewBufferManager 创建缓冲区管理器

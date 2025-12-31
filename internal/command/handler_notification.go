@@ -7,7 +7,7 @@ import (
 
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -199,6 +199,6 @@ func (h *SendNotifyToClientHandler) Handle(ctx *CommandContext) (*CommandRespons
 
 // generateNotifyID 生成通知ID
 func generateNotifyID() string {
-	randomPart, _ := utils.GenerateRandomInt(100000, 999999)
+	randomPart, _ := random.Int(100000, 999999)
 	return fmt.Sprintf("notify-%d-%d", time.Now().UnixMilli(), randomPart)
 }

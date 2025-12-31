@@ -11,7 +11,7 @@ import (
 	"tunnox-core/internal/core/dispose"
 	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -259,7 +259,7 @@ func (m *JWTManager) ValidateAccessToken(ctx context.Context, tokenString string
 	}
 
 	// 验证受众
-	if !utils.ContainsString(claims.Audience, "tunnox-client") {
+	if !random.ContainsString(claims.Audience, "tunnox-client") {
 		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "invalid audience")
 	}
 
@@ -349,7 +349,7 @@ func (m *JWTManager) ValidateRefreshToken(ctx context.Context, refreshTokenStrin
 	}
 
 	// 验证受众
-	if !utils.ContainsString(claims.Audience, "tunnox-refresh") {
+	if !random.ContainsString(claims.Audience, "tunnox-refresh") {
 		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "invalid audience")
 	}
 

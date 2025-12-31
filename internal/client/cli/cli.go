@@ -58,7 +58,7 @@ func NewCLI(ctx context.Context, tunnoxClient *client.TunnoxClient) (*CLI, error
 		Stderr:          os.Stderr,
 	})
 	if err != nil {
-		return nil, coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to initialize readline")
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to initialize readline")
 	}
 
 	// 创建输出工具

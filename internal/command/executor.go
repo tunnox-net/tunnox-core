@@ -12,7 +12,7 @@ import (
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // CommandExecutor 命令执行器
@@ -288,7 +288,7 @@ func (ce *CommandExecutor) sendResponse(connectionID string, response *types.Com
 // generateRequestID 生成请求ID
 func (ce *CommandExecutor) generateRequestID() string {
 	// 使用纳秒时间戳 + 随机数确保唯一性
-	randomSuffix, _ := utils.GenerateRandomDigits(4)
+	randomSuffix, _ := random.Digits(4)
 	return fmt.Sprintf("req_%d%s", time.Now().UnixNano(), randomSuffix)
 }
 

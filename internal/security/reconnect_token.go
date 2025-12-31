@@ -39,9 +39,10 @@ type ReconnectTokenConfig struct {
 }
 
 // DefaultReconnectTokenConfig 默认配置
+// 注意：SecretKey 为空，必须从应用配置中注入
 func DefaultReconnectTokenConfig() *ReconnectTokenConfig {
 	return &ReconnectTokenConfig{
-		SecretKey: "tunnox-reconnect-secret-change-me", // 应该从配置读取
+		SecretKey: "", // 必须从配置注入，不再使用硬编码值
 		TTL:       30 * time.Second,
 	}
 }

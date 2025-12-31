@@ -231,6 +231,6 @@ func (m *ResponseManager) WaitForResponseWithContext(ctx context.Context, comman
 		corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_CANCELLED] CommandID=%s, WaitDuration=%v, Time=%s",
 			commandID, waitDuration, time.Now().Format("15:04:05.000"))
 		m.UnregisterRequest(commandID)
-		return nil, coreerrors.Wrap(ctx.Err(), coreerrors.CodeOperationCancelled, "command cancelled")
+		return nil, coreerrors.Wrap(ctx.Err(), coreerrors.CodeCancelled, "command cancelled")
 	}
 }

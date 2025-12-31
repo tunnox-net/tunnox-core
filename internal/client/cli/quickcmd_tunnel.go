@@ -186,7 +186,7 @@ func (r *QuickCommandRunner) connectToServer() error {
 	// 连接
 	if err := r.client.Connect(); err != nil {
 		if r.ctx.Err() == context.Canceled {
-			return coreerrors.New(coreerrors.CodeOperationCancelled, "connection cancelled")
+			return coreerrors.New(coreerrors.CodeCancelled, "connection cancelled")
 		}
 		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "connection failed")
 	}

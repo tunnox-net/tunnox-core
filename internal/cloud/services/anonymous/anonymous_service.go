@@ -14,7 +14,7 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	corelog "tunnox-core/internal/core/log"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // Notifier avoids circular dependency with managers package
@@ -110,7 +110,7 @@ func (s *Service) GenerateAnonymousCredentials() (*models.Client, error) {
 
 // GetAnonymousClient 获取匿名客户端
 func (s *Service) GetAnonymousClient(clientID int64) (*models.Client, error) {
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
+	client, err := s.clientRepo.GetClient(random.Int64ToString(clientID))
 	if err != nil {
 		return nil, coreerrors.Wrapf(err, coreerrors.CodeClientNotFound, "anonymous client %d not found", clientID)
 	}
@@ -126,7 +126,7 @@ func (s *Service) GetAnonymousClient(clientID int64) (*models.Client, error) {
 // DeleteAnonymousClient 删除匿名客户端
 func (s *Service) DeleteAnonymousClient(clientID int64) error {
 	// 获取客户端信息
-	client, err := s.clientRepo.GetClient(utils.Int64ToString(clientID))
+	client, err := s.clientRepo.GetClient(random.Int64ToString(clientID))
 	if err != nil {
 		return s.baseService.WrapErrorWithInt64ID(err, "get anonymous client", clientID)
 	}
@@ -137,7 +137,7 @@ func (s *Service) DeleteAnonymousClient(clientID int64) error {
 	}
 
 	// 删除客户端
-	if err := s.clientRepo.DeleteClient(utils.Int64ToString(clientID)); err != nil {
+	if err := s.clientRepo.DeleteClient(random.Int64ToString(clientID)); err != nil {
 		return s.baseService.WrapErrorWithInt64ID(err, "delete anonymous client", clientID)
 	}
 
@@ -171,13 +171,13 @@ func (s *Service) ListAnonymousClients() ([]*models.Client, error) {
 // CreateAnonymousMapping 创建匿名映射
 func (s *Service) CreateAnonymousMapping(listenClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) {
 	// 验证监听客户端
-	_, err := s.clientRepo.GetClient(utils.Int64ToString(listenClientID))
+	_, err := s.clientRepo.GetClient(random.Int64ToString(listenClientID))
 	if err != nil {
 		return nil, coreerrors.Wrapf(err, coreerrors.CodeClientNotFound, "listen client %d not found", listenClientID)
 	}
 
 	// 验证目标客户端
-	_, err = s.clientRepo.GetClient(utils.Int64ToString(targetClientID))
+	_, err = s.clientRepo.GetClient(random.Int64ToString(targetClientID))
 	if err != nil {
 		return nil, coreerrors.Wrapf(err, coreerrors.CodeClientNotFound, "target client %d not found", targetClientID)
 	}

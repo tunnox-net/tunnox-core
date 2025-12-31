@@ -55,14 +55,12 @@ const (
 	CodeResourceExhausted ErrorCode = "RESOURCE_EXHAUSTED"
 
 	// 系统错误 (6xxx)
-	CodeInternal            ErrorCode = "INTERNAL_ERROR"
-	CodeInternalError       ErrorCode = "INTERNAL_ERROR" // 别名，保持兼容
-	CodeStorageError        ErrorCode = "STORAGE_ERROR"
-	CodeNetworkError        ErrorCode = "NETWORK_ERROR"
-	CodeTimeout             ErrorCode = "TIMEOUT"
-	CodeCancelled           ErrorCode = "CANCELLED"
-	CodeOperationCancelled  ErrorCode = "CANCELLED" // 别名，保持兼容
-	CodeExpired             ErrorCode = "EXPIRED"
+	CodeInternal     ErrorCode = "INTERNAL_ERROR"
+	CodeStorageError ErrorCode = "STORAGE_ERROR"
+	CodeNetworkError ErrorCode = "NETWORK_ERROR"
+	CodeTimeout      ErrorCode = "TIMEOUT"
+	CodeCancelled    ErrorCode = "CANCELLED"
+	CodeExpired      ErrorCode = "EXPIRED"
 	CodeUnavailable         ErrorCode = "UNAVAILABLE"
 	CodeNotConfigured       ErrorCode = "NOT_CONFIGURED"
 	CodeServiceClosed       ErrorCode = "SERVICE_CLOSED"

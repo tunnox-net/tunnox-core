@@ -12,12 +12,6 @@ import (
 // StreamTransformer 流转换器接口
 // 注意：压缩和加密已移至StreamProcessor，Transform只处理限速等商业特性
 type StreamTransformer interface {
-	// WrapReader 包装 Reader（限速）
-	WrapReader(r io.Reader) (io.Reader, error)
-
-	// WrapWriter 包装 Writer（限速）
-	WrapWriter(w io.Writer) (io.WriteCloser, error)
-
 	// WrapReaderWithContext 包装 Reader（限速），支持 context 取消
 	WrapReaderWithContext(ctx context.Context, r io.Reader) (io.Reader, error)
 
@@ -33,14 +27,6 @@ type TransformConfig struct {
 
 // NoOpTransformer 无操作转换器（不限速）
 type NoOpTransformer struct{}
-
-func (t *NoOpTransformer) WrapReader(r io.Reader) (io.Reader, error) {
-	return r, nil
-}
-
-func (t *NoOpTransformer) WrapWriter(w io.Writer) (io.WriteCloser, error) {
-	return &nopWriteCloser{w}, nil
-}
 
 func (t *NoOpTransformer) WrapReaderWithContext(ctx context.Context, r io.Reader) (io.Reader, error) {
 	return r, nil
@@ -77,28 +63,6 @@ func NewTransformer(config *TransformConfig) (StreamTransformer, error) {
 	return &RateLimitedTransformer{
 		config:      *config,
 		rateLimiter: limiter,
-	}, nil
-}
-
-// WrapReader 包装 Reader（添加限速）
-// 注意：此方法保留向后兼容，内部使用 context.Background() 作为超时基础
-// 推荐使用 WrapReaderWithContext 传入正确的 parent context
-func (t *RateLimitedTransformer) WrapReader(r io.Reader) (io.Reader, error) {
-	return &rateLimitedReader{
-		source:    r,
-		limiter:   t.rateLimiter,
-		parentCtx: context.Background(),
-	}, nil
-}
-
-// WrapWriter 包装 Writer（添加限速）
-// 注意：此方法保留向后兼容，内部使用 context.Background() 作为超时基础
-// 推荐使用 WrapWriterWithContext 传入正确的 parent context
-func (t *RateLimitedTransformer) WrapWriter(w io.Writer) (io.WriteCloser, error) {
-	return &rateLimitedWriter{
-		target:    w,
-		limiter:   t.rateLimiter,
-		parentCtx: context.Background(),
 	}, nil
 }
 

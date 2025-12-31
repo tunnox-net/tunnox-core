@@ -136,41 +136,9 @@ func TestEnvSource_LoadInto_Secret(t *testing.T) {
 	}
 }
 
-// P0: Test backward compatible fallback without prefix
-func TestEnvSource_BackwardCompatibleFallback(t *testing.T) {
-	// Set env var without prefix (deprecated)
-	os.Setenv("LOG_LEVEL", "warn")
-	defer os.Unsetenv("LOG_LEVEL")
-
-	cfg := &schema.Root{}
-	s := NewEnvSource("TUNNOX")
-
-	err := s.LoadInto(cfg)
-	if err != nil {
-		t.Fatalf("LoadInto() error = %v", err)
-	}
-
-	// Should still load from non-prefixed env var
-	if cfg.Log.Level != "warn" {
-		t.Errorf("Log.Level = %q, want %q", cfg.Log.Level, "warn")
-	}
-
-	// Check that deprecated var was tracked
-	deprecatedVars := s.GetDeprecatedVars()
-	found := false
-	for _, v := range deprecatedVars {
-		if v == "LOG_LEVEL" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Error("LOG_LEVEL should be tracked as deprecated")
-	}
-}
-
-// P0: Test that prefixed env var takes precedence
-func TestEnvSource_PrefixedTakesPrecedence(t *testing.T) {
+// Test that only prefixed env var is used
+func TestEnvSource_OnlyPrefixedEnvUsed(t *testing.T) {
+	// Set env var without prefix (should be ignored)
 	os.Setenv("LOG_LEVEL", "warn")
 	os.Setenv("TUNNOX_LOG_LEVEL", "debug")
 	defer func() {
@@ -186,9 +154,30 @@ func TestEnvSource_PrefixedTakesPrecedence(t *testing.T) {
 		t.Fatalf("LoadInto() error = %v", err)
 	}
 
-	// Prefixed should take precedence
+	// Only prefixed env var should be used
 	if cfg.Log.Level != "debug" {
 		t.Errorf("Log.Level = %q, want %q", cfg.Log.Level, "debug")
+	}
+}
+
+// Test that non-prefixed env var is ignored
+func TestEnvSource_NonPrefixedEnvIgnored(t *testing.T) {
+	// Set only non-prefixed env var (should be ignored)
+	os.Setenv("LOG_LEVEL", "warn")
+	defer os.Unsetenv("LOG_LEVEL")
+
+	cfg := &schema.Root{}
+	cfg.Log.Level = "info" // Set initial value
+	s := NewEnvSource("TUNNOX")
+
+	err := s.LoadInto(cfg)
+	if err != nil {
+		t.Fatalf("LoadInto() error = %v", err)
+	}
+
+	// Non-prefixed env var should be ignored, keep initial value
+	if cfg.Log.Level != "info" {
+		t.Errorf("Log.Level = %q, want %q (unchanged)", cfg.Log.Level, "info")
 	}
 }
 

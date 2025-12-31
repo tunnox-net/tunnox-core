@@ -359,16 +359,22 @@ func (m *Storage) StopCleanup() {
 }
 
 // SetNX 原子设置，仅当键不存在时
+// 注意：已过期的键视为不存在，允许重新设置
 func (m *Storage) SetNX(key string, value any, ttl time.Duration) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 检查键是否已存在
-	if _, exists := m.data[key]; exists {
-		return false, nil // 键已存在，设置失败
+	// 检查键是否已存在且未过期
+	if item, exists := m.data[key]; exists {
+		// 如果键存在但已过期，视为不存在，允许覆盖
+		if item.Expiration.IsZero() || time.Now().Before(item.Expiration) {
+			return false, nil // 键存在且未过期，设置失败
+		}
+		// 键已过期，删除后继续设置
+		delete(m.data, key)
 	}
 
-	// 键不存在，设置成功
+	// 键不存在或已过期，设置成功
 	var expiration time.Time
 	if ttl <= 0 {
 		expiration = time.Time{} // 零值，表示永不过期

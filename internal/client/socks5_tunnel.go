@@ -11,7 +11,7 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/iocopy"
 )
 
 // SOCKS5TunnelCreatorImpl SOCKS5 隧道创建器实现
@@ -87,7 +87,7 @@ func (c *SOCKS5TunnelCreatorImpl) forwardData(tunnelID string, userConn, serverC
 	}
 
 	// 包装成 ReadWriteCloser（确保关闭时同时关闭 stream 和 conn）
-	tunnelRWC, err := utils.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
+	tunnelRWC, err := iocopy.NewReadWriteCloser(tunnelReader, tunnelWriter, func() error {
 		tunnelStream.Close()
 		serverConn.Close()
 		return nil
@@ -99,7 +99,7 @@ func (c *SOCKS5TunnelCreatorImpl) forwardData(tunnelID string, userConn, serverC
 		return
 	}
 
-	result := utils.SimpleBidirectionalCopy(userConn, tunnelRWC, logPrefix)
+	result := iocopy.Simple(userConn, tunnelRWC, logPrefix)
 
 	if result.SendError != nil && result.SendError != io.EOF {
 		corelog.Warnf("SOCKS5Tunnel[%s]: user->server error: %v", tunnelID, result.SendError)

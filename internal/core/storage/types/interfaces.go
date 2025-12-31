@@ -81,14 +81,13 @@ type TypedWatchableStore[T any] interface {
 
 // ============================================================================
 // 核心接口（所有存储必须实现）
-// Deprecated: 推荐使用泛型接口 TypedStorage[T]，配合 TypedStorageAdapter
 // ============================================================================
 
 // Storage 核心存储接口（必需实现）
 // 包含最常用的基础操作，所有存储实现都必须支持
 //
-// 注意: 此接口使用 any 类型作为通用存储层。
-// 推荐使用 TypedStorageAdapter[T] 包装此接口以获得类型安全性。
+// 此接口使用 any 类型作为通用存储层。
+// 如需类型安全，可使用 TypedStorageAdapter[T] 包装此接口。
 //
 // 示例:
 //
@@ -115,13 +114,12 @@ type Storage interface {
 
 // ============================================================================
 // 扩展接口（可选实现）
-// Deprecated: 推荐使用对应的泛型接口
 // ============================================================================
 
 // ListStore 列表操作扩展接口（可选）
 // 如果存储支持列表操作，可以实现此接口
 //
-// 推荐: 使用 TypedListStore[T] 或 TypedFullStorageAdapter[T] 获得类型安全
+// 如需类型安全，可使用 TypedListStore[T] 或 TypedFullStorageAdapter[T]
 type ListStore interface {
 	SetList(key string, values []any, ttl time.Duration) error
 	GetList(key string) ([]any, error)
@@ -131,7 +129,7 @@ type ListStore interface {
 
 // HashStore 哈希操作扩展接口（可选）
 //
-// 推荐: 使用 TypedHashStore[T] 或 TypedFullStorageAdapter[T] 获得类型安全
+// 如需类型安全，可使用 TypedHashStore[T] 或 TypedFullStorageAdapter[T]
 type HashStore interface {
 	SetHash(key string, field string, value any) error
 	GetHash(key string, field string) (any, error)
@@ -148,7 +146,7 @@ type CounterStore interface {
 // CASStore 原子操作扩展接口（可选）
 // 用于分布式锁、原子更新等场景
 //
-// 推荐: 使用 TypedCASStore[T] 或 TypedFullStorageAdapter[T] 获得类型安全
+// 如需类型安全，可使用 TypedCASStore[T] 或 TypedFullStorageAdapter[T]
 type CASStore interface {
 	SetNX(key string, value any, ttl time.Duration) (bool, error)
 	CompareAndSwap(key string, oldValue, newValue any, ttl time.Duration) (bool, error)
@@ -157,7 +155,7 @@ type CASStore interface {
 // WatchableStore 监听扩展接口（可选）
 // 用于键变化通知
 //
-// 推荐: 使用 TypedWatchableStore[T] 或 TypedFullStorageAdapter[T] 获得类型安全
+// 如需类型安全，可使用 TypedWatchableStore[T] 或 TypedFullStorageAdapter[T]
 type WatchableStore interface {
 	Watch(key string, callback func(any)) error
 	Unwatch(key string) error
@@ -186,7 +184,7 @@ type FullStorage interface {
 // PersistentStorage 持久化存储接口
 // 用于数据库或远程 gRPC 存储
 //
-// 推荐: 使用 TypedPersistentAdapter[T] 包装此接口获得类型安全
+// 如需类型安全，可使用 TypedPersistentAdapter[T] 包装此接口
 type PersistentStorage interface {
 	// Set 设置键值对（持久化，不设置 TTL）
 	Set(key string, value any) error
@@ -253,7 +251,7 @@ type TypedPersistentStorage[T any] interface {
 
 // CacheStorage 缓存存储接口（对 Storage 的子集）
 //
-// 推荐: 使用 TypedCacheAdapter[T] 包装此接口获得类型安全
+// 如需类型安全，可使用 TypedCacheAdapter[T] 包装此接口
 type CacheStorage interface {
 	Set(key string, value any, ttl time.Duration) error
 	Get(key string) (any, error)

@@ -65,8 +65,12 @@ func (c *SecurityComponent) Initialize(ctx context.Context, deps *Dependencies) 
 	deps.IPManager = security.NewIPManager(deps.Storage, ctx)
 	deps.RateLimiter = security.NewRateLimiter(nil, nil, ctx)
 
-	// 创建 Token 管理器
-	deps.ReconnectTokenManager = security.NewReconnectTokenManager(nil, deps.Storage)
+	// 创建 Token 管理器，使用配置中的密钥
+	reconnectTokenConfig := &security.ReconnectTokenConfig{
+		SecretKey: deps.Config.Security.ReconnectTokenSecret,
+		TTL:       time.Duration(deps.Config.Security.ReconnectTokenTTL) * time.Second,
+	}
+	deps.ReconnectTokenManager = security.NewReconnectTokenManager(reconnectTokenConfig, deps.Storage)
 	deps.SessionTokenManager = security.NewSessionTokenManager(nil)
 
 	// 注入到 SessionManager

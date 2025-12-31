@@ -34,7 +34,7 @@ func (g *Generator) Generate() (string, error) {
 	for i := 0; i < g.config.SegmentCount; i++ {
 		segment, err := g.generateSegment()
 		if err != nil {
-			return "", coreerrors.Wrapf(err, coreerrors.CodeInternalError, "failed to generate segment %d", i)
+			return "", coreerrors.Wrapf(err, coreerrors.CodeInternal, "failed to generate segment %d", i)
 		}
 		segments[i] = segment
 	}
@@ -54,7 +54,7 @@ func (g *Generator) generateSegment() (string, error) {
 		// 使用 crypto/rand 生成安全的随机数
 		randomIndex, err := rand.Int(rand.Reader, big.NewInt(charsetLen))
 		if err != nil {
-			return "", coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to generate random number")
+			return "", coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to generate random number")
 		}
 		segment[i] = g.config.Charset[randomIndex.Int64()]
 	}
@@ -70,7 +70,7 @@ func (g *Generator) GenerateUnique(checkExists func(string) (bool, error)) (stri
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		code, err := g.Generate()
 		if err != nil {
-			return "", coreerrors.Wrapf(err, coreerrors.CodeInternalError, "failed to generate code (attempt %d)", attempt+1)
+			return "", coreerrors.Wrapf(err, coreerrors.CodeInternal, "failed to generate code (attempt %d)", attempt+1)
 		}
 
 		exists, err := checkExists(code)

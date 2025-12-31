@@ -13,7 +13,7 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	corelog "tunnox-core/internal/core/log"
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 )
 
 // portMappingService 端口映射服务实现
@@ -83,7 +83,7 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 	// 双向索引：同时添加到 ListenClientID 和 TargetClientID 的索引
 	// 确保 GetClientPortMappings 能查询到该客户端作为 ListenClient 或 TargetClient 的所有映射
 	if mapping.ListenClientID > 0 {
-		clientKey := utils.Int64ToString(mapping.ListenClientID)
+		clientKey := random.Int64ToString(mapping.ListenClientID)
 		if err := s.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			s.baseService.LogWarning("add mapping to listen client list", err)
 		} else {
@@ -92,7 +92,7 @@ func (s *portMappingService) CreatePortMapping(mapping *models.PortMapping) (*mo
 	}
 
 	if mapping.TargetClientID > 0 {
-		clientKey := utils.Int64ToString(mapping.TargetClientID)
+		clientKey := random.Int64ToString(mapping.TargetClientID)
 		if err := s.mappingRepo.AddMappingToClient(clientKey, mapping); err != nil {
 			s.baseService.LogWarning("add mapping to target client list", err)
 		} else {

@@ -15,13 +15,17 @@ type TunnelRegistry struct {
 	tunnelMap map[string]*TunnelConnection // tunnelID -> 隧道连接
 	mu        sync.RWMutex
 
+	// 容量限制
+	maxTunnels int // 最大隧道数，0 表示不限制
+
 	// 日志
 	logger corelog.Logger
 }
 
 // TunnelRegistryConfig 隧道注册表配置
 type TunnelRegistryConfig struct {
-	Logger corelog.Logger
+	Logger     corelog.Logger
+	MaxTunnels int // 最大隧道数，0 表示不限制
 }
 
 // NewTunnelRegistry 创建隧道注册表
@@ -36,9 +40,10 @@ func NewTunnelRegistry(config *TunnelRegistryConfig) *TunnelRegistry {
 	}
 
 	return &TunnelRegistry{
-		connMap:   make(map[string]*TunnelConnection),
-		tunnelMap: make(map[string]*TunnelConnection),
-		logger:    logger,
+		connMap:    make(map[string]*TunnelConnection),
+		tunnelMap:  make(map[string]*TunnelConnection),
+		maxTunnels: config.MaxTunnels,
+		logger:     logger,
 	}
 }
 
@@ -53,6 +58,12 @@ func (r *TunnelRegistry) Register(conn *TunnelConnection) error {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	// 检查容量限制
+	if r.maxTunnels > 0 && len(r.connMap) >= r.maxTunnels {
+		r.logger.Warnf("TunnelRegistry: capacity limit reached (max=%d, current=%d)", r.maxTunnels, len(r.connMap))
+		return coreerrors.Newf(coreerrors.CodeResourceExhausted, "tunnel registry capacity limit reached: max %d tunnels", r.maxTunnels)
+	}
 
 	r.connMap[conn.ConnID] = conn
 	if conn.TunnelID != "" {

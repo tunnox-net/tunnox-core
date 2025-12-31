@@ -7,7 +7,6 @@ package transport
 
 import (
 	"context"
-	"crypto/tls"
 	"io"
 	"net"
 	"sync"
@@ -35,10 +34,11 @@ type QUICStreamConn struct {
 func NewQUICStreamConn(ctx context.Context, address string) (*QUICStreamConn, error) {
 	corelog.Debugf("QUIC: connecting to %s", address)
 
-	// Create TLS config (skip verification for now, can be configured later)
-	tlsConf := &tls.Config{
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"tunnox-quic"},
+	// 从 context 获取 TLS 配置，如果没有则使用默认配置（跳过验证）
+	tlsOpts := GetTLSOptions(ctx)
+	tlsConf, err := BuildTLSConfig(tlsOpts, []string{"tunnox-quic"})
+	if err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to build TLS config")
 	}
 
 	// Create QUIC config

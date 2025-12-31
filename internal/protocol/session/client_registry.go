@@ -7,6 +7,7 @@ import (
 
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/stream"
 )
 
 // ClientRegistry 客户端注册表
@@ -167,30 +168,56 @@ func (r *ClientRegistry) Unregister(connID string) {
 	r.logger.Debugf("ClientRegistry: unregistered connection %s (stream kept open)", connID)
 }
 
+// kickConnectionInfo 用于在锁释放后执行 I/O 操作所需的连接信息
+type kickConnectionInfo struct {
+	connID   string
+	clientID int64
+	stream   stream.PackageStreamer
+}
+
 // KickOldConnection 踢掉旧的控制连接
+// 采用"先移除后操作"模式：在持锁期间完成验证和映射移除，锁释放后再执行 I/O 操作
 func (r *ClientRegistry) KickOldConnection(clientID int64, newConnID string, sendKickFn func(*ControlConnection, string, string)) {
+	var connInfo *kickConnectionInfo
+	var oldConnForCallback *ControlConnection
+
+	// 1. 持锁期间：验证、记录信息、从映射移除
 	r.mu.Lock()
 	oldConn := r.clientIDMap[clientID]
-	r.mu.Unlock()
-
 	if oldConn != nil && oldConn.ConnID != newConnID {
+		// 记录连接信息用于后续 I/O 操作
+		connInfo = &kickConnectionInfo{
+			connID:   oldConn.ConnID,
+			clientID: oldConn.ClientID,
+			stream:   oldConn.Stream,
+		}
+		// 保存引用用于回调（回调可能需要完整的连接信息）
+		oldConnForCallback = oldConn
+
 		r.logger.Warnf("ClientRegistry: kicking old connection - clientID=%d, oldConnID=%s, newConnID=%s",
 			clientID, oldConn.ConnID, newConnID)
 
+		// 从映射中移除（但不关闭 stream，稍后在锁外关闭）
+		if oldConn.Authenticated && oldConn.ClientID > 0 {
+			if existingConn, exists := r.clientIDMap[oldConn.ClientID]; exists && existingConn.ConnID == oldConn.ConnID {
+				delete(r.clientIDMap, oldConn.ClientID)
+			}
+		}
+		delete(r.connMap, oldConn.ConnID)
+	}
+	r.mu.Unlock()
+
+	// 2. 锁释放后：执行 I/O 操作（发送 Kick 命令、关闭 Stream）
+	if connInfo != nil {
 		// 发送 Kick 命令
-		if sendKickFn != nil {
-			sendKickFn(oldConn, "Another client logged in with the same ID", "DUPLICATE_LOGIN")
+		if sendKickFn != nil && oldConnForCallback != nil {
+			sendKickFn(oldConnForCallback, "Another client logged in with the same ID", "DUPLICATE_LOGIN")
 		}
 
-		// 关闭旧连接
-		if oldConn.Stream != nil {
-			oldConn.Stream.Close()
+		// 关闭旧连接的 stream
+		if connInfo.stream != nil {
+			connInfo.stream.Close()
 		}
-
-		// 从映射中移除
-		r.mu.Lock()
-		r.removeConnectionLocked(oldConn)
-		r.mu.Unlock()
 	}
 }
 
@@ -213,44 +240,66 @@ func (r *ClientRegistry) List() []*ControlConnection {
 	return result
 }
 
+// staleConnectionInfo 用于在锁释放后执行清理操作所需的连接信息
+type staleConnectionInfo struct {
+	connID       string
+	clientID     int64
+	idleDuration time.Duration
+	stream       stream.PackageStreamer
+}
+
 // CleanupStale 清理过期的连接
+// 采用"先移除后操作"模式：在持锁期间完成检查和映射移除，锁释放后再执行 I/O 操作
 // 返回清理的连接数量
 func (r *ClientRegistry) CleanupStale(timeout time.Duration, closeFn func(string) error) int {
-	// 1. 收集超时连接（避免长时间持锁）
-	var staleConns []*ControlConnection
+	var staleInfos []staleConnectionInfo
 
-	r.mu.RLock()
+	// 1. 持锁期间：检查、记录信息、从映射移除
+	r.mu.Lock()
 	for _, conn := range r.connMap {
 		if conn.IsStale(timeout) {
-			staleConns = append(staleConns, conn)
+			// 记录连接信息用于后续 I/O 操作
+			staleInfos = append(staleInfos, staleConnectionInfo{
+				connID:       conn.ConnID,
+				clientID:     conn.ClientID,
+				idleDuration: time.Since(conn.LastActiveAt),
+				stream:       conn.Stream,
+			})
+
+			// 从映射中移除（但不关闭 stream，稍后在锁外关闭）
+			if conn.Authenticated && conn.ClientID > 0 {
+				if existingConn, exists := r.clientIDMap[conn.ClientID]; exists && existingConn.ConnID == conn.ConnID {
+					delete(r.clientIDMap, conn.ClientID)
+				}
+			}
+			delete(r.connMap, conn.ConnID)
 		}
 	}
-	r.mu.RUnlock()
+	r.mu.Unlock()
 
-	if len(staleConns) == 0 {
+	if len(staleInfos) == 0 {
 		return 0
 	}
 
-	// 2. 清理超时连接
-	for _, conn := range staleConns {
-		idleDuration := time.Since(conn.LastActiveAt)
+	// 2. 锁释放后：执行 I/O 操作（关闭连接）
+	for _, info := range staleInfos {
 		r.logger.Warnf("ClientRegistry: removing stale connection - connID=%s, clientID=%d, idle=%v",
-			conn.ConnID, conn.ClientID, idleDuration)
+			info.connID, info.clientID, info.idleDuration)
 
-		// 关闭连接
+		// 调用外部关闭函数
 		if closeFn != nil {
-			if err := closeFn(conn.ConnID); err != nil {
-				r.logger.Errorf("ClientRegistry: failed to close stale connection %s: %v", conn.ConnID, err)
+			if err := closeFn(info.connID); err != nil {
+				r.logger.Errorf("ClientRegistry: failed to close stale connection %s: %v", info.connID, err)
 			}
 		}
 
-		// 从映射中移除
-		r.mu.Lock()
-		r.removeConnectionLocked(conn)
-		r.mu.Unlock()
+		// 关闭 stream
+		if info.stream != nil {
+			info.stream.Close()
+		}
 	}
 
-	return len(staleConns)
+	return len(staleInfos)
 }
 
 // Close 关闭所有连接

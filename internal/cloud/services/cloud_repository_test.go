@@ -9,7 +9,7 @@ import (
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/storage"
 
-	"tunnox-core/internal/utils"
+	"tunnox-core/internal/utils/random"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -390,7 +390,7 @@ func TestPortMappingRepo_CreateMapping(t *testing.T) {
 	repo := repos.NewRepository(storage)
 	mappingRepo := repos.NewPortMappingRepo(repo)
 
-	mappingID, err := utils.GenerateRandomString(12)
+	mappingID, err := random.String(12)
 	require.NoError(t, err)
 
 	mapping := &models.PortMapping{
@@ -423,7 +423,7 @@ func TestPortMappingRepo_GetMapping(t *testing.T) {
 	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	mappingRepo := repos.NewPortMappingRepo(repo)
 
-	mappingID, err := utils.GenerateRandomString(12)
+	mappingID, err := random.String(12)
 	require.NoError(t, err)
 
 	mapping := &models.PortMapping{
@@ -457,7 +457,7 @@ func TestPortMappingRepo_UpdateMapping(t *testing.T) {
 	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	mappingRepo := repos.NewPortMappingRepo(repo)
 
-	mappingID, err := utils.GenerateRandomString(12)
+	mappingID, err := random.String(12)
 	require.NoError(t, err)
 
 	mapping := &models.PortMapping{
@@ -493,7 +493,7 @@ func TestPortMappingRepo_DeleteMapping(t *testing.T) {
 	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	mappingRepo := repos.NewPortMappingRepo(repo)
 
-	mappingID, err := utils.GenerateRandomString(12)
+	mappingID, err := random.String(12)
 	require.NoError(t, err)
 
 	mapping := &models.PortMapping{
@@ -524,11 +524,11 @@ func TestPortMappingRepo_ListMappings(t *testing.T) {
 	repo := repos.NewRepository(storage.NewMemoryStorage(context.Background()))
 	mappingRepo := repos.NewPortMappingRepo(repo)
 
-	mappingID1, err := utils.GenerateRandomString(12)
+	mappingID1, err := random.String(12)
 	require.NoError(t, err)
-	mappingID2, err := utils.GenerateRandomString(12)
+	mappingID2, err := random.String(12)
 	require.NoError(t, err)
-	mappingID3, err := utils.GenerateRandomString(12)
+	mappingID3, err := random.String(12)
 	require.NoError(t, err)
 
 	// 创建多个映射

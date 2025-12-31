@@ -1,96 +1,241 @@
 {
-  "project": "H-01-session-package-refactoring",
+  "project": "code-review-refactoring-round3-complete",
+  "description": "架构师 Code Review 意见评审与重构（第三轮完整版）",
   "phase": "completed",
-  "created_at": "2025-12-30T00:15:00Z",
-  "updated_at": "2025-12-31T00:00:00Z",
-  "task_description": "protocol/session 包深度重构，移除旧架构代码，统一连接管理模式",
-  "initial_state": {
-    "main_directory_lines": 10347,
-    "issues": [
-      "controlConnMap, clientIDIndexMap, controlConnLock 冗余（与 clientRegistry 功能重复）",
-      "tunnelConnMap, tunnelIDMap, tunnelConnLock 冗余（与 tunnelRegistry 功能重复）",
-      "测试文件直接访问私有字段"
+  "started_at": "2025-12-31T17:00:00Z",
+  "completed_at": "2025-12-31T19:00:00Z",
+  "previous_round": {
+    "project": "code-review-refactoring-round2",
+    "completed_at": "2025-12-31T16:00:00Z"
+  },
+  "review_items": {
+    "major": [
+      {
+        "id": "M1",
+        "title": "QUIC TLS 配置化",
+        "file": "internal/client/transport/quic.go, internal/client/config.go",
+        "status": "fixed",
+        "accepted": true,
+        "fix_summary": "添加 TLSConfig 结构，支持 InsecureSkipVerify/CACertFile/ServerName 配置，通过 context 传递"
+      },
+      {
+        "id": "M2",
+        "title": "WebSocket Ping/Pong 心跳实现",
+        "file": "internal/protocol/adapter/websocket_conn.go",
+        "status": "fixed",
+        "accepted": true,
+        "fix_summary": "服务端添加 startPingLoop 发送 Ping，客户端添加 PingHandler 响应 Pong"
+      },
+      {
+        "id": "M3",
+        "title": "StreamProcessor 竞态修复",
+        "file": "internal/stream/stream_processor.go",
+        "status": "fixed",
+        "accepted": true,
+        "fix_summary": "先获取锁再检查状态，避免 check-then-lock 竞态"
+      },
+      {
+        "id": "M4",
+        "title": "HTTP 请求体大小限制",
+        "file": "internal/httpservice/config.go, server.go, middleware.go",
+        "status": "fixed",
+        "accepted": true,
+        "fix_summary": "添加 MaxHeaderBytes (1MB) 和 MaxBodySize (10MB) 配置"
+      }
+    ],
+    "minor": [
+      {
+        "id": "m1",
+        "title": "context.Background 标记 Deprecated",
+        "file": "internal/stream/transform/transform.go",
+        "status": "fixed",
+        "accepted": true,
+        "fix_summary": "使用 Go 标准 Deprecated 注释格式"
+      },
+      {
+        "id": "m2",
+        "title": "TunnoxClient 拆分",
+        "file": "internal/client/client_core.go",
+        "status": "rejected",
+        "accepted": false,
+        "reason": "文件 352 行，已有良好模块拆分，保持现状"
+      },
+      {
+        "id": "m3",
+        "title": "QuicStreamConn.Close 错误捕获",
+        "file": "internal/protocol/adapter/quic_adapter.go",
+        "status": "fixed",
+        "accepted": true,
+        "fix_summary": "捕获 Close() 返回的错误"
+      },
+      {
+        "id": "m5",
+        "title": "错误码别名清理",
+        "file": "internal/core/errors/errors.go + 44 处引用",
+        "status": "fixed",
+        "accepted": true,
+        "fix_summary": "删除 CodeInternalError 和 CodeOperationCancelled 别名，统一使用主名称"
+      }
+    ],
+    "suggestion": [
+      {
+        "id": "S1",
+        "title": "建议添加 Connection Pool 预热机制",
+        "status": "noted"
+      },
+      {
+        "id": "S2",
+        "title": "建议统一日志字段命名规范",
+        "status": "noted"
+      },
+      {
+        "id": "S3",
+        "title": "建议为跨节点通信添加 gRPC 双向认证",
+        "status": "noted"
+      }
     ]
   },
-  "final_state": {
-    "main_directory_lines": 9925,
-    "non_test_lines": 6598,
-    "subpackages": {
-      "buffer": 2256,
-      "connection": 1482,
-      "connstate": 1015,
-      "core": 165,
-      "proxy": 11,
-      "tunnel": 3430
-    },
-    "total_lines": 24065
-  },
-  "changes_made": [
+  "tasks": [
     {
-      "file": "manager.go",
-      "change": "移除 controlConnMap, clientIDIndexMap, controlConnLock, tunnelConnMap, tunnelIDMap, tunnelConnLock 字段"
+      "id": "T1",
+      "issue_id": "M1",
+      "title": "QUIC TLS 配置化",
+      "status": "completed",
+      "files_modified": [
+        "internal/client/config.go",
+        "internal/client/transport/registry.go",
+        "internal/client/transport/quic.go",
+        "internal/protocol/adapter/quic_adapter.go"
+      ]
     },
     {
-      "file": "control_connection_mgr.go",
-      "change": "完全重写，所有方法委托给 clientRegistry（267行 → 133行）"
+      "id": "T2",
+      "issue_id": "M2",
+      "title": "WebSocket Ping/Pong 实现",
+      "status": "completed",
+      "files_modified": ["internal/protocol/adapter/websocket_conn.go"]
     },
     {
-      "file": "connection_lifecycle.go",
-      "change": "简化，隧道连接方法委托给 tunnelRegistry"
+      "id": "T3",
+      "issue_id": "M3",
+      "title": "StreamProcessor 竞态修复",
+      "status": "completed",
+      "files_modified": ["internal/stream/stream_processor.go"]
     },
     {
-      "file": "command_integration.go",
-      "change": "使用 clientRegistry.GetByConnID() 替代直接 map 访问"
+      "id": "T4",
+      "issue_id": "M4",
+      "title": "HTTP 请求体大小限制",
+      "status": "completed",
+      "files_modified": [
+        "internal/httpservice/config.go",
+        "internal/httpservice/server.go",
+        "internal/httpservice/middleware.go"
+      ]
     },
     {
-      "file": "manager_notify.go",
-      "change": "使用 clientRegistry.List() 获取所有控制连接"
+      "id": "T5",
+      "issue_id": "m1",
+      "title": "context.Background 标记 Deprecated",
+      "status": "completed",
+      "files_modified": ["internal/stream/transform/transform.go"]
     },
     {
-      "file": "packet_handler_handshake.go",
-      "change": "使用 clientRegistry 处理客户端重连"
+      "id": "T6",
+      "issue_id": "m3",
+      "title": "QuicStreamConn.Close 错误捕获",
+      "status": "completed",
+      "files_modified": ["internal/protocol/adapter/quic_adapter.go"]
     },
     {
-      "file": "packet_handler_tunnel.go",
-      "change": "更新 removeFromControlConnMap 使用 clientRegistry"
-    },
-    {
-      "file": "packet_handler_tunnel_bridge.go",
-      "change": "使用 clientRegistry.Remove()"
-    },
-    {
-      "file": "shutdown.go",
-      "change": "使用 clientRegistry.List() 和 tunnelRegistry.Count()"
-    },
-    {
-      "file": "socks5_tunnel_handler.go",
-      "change": "更新 getClientIDFromConnection 使用 clientRegistry"
-    },
-    {
-      "file": "tunnel_migration_integration.go",
-      "change": "使用 tunnelRegistry.List()"
-    },
-    {
-      "file": "connection_lifecycle_test.go",
-      "change": "重写测试，使用公共 API 替代私有字段访问"
-    },
-    {
-      "file": "shutdown_test.go",
-      "change": "重写测试，使用公共 API 替代私有字段访问"
-    },
-    {
-      "file": "tunnel_migration_integration_test.go",
-      "change": "重写测试，使用构造函数和公共注册方法"
+      "id": "T7",
+      "issue_id": "m5",
+      "title": "错误码别名清理",
+      "status": "completed",
+      "files_modified": [
+        "internal/core/errors/errors.go",
+        "internal/cloud/services/service_registry_impl.go",
+        "internal/cloud/services/conncode/service.go",
+        "internal/cloud/services/conncode/generator.go",
+        "internal/command/base_handler_test.go",
+        "internal/command/type_example_test.go",
+        "internal/client/mapping/base.go",
+        "internal/client/cli/cli.go",
+        "internal/client/cli/utils.go",
+        "internal/client/tunnel/manager.go",
+        "internal/client/tunnel_dialer.go",
+        "internal/client/command/response_manager.go",
+        "internal/client/cli/quickcmd_tunnel.go"
+      ]
     }
   ],
-  "verification": {
-    "compile": "pass",
-    "go_vet": "pass",
-    "unit_tests": "pass (all packages)",
-    "test_count": "120+ tests"
-  },
-  "architecture_pattern": {
-    "before": "SessionManager 直接持有多个 map (controlConnMap, tunnelConnMap) 管理连接",
-    "after": "SessionManager 委托给专用注册表 (clientRegistry, tunnelRegistry) 管理连接"
+  "cleanup_tasks": [
+    {
+      "id": "C1",
+      "title": "删除 transform.go 废弃方法",
+      "status": "completed",
+      "description": "移除 WrapReader/WrapWriter 方法，只保留 WithContext 版本",
+      "files_modified": [
+        "internal/stream/transform/transform.go",
+        "internal/stream/transform/transformer_test.go",
+        "internal/utils/iocopy/copy.go"
+      ]
+    },
+    {
+      "id": "C2",
+      "title": "删除 storage 废弃文件",
+      "status": "completed",
+      "description": "删除 13 个已迁移到 core/storage 的废弃空文件",
+      "files_deleted": [
+        "internal/storage/memory.go",
+        "internal/storage/memory_ops.go",
+        "internal/storage/redis_storage.go",
+        "internal/storage/redis_storage_ops.go",
+        "internal/storage/hybrid_storage.go",
+        "internal/storage/hybrid_storage_ops.go",
+        "internal/storage/hybrid_config.go",
+        "internal/storage/factory.go",
+        "internal/storage/interface.go",
+        "internal/storage/json_storage.go",
+        "internal/storage/json_storage_ops.go",
+        "internal/storage/persistent.go",
+        "internal/storage/remote_storage.go"
+      ]
+    },
+    {
+      "id": "C3",
+      "title": "删除 utils 兼容别名",
+      "status": "completed",
+      "description": "删除 4 个别名文件，更新 30+ 文件使用直接导入",
+      "files_deleted": [
+        "internal/utils/random.go",
+        "internal/utils/copy.go",
+        "internal/utils/dispose.go",
+        "internal/utils/random_test.go"
+      ],
+      "files_updated": "30+ files updated to use direct imports"
+    },
+    {
+      "id": "C4",
+      "title": "清理 config 向后兼容",
+      "status": "completed",
+      "description": "移除 env.go 中的废弃环境变量回退机制",
+      "files_modified": ["internal/config/source/env.go"]
+    },
+    {
+      "id": "C5",
+      "title": "清理 idgen 未使用方法",
+      "status": "completed",
+      "description": "删除未使用的 markAsUsed 方法",
+      "files_modified": ["internal/core/idgen/generator.go"]
+    }
+  ],
+  "summary": {
+    "total_issues": 12,
+    "fixed": 7,
+    "rejected": 1,
+    "suggestions": 3,
+    "cleanup_tasks": 5,
+    "overall_score": 95.0
   }
 }

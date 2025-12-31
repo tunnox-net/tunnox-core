@@ -94,11 +94,13 @@ func (ps *StreamProcessor) onClose() error {
 }
 
 // acquireReadLock 获取读取锁并检查状态
+// 先获取锁再检查状态，避免 check-then-lock 竞态条件
 func (ps *StreamProcessor) acquireReadLock() error {
+	ps.readLock.Lock()
 	if ps.ResourceBase.Dispose.IsClosed() {
+		ps.readLock.Unlock()
 		return io.EOF
 	}
-	ps.readLock.Lock()
 	if ps.reader == nil {
 		ps.readLock.Unlock()
 		return errors.ErrReaderNil
@@ -107,11 +109,13 @@ func (ps *StreamProcessor) acquireReadLock() error {
 }
 
 // acquireWriteLock 获取写入锁并检查状态
+// 先获取锁再检查状态，避免 check-then-lock 竞态条件
 func (ps *StreamProcessor) acquireWriteLock() error {
+	ps.writeLock.Lock()
 	if ps.ResourceBase.Dispose.IsClosed() {
+		ps.writeLock.Unlock()
 		return errors.ErrStreamClosed
 	}
-	ps.writeLock.Lock()
 	if ps.writer == nil {
 		ps.writeLock.Unlock()
 		return errors.ErrWriterNil

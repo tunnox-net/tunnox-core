@@ -47,13 +47,22 @@ func (s *SessionManager) handleCrossNodeTargetConnection(
 	return s.processCrossNodeForward(ctx, req, conn, netConn, routingState)
 }
 
-// lookupTunnelRouting 查询隧道路由信息（带重试）
+// 指数退避参数
+const (
+	pollInitialInterval = 50 * time.Millisecond  // 起始间隔
+	pollMaxInterval     = 200 * time.Millisecond // 最大间隔
+	pollBackoffFactor   = 2                      // 退避因子
+)
+
+// lookupTunnelRouting 查询隧道路由信息（带指数退避重试）
 func (s *SessionManager) lookupTunnelRouting(ctx context.Context, tunnelID string) (*TunnelWaitingState, error) {
 	var routingState *TunnelWaitingState
 	var err error
 
 	// 轮询 Redis 查找路由信息（解决时序问题）
-	for range 100 { // 最多等待 10 秒（100 * 100ms）
+	// 使用指数退避：50ms -> 100ms -> 200ms -> 200ms...
+	interval := pollInitialInterval
+	for {
 		select {
 		case <-ctx.Done():
 			return nil, coreerrors.Wrap(ctx.Err(), coreerrors.CodeTimeout, "timeout waiting for tunnel routing")
@@ -69,11 +78,13 @@ func (s *SessionManager) lookupTunnelRouting(ctx context.Context, tunnelID strin
 			return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to lookup tunnel routing")
 		}
 
-		// 路由信息不存在，等待一下再试
-		time.Sleep(100 * time.Millisecond)
+		// 路由信息不存在，等待一下再试（指数退避）
+		time.Sleep(interval)
+		interval *= pollBackoffFactor
+		if interval > pollMaxInterval {
+			interval = pollMaxInterval
+		}
 	}
-
-	return nil, coreerrors.New(coreerrors.CodeNotFound, "tunnel routing not found after polling")
 }
 
 // processCrossNodeForward 处理跨节点转发
@@ -93,15 +104,23 @@ func (s *SessionManager) processCrossNodeForward(
 	return s.forwardToSourceNode(ctx, req, conn, netConn, routingState)
 }
 
-// handleLocalBridgeWait 等待本地 Bridge 创建
+// handleLocalBridgeWait 等待本地 Bridge 创建（使用指数退避）
 func (s *SessionManager) handleLocalBridgeWait(
 	req *packet.TunnelOpenRequest,
 	conn *types.Connection,
 	netConn net.Conn,
 ) error {
 	// 等待 Bridge 创建（最多等待 5 秒）
-	for range 50 {
-		time.Sleep(100 * time.Millisecond)
+	// 使用指数退避：50ms -> 100ms -> 200ms -> 200ms...
+	timeout := time.After(5 * time.Second)
+	interval := pollInitialInterval
+
+	for {
+		select {
+		case <-timeout:
+			return coreerrors.New(coreerrors.CodeTimeout, "bridge not created on source node after waiting")
+		default:
+		}
 
 		s.bridgeLock.RLock()
 		bridge, exists := s.tunnelBridges[req.TunnelID]
@@ -114,9 +133,14 @@ func (s *SessionManager) handleLocalBridgeWait(
 			bridge.SetTargetConnection(tunnelConn)
 			return nil
 		}
-	}
 
-	return coreerrors.New(coreerrors.CodeTimeout, "bridge not created on source node after waiting")
+		// 等待后重试（指数退避）
+		time.Sleep(interval)
+		interval *= pollBackoffFactor
+		if interval > pollMaxInterval {
+			interval = pollMaxInterval
+		}
+	}
 }
 
 // forwardToSourceNode 转发到源节点
@@ -127,7 +151,8 @@ func (s *SessionManager) forwardToSourceNode(
 	netConn net.Conn,
 	routingState *TunnelWaitingState,
 ) error {
-	corelog.Infof("CrossNode[%s]: forwarding to sourceNode=%s", req.TunnelID, routingState.SourceNodeID)
+	corelog.Infof("CrossNode[%s]: currentNode=%s -> sourceNode=%s (reason: bridge on remote)",
+		req.TunnelID, s.nodeID, routingState.SourceNodeID)
 
 	// 0. 先发送 TunnelOpenAck 给 Target 客户端
 	s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{

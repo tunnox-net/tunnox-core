@@ -156,7 +156,7 @@ func TestBaseCommandHandler_CreateResponse(t *testing.T) {
 func TestBaseCommandHandler_CreateErrorResponse(t *testing.T) {
 	handler := NewTestHandler()
 
-	response := handler.CreateErrorResponse(coreerrors.New(coreerrors.CodeInternalError, "test error"), "req_456")
+	response := handler.CreateErrorResponse(coreerrors.New(coreerrors.CodeInternal, "test error"), "req_456")
 
 	assert.NotNil(t, response)
 	assert.False(t, response.Success)

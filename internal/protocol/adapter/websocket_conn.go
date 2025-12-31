@@ -27,6 +27,7 @@ type wsServerConn struct {
 	closeOnce  sync.Once
 	closed     chan struct{}
 	remoteAddr string
+	pingTicker *time.Ticker // Ping 定时器
 }
 
 // newWSServerConn 创建服务端连接包装器
@@ -38,13 +39,42 @@ func newWSServerConn(conn *websocket.Conn, remoteAddr string) *wsServerConn {
 		remoteAddr: remoteAddr,
 	}
 
-	// 设置 pong 处理器
+	// 设置初始读超时
+	conn.SetReadDeadline(time.Now().Add(WebSocketPongTimeout))
+
+	// 设置 pong 处理器：收到 pong 时更新读超时
 	conn.SetPongHandler(func(appData string) error {
 		conn.SetReadDeadline(time.Now().Add(WebSocketPongTimeout))
 		return nil
 	})
 
+	// 启动 ping 循环
+	c.startPingLoop()
+
 	return c
+}
+
+// startPingLoop 启动 ping 循环，防止连接被中间代理超时断开
+func (c *wsServerConn) startPingLoop() {
+	c.pingTicker = time.NewTicker(WebSocketPingInterval)
+	go func() {
+		defer c.pingTicker.Stop()
+		for {
+			select {
+			case <-c.closed:
+				return
+			case <-c.pingTicker.C:
+				c.writeMu.Lock()
+				c.conn.SetWriteDeadline(time.Now().Add(WebSocketWriteTimeout))
+				err := c.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(WebSocketWriteTimeout))
+				c.writeMu.Unlock()
+				if err != nil {
+					corelog.Debugf("WebSocket: ping failed, remote=%s, err=%v", c.remoteAddr, err)
+					return
+				}
+			}
+		}
+	}()
 }
 
 // Read 实现 io.Reader
@@ -185,7 +215,15 @@ func newWSClientConn(conn *websocket.Conn) *wsClientConn {
 		closed:  make(chan struct{}),
 	}
 
-	// 清除默认超时
+	// 设置 ping 处理器：收到服务端 ping 时自动回复 pong 并更新超时
+	conn.SetPingHandler(func(appData string) error {
+		c.writeMu.Lock()
+		defer c.writeMu.Unlock()
+		conn.SetReadDeadline(time.Now().Add(WebSocketPongTimeout))
+		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(time.Second))
+	})
+
+	// 清除默认超时（应用层心跳会管理超时）
 	conn.SetReadDeadline(time.Time{})
 	conn.SetWriteDeadline(time.Time{})
 

@@ -258,7 +258,7 @@ func CreateTypedResponse(handler types.CommandHandler, data interface{}) (*types
 		if jsonData, err := json.Marshal(data); err == nil {
 			responseData = string(jsonData)
 		} else {
-			return nil, coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to marshal response data")
+			return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal response data")
 		}
 	}
 

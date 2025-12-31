@@ -97,7 +97,7 @@ func resolveUserServiceDeps(c *container.Container) (*repos.UserRepository, *idg
 	}
 	userRepo, ok := userRepoInstance.(*repos.UserRepository)
 	if !ok {
-		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "user repository is not of type *repos.UserRepository")
+		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "user repository is not of type *repos.UserRepository")
 	}
 
 	idManagerInstance, err := c.Resolve("id_manager")
@@ -106,7 +106,7 @@ func resolveUserServiceDeps(c *container.Container) (*repos.UserRepository, *idg
 	}
 	idManager, ok := idManagerInstance.(*idgen.IDManager)
 	if !ok {
-		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "id manager is not of type *idgen.IDManager")
+		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "id manager is not of type *idgen.IDManager")
 	}
 
 	statsManagerInstance, err := c.Resolve("stats_manager")
@@ -115,7 +115,7 @@ func resolveUserServiceDeps(c *container.Container) (*repos.UserRepository, *idg
 	}
 	statsProvider, ok := statsManagerInstance.(StatsProvider)
 	if !ok {
-		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "stats manager does not implement StatsProvider interface")
+		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "stats manager does not implement StatsProvider interface")
 	}
 
 	return userRepo, idManager, statsProvider, nil
@@ -128,7 +128,7 @@ func resolveClientServiceDeps(c *container.Container) (*repos.ClientConfigReposi
 	}
 	configRepo, ok := configRepoInstance.(*repos.ClientConfigRepository)
 	if !ok {
-		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "client config repository is not of type *repos.ClientConfigRepository")
+		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "client config repository is not of type *repos.ClientConfigRepository")
 	}
 
 	stateRepoInstance, err := c.Resolve("client_state_repository")
@@ -137,7 +137,7 @@ func resolveClientServiceDeps(c *container.Container) (*repos.ClientConfigReposi
 	}
 	stateRepo, ok := stateRepoInstance.(*repos.ClientStateRepository)
 	if !ok {
-		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "client state repository is not of type *repos.ClientStateRepository")
+		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "client state repository is not of type *repos.ClientStateRepository")
 	}
 
 	tokenRepoInstance, err := c.Resolve("client_token_repository")
@@ -146,7 +146,7 @@ func resolveClientServiceDeps(c *container.Container) (*repos.ClientConfigReposi
 	}
 	tokenRepo, ok := tokenRepoInstance.(*repos.ClientTokenRepository)
 	if !ok {
-		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "client token repository is not of type *repos.ClientTokenRepository")
+		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "client token repository is not of type *repos.ClientTokenRepository")
 	}
 
 	clientRepoInstance, err := c.Resolve("client_repository")
@@ -155,7 +155,7 @@ func resolveClientServiceDeps(c *container.Container) (*repos.ClientConfigReposi
 	}
 	clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
 	if !ok {
-		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "client repository is not of type *repos.ClientRepository")
+		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "client repository is not of type *repos.ClientRepository")
 	}
 
 	mappingRepoInstance, err := c.Resolve("mapping_repository")
@@ -164,7 +164,7 @@ func resolveClientServiceDeps(c *container.Container) (*repos.ClientConfigReposi
 	}
 	mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
 	if !ok {
-		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "mapping repository is not of type *repos.PortMappingRepo")
+		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "mapping repository is not of type *repos.PortMappingRepo")
 	}
 
 	idManagerInstance, err := c.Resolve("id_manager")
@@ -173,7 +173,7 @@ func resolveClientServiceDeps(c *container.Container) (*repos.ClientConfigReposi
 	}
 	idManager, ok := idManagerInstance.(*idgen.IDManager)
 	if !ok {
-		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "id manager is not of type *idgen.IDManager")
+		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "id manager is not of type *idgen.IDManager")
 	}
 
 	statsManagerInstance, err := c.Resolve("stats_manager")
@@ -182,7 +182,7 @@ func resolveClientServiceDeps(c *container.Container) (*repos.ClientConfigReposi
 	}
 	statsProvider, ok := statsManagerInstance.(StatsProvider)
 	if !ok {
-		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "stats manager does not implement StatsProvider interface")
+		return nil, nil, nil, nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "stats manager does not implement StatsProvider interface")
 	}
 
 	return configRepo, stateRepo, tokenRepo, clientRepo, mappingRepo, idManager, statsProvider, nil
@@ -195,7 +195,7 @@ func resolveMappingServiceDeps(c *container.Container) (*repos.PortMappingRepo, 
 	}
 	mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
 	if !ok {
-		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "mapping repository is not of type *repos.PortMappingRepo")
+		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "mapping repository is not of type *repos.PortMappingRepo")
 	}
 
 	idManagerInstance, err := c.Resolve("id_manager")
@@ -204,7 +204,7 @@ func resolveMappingServiceDeps(c *container.Container) (*repos.PortMappingRepo, 
 	}
 	idManager, ok := idManagerInstance.(*idgen.IDManager)
 	if !ok {
-		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "id manager is not of type *idgen.IDManager")
+		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "id manager is not of type *idgen.IDManager")
 	}
 
 	statsManagerInstance, err := c.Resolve("stats_manager")
@@ -213,7 +213,7 @@ func resolveMappingServiceDeps(c *container.Container) (*repos.PortMappingRepo, 
 	}
 	statsProvider, ok := statsManagerInstance.(StatsProvider)
 	if !ok {
-		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "stats manager does not implement StatsProvider interface")
+		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "stats manager does not implement StatsProvider interface")
 	}
 
 	return mappingRepo, idManager, statsProvider, nil
@@ -226,7 +226,7 @@ func resolveNodeServiceDeps(c *container.Container) (*repos.NodeRepository, *idg
 	}
 	nodeRepo, ok := nodeRepoInstance.(*repos.NodeRepository)
 	if !ok {
-		return nil, nil, coreerrors.New(coreerrors.CodeInternalError, "node repository is not of type *repos.NodeRepository")
+		return nil, nil, coreerrors.New(coreerrors.CodeInternal, "node repository is not of type *repos.NodeRepository")
 	}
 
 	idManagerInstance, err := c.Resolve("id_manager")
@@ -235,7 +235,7 @@ func resolveNodeServiceDeps(c *container.Container) (*repos.NodeRepository, *idg
 	}
 	idManager, ok := idManagerInstance.(*idgen.IDManager)
 	if !ok {
-		return nil, nil, coreerrors.New(coreerrors.CodeInternalError, "id manager is not of type *idgen.IDManager")
+		return nil, nil, coreerrors.New(coreerrors.CodeInternal, "id manager is not of type *idgen.IDManager")
 	}
 
 	return nodeRepo, idManager, nil
@@ -248,7 +248,7 @@ func resolveAuthServiceDeps(c *container.Container) (*repos.ClientRepository, *r
 	}
 	clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
 	if !ok {
-		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "client repository is not of type *repos.ClientRepository")
+		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "client repository is not of type *repos.ClientRepository")
 	}
 
 	nodeRepoInstance, err := c.Resolve("node_repository")
@@ -257,7 +257,7 @@ func resolveAuthServiceDeps(c *container.Container) (*repos.ClientRepository, *r
 	}
 	nodeRepo, ok := nodeRepoInstance.(*repos.NodeRepository)
 	if !ok {
-		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "node repository is not of type *repos.NodeRepository")
+		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "node repository is not of type *repos.NodeRepository")
 	}
 
 	jwtManagerInstance, err := c.Resolve("jwt_manager")
@@ -266,7 +266,7 @@ func resolveAuthServiceDeps(c *container.Container) (*repos.ClientRepository, *r
 	}
 	jwtProvider, ok := jwtManagerInstance.(JWTProvider)
 	if !ok {
-		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "jwt manager does not implement JWTProvider interface")
+		return nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "jwt manager does not implement JWTProvider interface")
 	}
 
 	return clientRepo, nodeRepo, jwtProvider, nil
@@ -279,7 +279,7 @@ func resolveAnonymousServiceDeps(c *container.Container) (*repos.ClientRepositor
 	}
 	clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
 	if !ok {
-		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "client repository is not of type *repos.ClientRepository")
+		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "client repository is not of type *repos.ClientRepository")
 	}
 
 	configRepoInstance, err := c.Resolve("client_config_repository")
@@ -288,7 +288,7 @@ func resolveAnonymousServiceDeps(c *container.Container) (*repos.ClientRepositor
 	}
 	configRepo, ok := configRepoInstance.(*repos.ClientConfigRepository)
 	if !ok {
-		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "client config repository is not of type *repos.ClientConfigRepository")
+		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "client config repository is not of type *repos.ClientConfigRepository")
 	}
 
 	mappingRepoInstance, err := c.Resolve("mapping_repository")
@@ -297,7 +297,7 @@ func resolveAnonymousServiceDeps(c *container.Container) (*repos.ClientRepositor
 	}
 	mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
 	if !ok {
-		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "mapping repository is not of type *repos.PortMappingRepo")
+		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "mapping repository is not of type *repos.PortMappingRepo")
 	}
 
 	idManagerInstance, err := c.Resolve("id_manager")
@@ -306,7 +306,7 @@ func resolveAnonymousServiceDeps(c *container.Container) (*repos.ClientRepositor
 	}
 	idManager, ok := idManagerInstance.(*idgen.IDManager)
 	if !ok {
-		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "id manager is not of type *idgen.IDManager")
+		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "id manager is not of type *idgen.IDManager")
 	}
 
 	return clientRepo, configRepo, mappingRepo, idManager, nil
@@ -319,7 +319,7 @@ func resolveConnectionServiceDeps(c *container.Container) (*repos.ConnectionRepo
 	}
 	connRepo, ok := connRepoInstance.(*repos.ConnectionRepo)
 	if !ok {
-		return nil, nil, coreerrors.New(coreerrors.CodeInternalError, "connection repository is not of type *repos.ConnectionRepo")
+		return nil, nil, coreerrors.New(coreerrors.CodeInternal, "connection repository is not of type *repos.ConnectionRepo")
 	}
 
 	idManagerInstance, err := c.Resolve("id_manager")
@@ -328,7 +328,7 @@ func resolveConnectionServiceDeps(c *container.Container) (*repos.ConnectionRepo
 	}
 	idManager, ok := idManagerInstance.(*idgen.IDManager)
 	if !ok {
-		return nil, nil, coreerrors.New(coreerrors.CodeInternalError, "id manager is not of type *idgen.IDManager")
+		return nil, nil, coreerrors.New(coreerrors.CodeInternal, "id manager is not of type *idgen.IDManager")
 	}
 
 	return connRepo, idManager, nil
@@ -341,7 +341,7 @@ func resolveStatsServiceDeps(c *container.Container) (*repos.UserRepository, *re
 	}
 	userRepo, ok := userRepoInstance.(*repos.UserRepository)
 	if !ok {
-		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "user repository is not of type *repos.UserRepository")
+		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "user repository is not of type *repos.UserRepository")
 	}
 
 	clientRepoInstance, err := c.Resolve("client_repository")
@@ -350,7 +350,7 @@ func resolveStatsServiceDeps(c *container.Container) (*repos.UserRepository, *re
 	}
 	clientRepo, ok := clientRepoInstance.(*repos.ClientRepository)
 	if !ok {
-		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "client repository is not of type *repos.ClientRepository")
+		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "client repository is not of type *repos.ClientRepository")
 	}
 
 	mappingRepoInstance, err := c.Resolve("mapping_repository")
@@ -359,7 +359,7 @@ func resolveStatsServiceDeps(c *container.Container) (*repos.UserRepository, *re
 	}
 	mappingRepo, ok := mappingRepoInstance.(*repos.PortMappingRepo)
 	if !ok {
-		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "mapping repository is not of type *repos.PortMappingRepo")
+		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "mapping repository is not of type *repos.PortMappingRepo")
 	}
 
 	nodeRepoInstance, err := c.Resolve("node_repository")
@@ -368,7 +368,7 @@ func resolveStatsServiceDeps(c *container.Container) (*repos.UserRepository, *re
 	}
 	nodeRepo, ok := nodeRepoInstance.(*repos.NodeRepository)
 	if !ok {
-		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternalError, "node repository is not of type *repos.NodeRepository")
+		return nil, nil, nil, nil, coreerrors.New(coreerrors.CodeInternal, "node repository is not of type *repos.NodeRepository")
 	}
 
 	return userRepo, clientRepo, mappingRepo, nodeRepo, nil
