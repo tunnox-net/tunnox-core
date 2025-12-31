@@ -3,9 +3,9 @@ package stats
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -21,6 +21,17 @@ var (
 	ErrStorageNoHashSupport = errors.New("storage does not support hash operations (required for StatsCounter)")
 )
 
+// HashOperator 定义 Hash 操作接口
+// 用于类型安全地访问存储的 Hash 功能
+// 注意：value 参数使用 interface{} 是因为底层 storage.HashStore 接口定义如此，
+// 这是为了兼容 JSON 序列化和存储任意类型值的需求
+type HashOperator interface {
+	SetHash(key string, field string, value interface{}) error
+	GetHash(key string, field string) (interface{}, error)
+	GetAllHash(key string) (map[string]interface{}, error)
+	DeleteHash(key string, field string) error
+}
+
 // StatsCounter 统计计数器
 // 自动适配不同存储后端（Memory/Redis/Hybrid）
 type StatsCounter struct {
@@ -34,37 +45,22 @@ type StatsCounter struct {
 }
 
 // getHashStore 获取 HashStore 接口（如果支持）
-func (sc *StatsCounter) getHashStore() (interface {
-	SetHash(key string, field string, value interface{}) error
-	GetHash(key string, field string) (interface{}, error)
-	GetAllHash(key string) (map[string]interface{}, error)
-	DeleteHash(key string, field string) error
-}, error) {
+func (sc *StatsCounter) getHashStore() (HashOperator, error) {
 	// 优先使用 FullStorage
 	if fullStorage, ok := sc.storage.(storage.FullStorage); ok {
 		return fullStorage, nil
 	}
-	// 尝试直接类型断言
-	if hs, ok := sc.storage.(interface {
-		SetHash(key string, field string, value interface{}) error
-		GetHash(key string, field string) (interface{}, error)
-		GetAllHash(key string) (map[string]interface{}, error)
-		DeleteHash(key string, field string) error
-	}); ok {
+	// 尝试直接类型断言为 HashOperator
+	if hs, ok := sc.storage.(HashOperator); ok {
 		return hs, nil
 	}
-	return nil, fmt.Errorf("storage does not support hash operations")
+	return nil, coreerrors.New(coreerrors.CodeNotConfigured, "storage does not support hash operations")
 }
 
 // NewStatsCounter 创建统计计数器
 func NewStatsCounter(storage storage.Storage, ctx context.Context) (*StatsCounter, error) {
-	// 验证存储支持 HashStore 接口（通过方法检查）
-	if _, ok := storage.(interface {
-		SetHash(key string, field string, value interface{}) error
-		GetHash(key string, field string) (interface{}, error)
-		GetAllHash(key string) (map[string]interface{}, error)
-		DeleteHash(key string, field string) error
-	}); !ok {
+	// 验证存储支持 HashOperator 接口
+	if _, ok := storage.(HashOperator); !ok {
 		return nil, ErrStorageNoHashSupport
 	}
 
@@ -88,7 +84,7 @@ func NewStatsCounter(storage storage.Storage, ctx context.Context) (*StatsCounte
 // IncrUser 增加/减少用户计数 (持久化)
 func (sc *StatsCounter) IncrUser(delta int64) error {
 	if err := sc.incrHashField(PersistentStatsKey, "total_users", delta); err != nil {
-		return fmt.Errorf("failed to increment user count: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to increment user count")
 	}
 
 	sc.invalidateCache()
@@ -98,7 +94,7 @@ func (sc *StatsCounter) IncrUser(delta int64) error {
 // IncrClient 增加/减少客户端计数 (持久化)
 func (sc *StatsCounter) IncrClient(delta int64) error {
 	if err := sc.incrHashField(PersistentStatsKey, "total_clients", delta); err != nil {
-		return fmt.Errorf("failed to increment client count: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to increment client count")
 	}
 
 	sc.invalidateCache()
@@ -108,7 +104,7 @@ func (sc *StatsCounter) IncrClient(delta int64) error {
 // IncrMapping 增加/减少映射计数 (持久化)
 func (sc *StatsCounter) IncrMapping(delta int64) error {
 	if err := sc.incrHashField(PersistentStatsKey, "total_mappings", delta); err != nil {
-		return fmt.Errorf("failed to increment mapping count: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to increment mapping count")
 	}
 
 	sc.invalidateCache()
@@ -118,7 +114,7 @@ func (sc *StatsCounter) IncrMapping(delta int64) error {
 // IncrNode 增加/减少节点计数 (持久化)
 func (sc *StatsCounter) IncrNode(delta int64) error {
 	if err := sc.incrHashField(PersistentStatsKey, "total_nodes", delta); err != nil {
-		return fmt.Errorf("failed to increment node count: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to increment node count")
 	}
 
 	sc.invalidateCache()
@@ -141,7 +137,7 @@ func (sc *StatsCounter) SetOnlineClients(count int64) error {
 // IncrOnlineClients 增加/减少在线客户端数 (运行时)
 func (sc *StatsCounter) IncrOnlineClients(delta int64) error {
 	if err := sc.incrHashField(RuntimeStatsKey, "online_clients", delta); err != nil {
-		return fmt.Errorf("failed to increment online clients: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to increment online clients")
 	}
 
 	sc.invalidateCache()
@@ -160,7 +156,7 @@ func (sc *StatsCounter) SetActiveMappings(count int64) error {
 // IncrActiveMappings 增加/减少活跃映射数 (运行时)
 func (sc *StatsCounter) IncrActiveMappings(delta int64) error {
 	if err := sc.incrHashField(RuntimeStatsKey, "active_mappings", delta); err != nil {
-		return fmt.Errorf("failed to increment active mappings: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to increment active mappings")
 	}
 
 	sc.invalidateCache()
@@ -179,7 +175,7 @@ func (sc *StatsCounter) SetOnlineNodes(count int64) error {
 // IncrAnonymousUsers 增加/减少匿名用户数 (运行时)
 func (sc *StatsCounter) IncrAnonymousUsers(delta int64) error {
 	if err := sc.incrHashField(RuntimeStatsKey, "anonymous_users", delta); err != nil {
-		return fmt.Errorf("failed to increment anonymous users: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to increment anonymous users")
 	}
 
 	sc.invalidateCache()
@@ -222,13 +218,13 @@ func (sc *StatsCounter) getStatsFromStorage() (*SystemStats, error) {
 	}
 	persistent, err := hs.GetAllHash(PersistentStatsKey)
 	if err != nil && err != storage.ErrKeyNotFound {
-		return nil, fmt.Errorf("failed to get persistent stats: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get persistent stats")
 	}
 
 	// 获取运行时统计
 	runtime, err := hs.GetAllHash(RuntimeStatsKey)
 	if err != nil && err != storage.ErrKeyNotFound {
-		return nil, fmt.Errorf("failed to get runtime stats: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get runtime stats")
 	}
 
 	// 合并统计数据
@@ -249,6 +245,8 @@ func (sc *StatsCounter) getStatsFromStorage() (*SystemStats, error) {
 }
 
 // getInt 从map安全获取int值
+// 注意：参数使用 map[string]interface{} 是因为 HashStore.GetAllHash 返回此类型，
+// 这是 JSON 序列化兼容性的要求
 func getInt(m map[string]interface{}, key string) int {
 	if m == nil {
 		return 0
@@ -265,6 +263,8 @@ func getInt(m map[string]interface{}, key string) int {
 }
 
 // getInt64 从map安全获取int64值
+// 注意：参数使用 map[string]interface{} 是因为 HashStore.GetAllHash 返回此类型，
+// 这是 JSON 序列化兼容性的要求
 func getInt64(m map[string]interface{}, key string) int64 {
 	if m == nil {
 		return 0
@@ -284,6 +284,12 @@ func getInt64(m map[string]interface{}, key string) int64 {
 // 初始化和重建
 // ═══════════════════════════════════════════════════════════════════
 
+// counterField 计数器字段定义（类型安全）
+type counterField struct {
+	name  string
+	value int64
+}
+
 // Initialize 初始化计数器（系统启动时调用）
 func (sc *StatsCounter) Initialize() error {
 	// 检查持久化计数器是否存在
@@ -291,85 +297,72 @@ func (sc *StatsCounter) Initialize() error {
 
 	if !exists {
 		// 初始化持久化统计为0
-		persistentCounters := map[string]interface{}{
-			"total_users":    int64(0),
-			"total_clients":  int64(0),
-			"total_mappings": int64(0),
-			"total_nodes":    int64(0),
+		persistentFields := []counterField{
+			{"total_users", 0},
+			{"total_clients", 0},
+			{"total_mappings", 0},
+			{"total_nodes", 0},
 		}
 
-		for field, value := range persistentCounters {
-			hs, err := sc.getHashStore()
-			if err != nil {
-				return err
-			}
-			if err := hs.SetHash(PersistentStatsKey, field, value); err != nil {
-				return fmt.Errorf("failed to initialize persistent counter %s: %w", field, err)
-			}
+		if err := sc.setCounterFields(PersistentStatsKey, persistentFields); err != nil {
+			return err
 		}
 	}
 
 	// 初始化运行时统计为0（每次启动都重置）
-	runtimeCounters := map[string]interface{}{
-		"online_clients":    int64(0),
-		"active_mappings":   int64(0),
-		"online_nodes":      int64(0),
-		"anonymous_users":   int64(0),
-		"total_traffic":     int64(0),
-		"total_connections": int64(0),
+	runtimeFields := []counterField{
+		{"online_clients", 0},
+		{"active_mappings", 0},
+		{"online_nodes", 0},
+		{"anonymous_users", 0},
+		{"total_traffic", 0},
+		{"total_connections", 0},
 	}
 
-	for field, value := range runtimeCounters {
-		hs, err := sc.getHashStore()
-		if err != nil {
-			return err
-		}
-		if err := hs.SetHash(RuntimeStatsKey, field, value); err != nil {
-			return fmt.Errorf("failed to initialize runtime counter %s: %w", field, err)
-		}
+	return sc.setCounterFields(RuntimeStatsKey, runtimeFields)
+}
+
+// setCounterFields 批量设置计数器字段（类型安全的辅助函数）
+func (sc *StatsCounter) setCounterFields(key string, fields []counterField) error {
+	hs, err := sc.getHashStore()
+	if err != nil {
+		return err
 	}
 
+	for _, f := range fields {
+		if err := hs.SetHash(key, f.name, f.value); err != nil {
+			return coreerrors.Wrapf(err, coreerrors.CodeStorageError, "failed to set counter %s", f.name)
+		}
+	}
 	return nil
 }
 
 // Rebuild 重建计数器（从数据库全量计算，管理员手动触发）
 func (sc *StatsCounter) Rebuild(stats *SystemStats) error {
 	// 重建持久化统计
-	persistentCounters := map[string]interface{}{
-		"total_users":    int64(stats.TotalUsers),
-		"total_clients":  int64(stats.TotalClients),
-		"total_mappings": int64(stats.TotalMappings),
-		"total_nodes":    int64(stats.TotalNodes),
+	persistentFields := []counterField{
+		{"total_users", int64(stats.TotalUsers)},
+		{"total_clients", int64(stats.TotalClients)},
+		{"total_mappings", int64(stats.TotalMappings)},
+		{"total_nodes", int64(stats.TotalNodes)},
 	}
 
-	for field, value := range persistentCounters {
-		hs, err := sc.getHashStore()
-		if err != nil {
-			return err
-		}
-		if err := hs.SetHash(PersistentStatsKey, field, value); err != nil {
-			return fmt.Errorf("failed to rebuild persistent counter %s: %w", field, err)
-		}
+	if err := sc.setCounterFields(PersistentStatsKey, persistentFields); err != nil {
+		return err
 	}
 
 	// 重建运行时统计
-	runtimeCounters := map[string]interface{}{
-		"online_clients":    int64(stats.OnlineClients),
-		"active_mappings":   int64(stats.ActiveMappings),
-		"online_nodes":      int64(stats.OnlineNodes),
-		"anonymous_users":   int64(stats.AnonymousUsers),
-		"total_traffic":     stats.TotalTraffic,
-		"total_connections": stats.TotalConnections,
+	runtimeFields := []counterField{
+		{"online_clients", int64(stats.OnlineClients)},
+		{"active_mappings", int64(stats.ActiveMappings)},
+		{"online_nodes", int64(stats.OnlineNodes)},
+		{"anonymous_users", int64(stats.AnonymousUsers)},
+		{"total_traffic", stats.TotalTraffic},
+		{"total_connections", stats.TotalConnections},
 	}
 
-	for field, value := range runtimeCounters {
-		hs, err := sc.getHashStore()
-		if err != nil {
-			return err
-		}
-		if err := hs.SetHash(RuntimeStatsKey, field, value); err != nil {
-			return fmt.Errorf("failed to rebuild runtime counter %s: %w", field, err)
-		}
+	if err := sc.setCounterFields(RuntimeStatsKey, runtimeFields); err != nil {
+		return err
 	}
 
 	sc.invalidateCache()

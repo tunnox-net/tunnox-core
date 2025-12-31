@@ -3,11 +3,11 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"tunnox-core/internal/client/command"
 	clientconfig "tunnox-core/internal/config"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
@@ -40,7 +40,7 @@ func (c *TunnoxClient) GenerateConnectionCode(req *GenerateConnectionCodeRequest
 	var resp GenerateConnectionCodeResponse
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
 		corelog.Errorf("Client.GenerateConnectionCode: failed to parse response data: %v, Data=%s", err, cmdResp.Data)
-		return nil, fmt.Errorf("failed to parse response data: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	corelog.Infof("Client.GenerateConnectionCode: success, Code=%s", resp.Code)
@@ -60,7 +60,7 @@ func (c *TunnoxClient) ListConnectionCodes() (*ListConnectionCodesResponseCmd, e
 
 	var resp ListConnectionCodesResponseCmd
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response data: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	return &resp, nil
@@ -79,7 +79,7 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 
 	var resp ActivateConnectionCodeResponse
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response data: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	if resp.MappingID != "" {
@@ -156,7 +156,7 @@ func (c *TunnoxClient) ListMappingsWithContext(ctx context.Context, req *ListMap
 
 	var resp ListMappingsResponseCmd
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response data: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	c.updateTrafficStatsFromMappings(resp.Mappings)
@@ -205,7 +205,7 @@ func (c *TunnoxClient) GetMappingWithContext(ctx context.Context, mappingID stri
 
 	var resp GetMappingResponseCmd
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response data: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	c.updateTrafficStatsFromMappings([]MappingInfoCmd{resp.Mapping})

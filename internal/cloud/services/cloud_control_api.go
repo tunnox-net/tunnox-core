@@ -2,12 +2,12 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"tunnox-core/internal/cloud/configs"
 	"tunnox-core/internal/cloud/container"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	storageCore "tunnox-core/internal/core/storage"
 )
@@ -36,12 +36,12 @@ func NewCloudControlAPI(config *configs.ControlConfig, storage storageCore.Stora
 
 	// 注册基础设施服务
 	if err := registerInfrastructureServices(container, config, storage, factories, parentCtx); err != nil {
-		return nil, fmt.Errorf("failed to register infrastructure services: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to register infrastructure services")
 	}
 
 	// 注册业务服务
 	if err := registerBusinessServices(container, parentCtx); err != nil {
-		return nil, fmt.Errorf("failed to register business services: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to register business services")
 	}
 
 	// 创建API实例
@@ -52,7 +52,7 @@ func NewCloudControlAPI(config *configs.ControlConfig, storage storageCore.Stora
 
 	// 解析各个服务
 	if err := api.resolveServices(); err != nil {
-		return nil, fmt.Errorf("failed to resolve services: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to resolve services")
 	}
 
 	return api, nil
@@ -62,42 +62,42 @@ func NewCloudControlAPI(config *configs.ControlConfig, storage storageCore.Stora
 func (api *CloudControlAPI) resolveServices() error {
 	// 解析用户服务
 	if err := api.container.ResolveTyped("user_service", &api.userService); err != nil {
-		return fmt.Errorf("failed to resolve user service: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to resolve user service")
 	}
 
 	// 解析客户端服务
 	if err := api.container.ResolveTyped("client_service", &api.clientService); err != nil {
-		return fmt.Errorf("failed to resolve client service: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to resolve client service")
 	}
 
 	// 解析端口映射服务
 	if err := api.container.ResolveTyped("mapping_service", &api.mappingService); err != nil {
-		return fmt.Errorf("failed to resolve mapping service: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to resolve mapping service")
 	}
 
 	// 解析节点服务
 	if err := api.container.ResolveTyped("node_service", &api.nodeService); err != nil {
-		return fmt.Errorf("failed to resolve node service: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to resolve node service")
 	}
 
 	// 解析认证服务
 	if err := api.container.ResolveTyped("auth_service", &api.authService); err != nil {
-		return fmt.Errorf("failed to resolve auth service: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to resolve auth service")
 	}
 
 	// 解析匿名服务
 	if err := api.container.ResolveTyped("anonymous_service", &api.anonymousService); err != nil {
-		return fmt.Errorf("failed to resolve anonymous service: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to resolve anonymous service")
 	}
 
 	// 解析连接服务
 	if err := api.container.ResolveTyped("connection_service", &api.connectionService); err != nil {
-		return fmt.Errorf("failed to resolve connection service: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to resolve connection service")
 	}
 
 	// 解析统计服务
 	if err := api.container.ResolveTyped("stats_service", &api.statsService); err != nil {
-		return fmt.Errorf("failed to resolve stats service: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to resolve stats service")
 	}
 
 	corelog.Infof("All services resolved successfully")
@@ -376,15 +376,13 @@ func (api *CloudControlAPI) GetConnectionStats(timeRange string) ([]*stats.Conne
 	return api.statsService.GetConnectionStats(timeRange)
 }
 
-// SetNotifier 设置通知器 (实现了 managers.NotifierAware)
-func (api *CloudControlAPI) SetNotifier(notifier interface{}) {
-	// Cast to managers.ClientNotifier is not possible here due to circular dep if we imported.
-	// Instead we accept interface{} (or define interface locally) and pass to services.
-
-	// Pass to anonymous service
-	api.anonymousService.SetNotifier(notifier)
-
-	// Potentially pass to other services if needed
+// SetNotifier 设置通知器 (实现了 managers.NotifierAware 接口的变体)
+// 使用 services.ClientNotifier 避免循环依赖，与 managers.ClientNotifier 接口兼容
+func (api *CloudControlAPI) SetNotifier(notifier ClientNotifier) {
+	// Pass to anonymous service (anonymous.Notifier 接口与 ClientNotifier 兼容)
+	if notifier != nil {
+		api.anonymousService.SetNotifier(notifier)
+	}
 }
 
 func (api *CloudControlAPI) Close() error {

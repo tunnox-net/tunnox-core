@@ -1,8 +1,9 @@
 package session
 
 import (
-	"fmt"
 	"net"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 
@@ -20,18 +21,8 @@ func (s *SessionManager) handleExistingBridge(
 	// ✅ 隧道连接（有 MappingID）不应该被注册为控制连接
 	// 由于现在在 Handshake 中已经通过 ConnectionType 识别，这里只需要清理可能的误注册
 	if req.MappingID != "" {
-		s.controlConnLock.Lock()
-		if controlConn, exists := s.controlConnMap[connPacket.ConnectionID]; exists {
-			// 如果这个连接被错误注册为控制连接，移除它
-			delete(s.controlConnMap, connPacket.ConnectionID)
-			if controlConn.IsAuthenticated() && controlConn.GetClientID() > 0 {
-				// 如果 clientIDIndexMap 中也指向这个连接，移除它
-				if currentControlConn, exists := s.clientIDIndexMap[controlConn.ClientID]; exists && currentControlConn.ConnID == connPacket.ConnectionID {
-					delete(s.clientIDIndexMap, controlConn.ClientID)
-				}
-			}
-		}
-		s.controlConnLock.Unlock()
+		// 使用 clientRegistry.Unregister 只移除映射，不关闭 stream（隧道连接需要保持 stream 打开）
+		s.clientRegistry.Unregister(connPacket.ConnectionID)
 	}
 
 	s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{
@@ -102,7 +93,7 @@ func (s *SessionManager) handleExistingBridge(
 		s.connLock.Unlock()
 	}
 
-	return fmt.Errorf("tunnel connected to existing bridge, switching to stream mode")
+	return coreerrors.New(coreerrors.CodeTunnelModeSwitch, "tunnel connected to existing bridge, switching to stream mode")
 }
 
 // handleSourceBridge 处理源端连接：创建新的bridge
@@ -158,7 +149,7 @@ func (s *SessionManager) handleTargetBridge(
 		// 本地未找到 Bridge，尝试跨节点转发
 		if err := s.handleCrossNodeTargetConnection(req, conn, netConn); err != nil {
 			corelog.Errorf("Tunnel[%s]: cross-node forwarding failed: %v", req.TunnelID, err)
-			return fmt.Errorf("bridge not found for tunnel %s: %w", req.TunnelID, err)
+			return coreerrors.Wrapf(err, coreerrors.CodeNotFound, "bridge not found for tunnel %s", req.TunnelID)
 		}
 		return nil
 	}
@@ -192,16 +183,8 @@ func (s *SessionManager) cleanupTunnelFromControlConn(
 		return
 	}
 
-	s.controlConnLock.Lock()
-	if controlConn, exists := s.controlConnMap[connPacket.ConnectionID]; exists {
-		delete(s.controlConnMap, connPacket.ConnectionID)
-		if controlConn.IsAuthenticated() && controlConn.GetClientID() > 0 {
-			if currentControlConn, exists := s.clientIDIndexMap[controlConn.GetClientID()]; exists && currentControlConn.GetConnID() == connPacket.ConnectionID {
-				delete(s.clientIDIndexMap, controlConn.GetClientID())
-			}
-		}
-	}
-	s.controlConnLock.Unlock()
+	// 使用 clientRegistry.Unregister 只移除映射，不关闭 stream（隧道连接需要保持 stream 打开）
+	s.clientRegistry.Unregister(connPacket.ConnectionID)
 
 	// ✅ 判断是否应该保留在 connMap（通过接口判断，协议无关）
 	shouldKeep := false

@@ -3,9 +3,10 @@ package session
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+
 	"tunnox-core/internal/command"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/events"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
@@ -35,7 +36,7 @@ func (rm *ResponseManager) SetEventBus(eventBus events.EventBus) error {
 	// 订阅命令完成事件
 	if eventBus != nil {
 		if err := eventBus.Subscribe("CommandCompleted", rm.handleCommandCompletedEvent); err != nil {
-			return fmt.Errorf("failed to subscribe to CommandCompleted events: %w", err)
+			return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to subscribe to CommandCompleted events")
 		}
 		corelog.Infof("Response manager subscribed to CommandCompleted events")
 	}
@@ -47,7 +48,7 @@ func (rm *ResponseManager) SetEventBus(eventBus events.EventBus) error {
 func (rm *ResponseManager) handleCommandCompletedEvent(event events.Event) error {
 	completedEvent, ok := event.(*events.CommandCompletedEvent)
 	if !ok {
-		return fmt.Errorf("invalid event type: expected CommandCompletedEvent")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "invalid event type: expected CommandCompletedEvent")
 	}
 
 	corelog.Infof("Handling command completed event for connection: %s, success: %v",
@@ -72,12 +73,12 @@ func (rm *ResponseManager) SendResponse(connID string, response *command.Command
 	// 获取连接信息
 	conn, exists := rm.session.GetConnection(connID)
 	if !exists {
-		return fmt.Errorf("connection %s not found", connID)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "connection %s not found", connID)
 	}
 
 	// 检查连接状态
 	if conn.State == types.StateClosed || conn.State == types.StateClosing {
-		return fmt.Errorf("connection %s is closed or closing", connID)
+		return coreerrors.Newf(coreerrors.CodeConnectionError, "connection %s is closed or closing", connID)
 	}
 
 	corelog.Debugf("Sending response to connection %s: success=%v",
@@ -104,7 +105,7 @@ func (rm *ResponseManager) SendResponse(connID string, response *command.Command
 	// 2. 序列化响应
 	dataBytes, err := json.Marshal(responseData)
 	if err != nil {
-		return fmt.Errorf("failed to marshal response: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal response")
 	}
 
 	// 3. 构造 CommandPacket
@@ -125,12 +126,12 @@ func (rm *ResponseManager) SendResponse(connID string, response *command.Command
 
 	// 5. 通过连接的 Stream 发送数据包
 	if conn.Stream == nil {
-		return fmt.Errorf("connection %s has no stream", connID)
+		return coreerrors.Newf(coreerrors.CodeConnectionError, "connection %s has no stream", connID)
 	}
 
 	if _, err := conn.Stream.WritePacket(transferPacket, true, 0); err != nil {
 		corelog.Errorf("Failed to send response to connection %s: %v", connID, err)
-		return fmt.Errorf("failed to write response packet: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write response packet")
 	}
 
 	corelog.Infof("Response sent successfully to connection %s, CommandId=%s, Success=%v",

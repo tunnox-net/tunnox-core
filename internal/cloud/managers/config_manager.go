@@ -3,11 +3,12 @@ package managers
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
+
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -48,12 +49,12 @@ func (cm *ConfigManager) UpdateConfig(ctx context.Context, newConfig *ControlCon
 	// 保存配置到存储
 	data, err := json.Marshal(newConfig)
 	if err != nil {
-		return fmt.Errorf("marshal config failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "marshal config failed")
 	}
 
-	key := fmt.Sprintf("%s:config", constants.KeyPrefixConfig)
+	key := constants.KeyPrefixConfig + ":config"
 	if err := cm.storage.Set(key, string(data), 0); err != nil {
-		return fmt.Errorf("save config failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "save config failed")
 	}
 
 	// 更新内存配置
@@ -69,7 +70,7 @@ func (cm *ConfigManager) UpdateConfig(ctx context.Context, newConfig *ControlCon
 
 // LoadConfig 从存储加载配置
 func (cm *ConfigManager) LoadConfig(ctx context.Context) error {
-	key := fmt.Sprintf("%s:config", constants.KeyPrefixConfig)
+	key := constants.KeyPrefixConfig + ":config"
 	data, err := cm.storage.Get(key)
 	if err != nil {
 		// 配置不存在，使用默认配置
@@ -78,12 +79,12 @@ func (cm *ConfigManager) LoadConfig(ctx context.Context) error {
 
 	configData, ok := data.(string)
 	if !ok {
-		return fmt.Errorf("invalid config data type")
+		return coreerrors.New(coreerrors.CodeInvalidData, "invalid config data type")
 	}
 
 	var config ControlConfig
 	if err := json.Unmarshal([]byte(configData), &config); err != nil {
-		return fmt.Errorf("unmarshal config failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInvalidData, "unmarshal config failed")
 	}
 
 	cm.mu.Lock()

@@ -1,7 +1,7 @@
 package managers
 
 import (
-	"fmt"
+	coreerrors "tunnox-core/internal/core/errors"
 
 	"tunnox-core/internal/cloud/models"
 )
@@ -10,7 +10,7 @@ import (
 // 注意：此方法委托给 NodeService 处理，遵循 Manager -> Service -> Repository 架构
 func (c *CloudControl) NodeRegister(req *models.NodeRegisterRequest) (*models.NodeRegisterResponse, error) {
 	if c.nodeService == nil {
-		return nil, fmt.Errorf("nodeService not initialized")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "nodeService not initialized")
 	}
 	return c.nodeService.NodeRegister(req)
 }
@@ -18,7 +18,7 @@ func (c *CloudControl) NodeRegister(req *models.NodeRegisterRequest) (*models.No
 // NodeUnregister 注销节点
 func (c *CloudControl) NodeUnregister(req *models.NodeUnregisterRequest) error {
 	if c.nodeService == nil {
-		return fmt.Errorf("nodeService not initialized")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "nodeService not initialized")
 	}
 	return c.nodeService.NodeUnregister(req)
 }
@@ -26,7 +26,7 @@ func (c *CloudControl) NodeUnregister(req *models.NodeUnregisterRequest) error {
 // NodeHeartbeat 节点心跳
 func (c *CloudControl) NodeHeartbeat(req *models.NodeHeartbeatRequest) (*models.NodeHeartbeatResponse, error) {
 	if c.nodeService == nil {
-		return nil, fmt.Errorf("nodeService not initialized")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "nodeService not initialized")
 	}
 	return c.nodeService.NodeHeartbeat(req)
 }
@@ -40,7 +40,7 @@ func (c *CloudControl) GetNodeServiceInfo(nodeID string) (*models.NodeServiceInf
 	if c.nodeService != nil {
 		return c.nodeService.GetNodeServiceInfo(nodeID)
 	}
-	return nil, fmt.Errorf("nodeManager and nodeService both not initialized")
+	return nil, coreerrors.New(coreerrors.CodeNotConfigured, "nodeManager and nodeService both not initialized")
 }
 
 // GetAllNodeServiceInfo 获取所有节点服务信息
@@ -52,5 +52,5 @@ func (c *CloudControl) GetAllNodeServiceInfo() ([]*models.NodeServiceInfo, error
 	if c.nodeService != nil {
 		return c.nodeService.GetAllNodeServiceInfo()
 	}
-	return nil, fmt.Errorf("nodeManager and nodeService both not initialized")
+	return nil, coreerrors.New(coreerrors.CodeNotConfigured, "nodeManager and nodeService both not initialized")
 }

@@ -33,7 +33,7 @@ type HTTPService struct {
 	healthManager *health.HealthManager
 
 	// JWT 验证函数（可选）
-	validateJWT func(token string) (interface{}, error)
+	validateJWT func(token string) (*JWTClaims, error)
 }
 
 // NewHTTPService 创建统一 HTTP 服务
@@ -95,7 +95,7 @@ func (s *HTTPService) SetSessionManager(sessionMgr SessionManagerInterface) {
 }
 
 // SetJWTValidator 设置 JWT 验证函数
-func (s *HTTPService) SetJWTValidator(validator func(token string) (interface{}, error)) {
+func (s *HTTPService) SetJWTValidator(validator func(token string) (*JWTClaims, error)) {
 	s.validateJWT = validator
 }
 
@@ -189,9 +189,9 @@ func (s *HTTPService) registerHealthRoutes() {
 // handleHealth 简单健康检查
 func (s *HTTPService) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if s.healthManager == nil {
-		respondJSON(w, http.StatusOK, map[string]string{
-			"status": "ok",
-			"time":   time.Now().Format(time.RFC3339),
+		respondJSON(w, http.StatusOK, HealthResponse{
+			Status: "ok",
+			Time:   time.Now().Format(time.RFC3339),
 		})
 		return
 	}
@@ -218,9 +218,9 @@ func (s *HTTPService) handleHealth(w http.ResponseWriter, r *http.Request) {
 // handleHealthz 增强的健康检查
 func (s *HTTPService) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	if s.healthManager == nil {
-		respondJSON(w, http.StatusOK, map[string]string{
-			"status": "ok",
-			"time":   time.Now().Format(time.RFC3339),
+		respondJSON(w, http.StatusOK, HealthResponse{
+			Status: "ok",
+			Time:   time.Now().Format(time.RFC3339),
 		})
 		return
 	}
@@ -243,18 +243,18 @@ func (s *HTTPService) handleHealthz(w http.ResponseWriter, r *http.Request) {
 // handleReady 就绪检查
 func (s *HTTPService) handleReady(w http.ResponseWriter, r *http.Request) {
 	if s.healthManager == nil || s.healthManager.IsAcceptingConnections() {
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"ready":  true,
-			"status": "accepting_connections",
+		respondJSON(w, http.StatusOK, ReadyResponse{
+			Ready:  true,
+			Status: "accepting_connections",
 		})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"ready":  false,
-		"status": string(s.healthManager.GetStatus()),
+	json.NewEncoder(w).Encode(ReadyResponse{
+		Ready:  false,
+		Status: string(s.healthManager.GetStatus()),
 	})
 }
 

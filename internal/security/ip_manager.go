@@ -2,14 +2,14 @@ package security
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 	"sync"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -115,7 +115,7 @@ func (m *IPManager) AddToBlacklist(ip string, duration time.Duration, reason str
 
 	// 验证IP格式
 	if err := validateIPOrCIDR(ip); err != nil {
-		return fmt.Errorf("invalid IP or CIDR: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInvalidParam, "invalid IP or CIDR")
 	}
 
 	now := time.Now()
@@ -173,7 +173,7 @@ func (m *IPManager) AddToWhitelist(ip string, reason string, addedBy string) err
 
 	// 验证IP格式
 	if err := validateIPOrCIDR(ip); err != nil {
-		return fmt.Errorf("invalid IP or CIDR: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInvalidParam, "invalid IP or CIDR")
 	}
 
 	record := &IPRecord{
@@ -361,5 +361,5 @@ func validateIPOrCIDR(ip string) error {
 		return nil
 	}
 
-	return fmt.Errorf("invalid IP or CIDR format: %s", ip)
+	return coreerrors.New(coreerrors.CodeInvalidParam, "invalid IP or CIDR format: "+ip)
 }

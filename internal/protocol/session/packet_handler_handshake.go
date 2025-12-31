@@ -2,8 +2,9 @@ package session
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/types"
@@ -13,7 +14,7 @@ import (
 // handleHandshake 处理握手请求
 func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 	if s.authHandler == nil {
-		return fmt.Errorf("auth handler not configured")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "auth handler not configured")
 	}
 
 	// 解析握手请求（从 Payload）
@@ -21,7 +22,7 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 	if len(connPacket.Packet.Payload) > 0 {
 		if err := json.Unmarshal(connPacket.Packet.Payload, req); err != nil {
 			corelog.Errorf("Failed to parse handshake request: %v", err)
-			return fmt.Errorf("invalid handshake request format: %w", err)
+			return coreerrors.Wrap(err, coreerrors.CodeInvalidPacket, "invalid handshake request format")
 		}
 	}
 
@@ -40,7 +41,7 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 			// 获取底层连接信息
 			conn := s.getConnectionByConnID(connPacket.ConnectionID)
 			if conn == nil {
-				return fmt.Errorf("connection not found: %s", connPacket.ConnectionID)
+				return coreerrors.Newf(coreerrors.CodeNotFound, "connection not found: %s", connPacket.ConnectionID)
 			}
 
 			// 创建控制连接
@@ -60,7 +61,7 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 	} else {
 		conn := s.getConnectionByConnID(connPacket.ConnectionID)
 		if conn == nil {
-			return fmt.Errorf("connection not found: %s", connPacket.ConnectionID)
+			return coreerrors.Newf(coreerrors.CodeNotFound, "connection not found: %s", connPacket.ConnectionID)
 		}
 		enforcedProtocol := conn.Protocol
 		if enforcedProtocol == "" {
@@ -71,9 +72,8 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 			remoteAddr = conn.RawConn.RemoteAddr()
 		}
 		newConn := NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
-		s.controlConnLock.Lock()
-		s.controlConnMap[connPacket.ConnectionID] = newConn
-		s.controlConnLock.Unlock()
+		// 使用 clientRegistry 注册
+		s.RegisterControlConnection(newConn)
 		clientConn = newConn
 	}
 
@@ -100,26 +100,30 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		isControlConnection, clientConn.IsAuthenticated(), clientConn.GetClientID(), connPacket.ConnectionID)
 
 	if isControlConnection && clientConn.IsAuthenticated() && clientConn.GetClientID() > 0 {
-		corelog.Infof("Handshake: updating clientIDIndexMap for client %d, isControlConnection=%v, isAuthenticated=%v",
+		corelog.Infof("Handshake: updating clientRegistry for client %d, isControlConnection=%v, isAuthenticated=%v",
 			clientConn.GetClientID(), isControlConnection, clientConn.IsAuthenticated())
-		s.controlConnLock.Lock()
-		oldConn, exists := s.clientIDIndexMap[clientConn.GetClientID()]
-		if exists && oldConn != nil && oldConn.GetConnID() != clientConn.GetConnID() {
+
+		// 检查是否存在旧连接，如果存在则清理
+		oldConn := s.clientRegistry.GetByClientID(clientConn.GetClientID())
+		if oldConn != nil && oldConn.GetConnID() != clientConn.GetConnID() {
 			corelog.Warnf("Client %d reconnected: oldConnID=%s, newConnID=%s, cleaning up old connection",
 				clientConn.GetClientID(), oldConn.GetConnID(), clientConn.GetConnID())
-			delete(s.controlConnMap, oldConn.GetConnID())
 			// 清理旧连接的 Redis 记录
 			if s.connStateStore != nil {
 				if err := s.connStateStore.UnregisterConnection(s.Ctx(), oldConn.GetConnID()); err != nil {
 					corelog.Warnf("Failed to unregister old connection state: %v", err)
 				}
 			}
+			// 从 clientRegistry 移除旧连接
+			s.clientRegistry.Remove(oldConn.GetConnID())
 		}
-		// 需要将接口转换为具体类型存储（内部实现需要）
+
+		// 更新认证信息（会自动更新 clientIDMap）
 		if concreteConn, ok := clientConn.(*ControlConnection); ok {
-			s.clientIDIndexMap[clientConn.GetClientID()] = concreteConn
+			if err := s.clientRegistry.UpdateAuth(concreteConn.ConnID, clientConn.GetClientID(), concreteConn.UserID); err != nil {
+				corelog.Warnf("Failed to update auth in clientRegistry: %v", err)
+			}
 		}
-		s.controlConnLock.Unlock()
 
 		// ✅ 登记客户端位置到 Redis（用于跨节点查询）
 		if s.connStateStore != nil {
@@ -220,7 +224,7 @@ func (s *SessionManager) sendHandshakeResponse(conn ControlConnectionInterface, 
 	// 序列化响应
 	respData, err := json.Marshal(resp)
 	if err != nil {
-		return fmt.Errorf("failed to marshal handshake response: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal handshake response")
 	}
 
 	// 构造响应包
@@ -235,7 +239,7 @@ func (s *SessionManager) sendHandshakeResponse(conn ControlConnectionInterface, 
 	stream := conn.GetStream()
 	if stream == nil {
 		corelog.Errorf("Failed to send handshake response: stream is nil for connection %s", conn.GetConnID())
-		return fmt.Errorf("stream is nil")
+		return coreerrors.New(coreerrors.CodeConnectionError, "stream is nil")
 	}
 
 	// 调试：检查 stream 类型

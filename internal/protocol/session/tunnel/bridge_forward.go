@@ -2,13 +2,13 @@
 package tunnel
 
 import (
-	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"tunnox-core/internal/cloud/constants"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
 )
@@ -261,9 +261,9 @@ func (b *Bridge) Start() error {
 	case <-b.ready:
 		// 目标连接已建立
 	case <-time.After(30 * time.Second):
-		return fmt.Errorf("timeout waiting for target connection")
+		return coreerrors.New(coreerrors.CodeTimeout, "timeout waiting for target connection")
 	case <-b.Ctx().Done():
-		return fmt.Errorf("bridge cancelled before target connection")
+		return coreerrors.New(coreerrors.CodeCancelled, "bridge cancelled before target connection")
 	}
 
 	// 跨节点场景：数据转发由 CrossNodeListener 负责，这里只管理生命周期

@@ -69,14 +69,33 @@ func TestError_Unwrap(t *testing.T) {
 
 func TestError_WithDetail(t *testing.T) {
 	err := New(CodeInvalidParam, "invalid port").
-		WithDetail("port", 99999).
-		WithDetail("max", 65535)
+		WithDetailInt("port", 99999).
+		WithDetailInt("max", 65535)
 
-	if err.Details["port"] != 99999 {
+	portVal, ok := err.GetDetailInt("port")
+	if !ok || portVal != 99999 {
 		t.Error("detail 'port' should be 99999")
 	}
-	if err.Details["max"] != 65535 {
+	maxVal, ok := err.GetDetailInt("max")
+	if !ok || maxVal != 65535 {
 		t.Error("detail 'max' should be 65535")
+	}
+
+	// 测试字符串类型详情
+	err2 := New(CodeInvalidParam, "invalid name").
+		WithDetailString("field", "username").
+		WithDetailString("reason", "too short")
+
+	if err2.GetDetailString("field") != "username" {
+		t.Error("detail 'field' should be 'username'")
+	}
+	if err2.GetDetailString("reason") != "too short" {
+		t.Error("detail 'reason' should be 'too short'")
+	}
+
+	// 测试整数转字符串
+	if err.GetDetailString("port") != "99999" {
+		t.Error("GetDetailString for int should return '99999'")
 	}
 }
 

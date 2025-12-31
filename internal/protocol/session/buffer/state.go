@@ -6,9 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/packet"
 )
@@ -74,7 +75,7 @@ func NewStateManager(storage storage.Storage, secretKey string) *StateManager {
 // SaveState 保存隧道状态
 func (m *StateManager) SaveState(state *TunnelState) error {
 	if state == nil {
-		return errors.New("state is nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "state is nil")
 	}
 
 	// 更新时间戳
@@ -86,20 +87,20 @@ func (m *StateManager) SaveState(state *TunnelState) error {
 	// 计算签名
 	signature, err := m.computeSignature(state)
 	if err != nil {
-		return fmt.Errorf("failed to compute signature: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to compute signature")
 	}
 	state.Signature = signature
 
 	// 序列化
 	data, err := json.Marshal(state)
 	if err != nil {
-		return fmt.Errorf("failed to marshal state: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal state")
 	}
 
 	// 存储到Redis
 	key := StateKeyPrefix + state.TunnelID
 	if err := m.storage.Set(key, string(data), StateTTL); err != nil {
-		return fmt.Errorf("failed to save state: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to save state")
 	}
 
 	return nil
@@ -112,28 +113,28 @@ func (m *StateManager) LoadState(tunnelID string) (*TunnelState, error) {
 	// 从Redis读取
 	data, err := m.storage.Get(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load state: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to load state")
 	}
 
 	// 类型断言
 	dataStr, ok := data.(string)
 	if !ok {
-		return nil, errors.New("invalid state data type")
+		return nil, coreerrors.New(coreerrors.CodeInternal, "invalid state data type")
 	}
 
 	// 反序列化
 	var state TunnelState
 	if err := json.Unmarshal([]byte(dataStr), &state); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal state: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to unmarshal state")
 	}
 
 	// 验证签名
 	expectedSignature, err := m.computeSignature(&state)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute signature: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to compute signature")
 	}
 	if state.Signature != expectedSignature {
-		return nil, errors.New("state signature mismatch (possible tampering)")
+		return nil, coreerrors.New(coreerrors.CodeAuthFailed, "state signature mismatch (possible tampering)")
 	}
 
 	return &state, nil

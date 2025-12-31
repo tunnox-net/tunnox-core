@@ -1,43 +1,96 @@
 {
-  "project": "fix-first-connection-credentials",
+  "project": "H-01-session-package-refactoring",
   "phase": "completed",
   "created_at": "2025-12-30T00:15:00Z",
-  "updated_at": "2025-12-30T01:30:00Z",
-  "bug_description": "客户端首次连接私有服务器无法获取 clientId 和 secret_key",
-  "scenarios": [
-    "./tunnox-client -p tcp -s 192.168.194.149:8000",
-    "配置文件指定私服地址但无 client_id/secret_key"
-  ],
-  "root_cause": "在 auto_connector.go 中，握手在 c.controlStream 设置之前执行，导致 stream == c.controlStream 永远为 false",
-  "fix": "将 stream == c.controlStream 改为 connectionType == \"control\"",
-  "modified_files": [
-    "internal/client/control_connection_handshake.go"
-  ],
-  "tasks": [
+  "updated_at": "2025-12-31T00:00:00Z",
+  "task_description": "protocol/session 包深度重构，移除旧架构代码，统一连接管理模式",
+  "initial_state": {
+    "main_directory_lines": 10347,
+    "issues": [
+      "controlConnMap, clientIDIndexMap, controlConnLock 冗余（与 clientRegistry 功能重复）",
+      "tunnelConnMap, tunnelIDMap, tunnelConnLock 冗余（与 tunnelRegistry 功能重复）",
+      "测试文件直接访问私有字段"
+    ]
+  },
+  "final_state": {
+    "main_directory_lines": 9925,
+    "non_test_lines": 6598,
+    "subpackages": {
+      "buffer": 2256,
+      "connection": 1482,
+      "connstate": 1015,
+      "core": 165,
+      "proxy": 11,
+      "tunnel": 3430
+    },
+    "total_lines": 24065
+  },
+  "changes_made": [
     {
-      "id": "T001",
-      "title": "开发定位并修复 Bug",
-      "status": "completed",
-      "assignee": "dev"
+      "file": "manager.go",
+      "change": "移除 controlConnMap, clientIDIndexMap, controlConnLock, tunnelConnMap, tunnelIDMap, tunnelConnLock 字段"
     },
     {
-      "id": "T002",
-      "title": "架构师 Review 代码",
-      "status": "completed",
-      "assignee": "architect",
-      "review_result": "approved"
+      "file": "control_connection_mgr.go",
+      "change": "完全重写，所有方法委托给 clientRegistry（267行 → 133行）"
     },
     {
-      "id": "T003",
-      "title": "QA 设计测试用例并验证",
-      "status": "completed",
-      "assignee": "qa",
-      "test_result": {
-        "compile": "pass",
-        "unit_tests": "pass (41 packages)",
-        "go_vet": "pass",
-        "code_review": "pass"
-      }
+      "file": "connection_lifecycle.go",
+      "change": "简化，隧道连接方法委托给 tunnelRegistry"
+    },
+    {
+      "file": "command_integration.go",
+      "change": "使用 clientRegistry.GetByConnID() 替代直接 map 访问"
+    },
+    {
+      "file": "manager_notify.go",
+      "change": "使用 clientRegistry.List() 获取所有控制连接"
+    },
+    {
+      "file": "packet_handler_handshake.go",
+      "change": "使用 clientRegistry 处理客户端重连"
+    },
+    {
+      "file": "packet_handler_tunnel.go",
+      "change": "更新 removeFromControlConnMap 使用 clientRegistry"
+    },
+    {
+      "file": "packet_handler_tunnel_bridge.go",
+      "change": "使用 clientRegistry.Remove()"
+    },
+    {
+      "file": "shutdown.go",
+      "change": "使用 clientRegistry.List() 和 tunnelRegistry.Count()"
+    },
+    {
+      "file": "socks5_tunnel_handler.go",
+      "change": "更新 getClientIDFromConnection 使用 clientRegistry"
+    },
+    {
+      "file": "tunnel_migration_integration.go",
+      "change": "使用 tunnelRegistry.List()"
+    },
+    {
+      "file": "connection_lifecycle_test.go",
+      "change": "重写测试，使用公共 API 替代私有字段访问"
+    },
+    {
+      "file": "shutdown_test.go",
+      "change": "重写测试，使用公共 API 替代私有字段访问"
+    },
+    {
+      "file": "tunnel_migration_integration_test.go",
+      "change": "重写测试，使用构造函数和公共注册方法"
     }
-  ]
+  ],
+  "verification": {
+    "compile": "pass",
+    "go_vet": "pass",
+    "unit_tests": "pass (all packages)",
+    "test_count": "120+ tests"
+  },
+  "architecture_pattern": {
+    "before": "SessionManager 直接持有多个 map (controlConnMap, tunnelConnMap) 管理连接",
+    "after": "SessionManager 委托给专用注册表 (clientRegistry, tunnelRegistry) 管理连接"
+  }
 }

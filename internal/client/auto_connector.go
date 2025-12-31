@@ -2,13 +2,13 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"sync"
 	"time"
 
 	"tunnox-core/internal/client/transport"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 )
@@ -85,7 +85,7 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 		// 显示当前轮次信息
 		endpoints := DefaultServerEndpoints()
 		if len(endpoints) == 0 {
-			return nil, fmt.Errorf("no protocols available (none compiled in)")
+			return nil, coreerrors.New(coreerrors.CodeNotConfigured, "no protocols available (none compiled in)")
 		}
 		if round == 0 {
 			protocols := make([]string, len(endpoints))
@@ -112,7 +112,7 @@ func (ac *AutoConnector) ConnectWithAutoDetection(ctx context.Context) (*Connect
 	}
 
 	// 所有轮次都失败
-	return nil, fmt.Errorf("all connection attempts failed after %d rounds", len(roundTimeouts))
+	return nil, coreerrors.Newf(coreerrors.CodeConnectionError, "all connection attempts failed after %d rounds", len(roundTimeouts))
 }
 
 // tryRoundFastReturn 尝试一轮连接（并发尝试所有协议，第一个成功就返回）
@@ -183,7 +183,7 @@ func (ac *AutoConnector) tryRoundFastReturn(ctx context.Context, timeout time.Du
 		// 超时或取消
 	}
 
-	return nil, fmt.Errorf("all protocols failed in round %d", roundNum)
+	return nil, coreerrors.Newf(coreerrors.CodeConnectionError, "all protocols failed in round %d", roundNum)
 }
 
 // tryConnectAndHandshake 尝试连接到指定端点并完成握手
@@ -208,7 +208,7 @@ func (ac *AutoConnector) tryConnectAndHandshake(ctx context.Context, endpoint Se
 	// 使用统一的协议注册表拨号
 	conn, err := transport.Dial(dialCtx, endpoint.Protocol, endpoint.Address)
 	if err != nil {
-		attempt.Err = fmt.Errorf("dial %s failed: %w", endpoint.Protocol, err)
+		attempt.Err = coreerrors.Wrapf(err, coreerrors.CodeConnectionError, "dial %s failed", endpoint.Protocol)
 		return attempt
 	}
 
@@ -251,7 +251,7 @@ func (ac *AutoConnector) tryConnectAndHandshake(ctx context.Context, endpoint Se
 	if handshakeErr != nil {
 		pkgStream.Close()
 		conn.Close()
-		attempt.Err = fmt.Errorf("handshake failed: %w", handshakeErr)
+		attempt.Err = coreerrors.Wrap(handshakeErr, coreerrors.CodeHandshakeFailed, "handshake failed")
 		return attempt
 	}
 
@@ -279,7 +279,7 @@ func (ac *AutoConnector) sendHandshakeWithContext(ctx context.Context, stream st
 	case err := <-resultChan:
 		return err
 	case <-ctx.Done():
-		return fmt.Errorf("handshake timeout: %w", ctx.Err())
+		return coreerrors.Wrap(ctx.Err(), coreerrors.CodeTimeout, "handshake timeout")
 	}
 }
 

@@ -2,8 +2,9 @@ package command
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 )
 
@@ -71,7 +72,7 @@ func (cp *CommandPipeline) ExecuteWithTimeout(ctx *CommandContext, timeout time.
 	case err := <-errorChan:
 		return nil, err
 	case <-execCtx.Done():
-		return nil, fmt.Errorf("command execution timeout")
+		return nil, coreerrors.New(coreerrors.CodeTimeout, "command execution timeout")
 	}
 }
 

@@ -8,14 +8,14 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"math/big"
 	"net"
 	"sync"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
+	coreerrors "tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/protocol/session"
 
 	"github.com/quic-go/quic-go"
@@ -41,6 +41,7 @@ func NewQuicAdapter(parentCtx context.Context, sess session.Session) *QuicAdapte
 	adapter.SetName("quic")
 	adapter.SetSession(sess)
 	adapter.SetCtx(parentCtx, adapter.onClose)
+	adapter.SetProtocolAdapter(adapter) // 设置协议适配器引用，与 TCP/KCP 保持一致
 
 	// Generate self-signed certificate
 	adapter.tlsConfig = generateTLSConfig()
@@ -89,15 +90,12 @@ func generateTLSConfig() *tls.Config {
 	}
 }
 
-// ListenFrom starts the QUIC server on the given address
-func (a *QuicAdapter) ListenFrom(addr string) error {
-	corelog.Infof("QUIC adapter starting on %s", addr)
-
-	// 设置地址到 BaseAdapter
-	a.SetAddr(addr)
+// Listen 实现 ProtocolAdapter 接口，启动 QUIC 监听
+func (a *QuicAdapter) Listen(addr string) error {
+	corelog.Infof("QUIC adapter starting listener on %s", addr)
 
 	if a.tlsConfig == nil {
-		return fmt.Errorf("TLS config not initialized")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "TLS config not initialized")
 	}
 
 	// Create QUIC config
@@ -109,49 +107,28 @@ func (a *QuicAdapter) ListenFrom(addr string) error {
 	// Create UDP listener
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to resolve UDP address: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to resolve UDP address")
 	}
 
 	udpConn, err := net.ListenUDP("udp", udpAddr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on UDP: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to listen on UDP")
 	}
 
 	// Create QUIC listener
 	listener, err := quic.Listen(udpConn, a.tlsConfig, quicConf)
 	if err != nil {
 		udpConn.Close()
-		return fmt.Errorf("failed to create QUIC listener: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to create QUIC listener")
 	}
 
 	a.listener = listener
 
-	// Start accepting connections
+	// Start accepting QUIC connections and streams in background
 	go a.acceptConnections()
 
-	// Start handling connections
-	go a.handleConnections()
-
-	corelog.Infof("QUIC adapter started on %s", addr)
+	corelog.Infof("QUIC adapter listener started on %s", addr)
 	return nil
-}
-
-// handleConnections processes incoming QUIC connections
-func (a *QuicAdapter) handleConnections() {
-	for {
-		conn, err := a.Accept()
-		if err != nil {
-			select {
-			case <-a.Ctx().Done():
-				return
-			default:
-				corelog.Errorf("QUIC: accept error: %v", err)
-				continue
-			}
-		}
-
-		go a.handleConnection(a, conn)
-	}
 }
 
 // acceptConnections accepts incoming QUIC connections
@@ -192,7 +169,7 @@ func (a *QuicAdapter) acceptStream(conn *quic.Conn) {
 	}
 
 	// Wrap stream as connection
-	streamConn := &QuicServerStreamConn{
+	streamConn := &QuicStreamConn{
 		stream:     stream,
 		connection: conn,
 		remoteAddr: conn.RemoteAddr().String(),
@@ -215,10 +192,13 @@ func (a *QuicAdapter) acceptStream(conn *quic.Conn) {
 // Accept accepts a new QUIC stream connection
 func (a *QuicAdapter) Accept() (io.ReadWriteCloser, error) {
 	select {
-	case conn := <-a.connChan:
+	case conn, ok := <-a.connChan:
+		if !ok {
+			return nil, coreerrors.New(coreerrors.CodeResourceClosed, "quic adapter closed")
+		}
 		return conn, nil
 	case <-a.Ctx().Done():
-		return nil, fmt.Errorf("quic adapter closed")
+		return nil, coreerrors.New(coreerrors.CodeResourceClosed, "quic adapter closed")
 	}
 }
 
@@ -234,35 +214,71 @@ func (a *QuicAdapter) onClose() error {
 
 	corelog.Infof("QUIC adapter closing")
 
+	var err error
+
 	// Close listener
 	if a.listener != nil {
-		if err := a.listener.Close(); err != nil {
-			corelog.Errorf("QUIC listener close error: %v", err)
+		if closeErr := a.listener.Close(); closeErr != nil {
+			corelog.Errorf("QUIC listener close error: %v", closeErr)
+			err = closeErr
 		}
 	}
 
 	close(a.connChan)
 
-	return nil
+	// 调用基类清理，与 TCP/KCP 适配器保持一致
+	baseErr := a.BaseAdapter.onClose()
+	if err == nil {
+		err = baseErr
+	}
+
+	corelog.Infof("QUIC adapter closed")
+	return err
 }
 
-// Dial is not supported for QUIC adapter (server-side only)
+// Dial 建立 QUIC 连接（客户端）
 func (a *QuicAdapter) Dial(address string) (io.ReadWriteCloser, error) {
-	return nil, fmt.Errorf("dial not supported for QUIC adapter")
+	corelog.Infof("QUIC adapter dialing %s", address)
+
+	tlsConf := &tls.Config{
+		InsecureSkipVerify: true, // 自签名证书
+		NextProtos:         []string{"tunnox-quic"},
+	}
+
+	quicConf := &quic.Config{
+		MaxIdleTimeout:  30 * time.Second,
+		KeepAlivePeriod: 10 * time.Second,
+	}
+
+	conn, err := quic.DialAddr(a.Ctx(), address, tlsConf, quicConf)
+	if err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeConnectionError, "failed to dial QUIC")
+	}
+
+	// Open a stream
+	stream, err := conn.OpenStreamSync(a.Ctx())
+	if err != nil {
+		conn.CloseWithError(quic.ApplicationErrorCode(0), "failed to open stream")
+		return nil, coreerrors.Wrap(err, coreerrors.CodeConnectionError, "failed to open QUIC stream")
+	}
+
+	corelog.Infof("QUIC adapter connected to %s", address)
+
+	return &QuicStreamConn{
+		stream:     stream,
+		connection: conn,
+		remoteAddr: conn.RemoteAddr().String(),
+		closed:     make(chan struct{}),
+	}, nil
 }
 
-// Listen is not used for QUIC adapter (uses QUIC listener instead)
-func (a *QuicAdapter) Listen(address string) error {
-	return fmt.Errorf("listen not supported for QUIC adapter")
-}
-
-// getConnectionType returns the connection type for this adapter
+// getConnectionType 返回连接类型
 func (a *QuicAdapter) getConnectionType() string {
-	return "quic"
+	return "QUIC"
 }
 
-// QuicServerStreamConn wraps a QUIC stream for server side
-type QuicServerStreamConn struct {
+// QuicStreamConn wraps a QUIC stream as io.ReadWriteCloser
+type QuicStreamConn struct {
 	stream     *quic.Stream
 	connection *quic.Conn
 	remoteAddr string
@@ -271,14 +287,14 @@ type QuicServerStreamConn struct {
 }
 
 // Read implements io.Reader
-func (c *QuicServerStreamConn) Read(p []byte) (int, error) {
+func (c *QuicStreamConn) Read(p []byte) (int, error) {
 	select {
 	case <-c.closed:
 		return 0, io.EOF
 	default:
 	}
 
-	n, err := c.stream.Read(p)
+	n, err := (*c.stream).Read(p)
 	if err != nil {
 		select {
 		case <-c.closed:
@@ -292,40 +308,40 @@ func (c *QuicServerStreamConn) Read(p []byte) (int, error) {
 }
 
 // Write implements io.Writer
-func (c *QuicServerStreamConn) Write(p []byte) (int, error) {
+func (c *QuicStreamConn) Write(p []byte) (int, error) {
 	select {
 	case <-c.closed:
 		return 0, io.ErrClosedPipe
 	default:
 	}
 
-	return c.stream.Write(p)
+	return (*c.stream).Write(p)
 }
 
 // Close implements io.Closer
-func (c *QuicServerStreamConn) Close() error {
+func (c *QuicStreamConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		close(c.closed)
 
 		// Close stream
-		c.stream.Close()
+		(*c.stream).Close()
 	})
 	return err
 }
 
 // LocalAddr implements net.Conn
-func (c *QuicServerStreamConn) LocalAddr() net.Addr {
+func (c *QuicStreamConn) LocalAddr() net.Addr {
 	return c.connection.LocalAddr()
 }
 
 // RemoteAddr implements net.Conn
-func (c *QuicServerStreamConn) RemoteAddr() net.Addr {
+func (c *QuicStreamConn) RemoteAddr() net.Addr {
 	return c.connection.RemoteAddr()
 }
 
 // SetDeadline implements net.Conn
-func (c *QuicServerStreamConn) SetDeadline(t time.Time) error {
+func (c *QuicStreamConn) SetDeadline(t time.Time) error {
 	if err := c.SetReadDeadline(t); err != nil {
 		return err
 	}
@@ -333,11 +349,11 @@ func (c *QuicServerStreamConn) SetDeadline(t time.Time) error {
 }
 
 // SetReadDeadline implements net.Conn
-func (c *QuicServerStreamConn) SetReadDeadline(t time.Time) error {
-	return c.stream.SetReadDeadline(t)
+func (c *QuicStreamConn) SetReadDeadline(t time.Time) error {
+	return (*c.stream).SetReadDeadline(t)
 }
 
 // SetWriteDeadline implements net.Conn
-func (c *QuicServerStreamConn) SetWriteDeadline(t time.Time) error {
-	return c.stream.SetWriteDeadline(t)
+func (c *QuicStreamConn) SetWriteDeadline(t time.Time) error {
+	return (*c.stream).SetWriteDeadline(t)
 }

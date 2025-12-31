@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/cloud/models"
@@ -33,7 +35,7 @@ func NewMappingCommandHandlers(
 // RegisterHandlers 注册所有映射命令处理器
 func (h *MappingCommandHandlers) RegisterHandlers(registry *command.CommandRegistry) error {
 	if registry == nil {
-		return fmt.Errorf("command registry is nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "command registry is nil")
 	}
 
 	listHandler := &ListMappingsHandler{
@@ -48,7 +50,7 @@ func (h *MappingCommandHandlers) RegisterHandlers(registry *command.CommandRegis
 		sessionMgr:      h.sessionMgr,
 	}
 	if err := registry.Register(listHandler); err != nil {
-		return fmt.Errorf("failed to register list mappings handler: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to register list mappings handler")
 	}
 
 	getHandler := &GetMappingHandler{
@@ -63,7 +65,7 @@ func (h *MappingCommandHandlers) RegisterHandlers(registry *command.CommandRegis
 		sessionMgr:      h.sessionMgr,
 	}
 	if err := registry.Register(getHandler); err != nil {
-		return fmt.Errorf("failed to register get mapping handler: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to register get mapping handler")
 	}
 
 	deleteHandler := &DeleteMappingHandler{
@@ -78,7 +80,7 @@ func (h *MappingCommandHandlers) RegisterHandlers(registry *command.CommandRegis
 		sessionMgr:      h.sessionMgr,
 	}
 	if err := registry.Register(deleteHandler); err != nil {
-		return fmt.Errorf("failed to register delete mapping handler: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to register delete mapping handler")
 	}
 
 	return nil
@@ -186,7 +188,11 @@ func (h *ListMappingsHandler) Handle(ctx *command.CommandContext) (*command.Comm
 		Total:    len(mappingItems),
 	}
 
-	respBody, _ := json.Marshal(resp)
+	respBody, err := json.Marshal(resp)
+	if err != nil {
+		corelog.Errorf("ListMappingsHandler: failed to marshal response: %v", err)
+		return h.errorResponse(ctx, "failed to serialize response")
+	}
 	return &command.CommandResponse{
 		Success:   true,
 		Data:      string(respBody),
@@ -277,7 +283,11 @@ func (h *GetMappingHandler) Handle(ctx *command.CommandContext) (*command.Comman
 	}
 
 	resp := MappingDetailResponse{Mapping: item}
-	respBody, _ := json.Marshal(resp)
+	respBody, err := json.Marshal(resp)
+	if err != nil {
+		corelog.Errorf("GetMappingHandler: failed to marshal response: %v", err)
+		return h.errorResponse(ctx, "failed to serialize response")
+	}
 	return &command.CommandResponse{
 		Success:   true,
 		Data:      string(respBody),

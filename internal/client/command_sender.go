@@ -3,10 +3,10 @@ package client
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -35,7 +35,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponse(req *CommandRequest) (*Command
 // sendCommandAndWaitResponseWithContext 发送命令并等待响应（支持context取消）
 func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context, req *CommandRequest) (*CommandResponseData, error) {
 	if !c.IsConnected() {
-		return nil, fmt.Errorf("control connection not established, please connect to server first")
+		return nil, coreerrors.New(coreerrors.CodeConnectionError, "control connection not established, please connect to server first")
 	}
 
 	// 序列化请求
@@ -44,7 +44,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	if req.RequestBody != nil {
 		reqBody, err = json.Marshal(req.RequestBody)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request: %w", err)
+			return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal request")
 		}
 	} else {
 		reqBody = []byte("{}")
@@ -53,7 +53,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	// 创建命令包
 	cmdID, err := utils.GenerateRandomString(16)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate command ID: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to generate command ID")
 	}
 
 	cmdPkt := &packet.CommandPacket{
@@ -73,7 +73,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 
 	// 发送命令前再次检查连接状态
 	if !c.IsConnected() {
-		return nil, fmt.Errorf("control connection is closed, please reconnect to server")
+		return nil, coreerrors.New(coreerrors.CodeConnectionError, "control connection is closed, please reconnect to server")
 	}
 
 	// 获取控制流
@@ -82,7 +82,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	c.mu.RUnlock()
 
 	if controlStream == nil {
-		return nil, fmt.Errorf("control stream is nil")
+		return nil, coreerrors.New(coreerrors.CodeConnectionError, "control stream is nil")
 	}
 
 	// 发送命令
@@ -102,9 +102,9 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 		if strings.Contains(errMsg, "stream is closed") ||
 			strings.Contains(errMsg, "stream closed") ||
 			strings.Contains(errMsg, "ErrStreamClosed") {
-			return nil, fmt.Errorf("control connection is closed, please reconnect to server")
+			return nil, coreerrors.New(coreerrors.CodeStreamClosed, "control connection is closed, please reconnect to server")
 		}
-		return nil, fmt.Errorf("failed to send command: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send command")
 	}
 
 	// 等待响应（支持context取消）
@@ -124,7 +124,7 @@ func (c *TunnoxClient) sendCommandAndWaitResponseWithContext(ctx context.Context
 	}
 
 	if !cmdResp.Success {
-		return nil, fmt.Errorf("command failed: %s", cmdResp.Error)
+		return nil, coreerrors.Newf(coreerrors.CodeInternal, "command failed: %s", cmdResp.Error)
 	}
 
 	return &CommandResponseData{

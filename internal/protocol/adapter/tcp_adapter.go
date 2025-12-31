@@ -2,11 +2,11 @@ package adapter
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net"
 
 	"tunnox-core/internal/cloud/constants"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/protocol/session"
 )
 
@@ -63,7 +63,7 @@ func (t *TcpAdapter) Listen(addr string) error {
 
 func (t *TcpAdapter) Accept() (io.ReadWriteCloser, error) {
 	if t.listener == nil {
-		return nil, fmt.Errorf("TCP listener not initialized")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "TCP listener not initialized")
 	}
 	conn, err := t.listener.Accept()
 	if err != nil {

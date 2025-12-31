@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 
 	"github.com/redis/go-redis/v9"
@@ -35,7 +36,7 @@ type RedisBroker struct {
 // NewRedisBroker 创建 Redis 消息代理
 func NewRedisBroker(parentCtx context.Context, config *RedisBrokerConfig, nodeID string) (*RedisBroker, error) {
 	if config == nil {
-		return nil, fmt.Errorf("redis broker config is required")
+		return nil, coreerrors.New(coreerrors.CodeConfigError, "redis broker config is required")
 	}
 
 	// 设置默认值
@@ -70,7 +71,7 @@ func NewRedisBroker(parentCtx context.Context, config *RedisBrokerConfig, nodeID
 
 	if err := client.Ping(pingCtx).Err(); err != nil {
 		client.Close()
-		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to connect to Redis")
 	}
 
 	broker := &RedisBroker{
@@ -88,7 +89,7 @@ func NewRedisBroker(parentCtx context.Context, config *RedisBrokerConfig, nodeID
 // Publish 发布消息到指定主题
 func (r *RedisBroker) Publish(ctx context.Context, topic string, message []byte) error {
 	if r.closed {
-		return fmt.Errorf("broker is closed")
+		return coreerrors.New(coreerrors.CodeServiceClosed, "broker is closed")
 	}
 
 	// 构造完整消息（包含元数据）
@@ -102,14 +103,14 @@ func (r *RedisBroker) Publish(ctx context.Context, topic string, message []byte)
 	// 序列化消息
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal message: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to marshal message")
 	}
 
 	// 发布到 Redis（添加前缀避免冲突）
 	channel := fmt.Sprintf("tunnox:%s", topic)
 	if err := r.client.Publish(ctx, channel, data).Err(); err != nil {
 		corelog.Errorf("RedisBroker: failed to publish to %s: %v", topic, err)
-		return fmt.Errorf("failed to publish to Redis: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to publish to Redis")
 	}
 
 	corelog.Debugf("RedisBroker: published message to topic %s", topic)
@@ -122,12 +123,12 @@ func (r *RedisBroker) Subscribe(ctx context.Context, topic string) (<-chan *Mess
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return nil, fmt.Errorf("broker is closed")
+		return nil, coreerrors.New(coreerrors.CodeServiceClosed, "broker is closed")
 	}
 
 	// 检查是否已订阅该主题
 	if _, exists := r.subscribers[topic]; exists {
-		return nil, fmt.Errorf("already subscribed to topic: %s", topic)
+		return nil, coreerrors.Newf(coreerrors.CodeAlreadyExists, "already subscribed to topic: %s", topic)
 	}
 
 	// 创建消息通道
@@ -144,7 +145,7 @@ func (r *RedisBroker) Subscribe(ctx context.Context, topic string) (<-chan *Mess
 	if err := r.pubsub.Subscribe(r.Ctx(), channel); err != nil {
 		delete(r.subscribers, topic)
 		close(msgChan)
-		return nil, fmt.Errorf("failed to subscribe to Redis: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to subscribe to Redis")
 	}
 
 	// 首次订阅时启动接收循环
@@ -212,12 +213,12 @@ func (r *RedisBroker) Unsubscribe(ctx context.Context, topic string) error {
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return fmt.Errorf("broker is closed")
+		return coreerrors.New(coreerrors.CodeServiceClosed, "broker is closed")
 	}
 
 	ch, exists := r.subscribers[topic]
 	if !exists {
-		return fmt.Errorf("not subscribed to topic: %s", topic)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "not subscribed to topic: %s", topic)
 	}
 
 	// 取消 Redis 订阅
@@ -242,11 +243,11 @@ func (r *RedisBroker) Ping(ctx context.Context) error {
 	defer r.mu.RUnlock()
 
 	if r.closed {
-		return fmt.Errorf("broker is closed")
+		return coreerrors.New(coreerrors.CodeServiceClosed, "broker is closed")
 	}
 
 	if r.client == nil {
-		return fmt.Errorf("redis client is nil")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "redis client is nil")
 	}
 
 	return r.client.Ping(ctx).Err()

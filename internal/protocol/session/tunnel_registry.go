@@ -1,9 +1,9 @@
 package session
 
 import (
-	"fmt"
 	"sync"
 
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 )
 
@@ -45,10 +45,10 @@ func NewTunnelRegistry(config *TunnelRegistryConfig) *TunnelRegistry {
 // Register 注册隧道连接
 func (r *TunnelRegistry) Register(conn *TunnelConnection) error {
 	if conn == nil {
-		return fmt.Errorf("connection cannot be nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "connection cannot be nil")
 	}
 	if conn.ConnID == "" {
-		return fmt.Errorf("connection ID cannot be empty")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "connection ID cannot be empty")
 	}
 
 	r.mu.Lock()
@@ -72,7 +72,7 @@ func (r *TunnelRegistry) UpdateAuth(connID string, tunnelID string, mappingID st
 
 	conn, exists := r.connMap[connID]
 	if !exists {
-		return fmt.Errorf("tunnel connection not found: %s", connID)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "tunnel connection not found: %s", connID)
 	}
 
 	conn.TunnelID = tunnelID

@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -90,7 +92,7 @@ func (m *ReconnectTokenManager) GenerateReconnectToken(clientID int64, nodeID st
 	// 计算签名
 	signature, err := m.computeSignature(token)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compute signature: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeAuthFailed, "failed to compute signature")
 	}
 	token.Signature = signature
 
@@ -131,7 +133,7 @@ func (m *ReconnectTokenManager) ValidateReconnectToken(token *ReconnectToken) er
 	// 1. 签名验证
 	expectedSignature, err := m.computeSignature(token)
 	if err != nil {
-		return fmt.Errorf("failed to compute signature: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeAuthFailed, "failed to compute signature")
 	}
 	if token.Signature != expectedSignature {
 		return errors.New("invalid signature")
@@ -143,10 +145,10 @@ func (m *ReconnectTokenManager) ValidateReconnectToken(token *ReconnectToken) er
 	}
 
 	// 3. Nonce防重放检查
-	usedKey := fmt.Sprintf("reconnect:token:used:%s", token.TokenID)
+	usedKey := "reconnect:token:used:" + token.TokenID
 	exists, err := m.storage.Exists(usedKey)
 	if err != nil {
-		return fmt.Errorf("failed to check token usage: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeAuthFailed, "failed to check token usage")
 	}
 	if exists {
 		return errors.New("token already used")
@@ -159,7 +161,7 @@ func (m *ReconnectTokenManager) ValidateReconnectToken(token *ReconnectToken) er
 //
 // Token验证成功后，必须立即调用此方法标记为已使用，防止重放攻击。
 func (m *ReconnectTokenManager) MarkTokenAsUsed(token *ReconnectToken) error {
-	usedKey := fmt.Sprintf("reconnect:token:used:%s", token.TokenID)
+	usedKey := "reconnect:token:used:" + token.TokenID
 
 	// 存储到Redis，TTL为Token的剩余有效期
 	ttl := time.Until(token.ExpiresAt)
@@ -169,7 +171,7 @@ func (m *ReconnectTokenManager) MarkTokenAsUsed(token *ReconnectToken) error {
 
 	// 存储一个标记（值不重要，只要存在即可）
 	if err := m.storage.Set(usedKey, "1", ttl); err != nil {
-		return fmt.Errorf("failed to mark token as used: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeAuthFailed, "failed to mark token as used")
 	}
 
 	return nil
@@ -183,7 +185,7 @@ func (m *ReconnectTokenManager) MarkTokenAsUsed(token *ReconnectToken) error {
 func (m *ReconnectTokenManager) EncodeToken(token *ReconnectToken) (string, error) {
 	data, err := json.Marshal(token)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal token: %w", err)
+		return "", coreerrors.Wrap(err, coreerrors.CodeAuthFailed, "failed to marshal token")
 	}
 	return string(data), nil
 }
@@ -192,7 +194,7 @@ func (m *ReconnectTokenManager) EncodeToken(token *ReconnectToken) (string, erro
 func (m *ReconnectTokenManager) DecodeToken(tokenStr string) (*ReconnectToken, error) {
 	var token ReconnectToken
 	if err := json.Unmarshal([]byte(tokenStr), &token); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal token: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeAuthFailed, "failed to unmarshal token")
 	}
 	return &token, nil
 }
@@ -205,7 +207,7 @@ func (m *ReconnectTokenManager) DecodeToken(tokenStr string) (*ReconnectToken, e
 func generateTokenID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("crypto/rand failed in generateTokenID: %w", err)
+		return "", coreerrors.Wrap(err, coreerrors.CodeAuthFailed, "crypto/rand failed in generateTokenID")
 	}
 	return hex.EncodeToString(b), nil
 }
@@ -214,7 +216,7 @@ func generateTokenID() (string, error) {
 func generateNonce() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("crypto/rand failed in generateNonce: %w", err)
+		return "", coreerrors.Wrap(err, coreerrors.CodeAuthFailed, "crypto/rand failed in generateNonce")
 	}
 	return hex.EncodeToString(b), nil
 }

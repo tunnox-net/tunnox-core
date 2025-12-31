@@ -2,6 +2,7 @@ package mapping
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"tunnox-core/internal/config"
@@ -84,9 +85,8 @@ func TestCreateAdapter_UnsupportedProtocol(t *testing.T) {
 		t.Error("CreateAdapter(unknown) should return nil adapter")
 	}
 
-	// 验证错误消息
-	expectedErr := "unsupported protocol: unknown"
-	if err.Error() != expectedErr {
-		t.Errorf("Expected error '%s', got '%s'", expectedErr, err.Error())
+	// 验证错误消息包含关键信息
+	if !strings.Contains(err.Error(), "unsupported protocol: unknown") {
+		t.Errorf("Expected error to contain 'unsupported protocol: unknown', got '%s'", err.Error())
 	}
 }

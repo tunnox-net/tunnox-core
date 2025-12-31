@@ -3,7 +3,9 @@ package models
 import (
 	"fmt"
 	"time"
+
 	"tunnox-core/internal/cloud/configs"
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // ClientConfig 客户端持久化配置
@@ -37,15 +39,15 @@ func (c *ClientConfig) GetID() string {
 // Validate 验证配置有效性
 func (c *ClientConfig) Validate() error {
 	if c.ID <= 0 {
-		return fmt.Errorf("invalid client ID: %d", c.ID)
+		return coreerrors.Newf(coreerrors.CodeValidationError, "invalid client ID: %d", c.ID)
 	}
 
 	if c.AuthCode == "" {
-		return fmt.Errorf("auth code is required")
+		return coreerrors.New(coreerrors.CodeValidationError, "auth code is required")
 	}
 
 	if c.Type != ClientTypeRegistered && c.Type != ClientTypeAnonymous {
-		return fmt.Errorf("invalid client type: %s", c.Type)
+		return coreerrors.Newf(coreerrors.CodeValidationError, "invalid client type: %s", c.Type)
 	}
 
 	return nil

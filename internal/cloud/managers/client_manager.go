@@ -1,8 +1,9 @@
 package managers
 
 import (
-	"fmt"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 
 	"tunnox-core/internal/cloud/models"
 )
@@ -11,7 +12,7 @@ import (
 // 注意：此方法委托给 ClientService 处理，遵循 Manager -> Service -> Repository 架构
 func (c *CloudControl) CreateClient(userID, clientName string) (*models.Client, error) {
 	if c.clientService == nil {
-		return nil, fmt.Errorf("clientService not initialized")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	return c.clientService.CreateClient(userID, clientName)
 }
@@ -26,7 +27,7 @@ func (c *CloudControl) TouchClient(clientID int64) {
 // GetClient 获取客户端
 func (c *CloudControl) GetClient(clientID int64) (*models.Client, error) {
 	if c.clientService == nil {
-		return nil, fmt.Errorf("clientService not initialized")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	return c.clientService.GetClient(clientID)
 }
@@ -34,7 +35,7 @@ func (c *CloudControl) GetClient(clientID int64) (*models.Client, error) {
 // UpdateClient 更新客户端
 func (c *CloudControl) UpdateClient(client *models.Client) error {
 	if c.clientService == nil {
-		return fmt.Errorf("clientService not initialized")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	client.UpdatedAt = time.Now()
 	return c.clientService.UpdateClient(client)
@@ -43,7 +44,7 @@ func (c *CloudControl) UpdateClient(client *models.Client) error {
 // DeleteClient 删除客户端
 func (c *CloudControl) DeleteClient(clientID int64) error {
 	if c.clientService == nil {
-		return fmt.Errorf("clientService not initialized")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	return c.clientService.DeleteClient(clientID)
 }
@@ -51,7 +52,7 @@ func (c *CloudControl) DeleteClient(clientID int64) error {
 // UpdateClientStatus 更新客户端状态
 func (c *CloudControl) UpdateClientStatus(clientID int64, status models.ClientStatus, nodeID string) error {
 	if c.clientService == nil {
-		return fmt.Errorf("clientService not initialized")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	return c.clientService.UpdateClientStatus(clientID, status, nodeID)
 }
@@ -59,7 +60,7 @@ func (c *CloudControl) UpdateClientStatus(clientID int64, status models.ClientSt
 // ListClients 列出客户端
 func (c *CloudControl) ListClients(userID string, clientType models.ClientType) ([]*models.Client, error) {
 	if c.clientService == nil {
-		return nil, fmt.Errorf("clientService not initialized")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	return c.clientService.ListClients(userID, clientType)
 }
@@ -67,7 +68,7 @@ func (c *CloudControl) ListClients(userID string, clientType models.ClientType) 
 // ListUserClients 列出用户的客户端
 func (c *CloudControl) ListUserClients(userID string) ([]*models.Client, error) {
 	if c.clientService == nil {
-		return nil, fmt.Errorf("clientService not initialized")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	return c.clientService.ListUserClients(userID)
 }
@@ -75,7 +76,7 @@ func (c *CloudControl) ListUserClients(userID string) ([]*models.Client, error) 
 // GetClientPortMappings 获取客户端的端口映射
 func (c *CloudControl) GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) {
 	if c.clientService == nil {
-		return nil, fmt.Errorf("clientService not initialized")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	return c.clientService.GetClientPortMappings(clientID)
 }
@@ -85,7 +86,7 @@ func (c *CloudControl) GetClientPortMappings(clientID int64) ([]*models.PortMapp
 // GetClientNodeID 获取客户端所在节点ID（快速查询）
 func (c *CloudControl) GetClientNodeID(clientID int64) (string, error) {
 	if c.clientService == nil {
-		return "", fmt.Errorf("clientService not initialized")
+		return "", coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	client, err := c.clientService.GetClient(clientID)
 	if err != nil {
@@ -100,7 +101,7 @@ func (c *CloudControl) GetClientNodeID(clientID int64) (string, error) {
 // IsClientOnNode 检查客户端是否在指定节点
 func (c *CloudControl) IsClientOnNode(clientID int64, nodeID string) (bool, error) {
 	if c.clientService == nil {
-		return false, fmt.Errorf("clientService not initialized")
+		return false, coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	client, err := c.clientService.GetClient(clientID)
 	if err != nil {
@@ -112,7 +113,7 @@ func (c *CloudControl) IsClientOnNode(clientID int64, nodeID string) (bool, erro
 // GetNodeClients 获取节点的所有在线客户端
 func (c *CloudControl) GetNodeClients(nodeID string) ([]*models.Client, error) {
 	if c.clientService == nil {
-		return nil, fmt.Errorf("clientService not initialized")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
 	}
 	// 通过 ClientService 列出所有客户端并过滤
 	allClients, err := c.clientService.ListClients("", "")
@@ -132,13 +133,13 @@ func (c *CloudControl) GetNodeClients(nodeID string) ([]*models.Client, error) {
 // MigrateClientMappings 迁移客户端的端口映射
 func (c *CloudControl) MigrateClientMappings(fromClientID, toClientID int64) error {
 	if c.clientService == nil || c.portMappingService == nil {
-		return fmt.Errorf("services not initialized")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "services not initialized")
 	}
 
 	// 获取源客户端的所有映射
 	mappings, err := c.clientService.GetClientPortMappings(fromClientID)
 	if err != nil {
-		return fmt.Errorf("failed to get mappings for client %d: %w", fromClientID, err)
+		return coreerrors.Wrapf(err, coreerrors.CodeStorageError, "failed to get mappings for client %d", fromClientID)
 	}
 
 	if len(mappings) == 0 {

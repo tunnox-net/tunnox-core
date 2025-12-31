@@ -2,10 +2,10 @@ package session
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"tunnox-core/internal/core/events"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
@@ -41,7 +41,7 @@ type SessionManagerConfig struct {
 // Validate 验证配置
 func (c *SessionManagerConfig) Validate() error {
 	if c.IDManager == nil {
-		return errors.New("IDManager is required")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "IDManager is required")
 	}
 	return nil
 }
@@ -149,7 +149,7 @@ func WithMigrationManager(m *TunnelMigrationManager) SessionManagerOption {
 func WithEventBus(eb events.EventBus) SessionManagerOption {
 	return func(s *SessionManager) {
 		s.eventBus = eb
-		// 订阅断开连接事件
+		// 订阅断开连接事件（忽略订阅错误，事件通知是可选功能）
 		if eb != nil {
 			_ = eb.Subscribe("DisconnectRequest", s.handleDisconnectRequestEvent)
 		}
@@ -193,7 +193,7 @@ func NewSessionManagerV2(
 ) (*SessionManager, error) {
 	// 验证配置
 	if config == nil {
-		return nil, errors.New("config is required")
+		return nil, coreerrors.New(coreerrors.CodeInvalidParam, "config is required")
 	}
 	if err := config.Validate(); err != nil {
 		return nil, err

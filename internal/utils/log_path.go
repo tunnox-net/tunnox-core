@@ -107,6 +107,7 @@ func canWriteToPath(path string) bool {
 	if err != nil {
 		return false
 	}
+	// 忽略关闭错误，仅用于验证路径可写
 	_ = file.Close()
 
 	return true

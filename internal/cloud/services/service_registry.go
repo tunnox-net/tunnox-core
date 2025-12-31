@@ -1,25 +1,19 @@
 package services
 
 import (
-	"fmt"
 	"tunnox-core/internal/cloud/container"
+	"tunnox-core/internal/cloud/services/registry"
 )
 
 // ServiceRegistry 服务注册器，提供依赖注入和错误处理
-type ServiceRegistry struct {
-	container   *container.Container
-	baseService *BaseService
-}
+// 向后兼容：重新导出 registry.Registry
+type ServiceRegistry = registry.Registry
 
 // NewServiceRegistry 创建服务注册器
-func NewServiceRegistry(container *container.Container) *ServiceRegistry {
-	return &ServiceRegistry{
-		container:   container,
-		baseService: NewBaseService(),
-	}
+func NewServiceRegistry(c *container.Container) *ServiceRegistry {
+	return registry.NewRegistry(c)
 }
 
-// wrapResolveError 包装服务解析错误
-func (r *ServiceRegistry) wrapResolveError(err error, serviceName string) error {
-	return r.baseService.WrapError(err, fmt.Sprintf("resolve %s", serviceName))
-}
+// ManagerFactories 管理器工厂函数集合
+// 向后兼容：重新导出 registry.ManagerFactories
+type ManagerFactories = registry.ManagerFactories

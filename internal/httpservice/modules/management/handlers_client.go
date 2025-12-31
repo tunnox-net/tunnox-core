@@ -5,6 +5,7 @@ import (
 
 	"tunnox-core/internal/cloud/models"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/httpservice"
 )
 
 // handleListAllClients 列出所有客户端
@@ -22,7 +23,7 @@ func (m *ManagementModule) handleListAllClients(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, clients)
+	respondJSONTyped(w, http.StatusOK, clients)
 }
 
 // handleCreateClient 创建客户端
@@ -49,7 +50,7 @@ func (m *ManagementModule) handleCreateClient(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	m.respondJSON(w, http.StatusCreated, client)
+	respondJSONTyped(w, http.StatusCreated, client)
 }
 
 // handleGetClient 获取客户端
@@ -71,7 +72,7 @@ func (m *ManagementModule) handleGetClient(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, client)
+	respondJSONTyped(w, http.StatusOK, client)
 }
 
 // handleUpdateClient 更新客户端
@@ -119,7 +120,7 @@ func (m *ManagementModule) handleUpdateClient(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, client)
+	respondJSONTyped(w, http.StatusOK, client)
 }
 
 // handleDeleteClient 删除客户端
@@ -141,7 +142,7 @@ func (m *ManagementModule) handleDeleteClient(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, map[string]string{"message": "client deleted"})
+	respondJSONTyped(w, http.StatusOK, httpservice.MessageResponse{Message: "client deleted"})
 }
 
 // handleDisconnectClient 断开客户端连接
@@ -164,7 +165,7 @@ func (m *ManagementModule) handleDisconnectClient(w http.ResponseWriter, r *http
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, map[string]string{"message": "client disconnected"})
+	respondJSONTyped(w, http.StatusOK, httpservice.MessageResponse{Message: "client disconnected"})
 }
 
 // handleListClientMappings 列出客户端的映射
@@ -187,5 +188,5 @@ func (m *ManagementModule) handleListClientMappings(w http.ResponseWriter, r *ht
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, mappings)
+	respondJSONTyped(w, http.StatusOK, mappings)
 }

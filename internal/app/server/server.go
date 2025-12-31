@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/broker"
@@ -83,7 +84,11 @@ func (s *Server) createServiceManager(parentCtx context.Context) {
 
 	// 生成服务器ID
 	if s.idManager != nil {
-		s.serverID, _ = s.idManager.GenerateConnectionID()
+		var err error
+		s.serverID, err = s.idManager.GenerateConnectionID()
+		if err != nil {
+			corelog.Warnf("Failed to generate server ID, using empty ID: %v", err)
+		}
 	}
 }
 
@@ -91,7 +96,7 @@ func (s *Server) createServiceManager(parentCtx context.Context) {
 func (s *Server) Start() error {
 	// 设置协议适配器
 	if err := s.setupProtocolAdapters(); err != nil {
-		return fmt.Errorf("failed to setup protocol adapters: %v", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to setup protocol adapters")
 	}
 
 	// 设置连接码命令处理器
@@ -101,7 +106,7 @@ func (s *Server) Start() error {
 
 	// 使用服务管理器启动所有服务
 	if err := s.serviceManager.StartAllServices(); err != nil {
-		return fmt.Errorf("failed to start services: %v", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to start services")
 	}
 
 	return nil
@@ -151,7 +156,7 @@ func (s *Server) Run() error {
 	// 设置协议适配器（但不启动服务）
 	if err := s.setupProtocolAdapters(); err != nil {
 		corelog.Default().Errorf("Failed to setup protocol adapters: %v", err)
-		return fmt.Errorf("failed to setup protocol adapters: %v", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to setup protocol adapters")
 	}
 
 	// 设置连接码命令处理器
@@ -167,7 +172,7 @@ func (s *Server) Run() error {
 func (s *Server) RunWithContext(ctx context.Context) error {
 	// 设置协议适配器（但不启动服务）
 	if err := s.setupProtocolAdapters(); err != nil {
-		return fmt.Errorf("failed to setup protocol adapters: %v", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to setup protocol adapters")
 	}
 
 	// 设置连接码命令处理器
@@ -193,7 +198,7 @@ func (s *Server) registerCurrentNode(nodeID, address string) error {
 	if s.cloudBuiltin != nil {
 		return s.cloudBuiltin.RegisterNodeDirect(nodeModel)
 	}
-	return fmt.Errorf("cloudBuiltin not initialized")
+	return coreerrors.New(coreerrors.CodeNotConfigured, "cloudBuiltin not initialized")
 }
 
 // getRemoteStorage 获取 RemoteStorage 实例（如果存在）

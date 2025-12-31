@@ -2,9 +2,9 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	coreerrors "tunnox-core/internal/core/errors"
 
 	"gopkg.in/yaml.v3"
 )
@@ -57,35 +57,35 @@ func (l *TypedConfigLoader[T]) Load(path string) (T, error) {
 			configPtr := l.DefaultsProvider()
 			if l.EnvOverrider != nil {
 				if err := l.EnvOverrider(configPtr); err != nil {
-					return zero, fmt.Errorf("failed to apply env overrides: %w", err)
+					return zero, coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to apply env overrides")
 				}
 			}
 			return *configPtr, nil
 		}
-		return zero, fmt.Errorf("config file not found and no defaults provider: %s", path)
+		return zero, coreerrors.Newf(coreerrors.CodeNotFound, "config file not found and no defaults provider: %s", path)
 	}
 
 	// 读取文件
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return zero, fmt.Errorf("failed to read config file: %w", err)
+		return zero, coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to read config file")
 	}
 
 	// 先获取默认配置
 	if l.DefaultsProvider == nil {
-		return zero, fmt.Errorf("defaults provider is required")
+		return zero, coreerrors.New(coreerrors.CodeConfigError, "defaults provider is required")
 	}
 	configPtr := l.DefaultsProvider()
 
 	// 解析 YAML 到配置对象
 	if err := yaml.Unmarshal(data, configPtr); err != nil {
-		return zero, fmt.Errorf("failed to parse config: %w", err)
+		return zero, coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to parse config")
 	}
 
 	// 应用环境变量覆盖
 	if l.EnvOverrider != nil {
 		if err := l.EnvOverrider(configPtr); err != nil {
-			return zero, fmt.Errorf("failed to apply env overrides: %w", err)
+			return zero, coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to apply env overrides")
 		}
 	}
 
@@ -112,7 +112,7 @@ func (e *TypedConfigExporter[T]) Export(config T, path string, options ExportOpt
 		// 导出配置（完整或最小）
 		data, err = yaml.Marshal(config)
 		if err != nil {
-			return fmt.Errorf("failed to marshal config: %w", err)
+			return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to marshal config")
 		}
 	}
 
@@ -120,19 +120,20 @@ func (e *TypedConfigExporter[T]) Export(config T, path string, options ExportOpt
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory: %w", err)
+			return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to create directory")
 		}
 	}
 
 	// 原子写入
 	tempFile := path + ".tmp"
 	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to write temp file")
 	}
 
 	if err := os.Rename(tempFile, path); err != nil {
+		// 清理临时文件（忽略删除错误，主流程已失败）
 		_ = os.Remove(tempFile)
-		return fmt.Errorf("failed to rename temp file: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to rename temp file")
 	}
 
 	return nil
@@ -167,7 +168,7 @@ func (m *TypedConfigManager[T]) Load(path string) (T, error) {
 	}
 	if m.validator != nil {
 		if err := m.validator.Validate(config); err != nil {
-			return zero, fmt.Errorf("config validation failed: %w", err)
+			return zero, coreerrors.Wrap(err, coreerrors.CodeValidationError, "config validation failed")
 		}
 	}
 	return config, nil
@@ -184,7 +185,7 @@ func (m *TypedConfigManager[T]) Validate(config T) error {
 // Export 导出配置到文件
 func (m *TypedConfigManager[T]) Export(config T, path string, options ExportOptions) error {
 	if m.exporter == nil {
-		return fmt.Errorf("exporter not configured")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "exporter not configured")
 	}
 	return m.exporter.Export(config, path, options)
 }

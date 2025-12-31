@@ -1,10 +1,11 @@
 package session
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 )
@@ -21,7 +22,7 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 		currentCount := len(s.connMap)
 		s.connLock.RUnlock()
 		if currentCount >= s.config.MaxConnections {
-			return nil, fmt.Errorf("connection limit reached: %d/%d", currentCount, s.config.MaxConnections)
+			return nil, coreerrors.Newf(coreerrors.CodeQuotaExceeded, "connection limit reached: %d/%d", currentCount, s.config.MaxConnections)
 		}
 	}
 
@@ -39,7 +40,7 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 	if connID == "" {
 		connID, err = s.idManager.GenerateConnectionID()
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate connection ID: %w", err)
+			return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to generate connection ID")
 		}
 		corelog.Infof("CreateConnection: generated new connectionID=%s", connID)
 	}
@@ -55,7 +56,7 @@ func (s *SessionManager) CreateConnection(reader io.Reader, writer io.Writer) (*
 	// 创建流处理器
 	streamProcessor, err := s.streamMgr.CreateStream(connID, reader, writer)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create stream: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to create stream")
 	}
 
 	// 创建连接对象
@@ -135,7 +136,7 @@ func (s *SessionManager) UpdateConnectionState(connID string, state types.Connec
 
 	conn, exists := s.connMap[connID]
 	if !exists {
-		return fmt.Errorf("connection not found: %s", connID)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "connection not found: %s", connID)
 	}
 
 	conn.State = state
@@ -202,30 +203,23 @@ func (s *SessionManager) GetActiveConnections() int {
 
 // GetActiveChannels 返回当前占用的通道数（控制通道 + 数据隧道）
 func (s *SessionManager) GetActiveChannels() int {
-	s.controlConnLock.RLock()
-	controlCount := len(s.controlConnMap)
-	s.controlConnLock.RUnlock()
-
-	s.tunnelConnLock.RLock()
-	tunnelCount := len(s.tunnelConnMap)
-	s.tunnelConnLock.RUnlock()
+	// ✅ 优先使用 registry（新架构）
+	controlCount := s.clientRegistry.Count()
+	tunnelCount := s.tunnelRegistry.Count()
 
 	return controlCount + tunnelCount
 }
 
 // GetConnectionStats 获取连接统计信息
 func (s *SessionManager) GetConnectionStats() ConnectionStats {
+	// ✅ 优先使用 registry（新架构）
+	controlConnections := s.clientRegistry.Count()
+	tunnelConnections := s.tunnelRegistry.Count()
+
+	// ⚠️ 总连接数仍从旧map获取（待子阶段4.6处理）
 	s.connLock.RLock()
 	totalConnections := len(s.connMap)
 	s.connLock.RUnlock()
-
-	s.controlConnLock.RLock()
-	controlConnections := len(s.controlConnMap)
-	s.controlConnLock.RUnlock()
-
-	s.tunnelConnLock.RLock()
-	tunnelConnections := len(s.tunnelConnMap)
-	s.tunnelConnLock.RUnlock()
 
 	return ConnectionStats{
 		TotalConnections:      totalConnections,
@@ -265,66 +259,29 @@ func (s *SessionManager) getMaxControlConnections() int {
 
 // RegisterTunnelConnection 注册映射连接
 func (s *SessionManager) RegisterTunnelConnection(conn *TunnelConnection) {
-	s.tunnelConnLock.Lock()
-	defer s.tunnelConnLock.Unlock()
-
-	s.tunnelConnMap[conn.ConnID] = conn
-	if conn.TunnelID != "" {
-		s.tunnelIDMap[conn.TunnelID] = conn
+	// 委托给 tunnelRegistry
+	if err := s.tunnelRegistry.Register(conn); err != nil {
+		corelog.Errorf("Failed to register tunnel connection: %v", err)
 	}
-
 }
 
 // UpdateTunnelConnectionAuth 更新映射连接的认证信息
 func (s *SessionManager) UpdateTunnelConnectionAuth(connID string, tunnelID string, mappingID string) error {
-	s.tunnelConnLock.Lock()
-	defer s.tunnelConnLock.Unlock()
-
-	conn, exists := s.tunnelConnMap[connID]
-	if !exists {
-		return fmt.Errorf("tunnel connection not found: %s", connID)
-	}
-
-	conn.TunnelID = tunnelID
-	conn.MappingID = mappingID
-	conn.Authenticated = true
-
-	// 更新 tunnelIDMap
-	s.tunnelIDMap[tunnelID] = conn
-
-	corelog.Infof("Tunnel connection authenticated: connID=%s, tunnelID=%s, mappingID=%s", connID, tunnelID, mappingID)
-	return nil
+	// 委托给 tunnelRegistry
+	return s.tunnelRegistry.UpdateAuth(connID, tunnelID, mappingID)
 }
 
 // GetTunnelConnectionByTunnelID 根据 TunnelID 获取映射连接
 func (s *SessionManager) GetTunnelConnectionByTunnelID(tunnelID string) *TunnelConnection {
-	s.tunnelConnLock.RLock()
-	defer s.tunnelConnLock.RUnlock()
-
-	return s.tunnelIDMap[tunnelID]
+	return s.tunnelRegistry.GetByTunnelID(tunnelID)
 }
 
 // GetTunnelConnectionByConnID 根据 ConnID 获取映射连接
 func (s *SessionManager) GetTunnelConnectionByConnID(connID string) *TunnelConnection {
-	s.tunnelConnLock.RLock()
-	defer s.tunnelConnLock.RUnlock()
-
-	return s.tunnelConnMap[connID]
+	return s.tunnelRegistry.GetByConnID(connID)
 }
 
 // RemoveTunnelConnection 移除映射连接
 func (s *SessionManager) RemoveTunnelConnection(connID string) {
-	s.tunnelConnLock.Lock()
-	defer s.tunnelConnLock.Unlock()
-
-	conn, exists := s.tunnelConnMap[connID]
-	if exists {
-		// 从 tunnelIDMap 移除
-		if conn.TunnelID != "" {
-			delete(s.tunnelIDMap, conn.TunnelID)
-		}
-		// 从 tunnelConnMap 移除
-		delete(s.tunnelConnMap, connID)
-		corelog.Debugf("Removed tunnel connection: connID=%s, tunnelID=%s", connID, conn.TunnelID)
-	}
+	s.tunnelRegistry.Remove(connID)
 }

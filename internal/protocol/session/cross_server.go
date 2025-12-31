@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/broker"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
@@ -31,7 +32,7 @@ func (s *SessionManager) handleCrossServerTargetConnection(
 			Success:  false,
 			Error:    "mapping_id mismatch",
 		})
-		return fmt.Errorf("mapping_id mismatch")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "mapping_id mismatch")
 	}
 
 	// 检查BridgeManager是否可用
@@ -41,7 +42,7 @@ func (s *SessionManager) handleCrossServerTargetConnection(
 			Success:  false,
 			Error:    "cross-server forwarding not available",
 		})
-		return fmt.Errorf("BridgeManager not configured")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "BridgeManager not configured")
 	}
 
 	// 发送成功响应给目标端客户端
@@ -53,13 +54,13 @@ func (s *SessionManager) handleCrossServerTargetConnection(
 	// 获取底层的net.Conn
 	netConn := s.extractNetConn(conn)
 	if netConn == nil {
-		return fmt.Errorf("failed to extract net.Conn from connection")
+		return coreerrors.New(coreerrors.CodeConnectionError, "failed to extract net.Conn from connection")
 	}
 
 	// 通过BridgeManager转发连接到源端Server
 	if err := s.forwardConnectionToSourceNode(netConn, req, routingState); err != nil {
 		netConn.Close()
-		return fmt.Errorf("failed to forward connection: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to forward connection")
 	}
 
 	// 透传通道：首个指令包处理完成后，从指令连接列表中移除
@@ -78,7 +79,7 @@ func (s *SessionManager) handleCrossServerTargetConnection(
 	}
 
 	// 返回特殊错误，让ProcessPacketLoop停止处理（连接已被BridgeManager接管）
-	return fmt.Errorf("tunnel target connected via cross-server bridge, switching to stream mode")
+	return coreerrors.New(coreerrors.CodeTunnelModeSwitch, "tunnel target connected via cross-server bridge, switching to stream mode")
 }
 
 // forwardConnectionToSourceNode 将目标端连接转发到源端Server
@@ -113,13 +114,13 @@ func (s *SessionManager) registerCrossServerConnection(
 
 	data, err := json.Marshal(connInfo)
 	if err != nil {
-		return fmt.Errorf("failed to marshal connection info: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal connection info")
 	}
 
 	if s.tunnelRouting != nil && s.tunnelRouting.GetStorage() != nil {
 		key := fmt.Sprintf("tunnox:cross_server_conn:%s", tunnelID)
 		if err := s.tunnelRouting.GetStorage().Set(key, data, 30*time.Second); err != nil {
-			return fmt.Errorf("failed to store connection info: %w", err)
+			return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to store connection info")
 		}
 	}
 

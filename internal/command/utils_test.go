@@ -3,6 +3,7 @@ package command
 import (
 	"io"
 	"testing"
+	"time"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
@@ -279,11 +280,10 @@ func TestCommandUtils_Chaining(t *testing.T) {
 	session := &UtilsMockSession{}
 	utils := NewCommandUtils(session)
 
-	// 测试链式调用
+	// 测试链式调用（不使用 PutRequest，因为已移除，请使用 TypedCommandUtils）
 	result := utils.
 		TcpMapCreate().
-		PutRequest(map[string]interface{}{"port": 8080}).
-		Timeout(5000).
+		Timeout(5 * time.Second).
 		WithAuthentication(true).
 		WithUserID("user123")
 
@@ -291,8 +291,8 @@ func TestCommandUtils_Chaining(t *testing.T) {
 		t.Errorf("Expected command type %v, got %v", packet.TcpMapCreate, result.commandType)
 	}
 
-	if result.timeout != 5000 {
-		t.Errorf("Expected timeout 5000, got %v", result.timeout)
+	if result.timeout != 5*time.Second {
+		t.Errorf("Expected timeout 5s, got %v", result.timeout)
 	}
 
 	if !result.isAuthenticated {
@@ -301,5 +301,254 @@ func TestCommandUtils_Chaining(t *testing.T) {
 
 	if result.userID != "user123" {
 		t.Errorf("Expected userID 'user123', got %v", result.userID)
+	}
+}
+
+// TestTypedCommandUtils_ChainingWithRequest 测试带请求数据的类型安全链式调用
+func TestTypedCommandUtils_ChainingWithRequest(t *testing.T) {
+	session := &UtilsMockSession{}
+
+	// 定义类型安全的请求结构
+	type TcpMapRequest struct {
+		Port int `json:"port"`
+	}
+	type TcpMapResponse struct {
+		Status string `json:"status"`
+	}
+
+	request := &TcpMapRequest{Port: 8080}
+	response := &TcpMapResponse{}
+
+	// 测试类型安全的链式调用
+	result := NewTypedCommandUtils[TcpMapRequest, TcpMapResponse](session).
+		WithCommand(packet.TcpMapCreate).
+		PutRequest(request).
+		ResultAs(response).
+		Timeout(5 * time.Second).
+		WithAuthentication(true).
+		WithUserID("user123")
+
+	if result.commandType != packet.TcpMapCreate {
+		t.Errorf("Expected command type %v, got %v", packet.TcpMapCreate, result.commandType)
+	}
+
+	if result.timeout != 5*time.Second {
+		t.Errorf("Expected timeout 5s, got %v", result.timeout)
+	}
+
+	if !result.isAuthenticated {
+		t.Errorf("Expected isAuthenticated true, got %v", result.isAuthenticated)
+	}
+
+	if result.userID != "user123" {
+		t.Errorf("Expected userID 'user123', got %v", result.userID)
+	}
+
+	// 验证请求数据被正确设置
+	if result.requestData == nil || result.requestData.Port != 8080 {
+		t.Errorf("Expected Port 8080, got %v", result.requestData)
+	}
+}
+
+// ==================== TypedCommandUtils 测试 ====================
+
+// 定义测试用的类型化请求和响应结构体
+type TestTcpMapRequest struct {
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+}
+
+type TestTcpMapResponse struct {
+	MappingID string `json:"mapping_id"`
+	Status    string `json:"status"`
+}
+
+func TestTypedCommandUtils_NewInstance(t *testing.T) {
+	session := &UtilsMockSession{}
+	utils := NewTypedCommandUtils[TestTcpMapRequest, TestTcpMapResponse](session)
+
+	if utils == nil {
+		t.Fatal("NewTypedCommandUtils should not return nil")
+	}
+
+	if utils.timeout != 30*time.Second {
+		t.Errorf("Expected default timeout 30s, got %v", utils.timeout)
+	}
+}
+
+func TestTypedCommandUtils_Chaining(t *testing.T) {
+	session := &UtilsMockSession{}
+
+	// 测试类型安全的链式调用
+	request := &TestTcpMapRequest{Port: 8080, Protocol: "tcp"}
+	response := &TestTcpMapResponse{}
+
+	utils := NewTypedCommandUtils[TestTcpMapRequest, TestTcpMapResponse](session).
+		WithCommand(packet.TcpMapCreate).
+		PutRequest(request).
+		ResultAs(response).
+		Timeout(5 * time.Second).
+		WithAuthentication(true).
+		WithUserID("user123")
+
+	if utils.commandType != packet.TcpMapCreate {
+		t.Errorf("Expected command type %v, got %v", packet.TcpMapCreate, utils.commandType)
+	}
+
+	if utils.timeout != 5*time.Second {
+		t.Errorf("Expected timeout 5s, got %v", utils.timeout)
+	}
+
+	if !utils.isAuthenticated {
+		t.Errorf("Expected isAuthenticated true, got %v", utils.isAuthenticated)
+	}
+
+	if utils.userID != "user123" {
+		t.Errorf("Expected userID 'user123', got %v", utils.userID)
+	}
+
+	// 验证请求数据被正确设置
+	if utils.requestData == nil {
+		t.Fatal("Expected requestData to be set")
+	}
+
+	if utils.requestData.Port != 8080 {
+		t.Errorf("Expected Port 8080, got %d", utils.requestData.Port)
+	}
+
+	if utils.requestData.Protocol != "tcp" {
+		t.Errorf("Expected Protocol 'tcp', got %s", utils.requestData.Protocol)
+	}
+
+	// 验证响应数据结构被正确设置
+	if utils.responseData == nil {
+		t.Fatal("Expected responseData to be set")
+	}
+}
+
+func TestTypedCommandUtils_WithMethods(t *testing.T) {
+	session := &UtilsMockSession{}
+
+	t.Run("WithConnectionID", func(t *testing.T) {
+		utils := NewTypedCommandUtils[TestTcpMapRequest, TestTcpMapResponse](session).
+			WithConnectionID("conn-123")
+
+		if utils.connectionID != "conn-123" {
+			t.Errorf("Expected connectionID 'conn-123', got %v", utils.connectionID)
+		}
+	})
+
+	t.Run("WithRequestID", func(t *testing.T) {
+		utils := NewTypedCommandUtils[TestTcpMapRequest, TestTcpMapResponse](session).
+			WithRequestID("req-456")
+
+		if utils.requestID != "req-456" {
+			t.Errorf("Expected requestID 'req-456', got %v", utils.requestID)
+		}
+	})
+
+	t.Run("WithCommandId", func(t *testing.T) {
+		utils := NewTypedCommandUtils[TestTcpMapRequest, TestTcpMapResponse](session).
+			WithCommandId("cmd-789")
+
+		if utils.commandId != "cmd-789" {
+			t.Errorf("Expected commandId 'cmd-789', got %v", utils.commandId)
+		}
+	})
+
+	t.Run("WithStartTime", func(t *testing.T) {
+		startTime := time.Now()
+		utils := NewTypedCommandUtils[TestTcpMapRequest, TestTcpMapResponse](session).
+			WithStartTime(startTime)
+
+		if utils.startTime != startTime {
+			t.Errorf("Expected startTime %v, got %v", startTime, utils.startTime)
+		}
+	})
+
+	t.Run("WithEndTime", func(t *testing.T) {
+		endTime := time.Now()
+		utils := NewTypedCommandUtils[TestTcpMapRequest, TestTcpMapResponse](session).
+			WithEndTime(endTime)
+
+		if utils.endTime != endTime {
+			t.Errorf("Expected endTime %v, got %v", endTime, utils.endTime)
+		}
+	})
+}
+
+func TestTypedCommandUtils_GetResponse(t *testing.T) {
+	session := &UtilsMockSession{}
+
+	response := &TestTcpMapResponse{MappingID: "map-001", Status: "active"}
+
+	utils := NewTypedCommandUtils[TestTcpMapRequest, TestTcpMapResponse](session).
+		ResultAs(response)
+
+	got := utils.GetResponse()
+	if got == nil {
+		t.Fatal("Expected GetResponse() to return non-nil")
+	}
+
+	if got.MappingID != "map-001" {
+		t.Errorf("Expected MappingID 'map-001', got %s", got.MappingID)
+	}
+
+	if got.Status != "active" {
+		t.Errorf("Expected Status 'active', got %s", got.Status)
+	}
+}
+
+func TestTypedCommandUtils_ThrowOn(t *testing.T) {
+	session := &UtilsMockSession{}
+
+	customErrorHandled := false
+	customErrorHandler := func(err error) error {
+		customErrorHandled = true
+		return err
+	}
+
+	utils := NewTypedCommandUtils[TestTcpMapRequest, TestTcpMapResponse](session).
+		ThrowOn(customErrorHandler)
+
+	// 验证错误处理器被设置
+	if utils.errorHandler == nil {
+		t.Fatal("Expected errorHandler to be set")
+	}
+
+	// 触发错误处理器
+	_ = utils.errorHandler(nil)
+	if !customErrorHandled {
+		t.Error("Expected custom error handler to be called")
+	}
+}
+
+// 测试不同类型参数的泛型
+type SimpleRequest struct {
+	ID string `json:"id"`
+}
+
+type SimpleResponse struct {
+	OK bool `json:"ok"`
+}
+
+func TestTypedCommandUtils_DifferentTypes(t *testing.T) {
+	session := &UtilsMockSession{}
+
+	// 测试不同类型的请求和响应
+	request := &SimpleRequest{ID: "test-id"}
+	response := &SimpleResponse{}
+
+	utils := NewTypedCommandUtils[SimpleRequest, SimpleResponse](session).
+		WithCommand(packet.HealthCheck).
+		PutRequest(request).
+		ResultAs(response)
+
+	if utils.requestData == nil {
+		t.Fatal("Expected requestData to be set")
+	}
+
+	if utils.requestData.ID != "test-id" {
+		t.Errorf("Expected ID 'test-id', got %s", utils.requestData.ID)
 	}
 }

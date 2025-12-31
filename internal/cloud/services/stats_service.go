@@ -2,11 +2,11 @@ package services
 
 import (
 	"context"
-	"fmt"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // statsService 统计服务实现
@@ -19,7 +19,7 @@ type statsService struct {
 }
 
 // NewstatsService 创建新的统计服务实现
-func NewstatsService(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository, parentCtx context.Context) *statsService {
+func NewstatsService(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository, parentCtx context.Context) StatsService {
 	service := &statsService{
 		ServiceBase: dispose.NewService("statsService", parentCtx),
 		userRepo:    userRepo,
@@ -38,13 +38,13 @@ func (s *statsService) GetSystemStats() (*stats.SystemStats, error) {
 	// 获取客户端总数
 	clients, err := s.clientRepo.ListClients()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get clients: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get clients")
 	}
 
 	// 获取节点总数
 	nodes, err := s.nodeRepo.ListNodes()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get nodes: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get nodes")
 	}
 
 	return &stats.SystemStats{

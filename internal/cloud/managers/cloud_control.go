@@ -8,6 +8,7 @@ import (
 	"tunnox-core/internal/cloud/distributed"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/storage"
 )
@@ -106,12 +107,12 @@ func (c *CloudControl) handleErrorWithIDRelease(err error, id int64, releaseFunc
 		return nil
 	}
 
-	// 释放ID
+	// 释放ID（忽略释放错误，主流程已失败）
 	if releaseFunc != nil {
 		_ = releaseFunc(id)
 	}
 
-	return fmt.Errorf("%s: %w", message, err)
+	return coreerrors.Wrap(err, coreerrors.CodeInternal, message)
 }
 
 // Close 实现 CloudControlAPI 接口的 Close 方法
@@ -134,7 +135,8 @@ func (c *CloudControl) Close() error {
 }
 
 // SetNotifier 设置通知器
-func (c *CloudControl) SetNotifier(notifier interface{}) {
+// 实现 NotifierAware 接口
+func (c *CloudControl) SetNotifier(notifier ClientNotifier) {
 	if c.anonymousManager != nil {
 		c.anonymousManager.SetNotifier(notifier)
 	}

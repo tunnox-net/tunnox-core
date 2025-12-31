@@ -1,7 +1,6 @@
 package constants
 
 import (
-	"fmt"
 	coreerrors "tunnox-core/internal/core/errors"
 )
 
@@ -103,5 +102,5 @@ func WrapError(err error, context string) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%s: %w", context, err)
+	return coreerrors.Wrap(err, coreerrors.CodeInternal, context)
 }

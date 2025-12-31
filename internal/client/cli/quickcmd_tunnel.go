@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	"tunnox-core/internal/client"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 )
 
@@ -85,7 +86,7 @@ func (r *QuickCommandRunner) parseTargetAddress(input string, protocol string) (
 	// 如果只是端口号
 	if port, err := strconv.Atoi(input); err == nil {
 		if port < 1 || port > 65535 {
-			return "", fmt.Errorf("port out of range: %d (must be 1-65535)", port)
+			return "", coreerrors.Newf(coreerrors.CodeInvalidParam, "port out of range: %d (must be 1-65535)", port)
 		}
 		return fmt.Sprintf("%s://localhost:%d", protocol, port), nil
 	}
@@ -95,14 +96,14 @@ func (r *QuickCommandRunner) parseTargetAddress(input string, protocol string) (
 		// 验证格式
 		parts := strings.Split(input, ":")
 		if len(parts) != 2 {
-			return "", fmt.Errorf("invalid address format: %s (expected host:port)", input)
+			return "", coreerrors.Newf(coreerrors.CodeInvalidParam, "invalid address format: %s (expected host:port)", input)
 		}
 		port, err := strconv.Atoi(parts[1])
 		if err != nil {
-			return "", fmt.Errorf("invalid port: %s", parts[1])
+			return "", coreerrors.Newf(coreerrors.CodeInvalidParam, "invalid port: %s", parts[1])
 		}
 		if port < 1 || port > 65535 {
-			return "", fmt.Errorf("port out of range: %d (must be 1-65535)", port)
+			return "", coreerrors.Newf(coreerrors.CodeInvalidParam, "port out of range: %d (must be 1-65535)", port)
 		}
 		return fmt.Sprintf("%s://%s", protocol, input), nil
 	}
@@ -124,7 +125,7 @@ func (r *QuickCommandRunner) generateCodeAndWait(protocol, targetAddress string,
 			if i+1 < len(extraArgs) {
 				minutes, err := strconv.Atoi(extraArgs[i+1])
 				if err != nil {
-					return false, fmt.Errorf("invalid --activation-ttl value: %s", extraArgs[i+1])
+					return false, coreerrors.Newf(coreerrors.CodeInvalidParam, "invalid --activation-ttl value: %s", extraArgs[i+1])
 				}
 				activationTTL = minutes * 60
 				i++
@@ -133,7 +134,7 @@ func (r *QuickCommandRunner) generateCodeAndWait(protocol, targetAddress string,
 			if i+1 < len(extraArgs) {
 				days, err := strconv.Atoi(extraArgs[i+1])
 				if err != nil {
-					return false, fmt.Errorf("invalid --mapping-ttl value: %s", extraArgs[i+1])
+					return false, coreerrors.Newf(coreerrors.CodeInvalidParam, "invalid --mapping-ttl value: %s", extraArgs[i+1])
 				}
 				mappingTTL = days * 24 * 3600
 				i++
@@ -162,7 +163,7 @@ func (r *QuickCommandRunner) generateCodeAndWait(protocol, targetAddress string,
 		Description:   codeName,
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to generate code: %w", err)
+		return false, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to generate code")
 	}
 
 	// 显示结果
@@ -185,9 +186,9 @@ func (r *QuickCommandRunner) connectToServer() error {
 	// 连接
 	if err := r.client.Connect(); err != nil {
 		if r.ctx.Err() == context.Canceled {
-			return fmt.Errorf("connection cancelled")
+			return coreerrors.New(coreerrors.CodeOperationCancelled, "connection cancelled")
 		}
-		return fmt.Errorf("connection failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "connection failed")
 	}
 
 	fmt.Fprintf(os.Stderr, "✅ Connected successfully\n")

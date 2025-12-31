@@ -2,6 +2,7 @@ package types
 
 import (
 	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/stats"
 )
 
 // CloudControl 云控制接口
@@ -12,7 +13,7 @@ type CloudControl interface {
 	GetPortMapping(mappingID string) (*models.PortMapping, error)
 
 	// UpdatePortMappingStats 更新端口映射统计信息
-	UpdatePortMappingStats(mappingID string, stats interface{}) error
+	UpdatePortMappingStats(mappingID string, stats *stats.TrafficStats) error
 
 	// GetClientPortMappings 获取客户端的所有端口映射
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error)
@@ -32,16 +33,4 @@ type BridgeManager interface {
 
 	// GetNodeID 获取当前节点ID
 	GetNodeID() string
-}
-
-// AuthHandler 认证处理器接口
-type AuthHandler interface {
-	// HandleAuth 处理认证请求
-	HandleAuth(connID string, authData interface{}) (interface{}, error)
-}
-
-// TunnelHandler 隧道处理器接口
-type TunnelHandler interface {
-	// HandleTunnelOpen 处理隧道打开请求
-	HandleTunnelOpen(connID string, tunnelData interface{}) (interface{}, error)
 }

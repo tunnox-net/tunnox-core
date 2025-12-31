@@ -2,7 +2,8 @@ package dispose
 
 import (
 	"context"
-	"fmt"
+
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // ResourceBase 通用资源管理基类
@@ -34,7 +35,7 @@ func (r *ResourceBase) onClose() error {
 func (r *ResourceBase) Close() error {
 	result := r.Dispose.Close()
 	if result.HasErrors() {
-		return fmt.Errorf("%s cleanup failed: %s", r.name, result.Error())
+		return coreerrors.Newf(coreerrors.CodeCleanupError, "%s cleanup failed: %s", r.name, result.Error())
 	}
 	return nil
 }

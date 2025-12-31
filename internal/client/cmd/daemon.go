@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/client"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 
 	"github.com/spf13/cobra"
@@ -180,7 +181,7 @@ func connectWithRetry(tunnoxClient *client.TunnoxClient, maxRetries int) error {
 		return nil
 	}
 
-	return fmt.Errorf("max retries exceeded")
+	return coreerrors.New(coreerrors.CodeNetworkError, "max retries exceeded")
 }
 
 // monitorConnectionAndReconnect 监控连接状态并自动重连

@@ -2,9 +2,9 @@ package managers
 
 import (
 	"context"
-	"fmt"
 	"time"
 	"tunnox-core/internal/cloud/models"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
@@ -100,7 +100,7 @@ func (b *BuiltinCloudControl) Close() error {
 // RegisterNodeDirect 直接注册节点（用于服务器启动时注册自己）
 func (b *BuiltinCloudControl) RegisterNodeDirect(node *models.Node) error {
 	if b.CloudControl == nil || b.CloudControl.nodeManager == nil {
-		return fmt.Errorf("nodeManager not initialized")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "nodeManager not initialized")
 	}
 	// 通过 NodeManager 注册节点
 	// 版本从 Meta 中获取（如果有），否则留空
@@ -115,7 +115,7 @@ func (b *BuiltinCloudControl) RegisterNodeDirect(node *models.Node) error {
 	}
 	_, err := b.CloudControl.NodeRegister(req)
 	if err != nil {
-		return fmt.Errorf("failed to register node: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to register node")
 	}
 	return nil
 }

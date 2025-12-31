@@ -42,25 +42,20 @@ type DefaultStreamProcessor struct {
 }
 
 // NewDefaultStreamProcessor 创建新的默认流处理器
+// rateLimiter 参数可为 nil，表示不启用限流
 func NewDefaultStreamProcessor(
 	reader io.Reader,
 	writer io.Writer,
 	compressionReader *compression.GzipReader,
 	compressionWriter *compression.GzipWriter,
-	rateLimiter interface{}, // 改为interface{}以兼容旧代码
+	rateLimiter *stream.RateLimiter,
 ) *DefaultStreamProcessor {
-	var streamRateLimiter *stream.RateLimiter
-	if rateLimiter != nil {
-		// 如果需要限流，可以在这里创建stream.RateLimiter
-		// 暂时设为nil，由外部处理
-	}
-
 	return &DefaultStreamProcessor{
 		reader:            reader,
 		writer:            writer,
 		compressionReader: compressionReader,
 		compressionWriter: compressionWriter,
-		rateLimiter:       streamRateLimiter,
+		rateLimiter:       rateLimiter,
 		// 注意：加密功能已移至 internal/stream/transform 模块
 	}
 }

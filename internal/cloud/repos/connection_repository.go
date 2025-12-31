@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
 	constants2 "tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // 编译时接口断言，确保 ConnectionRepo 实现了 IConnectionRepository 接口
@@ -47,14 +48,14 @@ func (cr *ConnectionRepo) onClose() error {
 // SaveConnection 保存连接信息（创建或更新）
 func (r *ConnectionRepo) SaveConnection(connInfo *models.ConnectionInfo) error {
 	if err := r.Save(connInfo, constants.KeyPrefixConnection, constants2.DefaultConnectionTTL); err != nil {
-		return fmt.Errorf("save connection failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "save connection failed")
 	}
 	// 添加到映射和客户端的连接列表
 	if err := r.AddConnectionToMapping(connInfo.MappingID, connInfo); err != nil {
-		return fmt.Errorf("add connection to mapping failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "add connection to mapping failed")
 	}
 	if err := r.AddConnectionToClient(connInfo.ClientID, connInfo); err != nil {
-		return fmt.Errorf("add connection to client failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "add connection to client failed")
 	}
 	return nil
 }
@@ -66,10 +67,10 @@ func (r *ConnectionRepo) CreateConnection(connInfo *models.ConnectionInfo) error
 	}
 	// 添加到映射和客户端的连接列表
 	if err := r.AddConnectionToMapping(connInfo.MappingID, connInfo); err != nil {
-		return fmt.Errorf("add connection to mapping failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "add connection to mapping failed")
 	}
 	if err := r.AddConnectionToClient(connInfo.ClientID, connInfo); err != nil {
-		return fmt.Errorf("add connection to client failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "add connection to client failed")
 	}
 	return nil
 }
@@ -79,18 +80,18 @@ func (r *ConnectionRepo) UpdateConnection(connInfo *models.ConnectionInfo) error
 	// 检查连接是否存在
 	_, err := r.GetConnection(connInfo.ConnID)
 	if err != nil {
-		return fmt.Errorf("connection with ID %s does not exist", connInfo.ConnID)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "connection with ID %s does not exist", connInfo.ConnID)
 	}
 
 	// 只更新主连接记录，不重新添加到列表中
 	data, err := json.Marshal(connInfo)
 	if err != nil {
-		return fmt.Errorf("marshal connection failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "marshal connection failed")
 	}
 
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixConnection, connInfo.ConnID)
 	if err := r.storage.Set(key, string(data), constants2.DefaultConnectionTTL); err != nil {
-		return fmt.Errorf("update connection failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "update connection failed")
 	}
 
 	return nil

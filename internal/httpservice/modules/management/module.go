@@ -13,6 +13,7 @@ import (
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/health"
 	"tunnox-core/internal/httpservice"
@@ -213,17 +214,18 @@ func (m *ManagementModule) registerPProfRoutes(router *mux.Router) {
 	corelog.Infof("ManagementModule: pprof enabled at /tunnox/v1/debug/pprof/")
 }
 
-// respondJSON 发送 JSON 响应
-func (m *ManagementModule) respondJSON(w http.ResponseWriter, statusCode int, data interface{}) {
+// respondJSONTyped 发送 JSON 响应
+// 使用泛型函数确保类型安全
+func respondJSONTyped[T any](w http.ResponseWriter, statusCode int, data T) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
-	response := map[string]interface{}{
-		"success": statusCode >= 200 && statusCode < 300,
-		"data":    data,
+	response := httpservice.APIResponse[T]{
+		Success: statusCode >= 200 && statusCode < 300,
+		Data:    data,
 	}
 
-	json.NewEncoder(w).Encode(response)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 // respondError 发送错误响应
@@ -231,9 +233,9 @@ func (m *ManagementModule) respondError(w http.ResponseWriter, statusCode int, m
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 
-	response := map[string]interface{}{
-		"success": false,
-		"error":   message,
+	response := httpservice.ErrorResponse{
+		Success: false,
+		Error:   message,
 	}
 
 	json.NewEncoder(w).Encode(response)
@@ -244,11 +246,11 @@ func getInt64PathVar(r *http.Request, key string) (int64, error) {
 	vars := mux.Vars(r)
 	str := vars[key]
 	if str == "" {
-		return 0, fmt.Errorf("%s is required", key)
+		return 0, coreerrors.New(coreerrors.CodeNetworkError, key+" is required")
 	}
 	val, err := strconv.ParseInt(str, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid %s: %v", key, err)
+		return 0, coreerrors.Wrapf(err, coreerrors.CodeNetworkError, "invalid %s", key)
 	}
 	return val, nil
 }
@@ -258,16 +260,17 @@ func getStringPathVar(r *http.Request, key string) (string, error) {
 	vars := mux.Vars(r)
 	str := vars[key]
 	if str == "" {
-		return "", fmt.Errorf("%s is required", key)
+		return "", coreerrors.New(coreerrors.CodeNetworkError, key+" is required")
 	}
 	return str, nil
 }
 
 // parseJSONBody 解析 JSON 请求体
-func parseJSONBody(r *http.Request, v interface{}) error {
+// 使用泛型约束确保传入的是指针类型
+func parseJSONBody[T any](r *http.Request, v *T) error {
 	defer r.Body.Close()
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		return fmt.Errorf("invalid JSON body: %v", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "invalid JSON body")
 	}
 	return nil
 }

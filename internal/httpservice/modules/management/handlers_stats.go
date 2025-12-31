@@ -20,7 +20,7 @@ func (m *ManagementModule) handleGetSystemStats(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, stats)
+	respondJSONTyped(w, http.StatusOK, stats)
 }
 
 // handleListNodes 列出节点
@@ -38,7 +38,7 @@ func (m *ManagementModule) handleListNodes(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, nodes)
+	respondJSONTyped(w, http.StatusOK, nodes)
 }
 
 // handleGetNode 获取节点
@@ -60,5 +60,5 @@ func (m *ManagementModule) handleGetNode(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, node)
+	respondJSONTyped(w, http.StatusOK, node)
 }

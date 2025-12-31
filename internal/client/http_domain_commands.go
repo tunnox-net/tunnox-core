@@ -2,9 +2,9 @@ package client
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"tunnox-core/internal/client/command"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
@@ -43,11 +43,11 @@ func (c *TunnoxClient) GetBaseDomains() (*GetBaseDomainsResponse, error) {
 
 	var resp GetBaseDomainsResponse
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response data: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	if !resp.Success {
-		return nil, fmt.Errorf("get base domains failed: %s", resp.Error)
+		return nil, coreerrors.Newf(coreerrors.CodeInternal, "get base domains failed: %s", resp.Error)
 	}
 
 	return &resp, nil
@@ -66,11 +66,11 @@ func (c *TunnoxClient) CheckSubdomain(req *CheckSubdomainRequest) (*CheckSubdoma
 
 	var resp CheckSubdomainResponse
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response data: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	if !resp.Success {
-		return nil, fmt.Errorf("check subdomain failed: %s", resp.Error)
+		return nil, coreerrors.Newf(coreerrors.CodeInternal, "check subdomain failed: %s", resp.Error)
 	}
 
 	return &resp, nil
@@ -93,11 +93,11 @@ func (c *TunnoxClient) GenSubdomain(baseDomain string) (*GenSubdomainResponse, e
 
 	var resp GenSubdomainResponse
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response data: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	if !resp.Success {
-		return nil, fmt.Errorf("generate subdomain failed: %s", resp.Error)
+		return nil, coreerrors.Newf(coreerrors.CodeInternal, "generate subdomain failed: %s", resp.Error)
 	}
 
 	return &resp, nil
@@ -120,11 +120,11 @@ func (c *TunnoxClient) CreateHTTPDomain(req *CreateHTTPDomainRequest) (*CreateHT
 	var resp CreateHTTPDomainResponse
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
 		corelog.Errorf("Client.CreateHTTPDomain: failed to parse response data: %v, Data=%s", err, cmdResp.Data)
-		return nil, fmt.Errorf("failed to parse response data: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	if !resp.Success {
-		return nil, fmt.Errorf("create HTTP domain failed: %s", resp.Error)
+		return nil, coreerrors.Newf(coreerrors.CodeInternal, "create HTTP domain failed: %s", resp.Error)
 	}
 
 	corelog.Infof("Client.CreateHTTPDomain: success, MappingID=%s, Domain=%s", resp.MappingID, resp.FullDomain)
@@ -144,11 +144,11 @@ func (c *TunnoxClient) ListHTTPDomains() (*ListHTTPDomainsResponse, error) {
 
 	var resp ListHTTPDomainsResponse
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response data: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	if !resp.Success {
-		return nil, fmt.Errorf("list HTTP domains failed: %s", resp.Error)
+		return nil, coreerrors.Newf(coreerrors.CodeInternal, "list HTTP domains failed: %s", resp.Error)
 	}
 
 	return &resp, nil
@@ -176,11 +176,11 @@ func (c *TunnoxClient) DeleteHTTPDomain(mappingID string) error {
 		Error   string `json:"error,omitempty"`
 	}
 	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
-		return fmt.Errorf("failed to parse response data: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response data")
 	}
 
 	if !resp.Success {
-		return fmt.Errorf("delete HTTP domain failed: %s", resp.Error)
+		return coreerrors.Newf(coreerrors.CodeInternal, "delete HTTP domain failed: %s", resp.Error)
 	}
 
 	corelog.Infof("Client.DeleteHTTPDomain: deleted mapping %s", mappingID)

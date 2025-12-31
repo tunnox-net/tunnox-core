@@ -130,7 +130,7 @@ func (r *ClientRegistry) GetByClientID(clientID int64) *ControlConnection {
 	return r.clientIDMap[clientID]
 }
 
-// Remove 移除控制连接
+// Remove 移除控制连接（并关闭 stream）
 func (r *ClientRegistry) Remove(connID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -142,6 +142,29 @@ func (r *ClientRegistry) Remove(connID string) {
 
 	r.removeConnectionLocked(conn)
 	r.logger.Debugf("ClientRegistry: removed connection %s", connID)
+}
+
+// Unregister 从映射中移除连接但不关闭 stream
+// 用于隧道连接场景：连接从控制连接映射移除后仍需要继续使用
+func (r *ClientRegistry) Unregister(connID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	conn, exists := r.connMap[connID]
+	if !exists {
+		return
+	}
+
+	// 从 clientIDMap 移除（只有在映射确实指向这个连接时才移除）
+	if conn.Authenticated && conn.ClientID > 0 {
+		if existingConn, exists := r.clientIDMap[conn.ClientID]; exists && existingConn.ConnID == connID {
+			delete(r.clientIDMap, conn.ClientID)
+		}
+	}
+
+	// 从 connMap 移除（但不关闭 stream）
+	delete(r.connMap, connID)
+	r.logger.Debugf("ClientRegistry: unregistered connection %s (stream kept open)", connID)
 }
 
 // KickOldConnection 踢掉旧的控制连接

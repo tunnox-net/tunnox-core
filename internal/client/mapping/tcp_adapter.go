@@ -8,6 +8,7 @@ import (
 
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/config"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 )
 
@@ -28,7 +29,7 @@ func (a *TCPMappingAdapter) StartListener(config config.MappingConfig) error {
 	addr := fmt.Sprintf("127.0.0.1:%d", config.LocalPort)
 	listener, err := net.Listen("tcp4", addr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", addr, err)
+		return coreerrors.Wrapf(err, coreerrors.CodeNetworkError, "failed to listen on %s", addr)
 	}
 
 	a.listener = listener
@@ -39,7 +40,7 @@ func (a *TCPMappingAdapter) StartListener(config config.MappingConfig) error {
 // Accept 接受TCP连接
 func (a *TCPMappingAdapter) Accept() (io.ReadWriteCloser, error) {
 	if a.listener == nil {
-		return nil, fmt.Errorf("TCP listener not initialized")
+		return nil, coreerrors.New(coreerrors.CodeInvalidState, "TCP listener not initialized")
 	}
 
 	// 设置 Accept 超时（5秒），避免永久阻塞
@@ -52,7 +53,7 @@ func (a *TCPMappingAdapter) Accept() (io.ReadWriteCloser, error) {
 
 	conn, err := a.listener.Accept()
 
-	// 清除超时设置
+	// 清除超时设置（忽略错误，非关键操作）
 	if isTCP && tcpListener != nil {
 		_ = tcpListener.SetDeadline(time.Time{})
 	}

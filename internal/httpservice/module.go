@@ -3,10 +3,13 @@
 package httpservice
 
 import (
+	"net"
+
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/health"
 	"tunnox-core/internal/protocol/httptypes"
+	"tunnox-core/internal/stream"
 
 	"github.com/gorilla/mux"
 )
@@ -76,10 +79,10 @@ type SessionManagerInterface interface {
 // 用于解耦 HTTP 服务与 session 包的隧道连接依赖
 type TunnelConnectionInterface interface {
 	// GetNetConn 获取底层网络连接
-	GetNetConn() interface{}
+	GetNetConn() net.Conn
 
 	// GetStream 获取数据流
-	GetStream() interface{}
+	GetStream() stream.PackageStreamer
 
 	// Read 读取数据
 	Read(p []byte) (n int, err error)

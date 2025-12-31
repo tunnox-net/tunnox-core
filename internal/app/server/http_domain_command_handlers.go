@@ -269,7 +269,12 @@ type HTTPDomainResponse struct {
 }
 
 // marshalResponse 序列化响应
+// 注意：此辅助函数用于命令响应序列化，失败时返回空字符串并记录日志
 func marshalResponse(resp interface{}) string {
-	data, _ := json.Marshal(resp)
+	data, err := json.Marshal(resp)
+	if err != nil {
+		corelog.Errorf("marshalResponse: failed to marshal response: %v", err)
+		return ""
+	}
 	return string(data)
 }

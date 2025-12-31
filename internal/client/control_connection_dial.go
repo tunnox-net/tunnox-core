@@ -1,10 +1,10 @@
 package client
 
 import (
-	"fmt"
 	"strings"
 
 	"tunnox-core/internal/client/transport"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 )
@@ -16,7 +16,7 @@ func (c *TunnoxClient) connectWithAutoDetection() error {
 
 	attempt, err := connector.ConnectWithAutoDetection(c.Ctx())
 	if err != nil {
-		return fmt.Errorf("auto connection failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "auto connection failed")
 	}
 
 	// 更新配置（更新内存中的配置）
@@ -78,13 +78,13 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 	// 检查协议是否可用
 	if !transport.IsProtocolAvailable(protocol) {
 		availableProtocols := transport.GetAvailableProtocolNames()
-		return fmt.Errorf("protocol %q is not available (compiled protocols: %v)", protocol, availableProtocols)
+		return coreerrors.Newf(coreerrors.CodeProtocolError, "protocol %q is not available (compiled protocols: %v)", protocol, availableProtocols)
 	}
 
 	// 使用统一的协议注册表拨号
 	conn, err := transport.Dial(c.Ctx(), protocol, address)
 	if err != nil {
-		return fmt.Errorf("failed to dial server (%s): %w", protocol, err)
+		return coreerrors.Wrapf(err, coreerrors.CodeNetworkError, "failed to dial server (%s)", protocol)
 	}
 
 	// TCP 特殊处理：设置 KeepAlive
@@ -125,7 +125,7 @@ func (c *TunnoxClient) connectWithEndpoint(protocol, address string) error {
 			c.controlConn = nil
 		}
 		c.mu.Unlock()
-		return fmt.Errorf("handshake failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "handshake failed")
 	}
 
 	// 启动读取循环

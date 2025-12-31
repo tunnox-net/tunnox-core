@@ -2,9 +2,10 @@
 package buffer
 
 import (
-	"errors"
 	"sync"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 )
 
@@ -97,11 +98,11 @@ func (b *SendBuffer) Send(data []byte, pkt *packet.TransferPacket) (uint64, erro
 
 	// 检查缓冲区是否已满
 	if len(b.Buffer) >= b.maxBufferedPackets {
-		return 0, errors.New("send buffer full: too many packets")
+		return 0, coreerrors.New(coreerrors.CodeQuotaExceeded, "send buffer full: too many packets")
 	}
 
 	if b.CurrentBufferSize+len(data) > b.maxBufferSize {
-		return 0, errors.New("send buffer full: size limit exceeded")
+		return 0, coreerrors.New(coreerrors.CodeQuotaExceeded, "send buffer full: size limit exceeded")
 	}
 
 	// 分配序列号

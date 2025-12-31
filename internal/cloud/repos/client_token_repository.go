@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
@@ -72,22 +74,22 @@ func (r *ClientTokenRepository) GetToken(clientID int64) (*models.ClientToken, e
 		if err == storage.ErrKeyNotFound {
 			return nil, nil // Token不存在
 		}
-		return nil, fmt.Errorf("failed to get token: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get token")
 	}
 
 	// 反序列化
 	var token models.ClientToken
 	if jsonStr, ok := value.(string); ok {
 		if err := json.Unmarshal([]byte(jsonStr), &token); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal token: %w", err)
+			return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to unmarshal token")
 		}
 	} else {
-		return nil, fmt.Errorf("invalid token type: %T", value)
+		return nil, coreerrors.Newf(coreerrors.CodeInvalidData, "invalid token type: %T", value)
 	}
 
 	// 检查是否过期
 	if token.IsExpired() {
-		// 已过期，删除并返回nil
+		// 已过期，删除并返回nil（忽略删除错误，返回nil表示无有效token）
 		_ = r.DeleteToken(clientID)
 		return nil, nil
 	}
@@ -104,17 +106,17 @@ func (r *ClientTokenRepository) GetToken(clientID int64) (*models.ClientToken, e
 //   - error: 错误信息
 func (r *ClientTokenRepository) SetToken(token *models.ClientToken) error {
 	if token == nil {
-		return fmt.Errorf("token is nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "token is nil")
 	}
 
 	// 验证Token有效性
 	if err := token.Validate(); err != nil {
-		return fmt.Errorf("invalid token: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeValidationError, "invalid token")
 	}
 
 	// 如果已过期，不保存
 	if token.IsExpired() {
-		return fmt.Errorf("token already expired")
+		return coreerrors.New(coreerrors.CodeTokenExpired, "token already expired")
 	}
 
 	key := fmt.Sprintf("%s%d", constants.KeyPrefixRuntimeClientToken, token.ClientID)
@@ -122,18 +124,18 @@ func (r *ClientTokenRepository) SetToken(token *models.ClientToken) error {
 	// 序列化
 	jsonBytes, err := json.Marshal(token)
 	if err != nil {
-		return fmt.Errorf("failed to marshal token: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal token")
 	}
 
 	// 计算TTL（Token过期时间）
 	ttl := token.TTL()
 	if ttl <= 0 {
-		return fmt.Errorf("token TTL is zero or negative")
+		return coreerrors.New(coreerrors.CodeTokenExpired, "token TTL is zero or negative")
 	}
 
 	// 写入缓存
 	if err := r.storage.Set(key, string(jsonBytes), ttl); err != nil {
-		return fmt.Errorf("failed to set token: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to set token")
 	}
 
 	corelog.Debugf("ClientTokenRepository: set token for client %d (expires_in=%s)",
@@ -153,7 +155,7 @@ func (r *ClientTokenRepository) DeleteToken(clientID int64) error {
 	key := fmt.Sprintf("%s%d", constants.KeyPrefixRuntimeClientToken, clientID)
 
 	if err := r.storage.Delete(key); err != nil && err != storage.ErrKeyNotFound {
-		return fmt.Errorf("failed to delete token: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to delete token")
 	}
 
 	corelog.Debugf("ClientTokenRepository: deleted token for client %d", clientID)
@@ -185,7 +187,7 @@ func (r *ClientTokenRepository) TokenExists(clientID int64) (bool, error) {
 // 返回：
 //   - error: 错误信息
 func (r *ClientTokenRepository) RefreshToken(token *models.ClientToken) error {
-	// 先删除旧Token
+	// 先删除旧Token（忽略删除错误，新Token会覆盖旧的）
 	_ = r.DeleteToken(token.ClientID)
 
 	// 设置新Token

@@ -10,6 +10,7 @@ import (
 	"tunnox-core/internal/cloud/stats"
 	cloudutils "tunnox-core/internal/cloud/utils"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
@@ -204,7 +205,7 @@ func (s *portMappingService) UpdatePortMappingStats(mappingID string, stats *sta
 func (s *portMappingService) GetUserPortMappings(userID string) ([]*models.PortMapping, error) {
 	mappings, err := s.mappingRepo.GetUserPortMappings(userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user port mappings for %s: %w", userID, err)
+		return nil, coreerrors.Wrapf(err, coreerrors.CodeStorageError, "failed to get user port mappings for %s", userID)
 	}
 	return mappings, nil
 }

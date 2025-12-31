@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -66,7 +68,7 @@ func (c *ManagementAPIClient) GenerateConnectionCode(req *GenerateCodeRequest) (
 
 	var resp GenerateCodeResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response")
 	}
 
 	return &resp, nil
@@ -99,7 +101,7 @@ func (c *ManagementAPIClient) ListConnectionCodes() (*ListConnectionCodesRespons
 
 	var resp ListConnectionCodesResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response")
 	}
 
 	return &resp, nil
@@ -134,7 +136,7 @@ func (c *ManagementAPIClient) ActivateConnectionCode(req *ActivateCodeRequest) (
 
 	var resp ActivateCodeResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response")
 	}
 
 	return &resp, nil
@@ -174,7 +176,7 @@ func (c *ManagementAPIClient) ListMappings(mappingType string) (*ListMappingsRes
 
 	var resp ListMappingsResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response")
 	}
 
 	return &resp, nil
@@ -191,7 +193,7 @@ func (c *ManagementAPIClient) GetMapping(mappingID string) (*MappingInfo, error)
 
 	var resp MappingInfo
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse response")
 	}
 
 	return &resp, nil
@@ -215,14 +217,14 @@ func (c *ManagementAPIClient) doRequest(method, url string, body interface{}) ([
 	if body != nil {
 		jsonData, err := json.Marshal(body)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request: %w", err)
+			return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal request")
 		}
 		reqBody = bytes.NewReader(jsonData)
 	}
 
 	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to create request")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -232,17 +234,17 @@ func (c *ManagementAPIClient) doRequest(method, url string, body interface{}) ([
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "request failed")
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to read response")
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, string(respBody))
+		return nil, coreerrors.Newf(coreerrors.CodeNetworkError, "API error (%d): %s", resp.StatusCode, string(respBody))
 	}
 
 	return respBody, nil

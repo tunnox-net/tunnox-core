@@ -9,6 +9,7 @@ import (
 
 	"tunnox-core/internal/command"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -36,29 +37,29 @@ func NewNotificationService(parentCtx context.Context, registry *ClientRegistry)
 // 实现 command.NotificationRouter 接口
 func (ns *NotificationService) SendToClient(targetClientID int64, notification *packet.ClientNotification) error {
 	if ns.IsClosed() {
-		return fmt.Errorf("notification service is closed")
+		return coreerrors.New(coreerrors.CodeServiceClosed, "notification service is closed")
 	}
 
 	if notification == nil {
-		return fmt.Errorf("notification cannot be nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "notification cannot be nil")
 	}
 
 	// 检查通知是否已过期
 	if notification.IsExpired() {
 		corelog.Warnf("NotificationService: notification %s has expired, skipping", notification.NotifyID)
-		return fmt.Errorf("notification has expired")
+		return coreerrors.New(coreerrors.CodeExpired, "notification has expired")
 	}
 
 	// 获取目标客户端的控制连接
 	conn := ns.registry.GetByClientID(targetClientID)
 	if conn == nil {
-		return fmt.Errorf("client %d not found or offline", targetClientID)
+		return coreerrors.Newf(coreerrors.CodeClientOffline, "client %d not found or offline", targetClientID)
 	}
 
 	// 序列化通知
 	notifyBody, err := json.Marshal(notification)
 	if err != nil {
-		return fmt.Errorf("failed to marshal notification: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal notification")
 	}
 
 	// 创建通知数据包
@@ -74,7 +75,7 @@ func (ns *NotificationService) SendToClient(targetClientID int64, notification *
 	if _, err := conn.Stream.WritePacket(notifyPkt, true, 0); err != nil {
 		corelog.Errorf("NotificationService: failed to send notification %s to client %d: %v",
 			notification.NotifyID, targetClientID, err)
-		return fmt.Errorf("failed to send notification: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send notification")
 	}
 
 	corelog.Debugf("NotificationService: sent notification %s (type=%s) to client %d",

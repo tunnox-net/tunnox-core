@@ -55,22 +55,26 @@ func TestBroadcastShutdown_WithConnections(t *testing.T) {
 	mockStream1 := &mockWriteStream{packets: make([]interface{}, 0)}
 	mockStream2 := &mockWriteStream{packets: make([]interface{}, 0)}
 
-	// 注册控制连接
-	sessionMgr.controlConnLock.Lock()
-	sessionMgr.controlConnMap[conn1ID] = &ControlConnection{
-		ConnID:   conn1ID,
-		ClientID: 101,
-		Stream:   mockStream1,
+	// 使用 RegisterControlConnection 注册
+	conn1 := &ControlConnection{
+		ConnID:        conn1ID,
+		ClientID:      101,
+		Stream:        mockStream1,
+		Authenticated: true,
 	}
-	sessionMgr.clientIDIndexMap[101] = sessionMgr.controlConnMap[conn1ID]
+	sessionMgr.RegisterControlConnection(conn1)
 
-	sessionMgr.controlConnMap[conn2ID] = &ControlConnection{
-		ConnID:   conn2ID,
-		ClientID: 102,
-		Stream:   mockStream2,
+	conn2 := &ControlConnection{
+		ConnID:        conn2ID,
+		ClientID:      102,
+		Stream:        mockStream2,
+		Authenticated: true,
 	}
-	sessionMgr.clientIDIndexMap[102] = sessionMgr.controlConnMap[conn2ID]
-	sessionMgr.controlConnLock.Unlock()
+	sessionMgr.RegisterControlConnection(conn2)
+
+	// 更新认证信息（会更新 clientIDMap）
+	_ = sessionMgr.UpdateControlConnectionAuth(conn1ID, 101, "user1")
+	_ = sessionMgr.UpdateControlConnectionAuth(conn2ID, 102, "user2")
 
 	// 测试广播
 	successCount, failureCount := sessionMgr.BroadcastShutdown(
@@ -104,33 +108,24 @@ func TestGetActiveTunnelCount(t *testing.T) {
 	// 初始应该为0
 	assert.Equal(t, 0, sessionMgr.GetActiveTunnelCount(), "Initial tunnel count should be 0")
 
-	// 添加隧道连接
+	// 使用 RegisterTunnelConnection 添加隧道连接
 	tunnel1ID, _ := idManager.GenerateTunnelID()
 	tunnel2ID, _ := idManager.GenerateTunnelID()
 	conn1ID, _ := idManager.GenerateConnectionID()
 	conn2ID, _ := idManager.GenerateConnectionID()
 
-	sessionMgr.tunnelConnLock.Lock()
-	sessionMgr.tunnelConnMap[conn1ID] = &TunnelConnection{
-		ConnID:   conn1ID,
-		TunnelID: tunnel1ID,
-	}
-	sessionMgr.tunnelIDMap[tunnel1ID] = sessionMgr.tunnelConnMap[conn1ID]
+	tunnelConn1 := NewTunnelConnection(conn1ID, nil, nil, "tcp")
+	tunnelConn1.TunnelID = tunnel1ID
+	sessionMgr.RegisterTunnelConnection(tunnelConn1)
 
-	sessionMgr.tunnelConnMap[conn2ID] = &TunnelConnection{
-		ConnID:   conn2ID,
-		TunnelID: tunnel2ID,
-	}
-	sessionMgr.tunnelIDMap[tunnel2ID] = sessionMgr.tunnelConnMap[conn2ID]
-	sessionMgr.tunnelConnLock.Unlock()
+	tunnelConn2 := NewTunnelConnection(conn2ID, nil, nil, "tcp")
+	tunnelConn2.TunnelID = tunnel2ID
+	sessionMgr.RegisterTunnelConnection(tunnelConn2)
 
 	assert.Equal(t, 2, sessionMgr.GetActiveTunnelCount(), "Should have 2 active tunnels")
 
-	// 移除一个隧道
-	sessionMgr.tunnelConnLock.Lock()
-	delete(sessionMgr.tunnelConnMap, conn1ID)
-	delete(sessionMgr.tunnelIDMap, tunnel1ID)
-	sessionMgr.tunnelConnLock.Unlock()
+	// 使用 RemoveTunnelConnection 移除一个隧道
+	sessionMgr.RemoveTunnelConnection(conn1ID)
 
 	assert.Equal(t, 1, sessionMgr.GetActiveTunnelCount(), "Should have 1 active tunnel")
 }
@@ -162,17 +157,13 @@ func TestWaitForTunnelsToComplete_WithTunnels_Timeout(t *testing.T) {
 	idManager := idgen.NewIDManager(memStorage, ctx)
 	sessionMgr := NewSessionManager(idManager, ctx)
 
-	// 添加一个隧道
+	// 使用 RegisterTunnelConnection 添加隧道
 	tunnelID, _ := idManager.GenerateTunnelID()
 	connID, _ := idManager.GenerateConnectionID()
 
-	sessionMgr.tunnelConnLock.Lock()
-	sessionMgr.tunnelConnMap[connID] = &TunnelConnection{
-		ConnID:   connID,
-		TunnelID: tunnelID,
-	}
-	sessionMgr.tunnelIDMap[tunnelID] = sessionMgr.tunnelConnMap[connID]
-	sessionMgr.tunnelConnLock.Unlock()
+	tunnelConn := NewTunnelConnection(connID, nil, nil, "tcp")
+	tunnelConn.TunnelID = tunnelID
+	sessionMgr.RegisterTunnelConnection(tunnelConn)
 
 	// 测试超时（2秒）
 	start := time.Now()
@@ -193,25 +184,18 @@ func TestWaitForTunnelsToComplete_WithTunnels_Complete(t *testing.T) {
 	idManager := idgen.NewIDManager(memStorage, ctx)
 	sessionMgr := NewSessionManager(idManager, ctx)
 
-	// 添加一个隧道
+	// 使用 RegisterTunnelConnection 添加隧道
 	tunnelID, _ := idManager.GenerateTunnelID()
 	connID, _ := idManager.GenerateConnectionID()
 
-	sessionMgr.tunnelConnLock.Lock()
-	sessionMgr.tunnelConnMap[connID] = &TunnelConnection{
-		ConnID:   connID,
-		TunnelID: tunnelID,
-	}
-	sessionMgr.tunnelIDMap[tunnelID] = sessionMgr.tunnelConnMap[connID]
-	sessionMgr.tunnelConnLock.Unlock()
+	tunnelConn := NewTunnelConnection(connID, nil, nil, "tcp")
+	tunnelConn.TunnelID = tunnelID
+	sessionMgr.RegisterTunnelConnection(tunnelConn)
 
 	// 1秒后移除隧道（模拟完成）
 	go func() {
 		time.Sleep(1 * time.Second)
-		sessionMgr.tunnelConnLock.Lock()
-		delete(sessionMgr.tunnelConnMap, connID)
-		delete(sessionMgr.tunnelIDMap, tunnelID)
-		sessionMgr.tunnelConnLock.Unlock()
+		sessionMgr.RemoveTunnelConnection(connID)
 	}()
 
 	// 测试等待完成

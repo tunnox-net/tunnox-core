@@ -2,8 +2,9 @@ package command
 
 import (
 	"encoding/json"
-	"fmt"
 	"testing"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 
 	"github.com/stretchr/testify/assert"
@@ -155,12 +156,12 @@ func TestBaseCommandHandler_CreateResponse(t *testing.T) {
 func TestBaseCommandHandler_CreateErrorResponse(t *testing.T) {
 	handler := NewTestHandler()
 
-	response := handler.CreateErrorResponse(fmt.Errorf("test error"), "req_456")
+	response := handler.CreateErrorResponse(coreerrors.New(coreerrors.CodeInternalError, "test error"), "req_456")
 
 	assert.NotNil(t, response)
 	assert.False(t, response.Success)
 	assert.Equal(t, "req_456", response.RequestID)
-	assert.Equal(t, "test error", response.Error)
+	assert.Contains(t, response.Error, "test error")
 	assert.Equal(t, "", response.Data) // Data 字段为空字符串
 }
 
@@ -281,13 +282,13 @@ func NewCustomValidationHandler() *CustomValidationHandler {
 // ValidateRequest 重写验证方法
 func (h *CustomValidationHandler) ValidateRequest(request *TestRequest) error {
 	if request.Name == "" {
-		return fmt.Errorf("name is required")
+		return coreerrors.New(coreerrors.CodeValidationError, "name is required")
 	}
 	if request.Age < 0 || request.Age > 150 {
-		return fmt.Errorf("invalid age: %d", request.Age)
+		return coreerrors.Newf(coreerrors.CodeValidationError, "invalid age: %d", request.Age)
 	}
 	if request.Email == "" {
-		return fmt.Errorf("email is required")
+		return coreerrors.New(coreerrors.CodeValidationError, "email is required")
 	}
 	return nil
 }

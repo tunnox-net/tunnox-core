@@ -9,7 +9,7 @@ import (
 
 func TestErrorMatching(t *testing.T) {
 	factory := storage.NewStorageFactory(context.TODO())
-	memStorage, _ := factory.CreateStorage(storage.StorageTypeMemory, nil)
+	memStorage, _ := factory.CreateStorage(&storage.MemoryStorageConfig{})
 	repo := NewRepository(memStorage)
 	connCodeRepo := NewConnectionCodeRepository(repo)
 

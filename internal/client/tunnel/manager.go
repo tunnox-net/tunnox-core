@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
@@ -63,13 +64,13 @@ func NewTunnelManager(parentCtx context.Context, role TunnelRole) *DefaultTunnel
 // RegisterTunnel 注册隧道
 func (m *DefaultTunnelManager) RegisterTunnel(tunnel *Tunnel) error {
 	if tunnel == nil {
-		return fmt.Errorf("tunnel is nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "tunnel is nil")
 	}
 
 	// 检查是否已存在
 	if _, exists := m.tunnels.LoadOrStore(tunnel.id, tunnel); exists {
 		corelog.Warnf("TunnelManager[%s]: tunnel %s already exists", m.role, tunnel.id)
-		return fmt.Errorf("tunnel already exists: %s", tunnel.id)
+		return coreerrors.Newf(coreerrors.CodeAlreadyExists, "tunnel already exists: %s", tunnel.id)
 	}
 
 	corelog.Debugf("TunnelManager[%s]: registered tunnel %s", m.role, tunnel.id)
@@ -118,7 +119,7 @@ func (m *DefaultTunnelManager) CountTunnels() int {
 func (m *DefaultTunnelManager) CloseTunnel(tunnelID string, reason CloseReason) error {
 	tunnel := m.GetTunnel(tunnelID)
 	if tunnel == nil {
-		return fmt.Errorf("tunnel not found: %s", tunnelID)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "tunnel not found: %s", tunnelID)
 	}
 
 	return tunnel.Close(reason, nil)
@@ -213,7 +214,7 @@ func (m *DefaultTunnelManager) OnTunnelError(tunnelID, mappingID, errorCode, err
 
 		// 如果是致命错误，尝试关闭该 tunnel
 		if tunnel := m.GetTunnel(tunnelID); tunnel != nil {
-			tunnel.Close(CloseReasonError, fmt.Errorf("%s: %s", errorCode, errorMessage))
+			tunnel.Close(CloseReasonError, coreerrors.Newf(coreerrors.CodeInternalError, "%s: %s", errorCode, errorMessage))
 		}
 	}
 }

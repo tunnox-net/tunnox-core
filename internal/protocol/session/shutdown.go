@@ -50,13 +50,8 @@ func (s *SessionManager) BroadcastShutdown(
 		Message:            message,
 	}
 
-	// 获取所有指令连接的快照（避免长时间持锁）
-	s.controlConnLock.RLock()
-	controlConns := make([]*ControlConnection, 0, len(s.controlConnMap))
-	for _, conn := range s.controlConnMap {
-		controlConns = append(controlConns, conn)
-	}
-	s.controlConnLock.RUnlock()
+	// 使用 clientRegistry 获取所有控制连接
+	controlConns := s.clientRegistry.List()
 
 	corelog.Infof("SessionManager: found %d control connections to notify", len(controlConns))
 
@@ -140,10 +135,7 @@ func (s *SessionManager) BroadcastShutdown(
 //
 // 返回所有活跃的隧道连接数量，用于优雅关闭时判断是否还有传输任务。
 func (s *SessionManager) GetActiveTunnelCount() int {
-	s.tunnelConnLock.RLock()
-	defer s.tunnelConnLock.RUnlock()
-
-	return len(s.tunnelConnMap)
+	return s.tunnelRegistry.Count()
 }
 
 // GetActiveTunnels 获取活跃隧道数（health.StatsProvider接口别名）

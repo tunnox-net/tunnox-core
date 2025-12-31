@@ -2,9 +2,9 @@ package client
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
 
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
@@ -14,12 +14,12 @@ import (
 func (c *TunnoxClient) SendTunnelCloseNotify(targetClientID int64, tunnelID, mappingID, reason string) error {
 	if !c.IsConnected() {
 		corelog.Warnf("Client: cannot send tunnel close notify, not connected")
-		return fmt.Errorf("not connected")
+		return coreerrors.New(coreerrors.CodeConnectionError, "not connected")
 	}
 
 	if targetClientID <= 0 {
 		corelog.Warnf("Client: invalid targetClientID for tunnel close notify: %d", targetClientID)
-		return fmt.Errorf("invalid target client ID")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "invalid target client ID")
 	}
 
 	// 构造 TunnelClosedPayload
@@ -32,7 +32,7 @@ func (c *TunnoxClient) SendTunnelCloseNotify(targetClientID int64, tunnelID, map
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal tunnel closed payload: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal tunnel closed payload")
 	}
 
 	// 构造 C2CNotifyRequest

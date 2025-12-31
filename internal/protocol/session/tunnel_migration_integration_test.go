@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/storage"
 
 	"github.com/stretchr/testify/assert"
@@ -17,46 +19,39 @@ import (
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 func TestSaveActiveTunnelStates(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	memStorage := storage.NewMemoryStorage(ctx)
+	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	// 创建TunnelStateManager
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
 
-	// 创建SessionManager（简化版）
-	sessionMgr := &SessionManager{
-		tunnelConnMap:      make(map[string]*TunnelConnection),
-		tunnelStateManager: stateManager,
-		nodeID:             "test-node-123",
-	}
+	// 创建SessionManager（使用构造函数）
+	sessionMgr := NewSessionManager(idManager, ctx)
+	defer sessionMgr.Close()
 
-	// 添加一些测试隧道
-	tunnel1 := &TunnelConnection{
-		TunnelID:      "tunnel-1",
-		MappingID:     "mapping-abc",
-		CreatedAt:     time.Now(),
-		LastActiveAt:  time.Now(),
-		sendBuffer:    NewTunnelSendBuffer(),
-		receiveBuffer: NewTunnelReceiveBuffer(),
-		enableSeqNum:  false, // 未启用序列号
-	}
+	// 设置TunnelStateManager
+	sessionMgr.SetTunnelStateManager(stateManager)
 
-	tunnel2 := &TunnelConnection{
-		TunnelID:      "tunnel-2",
-		MappingID:     "mapping-xyz",
-		CreatedAt:     time.Now(),
-		LastActiveAt:  time.Now(),
-		sendBuffer:    NewTunnelSendBuffer(),
-		receiveBuffer: NewTunnelReceiveBuffer(),
-		enableSeqNum:  true, // 启用序列号
-	}
+	// 添加一些测试隧道 - 使用构造函数创建并注册
+	conn1ID, _ := idManager.GenerateConnectionID()
+	tunnel1 := NewTunnelConnection(conn1ID, nil, nil, "tcp")
+	tunnel1.TunnelID = "tunnel-1"
+	tunnel1.MappingID = "mapping-abc"
+	// tunnel1 不启用序列号（默认）
+	sessionMgr.RegisterTunnelConnection(tunnel1)
 
+	conn2ID, _ := idManager.GenerateConnectionID()
+	tunnel2 := NewTunnelConnection(conn2ID, nil, nil, "tcp")
+	tunnel2.TunnelID = "tunnel-2"
+	tunnel2.MappingID = "mapping-xyz"
+	tunnel2.EnableSequenceNumbers() // 启用序列号
 	// 为tunnel2发送一些数据（模拟活跃隧道）
-	tunnel2.sendBuffer.Send([]byte("test-data-1"), nil)
-	tunnel2.sendBuffer.Send([]byte("test-data-2"), nil)
-
-	sessionMgr.tunnelConnMap["tunnel-1"] = tunnel1
-	sessionMgr.tunnelConnMap["tunnel-2"] = tunnel2
+	tunnel2.GetSendBuffer().Send([]byte("test-data-1"), nil)
+	tunnel2.GetSendBuffer().Send([]byte("test-data-2"), nil)
+	sessionMgr.RegisterTunnelConnection(tunnel2)
 
 	// 保存状态
 	err := sessionMgr.SaveActiveTunnelStates()
@@ -78,14 +73,17 @@ func TestSaveActiveTunnelStates(t *testing.T) {
 }
 
 func TestGenerateTunnelResumeToken(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	memStorage := storage.NewMemoryStorage(ctx)
+	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
 
-	sessionMgr := &SessionManager{
-		tunnelStateManager: stateManager,
-	}
+	sessionMgr := NewSessionManager(idManager, ctx)
+	defer sessionMgr.Close()
+	sessionMgr.SetTunnelStateManager(stateManager)
 
 	// 先保存一个隧道状态
 	tunnelState := &TunnelState{
@@ -109,14 +107,17 @@ func TestGenerateTunnelResumeToken(t *testing.T) {
 }
 
 func TestValidateTunnelResumeToken(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	memStorage := storage.NewMemoryStorage(ctx)
+	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
 
-	sessionMgr := &SessionManager{
-		tunnelStateManager: stateManager,
-	}
+	sessionMgr := NewSessionManager(idManager, ctx)
+	defer sessionMgr.Close()
+	sessionMgr.SetTunnelStateManager(stateManager)
 
 	// 1. 保存隧道状态
 	tunnelState := &TunnelState{
@@ -138,14 +139,17 @@ func TestValidateTunnelResumeToken(t *testing.T) {
 }
 
 func TestValidateTunnelResumeToken_Invalid(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	memStorage := storage.NewMemoryStorage(ctx)
+	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
 
-	sessionMgr := &SessionManager{
-		tunnelStateManager: stateManager,
-	}
+	sessionMgr := NewSessionManager(idManager, ctx)
+	defer sessionMgr.Close()
+	sessionMgr.SetTunnelStateManager(stateManager)
 
 	// 无效的Token格式
 	_, err := sessionMgr.ValidateTunnelResumeToken("invalid-token")
@@ -154,14 +158,17 @@ func TestValidateTunnelResumeToken_Invalid(t *testing.T) {
 }
 
 func TestValidateTunnelResumeToken_SignatureMismatch(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	memStorage := storage.NewMemoryStorage(ctx)
+	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
 
-	sessionMgr := &SessionManager{
-		tunnelStateManager: stateManager,
-	}
+	sessionMgr := NewSessionManager(idManager, ctx)
+	defer sessionMgr.Close()
+	sessionMgr.SetTunnelStateManager(stateManager)
 
 	// 1. 保存隧道状态
 	tunnelState := &TunnelState{
@@ -186,14 +193,17 @@ func TestValidateTunnelResumeToken_SignatureMismatch(t *testing.T) {
 }
 
 func TestValidateTunnelResumeToken_Expired(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	memStorage := storage.NewMemoryStorage(ctx)
+	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
 
-	sessionMgr := &SessionManager{
-		tunnelStateManager: stateManager,
-	}
+	sessionMgr := NewSessionManager(idManager, ctx)
+	defer sessionMgr.Close()
+	sessionMgr.SetTunnelStateManager(stateManager)
 
 	// 1. 保存隧道状态
 	tunnelState := &TunnelState{
@@ -218,49 +228,46 @@ func TestValidateTunnelResumeToken_Expired(t *testing.T) {
 }
 
 func TestTunnelResumeFlow_EndToEnd(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	memStorage := storage.NewMemoryStorage(ctx)
+	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	stateManager := NewTunnelStateManager(memStorage, "test-secret")
 	migrationManager := NewTunnelMigrationManager(stateManager, nil)
 
-	sessionMgr := &SessionManager{
-		tunnelConnMap:      make(map[string]*TunnelConnection),
-		tunnelStateManager: stateManager,
-		migrationManager:   migrationManager,
-		nodeID:             "node-A",
-	}
+	// 创建 SessionManager A (服务器A)
+	sessionMgrA := NewSessionManager(idManager, ctx)
+	defer sessionMgrA.Close()
+	sessionMgrA.SetTunnelStateManager(stateManager)
+	sessionMgrA.SetMigrationManager(migrationManager)
 
 	// ========== 阶段1: 服务器A运行，有活跃隧道 ==========
-	tunnel := &TunnelConnection{
-		TunnelID:      "tunnel-e2e",
-		MappingID:     "mapping-e2e",
-		CreatedAt:     time.Now(),
-		LastActiveAt:  time.Now(),
-		sendBuffer:    NewTunnelSendBuffer(),
-		receiveBuffer: NewTunnelReceiveBuffer(),
-		enableSeqNum:  true,
-	}
+	connID, _ := idManager.GenerateConnectionID()
+	tunnel := NewTunnelConnection(connID, nil, nil, "tcp")
+	tunnel.TunnelID = "tunnel-e2e"
+	tunnel.MappingID = "mapping-e2e"
+	tunnel.EnableSequenceNumbers()
 
 	// 发送一些数据
-	tunnel.sendBuffer.Send([]byte("data-before-shutdown"), nil)
-	sessionMgr.tunnelConnMap["tunnel-e2e"] = tunnel
+	tunnel.GetSendBuffer().Send([]byte("data-before-shutdown"), nil)
+	sessionMgrA.RegisterTunnelConnection(tunnel)
 
 	// ========== 阶段2: 服务器A关闭，保存状态 ==========
-	err := sessionMgr.SaveActiveTunnelStates()
+	err := sessionMgrA.SaveActiveTunnelStates()
 	require.NoError(t, err)
 
 	// 生成恢复Token
-	resumeToken, err := sessionMgr.GenerateTunnelResumeToken("tunnel-e2e")
+	resumeToken, err := sessionMgrA.GenerateTunnelResumeToken("tunnel-e2e")
 	require.NoError(t, err)
 	assert.NotEmpty(t, resumeToken)
 
 	// ========== 阶段3: 客户端重连到服务器B ==========
 	// 服务器B使用相同的存储
-	sessionMgrB := &SessionManager{
-		tunnelStateManager: stateManager,
-		nodeID:             "node-B",
-	}
+	sessionMgrB := NewSessionManager(idManager, ctx)
+	defer sessionMgrB.Close()
+	sessionMgrB.SetTunnelStateManager(stateManager)
 
 	// 客户端提供ResumeToken
 	loadedState, err := sessionMgrB.ValidateTunnelResumeToken(resumeToken)
@@ -273,7 +280,7 @@ func TestTunnelResumeFlow_EndToEnd(t *testing.T) {
 
 	// ========== 阶段4: 服务器B恢复隧道 ==========
 	// 注意：缓冲区恢复功能已实现（见 session.RestoreToSendBuffer），
-	// 如需测试缓冲区恢复，可在此处调用：session.RestoreToSendBuffer(newTunnel.sendBuffer, loadedState.BufferedPackets)
+	// 如需测试缓冲区恢复，可在此处调用：session.RestoreToSendBuffer(newTunnel.GetSendBuffer(), loadedState.BufferedPackets)
 
 	corelog.Infof("End-to-end tunnel resume test completed successfully")
 }

@@ -5,7 +5,6 @@ package socks5
 import (
 	"context"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"net"
 	"time"
@@ -176,22 +175,22 @@ func (l *Listener) Handshake(conn net.Conn) (string, int, error) {
 	// 1. 读取版本和认证方法数量
 	buf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return "", 0, fmt.Errorf("failed to read version: %w", err)
+		return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read version")
 	}
 
 	if buf[0] != Version {
-		return "", 0, fmt.Errorf("unsupported SOCKS version: %d", buf[0])
+		return "", 0, coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported SOCKS version: %d", buf[0])
 	}
 
 	nmethods := int(buf[1])
 	if nmethods == 0 {
-		return "", 0, fmt.Errorf("no authentication methods provided")
+		return "", 0, coreerrors.New(coreerrors.CodeProtocolError, "no authentication methods provided")
 	}
 
 	// 读取认证方法列表
 	methods := make([]byte, nmethods)
 	if _, err := io.ReadFull(conn, methods); err != nil {
-		return "", 0, fmt.Errorf("failed to read methods: %w", err)
+		return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read methods")
 	}
 
 	// 2. 选择认证方法（当前仅支持无认证）
@@ -205,27 +204,27 @@ func (l *Listener) Handshake(conn net.Conn) (string, int, error) {
 
 	// 发送认证方法选择
 	if _, err := conn.Write([]byte{Version, authMethod}); err != nil {
-		return "", 0, fmt.Errorf("failed to write auth method: %w", err)
+		return "", 0, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write auth method")
 	}
 
 	if authMethod == AuthNoMatch {
-		return "", 0, fmt.Errorf("no acceptable authentication method")
+		return "", 0, coreerrors.New(coreerrors.CodeProtocolError, "no acceptable authentication method")
 	}
 
 	// 3. 读取 CONNECT 请求
 	buf = make([]byte, 4)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return "", 0, fmt.Errorf("failed to read request: %w", err)
+		return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read request")
 	}
 
 	if buf[0] != Version {
 		l.SendError(conn, RepFailure)
-		return "", 0, fmt.Errorf("invalid version in request: %d", buf[0])
+		return "", 0, coreerrors.Newf(coreerrors.CodeProtocolError, "invalid version in request: %d", buf[0])
 	}
 
 	if buf[1] != CmdConnect {
 		l.SendError(conn, 0x07) // command not supported
-		return "", 0, fmt.Errorf("unsupported command: %d", buf[1])
+		return "", 0, coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported command: %d", buf[1])
 	}
 
 	// 4. 解析目标地址
@@ -236,37 +235,37 @@ func (l *Listener) Handshake(conn net.Conn) (string, int, error) {
 	case AddrIPv4:
 		addr := make([]byte, 4)
 		if _, err := io.ReadFull(conn, addr); err != nil {
-			return "", 0, fmt.Errorf("failed to read IPv4 address: %w", err)
+			return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read IPv4 address")
 		}
 		targetHost = net.IP(addr).String()
 
 	case AddrDomain:
 		lenBuf := make([]byte, 1)
 		if _, err := io.ReadFull(conn, lenBuf); err != nil {
-			return "", 0, fmt.Errorf("failed to read domain length: %w", err)
+			return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read domain length")
 		}
 		domain := make([]byte, lenBuf[0])
 		if _, err := io.ReadFull(conn, domain); err != nil {
-			return "", 0, fmt.Errorf("failed to read domain: %w", err)
+			return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read domain")
 		}
 		targetHost = string(domain)
 
 	case AddrIPv6:
 		addr := make([]byte, 16)
 		if _, err := io.ReadFull(conn, addr); err != nil {
-			return "", 0, fmt.Errorf("failed to read IPv6 address: %w", err)
+			return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read IPv6 address")
 		}
 		targetHost = net.IP(addr).String()
 
 	default:
 		l.SendError(conn, 0x08) // address type not supported
-		return "", 0, fmt.Errorf("unsupported address type: %d", addrType)
+		return "", 0, coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported address type: %d", addrType)
 	}
 
 	// 5. 读取端口
 	portBuf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, portBuf); err != nil {
-		return "", 0, fmt.Errorf("failed to read port: %w", err)
+		return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read port")
 	}
 	targetPort := int(binary.BigEndian.Uint16(portBuf))
 

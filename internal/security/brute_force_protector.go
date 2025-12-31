@@ -10,6 +10,29 @@ import (
 	"tunnox-core/internal/core/dispose"
 )
 
+// 暴力破解防护默认配置常量
+const (
+	// DefaultMaxFailures 默认最大失败次数
+	// 时间窗口内超过此次数将触发临时封禁
+	DefaultMaxFailures = 5
+
+	// DefaultTimeWindow 默认时间窗口
+	// 在此时间窗口内统计失败次数
+	DefaultTimeWindow = 5 * time.Minute
+
+	// DefaultBanDuration 默认封禁时长
+	// 触发临时封禁后的封禁持续时间
+	DefaultBanDuration = 30 * time.Minute
+
+	// DefaultPermanentBanAt 默认永久封禁阈值
+	// 累计失败次数达到此值后永久封禁
+	DefaultPermanentBanAt = 20
+
+	// DefaultBruteForceCleanupInterval 默认清理间隔
+	// 定期清理过期的失败记录和封禁记录
+	DefaultBruteForceCleanupInterval = 1 * time.Minute
+)
+
 // BruteForceProtector 暴力破解防护器
 //
 // 职责：
@@ -54,11 +77,11 @@ type BruteForceConfig struct {
 // DefaultBruteForceConfig 默认配置
 func DefaultBruteForceConfig() *BruteForceConfig {
 	return &BruteForceConfig{
-		MaxFailures:     5,
-		TimeWindow:      5 * time.Minute,
-		BanDuration:     30 * time.Minute,
-		PermanentBanAt:  20,
-		CleanupInterval: 1 * time.Minute,
+		MaxFailures:     DefaultMaxFailures,
+		TimeWindow:      DefaultTimeWindow,
+		BanDuration:     DefaultBanDuration,
+		PermanentBanAt:  DefaultPermanentBanAt,
+		CleanupInterval: DefaultBruteForceCleanupInterval,
 	}
 }
 

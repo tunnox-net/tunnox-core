@@ -10,6 +10,7 @@ import (
 
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/httpservice"
@@ -118,7 +119,7 @@ func (m *WebSocketModule) handleConnection(wsConn *WebSocketServerConn) {
 	var streamConn *types.StreamConnection
 
 	defer func() {
-		// 清理 SessionManager 中的连接（如果已创建）
+		// 清理 SessionManager 中的连接（如果已创建，忽略关闭错误，连接可能已关闭）
 		if streamConn != nil && m.session != nil {
 			_ = m.session.CloseConnection(streamConn.ID)
 		}
@@ -186,20 +187,13 @@ func (m *WebSocketModule) handleConnection(wsConn *WebSocketServerConn) {
 		isTunnelOpenPacket := (pkt.PacketType & 0x3F) == packet.TunnelOpen
 
 		if err := m.session.HandlePacket(streamPacket); err != nil {
-			if isTunnelOpenPacket {
-				errMsg := err.Error()
-				if errMsg == "tunnel source connected, switching to stream mode" ||
-					errMsg == "tunnel target connected, switching to stream mode" ||
-					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" ||
-					errMsg == "tunnel target connected via cross-node forwarding, switching to stream mode" ||
-					errMsg == "tunnel connected to existing bridge, switching to stream mode" {
-					// 启动流模式读取器
-					wsConn.SetStreamMode(true)
-					wsConn.StartStreamModeReader()
-					shouldCloseConn = false
-					streamConn = nil
-					return
-				}
+			if isTunnelOpenPacket && coreerrors.IsCode(err, coreerrors.CodeTunnelModeSwitch) {
+				// 启动流模式读取器
+				wsConn.SetStreamMode(true)
+				wsConn.StartStreamModeReader()
+				shouldCloseConn = false
+				streamConn = nil
+				return
 			}
 			corelog.Errorf("WebSocketModule: failed to handle packet for connection %s: %v", streamConn.ID, err)
 		}

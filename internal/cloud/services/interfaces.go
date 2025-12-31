@@ -1,11 +1,25 @@
 package services
 
 import (
-	"context"
-	"time"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
 )
+
+// ClientNotifier 客户端通知接口
+// 用于在服务层避免循环依赖，与 managers.ClientNotifier 接口兼容
+// 注意：anonymous.Notifier 使用相同的方法签名，满足 Go 的隐式接口实现
+type ClientNotifier interface {
+	NotifyClientUpdate(clientID int64)
+}
+
+// anonymousNotifierAdapter 用于适配 services.ClientNotifier 到 anonymous.Notifier
+type anonymousNotifierAdapter struct {
+	notifier ClientNotifier
+}
+
+func (a *anonymousNotifierAdapter) NotifyClientUpdate(clientID int64) {
+	a.notifier.NotifyClientUpdate(clientID)
+}
 
 // UserService 用户管理服务
 type UserService interface {
@@ -75,7 +89,7 @@ type AnonymousService interface {
 	CreateAnonymousMapping(listenClientID, targetClientID int64, protocol models.Protocol, sourcePort, targetPort int) (*models.PortMapping, error) // ✅ 统一命名：listenClientID
 	GetAnonymousMappings() ([]*models.PortMapping, error)
 	CleanupExpiredAnonymous() error
-	SetNotifier(notifier interface{}) // 使用 interface{} 避免循环依赖，具体实现转换
+	SetNotifier(notifier ClientNotifier)
 }
 
 // ConnectionService 连接管理服务
@@ -94,74 +108,6 @@ type StatsService interface {
 	GetConnectionStats(timeRange string) ([]*stats.ConnectionDataPoint, error)
 }
 
-// JWTTokenInfo JWT令牌信息
-type JWTTokenInfo struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	TokenType    string    `json:"token_type"`
-	ClientID     int64     `json:"client_id"`
-}
-
-// StatsProvider 统计数据提供者接口
-// 由 managers.StatsManager 实现，供 Service 层使用
-type StatsProvider interface {
-	// GetCounter 获取统计计数器
-	GetCounter() *stats.StatsCounter
-	// GetUserStats 获取用户统计信息
-	GetUserStats(userID string) (*stats.UserStats, error)
-	// GetClientStats 获取客户端统计信息
-	GetClientStats(clientID int64) (*stats.ClientStats, error)
-}
-
-// JWTProvider JWT令牌提供者接口
-// 由 managers.JWTManager 实现，供 Service 层使用
-// 注意：返回类型使用 interface{} 以避免循环依赖，实际实现会返回具体类型
-type JWTProvider interface {
-	// GenerateTokenPair 生成Token对（访问Token + 刷新Token）
-	// 返回 *managers.JWTTokenInfo
-	GenerateTokenPair(ctx context.Context, client *models.Client) (JWTTokenResult, error)
-	// ValidateAccessToken 验证访问Token
-	// 返回 *managers.JWTClaims
-	ValidateAccessToken(ctx context.Context, tokenString string) (JWTClaimsResult, error)
-	// ValidateRefreshToken 验证刷新Token
-	// 返回 *managers.RefreshTokenClaims
-	ValidateRefreshToken(ctx context.Context, refreshTokenString string) (RefreshTokenClaimsResult, error)
-	// RefreshAccessToken 使用刷新Token生成新的访问Token
-	// 返回 *managers.JWTTokenInfo
-	RefreshAccessToken(ctx context.Context, refreshTokenString string, client *models.Client) (JWTTokenResult, error)
-	// RevokeToken 撤销Token
-	RevokeToken(ctx context.Context, tokenID string) error
-}
-
-// JWTTokenResult JWT令牌生成结果接口
-type JWTTokenResult interface {
-	GetToken() string
-	GetRefreshToken() string
-	GetExpiresAt() time.Time
-	GetClientId() int64
-	GetTokenID() string
-}
-
-// JWTClaimsResult JWT声明结果接口
-type JWTClaimsResult interface {
-	GetClientID() int64
-	GetUserID() string
-	GetClientType() string
-	GetNodeID() string
-}
-
-// RefreshTokenClaimsResult 刷新Token声明结果接口
-type RefreshTokenClaimsResult interface {
-	GetClientID() int64
-	GetTokenID() string
-}
-
-// ManagerFactories 管理器工厂函数集合
-// 用于解决 services 和 managers 之间的循环依赖
-type ManagerFactories struct {
-	// NewJWTProvider 创建 JWT 提供者的工厂函数
-	NewJWTProvider func(config interface{}, storage interface{}, parentCtx context.Context) JWTProvider
-	// NewStatsProvider 创建统计提供者的工厂函数
-	NewStatsProvider func(userRepo, clientRepo, mappingRepo, nodeRepo interface{}, storage interface{}, parentCtx context.Context) StatsProvider
-}
+// 注意: JWTTokenInfo 定义在 auth 子包中，通过 auth_facade.go 重新导出
+// StatsProvider, JWTProvider 等接口类型定义在 base_service.go 中
+// 这里保留了服务接口定义，避免循环导入

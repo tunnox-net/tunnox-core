@@ -6,6 +6,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
 )
@@ -337,9 +339,9 @@ func TestCommandExecutor_DuplexTimeout(t *testing.T) {
 		return
 	}
 
-	// 验证错误信息
-	if err.Error() != "command timeout" {
-		t.Errorf("Expected timeout error, got %v", err)
+	// 验证错误类型是超时错误
+	if !coreerrors.IsCode(err, coreerrors.CodeTimeout) {
+		t.Errorf("Expected timeout error with code TIMEOUT, got %v", err)
 	}
 }
 

@@ -2,8 +2,8 @@ package idgen
 
 import (
 	"context"
-	"fmt"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
@@ -225,7 +225,7 @@ func (m *IDManager) GenerateUniqueID(
 	for attempts := 0; attempts < MaxAttempts; attempts++ {
 		generatedID, err := generateFunc()
 		if err != nil {
-			return 0, fmt.Errorf("generate %s ID failed: %w", idType, err)
+			return 0, coreerrors.Wrapf(err, coreerrors.CodeInternal, "generate %s ID failed", idType)
 		}
 
 		// 检查是否已存在
@@ -240,12 +240,12 @@ func (m *IDManager) GenerateUniqueID(
 			return generatedID, nil
 		}
 
-		// ID已存在，释放并重试
+		// ID已存在，释放并重试（忽略释放错误，继续尝试生成新ID）
 		_ = releaseFunc(generatedID)
 		continue
 	}
 
-	return 0, fmt.Errorf("failed to generate unique %s ID after %d attempts", idType, MaxAttempts)
+	return 0, coreerrors.Newf(coreerrors.CodeResourceExhausted, "failed to generate unique %s ID after %d attempts", idType, MaxAttempts)
 }
 
 // GenerateUniqueClientID 生成唯一客户端ID
@@ -263,7 +263,7 @@ func (m *IDManager) GenerateUniquePortMappingID(checkFunc func(string) (bool, er
 	for attempts := 0; attempts < MaxAttempts; attempts++ {
 		generatedID, err := m.GeneratePortMappingID()
 		if err != nil {
-			return "", fmt.Errorf("generate port mapping ID failed: %w", err)
+			return "", coreerrors.Wrap(err, coreerrors.CodeInternal, "generate port mapping ID failed")
 		}
 
 		// 检查是否已存在
@@ -278,12 +278,12 @@ func (m *IDManager) GenerateUniquePortMappingID(checkFunc func(string) (bool, er
 			return generatedID, nil
 		}
 
-		// ID已存在，释放并重试
+		// ID已存在，释放并重试（忽略释放错误，继续尝试生成新ID）
 		_ = m.ReleasePortMappingID(generatedID)
 		continue
 	}
 
-	return "", fmt.Errorf("failed to generate unique port mapping ID after %d attempts", MaxAttempts)
+	return "", coreerrors.Newf(coreerrors.CodeResourceExhausted, "failed to generate unique port mapping ID after %d attempts", MaxAttempts)
 }
 
 // GenerateUniqueNodeID 生成唯一节点ID
@@ -291,7 +291,7 @@ func (m *IDManager) GenerateUniqueNodeID(checkFunc func(string) (bool, error)) (
 	for attempts := 0; attempts < MaxAttempts; attempts++ {
 		generatedID, err := m.GenerateNodeID()
 		if err != nil {
-			return "", fmt.Errorf("generate node ID failed: %w", err)
+			return "", coreerrors.Wrap(err, coreerrors.CodeInternal, "generate node ID failed")
 		}
 
 		// 检查是否已存在
@@ -306,10 +306,10 @@ func (m *IDManager) GenerateUniqueNodeID(checkFunc func(string) (bool, error)) (
 			return generatedID, nil
 		}
 
-		// ID已存在，释放并重试
+		// ID已存在，释放并重试（忽略释放错误，继续尝试生成新ID）
 		_ = m.ReleaseNodeID(generatedID)
 		continue
 	}
 
-	return "", fmt.Errorf("failed to generate unique node ID after %d attempts", MaxAttempts)
+	return "", coreerrors.Newf(coreerrors.CodeResourceExhausted, "failed to generate unique node ID after %d attempts", MaxAttempts)
 }

@@ -1,10 +1,10 @@
 package client
 
 import (
-	"fmt"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
+	coreerrors "tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
 
@@ -33,7 +33,7 @@ func (c *TunnoxClient) sendHeartbeat() error {
 	c.mu.RUnlock()
 
 	if controlStream == nil {
-		return fmt.Errorf("control stream is nil")
+		return coreerrors.New(coreerrors.CodeConnectionError, "control stream is nil")
 	}
 
 	heartbeatPkt := &packet.TransferPacket{

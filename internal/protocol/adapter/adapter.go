@@ -1,13 +1,12 @@
 package adapter
 
 import (
-	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
-	"tunnox-core/internal/core/errors"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
@@ -77,16 +76,16 @@ func (b *BaseAdapter) ConnectTo(serverAddr string) error {
 	defer b.connMutex.Unlock()
 
 	if b.stream != nil {
-		return fmt.Errorf("already connected")
+		return coreerrors.New(coreerrors.CodeAlreadyExists, "already connected")
 	}
 
 	if b.protocol == nil {
-		return fmt.Errorf("protocol adapter not set")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "protocol adapter not set")
 	}
 
 	conn, err := b.protocol.Dial(serverAddr)
 	if err != nil {
-		return fmt.Errorf("failed to connect to %s server: %w", b.protocol.getConnectionType(), err)
+		return coreerrors.Wrapf(err, coreerrors.CodeConnectionError, "failed to connect to %s server", b.protocol.getConnectionType())
 	}
 
 	b.SetAddr(serverAddr)
@@ -102,16 +101,16 @@ func (b *BaseAdapter) ConnectTo(serverAddr string) error {
 func (b *BaseAdapter) ListenFrom(listenAddr string) error {
 	b.SetAddr(listenAddr)
 	if b.Addr() == "" {
-		return fmt.Errorf("address not set")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "address not set")
 	}
 
 	if b.protocol == nil {
-		return fmt.Errorf("protocol adapter not set")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "protocol adapter not set")
 	}
 
 	// 适配器直接启动监听
 	if err := b.protocol.Listen(b.Addr()); err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", b.protocol.getConnectionType(), err)
+		return coreerrors.Wrapf(err, coreerrors.CodeConnectionError, "failed to listen on %s", b.protocol.getConnectionType())
 	}
 
 	b.active = true
@@ -146,7 +145,7 @@ func (b *BaseAdapter) acceptLoop(adapter ProtocolAdapter) {
 // isIgnorableError 检查是否为可忽略的错误
 func isIgnorableError(err error) bool {
 	// 检查是否为超时错误码
-	if errors.IsCode(err, errors.CodeTimeout) {
+	if coreerrors.IsCode(err, coreerrors.CodeTimeout) {
 		return true
 	}
 
@@ -158,45 +157,70 @@ func isIgnorableError(err error) bool {
 	return false
 }
 
+// connectionState 保存连接处理过程中的状态
+type connectionState struct {
+	streamConn      *types.StreamConnection
+	shouldCloseConn bool
+}
+
 // handleConnection 通用连接处理逻辑
 func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWriteCloser) {
-	shouldCloseConn := true // 默认关闭连接
-	var streamConn *types.StreamConnection
+	state := &connectionState{shouldCloseConn: true}
 
+	// 检查是否为持久连接
 	if persistentConn, ok := conn.(interface{ IsPersistent() bool }); ok && persistentConn.IsPersistent() {
-		shouldCloseConn = false
+		state.shouldCloseConn = false
 	}
 
-	defer func() {
-		// 清理 SessionManager 中的连接（如果已创建）
-		if streamConn != nil && b.session != nil {
-			_ = b.session.CloseConnection(streamConn.ID)
-		}
-
-		// 关闭底层连接（如果不是持久连接）
-		if shouldCloseConn {
-			if closer, ok := conn.(interface{ Close() error }); ok {
-				_ = closer.Close()
-			}
-		}
-	}()
+	defer b.cleanupConnection(state, conn)
 
 	corelog.Infof("%s adapter handling connection", adapter.getConnectionType())
 
-	// Session是系统关键组件，必须存在
+	// 初始化连接
+	if err := b.initializeConnection(adapter, conn, state); err != nil {
+		return
+	}
+
+	// 进入读取循环
+	b.connectionReadLoop(state)
+}
+
+// cleanupConnection 清理连接资源
+func (b *BaseAdapter) cleanupConnection(state *connectionState, conn io.ReadWriteCloser) {
+	// 清理 SessionManager 中的连接（如果已创建，忽略关闭错误，连接可能已关闭）
+	if state.streamConn != nil && b.session != nil {
+		_ = b.session.CloseConnection(state.streamConn.ID)
+	}
+
+	// 关闭底层连接（如果不是持久连接，忽略关闭错误，连接可能已关闭）
+	if state.shouldCloseConn {
+		if closer, ok := conn.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	}
+}
+
+// initializeConnection 初始化连接并验证 session
+func (b *BaseAdapter) initializeConnection(adapter ProtocolAdapter, conn io.ReadWriteCloser, state *connectionState) error {
+	// Session 是系统关键组件，必须存在
 	if b.session == nil {
 		corelog.Errorf("Session is required but not set for %s adapter", adapter.getConnectionType())
-		return
+		return coreerrors.New(coreerrors.CodeNotConfigured, "session not set")
 	}
 
-	// 初始化连接
-	var err error
-	streamConn, err = b.session.AcceptConnection(conn, conn)
+	// 接受连接
+	streamConn, err := b.session.AcceptConnection(conn, conn)
 	if err != nil {
 		corelog.Errorf("Failed to initialize connection: %v", err)
-		return
+		return err
 	}
 
+	state.streamConn = streamConn
+	return nil
+}
+
+// connectionReadLoop 连接读取循环
+func (b *BaseAdapter) connectionReadLoop(state *connectionState) {
 	for {
 		select {
 		case <-b.Ctx().Done():
@@ -204,77 +228,113 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 		default:
 		}
 
-		// ✅ 设计改进：在每次循环开始时检查连接是否已切换到流模式
-		// 如果已切换到流模式，readLoop 应该立即退出，因为：
-		// 1. 流模式下数据是原始数据（如 MySQL 协议），不再是 Tunnox 协议包
-		// 2. 流模式下的数据应该通过 net.Conn 直接转发，而不是通过 ReadPacket()
-		// 3. 这样可以避免不必要的 ReadPacket 调用和解压缩错误
-		if streamConn != nil && streamConn.Stream != nil {
-			if reader, ok := streamConn.Stream.GetReader().(interface {
-				IsStreamMode() bool
-			}); ok && reader.IsStreamMode() {
-				corelog.Infof("Connection %s is in stream mode, readLoop exiting (data will be forwarded directly via net.Conn)", streamConn.ID)
-				shouldCloseConn = false
-				streamConn = nil
-				return
-			}
-		}
-
-		pkt, _, err := streamConn.Stream.ReadPacket()
-		if err != nil {
-			isTimeoutError := false
-			underlyingErr := err
-			for underlyingErr != nil {
-				if netErr, ok := underlyingErr.(interface {
-					Timeout() bool
-					Temporary() bool
-				}); ok && netErr.Timeout() && netErr.Temporary() {
-					isTimeoutError = true
-					break
-				}
-				if unwrapper, ok := underlyingErr.(interface{ Unwrap() error }); ok {
-					underlyingErr = unwrapper.Unwrap()
-				} else {
-					break
-				}
-			}
-			if isTimeoutError {
-				continue
-			}
-			if err != io.EOF {
-				corelog.Errorf("Failed to read packet for connection %s: %v", streamConn.ID, err)
-			}
+		// 检查是否已切换到流模式
+		if b.checkAndHandleStreamMode(state) {
 			return
 		}
 
-		streamPacket := &types.StreamPacket{
-			ConnectionID: streamConn.ID,
-			Packet:       pkt,
-			Timestamp:    time.Now(),
+		// 读取数据包
+		pkt, shouldContinue, shouldReturn := b.readPacketWithTimeout(state)
+		if shouldReturn {
+			return
+		}
+		if shouldContinue {
+			continue
 		}
 
-		isTunnelOpenPacket := (pkt.PacketType & 0x3F) == packet.TunnelOpen
-
-		if err := b.session.HandlePacket(streamPacket); err != nil {
-			if isTunnelOpenPacket {
-				errMsg := err.Error()
-				if errMsg == "tunnel source connected, switching to stream mode" ||
-					errMsg == "tunnel target connected, switching to stream mode" ||
-					errMsg == "tunnel target connected via cross-server bridge, switching to stream mode" ||
-					errMsg == "tunnel target connected via cross-node forwarding, switching to stream mode" ||
-					errMsg == "tunnel connected to existing bridge, switching to stream mode" {
-					// 在设置为 nil 之前保存 ID 用于日志
-					connID := streamConn.ID
-					shouldCloseConn = false
-					// 注意：对于隧道连接，streamConn 会被转移到隧道管理，不需要在这里关闭
-					streamConn = nil
-					corelog.Infof("Connection %s switched to stream mode, readLoop exiting", connID)
-					return
-				}
-			}
-			corelog.Errorf("Failed to handle packet for connection %s: %v", streamConn.ID, err)
+		// 处理数据包
+		if b.handlePacketAndCheckModeSwitch(state, pkt) {
+			return
 		}
 	}
+}
+
+// checkAndHandleStreamMode 检查连接是否已切换到流模式
+// 如果已切换到流模式，readLoop 应该立即退出，因为：
+// 1. 流模式下数据是原始数据（如 MySQL 协议），不再是 Tunnox 协议包
+// 2. 流模式下的数据应该通过 net.Conn 直接转发，而不是通过 ReadPacket()
+// 3. 这样可以避免不必要的 ReadPacket 调用和解压缩错误
+func (b *BaseAdapter) checkAndHandleStreamMode(state *connectionState) bool {
+	if state.streamConn == nil || state.streamConn.Stream == nil {
+		return false
+	}
+
+	reader, ok := state.streamConn.Stream.GetReader().(interface {
+		IsStreamMode() bool
+	})
+	if !ok || !reader.IsStreamMode() {
+		return false
+	}
+
+	corelog.Infof("Connection %s is in stream mode, readLoop exiting (data will be forwarded directly via net.Conn)", state.streamConn.ID)
+	state.shouldCloseConn = false
+	state.streamConn = nil
+	return true
+}
+
+// readPacketWithTimeout 读取数据包并处理超时错误
+// 返回值: (packet, shouldContinue, shouldReturn)
+func (b *BaseAdapter) readPacketWithTimeout(state *connectionState) (*packet.TransferPacket, bool, bool) {
+	pkt, _, err := state.streamConn.Stream.ReadPacket()
+	if err != nil {
+		if b.isTimeoutError(err) {
+			return nil, true, false // shouldContinue
+		}
+		if err != io.EOF {
+			corelog.Errorf("Failed to read packet for connection %s: %v", state.streamConn.ID, err)
+		}
+		return nil, false, true // shouldReturn
+	}
+	return pkt, false, false
+}
+
+// isTimeoutError 检查错误是否为超时错误
+func (b *BaseAdapter) isTimeoutError(err error) bool {
+	underlyingErr := err
+	for underlyingErr != nil {
+		if netErr, ok := underlyingErr.(interface {
+			Timeout() bool
+			Temporary() bool
+		}); ok && netErr.Timeout() && netErr.Temporary() {
+			return true
+		}
+		if unwrapper, ok := underlyingErr.(interface{ Unwrap() error }); ok {
+			underlyingErr = unwrapper.Unwrap()
+		} else {
+			break
+		}
+	}
+	return false
+}
+
+// handlePacketAndCheckModeSwitch 处理数据包并检查是否需要切换模式
+// 返回 true 表示需要退出循环
+func (b *BaseAdapter) handlePacketAndCheckModeSwitch(state *connectionState, pkt *packet.TransferPacket) bool {
+	streamPacket := &types.StreamPacket{
+		ConnectionID: state.streamConn.ID,
+		Packet:       pkt,
+		Timestamp:    time.Now(),
+	}
+
+	isTunnelOpenPacket := (pkt.PacketType & 0x3F) == packet.TunnelOpen
+
+	if err := b.session.HandlePacket(streamPacket); err != nil {
+		if isTunnelOpenPacket && b.isTunnelModeSwitch(err) {
+			connID := state.streamConn.ID
+			state.shouldCloseConn = false
+			// 注意：对于隧道连接，streamConn 会被转移到隧道管理，不需要在这里关闭
+			state.streamConn = nil
+			corelog.Infof("Connection %s switched to stream mode, readLoop exiting", connID)
+			return true
+		}
+		corelog.Errorf("Failed to handle packet for connection %s: %v", state.streamConn.ID, err)
+	}
+	return false
+}
+
+// isTunnelModeSwitch 检查错误是否表示隧道模式切换
+func (b *BaseAdapter) isTunnelModeSwitch(err error) bool {
+	return coreerrors.IsCode(err, coreerrors.CodeTunnelModeSwitch)
 }
 
 // GetReader 获取读取器
@@ -302,7 +362,7 @@ func (b *BaseAdapter) Close() error {
 	b.active = false
 	result := b.Dispose.Close()
 	if result.HasErrors() {
-		return fmt.Errorf("dispose cleanup failed: %s", result.Error())
+		return coreerrors.Newf(coreerrors.CodeCleanupError, "dispose cleanup failed: %s", result.Error())
 	}
 	return nil
 }
@@ -318,7 +378,7 @@ func (b *BaseAdapter) onClose() error {
 			result := streamProcessor.CloseWithResult()
 			if result.HasErrors() {
 				b.streamMutex.Unlock()
-				return fmt.Errorf("stream processor cleanup failed: %v", result.Error())
+				return coreerrors.Newf(coreerrors.CodeCleanupError, "stream processor cleanup failed: %v", result.Error())
 			}
 		} else {
 			// 如果类型断言失败，使用普通的Close方法

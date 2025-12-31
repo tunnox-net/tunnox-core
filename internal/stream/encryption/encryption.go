@@ -6,11 +6,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"sync"
 
 	"golang.org/x/crypto/chacha20poly1305"
+
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // EncryptionMethod 加密方法
@@ -61,7 +62,7 @@ func NewEncryptor(config *EncryptConfig) (Encryptor, error) {
 	case MethodChaCha20Poly1305, "chacha20":
 		return newChaCha20Encryptor(config.Key)
 	default:
-		return nil, fmt.Errorf("unsupported encryption method: %s", config.Method)
+		return nil, coreerrors.New(coreerrors.CodeProtocolError, "unsupported encryption method: "+string(config.Method))
 	}
 }
 
@@ -75,17 +76,17 @@ type aesGCMEncryptor struct {
 
 func newAESGCMEncryptor(key []byte) (*aesGCMEncryptor, error) {
 	if len(key) != 32 {
-		return nil, fmt.Errorf("AES-256-GCM requires 32-byte key, got %d", len(key))
+		return nil, coreerrors.Newf(coreerrors.CodeProtocolError, "AES-256-GCM requires 32-byte key, got %d", len(key))
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to create AES cipher")
 	}
 
 	aead, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to create GCM")
 	}
 
 	return &aesGCMEncryptor{aead: aead}, nil
@@ -113,12 +114,12 @@ type chaCha20Encryptor struct {
 
 func newChaCha20Encryptor(key []byte) (*chaCha20Encryptor, error) {
 	if len(key) != 32 {
-		return nil, fmt.Errorf("ChaCha20-Poly1305 requires 32-byte key, got %d", len(key))
+		return nil, coreerrors.Newf(coreerrors.CodeProtocolError, "ChaCha20-Poly1305 requires 32-byte key, got %d", len(key))
 	}
 
 	aead, err := chacha20poly1305.NewX(key) // XChaCha20-Poly1305 (24-byte nonce)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create ChaCha20-Poly1305: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to create ChaCha20-Poly1305")
 	}
 
 	return &chaCha20Encryptor{aead: aead}, nil
@@ -202,7 +203,7 @@ func (e *encryptWriter) flush() error {
 	// 生成随机 nonce
 	nonce := make([]byte, e.nonceSize)
 	if _, err := rand.Read(nonce); err != nil {
-		return fmt.Errorf("failed to generate nonce: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to generate nonce")
 	}
 
 	// 加密数据 (AEAD.Seal 会自动追加 tag)
@@ -214,17 +215,17 @@ func (e *encryptWriter) flush() error {
 
 	// 写入 [块长度]
 	if _, err := e.writer.Write(header); err != nil {
-		return fmt.Errorf("failed to write chunk length: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to write chunk length")
 	}
 
 	// 写入 [nonce]
 	if _, err := e.writer.Write(nonce); err != nil {
-		return fmt.Errorf("failed to write nonce: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to write nonce")
 	}
 
 	// 写入 [密文+tag]
 	if _, err := e.writer.Write(ciphertext); err != nil {
-		return fmt.Errorf("failed to write ciphertext: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to write ciphertext")
 	}
 
 	// 清空缓冲区
@@ -258,10 +259,10 @@ func (e *encryptWriter) Close() error {
 
 	// 4. 返回第一个错误
 	if flushErr != nil {
-		return fmt.Errorf("flush error during close: %w", flushErr)
+		return coreerrors.Wrap(flushErr, coreerrors.CodeProtocolError, "flush error during close")
 	}
 	if closeErr != nil {
-		return fmt.Errorf("close underlying writer error: %w", closeErr)
+		return coreerrors.Wrap(closeErr, coreerrors.CodeProtocolError, "close underlying writer error")
 	}
 
 	return nil
@@ -339,29 +340,29 @@ func (d *decryptReader) readNextChunk() error {
 	// 严格的长度校验，防止 DoS 攻击
 	// chunkLen 是密文长度（不含nonce），最大应为 ChunkSize + AEAD overhead (16 bytes)
 	if chunkLen == 0 {
-		return fmt.Errorf("invalid chunk length: 0 (empty chunk)")
+		return coreerrors.New(coreerrors.CodeProtocolError, "invalid chunk length: 0 (empty chunk)")
 	}
 	if chunkLen > MaxCiphertextSize {
-		return fmt.Errorf("chunk length %d exceeds maximum allowed %d (potential DoS attack)",
+		return coreerrors.Newf(coreerrors.CodeProtocolError, "chunk length %d exceeds maximum allowed %d (potential DoS attack)",
 			chunkLen, MaxCiphertextSize)
 	}
 
 	// 读取 [nonce]
 	nonce := make([]byte, d.nonceSize)
 	if _, err := io.ReadFull(d.reader, nonce); err != nil {
-		return fmt.Errorf("failed to read nonce: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read nonce")
 	}
 
 	// 读取 [密文+tag]
 	ciphertext := make([]byte, chunkLen)
 	if _, err := io.ReadFull(d.reader, ciphertext); err != nil {
-		return fmt.Errorf("failed to read ciphertext: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read ciphertext")
 	}
 
 	// 解密
 	plaintext, err := d.aead.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return fmt.Errorf("decryption failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "decryption failed")
 	}
 
 	// 更新缓冲区
@@ -379,7 +380,7 @@ func (d *decryptReader) readNextChunk() error {
 func GenerateKey() ([]byte, error) {
 	key := make([]byte, 32) // 256-bit key
 	if _, err := rand.Read(key); err != nil {
-		return nil, fmt.Errorf("failed to generate random key: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to generate random key")
 	}
 	return key, nil
 }

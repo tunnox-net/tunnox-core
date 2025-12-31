@@ -59,6 +59,9 @@ func (am *AnonymousManager) CleanupExpiredAnonymous() error {
 }
 
 // SetNotifier 设置通知器
-func (am *AnonymousManager) SetNotifier(notifier interface{}) {
+// 实现 NotifierAware 接口
+func (am *AnonymousManager) SetNotifier(notifier ClientNotifier) {
+	// services.AnonymousService.SetNotifier 接受 services.ClientNotifier
+	// 由于 ClientNotifier 接口相同，可以直接传递
 	am.anonymousService.SetNotifier(notifier)
 }

@@ -2,9 +2,10 @@
 package buffer
 
 import (
-	"errors"
 	"sync"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/packet"
 )
 
@@ -77,7 +78,7 @@ func NewReceiveBufferWithConfig(maxOutOfOrder int) *ReceiveBuffer {
 //   - 接收后尝试从缓冲区提取连续数据
 func (b *ReceiveBuffer) Receive(pkt *packet.TransferPacket) ([][]byte, error) {
 	if pkt == nil {
-		return nil, errors.New("packet is nil")
+		return nil, coreerrors.New(coreerrors.CodeInvalidParam, "packet is nil")
 	}
 
 	b.mu.Lock()
@@ -119,7 +120,7 @@ func (b *ReceiveBuffer) Receive(pkt *packet.TransferPacket) ([][]byte, error) {
 	if seqNum > b.nextExpected {
 		// 检查是否超过最大乱序限制
 		if len(b.buffer) >= b.maxOutOfOrder {
-			return nil, errors.New("too many out-of-order packets")
+			return nil, coreerrors.New(coreerrors.CodeQuotaExceeded, "too many out-of-order packets")
 		}
 
 		// 检查是否已缓冲（防止重复）

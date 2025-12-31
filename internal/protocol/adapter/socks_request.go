@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // handleRequest 处理 SOCKS5 请求
@@ -17,12 +19,12 @@ func (s *SocksAdapter) handleRequest(conn net.Conn) (string, error) {
 
 	buf := make([]byte, 4)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return "", fmt.Errorf("read request header failed: %w", err)
+		return "", coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read request header failed")
 	}
 
 	version := buf[0]
 	if version != socks5Version {
-		return "", fmt.Errorf("unsupported SOCKS version: %d", version)
+		return "", coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported SOCKS version: %d", version)
 	}
 
 	cmd := buf[1]
@@ -32,7 +34,7 @@ func (s *SocksAdapter) handleRequest(conn net.Conn) (string, error) {
 	// 目前只支持 CONNECT 命令
 	if cmd != socksCmdConnect {
 		s.sendReply(conn, socksRepCommandNotSupported, "0.0.0.0", 0)
-		return "", fmt.Errorf("unsupported command: %d", cmd)
+		return "", coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported command: %d", cmd)
 	}
 
 	// 解析目标地址
@@ -42,7 +44,7 @@ func (s *SocksAdapter) handleRequest(conn net.Conn) (string, error) {
 		// IPv4 地址 (4 字节)
 		addr := make([]byte, 4)
 		if _, err := io.ReadFull(conn, addr); err != nil {
-			return "", fmt.Errorf("read IPv4 address failed: %w", err)
+			return "", coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read IPv4 address failed")
 		}
 		targetAddr = net.IP(addr).String()
 
@@ -50,12 +52,12 @@ func (s *SocksAdapter) handleRequest(conn net.Conn) (string, error) {
 		// 域名 (1 字节长度 + 域名)
 		lenBuf := make([]byte, 1)
 		if _, err := io.ReadFull(conn, lenBuf); err != nil {
-			return "", fmt.Errorf("read domain length failed: %w", err)
+			return "", coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read domain length failed")
 		}
 		domainLen := int(lenBuf[0])
 		domain := make([]byte, domainLen)
 		if _, err := io.ReadFull(conn, domain); err != nil {
-			return "", fmt.Errorf("read domain failed: %w", err)
+			return "", coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read domain failed")
 		}
 		targetAddr = string(domain)
 
@@ -63,19 +65,19 @@ func (s *SocksAdapter) handleRequest(conn net.Conn) (string, error) {
 		// IPv6 地址 (16 字节)
 		addr := make([]byte, 16)
 		if _, err := io.ReadFull(conn, addr); err != nil {
-			return "", fmt.Errorf("read IPv6 address failed: %w", err)
+			return "", coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read IPv6 address failed")
 		}
 		targetAddr = net.IP(addr).String()
 
 	default:
 		s.sendReply(conn, socksRepAddrTypeNotSupported, "0.0.0.0", 0)
-		return "", fmt.Errorf("unsupported address type: %d", addrType)
+		return "", coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported address type: %d", addrType)
 	}
 
 	// 读取端口 (2 字节，大端序)
 	portBuf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, portBuf); err != nil {
-		return "", fmt.Errorf("read port failed: %w", err)
+		return "", coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read port failed")
 	}
 	port := binary.BigEndian.Uint16(portBuf)
 

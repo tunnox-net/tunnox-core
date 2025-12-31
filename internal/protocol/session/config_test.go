@@ -22,7 +22,7 @@ func TestSessionManagerConfigValidate(t *testing.T) {
 	// 测试有效配置
 	ctx := context.Background()
 	storageFactory := storage.NewStorageFactory(ctx)
-	memStorage, _ := storageFactory.CreateStorage(storage.StorageTypeMemory, nil)
+	memStorage, _ := storageFactory.CreateStorage(&storage.MemoryStorageConfig{})
 	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	config = &SessionManagerConfig{
@@ -64,7 +64,7 @@ func TestSessionManagerConfigApplyDefaults(t *testing.T) {
 func TestNewSessionManagerV2(t *testing.T) {
 	ctx := context.Background()
 	storageFactory := storage.NewStorageFactory(ctx)
-	memStorage, _ := storageFactory.CreateStorage(storage.StorageTypeMemory, nil)
+	memStorage, _ := storageFactory.CreateStorage(&storage.MemoryStorageConfig{})
 	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	// 测试空配置
@@ -101,7 +101,7 @@ func TestNewSessionManagerV2(t *testing.T) {
 func TestNewSessionManagerV2WithOptions(t *testing.T) {
 	ctx := context.Background()
 	storageFactory := storage.NewStorageFactory(ctx)
-	memStorage, _ := storageFactory.CreateStorage(storage.StorageTypeMemory, nil)
+	memStorage, _ := storageFactory.CreateStorage(&storage.MemoryStorageConfig{})
 	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	// 创建自定义 Logger
@@ -133,7 +133,7 @@ func TestNewSessionManagerV2WithOptions(t *testing.T) {
 func TestSessionManagerOptions(t *testing.T) {
 	ctx := context.Background()
 	storageFactory := storage.NewStorageFactory(ctx)
-	memStorage, _ := storageFactory.CreateStorage(storage.StorageTypeMemory, nil)
+	memStorage, _ := storageFactory.CreateStorage(&storage.MemoryStorageConfig{})
 	idManager := idgen.NewIDManager(memStorage, ctx)
 
 	// 创建基础 SessionManager

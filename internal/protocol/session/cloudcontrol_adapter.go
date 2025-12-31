@@ -1,39 +1,20 @@
 package session
 
 import (
-	"fmt"
-
 	"tunnox-core/internal/cloud/managers"
-	"tunnox-core/internal/cloud/models"
-	cloudstats "tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/protocol/session/core"
 )
 
-// CloudControlAdapter 适配器，将 BuiltinCloudControl 转换为 SessionManager 所需的接口
-type CloudControlAdapter struct {
-	cc *managers.BuiltinCloudControl
-}
+// ============================================================================
+// 向后兼容别名 - CloudControlAdapter 已迁移到 core 子包
+// ============================================================================
 
-// NewCloudControlAdapter 创建适配器
+// CloudControlAdapter 适配器别名（向后兼容）
+// Deprecated: 请使用 core.CloudControlAdapter
+type CloudControlAdapter = core.CloudControlAdapter
+
+// NewCloudControlAdapter 创建适配器（向后兼容）
+// Deprecated: 请使用 core.NewCloudControlAdapter
 func NewCloudControlAdapter(cc *managers.BuiltinCloudControl) CloudControlAPI {
-	return &CloudControlAdapter{cc: cc}
-}
-
-// GetPortMapping 实现 CloudControlAPI 接口
-// ✅ 统一返回 *models.PortMapping，不再使用 interface{}
-func (a *CloudControlAdapter) GetPortMapping(mappingID string) (*models.PortMapping, error) {
-	return a.cc.GetPortMapping(mappingID)
-}
-
-// UpdatePortMappingStats 更新端口映射统计
-func (a *CloudControlAdapter) UpdatePortMappingStats(mappingID string, stats interface{}) error {
-	trafficStats, ok := stats.(*cloudstats.TrafficStats)
-	if !ok {
-		return fmt.Errorf("invalid stats type: expected *cloudstats.TrafficStats, got %T", stats)
-	}
-	return a.cc.UpdatePortMappingStats(mappingID, trafficStats)
-}
-
-// GetClientPortMappings 获取客户端的所有端口映射
-func (a *CloudControlAdapter) GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) {
-	return a.cc.GetClientPortMappings(clientID)
+	return core.NewCloudControlAdapter(cc)
 }

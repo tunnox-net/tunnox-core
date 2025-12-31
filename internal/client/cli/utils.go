@@ -6,6 +6,8 @@ import (
 	"os"
 	"time"
 
+	coreerrors "tunnox-core/internal/core/errors"
+
 	"golang.org/x/term"
 )
 
@@ -22,7 +24,7 @@ func ParseIntWithDefault(s string, defaultVal int) (int, error) {
 	var val int
 	_, err := fmt.Sscanf(s, "%d", &val)
 	if err != nil {
-		return 0, fmt.Errorf("invalid number: %s", s)
+		return 0, coreerrors.Newf(coreerrors.CodeInvalidParam, "invalid number: %s", s)
 	}
 	return val, nil
 }
@@ -89,13 +91,13 @@ func FormatDuration(d time.Duration) string {
 // 返回选中的索引，如果取消则返回 -1
 func PromptSelect(prompt string, options []string) (int, error) {
 	if len(options) == 0 {
-		return -1, fmt.Errorf("no options provided")
+		return -1, coreerrors.New(coreerrors.CodeInvalidParam, "no options provided")
 	}
 
 	// 保存终端状态
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		return -1, fmt.Errorf("failed to enter raw mode: %w", err)
+		return -1, coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to enter raw mode")
 	}
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 

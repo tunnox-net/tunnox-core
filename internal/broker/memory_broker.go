@@ -2,10 +2,11 @@ package broker
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
+
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 )
 
@@ -37,7 +38,7 @@ func (m *MemoryBroker) Publish(ctx context.Context, topic string, message []byte
 	defer m.mu.RUnlock()
 
 	if m.closed {
-		return fmt.Errorf("broker is closed")
+		return coreerrors.New(coreerrors.CodeNetworkError, "broker is closed")
 	}
 
 	subscribers, exists := m.subscribers[topic]
@@ -80,7 +81,7 @@ func (m *MemoryBroker) Subscribe(ctx context.Context, topic string) (<-chan *Mes
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return nil, fmt.Errorf("broker is closed")
+		return nil, coreerrors.New(coreerrors.CodeNetworkError, "broker is closed")
 	}
 
 	// 创建带缓冲的消息通道（避免阻塞）
@@ -101,12 +102,12 @@ func (m *MemoryBroker) Unsubscribe(ctx context.Context, topic string) error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return fmt.Errorf("broker is closed")
+		return coreerrors.New(coreerrors.CodeNetworkError, "broker is closed")
 	}
 
 	subscribers, exists := m.subscribers[topic]
 	if !exists || len(subscribers) == 0 {
-		return fmt.Errorf("no subscribers for topic: %s", topic)
+		return coreerrors.New(coreerrors.CodeNetworkError, "no subscribers for topic: "+topic)
 	}
 
 	// 关闭所有订阅者通道
@@ -128,7 +129,7 @@ func (m *MemoryBroker) Ping(ctx context.Context) error {
 	defer m.mu.RUnlock()
 
 	if m.closed {
-		return fmt.Errorf("broker is closed")
+		return coreerrors.New(coreerrors.CodeNetworkError, "broker is closed")
 	}
 
 	return nil

@@ -2,10 +2,11 @@ package managers
 
 import (
 	"context"
-	"fmt"
+
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -92,13 +93,13 @@ func (sm *StatsManager) GetSystemStats() (*stats.SystemStats, error) {
 // RebuildStats 重建统计计数器（管理员手动触发）
 func (sm *StatsManager) RebuildStats() error {
 	if !sm.useCounter || sm.counter == nil {
-		return fmt.Errorf("counter mode not enabled")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "counter mode not enabled")
 	}
 
 	// 全量计算当前统计
 	systemStats, err := sm.statsService.GetSystemStats()
 	if err != nil {
-		return fmt.Errorf("failed to calculate full stats: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to calculate full stats")
 	}
 
 	// 重建计数器

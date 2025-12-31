@@ -65,7 +65,7 @@ func createRemoteStorage(factory *storage.StorageFactory, config *Config) (stora
 	}
 	hybridConfig.HybridConfig.EnablePersistent = true
 
-	return factory.CreateStorage(storage.StorageTypeHybrid, hybridConfig)
+	return factory.CreateStorage(hybridConfig)
 }
 
 // createRedisStorage 创建 Redis 存储（集群模式）
@@ -106,7 +106,7 @@ func createRedisStorage(factory *storage.StorageFactory, config *Config) (storag
 		}
 	}
 
-	return factory.CreateStorage(storage.StorageTypeHybrid, hybridConfig)
+	return factory.CreateStorage(hybridConfig)
 }
 
 // createPersistentStorage 创建持久化存储（单节点模式）
@@ -128,7 +128,7 @@ func createPersistentStorage(factory *storage.StorageFactory, config *Config) (s
 	}
 	hybridConfig.HybridConfig.EnablePersistent = true
 
-	return factory.CreateStorage(storage.StorageTypeHybrid, hybridConfig)
+	return factory.CreateStorage(hybridConfig)
 }
 
 // createMemoryStorage 创建纯内存存储
@@ -142,5 +142,5 @@ func createMemoryStorage(factory *storage.StorageFactory) (storage.Storage, erro
 	}
 	hybridConfig.HybridConfig.EnablePersistent = false
 
-	return factory.CreateStorage(storage.StorageTypeHybrid, hybridConfig)
+	return factory.CreateStorage(hybridConfig)
 }

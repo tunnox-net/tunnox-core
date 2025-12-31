@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
@@ -74,17 +76,17 @@ func (r *ClientStateRepository) GetState(clientID int64) (*models.ClientRuntimeS
 		if err == storage.ErrKeyNotFound {
 			return nil, nil // 状态不存在 = 离线
 		}
-		return nil, fmt.Errorf("failed to get client state: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get client state")
 	}
 
 	// 反序列化
 	var state models.ClientRuntimeState
 	if jsonStr, ok := value.(string); ok {
 		if err := json.Unmarshal([]byte(jsonStr), &state); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal state: %w", err)
+			return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to unmarshal state")
 		}
 	} else {
-		return nil, fmt.Errorf("invalid state type: %T", value)
+		return nil, coreerrors.Newf(coreerrors.CodeInvalidData, "invalid state type: %T", value)
 	}
 
 	return &state, nil
@@ -99,12 +101,12 @@ func (r *ClientStateRepository) GetState(clientID int64) (*models.ClientRuntimeS
 //   - error: 错误信息
 func (r *ClientStateRepository) SetState(state *models.ClientRuntimeState) error {
 	if state == nil {
-		return fmt.Errorf("state is nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "state is nil")
 	}
 
 	// 验证状态有效性
 	if err := state.Validate(); err != nil {
-		return fmt.Errorf("invalid state: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeValidationError, "invalid state")
 	}
 
 	key := fmt.Sprintf("%s%d", constants.KeyPrefixRuntimeClientState, state.ClientID)
@@ -112,13 +114,13 @@ func (r *ClientStateRepository) SetState(state *models.ClientRuntimeState) error
 	// 序列化
 	jsonBytes, err := json.Marshal(state)
 	if err != nil {
-		return fmt.Errorf("failed to marshal state: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal state")
 	}
 
 	// 写入缓存，TTL = 90秒
 	ttl := time.Duration(constants.TTLClientState) * time.Second
 	if err := r.storage.Set(key, string(jsonBytes), ttl); err != nil {
-		return fmt.Errorf("failed to set state: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to set state")
 	}
 
 	corelog.Debugf("ClientStateRepository: set state for client %d (node=%s, status=%s)",
@@ -138,7 +140,7 @@ func (r *ClientStateRepository) DeleteState(clientID int64) error {
 	key := fmt.Sprintf("%s%d", constants.KeyPrefixRuntimeClientState, clientID)
 
 	if err := r.storage.Delete(key); err != nil && err != storage.ErrKeyNotFound {
-		return fmt.Errorf("failed to delete state: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to delete state")
 	}
 
 	corelog.Debugf("ClientStateRepository: deleted state for client %d", clientID)
@@ -182,13 +184,13 @@ func (r *ClientStateRepository) GetNodeClients(nodeID string) ([]int64, error) {
 		if err == storage.ErrKeyNotFound {
 			return []int64{}, nil // 空列表
 		}
-		return nil, fmt.Errorf("failed to get node clients: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get node clients")
 	}
 
 	var clientIDs []int64
 	if jsonStr, ok := value.(string); ok {
 		if err := json.Unmarshal([]byte(jsonStr), &clientIDs); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal client IDs: %w", err)
+			return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to unmarshal client IDs")
 		}
 	}
 
@@ -205,7 +207,7 @@ func (r *ClientStateRepository) GetNodeClients(nodeID string) ([]int64, error) {
 //   - error: 错误信息
 func (r *ClientStateRepository) AddToNodeClients(nodeID string, clientID int64) error {
 	if nodeID == "" {
-		return fmt.Errorf("node_id is empty")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "node_id is empty")
 	}
 
 	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
@@ -231,7 +233,7 @@ func (r *ClientStateRepository) AddToNodeClients(nodeID string, clientID int64) 
 	ttl := time.Duration(constants.TTLNodeClients) * time.Second
 
 	if err := r.storage.Set(key, string(jsonBytes), ttl); err != nil {
-		return fmt.Errorf("failed to save node clients: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to save node clients")
 	}
 
 	corelog.Debugf("ClientStateRepository: added client %d to node %s", clientID, nodeID)
@@ -277,7 +279,7 @@ func (r *ClientStateRepository) RemoveFromNodeClients(nodeID string, clientID in
 	ttl := time.Duration(constants.TTLNodeClients) * time.Second
 
 	if err := r.storage.Set(key, string(jsonBytes), ttl); err != nil {
-		return fmt.Errorf("failed to save node clients: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to save node clients")
 	}
 
 	corelog.Debugf("ClientStateRepository: removed client %d from node %s", clientID, nodeID)

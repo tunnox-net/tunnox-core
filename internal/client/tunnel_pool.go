@@ -7,7 +7,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
 	"tunnox-core/internal/client/mapping"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 )
 
@@ -107,7 +109,7 @@ func (p *TunnelPool) Get(mappingID, secretKey string) (*PooledTunnelConn, error)
 				return conn, nil
 			}
 		case <-time.After(p.config.DialTimeout):
-			return nil, fmt.Errorf("timeout waiting for available connection")
+			return nil, coreerrors.New(coreerrors.CodeTimeout, "timeout waiting for available connection")
 		case <-p.ctx.Done():
 			return nil, p.ctx.Err()
 		}
@@ -281,7 +283,7 @@ func (p *TunnelPool) createNewConn(mappingID, secretKey string) (*PooledTunnelCo
 	conn, tunnelStream, err := p.client.dialTunnel(tunnelID, mappingID, secretKey)
 	if err != nil {
 		pool.active.Add(-1)
-		return nil, fmt.Errorf("failed to dial tunnel: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to dial tunnel")
 	}
 
 	pooledConn := &PooledTunnelConn{

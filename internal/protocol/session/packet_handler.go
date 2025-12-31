@@ -1,9 +1,9 @@
 package session
 
 import (
-	"fmt"
 	"net"
 
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/types"
@@ -60,7 +60,7 @@ func (s *SessionManager) ProcessPacket(connID string, pkt *packet.TransferPacket
 // HandlePacket 处理数据包（统一入口）
 func (s *SessionManager) HandlePacket(connPacket *types.StreamPacket) error {
 	if connPacket == nil || connPacket.Packet == nil {
-		return fmt.Errorf("invalid packet: nil")
+		return coreerrors.New(coreerrors.CodeInvalidPacket, "invalid packet: nil")
 	}
 
 	packetType := connPacket.Packet.PacketType
@@ -81,6 +81,6 @@ func (s *SessionManager) HandlePacket(connPacket *types.StreamPacket) error {
 
 	default:
 		corelog.Warnf("Unhandled packet type: %v", packetType)
-		return fmt.Errorf("unhandled packet type: %v", packetType)
+		return coreerrors.Newf(coreerrors.CodeInvalidPacket, "unhandled packet type: %v", packetType)
 	}
 }

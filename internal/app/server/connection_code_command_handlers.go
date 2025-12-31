@@ -145,7 +145,11 @@ func (h *GenerateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 		Description:   connCode.Description,
 	}
 
-	respBody, _ := json.Marshal(resp)
+	respBody, err := json.Marshal(resp)
+	if err != nil {
+		corelog.Errorf("CreateConnectionCodeHandler: failed to marshal response: %v", err)
+		return h.errorResponse(ctx, "failed to serialize response")
+	}
 	return &command.CommandResponse{
 		Success:   true,
 		Data:      string(respBody),
@@ -217,7 +221,11 @@ func (h *ListConnectionCodesHandler) Handle(ctx *command.CommandContext) (*comma
 		Total: len(codeInfos),
 	}
 
-	respBody, _ := json.Marshal(resp)
+	respBody, err := json.Marshal(resp)
+	if err != nil {
+		corelog.Errorf("ListConnectionCodesHandler: failed to marshal response: %v", err)
+		return h.errorResponse(ctx, "failed to serialize response")
+	}
 	return &command.CommandResponse{
 		Success:   true,
 		Data:      string(respBody),
@@ -281,7 +289,11 @@ func (h *ActivateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 		SecretKey:      mapping.SecretKey,      // SOCKS5 映射需要
 	}
 
-	respBody, _ := json.Marshal(resp)
+	respBody, err := json.Marshal(resp)
+	if err != nil {
+		corelog.Errorf("ActivateConnectionCodeHandler: failed to marshal response: %v", err)
+		return h.errorResponse(ctx, "failed to serialize response")
+	}
 	return &command.CommandResponse{
 		Success:   true,
 		Data:      string(respBody),

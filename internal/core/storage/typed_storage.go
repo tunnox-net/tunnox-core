@@ -12,9 +12,10 @@ var (
 	ErrStorageNotFullStorage = errors.New("storage does not implement FullStorage interface")
 )
 
-// TypedStorage 泛型类型安全存储接口
+// ExtendedTypedStorage 扩展的泛型类型安全存储接口
 // 提供类型安全的存储操作，避免运行时类型断言
-type TypedStorage[T any] interface {
+// 包含完整的存储功能：基础操作、列表、哈希、过期时间、分布式操作
+type ExtendedTypedStorage[T any] interface {
 	// 基础操作
 	Set(key string, value T, ttl time.Duration) error
 	Get(key string) (T, error)
@@ -46,18 +47,18 @@ type TypedStorage[T any] interface {
 }
 
 // typedStorageAdapter 泛型存储适配器
-// 将 Storage 接口适配为类型安全的 TypedStorage
+// 将 Storage 接口适配为类型安全的 ExtendedTypedStorage
 type typedStorageAdapter[T any] struct {
 	storage FullStorage // 使用 FullStorage 以支持所有功能
 }
 
-// NewTypedStorage 创建泛型类型安全存储
+// NewExtendedTypedStorage 创建扩展的泛型类型安全存储
 // 使用示例:
 //
-//	stringStorage, err := NewTypedStorage[string](storage)
-//	int64Storage, err := NewTypedStorage[int64](storage)
-//	userStorage, err := NewTypedStorage[*models.User](storage)
-func NewTypedStorage[T any](storage Storage) (TypedStorage[T], error) {
+//	stringStorage, err := NewExtendedTypedStorage[string](storage)
+//	int64Storage, err := NewExtendedTypedStorage[int64](storage)
+//	userStorage, err := NewExtendedTypedStorage[*models.User](storage)
+func NewExtendedTypedStorage[T any](storage Storage) (ExtendedTypedStorage[T], error) {
 	// 将 Storage 转换为 FullStorage（所有现有实现都实现了 FullStorage）
 	fullStorage, ok := storage.(FullStorage)
 	if !ok {
@@ -103,12 +104,12 @@ func (t *typedStorageAdapter[T]) Exists(key string) (bool, error) {
 
 // SetList 设置列表
 func (t *typedStorageAdapter[T]) SetList(key string, values []T, ttl time.Duration) error {
-	// 转换为 []interface{}
-	interfaceSlice := make([]interface{}, len(values))
+	// 转换为 []any
+	anySlice := make([]any, len(values))
 	for i, v := range values {
-		interfaceSlice[i] = v
+		anySlice[i] = v
 	}
-	return t.storage.SetList(key, interfaceSlice, ttl)
+	return t.storage.SetList(key, anySlice, ttl)
 }
 
 // GetList 获取列表
@@ -309,54 +310,54 @@ func (j *typedJSONStorageAdapter[T]) Underlying() Storage {
 // 常用类型别名（便捷使用）
 // ============================================================================
 
-// StringStorage 字符串存储
-type StringStorage = TypedStorage[string]
+// ExtendedStringStorage 扩展的字符串存储
+type ExtendedStringStorage = ExtendedTypedStorage[string]
 
-// Int64Storage Int64 存储
-type Int64Storage = TypedStorage[int64]
+// ExtendedInt64Storage 扩展的 Int64 存储
+type ExtendedInt64Storage = ExtendedTypedStorage[int64]
 
-// IntStorage Int 存储
-type IntStorage = TypedStorage[int]
+// ExtendedIntStorage 扩展的 Int 存储
+type ExtendedIntStorage = ExtendedTypedStorage[int]
 
-// BoolStorage 布尔值存储
-type BoolStorage = TypedStorage[bool]
+// ExtendedBoolStorage 扩展的布尔值存储
+type ExtendedBoolStorage = ExtendedTypedStorage[bool]
 
-// BytesStorage 字节数组存储
-type BytesStorage = TypedStorage[[]byte]
+// ExtendedBytesStorage 扩展的字节数组存储
+type ExtendedBytesStorage = ExtendedTypedStorage[[]byte]
 
-// Float64Storage Float64 存储
-type Float64Storage = TypedStorage[float64]
+// ExtendedFloat64Storage 扩展的 Float64 存储
+type ExtendedFloat64Storage = ExtendedTypedStorage[float64]
 
 // ============================================================================
 // 工厂函数（便捷创建）
 // ============================================================================
 
-// NewStringStorage 创建字符串存储
-func NewStringStorage(storage Storage) (StringStorage, error) {
-	return NewTypedStorage[string](storage)
+// NewExtendedStringStorage 创建扩展的字符串存储
+func NewExtendedStringStorage(storage Storage) (ExtendedStringStorage, error) {
+	return NewExtendedTypedStorage[string](storage)
 }
 
-// NewInt64Storage 创建 Int64 存储
-func NewInt64Storage(storage Storage) (Int64Storage, error) {
-	return NewTypedStorage[int64](storage)
+// NewExtendedInt64Storage 创建扩展的 Int64 存储
+func NewExtendedInt64Storage(storage Storage) (ExtendedInt64Storage, error) {
+	return NewExtendedTypedStorage[int64](storage)
 }
 
-// NewIntStorage 创建 Int 存储
-func NewIntStorage(storage Storage) (IntStorage, error) {
-	return NewTypedStorage[int](storage)
+// NewExtendedIntStorage 创建扩展的 Int 存储
+func NewExtendedIntStorage(storage Storage) (ExtendedIntStorage, error) {
+	return NewExtendedTypedStorage[int](storage)
 }
 
-// NewBoolStorage 创建布尔值存储
-func NewBoolStorage(storage Storage) (BoolStorage, error) {
-	return NewTypedStorage[bool](storage)
+// NewExtendedBoolStorage 创建扩展的布尔值存储
+func NewExtendedBoolStorage(storage Storage) (ExtendedBoolStorage, error) {
+	return NewExtendedTypedStorage[bool](storage)
 }
 
-// NewBytesStorage 创建字节数组存储
-func NewBytesStorage(storage Storage) (BytesStorage, error) {
-	return NewTypedStorage[[]byte](storage)
+// NewExtendedBytesStorage 创建扩展的字节数组存储
+func NewExtendedBytesStorage(storage Storage) (ExtendedBytesStorage, error) {
+	return NewExtendedTypedStorage[[]byte](storage)
 }
 
-// NewFloat64Storage 创建 Float64 存储
-func NewFloat64Storage(storage Storage) (Float64Storage, error) {
-	return NewTypedStorage[float64](storage)
+// NewExtendedFloat64Storage 创建扩展的 Float64 存储
+func NewExtendedFloat64Storage(storage Storage) (ExtendedFloat64Storage, error) {
+	return NewExtendedTypedStorage[float64](storage)
 }

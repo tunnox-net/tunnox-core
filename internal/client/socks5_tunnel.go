@@ -8,6 +8,7 @@ import (
 	"net"
 	"time"
 
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils"
@@ -52,7 +53,7 @@ func (c *SOCKS5TunnelCreatorImpl) CreateSOCKS5Tunnel(
 	// 因为 serverConn 已经被 tunnelStream 包装，并且已经执行了握手和 TunnelOpen 协议
 	serverConn, tunnelStream, err := c.client.dialTunnelWithTarget(tunnelID, mappingID, secretKey, targetHost, targetPort)
 	if err != nil {
-		return fmt.Errorf("failed to dial tunnel: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to dial tunnel")
 	}
 
 	// 3. 隧道建立成功，发送 SOCKS5 成功响应

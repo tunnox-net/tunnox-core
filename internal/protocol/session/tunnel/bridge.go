@@ -3,13 +3,12 @@ package tunnel
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 
@@ -94,6 +93,10 @@ type BridgeConfig struct {
 	CloudControl   CloudControlAPI // 用于上报流量统计（可选）
 }
 
+// ============================================================================
+// 隧道连接工厂
+// ============================================================================
+
 // TunnelConnectionFactory 隧道连接工厂函数类型
 type TunnelConnectionFactory func(
 	connID string,
@@ -134,7 +137,7 @@ func createTunnelConnection(
 // NewBridge 创建隧道桥接器
 func NewBridge(parentCtx context.Context, config *BridgeConfig) *Bridge {
 	bridge := &Bridge{
-		ManagerBase:  dispose.NewManager(fmt.Sprintf("TunnelBridge-%s", config.TunnelID), parentCtx),
+		ManagerBase:  dispose.NewManager("TunnelBridge-"+config.TunnelID, parentCtx),
 		tunnelID:     config.TunnelID,
 		mappingID:    config.MappingID,
 		cloudControl: config.CloudControl,
@@ -179,433 +182,64 @@ func NewBridge(parentCtx context.Context, config *BridgeConfig) *Bridge {
 
 	// 注册清理处理器
 	bridge.AddCleanHandler(func() error {
-		corelog.Infof("TunnelBridge[%s]: cleaning up resources", config.TunnelID)
-
-		// 上报最终流量统计
-		bridge.reportTrafficStats()
-
-		var errs []error
-
-		// 释放跨节点连接（归还到池）
-		bridge.ReleaseCrossNodeConnection()
-
-		// 关闭统一接口连接
-		if bridge.sourceTunnelConn != nil {
-			if err := bridge.sourceTunnelConn.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("source tunnel conn close error: %w", err))
-			}
-		}
-		if bridge.targetTunnelConn != nil {
-			if err := bridge.targetTunnelConn.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("target tunnel conn close error: %w", err))
-			}
-		}
-
-		// 向后兼容：关闭旧接口
-		if bridge.sourceStream != nil && bridge.sourceTunnelConn == nil {
-			bridge.sourceStream.Close()
-		}
-		if bridge.targetStream != nil && bridge.targetTunnelConn == nil {
-			bridge.targetStream.Close()
-		}
-		if bridge.sourceConn != nil && bridge.sourceTunnelConn == nil {
-			if err := bridge.sourceConn.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("source conn close error: %w", err))
-			}
-		}
-		if bridge.targetConn != nil && bridge.targetTunnelConn == nil {
-			if err := bridge.targetConn.Close(); err != nil {
-				errs = append(errs, fmt.Errorf("target conn close error: %w", err))
-			}
-		}
-
-		if len(errs) > 0 {
-			return fmt.Errorf("tunnel bridge cleanup errors: %v", errs)
-		}
-		return nil
+		return bridge.cleanup(config.TunnelID)
 	})
 
 	return bridge
+}
+
+// cleanup 清理桥接资源
+func (b *Bridge) cleanup(tunnelID string) error {
+	corelog.Infof("TunnelBridge[%s]: cleaning up resources", tunnelID)
+
+	// 上报最终流量统计
+	b.reportTrafficStats()
+
+	var errs []error
+
+	// 释放跨节点连接（归还到池）
+	b.ReleaseCrossNodeConnection()
+
+	// 关闭统一接口连接
+	if b.sourceTunnelConn != nil {
+		if err := b.sourceTunnelConn.Close(); err != nil {
+			errs = append(errs, coreerrors.Wrap(err, coreerrors.CodeCleanupError, "source tunnel conn close error"))
+		}
+	}
+	if b.targetTunnelConn != nil {
+		if err := b.targetTunnelConn.Close(); err != nil {
+			errs = append(errs, coreerrors.Wrap(err, coreerrors.CodeCleanupError, "target tunnel conn close error"))
+		}
+	}
+
+	// 向后兼容：关闭旧接口
+	if b.sourceStream != nil && b.sourceTunnelConn == nil {
+		b.sourceStream.Close()
+	}
+	if b.targetStream != nil && b.targetTunnelConn == nil {
+		b.targetStream.Close()
+	}
+	if b.sourceConn != nil && b.sourceTunnelConn == nil {
+		if err := b.sourceConn.Close(); err != nil {
+			errs = append(errs, coreerrors.Wrap(err, coreerrors.CodeCleanupError, "source conn close error"))
+		}
+	}
+	if b.targetConn != nil && b.targetTunnelConn == nil {
+		if err := b.targetConn.Close(); err != nil {
+			errs = append(errs, coreerrors.Wrap(err, coreerrors.CodeCleanupError, "target conn close error"))
+		}
+	}
+
+	if len(errs) > 0 {
+		return coreerrors.Newf(coreerrors.CodeCleanupError, "tunnel bridge cleanup errors: %v", errs)
+	}
+	return nil
 }
 
 // Close 关闭桥接
 func (b *Bridge) Close() error {
 	b.ManagerBase.Close()
 	return nil
-}
-
-// ============================================================================
-// 访问器方法 (实现 BridgeAccessor 接口)
-// ============================================================================
-
-// GetTunnelID 获取隧道ID
-func (b *Bridge) GetTunnelID() string {
-	if b == nil {
-		return ""
-	}
-	return b.tunnelID
-}
-
-// GetSourceConnectionID 获取源连接ID
-func (b *Bridge) GetSourceConnectionID() string {
-	if b == nil {
-		return ""
-	}
-	b.tunnelConnMu.RLock()
-	defer b.tunnelConnMu.RUnlock()
-	if b.sourceTunnelConn != nil {
-		return b.sourceTunnelConn.GetConnectionID()
-	}
-	return ""
-}
-
-// GetTargetConnectionID 获取目标连接ID
-func (b *Bridge) GetTargetConnectionID() string {
-	if b == nil {
-		return ""
-	}
-	b.tunnelConnMu.RLock()
-	defer b.tunnelConnMu.RUnlock()
-	if b.targetTunnelConn != nil {
-		return b.targetTunnelConn.GetConnectionID()
-	}
-	return ""
-}
-
-// GetMappingID 获取映射ID
-func (b *Bridge) GetMappingID() string {
-	if b == nil {
-		return ""
-	}
-	return b.mappingID
-}
-
-// GetClientID 获取客户端ID
-func (b *Bridge) GetClientID() int64 {
-	if b == nil {
-		return 0
-	}
-	b.tunnelConnMu.RLock()
-	defer b.tunnelConnMu.RUnlock()
-	if b.sourceTunnelConn != nil {
-		return b.sourceTunnelConn.GetClientID()
-	}
-	return 0
-}
-
-// IsActive 检查桥接是否活跃
-func (b *Bridge) IsActive() bool {
-	if b == nil {
-		return false
-	}
-	return !b.IsClosed()
-}
-
-// GetSourceTunnelConn 获取源端隧道连接
-func (b *Bridge) GetSourceTunnelConn() TunnelConnectionInterface {
-	if b == nil {
-		return nil
-	}
-	b.tunnelConnMu.RLock()
-	defer b.tunnelConnMu.RUnlock()
-	return b.sourceTunnelConn
-}
-
-// GetTargetTunnelConn 获取目标端隧道连接
-func (b *Bridge) GetTargetTunnelConn() TunnelConnectionInterface {
-	if b == nil {
-		return nil
-	}
-	b.tunnelConnMu.RLock()
-	defer b.tunnelConnMu.RUnlock()
-	return b.targetTunnelConn
-}
-
-// GetSourceNetConn 获取源端网络连接
-func (b *Bridge) GetSourceNetConn() net.Conn {
-	if b == nil {
-		return nil
-	}
-	b.sourceConnMu.RLock()
-	defer b.sourceConnMu.RUnlock()
-	return b.sourceConn
-}
-
-// GetTargetNetConn 获取目标端网络连接
-func (b *Bridge) GetTargetNetConn() net.Conn {
-	if b == nil {
-		return nil
-	}
-	return b.targetConn
-}
-
-// ============================================================================
-// 连接管理
-// ============================================================================
-
-// SetTargetConnection 设置目标端连接（统一接口）
-func (b *Bridge) SetTargetConnection(conn TunnelConnectionInterface) {
-	b.tunnelConnMu.Lock()
-	b.targetTunnelConn = conn
-	if conn != nil {
-		b.targetConn = conn.GetNetConn()
-		b.targetStream = conn.GetStream()
-		b.targetForwarder = CreateDataForwarder(b.targetConn, b.targetStream)
-	}
-	b.tunnelConnMu.Unlock()
-	close(b.ready)
-}
-
-// SetTargetConnectionLegacy 设置目标端连接（向后兼容）
-func (b *Bridge) SetTargetConnectionLegacy(targetConn net.Conn, targetStream stream.PackageStreamer) {
-	b.targetConn = targetConn
-	b.targetStream = targetStream
-	b.targetForwarder = CreateDataForwarder(targetConn, targetStream)
-
-	// 创建统一接口
-	if targetConn != nil || targetStream != nil {
-		connID := ""
-		if targetConn != nil {
-			connID = targetConn.RemoteAddr().String()
-		}
-		clientID := extractClientID(targetStream, targetConn)
-		b.tunnelConnMu.Lock()
-		b.targetTunnelConn = createTunnelConnection(
-			connID,
-			targetConn,
-			targetStream,
-			clientID,
-			b.mappingID,
-			b.tunnelID,
-		)
-		b.tunnelConnMu.Unlock()
-	}
-
-	close(b.ready)
-}
-
-// SetSourceConnection 设置源端连接（统一接口）
-func (b *Bridge) SetSourceConnection(conn TunnelConnectionInterface) {
-	b.tunnelConnMu.Lock()
-	b.sourceTunnelConn = conn
-	if conn != nil {
-		b.sourceConn = conn.GetNetConn()
-		b.sourceStream = conn.GetStream()
-		b.sourceForwarder = CreateDataForwarder(b.sourceConn, b.sourceStream)
-	} else {
-		b.sourceForwarder = nil
-	}
-	b.tunnelConnMu.Unlock()
-}
-
-// SetSourceConnectionLegacy 设置源端连接（向后兼容）
-func (b *Bridge) SetSourceConnectionLegacy(sourceConn net.Conn, sourceStream stream.PackageStreamer) {
-	b.sourceConnMu.Lock()
-	b.sourceConn = sourceConn
-	b.sourceForwarder = CreateDataForwarder(sourceConn, sourceStream)
-	b.sourceConnMu.Unlock()
-	if sourceStream != nil {
-		b.sourceStream = sourceStream
-	}
-
-	// 创建统一接口
-	if sourceConn != nil || sourceStream != nil {
-		connID := ""
-		if sourceConn != nil {
-			connID = sourceConn.RemoteAddr().String()
-		}
-		clientID := extractClientID(sourceStream, sourceConn)
-		b.tunnelConnMu.Lock()
-		b.sourceTunnelConn = createTunnelConnection(
-			connID,
-			sourceConn,
-			sourceStream,
-			clientID,
-			b.mappingID,
-			b.tunnelID,
-		)
-		b.tunnelConnMu.Unlock()
-	}
-}
-
-// GetSourceConn 获取源端连接（线程安全）
-func (b *Bridge) GetSourceConn() net.Conn {
-	b.sourceConnMu.RLock()
-	defer b.sourceConnMu.RUnlock()
-	return b.sourceConn
-}
-
-// GetSourceForwarder 获取源端数据转发器（线程安全）
-func (b *Bridge) GetSourceForwarder() DataForwarder {
-	b.sourceConnMu.RLock()
-	defer b.sourceConnMu.RUnlock()
-	return b.sourceForwarder
-}
-
-// GetTargetForwarder 获取目标端数据转发器
-func (b *Bridge) GetTargetForwarder() DataForwarder {
-	return b.targetForwarder
-}
-
-// WaitForTarget 等待目标端连接就绪
-func (b *Bridge) WaitForTarget(timeout time.Duration) error {
-	select {
-	case <-b.ready:
-		return nil
-	case <-time.After(timeout):
-		return fmt.Errorf("timeout waiting for target connection")
-	case <-b.Ctx().Done():
-		return b.Ctx().Err()
-	}
-}
-
-// IsTargetReady 检查目标端是否就绪
-func (b *Bridge) IsTargetReady() bool {
-	select {
-	case <-b.ready:
-		return true
-	default:
-		return false
-	}
-}
-
-// NotifyTargetReady 通知目标端就绪（用于跨节点场景）
-func (b *Bridge) NotifyTargetReady() {
-	select {
-	case <-b.ready:
-		// 已经关闭，忽略
-	default:
-		close(b.ready)
-	}
-}
-
-// ============================================================================
-// 跨节点连接管理
-// ============================================================================
-
-// SetCrossNodeConnection 设置跨节点连接
-func (b *Bridge) SetCrossNodeConnection(conn CrossNodeConnInterface) {
-	b.crossNodeConnMu.Lock()
-	b.crossNodeConn = conn
-	b.crossNodeConnMu.Unlock()
-}
-
-// GetCrossNodeConnection 获取跨节点连接
-func (b *Bridge) GetCrossNodeConnection() CrossNodeConnInterface {
-	b.crossNodeConnMu.RLock()
-	defer b.crossNodeConnMu.RUnlock()
-	return b.crossNodeConn
-}
-
-// ReleaseCrossNodeConnection 释放跨节点连接
-// 只清理 Bridge 中的引用，连接的生命周期由数据转发函数管理
-func (b *Bridge) ReleaseCrossNodeConnection() {
-	b.crossNodeConnMu.Lock()
-	b.crossNodeConn = nil // 只清理引用，不关闭连接
-	b.crossNodeConnMu.Unlock()
-}
-
-// ============================================================================
-// 流量统计
-// ============================================================================
-
-// GetBytesSent 获取发送字节数
-func (b *Bridge) GetBytesSent() int64 {
-	return b.bytesSent.Load()
-}
-
-// GetBytesReceived 获取接收字节数
-func (b *Bridge) GetBytesReceived() int64 {
-	return b.bytesReceived.Load()
-}
-
-// AddBytesSent 增加发送字节数
-func (b *Bridge) AddBytesSent(n int64) {
-	b.bytesSent.Add(n)
-}
-
-// AddBytesReceived 增加接收字节数
-func (b *Bridge) AddBytesReceived(n int64) {
-	b.bytesReceived.Add(n)
-}
-
-// GetRateLimiter 获取限速器
-func (b *Bridge) GetRateLimiter() *rate.Limiter {
-	return b.rateLimiter
-}
-
-// periodicTrafficReport 定期上报流量统计
-func (b *Bridge) periodicTrafficReport() {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			b.reportTrafficStats()
-		case <-b.Ctx().Done():
-			// 最终上报
-			b.reportTrafficStats()
-			return
-		}
-	}
-}
-
-// reportTrafficStats 上报流量统计到CloudControl
-func (b *Bridge) reportTrafficStats() {
-	if b.cloudControl == nil || b.mappingID == "" {
-		return
-	}
-
-	// 获取当前累计值
-	currentSent := b.bytesSent.Load()
-	currentReceived := b.bytesReceived.Load()
-
-	// 获取上次上报的值
-	lastSent := b.lastReportedSent.Load()
-	lastReceived := b.lastReportedReceived.Load()
-
-	// 计算增量
-	deltaSent := currentSent - lastSent
-	deltaReceived := currentReceived - lastReceived
-
-	// 如果没有增量，不上报
-	if deltaSent == 0 && deltaReceived == 0 {
-		return
-	}
-
-	// 获取当前映射的统计数据
-	mapping, err := b.cloudControl.GetPortMapping(b.mappingID)
-	if err != nil {
-		corelog.Errorf("TunnelBridge[%s]: failed to get mapping for traffic stats: %v", b.tunnelID, err)
-		return
-	}
-
-	// 累加增量到映射统计
-	trafficStats := mapping.TrafficStats
-	trafficStats.BytesSent += deltaSent
-	trafficStats.BytesReceived += deltaReceived
-	trafficStats.LastUpdated = time.Now()
-
-	// 更新映射统计
-	if err := b.cloudControl.UpdatePortMappingStats(b.mappingID, &trafficStats); err != nil {
-		corelog.Errorf("TunnelBridge[%s]: failed to update traffic stats: %v", b.tunnelID, err)
-		return
-	}
-
-	// 更新上次上报的值
-	b.lastReportedSent.Store(currentSent)
-	b.lastReportedReceived.Store(currentReceived)
-
-	corelog.Infof("TunnelBridge[%s]: traffic stats updated - mapping=%s, delta_sent=%d, delta_received=%d, total_sent=%d, total_received=%d",
-		b.tunnelID, b.mappingID, deltaSent, deltaReceived, trafficStats.BytesSent, trafficStats.BytesReceived)
-}
-
-// StartPeriodicTrafficReport 启动定期流量上报
-func (b *Bridge) StartPeriodicTrafficReport() {
-	if b.cloudControl != nil && b.mappingID != "" {
-		go b.periodicTrafficReport()
-	}
 }
 
 // ============================================================================

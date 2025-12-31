@@ -9,6 +9,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/constants"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 )
@@ -62,7 +63,7 @@ func (r *PortMappingRepo) GetPortMappingByDomain(fullDomain string) (*models.Por
 	// 从全局映射列表中查找
 	allMappings, err := r.ListAllMappings()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list mappings: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to list mappings")
 	}
 
 	for _, mapping := range allMappings {
@@ -73,7 +74,7 @@ func (r *PortMappingRepo) GetPortMappingByDomain(fullDomain string) (*models.Por
 		}
 	}
 
-	return nil, fmt.Errorf("mapping not found for domain: %s", fullDomain)
+	return nil, coreerrors.Newf(coreerrors.CodeNotFound, "mapping not found for domain: %s", fullDomain)
 }
 
 // DeletePortMapping 删除端口映射

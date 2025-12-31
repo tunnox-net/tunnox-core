@@ -6,8 +6,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"time"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
 
@@ -116,7 +118,7 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *models.Clien
 	// 生成Token ID用于撤销
 	tokenID, err := m.generateTokenID()
 	if err != nil {
-		return nil, fmt.Errorf("generate token ID failed: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "generate token ID failed")
 	}
 
 	// 创建访问Token声明
@@ -155,14 +157,14 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *models.Clien
 	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims)
 	accessTokenString, err := accessToken.SignedString([]byte(m.config.JWTSecretKey))
 	if err != nil {
-		return nil, fmt.Errorf("sign access token failed: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "sign access token failed")
 	}
 
 	// 生成刷新Token
 	refreshToken := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims)
 	refreshTokenString, err := refreshToken.SignedString([]byte(m.config.JWTSecretKey))
 	if err != nil {
-		return nil, fmt.Errorf("sign refresh token failed: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInternal, "sign refresh token failed")
 	}
 
 	// 存储Token信息到缓存
@@ -182,13 +184,13 @@ func (m *JWTManager) GenerateTokenPair(ctx context.Context, client *models.Clien
 	}
 
 	if err := m.cache.StoreAccessToken(ctx, accessTokenString, tokenInfo); err != nil {
-		return nil, fmt.Errorf("store access token failed: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "store access token failed")
 	}
 
 	if err := m.cache.StoreRefreshToken(ctx, refreshTokenString, refreshTokenInfo); err != nil {
 		// 如果存储刷新Token失败，需要清理已存储的访问Token
 		m.cache.RevokeAccessToken(ctx, accessTokenString)
-		return nil, fmt.Errorf("store refresh token failed: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "store refresh token failed")
 	}
 
 	return &JWTTokenInfo{
@@ -205,7 +207,7 @@ func (m *JWTManager) ValidateAccessToken(ctx context.Context, tokenString string
 	// 首先检查Token是否被撤销
 	revoked, err := m.cache.IsTokenRevoked(ctx, tokenString)
 	if err == nil && revoked {
-		return nil, fmt.Errorf("token has been revoked")
+		return nil, coreerrors.New(coreerrors.CodeTokenRevoked, "token has been revoked")
 	}
 
 	// 从缓存获取Token信息（快速验证）
@@ -215,7 +217,7 @@ func (m *JWTManager) ValidateAccessToken(ctx context.Context, tokenString string
 		if time.Now().After(cachedInfo.ExpiresAt) {
 			// Token已过期，从缓存中删除
 			m.cache.RevokeAccessToken(ctx, tokenString)
-			return nil, fmt.Errorf("token expired")
+			return nil, coreerrors.New(coreerrors.CodeTokenExpired, "token expired")
 		}
 
 		// 返回缓存的声明信息
@@ -238,32 +240,32 @@ func (m *JWTManager) ValidateAccessToken(ctx context.Context, tokenString string
 	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
 		// 验证签名方法
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, coreerrors.Newf(coreerrors.CodeInvalidToken, "unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(m.config.JWTSecretKey), nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("parse token failed: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidToken, "parse token failed")
 	}
 
 	if !token.Valid {
-		return nil, fmt.Errorf("invalid token")
+		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "invalid token")
 	}
 
 	claims, ok := token.Claims.(*JWTClaims)
 	if !ok {
-		return nil, fmt.Errorf("invalid token claims")
+		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "invalid token claims")
 	}
 
 	// 验证受众
 	if !utils.ContainsString(claims.Audience, "tunnox-client") {
-		return nil, fmt.Errorf("invalid audience")
+		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "invalid audience")
 	}
 
 	// 验证签发者
 	if claims.Issuer != m.config.JWTIssuer {
-		return nil, fmt.Errorf("invalid issuer")
+		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "invalid issuer")
 	}
 
 	// 验证通过后，将Token信息存储到缓存中（如果缓存中没有的话）
@@ -297,7 +299,7 @@ func (m *JWTManager) ValidateRefreshToken(ctx context.Context, refreshTokenStrin
 	// 首先检查刷新Token是否被撤销
 	revoked, err := m.cache.IsRefreshTokenRevoked(ctx, refreshTokenString)
 	if err == nil && revoked {
-		return nil, fmt.Errorf("refresh token has been revoked")
+		return nil, coreerrors.New(coreerrors.CodeTokenRevoked, "refresh token has been revoked")
 	}
 
 	// 从缓存获取刷新Token信息（快速验证）
@@ -307,7 +309,7 @@ func (m *JWTManager) ValidateRefreshToken(ctx context.Context, refreshTokenStrin
 		if time.Now().After(cachedInfo.ExpiresAt) {
 			// 刷新Token已过期，从缓存中删除
 			m.cache.RevokeRefreshToken(ctx, refreshTokenString)
-			return nil, fmt.Errorf("refresh token expired")
+			return nil, coreerrors.New(coreerrors.CodeTokenExpired, "refresh token expired")
 		}
 
 		// 返回缓存的声明信息
@@ -328,32 +330,32 @@ func (m *JWTManager) ValidateRefreshToken(ctx context.Context, refreshTokenStrin
 	token, err := jwt.ParseWithClaims(refreshTokenString, &RefreshTokenClaims{}, func(token *jwt.Token) (interface{}, error) {
 		// 验证签名方法
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, coreerrors.Newf(coreerrors.CodeInvalidToken, "unexpected signing method: %v", token.Header["alg"])
 		}
 		return []byte(m.config.JWTSecretKey), nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("parse refresh token failed: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidToken, "parse refresh token failed")
 	}
 
 	if !token.Valid {
-		return nil, fmt.Errorf("invalid refresh token")
+		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "invalid refresh token")
 	}
 
 	claims, ok := token.Claims.(*RefreshTokenClaims)
 	if !ok {
-		return nil, fmt.Errorf("invalid refresh token claims")
+		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "invalid refresh token claims")
 	}
 
 	// 验证受众
 	if !utils.ContainsString(claims.Audience, "tunnox-refresh") {
-		return nil, fmt.Errorf("invalid audience")
+		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "invalid audience")
 	}
 
 	// 验证签发者
 	if claims.Issuer != m.config.JWTIssuer {
-		return nil, fmt.Errorf("invalid issuer")
+		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "invalid issuer")
 	}
 
 	// 验证通过后，将刷新Token信息存储到缓存中（如果缓存中没有的话）
@@ -384,12 +386,12 @@ func (m *JWTManager) RefreshAccessToken(ctx context.Context, refreshTokenString 
 	// 验证刷新Token
 	refreshClaims, err := m.ValidateRefreshToken(ctx, refreshTokenString)
 	if err != nil {
-		return nil, fmt.Errorf("invalid refresh token: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidToken, "invalid refresh token")
 	}
 
 	// 校验ClientID是否匹配
 	if refreshClaims.ClientID != client.ID {
-		return nil, fmt.Errorf("client ID mismatch")
+		return nil, coreerrors.New(coreerrors.CodeInvalidToken, "client ID mismatch")
 	}
 
 	// 生成新的Token对
@@ -406,7 +408,7 @@ func (m *JWTManager) RevokeToken(ctx context.Context, tokenID string) error {
 func (m *JWTManager) generateTokenID() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+		return "", coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to generate random bytes")
 	}
 	return base64.URLEncoding.EncodeToString(b), nil
 }

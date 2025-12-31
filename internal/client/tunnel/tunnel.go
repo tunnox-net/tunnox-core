@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/utils"
@@ -165,14 +166,14 @@ func NewTunnel(config *TunnelConfig) *Tunnel {
 func (t *Tunnel) Start() error {
 	// 设置 context（从 manager 继承）
 	if t.manager == nil {
-		return fmt.Errorf("tunnel manager is nil")
+		return coreerrors.New(coreerrors.CodeInvalidState, "tunnel manager is nil")
 	}
 
 	t.SetCtx(t.manager.Ctx(), t.onClose)
 
 	// 更新状态
 	if !t.state.CompareAndSwap(int32(TunnelStateConnecting), int32(TunnelStateConnected)) {
-		return fmt.Errorf("invalid state transition")
+		return coreerrors.New(coreerrors.CodeInvalidState, "invalid state transition")
 	}
 
 	corelog.Infof("Tunnel[%s][%s]: starting, role=%s", t.role, t.id, t.role)
@@ -214,7 +215,7 @@ func (t *Tunnel) monitorTimeout() {
 		case <-timer.C:
 			if time.Since(lastActivity) >= idleTimeout {
 				corelog.Warnf("Tunnel[%s][%s]: idle timeout", t.role, t.id)
-				t.Close(CloseReasonTimeout, fmt.Errorf("idle timeout"))
+				t.Close(CloseReasonTimeout, coreerrors.New(coreerrors.CodeTimeout, "idle timeout"))
 				return
 			}
 			timer.Reset(idleTimeout)

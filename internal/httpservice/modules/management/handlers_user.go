@@ -5,6 +5,7 @@ import (
 
 	"tunnox-core/internal/cloud/models"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/httpservice"
 )
 
 // handleCreateUser 创建用户
@@ -31,7 +32,7 @@ func (m *ManagementModule) handleCreateUser(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	m.respondJSON(w, http.StatusCreated, user)
+	respondJSONTyped(w, http.StatusCreated, user)
 }
 
 // handleGetUser 获取用户
@@ -53,7 +54,7 @@ func (m *ManagementModule) handleGetUser(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, user)
+	respondJSONTyped(w, http.StatusOK, user)
 }
 
 // handleUpdateUser 更新用户
@@ -113,7 +114,7 @@ func (m *ManagementModule) handleUpdateUser(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, user)
+	respondJSONTyped(w, http.StatusOK, user)
 }
 
 // handleDeleteUser 删除用户
@@ -135,7 +136,7 @@ func (m *ManagementModule) handleDeleteUser(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, map[string]string{"message": "user deleted"})
+	respondJSONTyped(w, http.StatusOK, httpservice.MessageResponse{Message: "user deleted"})
 }
 
 // handleListUsers 列出用户
@@ -155,7 +156,7 @@ func (m *ManagementModule) handleListUsers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, users)
+	respondJSONTyped(w, http.StatusOK, users)
 }
 
 // handleListUserClients 列出用户的客户端
@@ -178,7 +179,7 @@ func (m *ManagementModule) handleListUserClients(w http.ResponseWriter, r *http.
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, clients)
+	respondJSONTyped(w, http.StatusOK, clients)
 }
 
 // handleListUserMappings 列出用户的映射
@@ -201,5 +202,5 @@ func (m *ManagementModule) handleListUserMappings(w http.ResponseWriter, r *http
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, mappings)
+	respondJSONTyped(w, http.StatusOK, mappings)
 }

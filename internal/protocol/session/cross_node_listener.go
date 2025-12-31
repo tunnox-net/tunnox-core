@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 
@@ -189,27 +188,13 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 		bridge.ReleaseCrossNodeConnection()
 	}()
 
-	done := make(chan struct{}, 2)
-	var closeOnce sync.Once
-
-	go func() {
-		defer func() {
-			closeOnce.Do(func() { _ = frameStream.Close() })
-			done <- struct{}{}
-		}()
-		_, _ = io.Copy(frameStream, sourceForwarder)
-	}()
-
-	go func() {
-		defer func() {
-			closeOnce.Do(func() { _ = frameStream.Close() })
-			done <- struct{}{}
-		}()
-		_, _ = io.Copy(sourceForwarder, frameStream)
-	}()
-
-	<-done
-	<-done
+	// 使用公共的双向转发逻辑
+	runBidirectionalForward(&BidirectionalForwardConfig{
+		TunnelID:   tunnelID,
+		LogPrefix:  "CrossNodeListener",
+		LocalConn:  sourceForwarder,
+		RemoteConn: frameStream,
+	})
 }
 
 // getBridgeIDs 获取所有 bridge ID（用于调试）

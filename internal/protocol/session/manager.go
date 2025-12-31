@@ -4,14 +4,32 @@ import (
 	"context"
 	"sync"
 	"time"
-	"tunnox-core/internal/cloud/models"
+
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/events"
 	"tunnox-core/internal/core/idgen"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
+	"tunnox-core/internal/protocol/session/core"
 	"tunnox-core/internal/security"
 	"tunnox-core/internal/stream"
+)
+
+// 会话管理器默认配置常量
+const (
+	// DefaultHeartbeatTimeout 默认心跳超时时间
+	// 缩短为60秒，负载均衡器后面连接多，需要更积极清理
+	DefaultHeartbeatTimeout = 60 * time.Second
+
+	// DefaultCleanupInterval 默认清理检查间隔
+	// 缩短为15秒，更频繁检查过期连接
+	DefaultCleanupInterval = 15 * time.Second
+
+	// DefaultMaxConnections 默认最大连接数限制
+	DefaultMaxConnections = 10000
+
+	// DefaultMaxControlConnections 默认最大控制连接数限制
+	DefaultMaxControlConnections = 5000
 )
 
 // SessionConfig SessionManager配置
@@ -32,10 +50,10 @@ type SessionConfig struct {
 // DefaultSessionConfig 返回默认配置
 func DefaultSessionConfig() *SessionConfig {
 	return &SessionConfig{
-		HeartbeatTimeout:      60 * time.Second, // 缩短为60秒（负载均衡器后面连接多，需要更积极清理）
-		CleanupInterval:       15 * time.Second, // 缩短为15秒（更频繁检查）
-		MaxConnections:        10000,            // 最大10000个连接
-		MaxControlConnections: 5000,             // 最大5000个控制连接
+		HeartbeatTimeout:      DefaultHeartbeatTimeout,
+		CleanupInterval:       DefaultCleanupInterval,
+		MaxConnections:        DefaultMaxConnections,
+		MaxControlConnections: DefaultMaxControlConnections,
 	}
 }
 
@@ -65,23 +83,9 @@ type SessionManager struct {
 	// 数据包路由器
 	packetRouter *PacketRouter
 
-	// ============================================================================
-	// 旧架构字段（保持向后兼容，逐步迁移）
-	// ============================================================================
-
-	// 基础连接映射（所有连接）
+	// 基础连接映射（所有连接的原始映射）
 	connMap  map[string]*types.Connection
 	connLock sync.RWMutex
-
-	// 指令连接（Control Connection）- 已迁移到 clientRegistry
-	controlConnMap   map[string]*ControlConnection // connID -> 指令连接
-	clientIDIndexMap map[int64]*ControlConnection  // clientID -> 指令连接（快速查找）
-	controlConnLock  sync.RWMutex
-
-	// 映射连接（Tunnel Connection）- 已迁移到 tunnelRegistry
-	tunnelConnMap  map[string]*TunnelConnection // connID -> 映射连接
-	tunnelIDMap    map[string]*TunnelConnection // tunnelID -> 映射连接
-	tunnelConnLock sync.RWMutex
 
 	idManager     *idgen.IDManager
 	streamMgr     *stream.StreamManager
@@ -185,16 +189,8 @@ func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.C
 		tunnelRegistry: tunnelRegistry,
 		packetRouter:   packetRouter,
 
-		// 基础连接（保持向后兼容）
+		// 基础连接映射
 		connMap: make(map[string]*types.Connection),
-
-		// 指令连接（保持向后兼容，同时使用 clientRegistry）
-		controlConnMap:   make(map[string]*ControlConnection),
-		clientIDIndexMap: make(map[int64]*ControlConnection),
-
-		// 映射连接（保持向后兼容，同时使用 tunnelRegistry）
-		tunnelConnMap: make(map[string]*TunnelConnection),
-		tunnelIDMap:   make(map[string]*TunnelConnection),
 
 		// 隧道桥接
 		tunnelBridges: make(map[string]*TunnelBridge),
@@ -227,12 +223,8 @@ func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.C
 }
 
 // CloudControlAPI 定义CloudControl接口
-// ✅ 统一返回 *models.PortMapping，不再使用 interface{}
-type CloudControlAPI interface {
-	GetPortMapping(mappingID string) (*models.PortMapping, error)
-	UpdatePortMappingStats(mappingID string, stats interface{}) error
-	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error)
-}
+// 已迁移到 core 子包，这里保留别名以保持向后兼容
+type CloudControlAPI = core.CloudControlAPI
 
 // ============================================================================
 // Handler 设置、跨节点组件设置、组件访问器已移至 manager_ops.go
@@ -269,14 +261,18 @@ func (s *SessionManager) onClose() error {
 	}
 
 	// 关闭新架构组件
+	controlConnCount := 0
+	tunnelConnCount := 0
 	if s.clientRegistry != nil {
+		controlConnCount = s.clientRegistry.Count()
 		s.clientRegistry.Close()
 	}
 	if s.tunnelRegistry != nil {
+		tunnelConnCount = s.tunnelRegistry.Count()
 		s.tunnelRegistry.Close()
 	}
 
-	// 关闭所有连接（旧架构，保持向后兼容）
+	// 关闭基础连接映射
 	s.connLock.Lock()
 	connCount := len(s.connMap)
 	for _, conn := range s.connMap {
@@ -289,30 +285,6 @@ func (s *SessionManager) onClose() error {
 	}
 	s.connMap = make(map[string]*types.Connection)
 	s.connLock.Unlock()
-
-	// 关闭所有控制连接（旧架构）
-	s.controlConnLock.Lock()
-	controlConnCount := len(s.controlConnMap)
-	for _, conn := range s.controlConnMap {
-		if conn.Stream != nil {
-			conn.Stream.Close()
-		}
-	}
-	s.controlConnMap = make(map[string]*ControlConnection)
-	s.clientIDIndexMap = make(map[int64]*ControlConnection)
-	s.controlConnLock.Unlock()
-
-	// 关闭所有隧道连接（旧架构）
-	s.tunnelConnLock.Lock()
-	tunnelConnCount := len(s.tunnelConnMap)
-	for _, conn := range s.tunnelConnMap {
-		if conn.Stream != nil {
-			conn.Stream.Close()
-		}
-	}
-	s.tunnelConnMap = make(map[string]*TunnelConnection)
-	s.tunnelIDMap = make(map[string]*TunnelConnection)
-	s.tunnelConnLock.Unlock()
 
 	corelog.Infof("SessionManager: closed %d connections, %d control connections, %d tunnel connections",
 		connCount, controlConnCount, tunnelConnCount)

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
@@ -187,7 +188,7 @@ func (m *ResponseManager) WaitForResponse(commandID string, responseChan chan *R
 		if resp == nil {
 			corelog.Errorf("[CMD_TRACE] [CLIENT] [WAIT_FAILED] CommandID=%s, WaitDuration=%v, Reason=channel_closed, Time=%s",
 				commandID, waitDuration, time.Now().Format("15:04:05.000"))
-			return nil, fmt.Errorf("response channel closed")
+			return nil, coreerrors.New(coreerrors.CodeNetworkError, "response channel closed")
 		}
 		corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, Success=%v, Time=%s",
 			commandID, waitDuration, resp.Success, time.Now().Format("15:04:05.000"))
@@ -197,7 +198,7 @@ func (m *ResponseManager) WaitForResponse(commandID string, responseChan chan *R
 		corelog.Errorf("[CMD_TRACE] [CLIENT] [WAIT_TIMEOUT] CommandID=%s, WaitDuration=%v, Timeout=%v, Time=%s",
 			commandID, waitDuration, m.timeout, time.Now().Format("15:04:05.000"))
 		m.UnregisterRequest(commandID)
-		return nil, fmt.Errorf("command timeout after %v", m.timeout)
+		return nil, coreerrors.Newf(coreerrors.CodeTimeout, "command timeout after %v", m.timeout)
 	}
 }
 
@@ -214,7 +215,7 @@ func (m *ResponseManager) WaitForResponseWithContext(ctx context.Context, comman
 		if resp == nil {
 			corelog.Errorf("[CMD_TRACE] [CLIENT] [WAIT_FAILED] CommandID=%s, WaitDuration=%v, Reason=channel_closed, Time=%s",
 				commandID, waitDuration, time.Now().Format("15:04:05.000"))
-			return nil, fmt.Errorf("response channel closed")
+			return nil, coreerrors.New(coreerrors.CodeNetworkError, "response channel closed")
 		}
 		corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_COMPLETE] CommandID=%s, WaitDuration=%v, Success=%v, Time=%s",
 			commandID, waitDuration, resp.Success, time.Now().Format("15:04:05.000"))
@@ -224,12 +225,12 @@ func (m *ResponseManager) WaitForResponseWithContext(ctx context.Context, comman
 		corelog.Errorf("[CMD_TRACE] [CLIENT] [WAIT_TIMEOUT] CommandID=%s, WaitDuration=%v, Timeout=%v, Time=%s",
 			commandID, waitDuration, m.timeout, time.Now().Format("15:04:05.000"))
 		m.UnregisterRequest(commandID)
-		return nil, fmt.Errorf("command timeout after %v", m.timeout)
+		return nil, coreerrors.Newf(coreerrors.CodeTimeout, "command timeout after %v", m.timeout)
 	case <-ctx.Done():
 		waitDuration := time.Since(waitStartTime)
 		corelog.Debugf("[CMD_TRACE] [CLIENT] [WAIT_CANCELLED] CommandID=%s, WaitDuration=%v, Time=%s",
 			commandID, waitDuration, time.Now().Format("15:04:05.000"))
 		m.UnregisterRequest(commandID)
-		return nil, fmt.Errorf("command cancelled: %w", ctx.Err())
+		return nil, coreerrors.Wrap(ctx.Err(), coreerrors.CodeOperationCancelled, "command cancelled")
 	}
 }

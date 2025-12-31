@@ -2,10 +2,8 @@ package session
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net"
-	"sync"
 	"time"
 
 	coreerrors "tunnox-core/internal/core/errors"
@@ -145,7 +143,12 @@ func (s *SessionManager) forwardToSourceNode(
 	}
 
 	// 2. 发送 TargetTunnelReady 消息
-	tunnelID, _ := TunnelIDFromString(req.TunnelID)
+	tunnelID, err := TunnelIDFromString(req.TunnelID)
+	if err != nil {
+		corelog.Errorf("CrossNode[%s]: invalid tunnel ID format: %v", req.TunnelID, err)
+		crossConn.Release()
+		return coreerrors.Wrap(err, coreerrors.CodeInvalidParam, "invalid tunnel ID format")
+	}
 	readyData := EncodeTargetReadyMessage(req.TunnelID, s.nodeID)
 	if err := WriteFrame(crossConn.GetTCPConn(), tunnelID, FrameTypeTargetReady, readyData); err != nil {
 		corelog.Errorf("CrossNode[%s]: failed to send target ready message: %v", req.TunnelID, err)
@@ -158,7 +161,7 @@ func (s *SessionManager) forwardToSourceNode(
 	go s.runCrossNodeDataForward(req.TunnelID, conn, netConn, crossConn)
 
 	// 4. 返回特殊错误，让 readLoop 退出（连接已被跨节点转发接管）
-	return fmt.Errorf("tunnel target connected via cross-node forwarding, switching to stream mode")
+	return coreerrors.New(coreerrors.CodeTunnelModeSwitch, "tunnel target connected via cross-node forwarding, switching to stream mode")
 }
 
 // runCrossNodeDataForward 运行跨节点数据转发（零拷贝）
@@ -218,28 +221,13 @@ func (s *SessionManager) runCrossNodeDataForward(
 		}
 	}()
 
-	// 双向数据转发
-	done := make(chan struct{}, 2)
-	var closeOnce sync.Once
-
-	go func() {
-		defer func() {
-			closeOnce.Do(func() { _ = frameStream.Close() })
-			done <- struct{}{}
-		}()
-		_, _ = io.Copy(frameStream, localConn)
-	}()
-
-	go func() {
-		defer func() {
-			closeOnce.Do(func() { _ = frameStream.Close() })
-			done <- struct{}{}
-		}()
-		_, _ = io.Copy(localConn, frameStream)
-	}()
-
-	<-done
-	<-done
+	// 使用公共的双向转发逻辑
+	runBidirectionalForward(&BidirectionalForwardConfig{
+		TunnelID:   tunnelID,
+		LogPrefix:  "CrossNodeDataForward",
+		LocalConn:  localConn,
+		RemoteConn: frameStream,
+	})
 }
 
 // readWriterWrapper 包装 Reader 和 Writer
@@ -264,5 +252,5 @@ func (s *SessionManager) getNodeAddress(nodeID string) (string, error) {
 			return addr, nil
 		}
 	}
-	return fmt.Sprintf("%s:50052", nodeID), nil
+	return nodeID + ":50052", nil
 }

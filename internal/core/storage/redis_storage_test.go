@@ -340,15 +340,15 @@ func TestRedisStorage_Factory(t *testing.T) {
 	factory := NewStorageFactory(ctx)
 
 	t.Run("Factory_Create_Redis", func(t *testing.T) {
-		config := map[string]interface{}{
-			"type":      "redis",
-			"addr":      "localhost:6379",
-			"password":  "",
-			"db":        0,
-			"pool_size": 10,
+		config := &StorageConfigMap{
+			Type:     StorageTypeRedis,
+			Addr:     "localhost:6379",
+			Password: "",
+			DB:       0,
+			PoolSize: 10,
 		}
 
-		storage, err := factory.CreateStorageWithConfig(config)
+		storage, err := factory.CreateStorageWithConfigMap(config)
 		if err != nil {
 			t.Skipf("Redis not available, skipping test: %v", err)
 		}
@@ -369,11 +369,11 @@ func TestRedisStorage_Factory(t *testing.T) {
 	})
 
 	t.Run("Factory_Create_Memory", func(t *testing.T) {
-		config := map[string]interface{}{
-			"type": "memory",
+		config := &StorageConfigMap{
+			Type: StorageTypeMemory,
 		}
 
-		storage, err := factory.CreateStorageWithConfig(config)
+		storage, err := factory.CreateStorageWithConfigMap(config)
 		require.NoError(t, err)
 		defer storage.Close()
 

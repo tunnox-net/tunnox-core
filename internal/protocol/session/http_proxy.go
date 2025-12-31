@@ -3,7 +3,6 @@
 package session
 
 import (
-	"context"
 	"encoding/json"
 	"sync"
 	"time"
@@ -12,102 +11,23 @@ import (
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/httptypes"
+	"tunnox-core/internal/protocol/session/httpproxy"
 )
 
-// HTTPProxyManager HTTP 代理管理器
-// 管理 HTTP 代理请求的发送和响应等待
-type HTTPProxyManager struct {
-	// 等待响应的请求
-	pendingRequests map[string]chan *httptypes.HTTPProxyResponse
-	pendingMu       sync.RWMutex
+// ============================================================================
+// 类型别名 - 保持 API 兼容性
+// HTTPProxyManager 实现已移至 httpproxy 子包
+// ============================================================================
 
-	// 默认超时
-	defaultTimeout time.Duration
-}
+// HTTPProxyManager HTTP 代理管理器（类型别名）
+type HTTPProxyManager = httpproxy.Manager
 
 // NewHTTPProxyManager 创建 HTTP 代理管理器
-func NewHTTPProxyManager() *HTTPProxyManager {
-	return &HTTPProxyManager{
-		pendingRequests: make(map[string]chan *httptypes.HTTPProxyResponse),
-		defaultTimeout:  30 * time.Second,
-	}
-}
-
-// RegisterPendingRequest 注册等待响应的请求
-func (m *HTTPProxyManager) RegisterPendingRequest(requestID string) chan *httptypes.HTTPProxyResponse {
-	ch := make(chan *httptypes.HTTPProxyResponse, 1)
-
-	m.pendingMu.Lock()
-	m.pendingRequests[requestID] = ch
-	m.pendingMu.Unlock()
-
-	return ch
-}
-
-// UnregisterPendingRequest 注销等待响应的请求
-func (m *HTTPProxyManager) UnregisterPendingRequest(requestID string) {
-	m.pendingMu.Lock()
-	delete(m.pendingRequests, requestID)
-	m.pendingMu.Unlock()
-}
-
-// HandleResponse 处理 HTTP 代理响应
-func (m *HTTPProxyManager) HandleResponse(resp *httptypes.HTTPProxyResponse) {
-	m.pendingMu.RLock()
-	ch, exists := m.pendingRequests[resp.RequestID]
-	m.pendingMu.RUnlock()
-
-	if !exists {
-		corelog.Warnf("HTTPProxyManager: no pending request for ID %s", resp.RequestID)
-		return
-	}
-
-	select {
-	case ch <- resp:
-	default:
-		corelog.Warnf("HTTPProxyManager: response channel full for request %s", resp.RequestID)
-	}
-}
-
-// WaitForResponse 等待响应
-func (m *HTTPProxyManager) WaitForResponse(
-	ctx context.Context,
-	requestID string,
-	timeout time.Duration,
-) (*httptypes.HTTPProxyResponse, error) {
-	ch := m.RegisterPendingRequest(requestID)
-	defer m.UnregisterPendingRequest(requestID)
-
-	if timeout == 0 {
-		timeout = m.defaultTimeout
-	}
-
-	select {
-	case resp := <-ch:
-		return resp, nil
-	case <-time.After(timeout):
-		return nil, coreerrors.New(coreerrors.CodeTimeout, "HTTP proxy request timeout")
-	case <-ctx.Done():
-		return nil, coreerrors.New(coreerrors.CodeTimeout, "context cancelled")
-	}
-}
-
-// ============================================================================
-// SessionManager HTTP 代理扩展
-// ============================================================================
-
-// httpProxyManager HTTP 代理管理器（懒加载）
-var (
-	globalHTTPProxyManager     *HTTPProxyManager
-	globalHTTPProxyManagerOnce sync.Once
-)
+var NewHTTPProxyManager = httpproxy.NewManager
 
 // getHTTPProxyManager 获取全局 HTTP 代理管理器
 func getHTTPProxyManager() *HTTPProxyManager {
-	globalHTTPProxyManagerOnce.Do(func() {
-		globalHTTPProxyManager = NewHTTPProxyManager()
-	})
-	return globalHTTPProxyManager
+	return httpproxy.GetGlobalManager()
 }
 
 // SendHTTPProxyRequest 发送 HTTP 代理请求到 Client

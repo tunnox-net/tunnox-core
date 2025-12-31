@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // ClientRuntimeState 客户端运行时状态
@@ -54,19 +56,19 @@ func (s *ClientRuntimeState) IsBlocked() bool {
 // Validate 验证状态有效性
 func (s *ClientRuntimeState) Validate() error {
 	if s.ClientID <= 0 {
-		return fmt.Errorf("invalid client ID: %d", s.ClientID)
+		return coreerrors.Newf(coreerrors.CodeValidationError, "invalid client ID: %d", s.ClientID)
 	}
 
 	if s.Status != ClientStatusOnline && s.Status != ClientStatusOffline && s.Status != ClientStatusBlocked {
-		return fmt.Errorf("invalid status: %s", s.Status)
+		return coreerrors.Newf(coreerrors.CodeValidationError, "invalid status: %s", s.Status)
 	}
 
 	if s.Status == ClientStatusOnline {
 		if s.NodeID == "" {
-			return fmt.Errorf("online client must have node_id")
+			return coreerrors.New(coreerrors.CodeValidationError, "online client must have node_id")
 		}
 		if s.ConnID == "" {
-			return fmt.Errorf("online client must have conn_id")
+			return coreerrors.New(coreerrors.CodeValidationError, "online client must have conn_id")
 		}
 	}
 

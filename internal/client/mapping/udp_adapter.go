@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/config"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 )
 
@@ -55,7 +56,7 @@ func (a *UDPMappingAdapter) StartListener(config config.MappingConfig) error {
 	addr := fmt.Sprintf(":%d", config.LocalPort)
 	listener, err := net.ListenPacket("udp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", addr, err)
+		return coreerrors.Wrapf(err, coreerrors.CodeNetworkError, "failed to listen on %s", addr)
 	}
 
 	a.listener = listener
@@ -186,7 +187,7 @@ func (a *UDPMappingAdapter) Accept() (io.ReadWriteCloser, error) {
 	case conn := <-a.connChan:
 		return conn, nil
 	case <-a.closeCh:
-		return nil, fmt.Errorf("adapter closed")
+		return nil, coreerrors.New(coreerrors.CodeResourceClosed, "adapter closed")
 	}
 }
 
@@ -247,7 +248,7 @@ func (c *UDPVirtualConn) Write(p []byte) (int, error) {
 	case <-c.closeCh:
 		return 0, io.ErrClosedPipe
 	default:
-		return 0, fmt.Errorf("write channel full")
+		return 0, coreerrors.New(coreerrors.CodeResourceExhausted, "write channel full")
 	}
 }
 

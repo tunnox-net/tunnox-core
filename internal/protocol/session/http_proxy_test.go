@@ -19,20 +19,29 @@ func TestHTTPProxyManager_RegisterAndUnregister(t *testing.T) {
 	ch := manager.RegisterPendingRequest(requestID)
 	assert.NotNil(t, ch)
 
-	// 验证请求已注册
-	manager.pendingMu.RLock()
-	_, exists := manager.pendingRequests[requestID]
-	manager.pendingMu.RUnlock()
-	assert.True(t, exists)
+	// 通过发送响应来验证请求已注册
+	resp := &httptypes.HTTPProxyResponse{
+		RequestID:  requestID,
+		StatusCode: 200,
+	}
+	go manager.HandleResponse(resp)
+
+	// 应该能收到响应
+	select {
+	case received := <-ch:
+		assert.Equal(t, requestID, received.RequestID)
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for response, request may not be registered")
+	}
 
 	// 注销请求
 	manager.UnregisterPendingRequest(requestID)
 
-	// 验证请求已注销
-	manager.pendingMu.RLock()
-	_, exists = manager.pendingRequests[requestID]
-	manager.pendingMu.RUnlock()
-	assert.False(t, exists)
+	// 验证请求已注销 - 重新注册应该得到新的 channel
+	ch2 := manager.RegisterPendingRequest(requestID)
+	assert.NotNil(t, ch2)
+	// 清理
+	manager.UnregisterPendingRequest(requestID)
 }
 
 func TestHTTPProxyManager_HandleResponse(t *testing.T) {

@@ -2,12 +2,12 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"strings"
 	"time"
 
 	"tunnox-core/internal/client/transport"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 )
@@ -22,7 +22,7 @@ func (c *TunnoxClient) Connect() error {
 
 	// 如果指定了协议但没有地址，报错
 	if c.config.Server.Protocol != "" && c.config.Server.Address == "" {
-		return fmt.Errorf("server address is required when protocol is specified (%s)", c.config.Server.Protocol)
+		return coreerrors.Newf(coreerrors.CodeInvalidParam, "server address is required when protocol is specified (%s)", c.config.Server.Protocol)
 	}
 
 	corelog.Infof("Client: connecting to server %s", c.config.Server.Address)
@@ -37,7 +37,7 @@ func (c *TunnoxClient) Connect() error {
 	// 检查 context 是否已被取消
 	select {
 	case <-c.Ctx().Done():
-		return fmt.Errorf("connection cancelled: %w", c.Ctx().Err())
+		return coreerrors.Wrap(c.Ctx().Err(), coreerrors.CodeCancelled, "connection cancelled")
 	default:
 	}
 
@@ -71,7 +71,7 @@ func (c *TunnoxClient) Connect() error {
 		// 检查协议是否可用
 		if !transport.IsProtocolAvailable(normalizedProtocol) {
 			availableProtocols := transport.GetAvailableProtocolNames()
-			resultErr = fmt.Errorf("protocol %q is not available (compiled protocols: %v)", normalizedProtocol, availableProtocols)
+			resultErr = coreerrors.Newf(coreerrors.CodeNotConfigured, "protocol %q is not available (compiled protocols: %v)", normalizedProtocol, availableProtocols)
 		} else {
 			// 使用统一的协议注册表拨号
 			resultConn, resultErr = transport.Dial(connectCtx, normalizedProtocol, c.config.Server.Address)
@@ -99,11 +99,11 @@ func (c *TunnoxClient) Connect() error {
 	case result := <-connectDone:
 		conn, err = result.conn, result.err
 	case <-connectCtx.Done():
-		err = fmt.Errorf("connection cancelled: %w", connectCtx.Err())
+		err = coreerrors.Wrap(connectCtx.Err(), coreerrors.CodeCancelled, "connection cancelled")
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to dial server (%s): %w", protocol, err)
+		return coreerrors.Wrapf(err, coreerrors.CodeNetworkError, "failed to dial server (%s)", protocol)
 	}
 
 	c.config.Server.Protocol = strings.ToLower(protocol)
@@ -141,7 +141,7 @@ func (c *TunnoxClient) Connect() error {
 			c.controlConn = nil
 		}
 		c.mu.Unlock()
-		return fmt.Errorf("handshake failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeHandshakeFailed, "handshake failed")
 	}
 
 	// 4. 启动读取循环（接收服务器命令）

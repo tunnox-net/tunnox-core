@@ -1,7 +1,7 @@
 package distributed
 
 import (
-	"fmt"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
@@ -38,7 +38,7 @@ func (f *LockFactory) CreateLock(lockType LockType, owner string) (DistributedLo
 		corelog.Debugf("Creating storage-based distributed lock for owner: %s", owner)
 		return NewStorageBasedLock(f.storage, owner), nil
 	default:
-		return nil, fmt.Errorf("unsupported lock type: %s", lockType)
+		return nil, coreerrors.Newf(coreerrors.CodeInvalidParam, "unsupported lock type: %s", lockType)
 	}
 }
 
@@ -65,5 +65,5 @@ func (f *LockFactory) CreateLockWithRetry(lockType LockType, owner string, maxRe
 		corelog.Warnf("Failed to create lock (attempt %d/%d): %v", i+1, maxRetries, err)
 	}
 
-	return nil, fmt.Errorf("failed to create lock after %d attempts: %w", maxRetries, lastErr)
+	return nil, coreerrors.Wrapf(lastErr, coreerrors.CodeInternal, "failed to create lock after %d attempts", maxRetries)
 }

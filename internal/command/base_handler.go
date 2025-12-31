@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
@@ -69,12 +71,12 @@ func (b *BaseCommandHandler[TRequest, TResponse]) GetCommunicationMode() Communi
 // ParseRequest 解析请求体为泛型类型
 func (b *BaseCommandHandler[TRequest, TResponse]) ParseRequest(ctx *CommandContext) (*TRequest, error) {
 	if ctx.RequestBody == "" {
-		return nil, fmt.Errorf("request body is empty")
+		return nil, coreerrors.New(coreerrors.CodeInvalidParam, "request body is empty")
 	}
 
 	var request TRequest
 	if err := json.Unmarshal([]byte(ctx.RequestBody), &request); err != nil {
-		return nil, fmt.Errorf("failed to parse request body: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse request body")
 	}
 
 	return &request, nil
@@ -141,7 +143,7 @@ func (b *BaseCommandHandler[TRequest, TResponse]) PostProcess(ctx *CommandContex
 
 // ProcessRequest 处理请求（子类必须实现）
 func (b *BaseCommandHandler[TRequest, TResponse]) ProcessRequest(ctx *CommandContext, request *TRequest) (*TResponse, error) {
-	return nil, fmt.Errorf("ProcessRequest not implemented")
+	return nil, coreerrors.New(coreerrors.CodeNotImplemented, "ProcessRequest not implemented")
 }
 
 // GetStreamProcessor 获取流处理器
@@ -185,23 +187,28 @@ func (b *BaseCommandHandler[TRequest, TResponse]) GetContext() context.Context {
 	if b.session != nil {
 		return b.session.(interface{ Ctx() context.Context }).Ctx()
 	}
-	// session 未设置时使用 context.Background() 作为后备
-	// 这种情况通常只在测试或简单场景中出现
+	// 设计决策：此处使用 context.Background() 作为后备是有意为之
+	// 原因：
+	// 1. BaseCommandHandler 是泛型基类，在单元测试中可能不需要完整的 session
+	// 2. 某些简单的命令处理场景（如健康检查）可能独立于 session 生命周期
+	// 3. 这是一个防御性编程措施，避免调用者忘记设置 session 时 panic
+	// 正常生产使用时，调用方必须通过 SetSession 注入 session，
+	// 此时会从 session 获取正确的父 context，遵循 dispose 模式
 	return context.Background()
 }
 
 // ValidateContext 验证上下文
 func (b *BaseCommandHandler[TRequest, TResponse]) ValidateContext(ctx *CommandContext) error {
 	if ctx == nil {
-		return fmt.Errorf("command context is nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "command context is nil")
 	}
 
 	if ctx.ConnectionID == "" {
-		return fmt.Errorf("connection ID is empty")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "connection ID is empty")
 	}
 
 	if ctx.CommandType == 0 {
-		return fmt.Errorf("command type is invalid")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "command type is invalid")
 	}
 
 	return nil

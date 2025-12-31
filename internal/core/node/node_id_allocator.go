@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
@@ -78,7 +80,7 @@ func (a *NodeIDAllocator) AllocateNodeID(ctx context.Context) (string, error) {
 		corelog.Debugf("NodeIDAllocator: %s already occupied, trying next...", nodeID)
 	}
 
-	return "", fmt.Errorf("no available node ID in range %d-%d (all occupied)", NodeIDMin, NodeIDMax)
+	return "", coreerrors.Newf(coreerrors.CodeResourceExhausted, "no available node ID in range %d-%d (all occupied)", NodeIDMin, NodeIDMax)
 }
 
 // tryAcquireNodeID 尝试占用节点ID
@@ -113,7 +115,7 @@ func (a *NodeIDAllocator) tryAcquireNodeID(key, nodeID string) (bool, error) {
 	// 如果 storage 不支持 SetNX，使用原来的非原子方式（兼容性）
 	exists, err := a.storage.Exists(key)
 	if err != nil {
-		return false, fmt.Errorf("failed to check existence: %w", err)
+		return false, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to check existence")
 	}
 	if exists {
 		return false, nil
@@ -121,13 +123,13 @@ func (a *NodeIDAllocator) tryAcquireNodeID(key, nodeID string) (bool, error) {
 
 	err = a.storage.Set(key, nodeID, NodeIDLockTTL)
 	if err != nil {
-		return false, fmt.Errorf("failed to set node ID: %w", err)
+		return false, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to set node ID")
 	}
 
 	// 再次确认（防止竞态）
 	value, err := a.storage.Get(key)
 	if err != nil {
-		return false, fmt.Errorf("failed to verify node ID: %w", err)
+		return false, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to verify node ID")
 	}
 
 	if valueStr, ok := value.(string); ok && valueStr == nodeID {
@@ -192,7 +194,7 @@ func (a *NodeIDAllocator) Release() error {
 	key := NodeIDKeyPrefix + a.nodeID
 	err := a.storage.Delete(key)
 	if err != nil {
-		return fmt.Errorf("failed to release node ID %s: %w", a.nodeID, err)
+		return coreerrors.Wrapf(err, coreerrors.CodeStorageError, "failed to release node ID %s", a.nodeID)
 	}
 
 	corelog.Infof("NodeIDAllocator: released node ID: %s", a.nodeID)

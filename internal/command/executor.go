@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
@@ -50,7 +52,7 @@ func (ce *CommandExecutor) Execute(streamPacket *types.StreamPacket) error {
 	// 获取命令处理器
 	handler, exists := ce.registry.GetHandler(ctx.CommandType)
 	if !exists {
-		return fmt.Errorf("no handler registered for command type: %v", ctx.CommandType)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "no handler registered for command type: %v", ctx.CommandType)
 	}
 
 	// 根据响应类型处理
@@ -60,7 +62,7 @@ func (ce *CommandExecutor) Execute(streamPacket *types.StreamPacket) error {
 	case types.DirectionDuplex:
 		return ce.executeDuplex(ctx, handler)
 	default:
-		return fmt.Errorf("unknown response type: %v", handler.GetDirection())
+		return coreerrors.Newf(coreerrors.CodeInvalidParam, "unknown response type: %v", handler.GetDirection())
 	}
 }
 
@@ -140,12 +142,12 @@ func (ce *CommandExecutor) executeDuplex(ctx *types.CommandContext, handler type
 	case response := <-responseChan:
 		corelog.Debugf("CommandExecutor: received response from channel, Success=%v, CommandID=%s", response.Success, ctx.CommandId)
 		if !response.Success {
-			return fmt.Errorf("command execution failed: %s", response.Error)
+			return coreerrors.Newf(coreerrors.CodeInternal, "command execution failed: %s", response.Error)
 		}
 		return nil
 	case <-time.After(timeout):
 		corelog.Errorf("CommandExecutor: command timeout, CommandID=%s, ConnectionID=%s", ctx.CommandId, ctx.ConnectionID)
-		return fmt.Errorf("command timeout")
+		return coreerrors.New(coreerrors.CodeTimeout, "command timeout")
 	}
 }
 
@@ -210,19 +212,19 @@ func (ce *CommandExecutor) sendResponse(connectionID string, response *types.Com
 		connectionID, response.CommandId, response.Success)
 
 	if ce.session == nil {
-		return fmt.Errorf("session not set, cannot send response")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "session not set, cannot send response")
 	}
 
 	// 通过 Session 接口获取连接
 	conn, exists := ce.session.GetConnection(connectionID)
 	if !exists || conn == nil {
 		corelog.Errorf("CommandExecutor.sendResponse: connection not found, ConnectionID=%s", connectionID)
-		return fmt.Errorf("connection not found: %s", connectionID)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "connection not found: %s", connectionID)
 	}
 
 	if conn.Stream == nil {
 		corelog.Errorf("CommandExecutor.sendResponse: stream is nil, ConnectionID=%s", connectionID)
-		return fmt.Errorf("stream is nil for connection %s", connectionID)
+		return coreerrors.Newf(coreerrors.CodeConnectionError, "stream is nil for connection %s", connectionID)
 	}
 
 	pkgStream := conn.Stream
@@ -252,7 +254,7 @@ func (ce *CommandExecutor) sendResponse(connectionID string, response *types.Com
 	// 序列化响应
 	dataBytes, err := json.Marshal(responseData)
 	if err != nil {
-		return fmt.Errorf("failed to marshal response: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal response")
 	}
 
 	// 构造响应包（CommandResp 是 PacketType，不是 CommandType）
@@ -274,7 +276,7 @@ func (ce *CommandExecutor) sendResponse(connectionID string, response *types.Com
 	written, err := pkgStream.WritePacket(transferPacket, true, 0)
 	if err != nil {
 		corelog.Errorf("CommandExecutor.sendResponse: failed to write packet, ConnectionID=%s, Error=%v", connectionID, err)
-		return fmt.Errorf("failed to write response packet: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write response packet")
 	}
 
 	corelog.Infof("CommandExecutor.sendResponse: response sent successfully, ConnectionID=%s, CommandID=%s, Success=%v, Bytes=%d",

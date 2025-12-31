@@ -14,9 +14,9 @@ import (
 func (s *SessionManager) NotifyClientUpdate(clientID int64) {
 	corelog.Infof("SessionManager: ⚡ NotifyClientUpdate called for client %d", clientID)
 
-	s.controlConnLock.RLock()
-	conn, ok := s.clientIDIndexMap[clientID]
-	s.controlConnLock.RUnlock()
+	// 使用 clientRegistry 获取连接
+	conn := s.clientRegistry.GetByClientID(clientID)
+	ok := conn != nil
 
 	// 1. 获取客户端的所有映射（无论客户端在哪个节点，都需要获取映射）
 	mappings, err := s.cloudControl.GetClientPortMappings(clientID)

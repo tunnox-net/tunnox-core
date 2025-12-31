@@ -184,8 +184,9 @@ func TestConnectionCodeGenerator_CalculateEntropy(t *testing.T) {
 	entropy := generator.CalculateEntropy()
 	entropyStr := generator.GetEntropyString()
 
-	t.Logf("Charset size: %d", len(generator.config.Charset))
-	t.Logf("Total length: %d", generator.config.SegmentCount*generator.config.SegmentLength)
+	config := generator.GetConfig()
+	t.Logf("Charset size: %d", len(config.Charset))
+	t.Logf("Total length: %d", config.SegmentCount*config.SegmentLength)
 	t.Logf("Entropy: %s", entropyStr)
 
 	// 验证熵值 >= 33^9 (默认配置)
@@ -199,30 +200,31 @@ func TestConnectionCodeGenerator_CalculateEntropy(t *testing.T) {
 
 func TestConnectionCodeGenerator_DefaultConfig(t *testing.T) {
 	generator := NewConnectionCodeGenerator(nil)
+	config := generator.GetConfig()
 
 	// 验证默认配置
-	if generator.config.SegmentLength != 3 {
-		t.Errorf("Expected SegmentLength 3, got %d", generator.config.SegmentLength)
+	if config.SegmentLength != 3 {
+		t.Errorf("Expected SegmentLength 3, got %d", config.SegmentLength)
 	}
 
-	if generator.config.SegmentCount != 3 {
-		t.Errorf("Expected SegmentCount 3, got %d", generator.config.SegmentCount)
+	if config.SegmentCount != 3 {
+		t.Errorf("Expected SegmentCount 3, got %d", config.SegmentCount)
 	}
 
-	if generator.config.Separator != "-" {
-		t.Errorf("Expected Separator '-', got '%s'", generator.config.Separator)
+	if config.Separator != "-" {
+		t.Errorf("Expected Separator '-', got '%s'", config.Separator)
 	}
 
 	// 验证字符集排除了 i, l, o
-	if strings.ContainsAny(generator.config.Charset, "ilo") {
+	if strings.ContainsAny(config.Charset, "ilo") {
 		t.Errorf("Charset should not contain 'i', 'l', or 'o'")
 	}
 
 	// 验证字符集包含其他字符
-	if !strings.ContainsRune(generator.config.Charset, 'a') {
+	if !strings.ContainsRune(config.Charset, 'a') {
 		t.Error("Charset should contain 'a'")
 	}
-	if !strings.ContainsRune(generator.config.Charset, '0') {
+	if !strings.ContainsRune(config.Charset, '0') {
 		t.Error("Charset should contain '0'")
 	}
 }

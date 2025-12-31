@@ -2,13 +2,13 @@ package adapter
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
 
 	"tunnox-core/internal/cloud/constants"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/protocol/session"
 )
@@ -96,14 +96,14 @@ func NewSocksAdapter(parentCtx context.Context, session session.Session, config 
 
 // Dial SOCKS5 不需要主动连接（客户端模式），返回错误
 func (s *SocksAdapter) Dial(addr string) (io.ReadWriteCloser, error) {
-	return nil, fmt.Errorf("SOCKS5 adapter does not support Dial (server mode only)")
+	return nil, coreerrors.New(coreerrors.CodeNotImplemented, "SOCKS5 adapter does not support Dial (server mode only)")
 }
 
 // Listen 启动 SOCKS5 代理服务器
 func (s *SocksAdapter) Listen(addr string) error {
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("failed to listen on SOCKS5: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to listen on SOCKS5")
 	}
 
 	s.listener = listener
@@ -115,7 +115,7 @@ func (s *SocksAdapter) Listen(addr string) error {
 // Accept 接受 SOCKS5 客户端连接
 func (s *SocksAdapter) Accept() (io.ReadWriteCloser, error) {
 	if s.listener == nil {
-		return nil, fmt.Errorf("SOCKS5 listener not initialized")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "SOCKS5 listener not initialized")
 	}
 
 	// 设置接受超时
@@ -127,7 +127,7 @@ func (s *SocksAdapter) Accept() (io.ReadWriteCloser, error) {
 	if err != nil {
 		// 检查是否是超时错误
 		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			return nil, fmt.Errorf("accept timeout")
+			return nil, coreerrors.New(coreerrors.CodeTimeout, "accept timeout")
 		}
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func (s *SocksAdapter) Accept() (io.ReadWriteCloser, error) {
 	go s.handleSocksConnection(conn)
 
 	// 返回超时错误，让 acceptLoop 继续
-	return nil, fmt.Errorf("socks connection handled")
+	return nil, coreerrors.New(coreerrors.CodeTimeout, "socks connection handled")
 }
 
 func (s *SocksAdapter) getConnectionType() string {
@@ -208,7 +208,7 @@ func (s *SocksAdapter) dialThroughTunnel(targetAddr string) (net.Conn, error) {
 		// 直接连接目标（不通过隧道）
 		conn, err := net.DialTimeout("tcp", targetAddr, socksDialTimeout)
 		if err != nil {
-			return nil, fmt.Errorf("direct dial failed: %w", err)
+			return nil, coreerrors.Wrap(err, coreerrors.CodeConnectionError, "direct dial failed")
 		}
 		return conn, nil
 	}
@@ -218,7 +218,7 @@ func (s *SocksAdapter) dialThroughTunnel(targetAddr string) (net.Conn, error) {
 	// 当前先使用直接连接作为备用方案
 	conn, err := net.DialTimeout("tcp", targetAddr, socksDialTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("tunnel dial failed: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeConnectionError, "tunnel dial failed")
 	}
 	return conn, nil
 }

@@ -1,9 +1,10 @@
 package adapter
 
 import (
-	"fmt"
 	"io"
 	"net"
+
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // handleHandshake 处理 SOCKS5 握手阶段
@@ -18,18 +19,18 @@ func (s *SocksAdapter) handleHandshake(conn net.Conn) error {
 	buf := make([]byte, 257)
 	n, err := io.ReadAtLeast(conn, buf, 2)
 	if err != nil {
-		return fmt.Errorf("read handshake failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read handshake failed")
 	}
 
 	version := buf[0]
 	if version != socks5Version {
-		return fmt.Errorf("unsupported SOCKS version: %d", version)
+		return coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported SOCKS version: %d", version)
 	}
 
 	nMethods := int(buf[1])
 	if n < 2+nMethods {
 		if _, err := io.ReadFull(conn, buf[n:2+nMethods]); err != nil {
-			return fmt.Errorf("read methods failed: %w", err)
+			return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read methods failed")
 		}
 	}
 
@@ -62,17 +63,17 @@ func (s *SocksAdapter) handleHandshake(conn net.Conn) error {
 	// | 1  |   1    |
 	// +----+--------+
 	if _, err := conn.Write([]byte{socks5Version, byte(selectedMethod)}); err != nil {
-		return fmt.Errorf("write method selection failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "write method selection failed")
 	}
 
 	if selectedMethod == socksAuthNoMatch {
-		return fmt.Errorf("no acceptable authentication method")
+		return coreerrors.New(coreerrors.CodeAuthFailed, "no acceptable authentication method")
 	}
 
 	// 如果需要认证，执行认证流程
 	if selectedMethod == socksAuthPassword {
 		if err := s.handlePasswordAuth(conn); err != nil {
-			return fmt.Errorf("authentication failed: %w", err)
+			return coreerrors.Wrap(err, coreerrors.CodeAuthFailed, "authentication failed")
 		}
 	}
 
@@ -90,12 +91,12 @@ func (s *SocksAdapter) handlePasswordAuth(conn net.Conn) error {
 	// 读取版本和用户名长度
 	buf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return fmt.Errorf("read auth header failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read auth header failed")
 	}
 
 	version := buf[0]
 	if version != 0x01 {
-		return fmt.Errorf("unsupported auth version: %d", version)
+		return coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported auth version: %d", version)
 	}
 
 	usernameLen := int(buf[1])
@@ -103,21 +104,21 @@ func (s *SocksAdapter) handlePasswordAuth(conn net.Conn) error {
 	// 读取用户名
 	usernameBuf := make([]byte, usernameLen)
 	if _, err := io.ReadFull(conn, usernameBuf); err != nil {
-		return fmt.Errorf("read username failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read username failed")
 	}
 	username := string(usernameBuf)
 
 	// 读取密码长度
 	passwordLenBuf := make([]byte, 1)
 	if _, err := io.ReadFull(conn, passwordLenBuf); err != nil {
-		return fmt.Errorf("read password length failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read password length failed")
 	}
 	passwordLen := int(passwordLenBuf[0])
 
 	// 读取密码
 	passwordBuf := make([]byte, passwordLen)
 	if _, err := io.ReadFull(conn, passwordBuf); err != nil {
-		return fmt.Errorf("read password failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "read password failed")
 	}
 	password := string(passwordBuf)
 
@@ -139,11 +140,11 @@ func (s *SocksAdapter) handlePasswordAuth(conn net.Conn) error {
 	}
 
 	if _, err := conn.Write([]byte{0x01, status}); err != nil {
-		return fmt.Errorf("write auth response failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeProtocolError, "write auth response failed")
 	}
 
 	if !success {
-		return fmt.Errorf("invalid credentials")
+		return coreerrors.New(coreerrors.CodeAuthFailed, "invalid credentials")
 	}
 
 	return nil

@@ -97,7 +97,7 @@ func InitLogger(config *LogConfig) error {
 			return fmt.Errorf("failed to create log directory %q: %w", logDir, err)
 		}
 
-		// 关闭之前的日志文件（如果存在）
+		// 关闭之前的日志文件（如果存在，忽略关闭错误）
 		if currentLogFile != nil {
 			_ = currentLogFile.Close()
 			currentLogFile = nil
@@ -118,7 +118,7 @@ func InitLogger(config *LogConfig) error {
 			Logger.SetOutput(file)
 		}
 	} else {
-		// 没有配置文件地址，不输出日志
+		// 没有配置文件地址，不输出日志（忽略关闭错误）
 		if currentLogFile != nil {
 			_ = currentLogFile.Close()
 			currentLogFile = nil

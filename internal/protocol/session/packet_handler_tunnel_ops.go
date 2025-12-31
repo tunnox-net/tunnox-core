@@ -2,8 +2,9 @@ package session
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/core/types"
@@ -15,7 +16,7 @@ func (s *SessionManager) sendTunnelOpenResponse(conn ControlConnectionInterface,
 	// 序列化响应
 	respData, err := json.Marshal(resp)
 	if err != nil {
-		return fmt.Errorf("failed to marshal tunnel open response: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal tunnel open response")
 	}
 
 	// 构造响应包
@@ -26,7 +27,7 @@ func (s *SessionManager) sendTunnelOpenResponse(conn ControlConnectionInterface,
 
 	// 发送响应
 	if _, err := conn.GetStream().WritePacket(respPacket, false, 0); err != nil {
-		return fmt.Errorf("failed to write tunnel open response: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write tunnel open response")
 	}
 
 	return nil
@@ -37,7 +38,7 @@ func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, re
 	// 序列化响应
 	respData, err := json.Marshal(resp)
 	if err != nil {
-		return fmt.Errorf("failed to marshal tunnel open response: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal tunnel open response")
 	}
 
 	// 构造响应包
@@ -48,7 +49,7 @@ func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, re
 
 	// 发送响应
 	if _, err := conn.Stream.WritePacket(respPacket, true, 0); err != nil {
-		return fmt.Errorf("failed to write tunnel open response: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write tunnel open response")
 	}
 
 	return nil

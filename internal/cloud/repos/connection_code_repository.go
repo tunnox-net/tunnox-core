@@ -7,6 +7,7 @@ import (
 
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -41,13 +42,13 @@ func NewConnectionCodeRepository(repo *Repository) *ConnectionCodeRepository {
 func (r *ConnectionCodeRepository) Create(code *models.TunnelConnectionCode) error {
 	// 1. 验证
 	if err := code.Validate(); err != nil {
-		return fmt.Errorf("invalid connection code: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeValidationError, "invalid connection code")
 	}
 
 	// 2. 序列化
 	data, err := json.Marshal(code)
 	if err != nil {
-		return fmt.Errorf("failed to marshal connection code: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal connection code")
 	}
 
 	// 3. 存储到两个位置，设置TTL
@@ -56,28 +57,28 @@ func (r *ConnectionCodeRepository) Create(code *models.TunnelConnectionCode) err
 	// 3.1 按Code存储（用于快速激活）
 	keyByCode := constants.KeyPrefixRuntimeConnectionCodeByCode + code.Code
 	if err := r.storage.Set(keyByCode, string(data), ttl); err != nil {
-		return fmt.Errorf("failed to store connection code by code: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to store connection code by code")
 	}
 
 	// 3.2 按ID存储（用于管理）
 	keyByID := constants.KeyPrefixRuntimeConnectionCodeByID + code.ID
 	if err := r.storage.Set(keyByID, string(data), ttl); err != nil {
-		// 回滚：删除按Code的存储
+		// 回滚：删除按Code的存储（忽略删除错误，主流程已失败）
 		_ = r.storage.Delete(keyByCode)
-		return fmt.Errorf("failed to store connection code by ID: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to store connection code by ID")
 	}
 
 	// 4. 添加到TargetClient的索引列表
 	listStore, ok := r.storage.(storage.ListStore)
 	if !ok {
-		return fmt.Errorf("storage does not support list operations")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "storage does not support list operations")
 	}
 	indexKey := constants.KeyPrefixIndexConnectionCodeByTarget + fmt.Sprintf("%d", code.TargetClientID)
 	if err := listStore.AppendToList(indexKey, code.ID); err != nil {
-		// 回滚
+		// 回滚：删除已存储的数据（忽略删除错误，主流程已失败）
 		_ = r.storage.Delete(keyByCode)
 		_ = r.storage.Delete(keyByID)
-		return fmt.Errorf("failed to add to target client index: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to add to target client index")
 	}
 
 	return nil
@@ -94,18 +95,18 @@ func (r *ConnectionCodeRepository) GetByCode(code string) (*models.TunnelConnect
 		if errors.Is(err, storage.ErrKeyNotFound) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("failed to get connection code by code: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get connection code by code")
 	}
 
 	// 类型断言
 	dataStr, ok := data.(string)
 	if !ok || dataStr == "" {
-		return nil, fmt.Errorf("unexpected data type for connection code")
+		return nil, coreerrors.New(coreerrors.CodeInvalidData, "unexpected data type for connection code")
 	}
 
 	var connCode models.TunnelConnectionCode
 	if err := json.Unmarshal([]byte(dataStr), &connCode); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal connection code: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to unmarshal connection code")
 	}
 
 	return &connCode, nil
@@ -122,18 +123,18 @@ func (r *ConnectionCodeRepository) GetByID(id string) (*models.TunnelConnectionC
 		if errors.Is(err, storage.ErrKeyNotFound) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("failed to get connection code by ID: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get connection code by ID")
 	}
 
 	// 类型断言
 	dataStr, ok := data.(string)
 	if !ok || dataStr == "" {
-		return nil, fmt.Errorf("unexpected data type for connection code")
+		return nil, coreerrors.New(coreerrors.CodeInvalidData, "unexpected data type for connection code")
 	}
 
 	var connCode models.TunnelConnectionCode
 	if err := json.Unmarshal([]byte(dataStr), &connCode); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal connection code: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to unmarshal connection code")
 	}
 
 	return &connCode, nil
@@ -148,14 +149,14 @@ func (r *ConnectionCodeRepository) ListByTargetClient(targetClientID int64) ([]*
 	// 1. 获取ID列表
 	listStore, ok := r.storage.(storage.ListStore)
 	if !ok {
-		return nil, fmt.Errorf("storage does not support list operations")
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "storage does not support list operations")
 	}
 	ids, err := listStore.GetList(indexKey)
 	if err != nil {
 		if errors.Is(err, storage.ErrKeyNotFound) {
 			return []*models.TunnelConnectionCode{}, nil
 		}
-		return nil, fmt.Errorf("failed to get target client index: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get target client index")
 	}
 
 	// 2. 批量查询连接码
@@ -169,11 +170,11 @@ func (r *ConnectionCodeRepository) ListByTargetClient(targetClientID int64) ([]*
 		code, err := r.GetByID(idStr)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
-				// 连接码可能已过期自动删除，从索引中移除
+				// 连接码可能已过期自动删除，从索引中移除（忽略移除错误，不影响主流程）
 				_ = listStore.RemoveFromList(indexKey, idStr)
 				continue
 			}
-			return nil, fmt.Errorf("failed to get connection code %s: %w", idStr, err)
+			return nil, coreerrors.Wrapf(err, coreerrors.CodeStorageError, "failed to get connection code %s", idStr)
 		}
 		codes = append(codes, code)
 	}
@@ -187,13 +188,13 @@ func (r *ConnectionCodeRepository) ListByTargetClient(targetClientID int64) ([]*
 func (r *ConnectionCodeRepository) Update(code *models.TunnelConnectionCode) error {
 	// 1. 验证
 	if err := code.Validate(); err != nil {
-		return fmt.Errorf("invalid connection code: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeValidationError, "invalid connection code")
 	}
 
 	// 2. 序列化
 	data, err := json.Marshal(code)
 	if err != nil {
-		return fmt.Errorf("failed to marshal connection code: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal connection code")
 	}
 
 	// 3. 计算剩余TTL
@@ -206,12 +207,12 @@ func (r *ConnectionCodeRepository) Update(code *models.TunnelConnectionCode) err
 	// 4. 更新两个位置
 	keyByCode := constants.KeyPrefixRuntimeConnectionCodeByCode + code.Code
 	if err := r.storage.Set(keyByCode, string(data), ttl); err != nil {
-		return fmt.Errorf("failed to update connection code by code: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to update connection code by code")
 	}
 
 	keyByID := constants.KeyPrefixRuntimeConnectionCodeByID + code.ID
 	if err := r.storage.Set(keyByID, string(data), ttl); err != nil {
-		return fmt.Errorf("failed to update connection code by ID: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to update connection code by ID")
 	}
 
 	return nil
@@ -227,29 +228,29 @@ func (r *ConnectionCodeRepository) Delete(id string) error {
 		if errors.Is(err, ErrNotFound) {
 			return nil // 已删除，视为成功
 		}
-		return fmt.Errorf("failed to get connection code for deletion: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get connection code for deletion")
 	}
 
 	// 2. 删除按Code存储
 	keyByCode := constants.KeyPrefixRuntimeConnectionCodeByCode + code.Code
 	if err := r.storage.Delete(keyByCode); err != nil && !errors.Is(err, storage.ErrKeyNotFound) {
-		return fmt.Errorf("failed to delete connection code by code: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to delete connection code by code")
 	}
 
 	// 3. 删除按ID存储
 	keyByID := constants.KeyPrefixRuntimeConnectionCodeByID + code.ID
 	if err := r.storage.Delete(keyByID); err != nil && !errors.Is(err, storage.ErrKeyNotFound) {
-		return fmt.Errorf("failed to delete connection code by ID: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to delete connection code by ID")
 	}
 
 	// 4. 从TargetClient的索引列表中移除
 	listStore, ok := r.storage.(storage.ListStore)
 	if !ok {
-		return fmt.Errorf("storage does not support list operations")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "storage does not support list operations")
 	}
 	indexKey := constants.KeyPrefixIndexConnectionCodeByTarget + fmt.Sprintf("%d", code.TargetClientID)
 	if err := listStore.RemoveFromList(indexKey, code.ID); err != nil && !errors.Is(err, storage.ErrKeyNotFound) {
-		return fmt.Errorf("failed to remove from target client index: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to remove from target client index")
 	}
 
 	return nil

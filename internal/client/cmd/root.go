@@ -13,6 +13,7 @@ import (
 
 	"tunnox-core/internal/client"
 	"tunnox-core/internal/client/cli"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 	"tunnox-core/internal/version"
@@ -241,7 +242,7 @@ func loadConfig() (*client.ClientConfig, error) {
 	configManager := client.NewConfigManager()
 	config, err := configManager.LoadConfig(configFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to load config")
 	}
 
 	// 命令行参数覆盖配置文件
@@ -263,7 +264,7 @@ func loadConfig() (*client.ClientConfig, error) {
 
 	// 验证配置
 	if err := validateConfig(config); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeConfigError, "invalid config")
 	}
 
 	return config, nil
@@ -282,7 +283,7 @@ func validateConfig(config *client.ClientConfig) error {
 			}
 		}
 		if !valid {
-			return fmt.Errorf("invalid protocol: %s (must be one of: tcp, websocket, kcp, quic)", config.Server.Protocol)
+			return coreerrors.Newf(coreerrors.CodeConfigError, "invalid protocol: %s (must be one of: tcp, websocket, kcp, quic)", config.Server.Protocol)
 		}
 	}
 
@@ -324,18 +325,18 @@ func configureLogging(config *client.ClientConfig) error {
 		var err error
 		logFilePath, err = utils.ResolveLogPath(candidates)
 		if err != nil {
-			return fmt.Errorf("failed to resolve log path: %w", err)
+			return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to resolve log path")
 		}
 	} else {
 		expandedPath, err := utils.ExpandPath(logFilePath)
 		if err != nil {
-			return fmt.Errorf("failed to expand log file path %q: %w", logFilePath, err)
+			return coreerrors.Wrapf(err, coreerrors.CodeConfigError, "failed to expand log file path %q", logFilePath)
 		}
 		logFilePath = expandedPath
 
 		logDir := filepath.Dir(logFilePath)
 		if err := os.MkdirAll(logDir, 0755); err != nil {
-			return fmt.Errorf("failed to create log directory %q: %w", logDir, err)
+			return coreerrors.Wrapf(err, coreerrors.CodeConfigError, "failed to create log directory %q", logDir)
 		}
 	}
 
@@ -367,7 +368,7 @@ func ensureConnected(ctx context.Context) error {
 
 	fmt.Fprintf(os.Stderr, "Connecting to server...\n")
 	if err := tunnoxClient.Connect(); err != nil {
-		return fmt.Errorf("connection failed: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "connection failed")
 	}
 
 	fmt.Fprintf(os.Stderr, "Connected successfully\n")

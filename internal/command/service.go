@@ -2,10 +2,11 @@ package command
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
+
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/events"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
@@ -174,12 +175,12 @@ func (cs *commandService) Start() error {
 	cs.mu.RUnlock()
 
 	if eventBus == nil {
-		return fmt.Errorf("event bus not set")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "event bus not set")
 	}
 
 	// 订阅命令接收事件
 	if err := eventBus.Subscribe("CommandReceived", cs.handleCommandEvent); err != nil {
-		return fmt.Errorf("failed to subscribe to CommandReceived events: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to subscribe to CommandReceived events")
 	}
 
 	corelog.Infof("Command service started, listening for events")
@@ -190,7 +191,7 @@ func (cs *commandService) Start() error {
 func (cs *commandService) handleCommandEvent(event events.Event) error {
 	cmdEvent, ok := event.(*events.CommandReceivedEvent)
 	if !ok {
-		return fmt.Errorf("invalid event type: expected CommandReceivedEvent")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "invalid event type: expected CommandReceivedEvent")
 	}
 
 	corelog.Infof("Handling command event for connection: %s, command: %v",
@@ -268,7 +269,7 @@ func (cs *commandService) Execute(ctx *CommandContext) (*CommandResponse, error)
 	cs.mu.RLock()
 	if cs.IsClosed() {
 		cs.mu.RUnlock()
-		return nil, fmt.Errorf("command service is closed")
+		return nil, coreerrors.New(coreerrors.CodeServiceClosed, "command service is closed")
 	}
 	cs.mu.RUnlock()
 
@@ -403,8 +404,8 @@ func (cs *commandService) buildPipeline(ctx *CommandContext) *CommandPipeline {
 	// 获取命令处理器
 	handler, exists := cs.registry.GetHandler(ctx.CommandType)
 	if !exists {
-		// 使用默认处理器
-		handler, _ = cs.registry.GetHandler(0) // 默认处理器
+		// 使用默认处理器（忽略错误，默认处理器应该总是存在）
+		handler, _ = cs.registry.GetHandler(0)
 	}
 
 	return NewCommandPipeline(middleware, handler)

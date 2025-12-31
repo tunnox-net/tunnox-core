@@ -5,6 +5,7 @@ import (
 	"net"
 
 	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/stream"
 )
 
@@ -38,7 +39,7 @@ type TunnelConnectionInterface interface {
 // CloudControlAPI 云控API接口（用于流量统计）
 type CloudControlAPI interface {
 	GetPortMapping(mappingID string) (*models.PortMapping, error)
-	UpdatePortMappingStats(mappingID string, stats interface{}) error
+	UpdatePortMappingStats(mappingID string, trafficStats *stats.TrafficStats) error
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error)
 }
 

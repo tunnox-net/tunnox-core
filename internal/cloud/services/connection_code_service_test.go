@@ -113,7 +113,7 @@ func TestConnectionCodeService_CreateConnectionCode_QuotaExceeded(t *testing.T) 
 
 	_, err := service.CreateConnectionCode(req)
 	assert.Error(t, err, "Expected error for quota exceeded")
-	assert.Contains(t, err.Error(), "quota exceeded")
+	assert.Contains(t, err.Error(), "QUOTA_EXCEEDED")
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

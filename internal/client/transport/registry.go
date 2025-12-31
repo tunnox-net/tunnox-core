@@ -4,9 +4,10 @@ package transport
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"sync"
+
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // Dialer 是协议拨号器的接口
@@ -78,7 +79,7 @@ func IsProtocolAvailable(name string) bool {
 func Dial(ctx context.Context, protocol, address string) (net.Conn, error) {
 	info, ok := GetProtocol(protocol)
 	if !ok {
-		return nil, fmt.Errorf("protocol %q is not available (not compiled in)", protocol)
+		return nil, coreerrors.Newf(coreerrors.CodeProtocolError, "protocol %q is not available (not compiled in)", protocol)
 	}
 	return info.Dialer(ctx, address)
 }

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 )
 
@@ -53,7 +54,7 @@ func (bus *eventBus) onClose() error {
 // Publish 发布事件
 func (bus *eventBus) Publish(event Event) error {
 	if bus.IsClosed() {
-		return fmt.Errorf("event bus is closed")
+		return coreerrors.New(coreerrors.CodeResourceClosed, "event bus is closed")
 	}
 
 	eventType := event.Type()
@@ -94,15 +95,15 @@ func (bus *eventBus) Publish(event Event) error {
 // Subscribe 订阅事件
 func (bus *eventBus) Subscribe(eventType string, handler EventHandler) error {
 	if bus.IsClosed() {
-		return fmt.Errorf("event bus is closed")
+		return coreerrors.New(coreerrors.CodeResourceClosed, "event bus is closed")
 	}
 
 	if eventType == "" {
-		return fmt.Errorf("event type cannot be empty")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "event type cannot be empty")
 	}
 
 	if handler == nil {
-		return fmt.Errorf("event handler cannot be nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "event handler cannot be nil")
 	}
 
 	bus.mu.Lock()
@@ -129,7 +130,7 @@ func (bus *eventBus) Subscribe(eventType string, handler EventHandler) error {
 // Unsubscribe 取消订阅
 func (bus *eventBus) Unsubscribe(eventType string, handler EventHandler) error {
 	if bus.IsClosed() {
-		return fmt.Errorf("event bus is closed")
+		return coreerrors.New(coreerrors.CodeResourceClosed, "event bus is closed")
 	}
 
 	bus.mu.Lock()
@@ -137,7 +138,7 @@ func (bus *eventBus) Unsubscribe(eventType string, handler EventHandler) error {
 
 	handlers, exists := bus.subscribers[eventType]
 	if !exists {
-		return fmt.Errorf("no handlers found for event type: %s", eventType)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "no handlers found for event type: %s", eventType)
 	}
 
 	handlerPtr := fmt.Sprintf("%p", handler)
@@ -150,7 +151,7 @@ func (bus *eventBus) Unsubscribe(eventType string, handler EventHandler) error {
 		}
 	}
 
-	return fmt.Errorf("handler not found for event type: %s", eventType)
+	return coreerrors.Newf(coreerrors.CodeNotFound, "handler not found for event type: %s", eventType)
 }
 
 // Close 关闭事件总线
@@ -211,10 +212,10 @@ func (bus *eventBus) WaitForEvent(eventType string, timeout time.Duration) (Even
 	case <-time.After(timeout):
 		// 取消订阅
 		bus.Unsubscribe(eventType, tempHandler)
-		return nil, fmt.Errorf("timeout waiting for event type: %s", eventType)
+		return nil, coreerrors.Newf(coreerrors.CodeTimeout, "timeout waiting for event type: %s", eventType)
 	case <-bus.ctx.Done():
 		// 取消订阅
 		bus.Unsubscribe(eventType, tempHandler)
-		return nil, fmt.Errorf("event bus context cancelled")
+		return nil, coreerrors.New(coreerrors.CodeCancelled, "event bus context cancelled")
 	}
 }

@@ -2,10 +2,10 @@ package client
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
-	corelog "tunnox-core/internal/core/log"
 
+	coreerrors "tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 )
@@ -38,7 +38,7 @@ func (c *TunnoxClient) saveConnectionConfig() error {
 	configMgr := NewConfigManagerWithPath(c.configFilePath)
 	// 只有在需要保存服务器配置时才允许更新服务器地址和协议
 	if err := configMgr.SaveConfigWithOptions(c.config, shouldSaveServerConfig); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to save config")
 	}
 
 	corelog.Infof("Client: connection config saved (ClientID=%d, protocol=%s, address=%s, configFile=%s)",
@@ -84,7 +84,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 	}
 
 	if _, err := stream.WritePacket(handshakePkt, true, 0); err != nil {
-		return fmt.Errorf("failed to send handshake: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send handshake")
 	}
 
 	// 等待握手响应（忽略心跳包）
@@ -92,7 +92,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 	for {
 		pkt, _, err := stream.ReadPacket()
 		if err != nil {
-			return fmt.Errorf("failed to read handshake response: %w", err)
+			return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to read handshake response")
 		}
 		if pkt == nil {
 			// ReadPacket 返回 nil 但没有错误，可能是超时或空响应，继续等待
@@ -114,7 +114,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		}
 
 		// 收到其他类型的包，返回错误
-		return fmt.Errorf("unexpected response type: %v (expected HandshakeResp)", pkt.PacketType)
+		return coreerrors.Newf(coreerrors.CodeInvalidPacket, "unexpected response type: %v (expected HandshakeResp)", pkt.PacketType)
 	}
 
 	corelog.Debugf("Client: received response PacketType=%d, Payload len=%d", respPkt.PacketType, len(respPkt.Payload))
@@ -124,7 +124,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 
 	var resp packet.HandshakeResponse
 	if err := json.Unmarshal(respPkt.Payload, &resp); err != nil {
-		return fmt.Errorf("failed to unmarshal handshake response (payload='%s'): %w", string(respPkt.Payload), err)
+		return coreerrors.Wrapf(err, coreerrors.CodeInvalidData, "failed to unmarshal handshake response (payload='%s')", string(respPkt.Payload))
 	}
 
 	if !resp.Success {
@@ -132,7 +132,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		if strings.Contains(resp.Error, "auth") || strings.Contains(resp.Error, "token") {
 			c.authFailed = true
 		}
-		return fmt.Errorf("handshake failed: %s", resp.Error)
+		return coreerrors.Newf(coreerrors.CodeAuthFailed, "handshake failed: %s", resp.Error)
 	}
 
 	// 首次连接时，服务器会返回分配的凭据（仅对控制连接有用）

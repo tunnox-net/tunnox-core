@@ -1,10 +1,10 @@
 package server
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"tunnox-core/internal/constants"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/utils"
 
@@ -117,13 +117,13 @@ func LoadConfig(configPath string) (*Config, error) {
 	// 读取配置文件
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf(constants.MsgFailedToReadConfigFile, configPath, err)
+		return nil, coreerrors.Wrapf(err, coreerrors.CodeConfigError, constants.MsgFailedToReadConfigFile, configPath, err)
 	}
 
 	// 解析YAML
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
-		return nil, fmt.Errorf(constants.MsgFailedToParseConfigFile, configPath, err)
+		return nil, coreerrors.Wrapf(err, coreerrors.CodeConfigError, constants.MsgFailedToParseConfigFile, configPath, err)
 	}
 
 	// 应用环境变量覆盖（环境变量优先级高于配置文件）
@@ -136,7 +136,7 @@ func LoadConfig(configPath string) (*Config, error) {
 		// 展开路径（支持 ~ 和相对路径）
 		expandedPath, err := utils.ExpandPath(config.Log.File)
 		if err != nil {
-			return nil, fmt.Errorf("failed to expand log file path %q: %w", config.Log.File, err)
+			return nil, coreerrors.Wrapf(err, coreerrors.CodeConfigError, "failed to expand log file path %q", config.Log.File)
 		}
 		config.Log.File = expandedPath
 	}
@@ -144,12 +144,12 @@ func LoadConfig(configPath string) (*Config, error) {
 	// 确保日志目录存在
 	logDir := filepath.Dir(config.Log.File)
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create log directory %q: %w", logDir, err)
+		return nil, coreerrors.Wrapf(err, coreerrors.CodeConfigError, "failed to create log directory %q", logDir)
 	}
 
 	// 验证配置
 	if err := ValidateConfig(&config); err != nil {
-		return nil, fmt.Errorf(constants.MsgInvalidConfiguration, err)
+		return nil, coreerrors.Wrapf(err, coreerrors.CodeConfigError, constants.MsgInvalidConfiguration, err)
 	}
 
 	corelog.Infof(constants.MsgConfigLoadedFrom, configPath)
@@ -234,7 +234,7 @@ func ValidateConfig(config *Config) error {
 
 	// 验证 Redis 配置
 	if config.Redis.Enabled && config.Redis.Addr == "" {
-		return fmt.Errorf("redis.addr is required when redis.enabled is true")
+		return coreerrors.New(coreerrors.CodeConfigError, "redis.addr is required when redis.enabled is true")
 	}
 
 	// 验证 Persistence 配置
@@ -247,7 +247,7 @@ func ValidateConfig(config *Config) error {
 
 	// 验证 Storage 配置
 	if config.Storage.Enabled && config.Storage.URL == "" {
-		return fmt.Errorf("storage.url is required when storage.enabled is true")
+		return coreerrors.New(coreerrors.CodeConfigError, "storage.url is required when storage.enabled is true")
 	}
 	if config.Storage.Timeout <= 0 {
 		config.Storage.Timeout = 10
@@ -255,7 +255,7 @@ func ValidateConfig(config *Config) error {
 
 	// 验证 Platform 配置
 	if config.Platform.Enabled && config.Platform.URL == "" {
-		return fmt.Errorf("platform.url is required when platform.enabled is true")
+		return coreerrors.New(coreerrors.CodeConfigError, "platform.url is required when platform.enabled is true")
 	}
 	if config.Platform.Timeout <= 0 {
 		config.Platform.Timeout = 10
@@ -344,25 +344,25 @@ func SaveConfig(configPath string, config *Config) error {
 	// 确保目录存在
 	dir := filepath.Dir(configPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to create config directory")
 	}
 
 	// 序列化为 YAML
 	data, err := yaml.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to marshal config")
 	}
 
 	// 写入临时文件
 	tempFile := configPath + ".tmp"
 	if err := os.WriteFile(tempFile, data, 0644); err != nil {
-		return fmt.Errorf("failed to write temp file: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to write temp file")
 	}
 
 	// 原子替换
 	if err := os.Rename(tempFile, configPath); err != nil {
 		os.Remove(tempFile) // 清理临时文件
-		return fmt.Errorf("failed to rename temp file: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to rename temp file")
 	}
 
 	return nil
@@ -378,7 +378,7 @@ func ExportConfigTemplate(configPath string) error {
 	// 确保目录存在
 	dir := filepath.Dir(configPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to create config directory")
 	}
 
 	// 简洁的配置模板
@@ -386,7 +386,7 @@ func ExportConfigTemplate(configPath string) error {
 
 	// 写入文件
 	if err := os.WriteFile(configPath, []byte(template), 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to write config file")
 	}
 
 	return nil

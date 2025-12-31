@@ -1,17 +1,18 @@
 package client
 
 import (
-	"fmt"
 	"net"
 	"net/url"
 	"strconv"
 	"strings"
+
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // validatePort 验证端口号是否在有效范围内
 func validatePort(port int) error {
 	if port < 1 || port > 65535 {
-		return fmt.Errorf("port %d out of range [1, 65535]", port)
+		return coreerrors.Newf(coreerrors.CodeInvalidParam, "port %d out of range [1, 65535]", port)
 	}
 	return nil
 }
@@ -19,15 +20,15 @@ func validatePort(port int) error {
 // parseListenAddress 解析监听地址 "127.0.0.1:8888" -> ("127.0.0.1", 8888, nil)
 func parseListenAddress(addr string) (string, int, error) {
 	if addr == "" {
-		return "", 0, fmt.Errorf("listen address is empty")
+		return "", 0, coreerrors.New(coreerrors.CodeInvalidParam, "listen address is empty")
 	}
 	host, portStr, err := net.SplitHostPort(addr)
 	if err != nil {
-		return "", 0, fmt.Errorf("invalid listen address format %q: %w", addr, err)
+		return "", 0, coreerrors.Wrapf(err, coreerrors.CodeInvalidParam, "invalid listen address format %q", addr)
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return "", 0, fmt.Errorf("invalid port in listen address %q: %w", addr, err)
+		return "", 0, coreerrors.Wrapf(err, coreerrors.CodeInvalidParam, "invalid port in listen address %q", addr)
 	}
 	if err := validatePort(port); err != nil {
 		return "", 0, err
@@ -39,7 +40,7 @@ func parseListenAddress(addr string) (string, int, error) {
 // 特殊格式：socks5://0.0.0.0:0 表示 SOCKS5 代理模式（动态目标）
 func parseTargetAddress(addr string) (string, int, string, error) {
 	if addr == "" {
-		return "", 0, "", fmt.Errorf("target address is empty")
+		return "", 0, "", coreerrors.New(coreerrors.CodeInvalidParam, "target address is empty")
 	}
 
 	// 解析 URL 格式：tcp://host:port
@@ -48,11 +49,11 @@ func parseTargetAddress(addr string) (string, int, string, error) {
 		// 如果不是URL格式，尝试直接解析为 host:port
 		host, port, err := net.SplitHostPort(addr)
 		if err != nil {
-			return "", 0, "", fmt.Errorf("invalid target address format %q: %w", addr, err)
+			return "", 0, "", coreerrors.Wrapf(err, coreerrors.CodeInvalidParam, "invalid target address format %q", addr)
 		}
 		portNum, err := strconv.Atoi(port)
 		if err != nil {
-			return "", 0, "", fmt.Errorf("invalid port in target address %q: %w", addr, err)
+			return "", 0, "", coreerrors.Wrapf(err, coreerrors.CodeInvalidParam, "invalid port in target address %q", addr)
 		}
 		if err := validatePort(portNum); err != nil {
 			return "", 0, "", err
@@ -67,15 +68,15 @@ func parseTargetAddress(addr string) (string, int, string, error) {
 	}
 	host := parsedURL.Hostname()
 	if host == "" {
-		return "", 0, "", fmt.Errorf("missing host in target address %q", addr)
+		return "", 0, "", coreerrors.Newf(coreerrors.CodeInvalidParam, "missing host in target address %q", addr)
 	}
 	portStr := parsedURL.Port()
 	if portStr == "" {
-		return "", 0, "", fmt.Errorf("missing port in target address %q", addr)
+		return "", 0, "", coreerrors.Newf(coreerrors.CodeInvalidParam, "missing port in target address %q", addr)
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		return "", 0, "", fmt.Errorf("invalid port in target address %q: %w", addr, err)
+		return "", 0, "", coreerrors.Wrapf(err, coreerrors.CodeInvalidParam, "invalid port in target address %q", addr)
 	}
 
 	// SOCKS5 协议特殊处理：socks5://0.0.0.0:0 是有效的（表示动态目标代理模式）

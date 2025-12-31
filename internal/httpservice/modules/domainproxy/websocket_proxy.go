@@ -2,10 +2,10 @@
 package domainproxy
 
 import (
-	"fmt"
 	"io"
 	"time"
 
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/httpservice"
 
@@ -40,7 +40,7 @@ func (m *DomainProxyModule) forwardUserToTunnel(userWS *websocket.Conn, tunnelCo
 	defer func() {
 		if r := recover(); r != nil {
 			corelog.Errorf("DomainProxyModule: panic in forwardUserToTunnel: %v", r)
-			errChan <- fmt.Errorf("panic: %v", r)
+			errChan <- coreerrors.Newf(coreerrors.CodeNetworkError, "panic: %v", r)
 		}
 	}()
 
@@ -78,7 +78,7 @@ func (m *DomainProxyModule) forwardTunnelToUser(tunnelConn httpservice.TunnelCon
 	defer func() {
 		if r := recover(); r != nil {
 			corelog.Errorf("DomainProxyModule: panic in forwardTunnelToUser: %v", r)
-			errChan <- fmt.Errorf("panic: %v", r)
+			errChan <- coreerrors.Newf(coreerrors.CodeNetworkError, "panic: %v", r)
 		}
 	}()
 

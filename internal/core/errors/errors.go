@@ -41,40 +41,105 @@ const (
 	CodeInvalidParam    ErrorCode = "INVALID_PARAM"
 	CodeMissingParam    ErrorCode = "MISSING_PARAM"
 	CodeValidationError ErrorCode = "VALIDATION_ERROR"
+	CodeInvalidState    ErrorCode = "INVALID_STATE"
+	CodeConfigError     ErrorCode = "CONFIG_ERROR"
 
 	// 权限错误 (5xxx)
-	CodeForbidden     ErrorCode = "FORBIDDEN"
-	CodeClientBlocked ErrorCode = "CLIENT_BLOCKED"
-	CodeQuotaExceeded ErrorCode = "QUOTA_EXCEEDED"
-	CodeRateLimited   ErrorCode = "RATE_LIMITED"
+	CodeForbidden         ErrorCode = "FORBIDDEN"
+	CodeUnauthorized      ErrorCode = "UNAUTHORIZED"
+	CodeClientBlocked     ErrorCode = "CLIENT_BLOCKED"
+	CodeClientOffline     ErrorCode = "CLIENT_OFFLINE"
+	CodeQuotaExceeded     ErrorCode = "QUOTA_EXCEEDED"
+	CodeRateLimited       ErrorCode = "RATE_LIMITED"
+	CodeResourceClosed    ErrorCode = "RESOURCE_CLOSED"
+	CodeResourceExhausted ErrorCode = "RESOURCE_EXHAUSTED"
 
 	// 系统错误 (6xxx)
-	CodeInternal      ErrorCode = "INTERNAL_ERROR"
-	CodeStorageError  ErrorCode = "STORAGE_ERROR"
-	CodeNetworkError  ErrorCode = "NETWORK_ERROR"
-	CodeTimeout       ErrorCode = "TIMEOUT"
-	CodeUnavailable   ErrorCode = "UNAVAILABLE"
-	CodeNotConfigured ErrorCode = "NOT_CONFIGURED"
+	CodeInternal            ErrorCode = "INTERNAL_ERROR"
+	CodeInternalError       ErrorCode = "INTERNAL_ERROR" // 别名，保持兼容
+	CodeStorageError        ErrorCode = "STORAGE_ERROR"
+	CodeNetworkError        ErrorCode = "NETWORK_ERROR"
+	CodeTimeout             ErrorCode = "TIMEOUT"
+	CodeCancelled           ErrorCode = "CANCELLED"
+	CodeOperationCancelled  ErrorCode = "CANCELLED" // 别名，保持兼容
+	CodeExpired             ErrorCode = "EXPIRED"
+	CodeUnavailable         ErrorCode = "UNAVAILABLE"
+	CodeNotConfigured       ErrorCode = "NOT_CONFIGURED"
+	CodeServiceClosed       ErrorCode = "SERVICE_CLOSED"
+	CodeCleanupError        ErrorCode = "CLEANUP_ERROR"
+	CodeNotImplemented      ErrorCode = "NOT_IMPLEMENTED"
 
 	// 流/连接错误 (7xxx)
-	CodeStreamClosed    ErrorCode = "STREAM_CLOSED"
-	CodeConnectionError ErrorCode = "CONNECTION_ERROR"
-	CodeHandshakeFailed ErrorCode = "HANDSHAKE_FAILED"
-	CodeTunnelError     ErrorCode = "TUNNEL_ERROR"
+	CodeStreamClosed      ErrorCode = "STREAM_CLOSED"
+	CodeConnectionError   ErrorCode = "CONNECTION_ERROR"
+	CodeHandshakeFailed   ErrorCode = "HANDSHAKE_FAILED"
+	CodeTunnelError       ErrorCode = "TUNNEL_ERROR"
+	CodeTunnelModeSwitch  ErrorCode = "TUNNEL_MODE_SWITCH" // 隧道模式切换，连接已被隧道管理接管
 
 	// 数据包错误 (8xxx)
 	CodeInvalidPacket    ErrorCode = "INVALID_PACKET"
+	CodeInvalidData      ErrorCode = "INVALID_DATA"
 	CodePacketTooLarge   ErrorCode = "PACKET_TOO_LARGE"
 	CodeCompressionError ErrorCode = "COMPRESSION_ERROR"
 	CodeEncryptionError  ErrorCode = "ENCRYPTION_ERROR"
+	CodeProtocolError    ErrorCode = "PROTOCOL_ERROR"
 )
+
+// DetailValue 详情值类型（类型安全）
+//
+// 设计说明：
+// - 避免使用 interface{} 保持类型安全
+// - 支持字符串和整数两种常用类型
+// - 使用单独的 hasXxx 字段区分零值和未设置
+type DetailValue struct {
+	strVal    string
+	intVal    int64
+	hasStr    bool
+	hasInt    bool
+}
+
+// NewStringDetail 创建字符串类型详情值
+func NewStringDetail(s string) DetailValue {
+	return DetailValue{strVal: s, hasStr: true}
+}
+
+// NewIntDetail 创建整数类型详情值
+func NewIntDetail(i int64) DetailValue {
+	return DetailValue{intVal: i, hasInt: true}
+}
+
+// String 获取字符串值（如果是整数则转换为字符串）
+func (d DetailValue) String() string {
+	if d.hasStr {
+		return d.strVal
+	}
+	if d.hasInt {
+		return fmt.Sprintf("%d", d.intVal)
+	}
+	return ""
+}
+
+// Int 获取整数值和是否存在的标记
+func (d DetailValue) Int() (int64, bool) {
+	return d.intVal, d.hasInt
+}
+
+// IsString 返回是否为字符串类型
+func (d DetailValue) IsString() bool {
+	return d.hasStr
+}
+
+// IsInt 返回是否为整数类型
+func (d DetailValue) IsInt() bool {
+	return d.hasInt
+}
 
 // Error 统一错误类型
 type Error struct {
 	Code    ErrorCode              // 错误码
 	Message string                 // 错误消息
 	Cause   error                  // 原始错误
-	Details map[string]interface{} // 额外详情
+	Details map[string]DetailValue // 额外详情（类型安全）
 }
 
 // Error 实现 error 接口
@@ -98,13 +163,44 @@ func (e *Error) Is(target error) bool {
 	return false
 }
 
-// WithDetail 添加详情
-func (e *Error) WithDetail(key string, value interface{}) *Error {
+// WithDetailString 添加字符串类型详情
+func (e *Error) WithDetailString(key string, value string) *Error {
 	if e.Details == nil {
-		e.Details = make(map[string]interface{})
+		e.Details = make(map[string]DetailValue)
 	}
-	e.Details[key] = value
+	e.Details[key] = NewStringDetail(value)
 	return e
+}
+
+// WithDetailInt 添加整数类型详情
+func (e *Error) WithDetailInt(key string, value int64) *Error {
+	if e.Details == nil {
+		e.Details = make(map[string]DetailValue)
+	}
+	e.Details[key] = NewIntDetail(value)
+	return e
+}
+
+// GetDetailString 获取字符串类型详情（任意类型都会转为字符串）
+func (e *Error) GetDetailString(key string) string {
+	if e.Details == nil {
+		return ""
+	}
+	if v, ok := e.Details[key]; ok {
+		return v.String()
+	}
+	return ""
+}
+
+// GetDetailInt 获取整数类型详情
+func (e *Error) GetDetailInt(key string) (int64, bool) {
+	if e.Details == nil {
+		return 0, false
+	}
+	if v, ok := e.Details[key]; ok {
+		return v.Int()
+	}
+	return 0, false
 }
 
 // New 创建新错误

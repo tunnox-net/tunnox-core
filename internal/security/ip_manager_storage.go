@@ -2,10 +2,10 @@ package security
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
+	coreerrors "tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -20,17 +20,17 @@ const (
 // loadFromStorage 从Storage加载黑白名单
 func (m *IPManager) loadFromStorage() error {
 	if m.storage == nil {
-		return fmt.Errorf("storage not available")
+		return coreerrors.New(coreerrors.CodeStorageError, "storage not available")
 	}
 
 	// 加载黑名单
 	if err := m.loadListFromStorage(IPTypeBlacklist); err != nil {
-		return fmt.Errorf("failed to load blacklist: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to load blacklist")
 	}
 
 	// 加载白名单
 	if err := m.loadListFromStorage(IPTypeWhitelist); err != nil {
-		return fmt.Errorf("failed to load whitelist: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to load whitelist")
 	}
 
 	corelog.Infof("IPManager: loaded %d blacklist and %d whitelist entries from storage",
@@ -55,13 +55,13 @@ func (m *IPManager) loadListFromStorage(ipType IPType) error {
 		keyPrefix = keyPrefixWhitelist
 		targetList = m.whitelist
 	default:
-		return fmt.Errorf("invalid IP type: %s", ipType)
+		return coreerrors.New(coreerrors.CodeInvalidParam, "invalid IP type: "+string(ipType))
 	}
 
 	// 获取IP列表
 	listStore, ok := m.storage.(storage.ListStore)
 	if !ok {
-		return fmt.Errorf("storage does not support list operations")
+		return coreerrors.New(coreerrors.CodeStorageError, "storage does not support list operations")
 	}
 	ips, err := listStore.GetList(indexKey)
 	if err != nil {
@@ -106,7 +106,7 @@ func (m *IPManager) loadListFromStorage(ipType IPType) error {
 // saveToStorage 保存到Storage
 func (m *IPManager) saveToStorage(ipType IPType, ip string, record *IPRecord) error {
 	if m.storage == nil {
-		return fmt.Errorf("storage not available")
+		return coreerrors.New(coreerrors.CodeStorageError, "storage not available")
 	}
 
 	var indexKey string
@@ -120,14 +120,14 @@ func (m *IPManager) saveToStorage(ipType IPType, ip string, record *IPRecord) er
 		indexKey = keyIndexWhitelist
 		keyPrefix = keyPrefixWhitelist
 	default:
-		return fmt.Errorf("invalid IP type: %s", ipType)
+		return coreerrors.New(coreerrors.CodeStorageError, "invalid IP type: "+string(ipType))
 	}
 
 	// 保存记录
 	key := keyPrefix + ip
 	data, err := json.Marshal(record)
 	if err != nil {
-		return fmt.Errorf("failed to encode record: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to encode record")
 	}
 
 	var ttl time.Duration
@@ -139,16 +139,16 @@ func (m *IPManager) saveToStorage(ipType IPType, ip string, record *IPRecord) er
 	}
 
 	if err := m.storage.Set(key, data, ttl); err != nil {
-		return fmt.Errorf("failed to save record: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to save record")
 	}
 
 	// 添加到索引
 	listStore, ok := m.storage.(storage.ListStore)
 	if !ok {
-		return fmt.Errorf("storage does not support list operations")
+		return coreerrors.New(coreerrors.CodeStorageError, "storage does not support list operations")
 	}
 	if err := listStore.AppendToList(indexKey, ip); err != nil {
-		return fmt.Errorf("failed to add to index: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to add to index")
 	}
 
 	return nil
@@ -157,7 +157,7 @@ func (m *IPManager) saveToStorage(ipType IPType, ip string, record *IPRecord) er
 // removeFromStorage 从Storage删除
 func (m *IPManager) removeFromStorage(ipType IPType, ip string) error {
 	if m.storage == nil {
-		return fmt.Errorf("storage not available")
+		return coreerrors.New(coreerrors.CodeStorageError, "storage not available")
 	}
 
 	var indexKey string
@@ -171,22 +171,22 @@ func (m *IPManager) removeFromStorage(ipType IPType, ip string) error {
 		indexKey = keyIndexWhitelist
 		keyPrefix = keyPrefixWhitelist
 	default:
-		return fmt.Errorf("invalid IP type: %s", ipType)
+		return coreerrors.New(coreerrors.CodeStorageError, "invalid IP type: "+string(ipType))
 	}
 
 	// 删除记录
 	key := keyPrefix + ip
 	if err := m.storage.Delete(key); err != nil {
-		return fmt.Errorf("failed to delete record: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to delete record")
 	}
 
 	// 从索引移除
 	listStore, ok := m.storage.(storage.ListStore)
 	if !ok {
-		return fmt.Errorf("storage does not support list operations")
+		return coreerrors.New(coreerrors.CodeStorageError, "storage does not support list operations")
 	}
 	if err := listStore.RemoveFromList(indexKey, ip); err != nil {
-		return fmt.Errorf("failed to remove from index: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to remove from index")
 	}
 
 	return nil

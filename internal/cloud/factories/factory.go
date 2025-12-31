@@ -2,8 +2,9 @@ package factories
 
 import (
 	"context"
-	"fmt"
+
 	"tunnox-core/internal/cloud/managers"
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // NewCloudControlAPI 创建云控API实例
@@ -16,7 +17,7 @@ func NewCloudControlAPI(parentCtx context.Context, config *managers.ControlConfi
 		return NewBuiltinCloudControlAPI(parentCtx, config)
 	}
 
-	return nil, fmt.Errorf("REST API not implemented yet")
+	return nil, coreerrors.New(coreerrors.CodeNotConfigured, "REST API not implemented yet")
 }
 
 // NewBuiltinCloudControlAPI 创建内置云控实例

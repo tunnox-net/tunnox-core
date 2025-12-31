@@ -1,8 +1,9 @@
 package models
 
 import (
-	"fmt"
 	"time"
+
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // ClientToken 客户端JWT Token信息
@@ -44,19 +45,19 @@ func (t *ClientToken) TTL() time.Duration {
 // Validate 验证Token有效性
 func (t *ClientToken) Validate() error {
 	if t.ClientID <= 0 {
-		return fmt.Errorf("invalid client ID: %d", t.ClientID)
+		return coreerrors.Newf(coreerrors.CodeValidationError, "invalid client ID: %d", t.ClientID)
 	}
 
 	if t.JWTToken == "" {
-		return fmt.Errorf("jwt_token is required")
+		return coreerrors.New(coreerrors.CodeValidationError, "jwt_token is required")
 	}
 
 	if t.TokenID == "" {
-		return fmt.Errorf("token_id is required")
+		return coreerrors.New(coreerrors.CodeValidationError, "token_id is required")
 	}
 
 	if t.TokenExpiresAt.IsZero() {
-		return fmt.Errorf("token_expires_at is required")
+		return coreerrors.New(coreerrors.CodeValidationError, "token_expires_at is required")
 	}
 
 	return nil

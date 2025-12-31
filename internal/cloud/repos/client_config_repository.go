@@ -3,8 +3,10 @@ package repos
 import (
 	"fmt"
 	"time"
+
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // 编译时接口断言，确保 ClientConfigRepository 实现了 IClientConfigRepository 接口
@@ -37,7 +39,7 @@ func NewClientConfigRepository(repo *Repository) *ClientConfigRepository {
 		// ID提取函数：从ClientConfig提取ID字符串
 		func(config *models.ClientConfig) (string, error) {
 			if config == nil {
-				return "", fmt.Errorf("config is nil")
+				return "", coreerrors.New(coreerrors.CodeInvalidParam, "config is nil")
 			}
 			return fmt.Sprintf("%d", config.ID), nil
 		},
@@ -82,12 +84,12 @@ func (r *ClientConfigRepository) GetConfig(clientID int64) (*models.ClientConfig
 //   - error: 错误信息
 func (r *ClientConfigRepository) SaveConfig(config *models.ClientConfig) error {
 	if config == nil {
-		return fmt.Errorf("config is nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "config is nil")
 	}
 
 	// 验证配置有效性
 	if err := config.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeValidationError, "invalid config")
 	}
 
 	// 更新时间戳
@@ -110,12 +112,12 @@ func (r *ClientConfigRepository) SaveConfig(config *models.ClientConfig) error {
 //   - error: 错误信息（如果已存在则返回错误）
 func (r *ClientConfigRepository) CreateConfig(config *models.ClientConfig) error {
 	if config == nil {
-		return fmt.Errorf("config is nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "config is nil")
 	}
 
 	// 验证配置
 	if err := config.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeValidationError, "invalid config")
 	}
 
 	// 设置创建时间
@@ -140,12 +142,12 @@ func (r *ClientConfigRepository) CreateConfig(config *models.ClientConfig) error
 //   - error: 错误信息（如果不存在则返回错误）
 func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error {
 	if config == nil {
-		return fmt.Errorf("config is nil")
+		return coreerrors.New(coreerrors.CodeInvalidParam, "config is nil")
 	}
 
 	// 验证配置
 	if err := config.Validate(); err != nil {
-		return fmt.Errorf("invalid config: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeValidationError, "invalid config")
 	}
 
 	// 更新时间戳
@@ -198,7 +200,7 @@ func (r *ClientConfigRepository) ListUserConfigs(userID string) ([]*models.Clien
 	// 获取所有配置
 	allConfigs, err := r.ListConfigs()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list all configs: %w", err)
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to list all configs")
 	}
 
 	// 过滤出指定用户的配置

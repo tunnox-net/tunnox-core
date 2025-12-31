@@ -6,11 +6,12 @@ import (
 	"io"
 	"sync/atomic"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/client/tunnel"
 	"tunnox-core/internal/config"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream/transform"
 	"tunnox-core/internal/utils"
 
@@ -97,12 +98,12 @@ func NewBaseMappingHandler(
 func (h *BaseMappingHandler) Start() error {
 	// 1. 创建Transformer（公共）
 	if err := h.createTransformer(); err != nil {
-		return fmt.Errorf("failed to create transformer: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to create transformer")
 	}
 
 	// 2. 启动监听（委托给adapter）
 	if err := h.adapter.StartListener(h.config); err != nil {
-		return fmt.Errorf("failed to start listener: %w", err)
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to start listener")
 	}
 
 	corelog.Infof("BaseMappingHandler: %s mapping started on port %d",

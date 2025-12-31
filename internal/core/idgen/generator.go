@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 	"tunnox-core/internal/core/dispose"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/utils"
@@ -108,7 +109,7 @@ func (g *StorageIDGenerator[T]) Generate() (T, error) {
 			candidate = any(randomID).(T)
 
 		default:
-			return zero, fmt.Errorf("unsupported ID type: %T", zero)
+			return zero, coreerrors.Newf(coreerrors.CodeInvalidParam, "unsupported ID type: %T", zero)
 		}
 
 		// 使用原子操作标记ID为已使用
@@ -188,7 +189,7 @@ func (g *StorageIDGenerator[T]) markAsUsed(id T) error {
 		return err
 	}
 	if !success {
-		return fmt.Errorf("ID %v already in use", id)
+		return coreerrors.Newf(coreerrors.CodeConflict, "ID %v already in use", id)
 	}
 	return nil
 }

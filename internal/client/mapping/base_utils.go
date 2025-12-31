@@ -6,6 +6,7 @@ import (
 	"io"
 	"time"
 
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream/transform"
 
@@ -76,7 +77,7 @@ func (h *BaseMappingHandler) checkConnectionQuota() error {
 	// 检查连接数限制
 	if maxConn > 0 {
 		if int(h.activeConnCount.Load()) >= maxConn {
-			return fmt.Errorf("max connections reached: %d/%d", h.activeConnCount.Load(), maxConn)
+			return coreerrors.Newf(coreerrors.CodeResourceExhausted, "max connections reached: %d/%d", h.activeConnCount.Load(), maxConn)
 		}
 	}
 

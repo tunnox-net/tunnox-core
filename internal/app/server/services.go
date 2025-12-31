@@ -2,16 +2,19 @@ package server
 
 import (
 	"context"
-	"fmt"
+	"net"
 	"sync"
+
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/protocol/adapter"
 	"tunnox-core/internal/protocol/httptypes"
 	"tunnox-core/internal/protocol/session"
+	"tunnox-core/internal/stream"
 )
 
 // ============================================================================
@@ -91,12 +94,12 @@ type TunnelConnectionAdapter struct {
 }
 
 // GetNetConn 获取底层网络连接
-func (a *TunnelConnectionAdapter) GetNetConn() interface{} {
+func (a *TunnelConnectionAdapter) GetNetConn() net.Conn {
 	return a.conn.GetNetConn()
 }
 
 // GetStream 获取数据流
-func (a *TunnelConnectionAdapter) GetStream() interface{} {
+func (a *TunnelConnectionAdapter) GetStream() stream.PackageStreamer {
 	return a.conn.GetStream()
 }
 
@@ -104,12 +107,12 @@ func (a *TunnelConnectionAdapter) GetStream() interface{} {
 func (a *TunnelConnectionAdapter) Read(p []byte) (int, error) {
 	stream := a.conn.GetStream()
 	if stream == nil {
-		return 0, fmt.Errorf("stream is nil")
+		return 0, coreerrors.New(coreerrors.CodeStreamClosed, "stream is nil")
 	}
 	// 使用 stream 的 Read 方法
 	reader := stream.GetReader()
 	if reader == nil {
-		return 0, fmt.Errorf("reader is nil")
+		return 0, coreerrors.New(coreerrors.CodeStreamClosed, "reader is nil")
 	}
 	return reader.Read(p)
 }
@@ -118,12 +121,12 @@ func (a *TunnelConnectionAdapter) Read(p []byte) (int, error) {
 func (a *TunnelConnectionAdapter) Write(p []byte) (int, error) {
 	stream := a.conn.GetStream()
 	if stream == nil {
-		return 0, fmt.Errorf("stream is nil")
+		return 0, coreerrors.New(coreerrors.CodeStreamClosed, "stream is nil")
 	}
 	// 使用 stream 的 Write 方法
 	writer := stream.GetWriter()
 	if writer == nil {
-		return 0, fmt.Errorf("writer is nil")
+		return 0, coreerrors.New(coreerrors.CodeStreamClosed, "writer is nil")
 	}
 	return writer.Write(p)
 }
@@ -201,7 +204,7 @@ func (s *BaseService) Stop(ctx context.Context) error {
 	// 关闭资源
 	if s.closeable != nil {
 		if err := s.closeable.Close(); err != nil {
-			return fmt.Errorf("failed to close %s: %w", s.name, err)
+			return coreerrors.Wrapf(err, coreerrors.CodeCleanupError, "failed to close %s", s.name)
 		}
 	}
 
@@ -266,7 +269,7 @@ func (pf *ProtocolFactory) CreateAdapter(protocolName string, ctx context.Contex
 	case "kcp":
 		return adapter.NewKcpAdapter(ctx, pf.session), nil
 	default:
-		return nil, fmt.Errorf("unsupported protocol: %s", protocolName)
+		return nil, coreerrors.Newf(coreerrors.CodeInvalidRequest, "unsupported protocol: %s", protocolName)
 	}
 }
 
@@ -290,7 +293,7 @@ func (r *SimpleNodeRegistry) GetNodeAddress(nodeID string) (string, error) {
 
 	addr, exists := r.nodes[nodeID]
 	if !exists {
-		return "", fmt.Errorf("node not found: %s", nodeID)
+		return "", coreerrors.Newf(coreerrors.CodeNodeNotFound, "node not found: %s", nodeID)
 	}
 	return addr, nil
 }

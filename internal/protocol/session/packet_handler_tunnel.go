@@ -2,8 +2,9 @@ package session
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
+
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 
@@ -22,13 +23,13 @@ import (
 // - cleanupTunnelFromControlConn: 清理控制连接引用
 func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error {
 	if s.tunnelHandler == nil {
-		return fmt.Errorf("tunnel handler not configured")
+		return coreerrors.New(coreerrors.CodeNotConfigured, "tunnel handler not configured")
 	}
 
 	// 获取底层连接
 	conn := s.getConnectionByConnID(connPacket.ConnectionID)
 	if conn == nil {
-		return fmt.Errorf("connection not found: %s", connPacket.ConnectionID)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "connection not found: %s", connPacket.ConnectionID)
 	}
 
 	// 解析隧道打开请求（从 Payload）
@@ -39,9 +40,9 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 			s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{
 				TunnelID: "",
 				Success:  false,
-				Error:    fmt.Sprintf("invalid tunnel open request format: %v", err),
+				Error:    "invalid tunnel open request format: " + err.Error(),
 			})
-			return fmt.Errorf("invalid tunnel open request format: %w", err)
+			return coreerrors.Wrap(err, coreerrors.CodeInvalidPacket, "invalid tunnel open request format")
 		}
 	}
 
@@ -71,7 +72,7 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 	// 获取或创建控制连接
 	clientConn := s.findOrCreateControlConnection(connPacket, conn, req)
 	if clientConn == nil {
-		return fmt.Errorf("control connection not found: %s", connPacket.ConnectionID)
+		return coreerrors.Newf(coreerrors.CodeNotFound, "control connection not found: %s", connPacket.ConnectionID)
 	}
 
 	// 调用隧道处理器
@@ -85,13 +86,15 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 		return err
 	}
 
-	// 清理控制连接映射
-	s.removeFromControlConnMap(connPacket.ConnectionID, clientConn)
-
+	// ✅ 先发送 TunnelOpenAck，再清理连接映射
+	// 注意：必须先发送响应，因为 removeFromControlConnMap 会关闭 stream
 	s.sendTunnelOpenResponseDirect(conn, &packet.TunnelOpenAckResponse{
 		TunnelID: req.TunnelID,
 		Success:  true,
 	})
+
+	// 清理控制连接映射（在发送响应后）
+	s.removeFromControlConnMap(connPacket.ConnectionID, clientConn)
 
 	// 设置映射ID
 	s.setMappingIDAfterAuth(conn, req.MappingID, clientConn)
@@ -113,7 +116,7 @@ func (s *SessionManager) handleTunnelOpen(connPacket *types.StreamPacket) error 
 	// 清理
 	s.cleanupTunnelFromControlConn(connPacket, conn, req)
 
-	return fmt.Errorf("tunnel source connected, switching to stream mode")
+	return coreerrors.New(coreerrors.CodeTunnelModeSwitch, "tunnel source connected, switching to stream mode")
 }
 
 // setMappingIDOnConnection 设置连接的 mappingID
@@ -217,17 +220,10 @@ func (s *SessionManager) findOrCreateControlConnection(
 }
 
 // removeFromControlConnMap 从控制连接映射中移除
+// 注意：这里使用 Unregister 而不是 Remove，因为隧道连接的 stream 需要继续使用
 func (s *SessionManager) removeFromControlConnMap(connID string, clientConn ControlConnectionInterface) {
-	s.controlConnLock.Lock()
-	defer s.controlConnLock.Unlock()
-	if _, exists := s.controlConnMap[connID]; exists {
-		delete(s.controlConnMap, connID)
-		if clientConn.IsAuthenticated() && clientConn.GetClientID() > 0 {
-			if currentControlConn, exists := s.clientIDIndexMap[clientConn.GetClientID()]; exists && currentControlConn.GetConnID() == connID {
-				delete(s.clientIDIndexMap, clientConn.GetClientID())
-			}
-		}
-	}
+	// 使用 clientRegistry.Unregister 只移除映射，不关闭 stream
+	s.clientRegistry.Unregister(connID)
 }
 
 // setMappingIDAfterAuth 认证后设置映射ID

@@ -5,6 +5,7 @@ import (
 
 	"tunnox-core/internal/cloud/models"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/httpservice"
 )
 
 // CreateMappingRequest 创建映射请求
@@ -38,7 +39,7 @@ func (m *ManagementModule) handleListAllMappings(w http.ResponseWriter, r *http.
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, mappings)
+	respondJSONTyped(w, http.StatusOK, mappings)
 }
 
 // handleCreateMapping 创建映射
@@ -98,7 +99,7 @@ func (m *ManagementModule) handleCreateMapping(w http.ResponseWriter, r *http.Re
 	if protocol == models.ProtocolHTTP && m.deps != nil && m.deps.DomainRegistry != nil {
 		// 检查基础域名是否允许
 		if !m.deps.DomainRegistry.IsBaseDomainAllowed(req.HTTPBaseDomain) {
-			// 删除已创建的映射
+			// 回滚：删除已创建的映射（忽略删除错误，主流程已失败）
 			_ = m.cloudControl.DeletePortMapping(created.ID)
 			m.respondError(w, http.StatusBadRequest, "base domain not allowed: "+req.HTTPBaseDomain)
 			return
@@ -106,7 +107,7 @@ func (m *ManagementModule) handleCreateMapping(w http.ResponseWriter, r *http.Re
 
 		if err := m.deps.DomainRegistry.Register(created); err != nil {
 			corelog.Errorf("ManagementModule: failed to register domain: %v", err)
-			// 域名注册失败，删除已创建的映射
+			// 回滚：删除已创建的映射（忽略删除错误，主流程已失败）
 			_ = m.cloudControl.DeletePortMapping(created.ID)
 			m.respondError(w, http.StatusInternalServerError, "failed to register domain: "+err.Error())
 			return
@@ -132,7 +133,7 @@ func (m *ManagementModule) handleCreateMapping(w http.ResponseWriter, r *http.Re
 		corelog.Warnf("ManagementModule: cannot notify clients, deps or SessionMgr is nil")
 	}
 
-	m.respondJSON(w, http.StatusCreated, created)
+	respondJSONTyped(w, http.StatusCreated, created)
 }
 
 // handleGetMapping 获取映射
@@ -154,7 +155,7 @@ func (m *ManagementModule) handleGetMapping(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	m.respondJSON(w, http.StatusOK, mapping)
+	respondJSONTyped(w, http.StatusOK, mapping)
 }
 
 // UpdateMappingRequest 更新映射请求
@@ -229,7 +230,7 @@ func (m *ManagementModule) handleUpdateMapping(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	m.respondJSON(w, http.StatusOK, existing)
+	respondJSONTyped(w, http.StatusOK, existing)
 }
 
 // handleDeleteMapping 删除映射
@@ -246,7 +247,11 @@ func (m *ManagementModule) handleDeleteMapping(w http.ResponseWriter, r *http.Re
 	}
 
 	// 获取映射信息（用于从域名注册表移除和通知客户端）
-	mapping, _ := m.cloudControl.GetPortMapping(mappingID)
+	// 错误被忽略是因为映射可能已不存在，后续通过 nil 检查处理
+	mapping, err := m.cloudControl.GetPortMapping(mappingID)
+	if err != nil {
+		corelog.Debugf("ManagementModule: mapping %s not found (may already be deleted): %v", mappingID, err)
+	}
 
 	// 删除映射
 	if err := m.cloudControl.DeletePortMapping(mappingID); err != nil {
@@ -270,7 +275,7 @@ func (m *ManagementModule) handleDeleteMapping(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	m.respondJSON(w, http.StatusOK, map[string]string{"message": "mapping deleted"})
+	respondJSONTyped(w, http.StatusOK, httpservice.MessageResponse{Message: "mapping deleted"})
 }
 
 // handleCheckSubdomain 检查子域名可用性
@@ -288,8 +293,8 @@ func (m *ManagementModule) handleCheckSubdomain(w http.ResponseWriter, r *http.R
 		available = m.deps.DomainRegistry.IsSubdomainAvailable(subdomain, baseDomain)
 	}
 
-	m.respondJSON(w, http.StatusOK, map[string]interface{}{
-		"available":   available,
-		"full_domain": subdomain + "." + baseDomain,
+	respondJSONTyped(w, http.StatusOK, httpservice.SubdomainCheckResponse{
+		Available:  available,
+		FullDomain: subdomain + "." + baseDomain,
 	})
 }

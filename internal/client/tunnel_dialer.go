@@ -2,12 +2,12 @@ package client
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
 	"strings"
 	"time"
 
 	"tunnox-core/internal/client/transport"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
@@ -37,7 +37,7 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 	// 检查协议是否可用
 	if !transport.IsProtocolAvailable(protocol) {
 		availableProtocols := transport.GetAvailableProtocolNames()
-		return nil, nil, fmt.Errorf("protocol %q is not available (compiled protocols: %v)", protocol, availableProtocols)
+		return nil, nil, coreerrors.Newf(coreerrors.CodeNotConfigured, "protocol %q is not available (compiled protocols: %v)", protocol, availableProtocols)
 	}
 
 	// 使用统一的协议注册表拨号
@@ -45,7 +45,7 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 
 	if err != nil {
 		corelog.Errorf("Client[%s]: dial server failed: %v", tunnelID, err)
-		return nil, nil, fmt.Errorf("failed to dial server (%s): %w", protocol, err)
+		return nil, nil, coreerrors.Wrapf(err, coreerrors.CodeNetworkError, "failed to dial server (%s)", protocol)
 	}
 	corelog.Debugf("Client[%s]: dial server SUCCESS, local=%s, remote=%s", tunnelID, conn.LocalAddr(), conn.RemoteAddr())
 
@@ -59,7 +59,7 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 	if err := c.sendHandshakeOnStream(tunnelStream, "tunnel"); err != nil {
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, fmt.Errorf("tunnel connection handshake failed: %w", err)
+		return nil, nil, coreerrors.Wrap(err, coreerrors.CodeHandshakeFailed, "tunnel connection handshake failed")
 	}
 
 	// 发送 TunnelOpen（包含 SOCKS5 动态目标地址）
@@ -71,7 +71,12 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 		TargetPort: targetPort, // SOCKS5 动态目标端口
 	}
 
-	reqData, _ := json.Marshal(req)
+	reqData, err := json.Marshal(req)
+	if err != nil {
+		tunnelStream.Close()
+		conn.Close()
+		return nil, nil, coreerrors.Wrap(err, coreerrors.CodeInternalError, "failed to marshal tunnel open request")
+	}
 	openPkt := &packet.TransferPacket{
 		PacketType: packet.TunnelOpen,
 		TunnelID:   tunnelID,
@@ -81,7 +86,7 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 	if _, err := tunnelStream.WritePacket(openPkt, true, 0); err != nil {
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, fmt.Errorf("failed to send tunnel open: %w", err)
+		return nil, nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send tunnel open")
 	}
 
 	// 等待 TunnelOpenAck（忽略心跳包）
@@ -93,7 +98,7 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 		case <-timeout:
 			tunnelStream.Close()
 			conn.Close()
-			return nil, nil, fmt.Errorf("timeout waiting for tunnel open ack (30s)")
+			return nil, nil, coreerrors.New(coreerrors.CodeTimeout, "timeout waiting for tunnel open ack (30s)")
 		default:
 		}
 
@@ -102,7 +107,7 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 			corelog.Errorf("Client: failed to read packet while waiting for TunnelOpenAck: %v", err)
 			tunnelStream.Close()
 			conn.Close()
-			return nil, nil, fmt.Errorf("failed to read tunnel open ack: %w", err)
+			return nil, nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to read tunnel open ack")
 		}
 
 		// 忽略心跳包和TunnelOpen包（可能是其他连接的TunnelOpen）
@@ -130,20 +135,20 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 		corelog.Errorf("Client: unexpected packet type: %v (expected TunnelOpenAck), baseType=%d", pkt.PacketType, baseType)
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, fmt.Errorf("unexpected packet type: %v (expected TunnelOpenAck)", pkt.PacketType)
+		return nil, nil, coreerrors.Newf(coreerrors.CodeInvalidPacket, "unexpected packet type: %v (expected TunnelOpenAck)", pkt.PacketType)
 	}
 
 	var ack packet.TunnelOpenAckResponse
 	if err := json.Unmarshal(ackPkt.Payload, &ack); err != nil {
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, fmt.Errorf("failed to unmarshal ack: %w", err)
+		return nil, nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to unmarshal ack")
 	}
 
 	if !ack.Success {
 		tunnelStream.Close()
 		conn.Close()
-		return nil, nil, fmt.Errorf("tunnel open failed: %s", ack.Error)
+		return nil, nil, coreerrors.Newf(coreerrors.CodeTunnelError, "tunnel open failed: %s", ack.Error)
 	}
 
 	return conn, tunnelStream, nil

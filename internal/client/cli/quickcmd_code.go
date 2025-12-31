@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"tunnox-core/internal/client"
+	coreerrors "tunnox-core/internal/core/errors"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -150,7 +151,7 @@ func (r *QuickCommandRunner) runCodeUseCommand(args []string) (bool, error) {
 			if i+1 < len(args) {
 				port, err := strconv.Atoi(args[i+1])
 				if err != nil {
-					return false, fmt.Errorf("invalid --port value: %s", args[i+1])
+					return false, coreerrors.Newf(coreerrors.CodeInvalidParam, "invalid --port value: %s", args[i+1])
 				}
 				localPort = port
 				i++
@@ -177,7 +178,7 @@ func (r *QuickCommandRunner) runCodeUseCommand(args []string) (bool, error) {
 		ListenAddress: listenAddress,
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to activate code: %w", err)
+		return false, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to activate code")
 	}
 
 	// 显示结果
@@ -219,7 +220,7 @@ func (r *QuickCommandRunner) runCodeListCommand(args []string) (bool, error) {
 
 	resp, err := r.client.ListConnectionCodes()
 	if err != nil {
-		return false, fmt.Errorf("failed to list codes: %w", err)
+		return false, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to list codes")
 	}
 
 	if len(resp.Codes) == 0 {
