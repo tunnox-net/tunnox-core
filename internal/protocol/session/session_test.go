@@ -224,9 +224,9 @@ func TestSessionDispose(t *testing.T) {
 	// 注意：GetActiveConnections() 只统计已注册的控制连接和隧道连接
 	// AcceptConnection 只是创建连接，不会自动注册，所以这里不检查连接数
 
-	// 释放会话
-	result := session.Close()
-	require.False(t, result.HasErrors(), "Failed to dispose session: %v", result.Error())
+	// 释放会话（ManagerBase.Close() 返回 error）
+	err = session.Close()
+	require.NoError(t, err, "Failed to dispose session")
 
 	// 注意：GetActiveConnections() 只统计已注册的控制连接和隧道连接
 	// 由于连接未注册，关闭后连接数仍为0

@@ -178,56 +178,11 @@ func TestSaveConfig(t *testing.T) {
 	}
 }
 
-// TestGetDefaultConfig 测试获取默认配置
-func TestGetDefaultConfig(t *testing.T) {
-	config := getDefaultConfig()
-
-	if config == nil {
-		t.Fatal("Expected non-nil default config")
-	}
-
-	// 默认配置应该是匿名模式
-	if config.ClientID != 0 {
-		t.Errorf("Expected default ClientID=0 (anonymous), got %d", config.ClientID)
-	}
-
-	// 验证服务器配置有默认值
-	if config.Server.Address == "" {
-		t.Error("Expected default server address to be set")
-	}
-	if config.Server.Address != "https://gw.tunnox.net/_tunnox" {
-		t.Errorf("Expected default server address to be 'https://gw.tunnox.net/_tunnox', got '%s'", config.Server.Address)
-	}
-
-	if config.Server.Protocol == "" {
-		t.Error("Expected default server protocol to be set")
-	}
-	if config.Server.Protocol != "websocket" {
-		t.Errorf("Expected default server protocol to be 'websocket', got '%s'", config.Server.Protocol)
-	}
-}
-
-// TestHelperFunctions 测试辅助函数
-func TestHelperFunctions(t *testing.T) {
-	// 测试获取可执行文件目录
-	execDir := getExecutableDir()
-	if execDir == "" {
-		t.Error("Expected non-empty executable directory")
-	}
-
-	// 测试获取工作目录
+// TestGetWorkingDir 测试获取工作目录
+func TestGetWorkingDir(t *testing.T) {
 	workDir := getWorkingDir()
 	if workDir == "" {
 		t.Error("Expected non-empty working directory")
 	}
-
-	// 测试获取用户主目录
-	homeDir := getUserHomeDir()
-	if homeDir == "" {
-		t.Error("Expected non-empty home directory")
-	}
-
-	t.Logf("Executable dir: %s", execDir)
 	t.Logf("Working dir: %s", workDir)
-	t.Logf("Home dir: %s", homeDir)
 }

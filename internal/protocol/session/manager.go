@@ -146,7 +146,7 @@ type SessionManager struct {
 	closedTunnels   map[string]time.Time // tunnelID -> 关闭时间
 	closedTunnelsMu sync.RWMutex
 
-	dispose.Dispose
+	*dispose.ManagerBase
 }
 
 // NewSessionManager 创建新的会话管理器（双连接模型）
@@ -209,10 +209,13 @@ func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.C
 		responseManager: nil,
 		tunnelHandler:   nil,
 		authHandler:     nil,
+
+		// Manager 级组件使用 ManagerBase
+		ManagerBase: dispose.NewManager("SessionManager", parentCtx),
 	}
 
-	// 设置资源清理回调
-	session.SetCtx(parentCtx, session.onClose)
+	// 添加资源清理回调
+	session.AddCleanHandler(session.onClose)
 
 	// 启动连接清理协程
 	session.startConnectionCleanup()

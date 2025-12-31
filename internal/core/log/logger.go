@@ -5,7 +5,6 @@ package log
 import (
 	"context"
 	"io"
-	"os"
 	"sync"
 	"time"
 
@@ -227,7 +226,6 @@ var (
 	defaultLogger     Logger
 	defaultLoggerOnce sync.Once
 	defaultLoggerMu   sync.RWMutex
-	currentLogFile    *os.File
 )
 
 // initDefaultLogger 初始化默认 Logger

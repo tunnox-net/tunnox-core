@@ -284,11 +284,7 @@ func (ps *StreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
 	// 注意：加密功能已移至 internal/stream/transform 模块
 	// 解密功能应通过 transform.StreamTransformer 处理
 	if packetType.IsEncrypted() {
-		// 加密功能已移至 transform 模块
-		err = fmt.Errorf("encryption not supported in StreamProcessor, use transform package")
-		if err != nil {
-			return nil, totalBytes, err
-		}
+		return nil, totalBytes, fmt.Errorf("encryption not supported in StreamProcessor, use transform package")
 	}
 	if packetType.IsCompressed() {
 		bodyData, err = ps.decompressData(bodyData)

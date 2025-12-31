@@ -9,7 +9,6 @@ import (
 	"tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
-	"tunnox-core/internal/utils"
 )
 
 // Service 基础服务结构，提供通用的错误处理工具
@@ -138,9 +137,9 @@ func (s *Service) LogDeleted(resourceType, identifier string) {
 // LogWarning 记录警告日志
 func (s *Service) LogWarning(operation string, err error, args ...interface{}) {
 	if len(args) > 0 {
-		utils.LogErrorf(err, "Failed to %s", fmt.Sprintf(operation, args...))
+		corelog.WithError(err).Errorf("Failed to %s", fmt.Sprintf(operation, args...))
 	} else {
-		utils.LogErrorf(err, "Failed to %s", operation)
+		corelog.WithError(err).Errorf("Failed to %s", operation)
 	}
 }
 

@@ -17,6 +17,14 @@ import (
 // 跨服务器 Tunnel 处理
 // ============================================================================
 
+// CrossServerConnectionInfo 跨服务器连接信息
+type CrossServerConnectionInfo struct {
+	TargetNodeID   string `json:"target_node_id"`
+	SourceNodeID   string `json:"source_node_id"`
+	TunnelID       string `json:"tunnel_id"`
+	ReadyTimestamp int64  `json:"ready_timestamp"`
+}
+
 // handleCrossServerTargetConnection 处理跨服务器的目标端连接
 // 当目标端客户端的TunnelOpen连接到了与源端不同的Server时调用
 // 需要通过BridgeManager将连接转发到源端Server
@@ -105,11 +113,11 @@ func (s *SessionManager) registerCrossServerConnection(
 	routingState *TunnelWaitingState,
 ) error {
 	// 将连接信息存储到Redis，源端Server可以查询并建立Bridge
-	connInfo := map[string]interface{}{
-		"target_node_id":  s.getNodeID(),
-		"source_node_id":  routingState.SourceNodeID,
-		"tunnel_id":       tunnelID,
-		"ready_timestamp": time.Now().Unix(),
+	connInfo := CrossServerConnectionInfo{
+		TargetNodeID:   s.getNodeID(),
+		SourceNodeID:   routingState.SourceNodeID,
+		TunnelID:       tunnelID,
+		ReadyTimestamp: time.Now().Unix(),
 	}
 
 	data, err := json.Marshal(connInfo)
@@ -241,19 +249,21 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 		targetPort = msg.TargetPort
 	}
 
-	cmdBody := map[string]interface{}{
-		"tunnel_id":          msg.TunnelID,
-		"mapping_id":         msg.MappingID,
-		"secret_key":         mapping.SecretKey,
-		"target_host":        targetHost,
-		"target_port":        targetPort,
-		"protocol":           string(mapping.Protocol),
-		"enable_compression": mapping.Config.EnableCompression,
-		"compression_level":  mapping.Config.CompressionLevel,
-		"enable_encryption":  mapping.Config.EnableEncryption,
-		"encryption_method":  mapping.Config.EncryptionMethod,
-		"encryption_key":     mapping.Config.EncryptionKey,
-		"bandwidth_limit":    mapping.Config.BandwidthLimit,
+	cmdBody := &packet.TunnelOpenRequestExtended{
+		TunnelOpenRequest: packet.TunnelOpenRequest{
+			TunnelID:   msg.TunnelID,
+			MappingID:  msg.MappingID,
+			SecretKey:  mapping.SecretKey,
+			TargetHost: targetHost,
+			TargetPort: targetPort,
+		},
+		Protocol:          string(mapping.Protocol),
+		EnableCompression: mapping.Config.EnableCompression,
+		CompressionLevel:  mapping.Config.CompressionLevel,
+		EnableEncryption:  mapping.Config.EnableEncryption,
+		EncryptionMethod:  mapping.Config.EncryptionMethod,
+		EncryptionKey:     mapping.Config.EncryptionKey,
+		BandwidthLimit:    mapping.Config.BandwidthLimit,
 	}
 
 	cmdBodyJSON, err := json.Marshal(cmdBody)

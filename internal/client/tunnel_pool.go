@@ -13,6 +13,22 @@ import (
 	corelog "tunnox-core/internal/core/log"
 )
 
+// MappingPoolStats 单个映射池的统计信息
+type MappingPoolStats struct {
+	Idle   int   `json:"idle"`
+	Active int32 `json:"active"`
+}
+
+// TunnelPoolStats 隧道连接池统计信息
+type TunnelPoolStats struct {
+	Enabled        bool                        `json:"enabled"`
+	TotalCreated   int64                       `json:"total_created"`
+	TotalReused    int64                       `json:"total_reused"`
+	TotalReleased  int64                       `json:"total_released"`
+	TotalDiscarded int64                       `json:"total_discarded"`
+	Pools          map[string]MappingPoolStats `json:"pools"`
+}
+
 // TunnelPoolConfig 隧道连接池配置
 type TunnelPoolConfig struct {
 	// MaxIdleConns 每个 mapping 的最大空闲连接数
@@ -214,27 +230,27 @@ func (p *TunnelPool) Shutdown() {
 }
 
 // Stats 返回统计信息
-func (p *TunnelPool) Stats() map[string]interface{} {
+func (p *TunnelPool) Stats() *TunnelPoolStats {
 	p.poolsMu.RLock()
 	defer p.poolsMu.RUnlock()
 
-	poolStats := make(map[string]interface{})
+	poolStats := make(map[string]MappingPoolStats)
 	for mappingID, pool := range p.pools {
 		pool.idleMu.Lock()
-		poolStats[mappingID] = map[string]interface{}{
-			"idle":   len(pool.idle),
-			"active": pool.active.Load(),
+		poolStats[mappingID] = MappingPoolStats{
+			Idle:   len(pool.idle),
+			Active: pool.active.Load(),
 		}
 		pool.idleMu.Unlock()
 	}
 
-	return map[string]interface{}{
-		"enabled":        p.config.Enabled,
-		"totalCreated":   p.totalCreated.Load(),
-		"totalReused":    p.totalReused.Load(),
-		"totalReleased":  p.totalReleased.Load(),
-		"totalDiscarded": p.totalDiscarded.Load(),
-		"pools":          poolStats,
+	return &TunnelPoolStats{
+		Enabled:        p.config.Enabled,
+		TotalCreated:   p.totalCreated.Load(),
+		TotalReused:    p.totalReused.Load(),
+		TotalReleased:  p.totalReleased.Load(),
+		TotalDiscarded: p.totalDiscarded.Load(),
+		Pools:          poolStats,
 	}
 }
 

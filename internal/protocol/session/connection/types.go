@@ -2,6 +2,7 @@ package connection
 
 import (
 	"net"
+	"sync"
 	"time"
 
 	"tunnox-core/internal/core/types"
@@ -176,6 +177,7 @@ type ControlConnection struct {
 	RemoteAddr    net.Addr // 远程地址
 	Protocol      string   // 协议类型（tcp/websocket/quic）
 	CreatedAt     time.Time
+	mu            sync.RWMutex // 保护 LastActiveAt 的并发访问
 	LastActiveAt  time.Time
 }
 
@@ -193,14 +195,19 @@ func NewControlConnection(connID string, stream stream.PackageStreamer, remoteAd
 }
 
 func (c *ControlConnection) UpdateActivity() {
+	c.mu.Lock()
 	c.LastActiveAt = time.Now()
+	c.mu.Unlock()
 }
 
 func (c *ControlConnection) IsStale(timeout time.Duration) bool {
 	if c == nil {
 		return true
 	}
-	return time.Since(c.LastActiveAt) > timeout
+	c.mu.RLock()
+	lastActive := c.LastActiveAt
+	c.mu.RUnlock()
+	return time.Since(lastActive) > timeout
 }
 
 func (c *ControlConnection) GetStream() stream.PackageStreamer {

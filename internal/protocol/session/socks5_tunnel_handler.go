@@ -80,19 +80,21 @@ func (s *SessionManager) HandleSOCKS5TunnelRequest(connPacket *types.StreamPacke
 	}
 
 	// 5. 构造 TunnelOpenRequest 命令（包含动态目标地址）
-	cmdBody := map[string]interface{}{
-		"tunnel_id":          req.TunnelID,
-		"mapping_id":         req.MappingID,
-		"secret_key":         mapping.SecretKey,
-		"target_host":        req.TargetHost, // 动态目标（来自 SOCKS5 协议）
-		"target_port":        req.TargetPort, // 动态端口（来自 SOCKS5 协议）
-		"protocol":           "socks5",
-		"enable_compression": mapping.Config.EnableCompression,
-		"compression_level":  mapping.Config.CompressionLevel,
-		"enable_encryption":  mapping.Config.EnableEncryption,
-		"encryption_method":  mapping.Config.EncryptionMethod,
-		"encryption_key":     mapping.Config.EncryptionKey,
-		"bandwidth_limit":    mapping.Config.BandwidthLimit,
+	cmdBody := &packet.TunnelOpenRequestExtended{
+		TunnelOpenRequest: packet.TunnelOpenRequest{
+			TunnelID:   req.TunnelID,
+			MappingID:  req.MappingID,
+			SecretKey:  mapping.SecretKey,
+			TargetHost: req.TargetHost, // 动态目标（来自 SOCKS5 协议）
+			TargetPort: req.TargetPort, // 动态端口（来自 SOCKS5 协议）
+		},
+		Protocol:          "socks5",
+		EnableCompression: mapping.Config.EnableCompression,
+		CompressionLevel:  mapping.Config.CompressionLevel,
+		EnableEncryption:  mapping.Config.EnableEncryption,
+		EncryptionMethod:  mapping.Config.EncryptionMethod,
+		EncryptionKey:     mapping.Config.EncryptionKey,
+		BandwidthLimit:    mapping.Config.BandwidthLimit,
 	}
 
 	cmdBodyJSON, err := json.Marshal(cmdBody)

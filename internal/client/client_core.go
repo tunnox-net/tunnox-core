@@ -311,7 +311,7 @@ func (c *TunnoxClient) GetTunnelPool() *TunnelPool {
 }
 
 // GetTunnelPoolStats 获取连接池统计信息
-func (c *TunnoxClient) GetTunnelPoolStats() map[string]interface{} {
+func (c *TunnoxClient) GetTunnelPoolStats() *TunnelPoolStats {
 	if c.tunnelPool == nil {
 		return nil
 	}

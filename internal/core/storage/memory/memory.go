@@ -31,6 +31,8 @@ func New(parentCtx context.Context) *Storage {
 		data:        make(map[string]*StorageItem),
 		cleanupStop: make(chan struct{}),
 	}
+	// 绑定 onClose 回调，确保资源正确释放
+	storage.AddCleanHandler(storage.onClose)
 	return storage
 }
 

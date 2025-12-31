@@ -268,6 +268,19 @@ type TunnelOpenRequest struct {
 	TargetPort int    `json:"target_port,omitempty"` // 动态目标端口（由 SOCKS5 协议指定）
 }
 
+// TunnelOpenRequestExtended 扩展的隧道开启请求（包含流处理配置）
+// 用于服务端向目标客户端发送隧道开启命令时，携带完整的流处理配置
+type TunnelOpenRequestExtended struct {
+	TunnelOpenRequest
+	Protocol          string `json:"protocol,omitempty"`
+	EnableCompression bool   `json:"enable_compression,omitempty"`
+	CompressionLevel  int    `json:"compression_level,omitempty"`
+	EnableEncryption  bool   `json:"enable_encryption,omitempty"`
+	EncryptionMethod  string `json:"encryption_method,omitempty"`
+	EncryptionKey     string `json:"encryption_key,omitempty"`
+	BandwidthLimit    int64  `json:"bandwidth_limit,omitempty"`
+}
+
 // TunnelOpenAckResponse 隧道打开确认响应
 type TunnelOpenAckResponse struct {
 	TunnelID string `json:"tunnel_id"`

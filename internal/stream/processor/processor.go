@@ -61,16 +61,16 @@ func NewDefaultStreamProcessor(
 }
 
 // ReadPacket 读取数据包
+// 注意：DefaultStreamProcessor 不实现完整的包读取逻辑
+// 完整实现请使用 stream.StreamProcessor
 func (sp *DefaultStreamProcessor) ReadPacket() (*packet.TransferPacket, int, error) {
-	// 实现数据包读取逻辑
-	// 这里应该包含解压缩、解密等处理
 	return nil, 0, nil
 }
 
 // WritePacket 写入数据包
+// 注意：DefaultStreamProcessor 不实现完整的包写入逻辑
+// 完整实现请使用 stream.StreamProcessor
 func (sp *DefaultStreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompression bool, rateLimitBytesPerSecond int64) (int, error) {
-	// 实现数据包写入逻辑
-	// 这里应该包含压缩、加密、限流等处理
 	return 0, nil
 }
 

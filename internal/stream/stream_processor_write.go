@@ -111,10 +111,6 @@ func (ps *StreamProcessor) WritePacket(pkt *packet.TransferPacket, useCompressio
 	}
 	// 注意：加密功能已移至 internal/stream/transform 模块
 	// 加密标志位的设置应通过 transform 模块处理
-	// 此处保留代码兼容性，但不再使用
-	if false { // encMgr 已移除
-		packetType |= packet.Encrypted
-	}
 
 	typeByte := []byte{byte(packetType)}
 	_, err := ps.writer.Write(typeByte)

@@ -204,16 +204,6 @@ func (cm *ConfigManager) saveConfigToFile(path string, config *ClientConfig) err
 	return nil
 }
 
-// getExecutableDir 获取可执行文件所在目录
-func getExecutableDir() string {
-	execPath, err := os.Executable()
-	if err != nil {
-		corelog.Warnf("ConfigManager: failed to get executable path: %v", err)
-		return "."
-	}
-	return filepath.Dir(execPath)
-}
-
 // getWorkingDir 获取工作目录
 func getWorkingDir() string {
 	workDir, err := os.Getwd()
@@ -224,21 +214,3 @@ func getWorkingDir() string {
 	return workDir
 }
 
-// getUserHomeDir 获取用户主目录
-func getUserHomeDir() string {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		corelog.Warnf("ConfigManager: failed to get user home directory: %v", err)
-		return "."
-	}
-	return homeDir
-}
-
-// getDefaultConfig 获取默认配置
-func getDefaultConfig() *ClientConfig {
-	config := &ClientConfig{}
-	// 默认使用 WebSocket 连接到公共服务器
-	config.Server.Address = "https://gw.tunnox.net/_tunnox"
-	config.Server.Protocol = "websocket"
-	return config
-}

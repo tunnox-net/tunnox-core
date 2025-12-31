@@ -40,6 +40,9 @@ type Manager struct {
 	config *ManagerConfig
 	logger corelog.Logger
 
+	// 父 context - 用于派生清理 goroutine 的 context
+	parentCtx context.Context
+
 	// 连接存储
 	connMap  map[string]*types.Connection
 	connLock sync.RWMutex
@@ -51,7 +54,8 @@ type Manager struct {
 }
 
 // NewManager 创建连接管理器
-func NewManager(config *ManagerConfig) *Manager {
+// parentCtx 用于派生清理 goroutine 的 context，遵循 dispose 模式
+func NewManager(parentCtx context.Context, config *ManagerConfig) *Manager {
 	if config == nil {
 		config = DefaultManagerConfig()
 	}
@@ -60,9 +64,10 @@ func NewManager(config *ManagerConfig) *Manager {
 	}
 
 	return &Manager{
-		config:  config,
-		logger:  config.Logger,
-		connMap: make(map[string]*types.Connection),
+		config:    config,
+		logger:    config.Logger,
+		parentCtx: parentCtx,
+		connMap:   make(map[string]*types.Connection),
 	}
 }
 
@@ -176,7 +181,8 @@ func (m *Manager) StartCleanup() {
 		return // 已经在运行
 	}
 
-	m.cleanupCtx, m.cleanupCancel = context.WithCancel(context.Background())
+	// 从父 context 派生，确保父组件关闭时清理 goroutine 也会被取消
+	m.cleanupCtx, m.cleanupCancel = context.WithCancel(m.parentCtx)
 	m.cleanupWg.Add(1)
 
 	go func() {

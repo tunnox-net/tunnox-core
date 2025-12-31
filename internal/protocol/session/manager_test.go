@@ -56,9 +56,9 @@ func TestSessionManager_Close(t *testing.T) {
 
 	sm := NewSessionManager(idManager, context.Background())
 
-	// 关闭
-	result := sm.Close()
-	assert.False(t, result.HasErrors())
+	// 关闭（ManagerBase.Close() 返回 error）
+	err := sm.Close()
+	assert.NoError(t, err)
 }
 
 func TestSessionManager_CloseMultipleTimes(t *testing.T) {
@@ -67,13 +67,13 @@ func TestSessionManager_CloseMultipleTimes(t *testing.T) {
 
 	sm := NewSessionManager(idManager, context.Background())
 
-	// 第一次关闭
-	result1 := sm.Close()
-	assert.False(t, result1.HasErrors())
+	// 第一次关闭（ManagerBase.Close() 返回 error）
+	err1 := sm.Close()
+	assert.NoError(t, err1)
 
 	// 第二次关闭（应该是幂等的）
-	result2 := sm.Close()
-	assert.False(t, result2.HasErrors())
+	err2 := sm.Close()
+	assert.NoError(t, err2)
 }
 
 func TestWithNodeID(t *testing.T) {

@@ -2,9 +2,6 @@ package client
 
 // SaaS公共服务端点配置
 const (
-	// 公共服务域名
-	PublicServiceDomain = "gw.tunnox.net"
-
 	// 公共服务端点（按优先级排序）
 	// WebSocket 优先（穿透性最好，大多数网络环境都能成功）
 	PublicServiceWebSocket = "wss://ws.tunnox.net"
@@ -17,14 +14,6 @@ const (
 
 	// KCP 端点（最后备选）
 	PublicServiceKCP = "gw.tunnox.net:8000"
-
-	// 向后兼容的别名
-	PublicServiceQUIC1      = PublicServiceQUIC
-	PublicServiceQUIC2      = PublicServiceQUIC
-	PublicServiceTCP1       = PublicServiceTCP
-	PublicServiceTCP2       = PublicServiceTCP
-	PublicServiceWebSocket1 = PublicServiceWebSocket
-	PublicServiceWebSocket2 = PublicServiceWebSocket
 )
 
 // 自动连接配置
