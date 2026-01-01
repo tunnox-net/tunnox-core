@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"strings"
 	"time"
 
 	"tunnox-core/internal/core/dispose"
@@ -86,7 +87,14 @@ func NewListener(
 func (l *Listener) Start() error {
 	listener, err := net.Listen("tcp", l.config.ListenAddr)
 	if err != nil {
-		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to start SOCKS5 listener")
+		// 检查是否是端口被占用的错误，使用更明确的错误码
+		if strings.Contains(err.Error(), "address already in use") ||
+			strings.Contains(err.Error(), "bind: address already in use") {
+			return coreerrors.Wrapf(err, coreerrors.CodePortConflict,
+				"port %s is already in use", l.config.ListenAddr)
+		}
+		return coreerrors.Wrapf(err, coreerrors.CodeNetworkError,
+			"failed to start SOCKS5 listener on %s", l.config.ListenAddr)
 	}
 
 	l.listener = listener

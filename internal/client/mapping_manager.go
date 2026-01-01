@@ -6,6 +6,7 @@ import (
 	"tunnox-core/internal/client/mapping"
 	"tunnox-core/internal/cloud/models"
 	clientconfig "tunnox-core/internal/config"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 )
 
@@ -36,9 +37,13 @@ func (c *TunnoxClient) handleConfigUpdate(configBody string) {
 		// SOCKS5 映射由 SOCKS5Manager 处理
 		if mappingConfig.Protocol == "socks5" && mappingConfig.LocalPort > 0 {
 			newSOCKS5MappingIDs[mappingConfig.MappingID] = true
-			c.addOrUpdateSOCKS5Mapping(mappingConfig)
+			if err := c.addOrUpdateSOCKS5Mapping(mappingConfig); err != nil {
+				corelog.Warnf("Client: failed to add SOCKS5 mapping %s: %v", mappingConfig.MappingID, err)
+			}
 		} else {
-			c.addOrUpdateMapping(mappingConfig)
+			if err := c.addOrUpdateMapping(mappingConfig); err != nil {
+				corelog.Warnf("Client: failed to add mapping %s: %v", mappingConfig.MappingID, err)
+			}
 		}
 	}
 
@@ -67,10 +72,11 @@ func (c *TunnoxClient) handleConfigUpdate(configBody string) {
 }
 
 // addOrUpdateSOCKS5Mapping 添加或更新 SOCKS5 映射
-func (c *TunnoxClient) addOrUpdateSOCKS5Mapping(mappingCfg clientconfig.MappingConfig) {
+// 返回 error 以便调用方可以处理端口绑定失败等情况
+func (c *TunnoxClient) addOrUpdateSOCKS5Mapping(mappingCfg clientconfig.MappingConfig) error {
 	if c.socks5Manager == nil {
 		corelog.Errorf("Client: SOCKS5Manager not initialized")
-		return
+		return coreerrors.New(coreerrors.CodeInvalidState, "SOCKS5Manager not initialized")
 	}
 
 	// 转换为 models.PortMapping 格式
@@ -85,11 +91,15 @@ func (c *TunnoxClient) addOrUpdateSOCKS5Mapping(mappingCfg clientconfig.MappingC
 
 	if err := c.socks5Manager.AddMapping(portMapping); err != nil {
 		corelog.Errorf("Client: failed to add SOCKS5 mapping %s: %v", mappingCfg.MappingID, err)
+		return err
 	}
+
+	return nil
 }
 
 // addOrUpdateMapping 添加或更新映射
-func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig) {
+// 返回 error 以便调用方可以处理端口绑定失败等情况
+func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -99,7 +109,7 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 		existingConfig := handler.GetConfig()
 		if isMappingConfigEqual(existingConfig, mappingCfg) {
 			corelog.Debugf("Client: mapping %s config unchanged, skipping update", mappingCfg.MappingID)
-			return
+			return nil
 		}
 		corelog.Infof("Client: updating mapping %s (config changed)", mappingCfg.MappingID)
 		handler.Stop()
@@ -109,7 +119,7 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 	// ✅ 目标端配置（LocalPort==0）不需要启动监听
 	if mappingCfg.LocalPort == 0 {
 		corelog.Debugf("Client: skipping mapping %s (target-side, no local listener needed)", mappingCfg.MappingID)
-		return
+		return nil
 	}
 
 	// 根据协议类型创建适配器和处理器
@@ -120,7 +130,7 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 
 	// SOCKS5 映射由 SOCKS5Manager 处理，不在这里创建
 	if protocol == "socks5" {
-		return
+		return nil
 	}
 
 	// 创建协议适配器
@@ -128,7 +138,7 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 	adapter, err := mapping.CreateAdapter(protocol, mappingCfg, c.GetContext())
 	if err != nil {
 		corelog.Errorf("Client: failed to create adapter: %v", err)
-		return
+		return err
 	}
 
 	// 创建映射处理器（使用BaseMappingHandler）
@@ -142,11 +152,12 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 
 	if err := handler.Start(); err != nil {
 		corelog.Errorf("Client: ❌ failed to start %s mapping %s: %v", protocol, mappingCfg.MappingID, err)
-		return
+		return err
 	}
 
 	c.mappingHandlers[mappingCfg.MappingID] = handler
 	corelog.Infof("Client: %s mapping %s started successfully on port %d", protocol, mappingCfg.MappingID, mappingCfg.LocalPort)
+	return nil
 }
 
 // isMappingConfigEqual 比较两个映射配置是否相同

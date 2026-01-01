@@ -68,6 +68,16 @@ func (c *TunnoxClient) ListConnectionCodes() (*ListConnectionCodesResponseCmd, e
 
 // ActivateConnectionCode 通过指令通道激活连接码
 func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest) (*ActivateConnectionCodeResponse, error) {
+	// 1. 在发送激活请求前，先检查本地端口是否可用
+	if req.ListenAddress != "" {
+		if err := CanBindPort(req.ListenAddress); err != nil {
+			corelog.Warnf("Client.ActivateConnectionCode: port check failed for %q: %v", req.ListenAddress, err)
+			return nil, err
+		}
+		corelog.Debugf("Client.ActivateConnectionCode: port check passed for %s", req.ListenAddress)
+	}
+
+	// 2. 发送激活请求到服务端
 	cmdResp, err := c.sendCommandAndWaitResponse(&CommandRequest{
 		CommandType: packet.ConnectionCodeActivate,
 		RequestBody: req,
@@ -111,13 +121,27 @@ func (c *TunnoxClient) ActivateConnectionCode(req *ActivateConnectionCodeRequest
 			BandwidthLimit: 0, // 无限制
 		}
 
-		// 根据协议类型分发到正确的处理器
+		// 3. 根据协议类型分发到正确的处理器
+		var mappingErr error
 		if protocol == "socks5" && port > 0 {
-			c.addOrUpdateSOCKS5Mapping(mappingCfg)
-			corelog.Infof("Client.ActivateConnectionCode: SOCKS5 mapping handler started for %s on %s", resp.MappingID, resp.ListenAddress)
+			mappingErr = c.addOrUpdateSOCKS5Mapping(mappingCfg)
+			if mappingErr == nil {
+				corelog.Infof("Client.ActivateConnectionCode: SOCKS5 mapping handler started for %s on %s", resp.MappingID, resp.ListenAddress)
+			}
 		} else {
-			c.addOrUpdateMapping(mappingCfg)
-			corelog.Infof("Client.ActivateConnectionCode: mapping handler started for %s on %s", resp.MappingID, resp.ListenAddress)
+			mappingErr = c.addOrUpdateMapping(mappingCfg)
+			if mappingErr == nil {
+				corelog.Infof("Client.ActivateConnectionCode: mapping handler started for %s on %s", resp.MappingID, resp.ListenAddress)
+			}
+		}
+
+		// 4. 如果映射启动失败，回滚服务端的映射
+		if mappingErr != nil {
+			corelog.Errorf("Client.ActivateConnectionCode: failed to start mapping, rolling back: %v", mappingErr)
+			if deleteErr := c.DeleteMapping(resp.MappingID); deleteErr != nil {
+				corelog.Warnf("Client.ActivateConnectionCode: failed to rollback mapping %s: %v", resp.MappingID, deleteErr)
+			}
+			return nil, mappingErr
 		}
 	}
 

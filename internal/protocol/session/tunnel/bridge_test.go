@@ -1700,7 +1700,7 @@ func TestRoutingTableLookupWaitingTunnel_DifferentTypes(t *testing.T) {
 	assert.Equal(t, "tunnel-002", found.TunnelID)
 
 	// 测试 []byte 类型
-	jsonData := []byte(`{"tunnel_id":"tunnel-003","mapping_id":"mapping-003","source_node_id":"node-003","source_client_id":12345,"target_client_id":67890,"created_at":"2025-01-01T00:00:00Z","expires_at":"2026-01-01T00:00:00Z"}`)
+	jsonData := []byte(`{"tunnel_id":"tunnel-003","mapping_id":"mapping-003","source_node_id":"node-003","source_client_id":12345,"target_client_id":67890,"created_at":"2025-01-01T00:00:00Z","expires_at":"2027-01-01T00:00:00Z"}`)
 	store.data["tunnox:tunnel_waiting:tunnel-003"] = jsonData
 
 	found, err = rt.LookupWaitingTunnel(ctx, "tunnel-003")
@@ -1712,7 +1712,7 @@ func TestRoutingTableLookupWaitingTunnel_DifferentTypes(t *testing.T) {
 	store.data["tunnox:tunnel_waiting:tunnel-004"] = string(jsonData)
 
 	// 修改 tunnel_id 以匹配查询
-	store.data["tunnox:tunnel_waiting:tunnel-004"] = `{"tunnel_id":"tunnel-004","mapping_id":"mapping-004","source_node_id":"node-004","source_client_id":12345,"target_client_id":67890,"created_at":"2025-01-01T00:00:00Z","expires_at":"2026-01-01T00:00:00Z"}`
+	store.data["tunnox:tunnel_waiting:tunnel-004"] = `{"tunnel_id":"tunnel-004","mapping_id":"mapping-004","source_node_id":"node-004","source_client_id":12345,"target_client_id":67890,"created_at":"2025-01-01T00:00:00Z","expires_at":"2027-01-01T00:00:00Z"}`
 
 	found, err = rt.LookupWaitingTunnel(ctx, "tunnel-004")
 	assert.NoError(t, err)

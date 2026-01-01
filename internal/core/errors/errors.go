@@ -35,6 +35,7 @@ const (
 	// 资源冲突 (3xxx)
 	CodeAlreadyExists ErrorCode = "ALREADY_EXISTS"
 	CodeConflict      ErrorCode = "CONFLICT"
+	CodePortConflict  ErrorCode = "PORT_CONFLICT" // 端口已被占用
 
 	// 请求错误 (4xxx)
 	CodeInvalidRequest  ErrorCode = "INVALID_REQUEST"
