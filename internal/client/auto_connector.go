@@ -235,18 +235,8 @@ func (ac *AutoConnector) tryConnectAndHandshake(ctx context.Context, endpoint Se
 	handshakeCtx, handshakeCancel := context.WithTimeout(ctx, handshakeTimeout)
 	defer handshakeCancel()
 
-	// 临时设置配置以发送握手
-	originalProtocol := ac.client.config.Server.Protocol
-	originalAddress := ac.client.config.Server.Address
-	ac.client.config.Server.Protocol = endpoint.Protocol
-	ac.client.config.Server.Address = endpoint.Address
-
-	// 发送握手
-	handshakeErr := ac.sendHandshakeWithContext(handshakeCtx, pkgStream, "control")
-
-	// 恢复配置
-	ac.client.config.Server.Protocol = originalProtocol
-	ac.client.config.Server.Address = originalAddress
+	// 发送握手（直接传入 protocol，避免并发修改全局配置）
+	handshakeErr := ac.sendHandshakeWithContext(handshakeCtx, pkgStream, "control", endpoint.Protocol)
 
 	if handshakeErr != nil {
 		pkgStream.Close()
@@ -262,12 +252,13 @@ func (ac *AutoConnector) tryConnectAndHandshake(ctx context.Context, endpoint Se
 }
 
 // sendHandshakeWithContext 在指定的stream上发送握手请求（带context超时控制）
-func (ac *AutoConnector) sendHandshakeWithContext(ctx context.Context, stream stream.PackageStreamer, connectionType string) error {
+// protocol: 使用的传输协议，直接传入避免并发修改全局配置
+func (ac *AutoConnector) sendHandshakeWithContext(ctx context.Context, stream stream.PackageStreamer, connectionType string, protocol string) error {
 	// 创建一个channel来接收握手结果
 	resultChan := make(chan error, 1)
 
 	go func() {
-		err := ac.client.sendHandshakeOnStream(stream, connectionType)
+		err := ac.client.sendHandshakeOnStream(stream, connectionType, protocol)
 		select {
 		case resultChan <- err:
 		case <-ctx.Done():

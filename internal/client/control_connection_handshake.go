@@ -13,7 +13,7 @@ import (
 // sendHandshake 发送握手请求（使用控制连接）
 func (c *TunnoxClient) sendHandshake() error {
 	corelog.Infof("Client: sendHandshake called, controlStream=%p", c.controlStream)
-	return c.sendHandshakeOnStream(c.controlStream, "control")
+	return c.sendHandshakeOnStream(c.controlStream, "control", c.config.Server.Protocol)
 }
 
 // saveConnectionConfig 保存连接配置到配置文件
@@ -48,9 +48,10 @@ func (c *TunnoxClient) saveConnectionConfig() error {
 
 // sendHandshakeOnStream 在指定的stream上发送握手请求（用于隧道连接）
 // connectionType: "control" 表示控制连接，"tunnel" 表示隧道连接
-func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, connectionType string) error {
+// protocol: 使用的传输协议（tcp/websocket/quic/kcp）
+func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, connectionType string, protocol string) error {
 	isControlConnection := connectionType == "control"
-	corelog.Infof("Client: sendHandshakeOnStream called, stream=%p, streamType=%T, connectionType=%s, isControl=%v", stream, stream, connectionType, isControlConnection)
+	corelog.Infof("Client: sendHandshakeOnStream called, stream=%p, streamType=%T, connectionType=%s, protocol=%s, isControl=%v", stream, stream, connectionType, protocol, isControlConnection)
 
 	var req *packet.HandshakeRequest
 
@@ -63,7 +64,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 			ClientID:       c.config.ClientID,
 			Token:          c.config.SecretKey,
 			Version:        "2.0",
-			Protocol:       c.config.Server.Protocol,
+			Protocol:       protocol,
 			ConnectionType: connectionType,
 		}
 	} else {
@@ -72,7 +73,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 			ClientID:       0,
 			Token:          "new-client", // 标识首次连接
 			Version:        "2.0",
-			Protocol:       c.config.Server.Protocol,
+			Protocol:       protocol,
 			ConnectionType: connectionType,
 		}
 	}

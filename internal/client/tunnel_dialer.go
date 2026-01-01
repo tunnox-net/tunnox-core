@@ -56,7 +56,7 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 	corelog.Debugf("Client[%s]: StreamProcessor created", tunnelID)
 
 	// ✅ 新连接需要先进行握手认证（标识为隧道连接）
-	if err := c.sendHandshakeOnStream(tunnelStream, "tunnel"); err != nil {
+	if err := c.sendHandshakeOnStream(tunnelStream, "tunnel", protocol); err != nil {
 		tunnelStream.Close()
 		conn.Close()
 		return nil, nil, coreerrors.Wrap(err, coreerrors.CodeHandshakeFailed, "tunnel connection handshake failed")
