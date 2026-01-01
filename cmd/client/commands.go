@@ -50,6 +50,19 @@ func runQuickCommand(args []string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// 初始化日志系统
+	logConfig := &utils.LogConfig{
+		Level:  "debug",
+		Output: "file",
+	}
+	candidates := utils.GetDefaultClientLogPath(true)
+	logFile, err := utils.ResolveLogPath(candidates)
+	if err == nil {
+		logConfig.File = logFile
+	}
+	utils.InitLogger(logConfig)
+	corelog.Infof("QuickCommand: started with args=%v", args)
+
 	// 设置信号处理
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)

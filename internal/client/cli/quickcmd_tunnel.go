@@ -20,12 +20,17 @@ import (
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 // runHTTPCommand 执行 tunnox http <port> 命令
+// 创建 HTTP 域名代理隧道，生成公网可访问的子域名
 func (r *QuickCommandRunner) runHTTPCommand(args []string) (bool, error) {
 	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: tunnox http <port|host:port> [options]\n")
+		fmt.Fprintf(os.Stderr, "\nOptions:\n")
+		fmt.Fprintf(os.Stderr, "  --subdomain <name>   Specify custom subdomain (default: random)\n")
+		fmt.Fprintf(os.Stderr, "  --ttl <days>         Mapping TTL in days (default: 7, 0 for no expiration)\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  tunnox http 3000              # Share localhost:3000\n")
-		fmt.Fprintf(os.Stderr, "  tunnox http 192.168.1.10:8080 # Share LAN device\n")
+		fmt.Fprintf(os.Stderr, "  tunnox http 3000                      # Share localhost:3000 with random subdomain\n")
+		fmt.Fprintf(os.Stderr, "  tunnox http 8080 --subdomain myapp    # Share with custom subdomain\n")
+		fmt.Fprintf(os.Stderr, "  tunnox http 192.168.1.10:8080         # Share LAN device\n")
 		return false, nil
 	}
 
@@ -34,7 +39,135 @@ func (r *QuickCommandRunner) runHTTPCommand(args []string) (bool, error) {
 		return false, err
 	}
 
-	return r.generateCodeAndWait("http", targetAddress, args[1:])
+	return r.createHTTPDomainAndWait(targetAddress, args[1:])
+}
+
+// createHTTPDomainAndWait 创建 HTTP 域名映射并等待
+func (r *QuickCommandRunner) createHTTPDomainAndWait(targetAddress string, extraArgs []string) (bool, error) {
+	// 解析额外参数
+	mappingTTL := 7 * 24 * 3600 // 默认7天
+	var customSubdomain string
+
+	for i := 0; i < len(extraArgs); i++ {
+		switch extraArgs[i] {
+		case "--ttl":
+			if i+1 < len(extraArgs) {
+				days, err := strconv.Atoi(extraArgs[i+1])
+				if err != nil {
+					return false, coreerrors.Newf(coreerrors.CodeInvalidParam, "invalid --ttl value: %s", extraArgs[i+1])
+				}
+				if days == 0 {
+					mappingTTL = 0
+				} else {
+					mappingTTL = days * 24 * 3600
+				}
+				i++
+			}
+		case "--subdomain", "-s":
+			if i+1 < len(extraArgs) {
+				customSubdomain = extraArgs[i+1]
+				i++
+			}
+		}
+	}
+
+	// 连接到服务器
+	if err := r.connectToServer(); err != nil {
+		return false, err
+	}
+	defer r.client.Stop()
+
+	// 获取可用的基础域名
+	fmt.Fprintf(os.Stderr, "\n🔍 Fetching available domains...\n")
+	corelog.Infof("QuickHTTP: calling GetBaseDomains, client connected=%v", r.client.IsConnected())
+	baseDomainsResp, err := r.client.GetBaseDomains()
+	corelog.Infof("QuickHTTP: GetBaseDomains returned, err=%v, resp=%+v", err, baseDomainsResp)
+	if err != nil {
+		return false, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to get base domains")
+	}
+
+	if len(baseDomainsResp.BaseDomains) == 0 {
+		return false, coreerrors.New(coreerrors.CodeInvalidState, "no base domains available, please contact administrator")
+	}
+
+	// 使用第一个可用的基础域名
+	baseDomain := baseDomainsResp.BaseDomains[0].Domain
+
+	var subdomain string
+	var fullDomain string
+
+	if customSubdomain != "" {
+		// 使用用户指定的子域名
+		subdomain = strings.ToLower(strings.TrimSpace(customSubdomain))
+		fullDomain = subdomain + "." + baseDomain
+		fmt.Fprintf(os.Stderr, "📝 Using custom subdomain: %s\n", fullDomain)
+
+		// 检查子域名是否可用
+		checkResp, err := r.client.CheckSubdomain(&client.CheckSubdomainRequest{
+			Subdomain:  subdomain,
+			BaseDomain: baseDomain,
+		})
+		if err != nil {
+			return false, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to check subdomain availability")
+		}
+		if !checkResp.Available {
+			return false, coreerrors.Newf(coreerrors.CodeAlreadyExists, "subdomain '%s' is not available", fullDomain)
+		}
+	} else {
+		// 生成随机子域名
+		fmt.Fprintf(os.Stderr, "🎲 Generating random subdomain...\n")
+		corelog.Infof("QuickHTTP: calling GenSubdomain, baseDomain=%s", baseDomain)
+		genResp, err := r.client.GenSubdomain(baseDomain)
+		corelog.Infof("QuickHTTP: GenSubdomain returned, err=%v, resp=%+v", err, genResp)
+		if err != nil {
+			return false, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to generate subdomain")
+		}
+		subdomain = genResp.Subdomain
+		fullDomain = genResp.FullDomain
+	}
+
+	// 创建 HTTP 域名映射
+	fmt.Fprintf(os.Stderr, "🔧 Creating HTTP tunnel...\n")
+	corelog.Infof("QuickHTTP: calling CreateHTTPDomain, subdomain=%s, baseDomain=%s, target=%s", subdomain, baseDomain, targetAddress)
+	createResp, err := r.client.CreateHTTPDomain(&client.CreateHTTPDomainRequest{
+		TargetURL:  targetAddress,
+		Subdomain:  subdomain,
+		BaseDomain: baseDomain,
+		MappingTTL: mappingTTL,
+	})
+	if err != nil {
+		return false, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to create HTTP domain mapping")
+	}
+
+	// 显示结果
+	r.printHTTPDomainResult(createResp, targetAddress)
+
+	// 等待 Ctrl+C
+	r.waitForShutdown()
+
+	// 清理：删除域名映射
+	fmt.Fprintf(os.Stderr, "🗑️  Removing domain mapping...\n")
+	if err := r.client.DeleteHTTPDomain(createResp.MappingID); err != nil {
+		corelog.Warnf("Failed to delete domain mapping: %v", err)
+	}
+
+	return false, nil
+}
+
+// printHTTPDomainResult 打印 HTTP 域名结果
+func (r *QuickCommandRunner) printHTTPDomainResult(resp *client.CreateHTTPDomainResponse, targetAddress string) {
+	fmt.Fprintf(os.Stderr, "\n")
+	fmt.Fprintf(os.Stderr, "✅ HTTP 隧道已创建!\n")
+	fmt.Fprintf(os.Stderr, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(os.Stderr, "   公网地址:   \033[1mhttps://%s\033[0m\n", resp.FullDomain)
+	fmt.Fprintf(os.Stderr, "   本地服务:   %s\n", targetAddress)
+	if resp.ExpiresAt != "" {
+		fmt.Fprintf(os.Stderr, "   过期时间:   %s\n", resp.ExpiresAt)
+	}
+	fmt.Fprintf(os.Stderr, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Fprintf(os.Stderr, "\n")
+	fmt.Fprintf(os.Stderr, "   按 Ctrl+C 停止隧道\n")
+	fmt.Fprintf(os.Stderr, "\n")
 }
 
 // runTCPCommand 执行 tunnox tcp <port> 命令
