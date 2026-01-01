@@ -159,3 +159,4 @@ config.yaml
 client-config.yaml
 **/config.yaml
 **/client-config.yaml
+.claude/settings.local copy.json
