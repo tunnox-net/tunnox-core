@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/httpservice"
@@ -20,7 +21,10 @@ type DomainProxyModule struct {
 
 	config   *httpservice.DomainProxyModuleConfig
 	deps     *httpservice.ModuleDependencies
-	registry *httpservice.DomainRegistry
+	registry *httpservice.DomainRegistry // Deprecated: 保留兼容性，优先使用 domainRepo
+
+	// domainRepo HTTP 域名映射仓库（持久化存储）
+	domainRepo repos.IHTTPDomainMappingRepository
 
 	// HTTP 客户端（用于命令模式响应）
 	httpClient *http.Client
@@ -52,7 +56,8 @@ func (m *DomainProxyModule) Name() string {
 // SetDependencies 注入依赖
 func (m *DomainProxyModule) SetDependencies(deps *httpservice.ModuleDependencies) {
 	m.deps = deps
-	m.registry = deps.DomainRegistry
+	m.registry = deps.DomainRegistry // Deprecated: 保留兼容性
+	m.domainRepo = deps.HTTPDomainMappingRepo
 }
 
 // RegisterRoutes 注册路由

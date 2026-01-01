@@ -152,6 +152,10 @@ func (c *HandlersComponent) Initialize(ctx context.Context, deps *Dependencies) 
 	portMappingRepo := repos.NewPortMappingRepo(deps.Repository)
 	portMappingService := services.NewPortMappingService(portMappingRepo, deps.IDManager, nil, ctx)
 
+	// 创建 HTTP 域名映射仓库（使用默认基础域名）
+	httpDomainBaseDomains := []string{"tunnox.net", "tunnel.test.local"}
+	deps.HTTPDomainRepo = repos.NewHTTPDomainMappingRepository(deps.Repository, httpDomainBaseDomains)
+
 	deps.ConnCodeService = services.NewConnectionCodeService(
 		connCodeRepo,
 		portMappingService,

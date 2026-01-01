@@ -6,6 +6,7 @@ import (
 	"net"
 
 	"tunnox-core/internal/cloud/managers"
+	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/storage"
 	"tunnox-core/internal/health"
 	"tunnox-core/internal/protocol/httptypes"
@@ -50,7 +51,11 @@ type ModuleDependencies struct {
 	HealthManager *health.HealthManager
 
 	// DomainRegistry 域名映射注册表（仅域名代理模块使用）
+	// Deprecated: 使用 HTTPDomainMappingRepo 替代
 	DomainRegistry *DomainRegistry
+
+	// HTTPDomainMappingRepo HTTP 域名映射仓库（持久化存储）
+	HTTPDomainMappingRepo repos.IHTTPDomainMappingRepository
 }
 
 // SessionManagerInterface 会话管理器接口

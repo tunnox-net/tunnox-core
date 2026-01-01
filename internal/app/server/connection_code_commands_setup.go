@@ -74,9 +74,13 @@ func (s *Server) setupConnectionCodeCommands() error {
 	}
 
 	// 注册 HTTP 域名命令处理器
-	httpDomainHandlers := NewHTTPDomainCommandHandlers(s.session, []string{"tunnox.net", "tunnel.test.local"})
-	if err := httpDomainHandlers.RegisterHandlers(cmdRegistry); err != nil {
-		return fmt.Errorf("failed to register HTTP domain command handlers: %w", err)
+	if s.httpDomainRepo != nil {
+		httpDomainHandlers := NewHTTPDomainCommandHandlers(s.session, s.httpDomainRepo)
+		if err := httpDomainHandlers.RegisterHandlers(cmdRegistry); err != nil {
+			return fmt.Errorf("failed to register HTTP domain command handlers: %w", err)
+		}
+	} else {
+		corelog.Warnf("Server: HTTP domain repository not set, skipping HTTP domain command handlers registration")
 	}
 
 	return nil

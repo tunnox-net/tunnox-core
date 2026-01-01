@@ -11,6 +11,7 @@ import (
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/idgen"
@@ -50,6 +51,9 @@ type Server struct {
 	healthManager         *health.HealthManager
 	reconnectTokenManager *security.ReconnectTokenManager
 	sessionTokenManager   *security.SessionTokenManager
+
+	// 仓库
+	httpDomainRepo repos.IHTTPDomainMappingRepository
 }
 
 // New 创建新服务器（使用 Builder 模式）

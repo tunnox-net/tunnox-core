@@ -67,12 +67,16 @@ func DefaultConfig() *Config {
 			"tunnox:index:conncode:target:", // 连接码索引（跨节点列表查询）
 			"tunnox:id:",                    // ID生成器（集群模式全局唯一）
 			"tunnox:runtime:client:state:",  // 客户端运行时状态（跨节点状态查询）
+			"tunnox:http_domain:index:",     // HTTP域名索引（跨节点快速查找，纯运行时）
+			"tunnox:http_domain:next_id",    // HTTP域名ID生成器（集群模式全局唯一）
 		},
 		SharedPersistentPrefixes: []string{
-			"tunnox:client_mappings:", // 客户端映射索引（跨节点共享 + 持久化）
-			"tunnox:user_mappings:",   // 用户映射索引（跨节点共享 + 持久化）
-			"tunnox:port_mapping:",    // 端口映射配置（跨节点访问 + 持久化）
-			"tunnox:mappings:list",    // 映射全局列表（跨节点查询 + 持久化）
+			"tunnox:client_mappings:",       // 客户端映射索引（跨节点共享 + 持久化）
+			"tunnox:user_mappings:",         // 用户映射索引（跨节点共享 + 持久化）
+			"tunnox:port_mapping:",          // 端口映射配置（跨节点访问 + 持久化）
+			"tunnox:mappings:list",          // 映射全局列表（跨节点查询 + 持久化）
+			"tunnox:http_domain:mapping:",   // HTTP域名映射数据（跨节点共享 + 持久化）
+			"tunnox:http_domain:client:",    // HTTP域名客户端映射列表（跨节点共享 + 持久化）
 		},
 		DefaultCacheTTL:    1 * time.Hour,
 		PersistentCacheTTL: 24 * time.Hour,

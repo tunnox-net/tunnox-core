@@ -87,7 +87,8 @@ type Dependencies struct {
 	TunnelHandler *ServerTunnelHandler
 
 	// 仓库（供组件间共享）
-	Repository *repos.Repository
+	Repository     *repos.Repository
+	HTTPDomainRepo repos.IHTTPDomainMappingRepository
 }
 
 // ============================================================================

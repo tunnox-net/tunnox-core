@@ -103,6 +103,7 @@ func (b *ServerBuilder) Build(parentCtx context.Context) (*Server, error) {
 		messageBroker:         b.deps.MessageBroker,
 		httpService:           b.deps.HTTPService,
 		authHandler:           b.deps.AuthHandler,
+		httpDomainRepo:        b.deps.HTTPDomainRepo,
 	}
 
 	// 创建服务管理器并注册服务
