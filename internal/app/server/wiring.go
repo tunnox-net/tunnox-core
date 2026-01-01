@@ -203,5 +203,10 @@ func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService
 		httpSvc.SetSessionManager(NewSessionManagerAdapter(s.session))
 	}
 
+	// 设置 HTTP 域名映射仓库（持久化存储）
+	if s.httpDomainRepo != nil {
+		httpSvc.SetHTTPDomainMappingRepo(s.httpDomainRepo)
+	}
+
 	return httpSvc
 }

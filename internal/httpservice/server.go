@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"tunnox-core/internal/cloud/managers"
+	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/core/dispose"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
@@ -97,6 +98,11 @@ func NewHTTPService(
 // SetSessionManager 设置会话管理器
 func (s *HTTPService) SetSessionManager(sessionMgr SessionManagerInterface) {
 	s.deps.SessionMgr = sessionMgr
+}
+
+// SetHTTPDomainMappingRepo 设置 HTTP 域名映射仓库
+func (s *HTTPService) SetHTTPDomainMappingRepo(repo repos.IHTTPDomainMappingRepository) {
+	s.deps.HTTPDomainMappingRepo = repo
 }
 
 // SetJWTValidator 设置 JWT 验证函数
