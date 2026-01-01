@@ -76,8 +76,8 @@ jobs:
           GIT_COMMIT=$(git rev-parse HEAD)
           BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
           
-          # 构建参数
-          LDFLAGS="-X 'tunnox-core/internal/version.Version=$VERSION'"
+          # 构建参数 (-s -w 剥离符号表和调试信息，减少约 37% 体积)
+          LDFLAGS="-s -w -X 'tunnox-core/internal/version.Version=$VERSION'"
           LDFLAGS="$LDFLAGS -X 'tunnox-core/internal/version.BuildTime=$BUILD_TIME'"
           LDFLAGS="$LDFLAGS -X 'tunnox-core/internal/version.GitCommit=$GIT_COMMIT'"
           
