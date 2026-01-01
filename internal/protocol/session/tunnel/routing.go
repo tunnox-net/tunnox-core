@@ -190,6 +190,10 @@ func (t *RoutingTable) GetNodeAddress(nodeID string) (string, error) {
 	return "", coreerrors.Newf(coreerrors.CodeInvalidData, "invalid address format for node %s", nodeID)
 }
 
+// NodeAddressTTL 节点地址的 TTL（24小时）
+// 节点地址应该比服务的运行时间长，避免跨节点通信失败
+const NodeAddressTTL = 24 * time.Hour
+
 // RegisterNodeAddress 注册节点地址
 func (t *RoutingTable) RegisterNodeAddress(nodeID, addr string) error {
 	if t.storage == nil {
@@ -197,8 +201,8 @@ func (t *RoutingTable) RegisterNodeAddress(nodeID, addr string) error {
 	}
 
 	key := "tunnox:node:" + nodeID + ":addr"
-	// 节点地址使用较长的 TTL（1小时）
-	return t.storage.Set(key, addr, time.Hour)
+	// 节点地址使用较长的 TTL（24小时），并通过心跳定期刷新
+	return t.storage.Set(key, addr, NodeAddressTTL)
 }
 
 // ============================================================================

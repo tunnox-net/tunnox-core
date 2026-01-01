@@ -134,17 +134,18 @@ func (r *QuickCommandRunner) interactiveGenerateCode() {
 // runCodeUseCommand 执行 tunnox code use <code> 命令
 func (r *QuickCommandRunner) runCodeUseCommand(args []string) (bool, error) {
 	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: tunnox code use <code> [options]\n")
+		fmt.Fprintf(os.Stderr, "Usage: tunnox code use <code> [port] [options]\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  tunnox code use ABC123              # Use connection code\n")
-		fmt.Fprintf(os.Stderr, "  tunnox code use ABC123 --port 9999  # Specify local port\n")
+		fmt.Fprintf(os.Stderr, "  tunnox code use ABC123              # Use connection code (auto assign port)\n")
+		fmt.Fprintf(os.Stderr, "  tunnox code use ABC123 9999         # Specify local port\n")
+		fmt.Fprintf(os.Stderr, "  tunnox code use ABC123 --port 9999  # Specify local port (alternative)\n")
 		return false, nil
 	}
 
 	code := args[0]
 	localPort := 0 // 默认自动分配
 
-	// 解析参数
+	// 解析参数：支持位置参数和选项参数
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "--port", "-p":
@@ -155,6 +156,13 @@ func (r *QuickCommandRunner) runCodeUseCommand(args []string) (bool, error) {
 				}
 				localPort = port
 				i++
+			}
+		default:
+			// 尝试解析为端口号（位置参数）
+			if localPort == 0 {
+				if port, err := strconv.Atoi(args[i]); err == nil && port > 0 && port <= 65535 {
+					localPort = port
+				}
 			}
 		}
 	}

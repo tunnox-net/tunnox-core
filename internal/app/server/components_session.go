@@ -212,6 +212,27 @@ func (c *HandlersComponent) Initialize(ctx context.Context, deps *Dependencies) 
 			corelog.Infof("Registered node address: %s -> %s", deps.NodeID, nodeAddr)
 		}
 
+		// ✅ 启动节点地址刷新 goroutine（每小时刷新一次，确保地址不过期）
+		go func(nodeID, addr string) {
+			refreshInterval := 1 * time.Hour
+			ticker := time.NewTicker(refreshInterval)
+			defer ticker.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					corelog.Debugf("Node address refresh stopped for %s", nodeID)
+					return
+				case <-ticker.C:
+					if err := tunnelRouting.RegisterNodeAddress(nodeID, addr); err != nil {
+						corelog.Warnf("Failed to refresh node address: %v", err)
+					} else {
+						corelog.Debugf("Refreshed node address: %s -> %s", nodeID, addr)
+					}
+				}
+			}
+		}(deps.NodeID, nodeAddr)
+
 		// ✅ 创建并注入 ConnectionStateStore（用于跨节点客户端位置查询）
 		connStateStore := session.NewConnectionStateStore(deps.Storage, deps.NodeID, 5*time.Minute)
 		deps.SessionMgr.SetConnectionStateStore(connStateStore)
