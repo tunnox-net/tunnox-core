@@ -191,6 +191,11 @@ func (c *HTTPServiceComponent) Initialize(ctx context.Context, deps *Dependencie
 	domainProxyModule := domainproxy.NewDomainProxyModule(ctx, domainProxyConfig)
 	httpSvc.RegisterModule(domainProxyModule)
 
+	// 设置 HTTP 域名映射仓库（必须在 RegisterModule 之后设置，确保延迟绑定生效）
+	if deps.HTTPDomainRepo != nil {
+		httpSvc.SetHTTPDomainMappingRepo(deps.HTTPDomainRepo)
+	}
+
 	// 设置会话管理器（如果可用）
 	if deps.SessionMgr != nil {
 		httpSvc.SetSessionManager(NewSessionManagerAdapter(deps.SessionMgr))

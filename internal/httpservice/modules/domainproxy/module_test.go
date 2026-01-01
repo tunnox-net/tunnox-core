@@ -161,8 +161,9 @@ func TestDomainProxyModule_SetDependencies(t *testing.T) {
 
 	module.SetDependencies(deps)
 
+	// 验证 deps 被正确设置（延迟绑定模式：不再复制字段，运行时从 deps 读取）
 	assert.Equal(t, deps, module.deps)
-	assert.Equal(t, registry, module.registry)
+	assert.Equal(t, registry, module.deps.DomainRegistry)
 }
 
 func TestDomainProxyModule_StartStop(t *testing.T) {

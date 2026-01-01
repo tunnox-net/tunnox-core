@@ -18,9 +18,17 @@ func (m *DomainProxyModule) lookupMapping(host string) (*models.PortMapping, err
 	// 移除端口号（如果有）
 	domain := extractDomain(host)
 
+	// 运行时从 deps 动态获取依赖（支持延迟绑定）
+	var domainRepo repos.IHTTPDomainMappingRepository
+	var registry *httpservice.DomainRegistry
+	if m.deps != nil {
+		domainRepo = m.deps.HTTPDomainMappingRepo
+		registry = m.deps.DomainRegistry
+	}
+
 	// 1. 优先使用新的 HTTPDomainMappingRepository（持久化存储，O(1) 查找）
-	if m.domainRepo != nil {
-		mapping, err := m.lookupFromRepository(domain)
+	if domainRepo != nil {
+		mapping, err := m.lookupFromRepositoryWithRepo(domain, domainRepo)
 		if err == nil {
 			return mapping, nil
 		}
@@ -32,8 +40,8 @@ func (m *DomainProxyModule) lookupMapping(host string) (*models.PortMapping, err
 	}
 
 	// 2. 回退到旧的本地注册表（内存缓存，兼容性保留）
-	if m.registry != nil {
-		mapping, found := m.registry.LookupByHost(host)
+	if registry != nil {
+		mapping, found := registry.LookupByHost(host)
 		if found {
 			// 检查映射状态
 			if mapping.Status != models.MappingStatusActive {
@@ -70,8 +78,8 @@ func (m *DomainProxyModule) lookupMapping(host string) (*models.PortMapping, err
 		}
 
 		// 缓存到本地注册表
-		if m.registry != nil {
-			if err := m.registry.Register(mapping); err != nil {
+		if registry != nil {
+			if err := registry.Register(mapping); err != nil {
 				corelog.Warnf("DomainProxyModule: failed to cache mapping to local registry: %v", err)
 			} else {
 				corelog.Infof("DomainProxyModule: cached mapping from database: %s -> client=%d",
@@ -86,13 +94,14 @@ func (m *DomainProxyModule) lookupMapping(host string) (*models.PortMapping, err
 	return nil, httpservice.ErrDomainNotFound
 }
 
-// lookupFromRepository 从持久化仓库查找域名映射
+// lookupFromRepositoryWithRepo 从持久化仓库查找域名映射
 // 使用 O(1) 时间复杂度的域名索引查找
-func (m *DomainProxyModule) lookupFromRepository(fullDomain string) (*models.PortMapping, error) {
+// 参数 repo: 运行时传入的仓库实例（支持延迟绑定）
+func (m *DomainProxyModule) lookupFromRepositoryWithRepo(fullDomain string, repo repos.IHTTPDomainMappingRepository) (*models.PortMapping, error) {
 	ctx := context.Background()
 
 	// 从 Repository 获取 HTTPDomainMapping
-	httpMapping, err := m.domainRepo.LookupByDomain(ctx, fullDomain)
+	httpMapping, err := repo.LookupByDomain(ctx, fullDomain)
 	if err != nil {
 		return nil, err
 	}
