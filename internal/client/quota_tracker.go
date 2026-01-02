@@ -1,10 +1,11 @@
 package client
 
 import (
+	"fmt"
 	"time"
-	corelog "tunnox-core/internal/core/log"
 
 	"tunnox-core/internal/cloud/models"
+	corelog "tunnox-core/internal/core/log"
 )
 
 // CheckMappingQuota 检查映射配额
@@ -18,12 +19,19 @@ func (c *TunnoxClient) CheckMappingQuota(mappingID string) error {
 		return nil
 	}
 
+	// 检查月流量限制
+	allowed, err := c.CheckMonthlyTrafficLimit()
+	if err != nil {
+		corelog.Warnf("Client: failed to check monthly traffic for mapping %s: %v", mappingID, err)
+		// 检查失败不阻塞连接
+	} else if !allowed {
+		corelog.Errorf("Client: monthly traffic limit exceeded, rejecting connection for mapping %s", mappingID)
+		return fmt.Errorf("monthly traffic limit exceeded")
+	}
+
 	// 检查带宽限制（已在MappingConfig中单独配置，这里不重复检查）
 	// 检查存储限制（如果需要）
 	// 注意：连接数限制已在BaseMappingHandler.checkConnectionQuota中检查
-
-	// 未来可以在这里添加更多业务限制检查
-	// 例如：月流量限制、特定时段限制等
 
 	corelog.Debugf("Client: quota check passed for mapping %s", mappingID)
 	return nil
@@ -81,26 +89,47 @@ func (c *TunnoxClient) GetUserQuota() (*models.UserQuota, error) {
 	c.quotaCacheMu.RUnlock()
 
 	// 缓存失效，需要刷新
-	// 预留：未来可通过 JsonCommand 发送 QuotaQuery 请求，从服务器获取配额信息
+	var quota *models.UserQuota
 
-	// 暂时使用默认配额
-	defaultQuota := &models.UserQuota{
-		MaxClientIDs:   10,
-		MaxConnections: 100,
-		BandwidthLimit: 0, // 0表示无限制
-		StorageLimit:   0,
+	// 尝试通过 Management API 获取配额
+	if c.apiClient != nil {
+		quotaInfo, err := c.apiClient.GetQuota()
+		if err != nil {
+			corelog.Warnf("Client: failed to get quota from API: %v, using defaults", err)
+		} else {
+			quota = &models.UserQuota{
+				MaxClientIDs:        quotaInfo.MaxClientIDs,
+				MaxConnections:      quotaInfo.MaxConnections,
+				BandwidthLimit:      quotaInfo.BandwidthLimit,
+				StorageLimit:        quotaInfo.StorageLimit,
+				MonthlyTrafficLimit: quotaInfo.MonthlyTrafficLimit,
+				MonthlyTrafficUsed:  quotaInfo.MonthlyTrafficUsed,
+				MonthlyResetDay:     quotaInfo.MonthlyResetDay,
+			}
+			corelog.Debugf("Client: quota retrieved from API - MaxConnections=%d, BandwidthLimit=%d, MonthlyTrafficLimit=%d, MonthlyTrafficUsed=%d",
+				quota.MaxConnections, quota.BandwidthLimit, quota.MonthlyTrafficLimit, quota.MonthlyTrafficUsed)
+		}
+	}
+
+	// 如果 API 获取失败或不可用，使用默认配额
+	if quota == nil {
+		quota = &models.UserQuota{
+			MaxClientIDs:   10,
+			MaxConnections: 100,
+			BandwidthLimit: 0, // 0表示无限制
+			StorageLimit:   0,
+		}
+		corelog.Debugf("Client: using default quota - MaxConnections=%d, BandwidthLimit=%d",
+			quota.MaxConnections, quota.BandwidthLimit)
 	}
 
 	// 更新缓存
 	c.quotaCacheMu.Lock()
-	c.cachedQuota = defaultQuota
+	c.cachedQuota = quota
 	c.quotaLastRefresh = time.Now()
 	c.quotaCacheMu.Unlock()
 
-	corelog.Debugf("Client: quota refreshed - MaxConnections=%d, BandwidthLimit=%d",
-		defaultQuota.MaxConnections, defaultQuota.BandwidthLimit)
-
-	return defaultQuota, nil
+	return quota, nil
 }
 
 // GetLocalTrafficStats 获取本地流量统计
@@ -116,4 +145,57 @@ func (c *TunnoxClient) GetLocalTrafficStats(mappingID string) (sent, received in
 	}
 
 	return 0, 0
+}
+
+// CheckMonthlyTrafficLimit 检查月流量是否超限
+// 返回 true 表示未超限可以继续使用，false 表示已超限
+func (c *TunnoxClient) CheckMonthlyTrafficLimit() (bool, error) {
+	quota, err := c.GetUserQuota()
+	if err != nil {
+		// 获取配额失败，不阻塞使用
+		corelog.Warnf("Client: failed to get quota for traffic check: %v, allowing traffic", err)
+		return true, nil
+	}
+
+	// 无月流量限制
+	if quota.MonthlyTrafficLimit == 0 {
+		return true, nil
+	}
+
+	// 检查是否超限
+	if quota.MonthlyTrafficUsed >= quota.MonthlyTrafficLimit {
+		corelog.Warnf("Client: monthly traffic limit exceeded (used=%d, limit=%d)",
+			quota.MonthlyTrafficUsed, quota.MonthlyTrafficLimit)
+		return false, nil
+	}
+
+	// 计算剩余流量百分比
+	remaining := quota.MonthlyTrafficLimit - quota.MonthlyTrafficUsed
+	usagePercent := float64(quota.MonthlyTrafficUsed) / float64(quota.MonthlyTrafficLimit) * 100
+
+	// 当使用量超过 80% 时发出警告
+	if usagePercent >= 80 {
+		corelog.Warnf("Client: monthly traffic usage at %.1f%% (remaining=%d bytes)",
+			usagePercent, remaining)
+	}
+
+	return true, nil
+}
+
+// GetMonthlyTrafficUsage 获取月流量使用情况
+// 返回已使用流量、总限制、使用百分比
+func (c *TunnoxClient) GetMonthlyTrafficUsage() (used, limit int64, percent float64, err error) {
+	quota, err := c.GetUserQuota()
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	used = quota.MonthlyTrafficUsed
+	limit = quota.MonthlyTrafficLimit
+
+	if limit > 0 {
+		percent = float64(used) / float64(limit) * 100
+	}
+
+	return used, limit, percent, nil
 }

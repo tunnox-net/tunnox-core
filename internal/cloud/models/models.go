@@ -98,6 +98,11 @@ type UserQuota struct {
 	MaxConnections int   `json:"max_connections"` // 最大并发连接数
 	BandwidthLimit int64 `json:"bandwidth_limit"` // 带宽限制(字节/秒)
 	StorageLimit   int64 `json:"storage_limit"`   // 存储限制(字节)
+
+	// 月流量限制
+	MonthlyTrafficLimit int64 `json:"monthly_traffic_limit"` // 月流量限制(字节)，0表示无限制
+	MonthlyTrafficUsed  int64 `json:"monthly_traffic_used"`  // 当月已使用流量(字节)
+	MonthlyResetDay     int   `json:"monthly_reset_day"`     // 每月重置日(1-28)，0表示每月1日
 }
 
 // Client类型定义已移至 client.go, client_config.go, client_state.go, client_token.go

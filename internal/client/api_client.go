@@ -208,6 +208,48 @@ func (c *ManagementAPIClient) DeleteMapping(mappingID string) error {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 配额相关API
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// QuotaInfo 配额信息
+type QuotaInfo struct {
+	MaxClientIDs   int   `json:"max_client_ids"`
+	MaxConnections int   `json:"max_connections"`
+	BandwidthLimit int64 `json:"bandwidth_limit"` // bytes/s, 0表示无限制
+	StorageLimit   int64 `json:"storage_limit"`   // bytes, 0表示无限制
+
+	// 月流量限制
+	MonthlyTrafficLimit int64 `json:"monthly_traffic_limit"` // 月流量限制(字节)，0表示无限制
+	MonthlyTrafficUsed  int64 `json:"monthly_traffic_used"`  // 当月已使用流量(字节)
+	MonthlyResetDay     int   `json:"monthly_reset_day"`     // 每月重置日(1-28)
+}
+
+// GetQuota 获取客户端配额
+func (c *ManagementAPIClient) GetQuota() (*QuotaInfo, error) {
+	url := fmt.Sprintf("%s/tunnox/v1/clients/%d/quota", c.baseURL, c.clientID)
+
+	respBody, err := c.doRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// 解析API响应，需要处理success/data包装
+	var apiResp struct {
+		Success bool      `json:"success"`
+		Data    QuotaInfo `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &apiResp); err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to parse quota response")
+	}
+
+	if !apiResp.Success {
+		return nil, coreerrors.New(coreerrors.CodeNetworkError, "failed to get quota")
+	}
+
+	return &apiResp.Data, nil
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 辅助方法
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 

@@ -104,6 +104,7 @@ func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 	api.HandleFunc("/clients/{client_id}", m.handleDeleteClient).Methods("DELETE")
 	api.HandleFunc("/clients/{client_id}/disconnect", m.handleDisconnectClient).Methods("POST")
 	api.HandleFunc("/clients/{client_id}/mappings", m.handleListClientMappings).Methods("GET")
+	api.HandleFunc("/clients/{client_id}/quota", m.handleGetClientQuota).Methods("GET")
 
 	// 端口映射管理路由
 	api.HandleFunc("/mappings", m.handleListAllMappings).Methods("GET")
@@ -114,6 +115,13 @@ func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 
 	// HTTP 域名映射专用路由
 	api.HandleFunc("/mappings/check-subdomain", m.handleCheckSubdomain).Methods("GET")
+
+	// 连接码管理路由
+	api.HandleFunc("/connection-codes", m.handleCreateConnectionCode).Methods("POST")
+	api.HandleFunc("/connection-codes", m.handleListConnectionCodes).Methods("GET")
+	api.HandleFunc("/connection-codes/activate", m.handleActivateConnectionCode).Methods("POST")
+	api.HandleFunc("/connection-codes/{code}", m.handleGetConnectionCode).Methods("GET")
+	api.HandleFunc("/connection-codes/{code}", m.handleRevokeConnectionCode).Methods("DELETE")
 
 	// 统计查询路由
 	api.HandleFunc("/stats", m.handleGetSystemStats).Methods("GET")

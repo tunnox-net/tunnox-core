@@ -190,3 +190,46 @@ func (m *ManagementModule) handleListClientMappings(w http.ResponseWriter, r *ht
 
 	respondJSONTyped(w, http.StatusOK, mappings)
 }
+
+// handleGetClientQuota 获取客户端配额
+// GET /tunnox/v1/clients/{client_id}/quota
+func (m *ManagementModule) handleGetClientQuota(w http.ResponseWriter, r *http.Request) {
+	clientID, err := getInt64PathVar(r, "client_id")
+	if err != nil {
+		m.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if m.cloudControl == nil {
+		m.respondError(w, http.StatusInternalServerError, "cloud control not configured")
+		return
+	}
+
+	// 获取客户端信息
+	client, err := m.cloudControl.GetClient(clientID)
+	if err != nil {
+		m.respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	// 如果客户端有关联用户，获取用户配额
+	var quota *models.UserQuota
+	if client.UserID != "" {
+		user, err := m.cloudControl.GetUser(client.UserID)
+		if err == nil {
+			quota = &user.Quota
+		}
+	}
+
+	// 如果没有用户或获取失败，返回默认配额
+	if quota == nil {
+		quota = &models.UserQuota{
+			MaxClientIDs:   10,
+			MaxConnections: 100,
+			BandwidthLimit: 0, // 无限制
+			StorageLimit:   0,
+		}
+	}
+
+	respondJSONTyped(w, http.StatusOK, quota)
+}
