@@ -1,6 +1,7 @@
 package repos
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -150,8 +151,8 @@ func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error
 		return coreerrors.Wrap(err, coreerrors.CodeValidationError, "invalid config")
 	}
 
-	// 获取旧配置（用于从列表中移除）
-	oldConfig, err := r.GetConfig(config.ID)
+	// 检查配置是否存在
+	_, err := r.GetConfig(config.ID)
 	if err != nil {
 		return coreerrors.Wrap(err, coreerrors.CodeNotFound, "config not found")
 	}
@@ -168,14 +169,13 @@ func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error
 		return err
 	}
 
-	// 同步全局列表：先移除旧的，再添加新的
-	// 注意：RemoveFromList 使用 JSON 精确匹配，必须使用旧配置对象
-	if err := r.RemoveFromList(oldConfig, constants.KeyPrefixPersistClientsList); err != nil {
-		// 列表同步失败不影响主流程，记录警告
-		// 可能是旧配置不在列表中（匿名客户端等情况）
+	// 同步全局列表：先基于 ID 移除旧的，再添加新的
+	// 使用 removeConfigFromListByID 而非 RemoveFromList，避免 JSON 不匹配的问题
+	if err := r.removeConfigFromListByID(config.ID); err != nil {
+		// 列表同步失败不影响主流程
 	}
 	if err := r.AddToList(config, constants.KeyPrefixPersistClientsList); err != nil {
-		// 列表同步失败不影响主流程，记录警告
+		// 列表同步失败不影响主流程
 	}
 
 	return nil
@@ -184,10 +184,8 @@ func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error
 // DeleteConfig 删除客户端配置
 //
 // 流程：
-// 1. 获取配置（用于从列表移除）
-// 2. 从数据库删除
-// 3. 从缓存删除
-// 4. 从全局列表移除
+// 1. 删除主数据（如果存在）
+// 2. 从全局列表移除（基于 ID 匹配，而非 JSON 精确匹配）
 //
 // 参数：
 //   - clientID: 客户端ID
@@ -195,28 +193,69 @@ func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error
 // 返回：
 //   - error: 错误信息
 func (r *ClientConfigRepository) DeleteConfig(clientID int64) error {
-	// 先获取配置，用于从列表中移除
-	config, err := r.GetConfig(clientID)
-	if err != nil {
-		// 配置不存在，直接返回（可能已被删除）
-		return nil
-	}
-
-	// 删除主数据
-	if err := r.Delete(
+	// 删除主数据（忽略不存在的错误）
+	_ = r.Delete(
 		fmt.Sprintf("%d", clientID),
 		constants.KeyPrefixPersistClientConfig,
-	); err != nil {
-		return err
-	}
+	)
 
-	// 从全局列表中移除
-	// 注意：RemoveFromList 使用 JSON 精确匹配
-	if err := r.RemoveFromList(config, constants.KeyPrefixPersistClientsList); err != nil {
-		// 列表同步失败不影响主流程
+	// 从全局列表中移除（基于 ID 匹配）
+	// 无论主数据是否存在，都要尝试清理列表
+	if err := r.removeConfigFromListByID(clientID); err != nil {
+		// 列表同步失败不影响主流程，但记录日志以便排查
+		// 不返回错误，因为主数据已删除
 	}
 
 	return nil
+}
+
+// removeConfigFromListByID 基于 ID 从全局列表移除配置
+// 这个方法读取整个列表，过滤掉指定 ID 的条目，然后重写列表
+// 用于解决 JSON 精确匹配失败的问题（如 updated_at 字段变化）
+func (r *ClientConfigRepository) removeConfigFromListByID(clientID int64) error {
+	// 读取当前列表
+	configs, err := r.ListConfigs()
+	if err != nil {
+		return err
+	}
+
+	// 过滤掉目标 ID
+	var filtered []*models.ClientConfig
+	for _, config := range configs {
+		if config.ID != clientID {
+			filtered = append(filtered, config)
+		}
+	}
+
+	// 如果长度没变，说明目标不在列表中，直接返回
+	if len(filtered) == len(configs) {
+		return nil
+	}
+
+	// 重写列表
+	return r.rewriteConfigList(filtered)
+}
+
+// rewriteConfigList 重写全局配置列表
+func (r *ClientConfigRepository) rewriteConfigList(configs []*models.ClientConfig) error {
+	listStore, ok := r.storage.(interface {
+		SetList(key string, values []interface{}, ttl int64) error
+	})
+	if !ok {
+		return coreerrors.New(coreerrors.CodeStorageError, "storage does not support SetList")
+	}
+
+	// 转换为 interface{} 切片
+	var values []interface{}
+	for _, config := range configs {
+		data, err := json.Marshal(config)
+		if err != nil {
+			continue
+		}
+		values = append(values, string(data))
+	}
+
+	return listStore.SetList(constants.KeyPrefixPersistClientsList, values, 0)
 }
 
 // ListConfigs 列出所有客户端配置
