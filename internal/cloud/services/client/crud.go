@@ -155,6 +155,14 @@ func (s *Service) UpdateClient(client *models.Client) error {
 		return coreerrors.New(coreerrors.CodeInvalidParam, "client is nil")
 	}
 
+	// 获取旧的客户端信息，用于检测 UserID 变化
+	oldClient, err := s.GetClient(client.ID)
+	if err != nil {
+		return s.baseService.WrapErrorWithInt64ID(err, "get old client", client.ID)
+	}
+	oldUserID := oldClient.UserID
+	newUserID := client.UserID
+
 	// 构建配置对象
 	config := &models.ClientConfig{
 		ID:        client.ID,
@@ -176,6 +184,22 @@ func (s *Service) UpdateClient(client *models.Client) error {
 	// ✅ 兼容性：同步到旧Repository
 	if err := s.clientRepo.UpdateClient(client); err != nil {
 		s.baseService.LogWarning("sync to legacy client repo", err)
+	}
+
+	// ✅ 处理 UserID 变化：更新用户客户端列表
+	if oldUserID != newUserID && s.clientRepo != nil {
+		// 从旧用户列表移除
+		if oldUserID != "" {
+			if err := s.clientRepo.RemoveClientFromUser(oldUserID, client); err != nil {
+				s.baseService.LogWarning("remove client from old user list", err)
+			}
+		}
+		// 添加到新用户列表
+		if newUserID != "" {
+			if err := s.clientRepo.AddClientToUser(newUserID, client); err != nil {
+				s.baseService.LogWarning("add client to new user list", err)
+			}
+		}
 	}
 
 	s.baseService.LogUpdated("client", fmt.Sprintf("%d", client.ID))
