@@ -1,8 +1,10 @@
 package client
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
+	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/models"
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
@@ -148,6 +150,10 @@ func (s *Service) ConnectClient(clientID int64, nodeID, connID, ipAddress, proto
 
 	corelog.Infof("Client %d connected to node %s (conn=%s, ip=%s, proto=%s)",
 		clientID, nodeID, connID, ipAddress, protocol)
+
+	// 发布客户端上线事件
+	s.publishClientOnlineEvent(clientID, nodeID, ipAddress)
+
 	return nil
 }
 
@@ -198,7 +204,62 @@ func (s *Service) DisconnectClient(clientID int64) error {
 	}
 
 	corelog.Infof("Client %d disconnected from node %s", clientID, state.NodeID)
+
+	// 发布客户端下线事件
+	s.publishClientOfflineEvent(clientID)
+
 	return nil
+}
+
+// publishClientOnlineEvent 发布客户端上线事件
+func (s *Service) publishClientOnlineEvent(clientID int64, nodeID, ipAddress string) {
+	if s.broker == nil {
+		return
+	}
+
+	msg := broker.ClientOnlineMessage{
+		ClientID:  clientID,
+		NodeID:    nodeID,
+		IPAddress: ipAddress,
+		Timestamp: time.Now().Unix(),
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		corelog.Errorf("Failed to marshal client online message: %v", err)
+		return
+	}
+
+	if err := s.broker.Publish(s.Ctx(), broker.TopicClientOnline, data); err != nil {
+		corelog.Warnf("Failed to publish client online event for client %d: %v", clientID, err)
+	} else {
+		corelog.Debugf("Published client online event: client_id=%d, node_id=%s, ip=%s",
+			clientID, nodeID, ipAddress)
+	}
+}
+
+// publishClientOfflineEvent 发布客户端下线事件
+func (s *Service) publishClientOfflineEvent(clientID int64) {
+	if s.broker == nil {
+		return
+	}
+
+	msg := broker.ClientOfflineMessage{
+		ClientID:  clientID,
+		Timestamp: time.Now().Unix(),
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		corelog.Errorf("Failed to marshal client offline message: %v", err)
+		return
+	}
+
+	if err := s.broker.Publish(s.Ctx(), broker.TopicClientOffline, data); err != nil {
+		corelog.Warnf("Failed to publish client offline event for client %d: %v", clientID, err)
+	} else {
+		corelog.Debugf("Published client offline event: client_id=%d", clientID)
+	}
 }
 
 // ============================================================================

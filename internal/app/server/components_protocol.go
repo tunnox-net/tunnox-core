@@ -96,6 +96,11 @@ func (c *MessageBrokerComponent) Initialize(ctx context.Context, deps *Dependenc
 		deps.BridgeAdapter = bridgeAdapter // 保存到 deps 供后续组件使用
 	}
 
+	// 注入 MessageBroker 到 CloudControl（用于客户端状态事件发布）
+	if deps.CloudBuiltin != nil && mb != nil {
+		deps.CloudBuiltin.SetBroker(mb)
+	}
+
 	corelog.Infof("MessageBroker initialized: type=%s", brokerType)
 	return nil
 }

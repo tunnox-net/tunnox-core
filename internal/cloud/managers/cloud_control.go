@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/distributed"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
 	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
+	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
 )
 
@@ -139,5 +141,19 @@ func (c *CloudControl) Close() error {
 func (c *CloudControl) SetNotifier(notifier ClientNotifier) {
 	if c.anonymousManager != nil {
 		c.anonymousManager.SetNotifier(notifier)
+	}
+}
+
+// SetBroker 设置消息代理
+// 将 broker 注入到需要发布事件的 Service
+func (c *CloudControl) SetBroker(b broker.MessageBroker) {
+	if c.clientService == nil {
+		return
+	}
+
+	// 使用类型断言检查 clientService 是否实现了 BrokerAware 接口
+	if aware, ok := c.clientService.(services.BrokerAware); ok {
+		aware.SetBroker(b)
+		corelog.Infof("CloudControl: broker injected into ClientService")
 	}
 }

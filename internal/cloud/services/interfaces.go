@@ -1,9 +1,16 @@
 package services
 
 import (
+	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
 )
+
+// BrokerAware 消息代理感知接口
+// 实现此接口的服务可以接收 MessageBroker 实例用于发布事件
+type BrokerAware interface {
+	SetBroker(b broker.MessageBroker)
+}
 
 // ClientNotifier 客户端通知接口
 // 用于在服务层避免循环依赖，与 managers.ClientNotifier 接口兼容

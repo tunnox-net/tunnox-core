@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/services/base"
 	"tunnox-core/internal/cloud/stats"
@@ -37,6 +38,9 @@ type Service struct {
 	idManager     *idgen.IDManager
 	statsProvider base.StatsProvider
 	statsCounter  *stats.StatsCounter
+
+	// 消息代理（可选，用于发布客户端状态事件）
+	broker broker.MessageBroker
 }
 
 // NewService 创建客户端服务
@@ -76,4 +80,12 @@ func NewService(
 		statsCounter:  statsProvider.GetCounter(),
 	}
 	return service
+}
+
+// SetBroker 设置消息代理（用于发布客户端状态事件）
+//
+// 参数：
+//   - b: 消息代理实例
+func (s *Service) SetBroker(b broker.MessageBroker) {
+	s.broker = b
 }
