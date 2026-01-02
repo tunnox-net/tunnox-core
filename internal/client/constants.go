@@ -21,12 +21,14 @@ const (
 	// 连接尝试轮数
 	AutoConnectMaxRounds = 2
 
-	// 每轮的超时时间（秒）- 缩短超时以加快失败检测
-	AutoConnectRound1Timeout = 3
-	AutoConnectRound2Timeout = 8
+	// 每轮的超时时间（秒）
+	// 必须大于 (AutoConnectDialTimeout + AutoConnectHandshakeTimeout)
+	// 以确保至少有一个协议能完成完整的连接+握手流程
+	AutoConnectRound1Timeout = 15
+	AutoConnectRound2Timeout = 25
 
 	// 单个连接+握手的超时时间（秒）
-	// 注意：通过代理连接时需要更长时间，3秒太短
+	// 注意：通过代理连接时需要更长时间
 	AutoConnectDialTimeout      = 10
 	AutoConnectHandshakeTimeout = 10
 )

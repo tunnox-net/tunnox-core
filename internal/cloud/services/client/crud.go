@@ -195,15 +195,16 @@ func (s *Service) UpdateClient(client *models.Client) error {
 		s.baseService.LogWarning("sync to legacy client repo", err)
 	}
 
-	// ✅ 处理 UserID 变化：更新用户客户端列表（Redis 兼容层）
-	if oldUserID != newUserID && s.clientRepo != nil {
-		// 从旧用户列表移除
+	// ✅ 同步用户客户端列表（Redis 兼容层）
+	// 注意：RemoveFromList 使用完整 JSON 匹配，必须用旧数据删除
+	if s.clientRepo != nil {
+		// 从旧用户列表移除（使用旧的 client 对象，JSON 才能匹配）
 		if oldUserID != "" {
-			if err := s.clientRepo.RemoveClientFromUser(oldUserID, client); err != nil {
+			if err := s.clientRepo.RemoveClientFromUser(oldUserID, oldClient); err != nil {
 				s.baseService.LogWarning("remove client from old user list", err)
 			}
 		}
-		// 添加到新用户列表
+		// 添加到新用户列表（使用更新后的 client 对象）
 		if newUserID != "" {
 			if err := s.clientRepo.AddClientToUser(newUserID, client); err != nil {
 				s.baseService.LogWarning("add client to new user list", err)
