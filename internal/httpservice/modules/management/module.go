@@ -100,7 +100,7 @@ func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 	api.HandleFunc("/clients", m.handleListAllClients).Methods("GET")
 	api.HandleFunc("/clients", m.handleCreateClient).Methods("POST")
 	api.HandleFunc("/clients/{client_id}", m.handleGetClient).Methods("GET")
-	api.HandleFunc("/clients/{client_id}", m.handleUpdateClient).Methods("PUT")
+	api.HandleFunc("/clients/{client_id}", m.handleUpdateClient).Methods("PUT", "PATCH")
 	api.HandleFunc("/clients/{client_id}", m.handleDeleteClient).Methods("DELETE")
 	api.HandleFunc("/clients/{client_id}/disconnect", m.handleDisconnectClient).Methods("POST")
 	api.HandleFunc("/clients/{client_id}/bind", m.handleBindClient).Methods("POST")
