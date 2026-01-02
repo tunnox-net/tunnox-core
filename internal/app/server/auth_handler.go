@@ -211,15 +211,20 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 	conn.SetClientID(clientID)
 	conn.SetAuthenticated(true) // 设置为已认证
 
-	// 7. 更新客户端状态为在线
+	// 7. 客户端连接：更新完整运行时状态（包含 connID）
 	nodeID := h.sessionMgr.GetNodeID()
 	if nodeID == "" {
 		corelog.Warnf("ServerAuthHandler: NodeID not set in SessionManager, using empty string")
 	}
-	if err := h.cloudControl.UpdateClientStatus(clientID, models.ClientStatusOnline, nodeID); err != nil {
-		corelog.Warnf("ServerAuthHandler: failed to update client %d status to online: %v", clientID, err)
+	connID := conn.GetConnID()
+	protocol := conn.GetProtocol()
+	if protocol == "" {
+		protocol = req.Protocol // 使用请求中的协议作为备选
+	}
+	version := req.Version
+	if err := h.cloudControl.ConnectClient(clientID, nodeID, connID, ip, protocol, version); err != nil {
+		corelog.Warnf("ServerAuthHandler: failed to connect client %d: %v", clientID, err)
 		// 不返回错误，只记录警告，握手仍然成功
-	} else {
 	}
 
 	// 构造握手响应

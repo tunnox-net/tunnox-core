@@ -204,6 +204,14 @@ func (api *CloudControlAPI) UpdateClientStatus(clientID int64, status models.Cli
 	return api.clientService.UpdateClientStatus(clientID, status, nodeID)
 }
 
+func (api *CloudControlAPI) ConnectClient(clientID int64, nodeID, connID, ipAddress, protocol, version string) error {
+	return api.clientService.ConnectClient(clientID, nodeID, connID, ipAddress, protocol, version)
+}
+
+func (api *CloudControlAPI) DisconnectClient(clientID int64) error {
+	return api.clientService.DisconnectClient(clientID)
+}
+
 func (api *CloudControlAPI) ListClients(userID string, clientType models.ClientType) ([]*models.Client, error) {
 	return api.clientService.ListClients(userID, clientType)
 }

@@ -31,9 +31,15 @@ type ClientConfig struct {
 	UpdatedAt time.Time            `json:"updated_at"` // 更新时间
 }
 
-// GetID 实现GenericEntity接口
+// GetID 实现 Entity 接口
 func (c *ClientConfig) GetID() string {
 	return fmt.Sprintf("%d", c.ID)
+}
+
+// GetUserID 实现 UserOwnedEntity 接口
+// 返回配置所属的用户 ID，匿名客户端返回空字符串
+func (c *ClientConfig) GetUserID() string {
+	return c.UserID
 }
 
 // Validate 验证配置有效性

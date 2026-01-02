@@ -57,6 +57,22 @@ func (c *CloudControl) UpdateClientStatus(clientID int64, status models.ClientSt
 	return c.clientService.UpdateClientStatus(clientID, status, nodeID)
 }
 
+// ConnectClient 客户端连接（更新完整运行时状态）
+func (c *CloudControl) ConnectClient(clientID int64, nodeID, connID, ipAddress, protocol, version string) error {
+	if c.clientService == nil {
+		return coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
+	}
+	return c.clientService.ConnectClient(clientID, nodeID, connID, ipAddress, protocol, version)
+}
+
+// DisconnectClient 客户端断开连接
+func (c *CloudControl) DisconnectClient(clientID int64) error {
+	if c.clientService == nil {
+		return coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
+	}
+	return c.clientService.DisconnectClient(clientID)
+}
+
 // ListClients 列出客户端
 func (c *CloudControl) ListClients(userID string, clientType models.ClientType) ([]*models.Client, error) {
 	if c.clientService == nil {

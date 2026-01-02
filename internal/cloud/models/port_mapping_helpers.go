@@ -7,6 +7,16 @@ import (
 	corelog "tunnox-core/internal/core/log"
 )
 
+// GetID 实现 Entity 接口
+func (m *PortMapping) GetID() string {
+	return m.ID
+}
+
+// GetUserID 实现 UserOwnedEntity 接口
+func (m *PortMapping) GetUserID() string {
+	return m.UserID
+}
+
 // IsExpired 检查映射是否已过期
 func (m *PortMapping) IsExpired() bool {
 	if m.ExpiresAt == nil {

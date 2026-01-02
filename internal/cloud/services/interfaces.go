@@ -47,6 +47,8 @@ type ClientService interface {
 	UpdateClient(client *models.Client) error
 	DeleteClient(clientID int64) error
 	UpdateClientStatus(clientID int64, status models.ClientStatus, nodeID string) error
+	ConnectClient(clientID int64, nodeID, connID, ipAddress, protocol, version string) error // 客户端连接（更新完整运行时状态）
+	DisconnectClient(clientID int64) error                                                   // 客户端断开连接
 	ListClients(userID string, clientType models.ClientType) ([]*models.Client, error)
 	ListUserClients(userID string) ([]*models.Client, error)
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error)

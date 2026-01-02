@@ -29,6 +29,16 @@ type ClientRuntimeState struct {
 	LastSeen  time.Time    `json:"last_seen"`  // 最后心跳时间
 }
 
+// GetID 实现 Entity 接口
+func (s *ClientRuntimeState) GetID() string {
+	return fmt.Sprintf("%d", s.ClientID)
+}
+
+// GetNodeKey 获取节点索引键（用于节点→客户端索引）
+func (s *ClientRuntimeState) GetNodeKey() string {
+	return s.NodeID
+}
+
 // IsOnline 判断客户端是否在线
 //
 // 条件：
