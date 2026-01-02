@@ -26,8 +26,9 @@ const (
 	AutoConnectRound2Timeout = 8
 
 	// 单个连接+握手的超时时间（秒）
-	AutoConnectDialTimeout      = 3
-	AutoConnectHandshakeTimeout = 5
+	// 注意：通过代理连接时需要更长时间，3秒太短
+	AutoConnectDialTimeout      = 10
+	AutoConnectHandshakeTimeout = 10
 )
 
 // 协议优先级顺序（WebSocket 优先因为穿透性最好）

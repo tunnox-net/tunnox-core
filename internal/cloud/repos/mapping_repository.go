@@ -78,7 +78,32 @@ func (r *PortMappingRepo) GetPortMappingByDomain(fullDomain string) (*models.Por
 }
 
 // DeletePortMapping 删除端口映射
+// 同时清理所有相关索引（client_mappings, mapping_list）
 func (r *PortMappingRepo) DeletePortMapping(mappingID string) error {
+	// 先获取 mapping 信息，用于清理索引
+	mapping, err := r.GetPortMapping(mappingID)
+	if err != nil {
+		return err
+	}
+
+	// 先清理索引（在删除主 key 之前，因为需要 mapping 对象）
+
+	// 清理 ListenClientID 的索引
+	if mapping.ListenClientID != 0 {
+		clientKey := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, random.Int64ToString(mapping.ListenClientID))
+		r.RemoveFromList(mapping, clientKey)
+	}
+
+	// 清理 TargetClientID 的索引（如果不同于 ListenClientID）
+	if mapping.TargetClientID != 0 && mapping.TargetClientID != mapping.ListenClientID {
+		clientKey := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, random.Int64ToString(mapping.TargetClientID))
+		r.RemoveFromList(mapping, clientKey)
+	}
+
+	// 清理全局映射列表
+	r.RemoveFromList(mapping, constants.KeyPrefixMappingList)
+
+	// 最后删除主 key
 	return r.Delete(mappingID, constants.KeyPrefixPortMapping)
 }
 
