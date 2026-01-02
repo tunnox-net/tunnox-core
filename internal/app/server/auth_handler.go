@@ -146,59 +146,21 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 				}, authError
 			}
 		} else {
-
-			// 根据客户端类型验证凭据
-			var authResp *models.AuthResponse
-			if client.Type == models.ClientTypeAnonymous {
-				// 匿名客户端：验证SecretKey
-				if client.SecretKey != req.Token {
-					authError = fmt.Errorf("invalid secret key")
-					corelog.Warnf("ServerAuthHandler: invalid secret key for anonymous client %d", req.ClientID)
-					if h.bruteForceProtector != nil {
-						h.bruteForceProtector.RecordFailure(ip)
-					}
-					return &packet.HandshakeResponse{
-						Success: false,
-						Error:   "Invalid credentials",
-					}, authError
+			// 统一使用 SecretKey 验证（匿名客户端和注册客户端都使用 SecretKey）
+			// AuthCode 已废弃，现在使用连接码机制
+			if client.SecretKey != req.Token {
+				authError = fmt.Errorf("invalid secret key")
+				corelog.Warnf("ServerAuthHandler: invalid secret key for client %d (type=%s)", req.ClientID, client.Type)
+				if h.bruteForceProtector != nil {
+					h.bruteForceProtector.RecordFailure(ip)
 				}
-				// SecretKey正确，更新状态
-				authResp = &models.AuthResponse{
-					Success: true,
-					Client:  client,
-					Message: "Anonymous client re-authenticated",
-				}
-				clientID = req.ClientID
-			} else {
-				// 注册客户端：使用Authenticate验证AuthCode
-				authResp, err = h.cloudControl.Authenticate(&models.AuthRequest{
-					ClientID: req.ClientID,
-					AuthCode: req.Token,
-				})
-				if err != nil {
-					authError = err
-					corelog.Errorf("ServerAuthHandler: authentication failed for client %d: %v", req.ClientID, err)
-					if h.bruteForceProtector != nil {
-						h.bruteForceProtector.RecordFailure(ip)
-					}
-					return &packet.HandshakeResponse{
-						Success: false,
-						Error:   "Authentication failed",
-					}, fmt.Errorf("authentication failed: %w", err)
-				}
-
-				if !authResp.Success {
-					authError = fmt.Errorf("authentication failed: %s", authResp.Message)
-					if h.bruteForceProtector != nil {
-						h.bruteForceProtector.RecordFailure(ip)
-					}
-					return &packet.HandshakeResponse{
-						Success: false,
-						Error:   authResp.Message,
-					}, authError
-				}
-				clientID = req.ClientID
+				return &packet.HandshakeResponse{
+					Success: false,
+					Error:   "Invalid credentials",
+				}, authError
 			}
+			clientID = req.ClientID
+			corelog.Infof("ServerAuthHandler: client %d authenticated via SecretKey", clientID)
 		}
 	}
 
