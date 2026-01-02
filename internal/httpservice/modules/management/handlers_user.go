@@ -179,7 +179,10 @@ func (m *ManagementModule) handleListUserClients(w http.ResponseWriter, r *http.
 		return
 	}
 
-	respondJSONTyped(w, http.StatusOK, clients)
+	// 包装成对象返回，符合 platform 期望的格式
+	respondJSONTyped(w, http.StatusOK, map[string]interface{}{
+		"clients": clients,
+	})
 }
 
 // handleListUserMappings 列出用户的映射
@@ -202,5 +205,8 @@ func (m *ManagementModule) handleListUserMappings(w http.ResponseWriter, r *http
 		return
 	}
 
-	respondJSONTyped(w, http.StatusOK, mappings)
+	// 包装成对象返回，符合 platform 期望的格式
+	respondJSONTyped(w, http.StatusOK, map[string]interface{}{
+		"mappings": mappings,
+	})
 }
