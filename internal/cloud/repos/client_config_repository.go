@@ -150,22 +150,44 @@ func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error
 		return coreerrors.Wrap(err, coreerrors.CodeValidationError, "invalid config")
 	}
 
+	// 获取旧配置（用于从列表中移除）
+	oldConfig, err := r.GetConfig(config.ID)
+	if err != nil {
+		return coreerrors.Wrap(err, coreerrors.CodeNotFound, "config not found")
+	}
+
 	// 更新时间戳
 	config.UpdatedAt = time.Now()
 
-	// 更新
-	return r.Update(
+	// 更新主数据
+	if err := r.Update(
 		config,
 		constants.KeyPrefixPersistClientConfig,
 		0, // 永久保存
-	)
+	); err != nil {
+		return err
+	}
+
+	// 同步全局列表：先移除旧的，再添加新的
+	// 注意：RemoveFromList 使用 JSON 精确匹配，必须使用旧配置对象
+	if err := r.RemoveFromList(oldConfig, constants.KeyPrefixPersistClientsList); err != nil {
+		// 列表同步失败不影响主流程，记录警告
+		// 可能是旧配置不在列表中（匿名客户端等情况）
+	}
+	if err := r.AddToList(config, constants.KeyPrefixPersistClientsList); err != nil {
+		// 列表同步失败不影响主流程，记录警告
+	}
+
+	return nil
 }
 
 // DeleteConfig 删除客户端配置
 //
 // 流程：
-// 1. 从数据库删除
-// 2. 从缓存删除
+// 1. 获取配置（用于从列表移除）
+// 2. 从数据库删除
+// 3. 从缓存删除
+// 4. 从全局列表移除
 //
 // 参数：
 //   - clientID: 客户端ID
@@ -173,10 +195,28 @@ func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error
 // 返回：
 //   - error: 错误信息
 func (r *ClientConfigRepository) DeleteConfig(clientID int64) error {
-	return r.Delete(
+	// 先获取配置，用于从列表中移除
+	config, err := r.GetConfig(clientID)
+	if err != nil {
+		// 配置不存在，直接返回（可能已被删除）
+		return nil
+	}
+
+	// 删除主数据
+	if err := r.Delete(
 		fmt.Sprintf("%d", clientID),
 		constants.KeyPrefixPersistClientConfig,
-	)
+	); err != nil {
+		return err
+	}
+
+	// 从全局列表中移除
+	// 注意：RemoveFromList 使用 JSON 精确匹配
+	if err := r.RemoveFromList(config, constants.KeyPrefixPersistClientsList); err != nil {
+		// 列表同步失败不影响主流程
+	}
+
+	return nil
 }
 
 // ListConfigs 列出所有客户端配置
