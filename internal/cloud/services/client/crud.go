@@ -177,17 +177,14 @@ func (s *Service) UpdateClient(client *models.Client) error {
 	}
 
 	// 更新配置
+	// 注意：UpdateConfig 内部会调用 removeConfigFromListByID + AddToList 同步全局列表
+	// 不需要额外调用 AddConfigToList
 	if err := s.configRepo.UpdateConfig(config); err != nil {
 		return s.baseService.WrapErrorWithInt64ID(err, "update client config", client.ID)
 	}
 
-	// ✅ 绑定操作：当 UserID 从空变为非空时，确保配置在全局列表中
-	// 匿名客户端的配置可能不在全局列表，绑定时需要添加
 	if oldUserID == "" && newUserID != "" {
-		if err := s.configRepo.AddConfigToList(config); err != nil {
-			s.baseService.LogWarning("add config to list on bind", err)
-		}
-		corelog.Infof("Client %d bound to user %s, added to config list", client.ID, newUserID)
+		corelog.Infof("Client %d bound to user %s", client.ID, newUserID)
 	}
 
 	// ✅ 兼容性：同步到旧Repository
