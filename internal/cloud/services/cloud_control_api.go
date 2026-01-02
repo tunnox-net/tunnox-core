@@ -130,7 +130,53 @@ func (api *CloudControlAPI) SearchUsers(keyword string) ([]*models.User, error) 
 }
 
 func (api *CloudControlAPI) GetUserStats(userID string) (*stats.UserStats, error) {
-	return api.userService.GetUserStats(userID)
+	// 验证用户存在
+	_, err := api.userService.GetUser(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取用户的客户端列表
+	clients, err := api.clientService.ListUserClients(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 计算在线客户端数量
+	onlineClients := 0
+	for _, client := range clients {
+		if client.Status == models.ClientStatusOnline {
+			onlineClients++
+		}
+	}
+
+	// 获取用户的映射列表
+	mappings, err := api.mappingService.GetUserPortMappings(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 计算活跃映射数量和流量统计
+	activeMappings := 0
+	var totalTraffic int64
+	var totalConnections int64
+	for _, mapping := range mappings {
+		if mapping.Status == models.MappingStatusActive {
+			activeMappings++
+		}
+		totalTraffic += mapping.TrafficStats.BytesSent + mapping.TrafficStats.BytesReceived
+		totalConnections += mapping.TrafficStats.Connections
+	}
+
+	return &stats.UserStats{
+		UserID:           userID,
+		TotalClients:     len(clients),
+		OnlineClients:    onlineClients,
+		TotalMappings:    len(mappings),
+		ActiveMappings:   activeMappings,
+		TotalTraffic:     totalTraffic,
+		TotalConnections: totalConnections,
+	}, nil
 }
 
 // 客户端管理接口

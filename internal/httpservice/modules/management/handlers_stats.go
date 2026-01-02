@@ -23,6 +23,29 @@ func (m *ManagementModule) handleGetSystemStats(w http.ResponseWriter, r *http.R
 	respondJSONTyped(w, http.StatusOK, stats)
 }
 
+// handleGetUserStats 获取用户统计
+func (m *ManagementModule) handleGetUserStats(w http.ResponseWriter, r *http.Request) {
+	userID, err := getStringPathVar(r, "user_id")
+	if err != nil {
+		m.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if m.cloudControl == nil {
+		m.respondError(w, http.StatusInternalServerError, "cloud control not configured")
+		return
+	}
+
+	stats, err := m.cloudControl.GetUserStats(userID)
+	if err != nil {
+		corelog.Errorf("ManagementModule: failed to get user stats: %v", err)
+		m.respondError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	respondJSONTyped(w, http.StatusOK, stats)
+}
+
 // handleListNodes 列出节点
 func (m *ManagementModule) handleListNodes(w http.ResponseWriter, r *http.Request) {
 	if m.cloudControl == nil {
