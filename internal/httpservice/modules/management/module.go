@@ -103,6 +103,7 @@ func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 	api.HandleFunc("/clients/{client_id}", m.handleUpdateClient).Methods("PUT")
 	api.HandleFunc("/clients/{client_id}", m.handleDeleteClient).Methods("DELETE")
 	api.HandleFunc("/clients/{client_id}/disconnect", m.handleDisconnectClient).Methods("POST")
+	api.HandleFunc("/clients/{client_id}/bind", m.handleBindClient).Methods("POST")
 	api.HandleFunc("/clients/{client_id}/mappings", m.handleListClientMappings).Methods("GET")
 	api.HandleFunc("/clients/{client_id}/quota", m.handleGetClientQuota).Methods("GET")
 

@@ -191,6 +191,97 @@ func (m *ManagementModule) handleListClientMappings(w http.ResponseWriter, r *ht
 	respondJSONTyped(w, http.StatusOK, mappings)
 }
 
+// handleBindClient 绑定客户端到用户
+// POST /tunnox/v1/clients/{client_id}/bind
+// 请求体: { "user_id": "xxx", "secret_key": "xxx" }
+func (m *ManagementModule) handleBindClient(w http.ResponseWriter, r *http.Request) {
+	clientID, err := getInt64PathVar(r, "client_id")
+	if err != nil {
+		m.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	var req struct {
+		UserID    string `json:"user_id"`
+		SecretKey string `json:"secret_key"`
+	}
+
+	if err := parseJSONBody(r, &req); err != nil {
+		m.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.UserID == "" {
+		m.respondError(w, http.StatusBadRequest, "user_id is required")
+		return
+	}
+
+	if req.SecretKey == "" {
+		m.respondError(w, http.StatusBadRequest, "secret_key is required")
+		return
+	}
+
+	if m.cloudControl == nil {
+		m.respondError(w, http.StatusInternalServerError, "cloud control not configured")
+		return
+	}
+
+	// 1. 获取客户端
+	client, err := m.cloudControl.GetClient(clientID)
+	if err != nil {
+		m.respondError(w, http.StatusNotFound, "client not found")
+		return
+	}
+
+	// 2. 验证密钥
+	if client.SecretKey != req.SecretKey {
+		corelog.Warnf("ManagementModule: bind client %d failed: invalid secret_key", clientID)
+		m.respondError(w, http.StatusUnauthorized, "invalid secret_key")
+		return
+	}
+
+	// 3. 检查是否已绑定
+	if client.UserID != "" {
+		m.respondError(w, http.StatusConflict, "client already bound to user: "+client.UserID)
+		return
+	}
+
+	// 4. 更新客户端信息
+	client.UserID = req.UserID
+	client.Type = models.ClientTypeRegistered
+
+	if err := m.cloudControl.UpdateClient(client); err != nil {
+		corelog.Errorf("ManagementModule: failed to bind client %d: %v", clientID, err)
+		m.respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// 5. 迁移相关的 PortMapping
+	mappings, err := m.cloudControl.GetClientPortMappings(clientID)
+	if err != nil {
+		corelog.Warnf("ManagementModule: failed to get client mappings for migration: %v", err)
+	} else {
+		migratedCount := 0
+		for _, mapping := range mappings {
+			// 只迁移未绑定用户的映射
+			if mapping.UserID == "" {
+				mapping.UserID = req.UserID
+				if err := m.cloudControl.UpdatePortMapping(mapping); err != nil {
+					corelog.Warnf("ManagementModule: failed to migrate mapping %s: %v", mapping.ID, err)
+				} else {
+					migratedCount++
+				}
+			}
+		}
+		if migratedCount > 0 {
+			corelog.Infof("ManagementModule: migrated %d mappings for client %d to user %s", migratedCount, clientID, req.UserID)
+		}
+	}
+
+	corelog.Infof("ManagementModule: client %d bound to user %s", clientID, req.UserID)
+	respondJSONTyped(w, http.StatusOK, client)
+}
+
 // handleGetClientQuota 获取客户端配额
 // GET /tunnox/v1/clients/{client_id}/quota
 func (m *ManagementModule) handleGetClientQuota(w http.ResponseWriter, r *http.Request) {
