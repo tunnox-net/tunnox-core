@@ -193,7 +193,7 @@ func (m *ManagementModule) handleListClientMappings(w http.ResponseWriter, r *ht
 
 // handleBindClient 绑定客户端到用户
 // POST /tunnox/v1/clients/{client_id}/bind
-// 请求体: { "user_id": "xxx", "secret_key": "xxx" }
+// 请求体: { "user_id": "xxx", "secret_key": "xxx", "name": "可选名称" }
 func (m *ManagementModule) handleBindClient(w http.ResponseWriter, r *http.Request) {
 	clientID, err := getInt64PathVar(r, "client_id")
 	if err != nil {
@@ -204,6 +204,7 @@ func (m *ManagementModule) handleBindClient(w http.ResponseWriter, r *http.Reque
 	var req struct {
 		UserID    string `json:"user_id"`
 		SecretKey string `json:"secret_key"`
+		Name      string `json:"name"` // 可选的客户端名称
 	}
 
 	if err := parseJSONBody(r, &req); err != nil {
@@ -249,6 +250,10 @@ func (m *ManagementModule) handleBindClient(w http.ResponseWriter, r *http.Reque
 	// 4. 更新客户端信息
 	client.UserID = req.UserID
 	client.Type = models.ClientTypeRegistered
+	// 如果提供了名称，则更新名称
+	if req.Name != "" {
+		client.Name = req.Name
+	}
 
 	if err := m.cloudControl.UpdateClient(client); err != nil {
 		corelog.Errorf("ManagementModule: failed to bind client %d: %v", clientID, err)
