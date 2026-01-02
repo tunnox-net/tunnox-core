@@ -181,12 +181,21 @@ func (s *Service) UpdateClient(client *models.Client) error {
 		return s.baseService.WrapErrorWithInt64ID(err, "update client config", client.ID)
 	}
 
+	// ✅ 绑定操作：当 UserID 从空变为非空时，确保配置在全局列表中
+	// 匿名客户端的配置可能不在全局列表，绑定时需要添加
+	if oldUserID == "" && newUserID != "" {
+		if err := s.configRepo.AddConfigToList(config); err != nil {
+			s.baseService.LogWarning("add config to list on bind", err)
+		}
+		corelog.Infof("Client %d bound to user %s, added to config list", client.ID, newUserID)
+	}
+
 	// ✅ 兼容性：同步到旧Repository
 	if err := s.clientRepo.UpdateClient(client); err != nil {
 		s.baseService.LogWarning("sync to legacy client repo", err)
 	}
 
-	// ✅ 处理 UserID 变化：更新用户客户端列表
+	// ✅ 处理 UserID 变化：更新用户客户端列表（Redis 兼容层）
 	if oldUserID != newUserID && s.clientRepo != nil {
 		// 从旧用户列表移除
 		if oldUserID != "" {
