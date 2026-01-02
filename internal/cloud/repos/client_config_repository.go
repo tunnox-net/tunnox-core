@@ -239,7 +239,7 @@ func (r *ClientConfigRepository) removeConfigFromListByID(clientID int64) error 
 // rewriteConfigList 重写全局配置列表
 func (r *ClientConfigRepository) rewriteConfigList(configs []*models.ClientConfig) error {
 	listStore, ok := r.storage.(interface {
-		SetList(key string, values []interface{}, ttl int64) error
+		SetList(key string, values []interface{}, ttl time.Duration) error
 	})
 	if !ok {
 		return coreerrors.New(coreerrors.CodeStorageError, "storage does not support SetList")
