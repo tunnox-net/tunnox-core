@@ -204,10 +204,23 @@ func (r *Storage) withRetry(operation func() error) error {
 }
 
 // Set 设置键值对
+// 注意：如果 value 已经是 string 或 []byte，直接使用，避免双重 JSON 编码
 func (r *Storage) Set(key string, value interface{}) error {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("failed to marshal value: %w", err)
+	var data []byte
+	switch v := value.(type) {
+	case string:
+		// 值已经是字符串，直接使用（常见于已序列化的 JSON）
+		data = []byte(v)
+	case []byte:
+		// 值已经是字节数组，直接使用
+		data = v
+	default:
+		// 其他类型，序列化为 JSON
+		var err error
+		data, err = json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("failed to marshal value: %w", err)
+		}
 	}
 
 	return r.withRetry(func() error {

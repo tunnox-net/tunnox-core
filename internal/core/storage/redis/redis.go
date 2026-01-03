@@ -78,11 +78,24 @@ func (r *Storage) onClose() error {
 }
 
 // Set 设置键值对
+// 注意：如果 value 已经是 string 或 []byte，直接使用，避免双重 JSON 编码
 func (r *Storage) Set(key string, value interface{}, ttl time.Duration) error {
-	// 序列化值
-	data, err := json.Marshal(value)
-	if err != nil {
-		return fmt.Errorf("failed to marshal value: %w", err)
+	// 处理值：如果已经是字符串/字节，直接使用；否则序列化
+	var data []byte
+	switch v := value.(type) {
+	case string:
+		// 值已经是字符串，直接使用（常见于已序列化的 JSON）
+		data = []byte(v)
+	case []byte:
+		// 值已经是字节数组，直接使用
+		data = v
+	default:
+		// 其他类型，序列化为 JSON
+		var err error
+		data, err = json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("failed to marshal value: %w", err)
+		}
 	}
 
 	// 设置到Redis
@@ -94,7 +107,7 @@ func (r *Storage) Set(key string, value interface{}, ttl time.Duration) error {
 	}
 
 	if result.Err() != nil {
-		dispose.Errorf("RedisStorage.Set: failed to set key %s: %v", key, err)
+		dispose.Errorf("RedisStorage.Set: failed to set key %s: %v", key, result.Err())
 		return fmt.Errorf("failed to set key %s: %w", key, result.Err())
 	}
 
