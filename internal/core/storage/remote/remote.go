@@ -412,6 +412,8 @@ func (r *Storage) QueryByField(keyPrefix string, fieldName string, fieldValue in
 func (r *Storage) QueryByPrefix(prefix string, limit int) (map[string]string, error) {
 	result := make(map[string]string)
 
+	dispose.Debugf("RemoteStorage.QueryByPrefix: calling gRPC with prefix=%s, limit=%d", prefix, limit)
+
 	err := r.withRetry(func() error {
 		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
 		defer cancel()
@@ -421,12 +423,15 @@ func (r *Storage) QueryByPrefix(prefix string, limit int) (map[string]string, er
 			Limit:  int32(limit),
 		})
 		if err != nil {
+			dispose.Errorf("RemoteStorage.QueryByPrefix: gRPC error=%v", err)
 			return err
 		}
 		if resp.Error != "" {
+			dispose.Errorf("RemoteStorage.QueryByPrefix: response error=%s", resp.Error)
 			return fmt.Errorf("query by prefix failed: %s", resp.Error)
 		}
 
+		dispose.Debugf("RemoteStorage.QueryByPrefix: received %d items", len(resp.Items))
 		for _, item := range resp.Items {
 			result[item.Key] = string(item.Value)
 		}
@@ -436,6 +441,7 @@ func (r *Storage) QueryByPrefix(prefix string, limit int) (map[string]string, er
 	if err != nil {
 		return nil, err
 	}
+	dispose.Infof("RemoteStorage.QueryByPrefix: returning %d items for prefix=%s", len(result), prefix)
 	return result, nil
 }
 

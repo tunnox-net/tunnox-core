@@ -489,8 +489,21 @@ func (h *Storage) SetRuntime(key string, value interface{}, ttl time.Duration) e
 // QueryByPrefix 按前缀查询所有键值对（从持久化存储查询）
 // 用于替代全局列表，直接扫描数据库获取所有匹配的键
 func (h *Storage) QueryByPrefix(prefix string, limit int) (map[string]string, error) {
+	dispose.Debugf("HybridStorage.QueryByPrefix: prefix=%s, limit=%d, EnablePersistent=%v, persistent=%v",
+		prefix, limit, h.config.EnablePersistent, h.persistent != nil)
+
 	if !h.config.EnablePersistent || h.persistent == nil {
+		dispose.Warnf("HybridStorage.QueryByPrefix: skipping, EnablePersistent=%v, persistent=%v",
+			h.config.EnablePersistent, h.persistent != nil)
 		return make(map[string]string), nil
 	}
-	return h.persistent.QueryByPrefix(prefix, limit)
+
+	result, err := h.persistent.QueryByPrefix(prefix, limit)
+	if err != nil {
+		dispose.Errorf("HybridStorage.QueryByPrefix: error=%v", err)
+		return nil, err
+	}
+
+	dispose.Infof("HybridStorage.QueryByPrefix: found %d items for prefix=%s", len(result), prefix)
+	return result, nil
 }
