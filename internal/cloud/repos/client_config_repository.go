@@ -7,6 +7,7 @@ import (
 
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
+	"tunnox-core/internal/core/dispose"
 	coreerrors "tunnox-core/internal/core/errors"
 )
 
@@ -215,15 +216,26 @@ func (r *ClientConfigRepository) ListConfigs() ([]*models.ClientConfig, error) {
 
 	// 反序列化结果
 	configs := make([]*models.ClientConfig, 0, len(items))
-	for _, jsonValue := range items {
+	parseErrors := 0
+	for key, jsonValue := range items {
 		var config models.ClientConfig
 		if err := json.Unmarshal([]byte(jsonValue), &config); err != nil {
-			// 跳过无法解析的配置，记录但不中断
+			// 跳过无法解析的配置，记录错误
+			parseErrors++
+			// 仅在首次错误时打印详细信息，避免日志泛滥
+			if parseErrors <= 3 {
+				maxLen := len(jsonValue)
+				if maxLen > 100 {
+					maxLen = 100
+				}
+				dispose.Errorf("ListConfigs: failed to parse key=%s, err=%v, value=%s", key, err, jsonValue[:maxLen])
+			}
 			continue
 		}
 		configs = append(configs, &config)
 	}
 
+	dispose.Infof("ListConfigs: queried %d items, parsed %d configs, errors=%d", len(items), len(configs), parseErrors)
 	return configs, nil
 }
 
