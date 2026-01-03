@@ -54,11 +54,6 @@ func (s *Service) CreateClient(userID, clientName string) (*models.Client, error
 		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "save client config")
 	}
 
-	// 添加到全局列表
-	if err := s.configRepo.AddConfigToList(config); err != nil {
-		s.baseService.LogWarning("add config to list", err)
-	}
-
 	// ✅ 兼容性：同步到旧的ClientRepository
 	legacyClient := models.FromConfigAndState(config, nil, nil)
 	if err := s.clientRepo.CreateClient(legacyClient); err != nil {
@@ -177,8 +172,7 @@ func (s *Service) UpdateClient(client *models.Client) error {
 	}
 
 	// 更新配置
-	// 注意：UpdateConfig 内部会调用 removeConfigFromListByID + AddToList 同步全局列表
-	// 不需要额外调用 AddConfigToList
+	// 注意：不再维护全局列表，ListConfigs 使用 QueryByPrefix 直接查询数据库
 	if err := s.configRepo.UpdateConfig(config); err != nil {
 		return s.baseService.WrapErrorWithInt64ID(err, "update client config", client.ID)
 	}

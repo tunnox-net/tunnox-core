@@ -485,3 +485,12 @@ func (h *Storage) SetPersistent(key string, value interface{}) error {
 func (h *Storage) SetRuntime(key string, value interface{}, ttl time.Duration) error {
 	return h.setRuntime(key, value, ttl)
 }
+
+// QueryByPrefix 按前缀查询所有键值对（从持久化存储查询）
+// 用于替代全局列表，直接扫描数据库获取所有匹配的键
+func (h *Storage) QueryByPrefix(prefix string, limit int) (map[string]string, error) {
+	if !h.config.EnablePersistent || h.persistent == nil {
+		return make(map[string]string), nil
+	}
+	return h.persistent.QueryByPrefix(prefix, limit)
+}

@@ -401,3 +401,43 @@ func matchesFieldValue(actual, expected interface{}) bool {
 
 	return false
 }
+
+// QueryByPrefix 按前缀查询所有键值对
+// prefix: 键前缀（如 "tunnox:persist:client:config:"）
+// limit: 返回结果数量限制，0 表示无限制
+// 返回：map[key]jsonValue，key 是完整键名，jsonValue 是 JSON 序列化的值
+func (j *Storage) QueryByPrefix(prefix string, limit int) (map[string]string, error) {
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+
+	result := make(map[string]string)
+	count := 0
+
+	for key, value := range j.data {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+
+		// 序列化值为 JSON 字符串
+		var jsonStr string
+		if str, ok := value.(string); ok {
+			jsonStr = str
+		} else {
+			jsonBytes, err := json.Marshal(value)
+			if err != nil {
+				continue
+			}
+			jsonStr = string(jsonBytes)
+		}
+
+		result[key] = jsonStr
+		count++
+
+		// 检查限制
+		if limit > 0 && count >= limit {
+			break
+		}
+	}
+
+	return result, nil
+}

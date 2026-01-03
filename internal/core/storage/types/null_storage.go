@@ -53,6 +53,11 @@ func (n *NullPersistentStorage) QueryByField(keyPrefix string, fieldName string,
 	return nil, ErrKeyNotFound
 }
 
+// QueryByPrefix 按前缀查询（返回空 map）
+func (n *NullPersistentStorage) QueryByPrefix(prefix string, limit int) (map[string]string, error) {
+	return make(map[string]string), nil
+}
+
 // Close 关闭连接（空操作）
 func (n *NullPersistentStorage) Close() error {
 	return nil

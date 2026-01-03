@@ -161,31 +161,18 @@ func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error
 	config.UpdatedAt = time.Now()
 
 	// 更新主数据
-	if err := r.Update(
+	// 注意：不再需要同步全局列表，ListConfigs 使用 QueryByPrefix 直接从数据库查询
+	return r.Update(
 		config,
 		constants.KeyPrefixPersistClientConfig,
 		0, // 永久保存
-	); err != nil {
-		return err
-	}
-
-	// 同步全局列表：先基于 ID 移除旧的，再添加新的
-	// 使用 removeConfigFromListByID 而非 RemoveFromList，避免 JSON 不匹配的问题
-	if err := r.removeConfigFromListByID(config.ID); err != nil {
-		// 列表同步失败不影响主流程
-	}
-	if err := r.AddToList(config, constants.KeyPrefixPersistClientsList); err != nil {
-		// 列表同步失败不影响主流程
-	}
-
-	return nil
+	)
 }
 
 // DeleteConfig 删除客户端配置
 //
 // 流程：
 // 1. 删除主数据（如果存在）
-// 2. 从全局列表移除（基于 ID 匹配，而非 JSON 精确匹配）
 //
 // 参数：
 //   - clientID: 客户端ID
@@ -194,77 +181,50 @@ func (r *ClientConfigRepository) UpdateConfig(config *models.ClientConfig) error
 //   - error: 错误信息
 func (r *ClientConfigRepository) DeleteConfig(clientID int64) error {
 	// 删除主数据（忽略不存在的错误）
+	// 注意：不再需要同步全局列表，ListConfigs 使用 QueryByPrefix 直接从数据库查询
 	_ = r.Delete(
 		fmt.Sprintf("%d", clientID),
 		constants.KeyPrefixPersistClientConfig,
 	)
-
-	// 从全局列表中移除（基于 ID 匹配）
-	// 无论主数据是否存在，都要尝试清理列表
-	if err := r.removeConfigFromListByID(clientID); err != nil {
-		// 列表同步失败不影响主流程，但记录日志以便排查
-		// 不返回错误，因为主数据已删除
-	}
-
 	return nil
 }
 
-// removeConfigFromListByID 基于 ID 从全局列表移除配置
-// 这个方法读取整个列表，过滤掉指定 ID 的条目，然后重写列表
-// 用于解决 JSON 精确匹配失败的问题（如 updated_at 字段变化）
-func (r *ClientConfigRepository) removeConfigFromListByID(clientID int64) error {
-	// 读取当前列表
-	configs, err := r.ListConfigs()
-	if err != nil {
-		return err
-	}
-
-	// 过滤掉目标 ID
-	var filtered []*models.ClientConfig
-	for _, config := range configs {
-		if config.ID != clientID {
-			filtered = append(filtered, config)
-		}
-	}
-
-	// 如果长度没变，说明目标不在列表中，直接返回
-	if len(filtered) == len(configs) {
-		return nil
-	}
-
-	// 重写列表
-	return r.rewriteConfigList(filtered)
-}
-
-// rewriteConfigList 重写全局配置列表
-func (r *ClientConfigRepository) rewriteConfigList(configs []*models.ClientConfig) error {
-	listStore, ok := r.storage.(interface {
-		SetList(key string, values []interface{}, ttl time.Duration) error
-	})
-	if !ok {
-		return coreerrors.New(coreerrors.CodeStorageError, "storage does not support SetList")
-	}
-
-	// 转换为 interface{} 切片
-	var values []interface{}
-	for _, config := range configs {
-		data, err := json.Marshal(config)
-		if err != nil {
-			continue
-		}
-		values = append(values, string(data))
-	}
-
-	return listStore.SetList(constants.KeyPrefixPersistClientsList, values, 0)
-}
-
 // ListConfigs 列出所有客户端配置
+//
+// 实现说明：
+// 使用 QueryByPrefix 直接从数据库扫描所有配置，不依赖全局列表
+// 这样可以避免数据一致性问题和重复/遗漏问题
 //
 // 返回：
 //   - []*models.ClientConfig: 配置列表
 //   - error: 错误信息
 func (r *ClientConfigRepository) ListConfigs() ([]*models.ClientConfig, error) {
-	return r.List(constants.KeyPrefixPersistClientsList)
+	// 使用 QueryByPrefix 直接从数据库查询，不再依赖全局列表
+	queryStore, ok := r.storage.(interface {
+		QueryByPrefix(prefix string, limit int) (map[string]string, error)
+	})
+	if !ok {
+		return nil, coreerrors.New(coreerrors.CodeStorageError, "storage does not support QueryByPrefix")
+	}
+
+	// 查询所有客户端配置
+	items, err := queryStore.QueryByPrefix(constants.KeyPrefixPersistClientConfig, 0)
+	if err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to query configs by prefix")
+	}
+
+	// 反序列化结果
+	configs := make([]*models.ClientConfig, 0, len(items))
+	for _, jsonValue := range items {
+		var config models.ClientConfig
+		if err := json.Unmarshal([]byte(jsonValue), &config); err != nil {
+			// 跳过无法解析的配置，记录但不中断
+			continue
+		}
+		configs = append(configs, &config)
+	}
+
+	return configs, nil
 }
 
 // ListUserConfigs 列出用户的所有客户端配置
@@ -295,13 +255,11 @@ func (r *ClientConfigRepository) ListUserConfigs(userID string) ([]*models.Clien
 
 // AddConfigToList 将配置添加到全局列表
 //
-// 参数：
-//   - config: 客户端配置
-//
-// 返回：
-//   - error: 错误信息
+// Deprecated: 不再需要手动维护全局列表，ListConfigs 使用 QueryByPrefix 直接查询数据库
+// 此方法保留仅为向后兼容，实际为空操作
 func (r *ClientConfigRepository) AddConfigToList(config *models.ClientConfig) error {
-	return r.AddToList(config, constants.KeyPrefixPersistClientsList)
+	// 空操作：不再维护全局列表
+	return nil
 }
 
 // ExistsConfig 检查配置是否存在

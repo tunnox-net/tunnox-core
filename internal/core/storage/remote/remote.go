@@ -408,6 +408,37 @@ func (r *Storage) QueryByField(keyPrefix string, fieldName string, fieldValue in
 	return keys, nil
 }
 
+// QueryByPrefix 按前缀查询所有键值对
+func (r *Storage) QueryByPrefix(prefix string, limit int) (map[string]string, error) {
+	result := make(map[string]string)
+
+	err := r.withRetry(func() error {
+		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
+		defer cancel()
+
+		resp, err := r.client.QueryByPrefix(ctx, &storagepb.QueryByPrefixRequest{
+			Prefix: prefix,
+			Limit:  int32(limit),
+		})
+		if err != nil {
+			return err
+		}
+		if resp.Error != "" {
+			return fmt.Errorf("query by prefix failed: %s", resp.Error)
+		}
+
+		for _, item := range resp.Items {
+			result[item.Key] = string(item.Value)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // Ping 健康检查
 func (r *Storage) Ping() error {
 	return r.withRetry(func() error {

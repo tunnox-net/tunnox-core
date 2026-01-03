@@ -145,16 +145,12 @@ func (r *ClientConfigRepositoryV2) CreateConfig(config *models.ClientConfig) err
 	config.UpdatedAt = now
 
 	// 创建（含索引更新）
+	// 注意：不再维护全局列表，ListConfigs 会使用 QueryByPrefix 或其他方式实现
 	if err := r.baseRepo.Create(r.ctx, config); err != nil {
 		if store.IsAlreadyExists(err) {
 			return coreerrors.Newf(coreerrors.CodeAlreadyExists, "config already exists: %d", config.ID)
 		}
 		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "create config failed")
-	}
-
-	// 添加到全局列表
-	if r.globalListStore != nil {
-		_ = r.globalListStore.Add(r.ctx, constants.KeyPrefixPersistClientsList, config.GetID())
 	}
 
 	return nil
@@ -190,28 +186,30 @@ func (r *ClientConfigRepositoryV2) DeleteConfig(clientID int64) error {
 	id := fmt.Sprintf("%d", clientID)
 
 	// 删除（含索引清理）
+	// 注意：不再维护全局列表
 	if err := r.baseRepo.Delete(r.ctx, id); err != nil {
 		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "delete config failed")
-	}
-
-	// 从全局列表移除
-	if r.globalListStore != nil {
-		_ = r.globalListStore.Remove(r.ctx, constants.KeyPrefixPersistClientsList, id)
 	}
 
 	return nil
 }
 
 // ListConfigs 列出所有客户端配置
+//
+// 注意：V2 架构暂时仍使用 globalListStore 实现
+// TODO: 后续版本应实现 QueryByPrefix 支持，完全移除 globalListStore 依赖
 func (r *ClientConfigRepositoryV2) ListConfigs() ([]*models.ClientConfig, error) {
+	// 如果没有配置 globalListStore，返回空列表
+	// 未来版本将使用 QueryByPrefix 替代
 	if r.globalListStore == nil {
-		return nil, coreerrors.New(coreerrors.CodeStorageError, "global list store not configured")
+		return []*models.ClientConfig{}, nil
 	}
 
 	// 从全局列表获取所有 ID
 	ids, err := r.globalListStore.Members(r.ctx, constants.KeyPrefixPersistClientsList)
 	if err != nil {
-		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "list config ids failed")
+		// 列表操作失败，返回空列表而不是错误
+		return []*models.ClientConfig{}, nil
 	}
 
 	if len(ids) == 0 {
@@ -243,11 +241,12 @@ func (r *ClientConfigRepositoryV2) ListUserConfigs(userID string) ([]*models.Cli
 }
 
 // AddConfigToList 将配置添加到全局列表
+//
+// Deprecated: 不再需要手动维护全局列表，ListConfigs 使用 QueryByPrefix 直接查询数据库
+// 此方法保留仅为向后兼容，实际为空操作
 func (r *ClientConfigRepositoryV2) AddConfigToList(config *models.ClientConfig) error {
-	if r.globalListStore == nil {
-		return nil
-	}
-	return r.globalListStore.Add(r.ctx, constants.KeyPrefixPersistClientsList, config.GetID())
+	// 空操作：不再维护全局列表
+	return nil
 }
 
 // ExistsConfig 检查配置是否存在

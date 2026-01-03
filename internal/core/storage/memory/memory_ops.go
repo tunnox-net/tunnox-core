@@ -1,7 +1,10 @@
 package memory
 
 import (
+	"encoding/json"
+	"strings"
 	"time"
+
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/core/storage/types"
 )
@@ -452,4 +455,54 @@ func (m *Storage) Unwatch(key string) error {
 func (m *Storage) Close() error {
 	m.Dispose.Close()
 	return nil
+}
+
+// QueryByPrefix 按前缀查询所有键值对
+// prefix: 键前缀（如 "tunnox:persist:client:config:"）
+// limit: 返回结果数量限制，0 表示无限制
+// 返回：map[key]jsonValue，key 是完整键名，jsonValue 是 JSON 序列化的值
+func (m *Storage) QueryByPrefix(prefix string, limit int) (map[string]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.data == nil {
+		return make(map[string]string), nil
+	}
+
+	result := make(map[string]string)
+	count := 0
+	now := time.Now()
+
+	for key, item := range m.data {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+
+		// 检查是否过期
+		if !item.Expiration.IsZero() && now.After(item.Expiration) {
+			continue
+		}
+
+		// 序列化值为 JSON 字符串
+		var jsonStr string
+		if str, ok := item.Value.(string); ok {
+			jsonStr = str
+		} else {
+			jsonBytes, err := json.Marshal(item.Value)
+			if err != nil {
+				continue
+			}
+			jsonStr = string(jsonBytes)
+		}
+
+		result[key] = jsonStr
+		count++
+
+		// 检查限制
+		if limit > 0 && count >= limit {
+			break
+		}
+	}
+
+	return result, nil
 }
