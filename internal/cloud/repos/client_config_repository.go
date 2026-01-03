@@ -215,14 +215,28 @@ func (r *ClientConfigRepository) ListConfigs() ([]*models.ClientConfig, error) {
 	}
 
 	// 反序列化结果
+	// 注意：由于历史原因，数据库中的值可能是双重 JSON 编码的
+	// 即：外层是 JSON 字符串，内层才是实际的 JSON 对象
 	configs := make([]*models.ClientConfig, 0, len(items))
 	parseErrors := 0
 	for key, jsonValue := range items {
 		var config models.ClientConfig
+
+		// 尝试直接解析
 		if err := json.Unmarshal([]byte(jsonValue), &config); err != nil {
-			// 跳过无法解析的配置，记录错误
+			// 如果失败，尝试先解析外层字符串（处理双重编码）
+			var innerJSON string
+			if err2 := json.Unmarshal([]byte(jsonValue), &innerJSON); err2 == nil {
+				// 成功解析为字符串，再解析内层 JSON
+				if err3 := json.Unmarshal([]byte(innerJSON), &config); err3 == nil {
+					// 双重编码解析成功
+					configs = append(configs, &config)
+					continue
+				}
+			}
+
+			// 两种方式都失败了，记录错误
 			parseErrors++
-			// 仅在首次错误时打印详细信息，避免日志泛滥
 			if parseErrors <= 3 {
 				maxLen := len(jsonValue)
 				if maxLen > 100 {
