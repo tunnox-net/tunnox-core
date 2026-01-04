@@ -265,6 +265,12 @@ func (s *SessionManager) handleHeartbeat(connPacket *types.StreamPacket) error {
 	// 更新 Control Connection 活跃时间 - 使用 clientRegistry
 	if controlConn := s.clientRegistry.GetByConnID(connPacket.ConnectionID); controlConn != nil {
 		controlConn.UpdateActivity()
+
+		// 刷新 Redis 中 ClientRuntimeState 的 TTL
+		// 这是关键：心跳需要同时刷新 Redis 状态，否则 90 秒后状态过期，客户端显示离线
+		if s.cloudControl != nil && controlConn.ClientID > 0 {
+			s.cloudControl.TouchClient(controlConn.ClientID)
+		}
 	}
 
 	corelog.Debugf("Heartbeat received from connection: %s", connPacket.ConnectionID)
