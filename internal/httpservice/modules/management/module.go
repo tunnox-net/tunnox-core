@@ -12,6 +12,7 @@ import (
 
 	"tunnox-core/internal/cloud/managers"
 	"tunnox-core/internal/cloud/services"
+	"tunnox-core/internal/cloud/services/quota"
 	"tunnox-core/internal/core/dispose"
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
@@ -40,6 +41,9 @@ type ManagementModule struct {
 
 	// 认证中间件
 	authMiddleware mux.MiddlewareFunc
+
+	// 配额检查器（云服务模式启用）
+	quotaChecker quota.QuotaChecker
 }
 
 // NewManagementModule 创建管理 API 模块
@@ -77,6 +81,12 @@ func (m *ManagementModule) SetDependencies(deps *httpservice.ModuleDependencies)
 	}
 }
 
+// SetQuotaChecker 设置配额检查器
+// 在云服务模式下调用，用于创建映射时检查配额
+func (m *ManagementModule) SetQuotaChecker(checker quota.QuotaChecker) {
+	m.quotaChecker = checker
+}
+
 // RegisterRoutes 注册路由
 func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 	// API 基础路径
@@ -95,6 +105,7 @@ func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 	api.HandleFunc("/users", m.handleListUsers).Methods("GET")
 	api.HandleFunc("/users/{user_id}/clients", m.handleListUserClients).Methods("GET")
 	api.HandleFunc("/users/{user_id}/mappings", m.handleListUserMappings).Methods("GET")
+	api.HandleFunc("/users/{user_id}/quota", m.handleGetUserQuota).Methods("GET")
 
 	// 客户端管理路由
 	api.HandleFunc("/clients", m.handleListAllClients).Methods("GET")

@@ -239,3 +239,64 @@ func (m *ManagementModule) handleListUserMappings(w http.ResponseWriter, r *http
 		"mappings": mappings,
 	})
 }
+
+// UserQuotaResponse 用户配额响应
+type UserQuotaResponse struct {
+	Quota *models.UserQuota `json:"quota"` // 配额限制
+	Usage *QuotaUsage       `json:"usage"` // 当前使用量
+}
+
+// QuotaUsage 配额使用量
+type QuotaUsage struct {
+	TotalMappings  int   `json:"total_mappings"`  // 总隧道数
+	HTTPMappings   int   `json:"http_mappings"`   // HTTP 隧道数
+	ActiveConns    int   `json:"active_conns"`    // 活跃连接数
+	MonthlyTraffic int64 `json:"monthly_traffic"` // 当月流量
+}
+
+// handleGetUserQuota 获取用户配额和使用量
+func (m *ManagementModule) handleGetUserQuota(w http.ResponseWriter, r *http.Request) {
+	userID, err := getStringPathVar(r, "user_id")
+	if err != nil {
+		m.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// 配额检查器未配置时返回无限配额
+	if m.quotaChecker == nil {
+		respondJSONTyped(w, http.StatusOK, UserQuotaResponse{
+			Quota: &models.UserQuota{
+				MaxMappings:    0, // 0 表示无限制
+				MaxHTTPDomains: 0,
+			},
+			Usage: &QuotaUsage{},
+		})
+		return
+	}
+
+	// 获取配额
+	quota, err := m.quotaChecker.GetUserQuota(userID)
+	if err != nil {
+		corelog.Errorf("ManagementModule: failed to get user quota: %v", err)
+		m.respondError(w, http.StatusInternalServerError, "failed to get quota")
+		return
+	}
+
+	// 获取使用量
+	usage, err := m.quotaChecker.GetUserUsage(userID)
+	if err != nil {
+		corelog.Errorf("ManagementModule: failed to get user usage: %v", err)
+		m.respondError(w, http.StatusInternalServerError, "failed to get usage")
+		return
+	}
+
+	respondJSONTyped(w, http.StatusOK, UserQuotaResponse{
+		Quota: quota,
+		Usage: &QuotaUsage{
+			TotalMappings:  usage.TotalMappings,
+			HTTPMappings:   usage.HTTPMappings,
+			ActiveConns:    usage.ActiveConns,
+			MonthlyTraffic: usage.MonthlyTraffic,
+		},
+	})
+}

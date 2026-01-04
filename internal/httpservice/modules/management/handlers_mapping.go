@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"tunnox-core/internal/cloud/models"
+	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/httpservice"
 )
@@ -22,7 +23,9 @@ type CreateMappingRequest struct {
 	HTTPBaseDomain string `json:"http_base_domain,omitempty"`
 
 	// 可选字段
-	Description string `json:"description,omitempty"`
+	Name        string `json:"name,omitempty"`        // 隧道名称
+	Description string `json:"description,omitempty"` // 隧道描述
+	UserID      string `json:"user_id,omitempty"`     // 用户ID（用于配额检查）
 }
 
 // handleListAllMappings 列出所有映射
@@ -57,6 +60,19 @@ func (m *ManagementModule) handleCreateMapping(w http.ResponseWriter, r *http.Re
 
 	protocol := models.Protocol(req.Protocol)
 
+	// 配额检查（云服务模式）
+	if m.quotaChecker != nil && req.UserID != "" {
+		if err := m.quotaChecker.CheckMappingQuota(req.UserID, protocol); err != nil {
+			if coreerrors.IsCode(err, coreerrors.CodeQuotaExceeded) {
+				m.respondError(w, http.StatusForbidden, err.Error())
+			} else {
+				corelog.Warnf("ManagementModule: quota check failed: %v", err)
+				m.respondError(w, http.StatusInternalServerError, "quota check failed")
+			}
+			return
+		}
+	}
+
 	// 构建 PortMapping
 	mapping := &models.PortMapping{
 		ListenClientID: req.ListenClientID,
@@ -67,6 +83,8 @@ func (m *ManagementModule) handleCreateMapping(w http.ResponseWriter, r *http.Re
 		TargetPort:     req.TargetPort,
 		HTTPSubdomain:  req.HTTPSubdomain,
 		HTTPBaseDomain: req.HTTPBaseDomain,
+		Name:           req.Name,
+		UserID:         req.UserID,
 		Description:    req.Description,
 		Status:         models.MappingStatusActive,
 	}

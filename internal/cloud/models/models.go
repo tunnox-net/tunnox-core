@@ -103,6 +103,10 @@ type UserQuota struct {
 	MonthlyTrafficLimit int64 `json:"monthly_traffic_limit"` // 月流量限制(字节)，0表示无限制
 	MonthlyTrafficUsed  int64 `json:"monthly_traffic_used"`  // 当月已使用流量(字节)
 	MonthlyResetDay     int   `json:"monthly_reset_day"`     // 每月重置日(1-28)，0表示每月1日
+
+	// 隧道配额（用于商业化）
+	MaxMappings    int `json:"max_mappings"`     // 最大隧道数，0表示无限制
+	MaxHTTPDomains int `json:"max_http_domains"` // 最大HTTP域名数，0表示无限制
 }
 
 // Client类型定义已移至 client.go, client_config.go, client_state.go, client_token.go
@@ -128,6 +132,7 @@ type PortMapping struct {
 	// 基础信息
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	ID     string `json:"id"`                // 映射ID
+	Name   string `json:"name,omitempty"`    // 隧道名称（便于识别，可选）
 	UserID string `json:"user_id,omitempty"` // 所属用户ID（匿名映射可能为空）
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
