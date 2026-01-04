@@ -1,6 +1,7 @@
 package hybrid
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -23,9 +24,20 @@ func (h *Storage) GetList(key string) ([]interface{}, error) {
 		return nil, err
 	}
 
+	// 如果已经是 []interface{}，直接返回（来自本地缓存）
 	if list, ok := value.([]interface{}); ok {
 		return list, nil
 	}
+
+	// 如果是字符串（来自持久化存储的 JSON），需要解析
+	if strValue, ok := value.(string); ok {
+		var list []interface{}
+		if err := json.Unmarshal([]byte(strValue), &list); err != nil {
+			return nil, fmt.Errorf("%w: failed to unmarshal list from JSON: %v", types.ErrInvalidType, err)
+		}
+		return list, nil
+	}
+
 	return nil, types.ErrInvalidType
 }
 
