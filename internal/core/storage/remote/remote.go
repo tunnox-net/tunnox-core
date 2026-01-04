@@ -242,8 +242,9 @@ func (r *Storage) Set(key string, value interface{}) error {
 }
 
 // Get 获取值
+// 注意：返回原始字符串（与 Set 对称），调用方自行反序列化
 func (r *Storage) Get(key string) (interface{}, error) {
-	var result interface{}
+	var result string
 
 	err := r.withRetry(func() error {
 		ctx, cancel := context.WithTimeout(r.ctx, r.config.Timeout)
@@ -260,9 +261,8 @@ func (r *Storage) Get(key string) (interface{}, error) {
 			return types.ErrKeyNotFound
 		}
 
-		if err := json.Unmarshal(resp.Value, &result); err != nil {
-			return fmt.Errorf("failed to unmarshal value: %w", err)
-		}
+		// 直接返回字符串，与 Set 对称
+		result = string(resp.Value)
 		return nil
 	})
 
@@ -341,6 +341,7 @@ func (r *Storage) BatchSet(items map[string]interface{}) error {
 }
 
 // BatchGet 批量获取
+// 注意：返回原始字符串（与 Set 对称），调用方自行反序列化
 func (r *Storage) BatchGet(keys []string) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 
@@ -357,12 +358,8 @@ func (r *Storage) BatchGet(keys []string) (map[string]interface{}, error) {
 		}
 
 		for _, item := range resp.Items {
-			var value interface{}
-			if err := json.Unmarshal(item.Value, &value); err != nil {
-				dispose.Warnf("RemoteStorage: failed to unmarshal value for key %s: %v", item.Key, err)
-				continue
-			}
-			result[item.Key] = value
+			// 直接返回字符串，与 Set 对称
+			result[item.Key] = string(item.Value)
 		}
 		return nil
 	})
