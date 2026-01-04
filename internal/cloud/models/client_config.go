@@ -20,15 +20,16 @@ import (
 // - 配置信息：Config（带宽、端口等）
 // - 时间戳：CreatedAt, UpdatedAt
 type ClientConfig struct {
-	ID        int64                `json:"id"`         // 客户端ID（8位数字）
-	UserID    string               `json:"user_id"`    // 所属用户ID（匿名用户为空）
-	Name      string               `json:"name"`       // 客户端名称
-	AuthCode  string               `json:"auth_code"`  // 认证码
-	SecretKey string               `json:"secret_key"` // 密钥
-	Type      ClientType           `json:"type"`       // 客户端类型（registered/anonymous）
-	Config    configs.ClientConfig `json:"config"`     // 客户端配置
-	CreatedAt time.Time            `json:"created_at"` // 创建时间
-	UpdatedAt time.Time            `json:"updated_at"` // 更新时间
+	ID               int64                `json:"id"`                          // 客户端ID（8位数字）
+	UserID           string               `json:"user_id"`                     // 所属用户ID（匿名用户为空）
+	Name             string               `json:"name"`                        // 客户端名称
+	AuthCode         string               `json:"auth_code"`                   // 认证码
+	SecretKey        string               `json:"secret_key"`                  // 密钥
+	Type             ClientType           `json:"type"`                        // 客户端类型（registered/anonymous）
+	Config           configs.ClientConfig `json:"config"`                      // 客户端配置
+	FirstConnectedAt *time.Time           `json:"first_connected_at,omitempty"` // 首次连接时间（激活时间）
+	CreatedAt        time.Time            `json:"created_at"`                  // 创建时间
+	UpdatedAt        time.Time            `json:"updated_at"`                  // 更新时间
 }
 
 // GetID 实现 Entity 接口

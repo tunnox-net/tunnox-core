@@ -21,15 +21,16 @@ import (
 // - Token部分：从ClientToken
 type Client struct {
 	// ========== 配置部分（持久化） ==========
-	ID        int64                `json:"id"`
-	UserID    string               `json:"user_id"`
-	Name      string               `json:"name"`
-	AuthCode  string               `json:"auth_code"`
-	SecretKey string               `json:"secret_key"`
-	Type      ClientType           `json:"type"`
-	Config    configs.ClientConfig `json:"config"`
-	CreatedAt time.Time            `json:"created_at"`
-	UpdatedAt time.Time            `json:"updated_at"`
+	ID               int64                `json:"id"`
+	UserID           string               `json:"user_id"`
+	Name             string               `json:"name"`
+	AuthCode         string               `json:"auth_code"`
+	SecretKey        string               `json:"secret_key"`
+	Type             ClientType           `json:"type"`
+	Config           configs.ClientConfig `json:"config"`
+	FirstConnectedAt *time.Time           `json:"first_connected_at,omitempty"` // 首次连接时间（激活时间）
+	CreatedAt        time.Time            `json:"created_at"`
+	UpdatedAt        time.Time            `json:"updated_at"`
 
 	// ========== 状态部分（运行时） ==========
 	NodeID    string       `json:"node_id"`
@@ -61,15 +62,16 @@ func FromConfigAndState(cfg *ClientConfig, state *ClientRuntimeState, token *Cli
 
 	client := &Client{
 		// 配置部分（来自ClientConfig）
-		ID:        cfg.ID,
-		UserID:    cfg.UserID,
-		Name:      cfg.Name,
-		AuthCode:  cfg.AuthCode,
-		SecretKey: cfg.SecretKey,
-		Type:      cfg.Type,
-		Config:    cfg.Config,
-		CreatedAt: cfg.CreatedAt,
-		UpdatedAt: cfg.UpdatedAt,
+		ID:               cfg.ID,
+		UserID:           cfg.UserID,
+		Name:             cfg.Name,
+		AuthCode:         cfg.AuthCode,
+		SecretKey:        cfg.SecretKey,
+		Type:             cfg.Type,
+		Config:           cfg.Config,
+		FirstConnectedAt: cfg.FirstConnectedAt,
+		CreatedAt:        cfg.CreatedAt,
+		UpdatedAt:        cfg.UpdatedAt,
 
 		// 默认离线状态
 		Status: ClientStatusOffline,

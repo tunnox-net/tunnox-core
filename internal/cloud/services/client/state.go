@@ -130,6 +130,20 @@ func (s *Service) ConnectClient(clientID int64, nodeID, connID, ipAddress, proto
 		s.baseService.LogWarning("add to node clients", err)
 	}
 
+	// ✅ 首次连接检测：更新 FirstConnectedAt（激活时间）
+	if s.configRepo != nil {
+		cfg, err := s.configRepo.GetConfig(clientID)
+		if err == nil && cfg != nil && cfg.FirstConnectedAt == nil {
+			now := time.Now()
+			cfg.FirstConnectedAt = &now
+			if err := s.configRepo.UpdateConfig(cfg); err != nil {
+				s.baseService.LogWarning("update first connected at", err, random.Int64ToString(clientID))
+			} else {
+				corelog.Infof("Client %d activated (first connected)", clientID)
+			}
+		}
+	}
+
 	// ✅ 兼容性：同步到旧Repository
 	if s.clientRepo != nil {
 		if err := s.clientRepo.UpdateClientStatus(random.Int64ToString(clientID), models.ClientStatusOnline, nodeID); err != nil {
