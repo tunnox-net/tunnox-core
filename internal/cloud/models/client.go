@@ -36,6 +36,7 @@ type Client struct {
 	NodeID    string       `json:"node_id"`
 	Status    ClientStatus `json:"status"`
 	IPAddress string       `json:"ip_address"`
+	IPRegion  string       `json:"ip_region,omitempty"` // IP 所在地区（GeoIP 解析）
 	LastSeen  *time.Time   `json:"last_seen,omitempty"`
 	Version   string       `json:"version,omitempty"`
 

@@ -6,7 +6,33 @@ import (
 	"tunnox-core/internal/cloud/models"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/httpservice"
+	"tunnox-core/internal/utils"
 )
+
+// enrichClientsWithIPRegion 为客户端列表填充 IP 地区信息
+func enrichClientsWithIPRegion(clients []*models.Client) {
+	if len(clients) == 0 {
+		return
+	}
+
+	// 收集所有 IP 地址
+	ips := make([]string, 0, len(clients))
+	for _, c := range clients {
+		if c.IPAddress != "" {
+			ips = append(ips, c.IPAddress)
+		}
+	}
+
+	// 批量查询 IP 地区
+	regions := utils.LookupIPRegionBatch(ips)
+
+	// 填充到客户端
+	for _, c := range clients {
+		if c.IPAddress != "" {
+			c.IPRegion = regions[c.IPAddress]
+		}
+	}
+}
 
 // handleCreateUser 创建用户
 func (m *ManagementModule) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -178,6 +204,9 @@ func (m *ManagementModule) handleListUserClients(w http.ResponseWriter, r *http.
 		m.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	// 填充 IP 地区信息（GeoIP 解析）
+	enrichClientsWithIPRegion(clients)
 
 	// 包装成对象返回，符合 platform 期望的格式
 	respondJSONTyped(w, http.StatusOK, map[string]interface{}{
