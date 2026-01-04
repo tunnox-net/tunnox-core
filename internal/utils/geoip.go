@@ -17,7 +17,7 @@ type GeoIPResult struct {
 	Region   string `json:"regionName"`
 	City     string `json:"city"`
 	ISP      string `json:"isp"`
-	Success  bool   `json:"status"`
+	Status   string `json:"status"` // "success" or "fail"
 	ErrorMsg string `json:"message"`
 }
 
@@ -88,7 +88,7 @@ func queryGeoIP(ip string) string {
 		return ""
 	}
 
-	if result.Success || result.ErrorMsg == "" {
+	if result.Status == "success" {
 		// 构建地区字符串
 		// 优先显示城市，没有城市显示地区，都没有显示国家
 		if result.City != "" {
