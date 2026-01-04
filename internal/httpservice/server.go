@@ -147,6 +147,9 @@ func (s *HTTPService) Start() error {
 		s.router.Use(bodySizeLimitMiddleware(s.config.MaxBodySize))
 	}
 
+	// 注册首页（防止防火墙因无响应而拉黑）
+	s.registerLandingPage()
+
 	// 注册健康检查端点（不需要认证）
 	s.registerHealthRoutes()
 
@@ -271,6 +274,41 @@ func (s *HTTPService) handleReady(w http.ResponseWriter, r *http.Request) {
 		Ready:  false,
 		Status: string(s.healthManager.GetStatus()),
 	})
+}
+
+// registerLandingPage 注册首页（防止防火墙因无响应而拉黑）
+func (s *HTTPService) registerLandingPage() {
+	s.router.HandleFunc("/", s.handleLandingPage).Methods("GET", "HEAD")
+}
+
+// handleLandingPage 返回简单的欢迎页面
+func (s *HTTPService) handleLandingPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Tunnox Gateway</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+               display: flex; justify-content: center; align-items: center;
+               min-height: 100vh; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .container { text-align: center; color: white; padding: 40px; }
+        h1 { font-size: 3em; margin-bottom: 10px; }
+        p { font-size: 1.2em; opacity: 0.9; }
+        .status { display: inline-block; width: 12px; height: 12px; background: #4ade80;
+                  border-radius: 50%; margin-right: 8px; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Tunnox</h1>
+        <p><span class="status"></span>Gateway Online</p>
+        <p style="font-size: 0.9em; opacity: 0.7; margin-top: 30px;">Secure Tunnel Service</p>
+    </div>
+</body>
+</html>`))
 }
 
 // logEndpoints 打印端点信息
