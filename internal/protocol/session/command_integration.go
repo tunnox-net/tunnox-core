@@ -124,6 +124,11 @@ func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) err
 		if connPacket.Packet.CommandPacket.CommandType == packet.SOCKS5TunnelRequestCmd {
 			return s.HandleSOCKS5TunnelRequest(connPacket)
 		}
+
+		// 特殊处理 Disconnect 命令（客户端主动断开通知）
+		if connPacket.Packet.CommandPacket.CommandType == packet.Disconnect {
+			return s.handleDisconnectCommand(connPacket)
+		}
 	}
 
 	// 优先使用 Command 执行器
@@ -286,5 +291,29 @@ func (s *SessionManager) handleHeartbeat(connPacket *types.StreamPacket) error {
 		}
 	}
 
+	return nil
+}
+
+// handleDisconnectCommand 处理客户端主动断开通知
+// 客户端在正常关闭时会发送此命令，服务端立即处理离线逻辑，避免等待心跳超时
+func (s *SessionManager) handleDisconnectCommand(connPacket *types.StreamPacket) error {
+	// 获取控制连接
+	controlConn := s.clientRegistry.GetByConnID(connPacket.ConnectionID)
+	if controlConn == nil {
+		corelog.Warnf("SessionManager: disconnect command from unknown connection: %s", connPacket.ConnectionID)
+		return nil
+	}
+
+	clientID := controlConn.ClientID
+	corelog.Infof("[SSE-TRACE] handleDisconnectCommand: client=%d, connID=%s, processing disconnect notification",
+		clientID, connPacket.ConnectionID)
+
+	// 立即调用 CloseConnection 处理离线逻辑（会触发 SSE 事件）
+	if err := s.CloseConnection(connPacket.ConnectionID); err != nil {
+		corelog.Errorf("[SSE-TRACE] handleDisconnectCommand: client=%d, CloseConnection failed: %v", clientID, err)
+		return err
+	}
+
+	corelog.Infof("[SSE-TRACE] handleDisconnectCommand: client=%d, disconnect processed successfully", clientID)
 	return nil
 }

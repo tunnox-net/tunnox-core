@@ -74,8 +74,10 @@ func FromConfigAndState(cfg *ClientConfig, state *ClientRuntimeState, token *Cli
 		CreatedAt:        cfg.CreatedAt,
 		UpdatedAt:        cfg.UpdatedAt,
 
-		// 默认离线状态
-		Status: ClientStatusOffline,
+		// 默认离线状态，使用 Config 中保存的最后 IP
+		Status:    ClientStatusOffline,
+		IPAddress: cfg.LastIPAddress,
+		IPRegion:  cfg.LastIPRegion,
 	}
 
 	// 填充状态（可能为空）

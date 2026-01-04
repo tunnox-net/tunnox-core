@@ -14,6 +14,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/core/dispose"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 
 	"github.com/google/uuid"
@@ -192,7 +193,43 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 // Stop 停止客户端
 func (c *TunnoxClient) Stop() {
 	corelog.Infof("Client: stopping...")
+
+	// 发送断开通知给服务器（让服务器立即知道客户端下线，而不是等待心跳超时）
+	c.sendDisconnectNotification()
+
 	c.Close()
+}
+
+// sendDisconnectNotification 发送断开通知给服务器
+// 这是一个 fire-and-forget 操作，不等待响应
+func (c *TunnoxClient) sendDisconnectNotification() {
+	c.mu.RLock()
+	controlStream := c.controlStream
+	c.mu.RUnlock()
+
+	if controlStream == nil {
+		corelog.Debugf("Client: no control stream, skip disconnect notification")
+		return
+	}
+
+	// 构建断开通知命令
+	cmdPkt := &packet.CommandPacket{
+		CommandType: packet.Disconnect,
+		CommandId:   "disconnect-" + c.instanceID[:8],
+		CommandBody: `{"reason":"client_shutdown"}`,
+	}
+
+	transferPkt := &packet.TransferPacket{
+		PacketType:    packet.JsonCommand,
+		CommandPacket: cmdPkt,
+	}
+
+	// 发送断开通知（不等待响应）
+	if _, err := controlStream.WritePacket(transferPkt, true, 0); err != nil {
+		corelog.Warnf("Client: failed to send disconnect notification: %v", err)
+	} else {
+		corelog.Infof("Client: disconnect notification sent to server")
+	}
 }
 
 // WasKicked 检查是否因被踢下线而断开连接

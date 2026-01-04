@@ -191,6 +191,21 @@ func (s *Service) DisconnectClient(clientID int64) error {
 		return nil // 已经离线，无需处理
 	}
 
+	// ✅ 保存最后的 IP 信息到持久化配置（离线后仍可查看）
+	if s.configRepo != nil && state.IPAddress != "" {
+		cfg, err := s.configRepo.GetConfig(clientID)
+		if err == nil && cfg != nil {
+			cfg.LastIPAddress = state.IPAddress
+			// IPRegion 需要从其他地方获取，这里暂时不设置
+			// 因为 ClientRuntimeState 没有 IPRegion 字段
+			if err := s.configRepo.UpdateConfig(cfg); err != nil {
+				s.baseService.LogWarning("save last IP to config", err, random.Int64ToString(clientID))
+			} else {
+				corelog.Debugf("Client %d: saved last IP %s to config", clientID, state.IPAddress)
+			}
+		}
+	}
+
 	// 从节点列表移除
 	if state.NodeID != "" {
 		if err := s.stateRepo.RemoveFromNodeClients(state.NodeID, clientID); err != nil {
