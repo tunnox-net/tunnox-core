@@ -255,12 +255,14 @@ func (s *Service) publishClientOnlineEvent(clientID int64, nodeID, ipAddress str
 // publishClientOfflineEvent 发布客户端下线事件
 func (s *Service) publishClientOfflineEvent(clientID int64) {
 	if s.broker == nil {
+		corelog.Warnf("[SSE-TRACE] publishClientOfflineEvent: broker is nil, client=%d", clientID)
 		return
 	}
 
+	ts := time.Now()
 	msg := broker.ClientOfflineMessage{
 		ClientID:  clientID,
-		Timestamp: time.Now().Unix(),
+		Timestamp: ts.Unix(),
 	}
 
 	data, err := json.Marshal(msg)
@@ -269,10 +271,14 @@ func (s *Service) publishClientOfflineEvent(clientID int64) {
 		return
 	}
 
+	corelog.Infof("[SSE-TRACE] publishClientOfflineEvent: client=%d, ts=%d, publishing...",
+		clientID, ts.UnixMilli())
+
 	if err := s.broker.Publish(s.Ctx(), broker.TopicClientOffline, data); err != nil {
-		corelog.Warnf("Failed to publish client offline event for client %d: %v", clientID, err)
+		corelog.Warnf("[SSE-TRACE] publishClientOfflineEvent: FAILED client=%d, err=%v", clientID, err)
 	} else {
-		corelog.Debugf("Published client offline event: client_id=%d", clientID)
+		corelog.Infof("[SSE-TRACE] publishClientOfflineEvent: DONE client=%d, elapsed=%dms",
+			clientID, time.Since(ts).Milliseconds())
 	}
 }
 

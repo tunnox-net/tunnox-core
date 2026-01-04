@@ -26,7 +26,15 @@ func (m *ManagementModule) handleListAllClients(w http.ResponseWriter, r *http.R
 	// 填充 IP 地区信息（GeoIP 解析）
 	enrichClientsWithIPRegion(clients)
 
-	respondJSONTyped(w, http.StatusOK, clients)
+	// 确保返回空数组而非 nil
+	if clients == nil {
+		clients = []*models.Client{}
+	}
+
+	// 包装成对象返回，符合 platform 期望的格式
+	respondJSONTyped(w, http.StatusOK, map[string]interface{}{
+		"clients": clients,
+	})
 }
 
 // handleCreateClient 创建客户端
@@ -161,13 +169,16 @@ func (m *ManagementModule) handleDisconnectClient(w http.ResponseWriter, r *http
 		return
 	}
 
-	// 更新客户端状态为离线
-	if err := m.cloudControl.UpdateClientStatus(clientID, models.ClientStatusOffline, ""); err != nil {
+	corelog.Infof("[SSE-TRACE] handleDisconnectClient: client=%d, start", clientID)
+
+	// 使用 DisconnectClient 方法，确保触发 SSE 下线事件
+	if err := m.cloudControl.DisconnectClient(clientID); err != nil {
 		corelog.Errorf("ManagementModule: failed to disconnect client %d: %v", clientID, err)
 		m.respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
+	corelog.Infof("[SSE-TRACE] handleDisconnectClient: client=%d, done", clientID)
 	respondJSONTyped(w, http.StatusOK, httpservice.MessageResponse{Message: "client disconnected"})
 }
 
@@ -191,7 +202,15 @@ func (m *ManagementModule) handleListClientMappings(w http.ResponseWriter, r *ht
 		return
 	}
 
-	respondJSONTyped(w, http.StatusOK, mappings)
+	// 确保返回空数组而非 nil
+	if mappings == nil {
+		mappings = []*models.PortMapping{}
+	}
+
+	// 包装成对象返回，符合 platform 期望的格式
+	respondJSONTyped(w, http.StatusOK, map[string]interface{}{
+		"mappings": mappings,
+	})
 }
 
 // handleBindClient 绑定客户端到用户

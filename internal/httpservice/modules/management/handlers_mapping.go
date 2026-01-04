@@ -42,7 +42,15 @@ func (m *ManagementModule) handleListAllMappings(w http.ResponseWriter, r *http.
 		return
 	}
 
-	respondJSONTyped(w, http.StatusOK, mappings)
+	// 确保返回空数组而非 nil
+	if mappings == nil {
+		mappings = []*models.PortMapping{}
+	}
+
+	// 包装成对象返回，符合 platform 期望的格式
+	respondJSONTyped(w, http.StatusOK, map[string]interface{}{
+		"mappings": mappings,
+	})
 }
 
 // handleCreateMapping 创建映射

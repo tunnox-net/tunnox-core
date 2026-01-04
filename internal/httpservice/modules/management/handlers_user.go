@@ -182,7 +182,15 @@ func (m *ManagementModule) handleListUsers(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	respondJSONTyped(w, http.StatusOK, users)
+	// 确保返回空数组而非 nil
+	if users == nil {
+		users = []*models.User{}
+	}
+
+	// 包装成对象返回，符合 platform 期望的格式
+	respondJSONTyped(w, http.StatusOK, map[string]interface{}{
+		"users": users,
+	})
 }
 
 // handleListUserClients 列出用户的客户端
