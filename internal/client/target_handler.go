@@ -54,7 +54,7 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 		go c.handleTCPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
 	case "udp":
 		go c.handleUDPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
-	case "socks5":
+	case "socks5", "socks":
 		go c.handleSOCKS5TargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
 	default:
 		corelog.Errorf("Client: unsupported protocol: %s", protocol)

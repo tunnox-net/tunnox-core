@@ -17,8 +17,9 @@ func CreateAdapter(protocol string, config config.MappingConfig, parentCtx conte
 	case "udp":
 		return NewUDPMappingAdapter(), nil
 
-	case "socks5":
+	case "socks5", "socks":
 		// SOCKS5凭据从配置读取（如果需要）
+		// 兼容服务端发送的 "socks" 和客户端内部使用的 "socks5"
 		credentials := make(map[string]string)
 		// 后续可在此从 config 中读取 SOCKS5 认证信息
 		return NewSOCKS5MappingAdapter(credentials), nil

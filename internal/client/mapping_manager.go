@@ -34,8 +34,8 @@ func (c *TunnoxClient) handleConfigUpdate(configBody string) {
 			i, mappingConfig.MappingID, mappingConfig.Protocol, mappingConfig.LocalPort)
 		newMappingIDs[mappingConfig.MappingID] = true
 
-		// SOCKS5 映射由 SOCKS5Manager 处理
-		if mappingConfig.Protocol == "socks5" && mappingConfig.LocalPort > 0 {
+		// SOCKS5 映射由 SOCKS5Manager 处理（兼容服务端发送的 "socks" 和 "socks5"）
+		if isSOCKS5Protocol(mappingConfig.Protocol) && mappingConfig.LocalPort > 0 {
 			newSOCKS5MappingIDs[mappingConfig.MappingID] = true
 			if err := c.addOrUpdateSOCKS5Mapping(mappingConfig); err != nil {
 				corelog.Warnf("Client: failed to add SOCKS5 mapping %s: %v", mappingConfig.MappingID, err)
@@ -129,7 +129,7 @@ func (c *TunnoxClient) addOrUpdateMapping(mappingCfg clientconfig.MappingConfig)
 	}
 
 	// SOCKS5 映射由 SOCKS5Manager 处理，不在这里创建
-	if protocol == "socks5" {
+	if isSOCKS5Protocol(protocol) {
 		return nil
 	}
 
@@ -177,6 +177,12 @@ func isMappingConfigEqual(a, b clientconfig.MappingConfig) bool {
 		a.EnableEncryption == b.EnableEncryption &&
 		a.EncryptionMethod == b.EncryptionMethod &&
 		a.EncryptionKey == b.EncryptionKey
+}
+
+// isSOCKS5Protocol 判断是否为 SOCKS5 协议
+// 兼容服务端使用的 "socks" 和客户端使用的 "socks5"
+func isSOCKS5Protocol(protocol string) bool {
+	return protocol == "socks5" || protocol == "socks"
 }
 
 // RemoveMapping 移除映射
