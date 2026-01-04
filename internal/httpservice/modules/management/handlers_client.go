@@ -23,6 +23,9 @@ func (m *ManagementModule) handleListAllClients(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// 填充 IP 地区信息（GeoIP 解析）
+	enrichClientsWithIPRegion(clients)
+
 	respondJSONTyped(w, http.StatusOK, clients)
 }
 
