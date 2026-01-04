@@ -212,10 +212,25 @@ func (s *portMappingService) GetUserPortMappings(userID string) ([]*models.PortM
 
 // ListPortMappings 列出端口映射
 func (s *portMappingService) ListPortMappings(mappingType models.MappingType) ([]*models.PortMapping, error) {
-	// 暂时返回空列表，因为PortMappingRepo没有按类型列表的方法
-	// 这里预留：可根据类型过滤端口映射
-	corelog.Warnf("ListPortMappings by type not implemented yet")
-	return []*models.PortMapping{}, nil
+	// 获取所有映射
+	allMappings, err := s.mappingRepo.ListAllMappings()
+	if err != nil {
+		return nil, s.baseService.WrapError(err, "list all port mappings")
+	}
+
+	// 如果未指定类型，返回所有映射
+	if mappingType == "" {
+		return allMappings, nil
+	}
+
+	// 按类型过滤
+	var filtered []*models.PortMapping
+	for _, m := range allMappings {
+		if m.Type == mappingType {
+			filtered = append(filtered, m)
+		}
+	}
+	return filtered, nil
 }
 
 // SearchPortMappings 搜索端口映射
