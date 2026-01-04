@@ -115,6 +115,7 @@ func (r *Storage) Set(key string, value interface{}, ttl time.Duration) error {
 }
 
 // Get 获取值
+// 注意：返回原始字符串（与 Set 对称），调用方自行反序列化
 func (r *Storage) Get(key string) (interface{}, error) {
 	result := r.client.Get(r.ctx, key)
 	if result.Err() != nil {
@@ -126,21 +127,9 @@ func (r *Storage) Get(key string) (interface{}, error) {
 		return nil, fmt.Errorf("failed to get key %s: %w", key, result.Err())
 	}
 
-	// 获取字节数据
-	data, err := result.Bytes()
-	if err != nil {
-		dispose.Errorf("RedisStorage.Get: failed to get bytes for key %s: %v", key, err)
-		return nil, fmt.Errorf("failed to get bytes for key %s: %w", key, err)
-	}
-
-	// 反序列化值
-	var value interface{}
-	if err := json.Unmarshal(data, &value); err != nil {
-		dispose.Errorf("RedisStorage.Get: failed to unmarshal value for key %s: %v", key, err)
-		return nil, fmt.Errorf("failed to unmarshal value for key %s: %w", key, err)
-	}
-
-	return value, nil
+	// 直接返回字符串，与 Set 方法对称
+	// 调用方传入 string，Get 返回 string
+	return result.Val(), nil
 }
 
 // Delete 删除键
