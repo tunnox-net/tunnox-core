@@ -304,6 +304,39 @@ func (m *ManagementModule) handleDeleteMapping(w http.ResponseWriter, r *http.Re
 	respondJSONTyped(w, http.StatusOK, httpservice.MessageResponse{Message: "mapping deleted"})
 }
 
+// handleCleanupOrphanedMapping 清理孤立的映射索引
+// 当主数据不存在但索引中仍有残留时，由 Platform 调用此 API 进行清理
+func (m *ManagementModule) handleCleanupOrphanedMapping(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		MappingID string                 `json:"mapping_id"`
+		UserID    string                 `json:"user_id"`
+		Mapping   map[string]interface{} `json:"mapping"`
+	}
+
+	if err := parseJSONBody(r, &req); err != nil {
+		m.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if req.MappingID == "" || req.UserID == "" {
+		m.respondError(w, http.StatusBadRequest, "mapping_id and user_id are required")
+		return
+	}
+
+	if m.cloudControl == nil {
+		m.respondError(w, http.StatusInternalServerError, "cloud control not configured")
+		return
+	}
+
+	// 从 mapping 数据中提取需要的信息来清理索引
+	if err := m.cloudControl.CleanupOrphanedMappingIndexes(req.MappingID, req.UserID, req.Mapping); err != nil {
+		corelog.Warnf("ManagementModule: failed to cleanup orphaned mapping %s: %v", req.MappingID, err)
+		// 即使清理失败也返回成功，因为主数据已不存在
+	}
+
+	respondJSONTyped(w, http.StatusOK, httpservice.MessageResponse{Message: "orphaned mapping cleaned up"})
+}
+
 // handleCheckSubdomain 检查子域名可用性
 func (m *ManagementModule) handleCheckSubdomain(w http.ResponseWriter, r *http.Request) {
 	subdomain := r.URL.Query().Get("subdomain")

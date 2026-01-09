@@ -129,6 +129,7 @@ func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 
 	// HTTP 域名映射专用路由
 	api.HandleFunc("/mappings/check-subdomain", m.handleCheckSubdomain).Methods("GET")
+	api.HandleFunc("/mappings/cleanup-orphaned", m.handleCleanupOrphanedMapping).Methods("POST")
 
 	// 连接码管理路由
 	api.HandleFunc("/connection-codes", m.handleCreateConnectionCode).Methods("POST")

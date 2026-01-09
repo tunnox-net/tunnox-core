@@ -48,6 +48,15 @@ func (c *CloudControl) DeletePortMapping(mappingID string) error {
 	return c.portMappingService.DeletePortMapping(mappingID)
 }
 
+// CleanupOrphanedMappingIndexes 清理孤立的映射索引
+// 当主数据不存在但索引中仍有残留时调用
+func (c *CloudControl) CleanupOrphanedMappingIndexes(mappingID, userID string, mappingData map[string]interface{}) error {
+	if c.portMappingService == nil {
+		return coreerrors.New(coreerrors.CodeNotConfigured, "portMappingService not initialized")
+	}
+	return c.portMappingService.CleanupOrphanedMappingIndexes(mappingID, userID, mappingData)
+}
+
 // UpdatePortMappingStatus 更新端口映射状态
 func (c *CloudControl) UpdatePortMappingStatus(mappingID string, status models.MappingStatus) error {
 	if c.portMappingService == nil {

@@ -179,6 +179,37 @@ func (s *portMappingService) DeletePortMapping(mappingID string) error {
 	return nil
 }
 
+// CleanupOrphanedMappingIndexes 清理孤立的映射索引
+// 当主数据不存在但索引中仍有残留时，由 Platform 调用此方法进行清理
+func (s *portMappingService) CleanupOrphanedMappingIndexes(mappingID, userID string, mappingData map[string]interface{}) error {
+	// 从 mappingData 构造 PortMapping 对象用于清理索引
+	mapping := &models.PortMapping{
+		ID:     mappingID,
+		UserID: userID,
+	}
+
+	// 提取 clientID 信息
+	if listenClientID, ok := mappingData["listen_client_id"]; ok {
+		switch v := listenClientID.(type) {
+		case float64:
+			mapping.ListenClientID = int64(v)
+		case int64:
+			mapping.ListenClientID = v
+		}
+	}
+	if targetClientID, ok := mappingData["target_client_id"]; ok {
+		switch v := targetClientID.(type) {
+		case float64:
+			mapping.TargetClientID = int64(v)
+		case int64:
+			mapping.TargetClientID = v
+		}
+	}
+
+	// 调用 repo 层清理索引
+	return s.mappingRepo.CleanupMappingIndexesByData(mapping)
+}
+
 // UpdatePortMappingStatus 更新端口映射状态
 func (s *portMappingService) UpdatePortMappingStatus(mappingID string, status models.MappingStatus) error {
 	if err := s.mappingRepo.UpdatePortMappingStatus(mappingID, status); err != nil {

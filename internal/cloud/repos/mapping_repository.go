@@ -119,36 +119,58 @@ func (r *PortMappingRepo) DeletePortMapping(mappingID string) error {
 
 // cleanupOrphanedMappingFromIndexes 清理孤立的 mapping 索引
 // 当主数据不存在但索引中可能存在残留时调用
+//
+// 搜索策略：依次从全局映射列表、所有用户映射列表中查找残留数据
 func (r *PortMappingRepo) cleanupOrphanedMappingFromIndexes(mappingID string) error {
 	listStore, ok := r.GetStorage().(storage.ListStore)
 	if !ok {
 		return coreerrors.New(coreerrors.CodeStorageError, "storage does not support list operations")
 	}
 
-	// 获取全局映射列表，查找包含该 mappingID 的条目并删除
-	globalListData, err := listStore.GetList(constants.KeyPrefixMappingList)
-	if err == nil {
-		for _, item := range globalListData {
+	// 辅助函数：从列表中查找并清理指定 mapping
+	findAndCleanup := func(listKey string) *models.PortMapping {
+		listData, err := listStore.GetList(listKey)
+		if err != nil {
+			return nil
+		}
+		for _, item := range listData {
 			if itemStr, ok := item.(string); ok {
 				var mapping models.PortMapping
 				if json.Unmarshal([]byte(itemStr), &mapping) == nil && mapping.ID == mappingID {
-					// 找到了，清理所有相关索引
-					r.RemoveFromList(&mapping, constants.KeyPrefixMappingList)
+					return &mapping
+				}
+			}
+		}
+		return nil
+	}
 
-					if mapping.ListenClientID != 0 {
-						clientKey := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, random.Int64ToString(mapping.ListenClientID))
-						r.RemoveFromList(&mapping, clientKey)
-					}
-					if mapping.TargetClientID != 0 && mapping.TargetClientID != mapping.ListenClientID {
-						clientKey := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, random.Int64ToString(mapping.TargetClientID))
-						r.RemoveFromList(&mapping, clientKey)
-					}
-					if mapping.UserID != "" {
-						userKey := fmt.Sprintf("%s:%s", constants.KeyPrefixUserMappings, mapping.UserID)
-						r.RemoveFromList(&mapping, userKey)
-					}
+	// 1. 先从全局映射列表查找
+	if mapping := findAndCleanup(constants.KeyPrefixMappingList); mapping != nil {
+		r.cleanupMappingIndexes(mapping)
+		return nil
+	}
 
-					// 索引已清理，返回成功
+	// 2. 从所有用户映射列表查找（遍历所有用户索引）
+	// 获取所有以 user_mappings: 开头的 key
+	if keyLister, ok := r.GetStorage().(interface{ Keys(prefix string) ([]string, error) }); ok {
+		keys, err := keyLister.Keys(constants.KeyPrefixUserMappings + ":")
+		if err == nil {
+			for _, key := range keys {
+				if mapping := findAndCleanup(key); mapping != nil {
+					r.cleanupMappingIndexes(mapping)
+					return nil
+				}
+			}
+		}
+	}
+
+	// 3. 从所有客户端映射列表查找
+	if keyLister, ok := r.GetStorage().(interface{ Keys(prefix string) ([]string, error) }); ok {
+		keys, err := keyLister.Keys(constants.KeyPrefixClientMappings + ":")
+		if err == nil {
+			for _, key := range keys {
+				if mapping := findAndCleanup(key); mapping != nil {
+					r.cleanupMappingIndexes(mapping)
 					return nil
 				}
 			}
@@ -157,6 +179,40 @@ func (r *PortMappingRepo) cleanupOrphanedMappingFromIndexes(mappingID string) er
 
 	// 未找到任何残留数据，返回原始的 not found 错误
 	return coreerrors.Newf(coreerrors.CodeNotFound, "mapping %s not found", mappingID)
+}
+
+// cleanupMappingIndexes 清理 mapping 的所有索引（内部方法）
+func (r *PortMappingRepo) cleanupMappingIndexes(mapping *models.PortMapping) {
+	// 清理全局映射列表
+	r.RemoveFromList(mapping, constants.KeyPrefixMappingList)
+
+	// 清理 ListenClientID 索引
+	if mapping.ListenClientID != 0 {
+		clientKey := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, random.Int64ToString(mapping.ListenClientID))
+		r.RemoveFromList(mapping, clientKey)
+	}
+
+	// 清理 TargetClientID 索引
+	if mapping.TargetClientID != 0 && mapping.TargetClientID != mapping.ListenClientID {
+		clientKey := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, random.Int64ToString(mapping.TargetClientID))
+		r.RemoveFromList(mapping, clientKey)
+	}
+
+	// 清理用户映射索引
+	if mapping.UserID != "" {
+		userKey := fmt.Sprintf("%s:%s", constants.KeyPrefixUserMappings, mapping.UserID)
+		r.RemoveFromList(mapping, userKey)
+	}
+}
+
+// CleanupMappingIndexesByData 根据已知的 mapping 数据清理索引
+// 当主数据不存在但我们有完整的 mapping 信息时使用
+func (r *PortMappingRepo) CleanupMappingIndexesByData(mapping *models.PortMapping) error {
+	if mapping == nil || mapping.ID == "" {
+		return coreerrors.New(coreerrors.CodeNotFound, "mapping or mapping ID is empty")
+	}
+	r.cleanupMappingIndexes(mapping)
+	return nil
 }
 
 // UpdatePortMappingStatus 更新端口映射状态
