@@ -3,6 +3,7 @@ package broker
 // ClientOnlineMessage 客户端上线消息
 type ClientOnlineMessage struct {
 	ClientID  int64  `json:"client_id"`
+	UserID    string `json:"user_id"` // 客户端所属用户，用于 SSE 定向推送
 	NodeID    string `json:"node_id"`
 	IPAddress string `json:"ip_address"`
 	Timestamp int64  `json:"timestamp"`
@@ -10,8 +11,9 @@ type ClientOnlineMessage struct {
 
 // ClientOfflineMessage 客户端下线消息
 type ClientOfflineMessage struct {
-	ClientID  int64 `json:"client_id"`
-	Timestamp int64 `json:"timestamp"`
+	ClientID  int64  `json:"client_id"`
+	UserID    string `json:"user_id"` // 客户端所属用户，用于 SSE 定向推送
+	Timestamp int64  `json:"timestamp"`
 }
 
 // ConfigUpdateMessage 配置更新消息

@@ -241,9 +241,18 @@ func (s *Service) DisconnectClient(clientID int64) error {
 }
 
 func (s *Service) publishClientOnlineEvent(clientID int64, nodeID, ipAddress string) {
+	// 获取客户端所属用户（用于 SSE 定向推送和 Webhook）
+	userID := ""
+	if s.configRepo != nil {
+		if cfg, err := s.configRepo.GetConfig(clientID); err == nil && cfg != nil {
+			userID = cfg.UserID
+		}
+	}
+
 	if s.broker != nil {
 		msg := broker.ClientOnlineMessage{
 			ClientID:  clientID,
+			UserID:    userID,
 			NodeID:    nodeID,
 			IPAddress: ipAddress,
 			Timestamp: time.Now().Unix(),
@@ -255,25 +264,30 @@ func (s *Service) publishClientOnlineEvent(clientID int64, nodeID, ipAddress str
 		} else if err := s.broker.Publish(s.Ctx(), broker.TopicClientOnline, data); err != nil {
 			corelog.Warnf("Failed to publish client online event for client %d: %v", clientID, err)
 		} else {
-			corelog.Debugf("Published client online event: client_id=%d, node_id=%s, ip=%s",
-				clientID, nodeID, ipAddress)
+			corelog.Debugf("Published client online event: client_id=%d, user_id=%s, node_id=%s, ip=%s",
+				clientID, userID, nodeID, ipAddress)
 		}
 	}
 
 	if s.webhookNotifier != nil {
-		userID := ""
-		if cfg, err := s.configRepo.GetConfig(clientID); err == nil && cfg != nil {
-			userID = cfg.UserID
-		}
 		s.webhookNotifier.DispatchClientOnline(clientID, userID, ipAddress, nodeID)
 	}
 }
 
 func (s *Service) publishClientOfflineEvent(clientID int64) {
+	// 获取客户端所属用户（用于 SSE 定向推送和 Webhook）
+	userID := ""
+	if s.configRepo != nil {
+		if cfg, err := s.configRepo.GetConfig(clientID); err == nil && cfg != nil {
+			userID = cfg.UserID
+		}
+	}
+
 	if s.broker != nil {
 		ts := time.Now()
 		msg := broker.ClientOfflineMessage{
 			ClientID:  clientID,
+			UserID:    userID,
 			Timestamp: ts.Unix(),
 		}
 
@@ -281,8 +295,8 @@ func (s *Service) publishClientOfflineEvent(clientID int64) {
 		if err != nil {
 			corelog.Errorf("Failed to marshal client offline message: %v", err)
 		} else {
-			corelog.Infof("[SSE-TRACE] publishClientOfflineEvent: client=%d, ts=%d, publishing...",
-				clientID, ts.UnixMilli())
+			corelog.Infof("[SSE-TRACE] publishClientOfflineEvent: client=%d, user=%s, ts=%d, publishing...",
+				clientID, userID, ts.UnixMilli())
 
 			if err := s.broker.Publish(s.Ctx(), broker.TopicClientOffline, data); err != nil {
 				corelog.Warnf("[SSE-TRACE] publishClientOfflineEvent: FAILED client=%d, err=%v", clientID, err)
@@ -296,10 +310,6 @@ func (s *Service) publishClientOfflineEvent(clientID int64) {
 	}
 
 	if s.webhookNotifier != nil {
-		userID := ""
-		if cfg, err := s.configRepo.GetConfig(clientID); err == nil && cfg != nil {
-			userID = cfg.UserID
-		}
 		s.webhookNotifier.DispatchClientOffline(clientID, userID)
 	}
 }
