@@ -119,6 +119,10 @@ func (c *TunnoxClient) sendHTTPProxyErrorResponse(commandID string, errMsg strin
 }
 
 // handleKickCommand 处理踢下线命令
+//
+// 特殊 Code 处理：
+// - "credentials_reset": 凭据被重置，客户端需要使用新凭据重新配置
+// - "auth_failed": 认证失败（凭据过期或无效）
 func (c *TunnoxClient) handleKickCommand(cmdBody string) {
 	var kickInfo struct {
 		Reason string `json:"reason"`
@@ -133,8 +137,20 @@ func (c *TunnoxClient) handleKickCommand(cmdBody string) {
 
 	corelog.Errorf("Client: KICKED BY SERVER - Reason: %s, Code: %s", kickInfo.Reason, kickInfo.Code)
 
-	// 标记为被踢下线，禁止重连
-	c.kicked = true
+	// 根据 Code 设置不同的标志
+	switch kickInfo.Code {
+	case "credentials_reset":
+		// 凭据被重置：客户端将退出，需要用户使用新凭据
+		c.credentialsReset = true
+		corelog.Errorf("Client: credentials have been reset, please obtain the new SecretKey from the server")
+	case "auth_failed", "expired":
+		// 认证失败或凭据过期：客户端将退出
+		c.authFailed = true
+		corelog.Errorf("Client: authentication failed or credentials expired")
+	default:
+		// 其他原因（如管理员踢下线）：禁止重连但不退出
+		c.kicked = true
+	}
 
 	// 停止客户端
 	c.Stop()

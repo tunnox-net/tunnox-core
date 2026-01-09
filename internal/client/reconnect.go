@@ -2,12 +2,19 @@ package client
 
 import (
 	"math/rand"
+	"os"
 	"sync"
 	"time"
 
 	corelog "tunnox-core/internal/core/log"
 	timeutil "tunnox-core/internal/utils/time"
 )
+
+// ExitCodeAuthFailed 认证失败退出码
+const ExitCodeAuthFailed = 10
+
+// ExitCodeCredentialsReset 凭据重置退出码
+const ExitCodeCredentialsReset = 11
 
 // ReconnectConfig 重连配置
 type ReconnectConfig struct {
@@ -109,6 +116,11 @@ func addJitter(delay time.Duration, jitterFactor float64) time.Duration {
 }
 
 // shouldReconnect 判断是否应该重连
+//
+// 重要：认证失败和凭据重置时，客户端会直接退出（包括 daemon 进程）
+// 这是安全策略的一部分：
+// - 认证失败：表示凭据无效，需要用户重新配置
+// - 凭据重置：表示服务端已重置凭据，需要用户使用新凭据
 func (c *TunnoxClient) shouldReconnect() bool {
 	// 被踢下线不重连
 	if c.kicked {
@@ -116,10 +128,22 @@ func (c *TunnoxClient) shouldReconnect() bool {
 		return false
 	}
 
-	// 认证失败不重连
+	// 认证失败：直接退出进程
+	// 这是安全策略：避免客户端持续使用无效凭据重试
 	if c.authFailed {
-		corelog.Infof("Client: not reconnecting (authentication failed)")
-		return false
+		corelog.Errorf("Client: authentication failed, exiting (exit code %d)", ExitCodeAuthFailed)
+		corelog.Errorf("Client: please check your ClientID and SecretKey configuration")
+		os.Exit(ExitCodeAuthFailed)
+		return false // unreachable
+	}
+
+	// 凭据重置：直接退出进程
+	// 当服务端重置凭据后，客户端需要使用新凭据重新配置
+	if c.credentialsReset {
+		corelog.Errorf("Client: credentials have been reset by server, exiting (exit code %d)", ExitCodeCredentialsReset)
+		corelog.Errorf("Client: please obtain the new SecretKey from the server and update your configuration")
+		os.Exit(ExitCodeCredentialsReset)
+		return false // unreachable
 	}
 
 	// 主动关闭不重连

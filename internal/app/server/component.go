@@ -66,6 +66,7 @@ type Dependencies struct {
 	RateLimiter           *security.RateLimiter
 	ReconnectTokenManager *security.ReconnectTokenManager
 	SessionTokenManager   *security.SessionTokenManager
+	SecretKeyManager      *security.SecretKeyManager // SecretKey 管理器（挑战-响应认证）
 
 	// 服务层
 	ConnCodeService *services.ConnectionCodeService

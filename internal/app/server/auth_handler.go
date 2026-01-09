@@ -23,22 +23,41 @@ type ServerAuthHandler struct {
 	bruteForceProtector *security.BruteForceProtector // 暴力破解防护
 	ipManager           *security.IPManager           // IP黑白名单管理
 	rateLimiter         *security.RateLimiter         // 速率限制器
+	secretKeyMgr        *security.SecretKeyManager    // SecretKey 管理器（挑战-响应认证）
 }
 
 // NewServerAuthHandler 创建认证处理器
-func NewServerAuthHandler(cloudControl managers.CloudControlAPI, sessionMgr *session.SessionManager, bruteForceProtector *security.BruteForceProtector, ipManager *security.IPManager, rateLimiter *security.RateLimiter) *ServerAuthHandler {
+func NewServerAuthHandler(
+	cloudControl managers.CloudControlAPI,
+	sessionMgr *session.SessionManager,
+	bruteForceProtector *security.BruteForceProtector,
+	ipManager *security.IPManager,
+	rateLimiter *security.RateLimiter,
+	secretKeyMgr *security.SecretKeyManager,
+) *ServerAuthHandler {
 	return &ServerAuthHandler{
 		cloudControl:        cloudControl,
 		sessionMgr:          sessionMgr,
 		bruteForceProtector: bruteForceProtector,
 		ipManager:           ipManager,
 		rateLimiter:         rateLimiter,
+		secretKeyMgr:        secretKeyMgr,
 	}
 }
 
-// HandleHandshake 处理握手请求
+// HandleHandshake 处理握手请求（挑战-响应认证）
+//
+// 认证流程：
+// 1. 首次连接（ClientID == 0, Token == "new-client"）：
+//   - 生成新的匿名客户端凭据
+//   - 返回 ClientID 和 SecretKey（仅此一次）
+//
+// 2. 已有客户端认证（ClientID > 0）：
+//   - 阶段一：客户端发送 ClientID（无 ChallengeResponse）
+//     → 服务端返回随机挑战
+//   - 阶段二：客户端发送 HMAC(SecretKey, Challenge)
+//     → 服务端验证响应，完成认证
 func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterface, req *packet.HandshakeRequest) (*packet.HandshakeResponse, error) {
-
 	// 提取IP地址
 	remoteAddr := conn.GetRemoteAddr()
 	var ip string
@@ -79,167 +98,241 @@ func (h *ServerAuthHandler) HandleHandshake(conn session.ControlConnectionInterf
 		}
 	}
 
-	var clientID int64
-	var authError error
-	var generatedClient *models.Client // 保存生成的客户端，避免后续重复查询
-
-	// 4. 认证客户端
-	// 统一认证模型：
-	// - ClientID == 0 且 Token == "new-client"：首次连接，分配新凭据
-	// - ClientID > 0 且 Token 是 SecretKey：使用持久化凭据认证
+	// ============================================================
+	// 4. 首次连接：分配新凭据
+	// ============================================================
 	isFirstConnection := req.ClientID == 0 && (req.Token == "new-client" || strings.HasPrefix(req.Token, "anonymous:"))
 	if isFirstConnection {
-		// 首次握手：生成新凭据
-		anonClient, err := h.cloudControl.GenerateAnonymousCredentials()
-		if err != nil {
-			authError = err
-			corelog.Errorf("ServerAuthHandler: failed to generate credentials: %v", err)
-			// 记录失败
-			if h.bruteForceProtector != nil {
-				h.bruteForceProtector.RecordFailure(ip)
-			}
-			return &packet.HandshakeResponse{
-				Success: false,
-				Error:   err.Error(),
-			}, err
-		}
-		clientID = anonClient.ID
-		generatedClient = anonClient // 保存生成的客户端，供后续返回凭据使用
-		corelog.Infof("ServerAuthHandler: generated new client ID: %d", clientID)
-	} else {
-		// 注册客户端或匿名客户端重新认证（使用ClientID+Token）
-		// 对于匿名客户端，Token是SecretKey
-		// 对于注册客户端，Token是AuthToken
-
-		// 先获取客户端信息以判断类型
-		client, err := h.cloudControl.GetClient(req.ClientID)
-		if err != nil || client == nil {
-			// 客户端不存在：如果是持久化凭据重新认证（Token不是"new-client"且长度合理），自动生成新客户端
-			// 这通常发生在服务端重启导致数据丢失，或客户端配置的ID无效时
-			if req.Token != "new-client" && !strings.HasPrefix(req.Token, "anonymous:") && len(req.Token) >= 16 {
-				// 可能是客户端的SecretKey，自动生成新客户端
-				corelog.Warnf("ServerAuthHandler: client %d not found, auto-generating new anonymous client (likely server restart or invalid config)", req.ClientID)
-				anonClient, genErr := h.cloudControl.GenerateAnonymousCredentials()
-				if genErr != nil {
-					authError = fmt.Errorf("failed to generate new anonymous client: %w", genErr)
-					corelog.Errorf("ServerAuthHandler: failed to generate anonymous credentials: %v", genErr)
-					if h.bruteForceProtector != nil {
-						h.bruteForceProtector.RecordFailure(ip)
-					}
-					return &packet.HandshakeResponse{
-						Success: false,
-						Error:   "Client not found and failed to generate new client",
-					}, authError
-				}
-				clientID = anonClient.ID
-				// 注意：这里不直接返回，继续执行后续逻辑以返回新凭据
-			} else {
-				// 注册客户端或首次匿名握手，返回错误
-				authError = fmt.Errorf("client not found")
-				corelog.Errorf("ServerAuthHandler: client %d not found: %v", req.ClientID, err)
-				if h.bruteForceProtector != nil {
-					h.bruteForceProtector.RecordFailure(ip)
-				}
-				return &packet.HandshakeResponse{
-					Success: false,
-					Error:   "Client not found",
-				}, authError
-			}
-		} else {
-			// 统一使用 SecretKey 验证（匿名客户端和注册客户端都使用 SecretKey）
-			// AuthCode 已废弃，现在使用连接码机制
-			if client.SecretKey != req.Token {
-				authError = fmt.Errorf("invalid secret key")
-				corelog.Warnf("ServerAuthHandler: invalid secret key for client %d (type=%s)", req.ClientID, client.Type)
-				if h.bruteForceProtector != nil {
-					h.bruteForceProtector.RecordFailure(ip)
-				}
-				return &packet.HandshakeResponse{
-					Success: false,
-					Error:   "Invalid credentials",
-				}, authError
-			}
-			clientID = req.ClientID
-			corelog.Infof("ServerAuthHandler: client %d authenticated via SecretKey", clientID)
-		}
+		return h.handleFirstConnection(conn, req, ip)
 	}
 
-	// 5. 认证成功，清除失败记录
+	// ============================================================
+	// 5. 已有客户端：挑战-响应认证
+	// ============================================================
+
+	// 获取客户端配置（包含加密的 SecretKey）
+	config, err := h.cloudControl.GetClientConfig(req.ClientID)
+	if err != nil || config == nil {
+		corelog.Warnf("ServerAuthHandler: client %d not found", req.ClientID)
+		if h.bruteForceProtector != nil {
+			h.bruteForceProtector.RecordFailure(ip)
+		}
+		return &packet.HandshakeResponse{
+			Success: false,
+			Error:   "Client not found",
+		}, fmt.Errorf("client %d not found", req.ClientID)
+	}
+
+	// 检查凭据是否过期（匿名客户端 30 天未绑定用户）
+	if config.IsExpired() {
+		corelog.Warnf("ServerAuthHandler: client %d credentials expired", req.ClientID)
+		return &packet.HandshakeResponse{
+			Success: false,
+			Error:   "Credentials expired. Please register a new client.",
+		}, fmt.Errorf("client %d credentials expired", req.ClientID)
+	}
+
+	// ============================================================
+	// 5.1 阶段一：发送挑战
+	// ============================================================
+	if req.ChallengeResponse == "" {
+		return h.handleChallengePhase1(conn, req, config, ip)
+	}
+
+	// ============================================================
+	// 5.2 阶段二：验证响应
+	// ============================================================
+	return h.handleChallengePhase2(conn, req, config, ip)
+}
+
+// handleFirstConnection 处理首次连接（分配新凭据）
+func (h *ServerAuthHandler) handleFirstConnection(conn session.ControlConnectionInterface, req *packet.HandshakeRequest, ip string) (*packet.HandshakeResponse, error) {
+	// 生成新的匿名客户端凭据
+	anonClient, err := h.cloudControl.GenerateAnonymousCredentials()
+	if err != nil {
+		corelog.Errorf("ServerAuthHandler: failed to generate credentials: %v", err)
+		if h.bruteForceProtector != nil {
+			h.bruteForceProtector.RecordFailure(ip)
+		}
+		return &packet.HandshakeResponse{
+			Success: false,
+			Error:   err.Error(),
+		}, err
+	}
+
+	corelog.Infof("ServerAuthHandler: generated new client ID: %d", anonClient.ID)
+
+	// 认证成功，清除失败记录
 	if h.bruteForceProtector != nil {
 		h.bruteForceProtector.RecordSuccess(ip)
 	}
 
-	// 6. 更新 ClientConnection 的 ClientID
-	conn.SetClientID(clientID)
-	conn.SetAuthenticated(true) // 设置为已认证
+	// 更新连接状态
+	conn.SetClientID(anonClient.ID)
+	conn.SetAuthenticated(true)
 
-	// 7. 客户端连接：更新完整运行时状态（包含 connID）
+	// 更新运行时状态
+	h.updateClientRuntimeState(conn, anonClient.ID, req, ip)
+
+	// 返回凭据（SecretKey 仅此一次返回）
+	return &packet.HandshakeResponse{
+		Success:   true,
+		Message:   fmt.Sprintf("New client registered, client_id=%d", anonClient.ID),
+		ClientID:  anonClient.ID,
+		SecretKey: anonClient.SecretKeyPlaintext, // 仅返回一次的明文 SecretKey
+	}, nil
+}
+
+// handleChallengePhase1 处理挑战阶段一：发送挑战
+func (h *ServerAuthHandler) handleChallengePhase1(conn session.ControlConnectionInterface, req *packet.HandshakeRequest, config *models.ClientConfig, ip string) (*packet.HandshakeResponse, error) {
+	// 检查 SecretKeyManager 是否可用
+	if h.secretKeyMgr == nil {
+		corelog.Errorf("ServerAuthHandler: SecretKeyManager not configured")
+		return &packet.HandshakeResponse{
+			Success: false,
+			Error:   "Server configuration error",
+		}, fmt.Errorf("SecretKeyManager not configured")
+	}
+
+	// 检查客户端是否有加密的 SecretKey
+	if config.SecretKeyEncrypted == "" {
+		// 兼容旧数据：如果没有加密的 SecretKey，使用明文 SecretKey 验证（回退到旧逻辑）
+		if config.SecretKey != "" {
+			corelog.Warnf("ServerAuthHandler: client %d using legacy plaintext SecretKey (needs migration)", req.ClientID)
+			return h.handleLegacyAuth(conn, req, config, ip)
+		}
+		corelog.Errorf("ServerAuthHandler: client %d has no SecretKey configured", req.ClientID)
+		return &packet.HandshakeResponse{
+			Success: false,
+			Error:   "Client credentials not configured",
+		}, fmt.Errorf("client %d has no SecretKey", req.ClientID)
+	}
+
+	// 生成随机挑战
+	challenge, err := h.secretKeyMgr.GenerateChallenge()
+	if err != nil {
+		corelog.Errorf("ServerAuthHandler: failed to generate challenge: %v", err)
+		return &packet.HandshakeResponse{
+			Success: false,
+			Error:   "Server error",
+		}, err
+	}
+
+	// 存储挑战到连接（用于阶段二验证）
+	conn.SetPendingChallenge(challenge)
+
+	corelog.Debugf("ServerAuthHandler: sending challenge to client %d", req.ClientID)
+
+	// 返回挑战
+	return &packet.HandshakeResponse{
+		Success:      false,         // 认证尚未完成
+		NeedResponse: true,          // 需要客户端响应
+		Challenge:    challenge,     // 发送挑战
+		Message:      "Challenge sent, please respond with HMAC",
+	}, nil
+}
+
+// handleChallengePhase2 处理挑战阶段二：验证响应
+func (h *ServerAuthHandler) handleChallengePhase2(conn session.ControlConnectionInterface, req *packet.HandshakeRequest, config *models.ClientConfig, ip string) (*packet.HandshakeResponse, error) {
+	// 获取待验证的挑战
+	challenge := conn.GetPendingChallenge()
+	if challenge == "" {
+		corelog.Warnf("ServerAuthHandler: no pending challenge for client %d", req.ClientID)
+		if h.bruteForceProtector != nil {
+			h.bruteForceProtector.RecordFailure(ip)
+		}
+		return &packet.HandshakeResponse{
+			Success: false,
+			Error:   "No pending challenge. Please start authentication again.",
+		}, fmt.Errorf("no pending challenge")
+	}
+
+	// 清除挑战（防止重放攻击）
+	conn.ClearPendingChallenge()
+
+	// 验证响应
+	if !h.secretKeyMgr.VerifyResponse(config.SecretKeyEncrypted, challenge, req.ChallengeResponse) {
+		corelog.Warnf("ServerAuthHandler: challenge-response verification failed for client %d", req.ClientID)
+		if h.bruteForceProtector != nil {
+			h.bruteForceProtector.RecordFailure(ip)
+		}
+		return &packet.HandshakeResponse{
+			Success: false,
+			Error:   "Invalid credentials",
+		}, fmt.Errorf("challenge-response verification failed")
+	}
+
+	corelog.Infof("ServerAuthHandler: client %d authenticated via challenge-response", req.ClientID)
+
+	// 认证成功，清除失败记录
+	if h.bruteForceProtector != nil {
+		h.bruteForceProtector.RecordSuccess(ip)
+	}
+
+	// 更新连接状态
+	conn.SetClientID(req.ClientID)
+	conn.SetAuthenticated(true)
+
+	// 更新运行时状态
+	h.updateClientRuntimeState(conn, req.ClientID, req, ip)
+
+	return &packet.HandshakeResponse{
+		Success: true,
+		Message: "Authentication successful",
+	}, nil
+}
+
+// handleLegacyAuth 处理旧版认证（明文 SecretKey，用于数据迁移过渡期）
+func (h *ServerAuthHandler) handleLegacyAuth(conn session.ControlConnectionInterface, req *packet.HandshakeRequest, config *models.ClientConfig, ip string) (*packet.HandshakeResponse, error) {
+	// 旧版使用 Token 字段传递 SecretKey
+	if config.SecretKey != req.Token {
+		corelog.Warnf("ServerAuthHandler: legacy auth failed for client %d", req.ClientID)
+		if h.bruteForceProtector != nil {
+			h.bruteForceProtector.RecordFailure(ip)
+		}
+		return &packet.HandshakeResponse{
+			Success: false,
+			Error:   "Invalid credentials",
+		}, fmt.Errorf("invalid secret key")
+	}
+
+	corelog.Infof("ServerAuthHandler: client %d authenticated via legacy SecretKey", req.ClientID)
+
+	// 认证成功，清除失败记录
+	if h.bruteForceProtector != nil {
+		h.bruteForceProtector.RecordSuccess(ip)
+	}
+
+	// 更新连接状态
+	conn.SetClientID(req.ClientID)
+	conn.SetAuthenticated(true)
+
+	// 更新运行时状态
+	h.updateClientRuntimeState(conn, req.ClientID, req, ip)
+
+	return &packet.HandshakeResponse{
+		Success: true,
+		Message: "Authentication successful (legacy mode - please update client)",
+	}, nil
+}
+
+// updateClientRuntimeState 更新客户端运行时状态
+func (h *ServerAuthHandler) updateClientRuntimeState(conn session.ControlConnectionInterface, clientID int64, req *packet.HandshakeRequest, ip string) {
 	nodeID := h.sessionMgr.GetNodeID()
 	if nodeID == "" {
-		corelog.Warnf("ServerAuthHandler: NodeID not set in SessionManager, using empty string")
+		corelog.Warnf("ServerAuthHandler: NodeID not set in SessionManager")
 	}
+
 	connID := conn.GetConnID()
 	protocol := conn.GetProtocol()
 	if protocol == "" {
-		protocol = req.Protocol // 使用请求中的协议作为备选
+		protocol = req.Protocol
 	}
 	version := req.Version
+
 	if err := h.cloudControl.ConnectClient(clientID, nodeID, connID, ip, protocol, version); err != nil {
-		corelog.Warnf("ServerAuthHandler: failed to connect client %d: %v", clientID, err)
-		// 不返回错误，只记录警告，握手仍然成功
+		corelog.Warnf("ServerAuthHandler: failed to update runtime state for client %d: %v", clientID, err)
 	}
-
-	// 构造握手响应
-	response := &packet.HandshakeResponse{
-		Success: true,
-		Message: "Handshake successful",
-	}
-
-	// 首次握手或重新分配凭据：返回分配的凭据
-	// 判断条件：
-	// 1. 首次握手（ClientID==0）- 此时 clientID 是新生成的
-	// 2. 新生成的客户端（clientID != req.ClientID 且 clientID > 0）
-	// 3. 重新认证 - 需要返回 SecretKey 供客户端更新
-	isNewClient := clientID != req.ClientID && clientID > 0
-
-	corelog.Debugf("ServerAuthHandler: handshake response check - isFirstConnection=%v, isNewClient=%v, req.ClientID=%d, clientID=%d",
-		isFirstConnection, isNewClient, req.ClientID, clientID)
-
-	if isFirstConnection || isNewClient {
-		// 使用已生成的客户端信息（避免重复查询可能失败的问题）
-		var anonClient *models.Client
-		if generatedClient != nil {
-			// 首次连接时，直接使用生成的客户端
-			anonClient = generatedClient
-		} else {
-			// 重新分配凭据时（isNewClient），需要查询
-			var err error
-			anonClient, err = h.cloudControl.GetClient(clientID)
-			if err != nil {
-				corelog.Warnf("ServerAuthHandler: failed to get anonymous client %d: %v", clientID, err)
-			}
-		}
-
-		if anonClient == nil {
-			corelog.Warnf("ServerAuthHandler: anonymous client %d not found (nil)", clientID)
-			response.Message = fmt.Sprintf("Anonymous client authenticated, client_id=%d", clientID)
-		} else {
-			response.ClientID = clientID
-			response.SecretKey = anonClient.SecretKey
-			corelog.Infof("ServerAuthHandler: returning ClientID=%d and SecretKey in handshake response", clientID)
-			if clientID != req.ClientID {
-				// 自动生成的新客户端，提示客户端更新配置
-				response.Message = fmt.Sprintf("Client ID updated: %d -> %d (please update your config)", req.ClientID, clientID)
-			} else {
-				response.Message = fmt.Sprintf("Anonymous client authenticated, client_id=%d", clientID)
-			}
-		}
-	} else {
-		corelog.Debugf("ServerAuthHandler: not returning ClientID/SecretKey - isFirstConnection=%v, isNewClient=%v",
-			isFirstConnection, isNewClient)
-	}
-
-	return response, nil
 }
 
 // GetClientConfig 获取客户端配置

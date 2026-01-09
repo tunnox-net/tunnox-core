@@ -61,6 +61,11 @@ storage:
         timeout: 10
         max_retries: 3
 
+security:
+  reconnect_token_secret: ""  # 为空时自动生成
+  reconnect_token_ttl: 30
+  secretkey_master_key: "cpk8Fl9wq2mDxM8diqvnE2FftSxui4kJ2NSmk0DbKqE="  # SecretKey AES-256 主密钥
+
 management_api:
   enabled: true
   listen_addr: "0.0.0.0:9000"

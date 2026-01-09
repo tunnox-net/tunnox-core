@@ -70,7 +70,26 @@ func (s *SessionManager) sendKickCommand(conn *ControlConnection, reason, code s
 
 // RemoveControlConnection 移除指令连接
 func (s *SessionManager) RemoveControlConnection(connID string) {
+	// 先获取连接信息，用于后续调用 DisconnectClient
+	conn := s.clientRegistry.GetByConnID(connID)
+	var clientID int64
+	var authenticated bool
+	if conn != nil {
+		clientID = conn.ClientID
+		authenticated = conn.Authenticated
+	}
+
+	// 从注册表移除
 	s.clientRegistry.Remove(connID)
+
+	// 如果是已认证的控制连接，通知云控层（触发 webhook）
+	if authenticated && clientID > 0 && s.cloudControl != nil {
+		if err := s.cloudControl.DisconnectClient(clientID); err != nil {
+			corelog.Warnf("RemoveControlConnection: failed to disconnect client %d: %v", clientID, err)
+		} else {
+			corelog.Infof("RemoveControlConnection: notified cloud control for client %d disconnect", clientID)
+		}
+	}
 }
 
 // getControlConnectionByConnID 根据连接ID获取控制连接（内部使用）
@@ -128,6 +147,17 @@ func (s *SessionManager) cleanupStaleConnections() int {
 		return 0
 	}
 
-	// 委托给 clientRegistry
-	return s.clientRegistry.CleanupStale(s.config.HeartbeatTimeout, s.CloseConnection)
+	// 委托给 clientRegistry，使用带 clientID 信息的回调
+	return s.clientRegistry.CleanupStale(s.config.HeartbeatTimeout, func(connID string, clientID int64, authenticated bool) error {
+		// 先通知云控层（触发 webhook）
+		if authenticated && clientID > 0 && s.cloudControl != nil {
+			if err := s.cloudControl.DisconnectClient(clientID); err != nil {
+				corelog.Warnf("cleanupStaleConnections: failed to disconnect client %d: %v", clientID, err)
+			} else {
+				corelog.Infof("cleanupStaleConnections: notified cloud control for client %d disconnect", clientID)
+			}
+		}
+		// 然后关闭连接（注意：连接已从 registry 移除，这里只清理其他资源）
+		return s.CloseConnection(connID)
+	})
 }

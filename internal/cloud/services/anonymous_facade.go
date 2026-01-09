@@ -7,6 +7,7 @@ import (
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/services/anonymous"
 	"tunnox-core/internal/core/idgen"
+	"tunnox-core/internal/security"
 )
 
 // anonymousServiceWrapper 包装 anonymous.Service 以实现 AnonymousService 接口
@@ -21,6 +22,11 @@ func (w *anonymousServiceWrapper) SetNotifier(notifier ClientNotifier) {
 	// anonymous.Notifier 和 ClientNotifier 有相同的方法签名
 	// 可以直接传递，因为 Go 的接口是隐式实现的
 	w.Service.SetNotifier(notifier)
+}
+
+// SetSecretKeyManager 实现 AnonymousService 接口
+func (w *anonymousServiceWrapper) SetSecretKeyManager(mgr *security.SecretKeyManager) {
+	w.Service.SetSecretKeyManager(mgr)
 }
 
 // GenerateAnonymousCredentials 委托到底层服务

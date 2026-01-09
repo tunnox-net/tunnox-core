@@ -232,12 +232,22 @@ type CommandPacket struct {
 }
 
 // HandshakeRequest 握手请求（连接级认证）
+//
+// 认证流程（V3协议，挑战-响应）：
+//  1. 客户端发送 ClientID（ChallengeResponse 为空）
+//  2. 服务端返回 Challenge
+//  3. 客户端计算 ChallengeResponse = HMAC-SHA256(SecretKey, Challenge)
+//  4. 客户端发送 ClientID + ChallengeResponse
+//  5. 服务端验证 ChallengeResponse
+//
+// 兼容旧协议：Token 字段保留用于数据迁移期间
 type HandshakeRequest struct {
-	ClientID       int64  `json:"client_id"`                 // 客户端ID
-	Token          string `json:"token"`                     // JWT Token
-	Version        string `json:"version"`                   // 协议版本
-	Protocol       string `json:"protocol"`                  // 连接协议（tcp/websocket/quic）
-	ConnectionType string `json:"connection_type,omitempty"` // 连接类型：control（控制连接）或 tunnel（隧道连接）
+	ClientID          int64  `json:"client_id"`                    // 客户端ID
+	Token             string `json:"token,omitempty"`              // [废弃] JWT Token（旧协议兼容）
+	Version           string `json:"version"`                      // 协议版本（V3 = 挑战-响应认证）
+	Protocol          string `json:"protocol"`                     // 连接协议（tcp/websocket/quic）
+	ConnectionType    string `json:"connection_type,omitempty"`    // 连接类型：control 或 tunnel
+	ChallengeResponse string `json:"challenge_response,omitempty"` // 挑战响应 = HMAC-SHA256(SecretKey, Challenge)
 }
 
 // HandshakeResponse 握手响应
@@ -246,9 +256,12 @@ type HandshakeResponse struct {
 	Error        string `json:"error,omitempty"`
 	Message      string `json:"message,omitempty"`
 	SessionToken string `json:"session_token,omitempty"` // 会话Token（认证成功后返回）
-	ClientID     int64  `json:"client_id,omitempty"`     // 分配的ClientID（匿名客户端首次握手）
-	SecretKey    string `json:"secret_key,omitempty"`    // 分配的SecretKey（匿名客户端首次握手）
+	ClientID     int64  `json:"client_id,omitempty"`     // 分配的ClientID（首次握手）
+	SecretKey    string `json:"secret_key,omitempty"`    // 分配的SecretKey（首次握手，仅返回一次）
 	ConnectionID string `json:"connection_id,omitempty"` // 服务端分配的ConnectionID（HTTP长轮询专用）
+	// 挑战-响应认证（V3协议）
+	Challenge    string `json:"challenge,omitempty"`      // 服务端发送的随机挑战
+	NeedResponse bool   `json:"need_response,omitempty"`  // 是否需要客户端发送挑战响应
 }
 
 // TunnelOpenRequest 隧道打开请求（映射连接认证）

@@ -5,6 +5,7 @@ import (
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
+	"tunnox-core/internal/security"
 )
 
 // AnonymousManager 匿名用户管理器
@@ -64,4 +65,9 @@ func (am *AnonymousManager) SetNotifier(notifier ClientNotifier) {
 	// services.AnonymousService.SetNotifier 接受 services.ClientNotifier
 	// 由于 ClientNotifier 接口相同，可以直接传递
 	am.anonymousService.SetNotifier(notifier)
+}
+
+// SetSecretKeyManager 设置 SecretKey 管理器（用于加密存储凭据）
+func (am *AnonymousManager) SetSecretKeyManager(mgr *security.SecretKeyManager) {
+	am.anonymousService.SetSecretKeyManager(mgr)
 }

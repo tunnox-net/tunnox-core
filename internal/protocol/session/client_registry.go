@@ -242,16 +242,20 @@ func (r *ClientRegistry) List() []*ControlConnection {
 
 // staleConnectionInfo 用于在锁释放后执行清理操作所需的连接信息
 type staleConnectionInfo struct {
-	connID       string
-	clientID     int64
-	idleDuration time.Duration
-	stream       stream.PackageStreamer
+	connID        string
+	clientID      int64
+	authenticated bool
+	idleDuration  time.Duration
+	stream        stream.PackageStreamer
 }
+
+// StaleConnectionCallback 过期连接清理回调函数类型
+type StaleConnectionCallback func(connID string, clientID int64, authenticated bool) error
 
 // CleanupStale 清理过期的连接
 // 采用"先移除后操作"模式：在持锁期间完成检查和映射移除，锁释放后再执行 I/O 操作
 // 返回清理的连接数量
-func (r *ClientRegistry) CleanupStale(timeout time.Duration, closeFn func(string) error) int {
+func (r *ClientRegistry) CleanupStale(timeout time.Duration, closeFn StaleConnectionCallback) int {
 	var staleInfos []staleConnectionInfo
 
 	// 1. 持锁期间：检查、记录信息、从映射移除
@@ -260,10 +264,11 @@ func (r *ClientRegistry) CleanupStale(timeout time.Duration, closeFn func(string
 		if conn.IsStale(timeout) {
 			// 记录连接信息用于后续 I/O 操作
 			staleInfos = append(staleInfos, staleConnectionInfo{
-				connID:       conn.ConnID,
-				clientID:     conn.ClientID,
-				idleDuration: time.Since(conn.LastActiveAt),
-				stream:       conn.Stream,
+				connID:        conn.ConnID,
+				clientID:      conn.ClientID,
+				authenticated: conn.Authenticated,
+				idleDuration:  time.Since(conn.LastActiveAt),
+				stream:        conn.Stream,
 			})
 
 			// 从映射中移除（但不关闭 stream，稍后在锁外关闭）
@@ -286,9 +291,9 @@ func (r *ClientRegistry) CleanupStale(timeout time.Duration, closeFn func(string
 		r.logger.Warnf("ClientRegistry: removing stale connection - connID=%s, clientID=%d, idle=%v",
 			info.connID, info.clientID, info.idleDuration)
 
-		// 调用外部关闭函数
+		// 调用外部关闭函数（传递完整的连接信息）
 		if closeFn != nil {
-			if err := closeFn(info.connID); err != nil {
+			if err := closeFn(info.connID, info.clientID, info.authenticated); err != nil {
 				r.logger.Errorf("ClientRegistry: failed to close stale connection %s: %v", info.connID, err)
 			}
 		}

@@ -3,6 +3,7 @@ package managers
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"time"
 
 	"tunnox-core/internal/broker"
@@ -13,6 +14,7 @@ import (
 	"tunnox-core/internal/core/idgen"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
+	"tunnox-core/internal/security"
 )
 
 // CloudControl 基础云控实现，所有存储操作通过 Storage 接口
@@ -160,11 +162,41 @@ func (c *CloudControl) SetBroker(b broker.MessageBroker) {
 
 func (c *CloudControl) SetWebhookNotifier(n services.WebhookNotifier) {
 	if c.clientService == nil {
+		corelog.Warnf("CloudControl: clientService is nil, cannot inject webhook notifier")
 		return
 	}
 
-	if aware, ok := c.clientService.(services.WebhookNotifierAware); ok {
-		aware.SetWebhookNotifier(n)
-		corelog.Infof("CloudControl: webhook notifier injected into ClientService")
+	// 使用反射调用 SetWebhookNotifier 方法
+	// 由于 client.WebhookNotifier 和 services.WebhookNotifier 是不同包中的类型，
+	// 无法通过接口类型断言，但方法签名兼容，所以使用反射调用
+	v := reflect.ValueOf(c.clientService)
+	method := v.MethodByName("SetWebhookNotifier")
+	if !method.IsValid() {
+		corelog.Warnf("CloudControl: clientService does not have SetWebhookNotifier method")
+		return
+	}
+
+	// 调用方法，传入 webhook notifier
+	method.Call([]reflect.Value{reflect.ValueOf(n)})
+	corelog.Infof("CloudControl: webhook notifier injected into ClientService (via reflection)")
+}
+
+// SetSecretKeyManager 设置 SecretKey 管理器
+// 用于匿名客户端凭据的加密存储和凭据重置
+func (c *CloudControl) SetSecretKeyManager(mgr *security.SecretKeyManager) {
+	// 注入到 AnonymousManager
+	if c.anonymousManager != nil {
+		c.anonymousManager.SetSecretKeyManager(mgr)
+		corelog.Infof("CloudControl: SecretKeyManager injected into AnonymousManager")
+	} else {
+		corelog.Warnf("CloudControl: anonymousManager is nil, cannot inject SecretKeyManager")
+	}
+
+	// 注入到 ClientService（用于凭据重置）
+	if c.clientService != nil {
+		c.clientService.SetSecretKeyManager(mgr)
+		corelog.Infof("CloudControl: SecretKeyManager injected into ClientService")
+	} else {
+		corelog.Warnf("CloudControl: clientService is nil, cannot inject SecretKeyManager")
 	}
 }

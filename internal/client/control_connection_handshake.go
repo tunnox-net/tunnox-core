@@ -1,6 +1,9 @@
 package client
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 
@@ -9,6 +12,20 @@ import (
 	"tunnox-core/internal/packet"
 	"tunnox-core/internal/stream"
 )
+
+// ProtocolVersion 当前客户端协议版本
+// V3 = 挑战-响应认证（SecretKey 不在网络传输）
+const ProtocolVersion = "3.0"
+
+// computeChallengeResponse 计算挑战响应
+//
+// 使用 HMAC-SHA256(secretKey, challenge) 计算响应
+// 与服务端 SecretKeyManager.ComputeResponse 算法一致
+func computeChallengeResponse(secretKey, challenge string) string {
+	h := hmac.New(sha256.New, []byte(secretKey))
+	h.Write([]byte(challenge))
+	return hex.EncodeToString(h.Sum(nil))
+}
 
 // sendHandshake 发送握手请求（使用控制连接）
 func (c *TunnoxClient) sendHandshake() error {
@@ -47,103 +64,99 @@ func (c *TunnoxClient) saveConnectionConfig() error {
 }
 
 // sendHandshakeOnStream 在指定的stream上发送握手请求（用于隧道连接）
+//
 // connectionType: "control" 表示控制连接，"tunnel" 表示隧道连接
 // protocol: 使用的传输协议（tcp/websocket/quic/kcp）
+//
+// V3 协议（挑战-响应认证）流程：
+//  1. 客户端发送 ClientID（首次连接时 ClientID=0, Token="new-client"）
+//  2. 服务端返回：
+//     - 首次连接：Success=true, ClientID=xxx, SecretKey=xxx
+//     - 已有客户端：NeedResponse=true, Challenge=xxx
+//  3. 客户端计算 ChallengeResponse = HMAC-SHA256(SecretKey, Challenge)
+//  4. 客户端发送 ClientID + ChallengeResponse
+//  5. 服务端验证并返回 Success=true
 func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, connectionType string, protocol string) error {
 	isControlConnection := connectionType == "control"
 	corelog.Infof("Client: sendHandshakeOnStream called, stream=%p, streamType=%T, connectionType=%s, protocol=%s, isControl=%v", stream, stream, connectionType, protocol, isControlConnection)
 
+	// ========================================
+	// 阶段1：发送初始握手请求
+	// ========================================
 	var req *packet.HandshakeRequest
 
-	// 统一认证策略：
-	// 1. 有 ClientID + SecretKey → 使用这两个字段认证
-	// 2. 无 ClientID → 首次握手，请求服务端分配凭据
 	if c.config.ClientID > 0 && c.config.SecretKey != "" {
-		// 使用持久化凭据认证
+		// 已有凭据：发送 ClientID，等待挑战
 		req = &packet.HandshakeRequest{
 			ClientID:       c.config.ClientID,
-			Token:          c.config.SecretKey,
-			Version:        "2.0",
+			Version:        ProtocolVersion,
 			Protocol:       protocol,
 			ConnectionType: connectionType,
+			// ChallengeResponse 留空，等待服务端返回 Challenge
 		}
+		corelog.Infof("Client: sending handshake phase 1 (existing client, ClientID=%d)", c.config.ClientID)
 	} else {
-		// 首次握手，请求分配凭据
+		// 首次连接：请求分配凭据
 		req = &packet.HandshakeRequest{
 			ClientID:       0,
 			Token:          "new-client", // 标识首次连接
-			Version:        "2.0",
+			Version:        ProtocolVersion,
 			Protocol:       protocol,
 			ConnectionType: connectionType,
 		}
+		corelog.Infof("Client: sending handshake phase 1 (new client)")
 	}
 
-	reqData, _ := json.Marshal(req)
-	handshakePkt := &packet.TransferPacket{
-		PacketType: packet.Handshake,
-		Payload:    reqData,
+	// 发送阶段1请求
+	resp, err := c.sendHandshakeRequest(stream, req)
+	if err != nil {
+		return err
 	}
 
-	if _, err := stream.WritePacket(handshakePkt, true, 0); err != nil {
-		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send handshake")
-	}
+	// ========================================
+	// 阶段2：处理挑战-响应（如果需要）
+	// ========================================
+	if resp.NeedResponse && resp.Challenge != "" {
+		corelog.Infof("Client: received challenge, computing response...")
 
-	// 等待握手响应（忽略心跳包）
-	var respPkt *packet.TransferPacket
-	for {
-		pkt, _, err := stream.ReadPacket()
+		// 计算挑战响应
+		if c.config.SecretKey == "" {
+			c.authFailed = true
+			return coreerrors.New(coreerrors.CodeAuthFailed, "no SecretKey available for challenge response")
+		}
+		challengeResponse := computeChallengeResponse(c.config.SecretKey, resp.Challenge)
+
+		// 发送阶段2请求
+		req2 := &packet.HandshakeRequest{
+			ClientID:          c.config.ClientID,
+			Version:           ProtocolVersion,
+			Protocol:          protocol,
+			ConnectionType:    connectionType,
+			ChallengeResponse: challengeResponse,
+		}
+		corelog.Infof("Client: sending handshake phase 2 (challenge response)")
+
+		resp, err = c.sendHandshakeRequest(stream, req2)
 		if err != nil {
-			return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to read handshake response")
+			return err
 		}
-		if pkt == nil {
-			// ReadPacket 返回 nil 但没有错误，可能是超时或空响应，继续等待
-			corelog.Debugf("Client: ReadPacket returned nil packet, continuing to wait for handshake response")
-			continue
-		}
-
-		// 忽略压缩/加密标志，只检查基础类型
-		baseType := pkt.PacketType & 0x3F
-		if baseType == packet.Heartbeat {
-			// 收到心跳包，继续等待握手响应
-			corelog.Debugf("Client: received heartbeat during handshake, ignoring")
-			continue
-		}
-
-		if baseType == packet.HandshakeResp {
-			respPkt = pkt
-			break
-		}
-
-		// 收到其他类型的包，返回错误
-		return coreerrors.Newf(coreerrors.CodeInvalidPacket, "unexpected response type: %v (expected HandshakeResp)", pkt.PacketType)
 	}
 
-	corelog.Debugf("Client: received response PacketType=%d, Payload len=%d", respPkt.PacketType, len(respPkt.Payload))
-	if len(respPkt.Payload) > 0 {
-		corelog.Debugf("Client: Payload=%s", string(respPkt.Payload))
-	}
-
-	var resp packet.HandshakeResponse
-	if err := json.Unmarshal(respPkt.Payload, &resp); err != nil {
-		return coreerrors.Wrapf(err, coreerrors.CodeInvalidData, "failed to unmarshal handshake response (payload='%s')", string(respPkt.Payload))
-	}
-
+	// ========================================
+	// 阶段3：处理最终响应
+	// ========================================
 	if !resp.Success {
 		// 认证失败，标记不重连
-		if strings.Contains(resp.Error, "auth") || strings.Contains(resp.Error, "token") {
-			c.authFailed = true
-		}
+		c.authFailed = true
 		return coreerrors.Newf(coreerrors.CodeAuthFailed, "handshake failed: %s", resp.Error)
 	}
 
 	// 首次连接时，服务器会返回分配的凭据（仅对控制连接有用）
-	// 使用 isControlConnection 判断而不是 stream == c.controlStream
-	// 因为在自动连接检测时，c.controlStream 还没有设置
 	if isControlConnection && resp.ClientID > 0 && resp.SecretKey != "" {
 		// 更新本地凭据
 		c.config.ClientID = resp.ClientID
 		c.config.SecretKey = resp.SecretKey
-		corelog.Infof("Client: received credentials - ClientID=%d, SecretKey=***", resp.ClientID)
+		corelog.Infof("Client: received credentials - ClientID=%d, SecretKey=*** (save this key, it will only be shown once!)", resp.ClientID)
 
 		// 更新 SOCKS5Manager 的 clientID
 		if c.socks5Manager != nil {
@@ -163,10 +176,67 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 		}
 	}
 
-	// ✅ 握手成功后不再主动请求映射配置
-	// 服务端会在握手成功后通过 pushConfigToClient 主动推送配置
-	// 移除客户端主动请求逻辑，避免 ConfigSet 重复发送
-	// 详见：packet_handler_handshake.go:166
-
 	return nil
+}
+
+// sendHandshakeRequest 发送握手请求并等待响应
+func (c *TunnoxClient) sendHandshakeRequest(stream stream.PackageStreamer, req *packet.HandshakeRequest) (*packet.HandshakeResponse, error) {
+	reqData, _ := json.Marshal(req)
+	handshakePkt := &packet.TransferPacket{
+		PacketType: packet.Handshake,
+		Payload:    reqData,
+	}
+
+	if _, err := stream.WritePacket(handshakePkt, true, 0); err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send handshake")
+	}
+
+	// 等待握手响应（忽略心跳包）
+	var respPkt *packet.TransferPacket
+	for {
+		pkt, _, err := stream.ReadPacket()
+		if err != nil {
+			return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to read handshake response")
+		}
+		if pkt == nil {
+			corelog.Debugf("Client: ReadPacket returned nil packet, continuing to wait for handshake response")
+			continue
+		}
+
+		// 忽略压缩/加密标志，只检查基础类型
+		baseType := pkt.PacketType & 0x3F
+		if baseType == packet.Heartbeat {
+			corelog.Debugf("Client: received heartbeat during handshake, ignoring")
+			continue
+		}
+
+		if baseType == packet.HandshakeResp {
+			respPkt = pkt
+			break
+		}
+
+		return nil, coreerrors.Newf(coreerrors.CodeInvalidPacket, "unexpected response type: %v (expected HandshakeResp)", pkt.PacketType)
+	}
+
+	corelog.Debugf("Client: received response PacketType=%d, Payload len=%d", respPkt.PacketType, len(respPkt.Payload))
+	if len(respPkt.Payload) > 0 {
+		corelog.Debugf("Client: Payload=%s", string(respPkt.Payload))
+	}
+
+	var resp packet.HandshakeResponse
+	if err := json.Unmarshal(respPkt.Payload, &resp); err != nil {
+		return nil, coreerrors.Wrapf(err, coreerrors.CodeInvalidData, "failed to unmarshal handshake response (payload='%s')", string(respPkt.Payload))
+	}
+
+	// 检查非挑战响应的失败
+	if !resp.Success && !resp.NeedResponse {
+		// 认证失败，标记不重连
+		if strings.Contains(resp.Error, "auth") || strings.Contains(resp.Error, "token") ||
+			strings.Contains(resp.Error, "credential") || strings.Contains(resp.Error, "expired") {
+			c.authFailed = true
+		}
+		return nil, coreerrors.Newf(coreerrors.CodeAuthFailed, "handshake failed: %s", resp.Error)
+	}
+
+	return &resp, nil
 }

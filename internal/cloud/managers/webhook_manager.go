@@ -139,9 +139,24 @@ func (m *WebhookManager) Dispatch(event string, data interface{}) {
 			targets = append(targets, w)
 		}
 	}
+	webhookCount := len(m.webhooks)
 	m.mu.RUnlock()
 
+	// 如果内存中没有 webhook，尝试从存储重新加载
+	// 这处理了其他节点创建 webhook 后，当前节点内存未更新的情况
+	if len(targets) == 0 && webhookCount == 0 {
+		m.loadWebhooks()
+		m.mu.RLock()
+		for _, w := range m.webhooks {
+			if w.Enabled && w.HasEvent(event) {
+				targets = append(targets, w)
+			}
+		}
+		m.mu.RUnlock()
+	}
+
 	if len(targets) == 0 {
+		corelog.Debugf("WebhookManager: no webhook targets for event %s", event)
 		return
 	}
 
@@ -152,6 +167,7 @@ func (m *WebhookManager) Dispatch(event string, data interface{}) {
 		Data:      data,
 	}
 
+	corelog.Infof("WebhookManager: dispatching event %s to %d webhooks", event, len(targets))
 	for _, webhook := range targets {
 		go m.sendWebhook(webhook, payload)
 	}

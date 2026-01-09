@@ -249,24 +249,29 @@ func (m *ManagementModule) handleBindClient(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// 1. 获取客户端
+	// 1. 验证密钥（支持加密存储）
+	valid, err := m.cloudControl.VerifyClientSecretKey(clientID, req.SecretKey)
+	if err != nil {
+		corelog.Warnf("ManagementModule: bind client %d failed: %v", clientID, err)
+		m.respondError(w, http.StatusNotFound, "client not found")
+		return
+	}
+	if !valid {
+		corelog.Warnf("ManagementModule: bind client %d failed: invalid secret_key", clientID)
+		m.respondError(w, http.StatusUnauthorized, "invalid secret_key")
+		return
+	}
+
+	// 2. 获取客户端
 	client, err := m.cloudControl.GetClient(clientID)
 	if err != nil {
 		m.respondError(w, http.StatusNotFound, "client not found")
 		return
 	}
 
-	// 2. 验证密钥
-	if client.SecretKey != req.SecretKey {
-		corelog.Warnf("ManagementModule: bind client %d failed: invalid secret_key", clientID)
-		m.respondError(w, http.StatusUnauthorized, "invalid secret_key")
-		return
-	}
-
-	// 3. 检查是否已绑定
-	if client.UserID != "" {
-		m.respondError(w, http.StatusConflict, "client already bound to user: "+client.UserID)
-		return
+	// 3. 如果已绑定其他用户，自动解绑（一个客户端只能绑定一个用户）
+	if client.UserID != "" && client.UserID != req.UserID {
+		corelog.Infof("ManagementModule: client %d rebinding from user %s to user %s", clientID, client.UserID, req.UserID)
 	}
 
 	// 4. 更新客户端信息
@@ -307,6 +312,64 @@ func (m *ManagementModule) handleBindClient(w http.ResponseWriter, r *http.Reque
 
 	corelog.Infof("ManagementModule: client %d bound to user %s", clientID, req.UserID)
 	respondJSONTyped(w, http.StatusOK, client)
+}
+
+// handleResetClientCredentials 重置客户端凭据
+// POST /tunnox/v1/clients/{client_id}/reset-credentials
+// 返回新的 SecretKey（仅此一次返回，需用户保存）
+func (m *ManagementModule) handleResetClientCredentials(w http.ResponseWriter, r *http.Request) {
+	clientID, err := getInt64PathVar(r, "client_id")
+	if err != nil {
+		m.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if m.cloudControl == nil {
+		m.respondError(w, http.StatusInternalServerError, "cloud control not configured")
+		return
+	}
+
+	// 重置凭据
+	newSecretKey, err := m.cloudControl.ResetClientCredentials(clientID)
+	if err != nil {
+		corelog.Errorf("ManagementModule: failed to reset client %d credentials: %v", clientID, err)
+		m.respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	corelog.Infof("ManagementModule: client %d credentials reset", clientID)
+	respondJSONTyped(w, http.StatusOK, map[string]interface{}{
+		"client_id":  clientID,
+		"secret_key": newSecretKey,
+		"message":    "Credentials reset successfully. Please save the new secret_key securely - it will only be shown once.",
+	})
+}
+
+// handleMigrateClientCredentials 迁移客户端凭据到加密存储
+// POST /tunnox/v1/clients/{client_id}/migrate-credentials
+func (m *ManagementModule) handleMigrateClientCredentials(w http.ResponseWriter, r *http.Request) {
+	clientID, err := getInt64PathVar(r, "client_id")
+	if err != nil {
+		m.respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if m.cloudControl == nil {
+		m.respondError(w, http.StatusInternalServerError, "cloud control not configured")
+		return
+	}
+
+	// 迁移凭据
+	if err := m.cloudControl.MigrateClientCredentials(clientID); err != nil {
+		corelog.Errorf("ManagementModule: failed to migrate client %d credentials: %v", clientID, err)
+		m.respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	corelog.Infof("ManagementModule: client %d credentials migrated to encrypted storage", clientID)
+	respondJSONTyped(w, http.StatusOK, httpservice.MessageResponse{
+		Message: "Credentials migrated to encrypted storage successfully",
+	})
 }
 
 // handleGetClientQuota 获取客户端配额

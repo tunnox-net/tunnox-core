@@ -69,6 +69,11 @@ type ControlConnectionInterface interface {
 	SetAuthenticated(authenticated bool)
 	GetProtocol() string
 	UpdateActivity()
+
+	// 挑战-响应认证支持
+	SetPendingChallenge(challenge string)
+	GetPendingChallenge() string
+	ClearPendingChallenge()
 }
 
 // ============================================================================
@@ -177,8 +182,11 @@ type ControlConnection struct {
 	RemoteAddr    net.Addr // 远程地址
 	Protocol      string   // 协议类型（tcp/websocket/quic）
 	CreatedAt     time.Time
-	mu            sync.RWMutex // 保护 LastActiveAt 的并发访问
+	mu            sync.RWMutex // 保护 LastActiveAt 和 PendingChallenge 的并发访问
 	LastActiveAt  time.Time
+
+	// 挑战-响应认证
+	PendingChallenge string // 待验证的挑战（认证第一阶段发送给客户端）
 }
 
 // NewControlConnection 创建指令连接
@@ -293,6 +301,37 @@ func (c *ControlConnection) GetRemoteAddrString() string {
 		return ""
 	}
 	return c.RemoteAddr.String()
+}
+
+// SetPendingChallenge 设置待验证的挑战
+func (c *ControlConnection) SetPendingChallenge(challenge string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.PendingChallenge = challenge
+	c.mu.Unlock()
+}
+
+// GetPendingChallenge 获取待验证的挑战
+func (c *ControlConnection) GetPendingChallenge() string {
+	if c == nil {
+		return ""
+	}
+	c.mu.RLock()
+	challenge := c.PendingChallenge
+	c.mu.RUnlock()
+	return challenge
+}
+
+// ClearPendingChallenge 清除待验证的挑战
+func (c *ControlConnection) ClearPendingChallenge() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.PendingChallenge = ""
+	c.mu.Unlock()
 }
 
 // ============================================================================

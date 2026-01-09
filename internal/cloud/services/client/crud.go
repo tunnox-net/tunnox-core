@@ -12,11 +12,18 @@ import (
 	"tunnox-core/internal/utils/random"
 )
 
+// RegisteredClientExpirationDays 注册客户端不设置过期时间（与匿名客户端不同）
+// 注册客户端绑定到用户，不会自动过期
+const RegisteredClientExpirationDays = 0
+
 // ============================================================================
 // 客户端CRUD操作
 // ============================================================================
 
 // CreateClient 创建客户端
+//
+// 返回的 Client 对象中，SecretKeyPlaintext 字段仅在首次创建时填充（用于一次性展示给用户）
+// 数据库中只存储加密后的 SecretKeyEncrypted
 func (s *Service) CreateClient(userID, clientName string) (*models.Client, error) {
 	// 生成客户端ID
 	clientID, err := s.idManager.GenerateClientID()
@@ -24,29 +31,52 @@ func (s *Service) CreateClient(userID, clientName string) (*models.Client, error
 		return nil, s.baseService.WrapError(err, "generate client ID")
 	}
 
-	// 生成认证码和密钥
+	// 生成认证码
 	authCode, err := s.idManager.GenerateAuthCode()
 	if err != nil {
 		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "generate auth code")
 	}
 
-	secretKey, err := s.idManager.GenerateSecretKey()
-	if err != nil {
-		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "generate secret key")
+	// 生成 SecretKey（加密存储）
+	var secretKeyPlaintext, secretKeyEncrypted string
+	if s.secretKeyMgr != nil {
+		// 新模式：使用 SecretKeyManager 生成加密凭据
+		plaintext, encrypted, err := s.secretKeyMgr.GenerateCredentials()
+		if err != nil {
+			return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "generate encrypted credentials")
+		}
+		secretKeyPlaintext = plaintext
+		secretKeyEncrypted = encrypted
+	} else {
+		// 兼容模式：使用旧的明文存储（仅用于迁移期间）
+		corelog.Warnf("SecretKeyManager not set, using legacy plaintext storage for client %d", clientID)
+		secretKey, err := s.idManager.GenerateSecretKey()
+		if err != nil {
+			return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "generate secret key")
+		}
+		secretKeyPlaintext = secretKey
+		// 兼容模式下，SecretKey 存在旧字段中
 	}
 
 	// 创建客户端配置
 	now := time.Now()
 	config := &models.ClientConfig{
-		ID:        clientID,
-		UserID:    userID,
-		Name:      clientName,
-		AuthCode:  authCode,
-		SecretKey: secretKey,
-		Type:      models.ClientTypeRegistered,
-		Config:    s.getDefaultClientConfig(),
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:                 clientID,
+		UserID:             userID,
+		Name:               clientName,
+		AuthCode:           authCode,
+		SecretKeyEncrypted: secretKeyEncrypted, // 加密后的 SecretKey
+		SecretKeyVersion:   1,                  // 初始版本
+		Type:               models.ClientTypeRegistered,
+		Config:             s.getDefaultClientConfig(),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+		// 注册客户端不设置过期时间（绑定用户后永不过期）
+	}
+
+	// 兼容模式：如果没有 SecretKeyManager，存到旧字段
+	if s.secretKeyMgr == nil {
+		config.SecretKey = secretKeyPlaintext
 	}
 
 	// 保存配置到持久化存储
@@ -76,8 +106,12 @@ func (s *Service) CreateClient(userID, clientName string) (*models.Client, error
 
 	s.baseService.LogCreated("client", fmt.Sprintf("%s (ID: %d) for user: %s", clientName, clientID, userID))
 
-	// 返回完整的Client对象（无状态 = 离线）
-	return models.FromConfigAndState(config, nil, nil), nil
+	// 返回完整的Client对象（包含 SecretKeyPlaintext 用于一次性展示）
+	client := models.FromConfigAndState(config, nil, nil)
+	client.SecretKeyPlaintext = secretKeyPlaintext // 仅此一次返回明文
+	client.SecretKeyVersion = config.SecretKeyVersion
+
+	return client, nil
 }
 
 // GetClient 获取客户端完整信息（聚合配置+状态+Token）
@@ -145,12 +179,20 @@ func (s *Service) TouchClient(clientID int64) {
 //
 // 注意：此方法只更新持久化配置，不更新运行时状态
 // 如需更新状态，使用UpdateClientStatus或ConnectClient
+// SecretKey 相关字段（SecretKeyEncrypted, SecretKeyVersion）不允许通过此方法修改，
+// 需要使用 ResetSecretKey 方法
 func (s *Service) UpdateClient(client *models.Client) error {
 	if client == nil {
 		return coreerrors.New(coreerrors.CodeInvalidParam, "client is nil")
 	}
 
-	// 获取旧的客户端信息，用于检测 UserID 变化
+	// 获取旧的客户端配置，用于检测 UserID 变化和保留 SecretKey 相关字段
+	oldConfig, err := s.configRepo.GetConfig(client.ID)
+	if err != nil {
+		return s.baseService.WrapErrorWithInt64ID(err, "get old client config", client.ID)
+	}
+
+	// 获取旧的客户端信息（包含状态），用于检测 UserID 变化
 	oldClient, err := s.GetClient(client.ID)
 	if err != nil {
 		return s.baseService.WrapErrorWithInt64ID(err, "get old client", client.ID)
@@ -159,16 +201,20 @@ func (s *Service) UpdateClient(client *models.Client) error {
 	newUserID := client.UserID
 
 	// 构建配置对象
+	// 注意：SecretKey 相关字段从原配置保留，不允许通过 UpdateClient 修改
 	config := &models.ClientConfig{
-		ID:        client.ID,
-		UserID:    client.UserID,
-		Name:      client.Name,
-		AuthCode:  client.AuthCode,
-		SecretKey: client.SecretKey,
-		Type:      client.Type,
-		Config:    client.Config,
-		CreatedAt: client.CreatedAt,
-		UpdatedAt: time.Now(),
+		ID:                 client.ID,
+		UserID:             client.UserID,
+		Name:               client.Name,
+		AuthCode:           client.AuthCode,
+		SecretKey:          oldConfig.SecretKey,          // 保留旧值（兼容模式）
+		SecretKeyEncrypted: oldConfig.SecretKeyEncrypted, // 保留加密值
+		SecretKeyVersion:   oldConfig.SecretKeyVersion,   // 保留版本号
+		ExpiresAt:          oldConfig.ExpiresAt,          // 保留过期时间
+		Type:               client.Type,
+		Config:             client.Config,
+		CreatedAt:          client.CreatedAt,
+		UpdatedAt:          time.Now(),
 	}
 
 	// 更新配置

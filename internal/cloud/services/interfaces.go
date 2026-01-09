@@ -4,6 +4,7 @@ import (
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/stats"
+	"tunnox-core/internal/security"
 )
 
 // BrokerAware 消息代理感知接口
@@ -26,6 +27,13 @@ type WebhookNotifier interface {
 // 注意：anonymous.Notifier 使用相同的方法签名，满足 Go 的隐式接口实现
 type ClientNotifier interface {
 	NotifyClientUpdate(clientID int64)
+}
+
+// ClientKicker 客户端踢出接口
+// 用于在凭据重置后踢掉当前连接
+// 注意：与 client.ClientKicker 使用相同的方法签名，满足 Go 的隐式接口实现
+type ClientKicker interface {
+	KickClient(clientID int64, reason, message string) error
 }
 
 // anonymousNotifierAdapter 用于适配 services.ClientNotifier 到 anonymous.Notifier
@@ -52,6 +60,7 @@ type UserService interface {
 type ClientService interface {
 	CreateClient(userID, clientName string) (*models.Client, error)
 	GetClient(clientID int64) (*models.Client, error)
+	GetClientConfig(clientID int64) (*models.ClientConfig, error) // 获取客户端配置（用于挑战-响应认证）
 	TouchClient(clientID int64)
 	UpdateClient(client *models.Client) error
 	DeleteClient(clientID int64) error
@@ -63,6 +72,12 @@ type ClientService interface {
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error)
 	SearchClients(keyword string) ([]*models.Client, error)
 	GetClientStats(clientID int64) (*stats.ClientStats, error)
+
+	// 凭据管理（SecretKey V3）
+	SetSecretKeyManager(mgr *security.SecretKeyManager)                                     // 设置 SecretKey 管理器
+	ResetSecretKey(clientID int64, kicker interface{ KickClient(int64, string, string) error }) (newSecretKey string, err error) // 重置 SecretKey
+	MigrateToEncrypted(clientID int64) error                                                // 迁移到加密存储
+	VerifySecretKey(clientID int64, secretKey string) (bool, error)                         // 验证 SecretKey
 }
 
 // PortMappingService 端口映射服务
@@ -108,6 +123,7 @@ type AnonymousService interface {
 	GetAnonymousMappings() ([]*models.PortMapping, error)
 	CleanupExpiredAnonymous() error
 	SetNotifier(notifier ClientNotifier)
+	SetSecretKeyManager(mgr *security.SecretKeyManager) // SecretKey 管理器（用于加密存储凭据）
 }
 
 // ConnectionService 连接管理服务

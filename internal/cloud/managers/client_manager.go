@@ -32,6 +32,24 @@ func (c *CloudControl) GetClient(clientID int64) (*models.Client, error) {
 	return c.clientService.GetClient(clientID)
 }
 
+// GetClientConfig 获取客户端配置
+//
+// 用途：
+// - 服务端挑战-响应认证时需要获取加密的 SecretKey
+//
+// 参数：
+//   - clientID: 客户端ID
+//
+// 返回：
+//   - *models.ClientConfig: 配置对象
+//   - error: 错误信息
+func (c *CloudControl) GetClientConfig(clientID int64) (*models.ClientConfig, error) {
+	if c.clientService == nil {
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
+	}
+	return c.clientService.GetClientConfig(clientID)
+}
+
 // UpdateClient 更新客户端
 func (c *CloudControl) UpdateClient(client *models.Client) error {
 	if c.clientService == nil {
@@ -175,4 +193,32 @@ func (c *CloudControl) MigrateClientMappings(fromClientID, toClientID int64) err
 	}
 
 	return nil
+}
+
+// ========== 客户端凭据管理（SecretKey V3） ==========
+
+// ResetClientCredentials 重置客户端凭据
+// 返回新的明文 SecretKey（仅此一次返回）
+func (c *CloudControl) ResetClientCredentials(clientID int64) (string, error) {
+	if c.clientService == nil {
+		return "", coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
+	}
+	return c.clientService.ResetSecretKey(clientID, nil)
+}
+
+// MigrateClientCredentials 迁移客户端凭据到加密存储
+func (c *CloudControl) MigrateClientCredentials(clientID int64) error {
+	if c.clientService == nil {
+		return coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
+	}
+	return c.clientService.MigrateToEncrypted(clientID)
+}
+
+// VerifyClientSecretKey 验证客户端 SecretKey
+// 支持加密存储和明文存储两种模式
+func (c *CloudControl) VerifyClientSecretKey(clientID int64, secretKey string) (bool, error) {
+	if c.clientService == nil {
+		return false, coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
+	}
+	return c.clientService.VerifySecretKey(clientID, secretKey)
 }

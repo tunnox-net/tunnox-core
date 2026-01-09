@@ -117,6 +117,8 @@ func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 	api.HandleFunc("/clients/{client_id}/bind", m.handleBindClient).Methods("POST")
 	api.HandleFunc("/clients/{client_id}/mappings", m.handleListClientMappings).Methods("GET")
 	api.HandleFunc("/clients/{client_id}/quota", m.handleGetClientQuota).Methods("GET")
+	api.HandleFunc("/clients/{client_id}/reset-credentials", m.handleResetClientCredentials).Methods("POST")
+	api.HandleFunc("/clients/{client_id}/migrate-credentials", m.handleMigrateClientCredentials).Methods("POST")
 
 	// 端口映射管理路由
 	api.HandleFunc("/mappings", m.handleListAllMappings).Methods("GET")

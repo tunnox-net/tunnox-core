@@ -21,16 +21,19 @@ import (
 // - Token部分：从ClientToken
 type Client struct {
 	// ========== 配置部分（持久化） ==========
-	ID               int64                `json:"id"`
-	UserID           string               `json:"user_id"`
-	Name             string               `json:"name"`
-	AuthCode         string               `json:"auth_code"`
-	SecretKey        string               `json:"secret_key"`
-	Type             ClientType           `json:"type"`
-	Config           configs.ClientConfig `json:"config"`
-	FirstConnectedAt *time.Time           `json:"first_connected_at,omitempty"` // 首次连接时间（激活时间）
-	CreatedAt        time.Time            `json:"created_at"`
-	UpdatedAt        time.Time            `json:"updated_at"`
+	ID                 int64                `json:"id"`
+	UserID             string               `json:"user_id"`
+	Name               string               `json:"name"`
+	AuthCode           string               `json:"auth_code"`
+	SecretKey          string               `json:"secret_key,omitempty"`  // [废弃] 兼容旧版本，不再使用
+	SecretKeyPlaintext string               `json:"-"`                     // 明文 SecretKey（仅生成/重置时临时填充，不序列化）
+	SecretKeyVersion   int                  `json:"secret_key_version"`    // 密钥版本号
+	Type               ClientType           `json:"type"`
+	Config             configs.ClientConfig `json:"config"`
+	ExpiresAt          *time.Time           `json:"expires_at,omitempty"`           // 凭据过期时间
+	FirstConnectedAt   *time.Time           `json:"first_connected_at,omitempty"`   // 首次连接时间（激活时间）
+	CreatedAt          time.Time            `json:"created_at"`
+	UpdatedAt          time.Time            `json:"updated_at"`
 
 	// ========== 状态部分（运行时） ==========
 	NodeID    string       `json:"node_id"`
@@ -67,9 +70,11 @@ func FromConfigAndState(cfg *ClientConfig, state *ClientRuntimeState, token *Cli
 		UserID:           cfg.UserID,
 		Name:             cfg.Name,
 		AuthCode:         cfg.AuthCode,
-		SecretKey:        cfg.SecretKey,
+		SecretKey:        cfg.SecretKey, // [废弃] 兼容旧版本
+		SecretKeyVersion: cfg.SecretKeyVersion,
 		Type:             cfg.Type,
 		Config:           cfg.Config,
+		ExpiresAt:        cfg.ExpiresAt,
 		FirstConnectedAt: cfg.FirstConnectedAt,
 		CreatedAt:        cfg.CreatedAt,
 		UpdatedAt:        cfg.UpdatedAt,
@@ -118,4 +123,12 @@ func (c *Client) IsRegistered() bool {
 // GetID 实现GenericEntity接口
 func (c *Client) GetID() int64 {
 	return c.ID
+}
+
+// IsExpired 判断凭据是否已过期
+func (c *Client) IsExpired() bool {
+	if c.ExpiresAt == nil {
+		return false
+	}
+	return time.Now().After(*c.ExpiresAt)
 }

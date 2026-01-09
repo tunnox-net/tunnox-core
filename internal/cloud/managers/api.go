@@ -25,8 +25,9 @@ type CloudControlAPI interface {
 	ListUsers(userType models.UserType) ([]*models.User, error)
 
 	// 客户端管理
-	CreateClient(userID, clientName string) (*models.Client, error) // 为指定用户创建客户端
-	GetClient(clientID int64) (*models.Client, error)
+	CreateClient(userID, clientName string) (*models.Client, error)      // 为指定用户创建客户端
+	GetClient(clientID int64) (*models.Client, error)                    // 获取客户端聚合对象
+	GetClientConfig(clientID int64) (*models.ClientConfig, error)        // 获取客户端配置（用于挑战-响应认证）
 	TouchClient(clientID int64)
 	UpdateClient(client *models.Client) error
 	DeleteClient(clientID int64) error
@@ -36,6 +37,11 @@ type CloudControlAPI interface {
 	ListClients(userID string, clientType models.ClientType) ([]*models.Client, error)
 	ListUserClients(userID string) ([]*models.Client, error)             // 获取用户下的所有客户端
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) // 获取客户端下的所有端口映射
+
+	// 客户端凭据管理
+	ResetClientCredentials(clientID int64) (newSecretKey string, err error) // 重置客户端 SecretKey
+	MigrateClientCredentials(clientID int64) error                          // 迁移客户端凭据到加密存储
+	VerifyClientSecretKey(clientID int64, secretKey string) (bool, error)   // 验证客户端 SecretKey（支持加密存储）
 
 	// 客户端状态查询（快速接口，仅查Redis）
 	GetClientNodeID(clientID int64) (string, error)             // 获取客户端所在节点ID

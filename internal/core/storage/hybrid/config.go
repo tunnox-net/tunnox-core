@@ -77,6 +77,10 @@ func DefaultConfig() *Config {
 			"tunnox:mappings:list",          // 映射全局列表（跨节点查询 + 持久化）
 			"tunnox:http_domain:mapping:",   // HTTP域名映射数据（跨节点共享 + 持久化）
 			"tunnox:http_domain:client:",    // HTTP域名客户端映射列表（跨节点共享 + 持久化）
+			"webhook:",                      // Webhook 配置（跨节点共享 + 持久化）
+			"webhooks:",                     // Webhook 列表和索引（跨节点共享 + 持久化）
+			"webhook_log:",                  // Webhook 日志（跨节点共享 + 持久化）
+			"webhook_logs:",                 // Webhook 日志列表（跨节点共享 + 持久化）
 		},
 		DefaultCacheTTL:    1 * time.Hour,
 		PersistentCacheTTL: 24 * time.Hour,

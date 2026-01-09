@@ -12,7 +12,8 @@ type CloudControlAPI interface {
 	GetPortMapping(mappingID string) (*models.PortMapping, error)
 	UpdatePortMappingStats(mappingID string, trafficStats *stats.TrafficStats) error
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error)
-	TouchClient(clientID int64) // 刷新客户端状态 TTL（心跳时调用）
+	TouchClient(clientID int64)            // 刷新客户端状态 TTL（心跳时调用）
+	DisconnectClient(clientID int64) error // 断开客户端连接（触发 webhook 通知）
 }
 
 // CloudControlAdapter 适配器，将 BuiltinCloudControl 转换为 CloudControlAPI 接口
@@ -43,4 +44,9 @@ func (a *CloudControlAdapter) GetClientPortMappings(clientID int64) ([]*models.P
 // TouchClient 刷新客户端状态 TTL
 func (a *CloudControlAdapter) TouchClient(clientID int64) {
 	a.cc.TouchClient(clientID)
+}
+
+// DisconnectClient 断开客户端连接（触发 webhook 通知）
+func (a *CloudControlAdapter) DisconnectClient(clientID int64) error {
+	return a.cc.DisconnectClient(clientID)
 }

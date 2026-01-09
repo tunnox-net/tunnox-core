@@ -3,19 +3,20 @@ package client
 import (
 	"context"
 	"tunnox-core/internal/broker"
-	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/services/base"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
+	"tunnox-core/internal/security"
 )
 
+// WebhookNotifier webhook 通知接口
+// 注意：方法签名必须与 services.WebhookNotifier 一致，以便 client.Service
+// 能够隐式实现 services.WebhookNotifierAware 接口
 type WebhookNotifier interface {
 	DispatchClientOnline(clientID int64, userID, ipAddress, nodeID string)
 	DispatchClientOffline(clientID int64, userID string)
-	DispatchMappingCreated(mapping *models.PortMapping)
-	DispatchMappingDeleted(mappingID, userID string)
 }
 
 // Service 客户端服务实现
@@ -52,6 +53,9 @@ type Service struct {
 
 	// Webhook 通知器（可选，用于发送客户端事件 webhook）
 	webhookNotifier WebhookNotifier
+
+	// SecretKey 管理器（可选，用于加密存储凭据）
+	secretKeyMgr *security.SecretKeyManager
 }
 
 // NewService 创建客户端服务
@@ -103,4 +107,9 @@ func (s *Service) SetBroker(b broker.MessageBroker) {
 
 func (s *Service) SetWebhookNotifier(n WebhookNotifier) {
 	s.webhookNotifier = n
+}
+
+// SetSecretKeyManager 设置 SecretKey 管理器（用于加密存储凭据）
+func (s *Service) SetSecretKeyManager(mgr *security.SecretKeyManager) {
+	s.secretKeyMgr = mgr
 }

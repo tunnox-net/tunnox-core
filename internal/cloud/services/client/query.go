@@ -186,3 +186,22 @@ func (s *Service) GetClientStats(clientID int64) (*stats.ClientStats, error) {
 	}
 	return clientStats, nil
 }
+
+// GetClientConfig 获取客户端配置（包含加密的 SecretKey）
+//
+// 用途：
+// - 服务端挑战-响应认证时需要获取加密的 SecretKey
+// - 配置迁移/更新时需要直接访问配置
+//
+// 参数：
+//   - clientID: 客户端ID
+//
+// 返回：
+//   - *models.ClientConfig: 配置对象
+//   - error: 错误信息
+func (s *Service) GetClientConfig(clientID int64) (*models.ClientConfig, error) {
+	if s.configRepo == nil {
+		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "configRepo not initialized")
+	}
+	return s.configRepo.GetConfig(clientID)
+}

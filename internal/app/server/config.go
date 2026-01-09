@@ -2,6 +2,7 @@ package server
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"os"
 	"path/filepath"
@@ -97,6 +98,7 @@ type PlatformConfig struct {
 type SecurityConfig struct {
 	ReconnectTokenSecret string `yaml:"reconnect_token_secret"` // 重连Token HMAC密钥，为空时自动生成
 	ReconnectTokenTTL    int    `yaml:"reconnect_token_ttl"`    // 重连Token有效期（秒），默认30
+	SecretKeyMasterKey   string `yaml:"secretkey_master_key"`   // SecretKey AES-256 主密钥（Base64编码，32字节），为空时自动生成
 }
 
 // Config 应用配置
@@ -284,16 +286,36 @@ func ValidateConfig(config *Config) error {
 		config.Security.ReconnectTokenTTL = 30 // 默认30秒
 	}
 
+	// SecretKey 主密钥（AES-256 需要 32 字节，Base64 编码）
+	if config.Security.SecretKeyMasterKey == "" {
+		// 未配置时自动生成随机密钥
+		secret, err := generateRandomSecretBase64(32)
+		if err != nil {
+			return coreerrors.Wrap(err, coreerrors.CodeConfigError, "failed to generate SecretKey master key")
+		}
+		config.Security.SecretKeyMasterKey = secret
+		corelog.Warnf("security.secretkey_master_key not configured, using auto-generated random key (not recommended for production cluster)")
+	}
+
 	return nil
 }
 
-// generateRandomSecret 生成随机密钥
+// generateRandomSecret 生成随机密钥（Hex 编码）
 func generateRandomSecret(length int) (string, error) {
 	b := make([]byte, length)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// generateRandomSecretBase64 生成随机密钥（Base64 编码）
+func generateRandomSecretBase64(length int) (string, error) {
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(b), nil
 }
 
 // GetDefaultConfig 获取默认配置

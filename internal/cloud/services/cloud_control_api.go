@@ -280,6 +280,23 @@ func (api *CloudControlAPI) GetClientStats(clientID int64) (*stats.ClientStats, 
 	return api.clientService.GetClientStats(clientID)
 }
 
+// 客户端凭据管理接口
+func (api *CloudControlAPI) ResetClientCredentials(clientID int64) (string, error) {
+	return api.clientService.ResetSecretKey(clientID, nil)
+}
+
+func (api *CloudControlAPI) MigrateClientCredentials(clientID int64) error {
+	return api.clientService.MigrateToEncrypted(clientID)
+}
+
+func (api *CloudControlAPI) VerifyClientSecretKey(clientID int64, secretKey string) (bool, error) {
+	return api.clientService.VerifySecretKey(clientID, secretKey)
+}
+
+func (api *CloudControlAPI) GetClientConfig(clientID int64) (*models.ClientConfig, error) {
+	return api.clientService.GetClientConfig(clientID)
+}
+
 // 端口映射管理接口
 func (api *CloudControlAPI) CreatePortMapping(mapping *models.PortMapping) (*models.PortMapping, error) {
 	return api.mappingService.CreatePortMapping(mapping)

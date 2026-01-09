@@ -73,12 +73,27 @@ func (c *SecurityComponent) Initialize(ctx context.Context, deps *Dependencies) 
 	deps.ReconnectTokenManager = security.NewReconnectTokenManager(reconnectTokenConfig, deps.Storage)
 	deps.SessionTokenManager = security.NewSessionTokenManager(nil)
 
+	// 创建 SecretKey 管理器（用于挑战-响应认证）
+	secretKeyConfig := &security.SecretKeyConfig{
+		MasterKey: deps.Config.Security.SecretKeyMasterKey,
+	}
+	secretKeyMgr, err := security.NewSecretKeyManager(secretKeyConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create SecretKeyManager: %w", err)
+	}
+	deps.SecretKeyManager = secretKeyMgr
+
+	// 注入 SecretKeyManager 到 CloudBuiltin（用于匿名客户端凭据加密存储）
+	if deps.CloudBuiltin != nil {
+		deps.CloudBuiltin.SetSecretKeyManager(secretKeyMgr)
+	}
+
 	// 注入到 SessionManager
 	if deps.SessionMgr != nil {
 		deps.SessionMgr.SetReconnectTokenManager(deps.ReconnectTokenManager)
 	}
 
-	corelog.Infof("Security components initialized")
+	corelog.Infof("Security components initialized (including SecretKeyManager)")
 	return nil
 }
 
@@ -171,6 +186,7 @@ func (c *HandlersComponent) Initialize(ctx context.Context, deps *Dependencies) 
 		deps.BruteForceProtector,
 		deps.IPManager,
 		deps.RateLimiter,
+		deps.SecretKeyManager,
 	)
 	deps.TunnelHandler = NewServerTunnelHandler(deps.CloudControl, deps.ConnCodeService)
 

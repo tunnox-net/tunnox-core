@@ -81,8 +81,9 @@ type TunnoxClient struct {
 	reconnecting atomic.Bool
 
 	// 重连控制
-	kicked     bool // 是否被踢下线
-	authFailed bool // 是否认证失败
+	kicked           bool // 是否被踢下线
+	authFailed       bool // 是否认证失败
+	credentialsReset bool // 是否凭据被重置
 
 	// 启动时间（用于计算运行时间）
 	startTime time.Time
