@@ -23,8 +23,13 @@ log:
   format: "text"
   output: "stdout"
 
-message_broker:
-  type: "memory"
+# Redis 配置（用于消息代理和缓存）
+# 启用 Redis 后，消息代理将使用 Redis Pub/Sub，支持跨节点通信和 SSE 实时推送
+redis:
+  enabled: true
+  addr: "redis:6379"
+  password: ""
+  db: 0
 
 storage:
   type: hybrid

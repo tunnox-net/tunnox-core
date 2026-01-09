@@ -38,7 +38,11 @@ cloud:
     max_attempts: 10
 
 message_broker:
-  type: "memory"
+  type: "redis"
+  redis:
+    addr: "redis:6379"
+    password: ""
+    db: 0
 
 storage:
   type: "hybrid"
