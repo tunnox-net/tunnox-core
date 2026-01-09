@@ -40,8 +40,9 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /build/tunnox-server .
 
-# Copy example config (用户可以通过 ConfigMap 覆盖 /app/config.yaml)
-COPY config.example.yaml ./config.example.yaml
+# Copy config file (用户可以通过 ConfigMap 覆盖 /app/config.yaml)
+# 默认启用 Redis broker 以支持跨节点通信和 SSE 实时推送
+COPY config.example.yaml ./config.yaml
 
 # Create data directory
 RUN mkdir -p /app/data /app/logs
