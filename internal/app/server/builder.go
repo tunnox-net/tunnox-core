@@ -44,6 +44,7 @@ func (b *ServerBuilder) WithDefaults() *ServerBuilder {
 		With(&MetricsComponent{}).
 		With(&CloudControlComponent{}).
 		With(&NodeComponent{}).
+		With(&WebhookComponent{}).
 		With(&SessionComponent{}).
 		With(&SecurityComponent{}).
 		With(&HealthComponent{}).

@@ -143,6 +143,15 @@ func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 	api.HandleFunc("/nodes", m.handleListNodes).Methods("GET")
 	api.HandleFunc("/nodes/{node_id}", m.handleGetNode).Methods("GET")
 
+	// Webhook 管理路由
+	api.HandleFunc("/webhooks", m.handleCreateWebhook).Methods("POST")
+	api.HandleFunc("/webhooks", m.handleListWebhooks).Methods("GET")
+	api.HandleFunc("/webhooks/{webhook_id}", m.handleGetWebhook).Methods("GET")
+	api.HandleFunc("/webhooks/{webhook_id}", m.handleUpdateWebhook).Methods("PUT")
+	api.HandleFunc("/webhooks/{webhook_id}", m.handleDeleteWebhook).Methods("DELETE")
+	api.HandleFunc("/webhooks/{webhook_id}/test", m.handleTestWebhook).Methods("POST")
+	api.HandleFunc("/webhooks/{webhook_id}/logs", m.handleListWebhookLogs).Methods("GET")
+
 	// 注册 pprof 路由
 	if m.config.PProf.Enabled {
 		m.registerPProfRoutes(router)

@@ -12,6 +12,15 @@ type BrokerAware interface {
 	SetBroker(b broker.MessageBroker)
 }
 
+type WebhookNotifierAware interface {
+	SetWebhookNotifier(n WebhookNotifier)
+}
+
+type WebhookNotifier interface {
+	DispatchClientOnline(clientID int64, userID, ipAddress, nodeID string)
+	DispatchClientOffline(clientID int64, userID string)
+}
+
 // ClientNotifier 客户端通知接口
 // 用于在服务层避免循环依赖，与 managers.ClientNotifier 接口兼容
 // 注意：anonymous.Notifier 使用相同的方法签名，满足 Go 的隐式接口实现

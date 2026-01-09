@@ -3,12 +3,20 @@ package client
 import (
 	"context"
 	"tunnox-core/internal/broker"
+	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/services/base"
 	"tunnox-core/internal/cloud/stats"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/idgen"
 )
+
+type WebhookNotifier interface {
+	DispatchClientOnline(clientID int64, userID, ipAddress, nodeID string)
+	DispatchClientOffline(clientID int64, userID string)
+	DispatchMappingCreated(mapping *models.PortMapping)
+	DispatchMappingDeleted(mappingID, userID string)
+}
 
 // Service 客户端服务实现
 //
@@ -41,6 +49,9 @@ type Service struct {
 
 	// 消息代理（可选，用于发布客户端状态事件）
 	broker broker.MessageBroker
+
+	// Webhook 通知器（可选，用于发送客户端事件 webhook）
+	webhookNotifier WebhookNotifier
 }
 
 // NewService 创建客户端服务
@@ -88,4 +99,8 @@ func NewService(
 //   - b: 消息代理实例
 func (s *Service) SetBroker(b broker.MessageBroker) {
 	s.broker = b
+}
+
+func (s *Service) SetWebhookNotifier(n WebhookNotifier) {
+	s.webhookNotifier = n
 }

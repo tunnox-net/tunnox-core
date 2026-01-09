@@ -105,6 +105,10 @@ func (s *HTTPService) SetHTTPDomainMappingRepo(repo repos.IHTTPDomainMappingRepo
 	s.deps.HTTPDomainMappingRepo = repo
 }
 
+func (s *HTTPService) SetWebhookManager(mgr managers.WebhookManagerAPI) {
+	s.deps.WebhookManager = mgr
+}
+
 // SetJWTValidator 设置 JWT 验证函数
 func (s *HTTPService) SetJWTValidator(validator func(token string) (*JWTClaims, error)) {
 	s.validateJWT = validator

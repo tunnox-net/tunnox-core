@@ -157,3 +157,14 @@ func (c *CloudControl) SetBroker(b broker.MessageBroker) {
 		corelog.Infof("CloudControl: broker injected into ClientService")
 	}
 }
+
+func (c *CloudControl) SetWebhookNotifier(n services.WebhookNotifier) {
+	if c.clientService == nil {
+		return
+	}
+
+	if aware, ok := c.clientService.(services.WebhookNotifierAware); ok {
+		aware.SetWebhookNotifier(n)
+		corelog.Infof("CloudControl: webhook notifier injected into ClientService")
+	}
+}

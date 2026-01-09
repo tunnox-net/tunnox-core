@@ -89,6 +89,10 @@ type Dependencies struct {
 	// 仓库（供组件间共享）
 	Repository     *repos.Repository
 	HTTPDomainRepo repos.IHTTPDomainMappingRepository
+
+	// Webhook 组件
+	WebhookRepo    repos.IWebhookRepository
+	WebhookManager managers.WebhookManagerAPI
 }
 
 // ============================================================================

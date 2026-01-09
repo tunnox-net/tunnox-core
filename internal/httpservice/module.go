@@ -56,6 +56,9 @@ type ModuleDependencies struct {
 
 	// HTTPDomainMappingRepo HTTP 域名映射仓库（持久化存储）
 	HTTPDomainMappingRepo repos.IHTTPDomainMappingRepository
+
+	// WebhookManager Webhook 管理器
+	WebhookManager managers.WebhookManagerAPI
 }
 
 // SessionManagerInterface 会话管理器接口

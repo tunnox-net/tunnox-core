@@ -206,6 +206,10 @@ func (c *HTTPServiceComponent) Initialize(ctx context.Context, deps *Dependencie
 		httpSvc.SetSessionManager(NewSessionManagerAdapter(deps.SessionMgr))
 	}
 
+	if deps.WebhookManager != nil {
+		httpSvc.SetWebhookManager(deps.WebhookManager)
+	}
+
 	deps.HTTPService = httpSvc
 
 	corelog.Infof("HTTPService initialized: addr=%s", httpConfig.ListenAddr)

@@ -234,3 +234,35 @@ func (c *NodeComponent) Start() error {
 func (c *NodeComponent) Stop() error {
 	return nil
 }
+
+type WebhookComponent struct {
+	*BaseComponent
+}
+
+func (c *WebhookComponent) Name() string {
+	return "Webhook"
+}
+
+func (c *WebhookComponent) Initialize(ctx context.Context, deps *Dependencies) error {
+	if deps.Storage == nil {
+		return fmt.Errorf("storage is required")
+	}
+
+	deps.WebhookRepo = repos.NewWebhookRepository(deps.Storage)
+	deps.WebhookManager = managers.NewWebhookManager(deps.WebhookRepo, ctx)
+
+	if deps.CloudBuiltin != nil {
+		deps.CloudBuiltin.SetWebhookNotifier(deps.WebhookManager)
+	}
+
+	corelog.Infof("Webhook component initialized")
+	return nil
+}
+
+func (c *WebhookComponent) Start() error {
+	return nil
+}
+
+func (c *WebhookComponent) Stop() error {
+	return nil
+}
