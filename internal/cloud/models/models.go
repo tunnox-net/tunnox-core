@@ -59,15 +59,16 @@ type NodeServiceInfo struct {
 
 // User 用户信息
 type User struct {
-	ID        string     `json:"id"`         // 用户唯一标识
-	Username  string     `json:"username"`   // 用户名
-	Email     string     `json:"email"`      // 邮箱
-	Status    UserStatus `json:"status"`     // 用户状态：active/suspended/deleted
-	Type      UserType   `json:"type"`       // 用户类型：registered/anonymous
-	CreatedAt time.Time  `json:"created_at"` // 创建时间
-	UpdatedAt time.Time  `json:"updated_at"` // 更新时间
-	Plan      UserPlan   `json:"plan"`       // 用户套餐：free/premium/enterprise
-	Quota     UserQuota  `json:"quota"`      // 用户配额
+	ID             string     `json:"id"`                         // 用户唯一标识（Core 内部 ID，如 user_rIar4uvt）
+	PlatformUserID int64      `json:"platform_user_id,omitempty"` // Platform 用户 ID（BIGINT，用于双向关联）
+	Username       string     `json:"username"`                   // 用户名
+	Email          string     `json:"email"`                      // 邮箱
+	Status         UserStatus `json:"status"`                     // 用户状态：active/suspended/deleted
+	Type           UserType   `json:"type"`                       // 用户类型：registered/anonymous
+	CreatedAt      time.Time  `json:"created_at"`                 // 创建时间
+	UpdatedAt      time.Time  `json:"updated_at"`                 // 更新时间
+	Plan           UserPlan   `json:"plan"`                       // 用户套餐：free/premium/enterprise
+	Quota          UserQuota  `json:"quota"`                      // 用户配额
 }
 
 type UserType string

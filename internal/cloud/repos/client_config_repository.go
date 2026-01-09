@@ -3,6 +3,7 @@ package repos
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"tunnox-core/internal/cloud/models"
@@ -250,6 +251,12 @@ func (r *ClientConfigRepository) ListConfigs() ([]*models.ClientConfig, error) {
 	}
 
 	dispose.Infof("ListConfigs: queried %d items, parsed %d configs, errors=%d", len(items), len(configs), parseErrors)
+
+	// 按创建时间降序排序（最新的在前面）
+	sort.Slice(configs, func(i, j int) bool {
+		return configs[i].CreatedAt.After(configs[j].CreatedAt)
+	})
+
 	return configs, nil
 }
 

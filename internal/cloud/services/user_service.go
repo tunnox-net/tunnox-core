@@ -33,7 +33,8 @@ func NewUserService(userRepo *repos.UserRepository, idManager *idgen.IDManager, 
 }
 
 // CreateUser 创建用户
-func (s *userService) CreateUser(username, email string) (*models.User, error) {
+// platformUserID: Platform 用户 ID（BIGINT），用于双向关联，0 表示未关联
+func (s *userService) CreateUser(username, email string, platformUserID int64) (*models.User, error) {
 	// 生成用户ID
 	userID, err := s.idManager.GenerateUserID()
 	if err != nil {
@@ -42,11 +43,12 @@ func (s *userService) CreateUser(username, email string) (*models.User, error) {
 
 	// 创建用户
 	user := &models.User{
-		ID:       userID,
-		Username: username,
-		Email:    email,
-		Type:     models.UserTypeRegistered,
-		Status:   models.UserStatusActive,
+		ID:             userID,
+		PlatformUserID: platformUserID, // 保存 Platform 用户 ID，实现双向关联
+		Username:       username,
+		Email:          email,
+		Type:           models.UserTypeRegistered,
+		Status:         models.UserStatusActive,
 	}
 
 	// 设置时间戳

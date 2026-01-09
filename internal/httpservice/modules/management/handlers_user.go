@@ -37,8 +37,9 @@ func enrichClientsWithIPRegion(clients []*models.Client) {
 // handleCreateUser 创建用户
 func (m *ManagementModule) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username string `json:"username"`
-		Email    string `json:"email"`
+		Username       string `json:"username"`
+		Email          string `json:"email"`
+		PlatformUserID int64  `json:"platform_user_id"` // Platform 用户 ID（BIGINT）
 	}
 
 	if err := parseJSONBody(r, &req); err != nil {
@@ -51,7 +52,7 @@ func (m *ManagementModule) handleCreateUser(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	user, err := m.cloudControl.CreateUser(req.Username, req.Email)
+	user, err := m.cloudControl.CreateUser(req.Username, req.Email, req.PlatformUserID)
 	if err != nil {
 		corelog.Errorf("ManagementModule: failed to create user: %v", err)
 		m.respondError(w, http.StatusInternalServerError, err.Error())
@@ -92,11 +93,12 @@ func (m *ManagementModule) handleUpdateUser(w http.ResponseWriter, r *http.Reque
 	}
 
 	var req struct {
-		Username string            `json:"username,omitempty"`
-		Email    string            `json:"email,omitempty"`
-		Status   models.UserStatus `json:"status,omitempty"`
-		Plan     models.UserPlan   `json:"plan,omitempty"`
-		Quota    *models.UserQuota `json:"quota,omitempty"`
+		Username       string            `json:"username,omitempty"`
+		Email          string            `json:"email,omitempty"`
+		Status         models.UserStatus `json:"status,omitempty"`
+		Plan           models.UserPlan   `json:"plan,omitempty"`
+		Quota          *models.UserQuota `json:"quota,omitempty"`
+		PlatformUserID *int64            `json:"platform_user_id,omitempty"`
 	}
 
 	if err := parseJSONBody(r, &req); err != nil {
@@ -131,6 +133,9 @@ func (m *ManagementModule) handleUpdateUser(w http.ResponseWriter, r *http.Reque
 	}
 	if req.Quota != nil {
 		user.Quota = *req.Quota
+	}
+	if req.PlatformUserID != nil {
+		user.PlatformUserID = *req.PlatformUserID
 	}
 
 	// 保存更新

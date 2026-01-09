@@ -356,6 +356,11 @@ func (c *TunnoxClient) GetTunnelPoolStats() *TunnelPoolStats {
 	return c.tunnelPool.Stats()
 }
 
+// GetSocks5Manager 获取 SOCKS5 管理器
+func (c *TunnoxClient) GetSocks5Manager() *socks5.Manager {
+	return c.socks5Manager
+}
+
 // IsTunnelPoolEnabled 是否启用了连接池
 func (c *TunnoxClient) IsTunnelPoolEnabled() bool {
 	return c.tunnelPool != nil && c.tunnelPool.config.Enabled

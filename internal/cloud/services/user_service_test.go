@@ -67,7 +67,7 @@ func TestUserService_CreateUser(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			service, _, _ := setupUserServiceTest(t)
 
-			user, err := service.CreateUser(tc.username, tc.email)
+			user, err := service.CreateUser(tc.username, tc.email, 0)
 
 			if tc.expectError {
 				assert.Error(t, err)
@@ -93,7 +93,7 @@ func TestUserService_GetUser(t *testing.T) {
 		{
 			name: "获取存在的用户",
 			setupFunc: func(t *testing.T, service UserService) string {
-				user, err := service.CreateUser("getuser", "get@example.com")
+				user, err := service.CreateUser("getuser", "get@example.com", 0)
 				require.NoError(t, err)
 				return user.ID
 			},
@@ -132,7 +132,7 @@ func TestUserService_UpdateUser(t *testing.T) {
 		service, _, _ := setupUserServiceTest(t)
 
 		// 创建用户
-		user, err := service.CreateUser("updateuser", "update@example.com")
+		user, err := service.CreateUser("updateuser", "update@example.com", 0)
 		require.NoError(t, err)
 
 		// 更新用户
@@ -153,7 +153,7 @@ func TestUserService_DeleteUser(t *testing.T) {
 	t.Run("删除存在的用户", func(t *testing.T) {
 		service, _, _ := setupUserServiceTest(t)
 
-		user, err := service.CreateUser("deleteuser", "delete@example.com")
+		user, err := service.CreateUser("deleteuser", "delete@example.com", 0)
 		require.NoError(t, err)
 
 		err = service.DeleteUser(user.ID)
@@ -171,10 +171,10 @@ func TestUserService_ListUsers(t *testing.T) {
 
 		// 创建多个不同类型的用户
 		// CreateUser 内部已调用 AddUserToList，无需重复调用
-		_, err := service.CreateUser("user1", "user1@example.com")
+		_, err := service.CreateUser("user1", "user1@example.com", 0)
 		require.NoError(t, err)
 
-		_, err = service.CreateUser("user2", "user2@example.com")
+		_, err = service.CreateUser("user2", "user2@example.com", 0)
 		require.NoError(t, err)
 
 		// 列出所有注册用户
@@ -203,7 +203,7 @@ func TestUserService_SearchUsers(t *testing.T) {
 			name: "按用户名搜索",
 			setupFunc: func(t *testing.T, service UserService) {
 				// CreateUser 内部已调用 AddUserToList
-				_, err := service.CreateUser("searchable", "search@example.com")
+				_, err := service.CreateUser("searchable", "search@example.com", 0)
 				require.NoError(t, err)
 			},
 			keyword:       "search",
@@ -212,7 +212,7 @@ func TestUserService_SearchUsers(t *testing.T) {
 		{
 			name: "按邮箱搜索",
 			setupFunc: func(t *testing.T, service UserService) {
-				_, err := service.CreateUser("emailuser", "findme@domain.com")
+				_, err := service.CreateUser("emailuser", "findme@domain.com", 0)
 				require.NoError(t, err)
 			},
 			keyword:       "findme",
@@ -221,7 +221,7 @@ func TestUserService_SearchUsers(t *testing.T) {
 		{
 			name: "大小写不敏感搜索",
 			setupFunc: func(t *testing.T, service UserService) {
-				_, err := service.CreateUser("CamelCase", "camel@case.com")
+				_, err := service.CreateUser("CamelCase", "camel@case.com", 0)
 				require.NoError(t, err)
 			},
 			keyword:       "camelcase",
@@ -230,7 +230,7 @@ func TestUserService_SearchUsers(t *testing.T) {
 		{
 			name: "空关键词搜索",
 			setupFunc: func(t *testing.T, service UserService) {
-				_, err := service.CreateUser("anyuser", "any@example.com")
+				_, err := service.CreateUser("anyuser", "any@example.com", 0)
 				require.NoError(t, err)
 			},
 			keyword:       "",
@@ -239,7 +239,7 @@ func TestUserService_SearchUsers(t *testing.T) {
 		{
 			name: "无匹配结果",
 			setupFunc: func(t *testing.T, service UserService) {
-				_, err := service.CreateUser("nouser", "no@example.com")
+				_, err := service.CreateUser("nouser", "no@example.com", 0)
 				require.NoError(t, err)
 			},
 			keyword:       "nonexistent",
@@ -269,7 +269,7 @@ func TestUserService_GetUserStats(t *testing.T) {
 		{
 			name: "获取存在用户的统计",
 			setupFunc: func(t *testing.T, service UserService) string {
-				user, err := service.CreateUser("statsuser", "stats@example.com")
+				user, err := service.CreateUser("statsuser", "stats@example.com", 0)
 				require.NoError(t, err)
 				return user.ID
 			},

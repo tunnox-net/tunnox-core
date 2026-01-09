@@ -24,7 +24,7 @@ func TestGetSystemStats(t *testing.T) {
 	cloudControl := NewBuiltinCloudControlWithStorageAndServices(ctx, config, store)
 
 	// 创建一些数据
-	_, err := cloudControl.CreateUser("user1", "user1@example.com")
+	_, err := cloudControl.CreateUser("user1", "user1@example.com", 0)
 	require.NoError(t, err)
 
 	_, err = cloudControl.CreateClient("user1", "client1")
@@ -88,7 +88,7 @@ func TestGetUserStats(t *testing.T) {
 	cloudControl := NewBuiltinCloudControlWithStorageAndServices(ctx, config, store)
 
 	// 创建用户
-	user, err := cloudControl.CreateUser("testuser", "test@example.com")
+	user, err := cloudControl.CreateUser("testuser", "test@example.com", 0)
 	require.NoError(t, err)
 
 	// 获取用户统计
@@ -134,13 +134,13 @@ func TestSearchUsers(t *testing.T) {
 	cloudControl := NewBuiltinCloudControlWithStorageAndServices(ctx, config, store)
 
 	// 创建测试用户
-	_, err := cloudControl.CreateUser("alice", "alice@example.com")
+	_, err := cloudControl.CreateUser("alice", "alice@example.com", 0)
 	require.NoError(t, err)
 
-	_, err = cloudControl.CreateUser("bob", "bob@example.com")
+	_, err = cloudControl.CreateUser("bob", "bob@example.com", 0)
 	require.NoError(t, err)
 
-	_, err = cloudControl.CreateUser("charlie", "charlie@example.com")
+	_, err = cloudControl.CreateUser("charlie", "charlie@example.com", 0)
 	require.NoError(t, err)
 
 	// 搜索用户
@@ -292,7 +292,7 @@ func TestStats_MultipleDataPoints(t *testing.T) {
 	// 创建多个用户和客户端
 	for i := 0; i < 5; i++ {
 		username := "user" + string(rune('a'+i))
-		_, err := cloudControl.CreateUser(username, username+"@example.com")
+		_, err := cloudControl.CreateUser(username, username+"@example.com", 0)
 		require.NoError(t, err)
 
 		_, err = cloudControl.CreateClient("user-"+username, "client-"+username)

@@ -204,7 +204,7 @@ func TestBuiltInCloudControl_ClientCreation(t *testing.T) {
 	defer cloudControl.Close()
 
 	// 创建用户
-	user, err := cloudControl.CreateUser("testuser", "test@example.com")
+	user, err := cloudControl.CreateUser("testuser", "test@example.com", 0)
 	require.NoError(t, err)
 	require.NotNil(t, user)
 
@@ -232,7 +232,7 @@ func TestBuiltInCloudControl_JWTTokenGeneration(t *testing.T) {
 	defer cloudControl.Close()
 
 	// 创建用户和客户端
-	user, err := cloudControl.CreateUser("testuser", "test@example.com")
+	user, err := cloudControl.CreateUser("testuser", "test@example.com", 0)
 	require.NoError(t, err)
 
 	client, err := cloudControl.CreateClient(user.ID, "test-client")

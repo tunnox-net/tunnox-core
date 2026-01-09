@@ -18,7 +18,7 @@ type CloudControlAPI interface {
 	ValidateToken(token string) (*models.AuthResponse, error)
 
 	// 用户管理
-	CreateUser(username, email string) (*models.User, error) // 创建用户，服务端分配用户ID
+	CreateUser(username, email string, platformUserID int64) (*models.User, error) // 创建用户，platformUserID 为 Platform 用户 ID（BIGINT），用于双向关联
 	GetUser(userID string) (*models.User, error)
 	UpdateUser(user *models.User) error
 	DeleteUser(userID string) error

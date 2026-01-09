@@ -156,14 +156,9 @@ func (s *portMappingService) UpdatePortMapping(mapping *models.PortMapping) erro
 }
 
 // DeletePortMapping 删除端口映射
+// 即使主数据不存在，也会尝试清理索引（处理数据不一致情况）
 func (s *portMappingService) DeletePortMapping(mappingID string) error {
-	// 获取映射信息
-	_, err := s.mappingRepo.GetPortMapping(mappingID)
-	if err != nil {
-		return s.baseService.WrapErrorWithID(err, "get port mapping", mappingID)
-	}
-
-	// 删除映射
+	// 删除映射（repo 层会处理主数据不存在但索引存在的情况）
 	if err := s.mappingRepo.DeletePortMapping(mappingID); err != nil {
 		return s.baseService.WrapErrorWithID(err, "delete port mapping", mappingID)
 	}

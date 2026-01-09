@@ -7,12 +7,13 @@ import (
 )
 
 // CreateUser 创建用户
+// platformUserID: Platform 用户 ID（BIGINT），用于双向关联，0 表示未关联
 // 注意：此方法委托给 UserService 处理，遵循 Manager -> Service -> Repository 架构
-func (c *CloudControl) CreateUser(username, email string) (*models.User, error) {
+func (c *CloudControl) CreateUser(username, email string, platformUserID int64) (*models.User, error) {
 	if c.userService == nil {
 		return nil, coreerrors.New(coreerrors.CodeNotConfigured, "userService not initialized")
 	}
-	return c.userService.CreateUser(username, email)
+	return c.userService.CreateUser(username, email, platformUserID)
 }
 
 // GetUser 获取用户

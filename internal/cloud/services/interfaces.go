@@ -47,7 +47,7 @@ func (a *anonymousNotifierAdapter) NotifyClientUpdate(clientID int64) {
 
 // UserService 用户管理服务
 type UserService interface {
-	CreateUser(username, email string) (*models.User, error)
+	CreateUser(username, email string, platformUserID int64) (*models.User, error) // platformUserID: Platform 用户 ID（BIGINT，用于双向关联）
 	GetUser(userID string) (*models.User, error)
 	UpdateUser(user *models.User) error
 	DeleteUser(userID string) error

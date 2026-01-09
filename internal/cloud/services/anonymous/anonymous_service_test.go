@@ -85,7 +85,7 @@ func TestService_GenerateAnonymousCredentials(t *testing.T) {
 				assert.Empty(t, client.UserID) // Anonymous has no UserID
 				assert.Contains(t, client.Name, "Anonymous-")
 				assert.NotEmpty(t, client.AuthCode)
-				assert.NotEmpty(t, client.SecretKey)
+				assert.NotEmpty(t, client.SecretKeyPlaintext) // SecretKey 字段已废弃，使用 SecretKeyPlaintext
 				assert.Equal(t, models.ClientStatusOffline, client.Status)
 				assert.Equal(t, models.ClientTypeAnonymous, client.Type)
 				assert.False(t, client.CreatedAt.IsZero())

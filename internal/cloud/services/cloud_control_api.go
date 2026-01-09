@@ -105,8 +105,8 @@ func (api *CloudControlAPI) resolveServices() error {
 }
 
 // 用户管理接口
-func (api *CloudControlAPI) CreateUser(username, email string) (*models.User, error) {
-	return api.userService.CreateUser(username, email)
+func (api *CloudControlAPI) CreateUser(username, email string, platformUserID int64) (*models.User, error) {
+	return api.userService.CreateUser(username, email, platformUserID)
 }
 
 func (api *CloudControlAPI) GetUser(userID string) (*models.User, error) {
