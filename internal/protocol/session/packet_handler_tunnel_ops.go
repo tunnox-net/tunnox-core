@@ -63,6 +63,9 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 		return
 	}
 
+	corelog.Infof("Tunnel[%s]: notifyTargetClientToOpenTunnel - req.TargetHost=%s, req.TargetPort=%d, req.MappingID=%s",
+		req.TunnelID, req.TargetHost, req.TargetPort, req.MappingID)
+
 	// ✅ 统一使用 GetPortMapping，直接返回 PortMapping
 	mapping, err := s.cloudControl.GetPortMapping(req.MappingID)
 	if err != nil {
@@ -114,7 +117,9 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 	// 对于其他协议，使用映射配置中的固定目标地址
 	targetHost := mapping.TargetHost
 	targetPort := mapping.TargetPort
-	if mapping.Protocol == "socks5" && req.TargetHost != "" {
+	// 支持 "socks5" 和 "socks" 两种写法
+	isSocks5 := mapping.Protocol == "socks5" || mapping.Protocol == "socks"
+	if isSocks5 && req.TargetHost != "" {
 		targetHost = req.TargetHost
 		targetPort = req.TargetPort
 	}
@@ -133,6 +138,9 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 		"encryption_key":     mapping.Config.EncryptionKey,
 		"bandwidth_limit":    mapping.Config.BandwidthLimit,
 	}
+
+	corelog.Infof("Tunnel[%s]: sending to target client %d - protocol=%s, isSocks5=%v, target_host=%s, target_port=%d",
+		req.TunnelID, mapping.TargetClientID, mapping.Protocol, isSocks5, targetHost, targetPort)
 
 	cmdBodyJSON, err := json.Marshal(cmdBody)
 	if err != nil {

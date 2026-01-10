@@ -2,6 +2,7 @@
 package tunnel
 
 import (
+	"sync/atomic"
 	"time"
 
 	corelog "tunnox-core/internal/core/log"
@@ -33,6 +34,16 @@ func (b *Bridge) AddBytesReceived(n int64) {
 	b.bytesReceived.Add(n)
 }
 
+// GetBytesSentPtr 获取发送字节计数器指针（用于跨节点场景）
+func (b *Bridge) GetBytesSentPtr() *atomic.Int64 {
+	return &b.bytesSent
+}
+
+// GetBytesReceivedPtr 获取接收字节计数器指针（用于跨节点场景）
+func (b *Bridge) GetBytesReceivedPtr() *atomic.Int64 {
+	return &b.bytesReceived
+}
+
 // GetRateLimiter 获取限速器
 func (b *Bridge) GetRateLimiter() *rate.Limiter {
 	return b.rateLimiter
@@ -57,7 +68,12 @@ func (b *Bridge) periodicTrafficReport() {
 
 // reportTrafficStats 上报流量统计到CloudControl
 func (b *Bridge) reportTrafficStats() {
-	if b.cloudControl == nil || b.mappingID == "" {
+	if b.cloudControl == nil {
+		corelog.Debugf("TunnelBridge[%s]: cloudControl is nil, skipping traffic report", b.tunnelID)
+		return
+	}
+	if b.mappingID == "" {
+		corelog.Debugf("TunnelBridge[%s]: mappingID is empty, skipping traffic report", b.tunnelID)
 		return
 	}
 
@@ -107,7 +123,14 @@ func (b *Bridge) reportTrafficStats() {
 
 // StartPeriodicTrafficReport 启动定期流量上报
 func (b *Bridge) StartPeriodicTrafficReport() {
-	if b.cloudControl != nil && b.mappingID != "" {
-		go b.periodicTrafficReport()
+	if b.cloudControl == nil {
+		corelog.Warnf("TunnelBridge[%s]: cloudControl is nil, periodic traffic report disabled", b.tunnelID)
+		return
 	}
+	if b.mappingID == "" {
+		corelog.Warnf("TunnelBridge[%s]: mappingID is empty, periodic traffic report disabled", b.tunnelID)
+		return
+	}
+	corelog.Infof("TunnelBridge[%s]: starting periodic traffic report, mappingID=%s", b.tunnelID, b.mappingID)
+	go b.periodicTrafficReport()
 }
