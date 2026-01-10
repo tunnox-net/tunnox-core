@@ -136,6 +136,10 @@ func createTunnelConnection(
 
 // NewBridge 创建隧道桥接器
 func NewBridge(parentCtx context.Context, config *BridgeConfig) *Bridge {
+	// 记录配置信息用于调试
+	corelog.Infof("TunnelBridge[%s]: creating bridge - mappingID=%s, cloudControl=%v",
+		config.TunnelID, config.MappingID, config.CloudControl != nil)
+
 	bridge := &Bridge{
 		ManagerBase:  dispose.NewManager("TunnelBridge-"+config.TunnelID, parentCtx),
 		tunnelID:     config.TunnelID,
@@ -184,6 +188,9 @@ func NewBridge(parentCtx context.Context, config *BridgeConfig) *Bridge {
 	bridge.AddCleanHandler(func() error {
 		return bridge.cleanup(config.TunnelID)
 	})
+
+	// 启动定期流量上报
+	bridge.StartPeriodicTrafficReport()
 
 	return bridge
 }

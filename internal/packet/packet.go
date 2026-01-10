@@ -138,6 +138,9 @@ const (
 	// ==================== SOCKS5 代理类命令 (90-99) ====================
 	SOCKS5TunnelRequestCmd CommandType = 90 // SOCKS5 隧道请求（ClientA -> Server）
 
+	// ==================== 流量统计类命令 (110-119) ====================
+	TunnelTrafficReport CommandType = 110 // 隧道流量上报（客户端 -> 服务器）
+
 	// ==================== 通知类命令 (100-109) ====================
 	NotifyClient       CommandType = 100 // 服务端 -> 客户端 推送通知
 	NotifyClientAck    CommandType = 101 // 客户端 -> 服务端 通知确认（可选）
@@ -458,4 +461,23 @@ type HTTPDomainListResponse struct {
 	Mappings []HTTPDomainMappingInfo `json:"mappings"`
 	Total    int                     `json:"total"`
 	Error    string                  `json:"error,omitempty"`
+}
+
+// ============================================================================
+// 流量统计类数据包
+// ============================================================================
+
+// TrafficReportRequest 流量上报请求（客户端 -> 服务器）
+type TrafficReportRequest struct {
+	MappingID     string `json:"mapping_id"`      // 映射ID
+	BytesSent     int64  `json:"bytes_sent"`      // 本次上报周期发送的字节数
+	BytesReceived int64  `json:"bytes_received"`  // 本次上报周期接收的字节数
+	Connections   int64  `json:"connections"`     // 当前活跃连接数
+	Timestamp     int64  `json:"timestamp"`       // 上报时间戳（Unix毫秒）
+}
+
+// TrafficReportResponse 流量上报响应
+type TrafficReportResponse struct {
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
 }

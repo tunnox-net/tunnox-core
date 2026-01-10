@@ -125,6 +125,11 @@ func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) err
 			return s.HandleSOCKS5TunnelRequest(connPacket)
 		}
 
+		// 特殊处理流量上报
+		if connPacket.Packet.CommandPacket.CommandType == packet.TunnelTrafficReport {
+			return s.HandleTrafficReport(connPacket)
+		}
+
 		// 特殊处理 Disconnect 命令（客户端主动断开通知）
 		if connPacket.Packet.CommandPacket.CommandType == packet.Disconnect {
 			return s.handleDisconnectCommand(connPacket)

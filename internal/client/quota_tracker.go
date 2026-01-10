@@ -66,9 +66,7 @@ func (c *TunnoxClient) TrackTraffic(mappingID string, bytesSent, bytesReceived i
 	corelog.Debugf("Client: traffic stats for %s - period(sent=%d, recv=%d), total(sent=%d, recv=%d)",
 		mappingID, bytesSent, bytesReceived, totalSent, totalReceived)
 
-	// 3. 预留：可在此处将统计数据上报服务器
-	// 可以通过控制连接发送JsonCommand类型的统计报告
-	// 或者通过专门的统计上报接口
+	// 流量统计由服务器端负责上报，客户端仅做本地记录
 
 	return nil
 }
@@ -199,3 +197,4 @@ func (c *TunnoxClient) GetMonthlyTrafficUsage() (used, limit int64, percent floa
 
 	return used, limit, percent, nil
 }
+

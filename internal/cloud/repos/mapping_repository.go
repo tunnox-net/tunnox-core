@@ -207,12 +207,72 @@ func (r *PortMappingRepo) cleanupMappingIndexes(mapping *models.PortMapping) {
 
 // CleanupMappingIndexesByData 根据已知的 mapping 数据清理索引
 // 当主数据不存在但我们有完整的 mapping 信息时使用
+// 注意：这个方法通过遍历列表按 ID 匹配删除，而不是完整对象匹配
 func (r *PortMappingRepo) CleanupMappingIndexesByData(mapping *models.PortMapping) error {
 	if mapping == nil || mapping.ID == "" {
 		return coreerrors.New(coreerrors.CodeNotFound, "mapping or mapping ID is empty")
 	}
-	r.cleanupMappingIndexes(mapping)
+	r.cleanupMappingIndexesByID(mapping.ID, mapping.UserID, mapping.ListenClientID, mapping.TargetClientID)
 	return nil
+}
+
+// cleanupMappingIndexesByID 通过 ID 匹配清理索引
+// 与 cleanupMappingIndexes 不同，这个方法遍历列表并按 ID 匹配删除，
+// 适用于只有部分 mapping 信息的场景
+func (r *PortMappingRepo) cleanupMappingIndexesByID(mappingID, userID string, listenClientID, targetClientID int64) {
+	// 辅助函数：从列表中按 ID 删除 mapping
+	removeByID := func(listKey string) {
+		listStore, ok := r.GetStorage().(storage.ListStore)
+		if !ok {
+			return
+		}
+		listData, err := listStore.GetList(listKey)
+		if err != nil {
+			return
+		}
+
+		// 过滤掉匹配的 mapping
+		newList := make([]interface{}, 0, len(listData))
+		for _, item := range listData {
+			if itemStr, ok := item.(string); ok {
+				var m models.PortMapping
+				if json.Unmarshal([]byte(itemStr), &m) == nil && m.ID == mappingID {
+					// 找到匹配项，跳过不添加
+					continue
+				}
+			}
+			newList = append(newList, item)
+		}
+
+		// 如果有变化，重写列表
+		if len(newList) < len(listData) {
+			// 使用 Set 而不是 SetList，因为需要保持 TTL
+			if setter, ok := r.GetStorage().(interface{ Set(key string, value interface{}, ttl time.Duration) error }); ok {
+				setter.Set(listKey, newList, 0) // TTL 0 表示不过期
+			}
+		}
+	}
+
+	// 清理全局映射列表
+	removeByID(constants.KeyPrefixMappingList)
+
+	// 清理 ListenClientID 索引
+	if listenClientID != 0 {
+		clientKey := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, random.Int64ToString(listenClientID))
+		removeByID(clientKey)
+	}
+
+	// 清理 TargetClientID 索引
+	if targetClientID != 0 && targetClientID != listenClientID {
+		clientKey := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, random.Int64ToString(targetClientID))
+		removeByID(clientKey)
+	}
+
+	// 清理用户映射索引
+	if userID != "" {
+		userKey := fmt.Sprintf("%s:%s", constants.KeyPrefixUserMappings, userID)
+		removeByID(userKey)
+	}
 }
 
 // UpdatePortMappingStatus 更新端口映射状态

@@ -59,22 +59,28 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 			clientConn = newConn
 		}
 	} else {
-		conn := s.getConnectionByConnID(connPacket.ConnectionID)
-		if conn == nil {
-			return coreerrors.Newf(coreerrors.CodeNotFound, "connection not found: %s", connPacket.ConnectionID)
+		// 隧道连接：先尝试获取现有连接（用于多阶段认证）
+		existingConn := s.getControlConnectionByConnID(connPacket.ConnectionID)
+		if existingConn != nil {
+			clientConn = existingConn
+		} else {
+			conn := s.getConnectionByConnID(connPacket.ConnectionID)
+			if conn == nil {
+				return coreerrors.Newf(coreerrors.CodeNotFound, "connection not found: %s", connPacket.ConnectionID)
+			}
+			enforcedProtocol := conn.Protocol
+			if enforcedProtocol == "" {
+				enforcedProtocol = "tcp"
+			}
+			var remoteAddr net.Addr
+			if conn.RawConn != nil {
+				remoteAddr = conn.RawConn.RemoteAddr()
+			}
+			newConn := NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
+			// 使用 clientRegistry 注册
+			s.RegisterControlConnection(newConn)
+			clientConn = newConn
 		}
-		enforcedProtocol := conn.Protocol
-		if enforcedProtocol == "" {
-			enforcedProtocol = "tcp"
-		}
-		var remoteAddr net.Addr
-		if conn.RawConn != nil {
-			remoteAddr = conn.RawConn.RemoteAddr()
-		}
-		newConn := NewControlConnection(conn.ID, conn.Stream, remoteAddr, enforcedProtocol)
-		// 使用 clientRegistry 注册
-		s.RegisterControlConnection(newConn)
-		clientConn = newConn
 	}
 
 	// 调用 authHandler 处理

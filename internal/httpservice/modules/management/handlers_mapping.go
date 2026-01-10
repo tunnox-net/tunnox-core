@@ -307,6 +307,7 @@ func (m *ManagementModule) handleDeleteMapping(w http.ResponseWriter, r *http.Re
 // handleCleanupOrphanedMapping 清理孤立的映射索引
 // 当主数据不存在但索引中仍有残留时，由 Platform 调用此 API 进行清理
 func (m *ManagementModule) handleCleanupOrphanedMapping(w http.ResponseWriter, r *http.Request) {
+	corelog.Infof("ManagementModule: handleCleanupOrphanedMapping called")
 	var req struct {
 		MappingID string                 `json:"mapping_id"`
 		UserID    string                 `json:"user_id"`
@@ -314,9 +315,12 @@ func (m *ManagementModule) handleCleanupOrphanedMapping(w http.ResponseWriter, r
 	}
 
 	if err := parseJSONBody(r, &req); err != nil {
+		corelog.Errorf("ManagementModule: handleCleanupOrphanedMapping parse error: %v", err)
 		m.respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+
+	corelog.Infof("ManagementModule: cleanup orphaned mapping request - mappingID=%s, userID=%s, mapping=%+v", req.MappingID, req.UserID, req.Mapping)
 
 	if req.MappingID == "" || req.UserID == "" {
 		m.respondError(w, http.StatusBadRequest, "mapping_id and user_id are required")
@@ -332,6 +336,8 @@ func (m *ManagementModule) handleCleanupOrphanedMapping(w http.ResponseWriter, r
 	if err := m.cloudControl.CleanupOrphanedMappingIndexes(req.MappingID, req.UserID, req.Mapping); err != nil {
 		corelog.Warnf("ManagementModule: failed to cleanup orphaned mapping %s: %v", req.MappingID, err)
 		// 即使清理失败也返回成功，因为主数据已不存在
+	} else {
+		corelog.Infof("ManagementModule: successfully cleaned up orphaned mapping %s", req.MappingID)
 	}
 
 	respondJSONTyped(w, http.StatusOK, httpservice.MessageResponse{Message: "orphaned mapping cleaned up"})

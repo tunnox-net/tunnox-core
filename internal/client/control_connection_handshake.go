@@ -86,13 +86,15 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 	var req *packet.HandshakeRequest
 
 	if c.config.ClientID > 0 && c.config.SecretKey != "" {
-		// 已有凭据：发送 ClientID，等待挑战
+		// 已有凭据：发送 ClientID 和 Token（兼容 legacy 认证）
+		// Token 字段用于 legacy 明文认证，ChallengeResponse 用于新版 challenge-response 认证
 		req = &packet.HandshakeRequest{
 			ClientID:       c.config.ClientID,
+			Token:          c.config.SecretKey, // 兼容 legacy 认证
 			Version:        ProtocolVersion,
 			Protocol:       protocol,
 			ConnectionType: connectionType,
-			// ChallengeResponse 留空，等待服务端返回 Challenge
+			// ChallengeResponse 留空，等待服务端返回 Challenge（如果是新版认证）
 		}
 		corelog.Infof("Client: sending handshake phase 1 (existing client, ClientID=%d)", c.config.ClientID)
 	} else {

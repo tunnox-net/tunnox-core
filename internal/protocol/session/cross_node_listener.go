@@ -188,12 +188,18 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 		bridge.ReleaseCrossNodeConnection()
 	}()
 
-	// 使用公共的双向转发逻辑
+	// 获取 Bridge 的流量计数器引用
+	bytesSentPtr := bridge.GetBytesSentPtr()
+	bytesReceivedPtr := bridge.GetBytesReceivedPtr()
+
+	// 使用公共的双向转发逻辑（带流量统计）
 	runBidirectionalForward(&BidirectionalForwardConfig{
-		TunnelID:   tunnelID,
-		LogPrefix:  "CrossNodeListener",
-		LocalConn:  sourceForwarder,
-		RemoteConn: frameStream,
+		TunnelID:             tunnelID,
+		LogPrefix:            "CrossNodeListener",
+		LocalConn:            sourceForwarder,
+		RemoteConn:           frameStream,
+		BytesSentCounter:     bytesSentPtr,
+		BytesReceivedCounter: bytesReceivedPtr,
 	})
 }
 

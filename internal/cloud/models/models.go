@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 	"tunnox-core/internal/cloud/configs"
 )
@@ -15,6 +16,70 @@ type TrafficStats struct {
 	PacketsReceived int64     `json:"packets_received"` // 接收包数
 	Errors          int64     `json:"errors"`           // 错误数
 	LastUpdated     time.Time `json:"last_updated"`     // 最后更新时间
+}
+
+// UnmarshalJSON 自定义 JSON 反序列化，容错处理 LastUpdated 字段
+func (ts *TrafficStats) UnmarshalJSON(data []byte) error {
+	// 定义辅助结构体，所有字段都用 interface{} 接收
+	type alias struct {
+		BytesSent       *int64      `json:"bytes_sent"`
+		BytesReceived   *int64      `json:"bytes_received"`
+		Connections     *int64      `json:"connections"`
+		PacketsSent     *int64      `json:"packets_sent"`
+		PacketsReceived *int64      `json:"packets_received"`
+		Errors          *int64      `json:"errors"`
+		LastUpdated     interface{} `json:"last_updated"`
+	}
+
+	aux := &alias{}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	// 赋值数值字段
+	if aux.BytesSent != nil {
+		ts.BytesSent = *aux.BytesSent
+	}
+	if aux.BytesReceived != nil {
+		ts.BytesReceived = *aux.BytesReceived
+	}
+	if aux.Connections != nil {
+		ts.Connections = *aux.Connections
+	}
+	if aux.PacketsSent != nil {
+		ts.PacketsSent = *aux.PacketsSent
+	}
+	if aux.PacketsReceived != nil {
+		ts.PacketsReceived = *aux.PacketsReceived
+	}
+	if aux.Errors != nil {
+		ts.Errors = *aux.Errors
+	}
+
+	// 容错处理 LastUpdated 字段的多种时间格式
+	if aux.LastUpdated != nil {
+		switch v := aux.LastUpdated.(type) {
+		case string:
+			// 尝试多种时间格式
+			formats := []string{
+				time.RFC3339,
+				time.RFC3339Nano,
+				"2006-01-02T15:04:05.999999999Z07:00",
+				"2006-01-02T15:04:05Z07:00",
+			}
+			for _, format := range formats {
+				if t, err := time.Parse(format, v); err == nil {
+					ts.LastUpdated = t
+					break
+				}
+			}
+		case float64:
+			// Unix 时间戳（秒）
+			ts.LastUpdated = time.Unix(int64(v), 0)
+		}
+	}
+
+	return nil
 }
 
 // NodeRegisterRequest 节点注册请求

@@ -215,6 +215,11 @@ func (s *GRPCStore[K, V]) BatchGet(ctx context.Context, keys []K) (map[K]V, erro
 	for gkey, data := range resp.Values {
 		value, err := s.deserialize(data)
 		if err != nil {
+			// 记录反序列化失败的详细信息
+			if key, ok := keyMap[gkey]; ok {
+				fmt.Printf("GRPCStore.BatchGet: failed to deserialize key %v: %v, raw data: %s\n",
+					key, err, string(data))
+			}
 			continue
 		}
 		if key, ok := keyMap[gkey]; ok {
