@@ -247,6 +247,12 @@ func (m *ManagementModule) handleListUserMappings(w http.ResponseWriter, r *http
 		return
 	}
 
+	// DEBUG: 打印流量统计
+	for _, mapping := range mappings {
+		corelog.Infof("DEBUG handleListUserMappings: mapping %s, traffic_stats bytes_sent=%d, bytes_received=%d",
+			mapping.ID, mapping.TrafficStats.BytesSent, mapping.TrafficStats.BytesReceived)
+	}
+
 	// 包装成对象返回，符合 platform 期望的格式
 	respondJSONTyped(w, http.StatusOK, map[string]interface{}{
 		"mappings": mappings,
