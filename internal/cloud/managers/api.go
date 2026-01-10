@@ -32,8 +32,9 @@ type CloudControlAPI interface {
 	UpdateClient(client *models.Client) error
 	DeleteClient(clientID int64) error
 	UpdateClientStatus(clientID int64, status models.ClientStatus, nodeID string) error
-	ConnectClient(clientID int64, nodeID, connID, ipAddress, protocol, version string) error // 客户端连接（更新完整运行时状态）
-	DisconnectClient(clientID int64) error                                                   // 客户端断开连接
+	ConnectClient(clientID int64, nodeID, connID, ipAddress, protocol, version string) error      // 客户端连接（更新完整运行时状态）
+	DisconnectClient(clientID int64) error                                                       // 客户端断开连接
+	EnsureClientOnline(clientID int64, nodeID, connID, ipAddress, protocol, version string) error // 确保客户端在线状态存在（心跳时调用）
 	ListClients(userID string, clientType models.ClientType) ([]*models.Client, error)
 	ListUserClients(userID string) ([]*models.Client, error)             // 获取用户下的所有客户端
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error) // 获取客户端下的所有端口映射

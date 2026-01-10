@@ -14,6 +14,10 @@ type CloudControlAPI interface {
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error)
 	TouchClient(clientID int64)            // 刷新客户端状态 TTL（心跳时调用）
 	DisconnectClient(clientID int64) error // 断开客户端连接（触发 webhook 通知）
+	// EnsureClientOnline 确保客户端在线状态存在
+	// 如果 Redis 状态丢失（TTL 过期或 Redis 重启），会重建状态
+	// 心跳时调用此方法代替 TouchClient，保证状态始终存在
+	EnsureClientOnline(clientID int64, nodeID, connID, ipAddress, protocol, version string) error
 }
 
 // CloudControlAdapter 适配器，将 BuiltinCloudControl 转换为 CloudControlAPI 接口
@@ -49,4 +53,9 @@ func (a *CloudControlAdapter) TouchClient(clientID int64) {
 // DisconnectClient 断开客户端连接（触发 webhook 通知）
 func (a *CloudControlAdapter) DisconnectClient(clientID int64) error {
 	return a.cc.DisconnectClient(clientID)
+}
+
+// EnsureClientOnline 确保客户端在线状态存在（如果丢失则重建）
+func (a *CloudControlAdapter) EnsureClientOnline(clientID int64, nodeID, connID, ipAddress, protocol, version string) error {
+	return a.cc.EnsureClientOnline(clientID, nodeID, connID, ipAddress, protocol, version)
 }

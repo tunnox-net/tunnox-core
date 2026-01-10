@@ -240,6 +240,73 @@ func (s *Service) DisconnectClient(clientID int64) error {
 	return nil
 }
 
+// EnsureClientOnline 确保客户端在线状态存在
+//
+// 调用时机：每次心跳时调用，代替 TouchClient
+//
+// 与 ConnectClient 的区别：
+//   - 如果状态存在，只刷新 TTL（不发布事件）
+//   - 如果状态丢失（Redis TTL 过期/重启），重建状态（不发布事件，避免重复通知）
+//
+// 这解决了以下问题：
+//   - Redis 状态因 TTL 过期丢失后，TouchState 无法恢复
+//   - 客户端实际在线但显示离线的状态不一致问题
+func (s *Service) EnsureClientOnline(clientID int64, nodeID, connID, ipAddress, protocol, version string) error {
+	// 获取当前状态
+	state, err := s.stateRepo.GetState(clientID)
+	if err != nil {
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get client state")
+	}
+
+	if state != nil {
+		// 状态存在，只刷新 TTL
+		state.Touch()
+		if err := s.stateRepo.SetState(state); err != nil {
+			return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to touch client state")
+		}
+		return nil
+	}
+
+	// 状态丢失，需要重建
+	corelog.Warnf("Client %d state lost, rebuilding (node=%s, conn=%s)", clientID, nodeID, connID)
+
+	// 构建新状态
+	newState := &models.ClientRuntimeState{
+		ClientID:  clientID,
+		NodeID:    nodeID,
+		ConnID:    connID,
+		Status:    models.ClientStatusOnline,
+		IPAddress: ipAddress,
+		Protocol:  protocol,
+		Version:   version,
+		LastSeen:  time.Now(),
+	}
+
+	// 保存状态
+	if err := s.stateRepo.SetState(newState); err != nil {
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to rebuild client state")
+	}
+
+	// 添加到节点列表
+	if err := s.stateRepo.AddToNodeClients(nodeID, clientID); err != nil {
+		s.baseService.LogWarning("add to node clients", err)
+	}
+
+	// ✅ 兼容性：同步到旧Repository
+	if s.clientRepo != nil {
+		if err := s.clientRepo.UpdateClientStatus(random.Int64ToString(clientID), models.ClientStatusOnline, nodeID); err != nil {
+			s.baseService.LogWarning("sync status to legacy repo", err)
+		}
+	}
+
+	corelog.Infof("Client %d state rebuilt on node %s", clientID, nodeID)
+
+	// 注意：不发布 online 事件，因为这是状态恢复，不是真正的上线
+	// 如果需要发布事件，可以添加一个 "state_recovered" 事件类型
+
+	return nil
+}
+
 func (s *Service) publishClientOnlineEvent(clientID int64, nodeID, ipAddress string) {
 	// 获取客户端所属用户（用于 SSE 定向推送和 Webhook）
 	userID := ""

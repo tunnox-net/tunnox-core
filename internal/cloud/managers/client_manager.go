@@ -91,6 +91,16 @@ func (c *CloudControl) DisconnectClient(clientID int64) error {
 	return c.clientService.DisconnectClient(clientID)
 }
 
+// EnsureClientOnline 确保客户端在线状态存在
+// 如果 Redis 状态丢失（TTL 过期或 Redis 重启），会重建状态
+// 心跳时调用此方法代替 TouchClient，保证状态始终存在
+func (c *CloudControl) EnsureClientOnline(clientID int64, nodeID, connID, ipAddress, protocol, version string) error {
+	if c.clientService == nil {
+		return coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
+	}
+	return c.clientService.EnsureClientOnline(clientID, nodeID, connID, ipAddress, protocol, version)
+}
+
 // ListClients 列出客户端
 func (c *CloudControl) ListClients(userID string, clientType models.ClientType) ([]*models.Client, error) {
 	if c.clientService == nil {

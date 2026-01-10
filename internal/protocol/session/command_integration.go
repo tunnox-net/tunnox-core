@@ -279,7 +279,11 @@ func (s *SessionManager) handleHeartbeat(connPacket *types.StreamPacket) error {
 		// 刷新 Redis 中 ClientRuntimeState 的 TTL
 		// 这是关键：心跳需要同时刷新 Redis 状态，否则 90 秒后状态过期，客户端显示离线
 		if s.cloudControl != nil && controlConn.ClientID > 0 {
-			s.cloudControl.TouchClient(controlConn.ClientID)
+			// 先尝试 Touch，如果状态丢失则重建
+			if err := s.cloudControl.EnsureClientOnline(controlConn.ClientID, s.nodeID, controlConn.ConnID,
+				controlConn.GetRemoteAddrString(), controlConn.Protocol, ""); err != nil {
+				corelog.Warnf("handleHeartbeat: failed to ensure client %d online: %v", controlConn.ClientID, err)
+			}
 		}
 	}
 
