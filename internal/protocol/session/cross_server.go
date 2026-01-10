@@ -244,7 +244,9 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 	// 对于 SOCKS5 协议，使用广播消息中的动态目标地址
 	targetHost := mapping.TargetHost
 	targetPort := mapping.TargetPort
-	if mapping.Protocol == "socks5" && msg.TargetHost != "" {
+	// 支持 "socks5" 和 "socks" 两种写法
+	isSocks5 := mapping.Protocol == "socks5" || mapping.Protocol == "socks"
+	if isSocks5 && msg.TargetHost != "" {
 		targetHost = msg.TargetHost
 		targetPort = msg.TargetPort
 	}
