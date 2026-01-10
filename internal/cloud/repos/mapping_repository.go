@@ -304,9 +304,41 @@ func (r *PortMappingRepo) UpdatePortMappingStats(mappingID string, stats *stats.
 }
 
 // GetUserPortMappings 列出用户的端口映射
+// 注意：索引中存储的是创建时的完整数据副本，不包含最新的流量统计等更新
+// 因此需要从主数据重新读取以获取最新状态
 func (r *PortMappingRepo) GetUserPortMappings(userID string) ([]*models.PortMapping, error) {
 	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserMappings, userID)
-	return r.List(key)
+
+	// 1. 从索引获取数据（包含旧的完整数据）
+	indexMappings, err := r.List(key)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(indexMappings) == 0 {
+		return []*models.PortMapping{}, nil
+	}
+
+	// 2. 提取 mapping IDs
+	mappingIDs := make([]string, 0, len(indexMappings))
+	for _, m := range indexMappings {
+		if m != nil && m.ID != "" {
+			mappingIDs = append(mappingIDs, m.ID)
+		}
+	}
+
+	// 3. 从主数据批量读取最新数据
+	result := make([]*models.PortMapping, 0, len(mappingIDs))
+	for _, id := range mappingIDs {
+		mapping, err := r.GetPortMapping(id)
+		if err != nil {
+			// 主数据不存在，跳过（可能是孤立索引）
+			continue
+		}
+		result = append(result, mapping)
+	}
+
+	return result, nil
 }
 
 // GetClientPortMappings 列出客户端的端口映射
@@ -314,7 +346,10 @@ func (r *PortMappingRepo) GetUserPortMappings(userID string) ([]*models.PortMapp
 // 查询流程：
 // 1. 先从缓存索引查询（tunnox:client_mappings:{clientID}）
 // 2. 如果索引为空，从持久存储按字段查询（QueryByField）
-// 3. 去重并返回结果
+// 3. 去重并从主数据读取最新数据后返回
+//
+// 注意：索引中存储的是创建时的完整数据副本，不包含最新的流量统计等更新
+// 因此需要从主数据重新读取以获取最新状态
 //
 // ✅ 由于映射会同时添加到 ListenClientID 和 TargetClientID 的索引，
 // 同一个映射可能出现在两个索引中，需要去重
@@ -323,16 +358,22 @@ func (r *PortMappingRepo) GetClientPortMappings(clientID string) ([]*models.Port
 	indexKey := fmt.Sprintf("%s:%s", constants.KeyPrefixClientMappings, clientID)
 	allMappings, err := r.List(indexKey)
 	if err == nil && len(allMappings) > 0 {
-		// 索引查询成功，去重并返回
-		mappingMap := make(map[string]*models.PortMapping)
+		// 索引查询成功，提取 ID 并去重
+		mappingIDs := make(map[string]bool)
 		for _, m := range allMappings {
 			if m != nil && m.ID != "" {
-				mappingMap[m.ID] = m
+				mappingIDs[m.ID] = true
 			}
 		}
-		result := make([]*models.PortMapping, 0, len(mappingMap))
-		for _, m := range mappingMap {
-			result = append(result, m)
+		// 从主数据读取最新数据
+		result := make([]*models.PortMapping, 0, len(mappingIDs))
+		for id := range mappingIDs {
+			mapping, err := r.GetPortMapping(id)
+			if err != nil {
+				// 主数据不存在，跳过（可能是孤立索引）
+				continue
+			}
+			result = append(result, mapping)
 		}
 		return result, nil
 	}
@@ -402,8 +443,39 @@ func (r *PortMappingRepo) AddMappingToClient(clientID string, mapping *models.Po
 }
 
 // ListAllMappings 列出所有端口映射
+// 注意：索引中存储的是创建时的完整数据副本，不包含最新的流量统计等更新
+// 因此需要从主数据重新读取以获取最新状态
 func (r *PortMappingRepo) ListAllMappings() ([]*models.PortMapping, error) {
-	return r.List(constants.KeyPrefixMappingList)
+	// 1. 从索引获取数据（包含旧的完整数据）
+	indexMappings, err := r.List(constants.KeyPrefixMappingList)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(indexMappings) == 0 {
+		return []*models.PortMapping{}, nil
+	}
+
+	// 2. 提取 mapping IDs 并去重
+	mappingIDs := make(map[string]bool)
+	for _, m := range indexMappings {
+		if m != nil && m.ID != "" {
+			mappingIDs[m.ID] = true
+		}
+	}
+
+	// 3. 从主数据批量读取最新数据
+	result := make([]*models.PortMapping, 0, len(mappingIDs))
+	for id := range mappingIDs {
+		mapping, err := r.GetPortMapping(id)
+		if err != nil {
+			// 主数据不存在，跳过（可能是孤立索引）
+			continue
+		}
+		result = append(result, mapping)
+	}
+
+	return result, nil
 }
 
 // AddMappingToList 添加映射到全局映射列表
