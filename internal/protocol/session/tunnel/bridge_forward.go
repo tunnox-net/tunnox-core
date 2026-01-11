@@ -267,10 +267,8 @@ func (b *Bridge) Start() error {
 	}
 
 	// 跨节点场景：数据转发由 CrossNodeListener 负责，这里只管理生命周期
+	// periodicTrafficReport 已在 NewBridge 中通过 StartPeriodicTrafficReport 启动
 	if b.GetCrossNodeConnection() != nil {
-		if b.cloudControl != nil && b.mappingID != "" {
-			go b.periodicTrafficReport()
-		}
 		// 等待跨节点转发完成（由 CrossNodeListener.runBridgeForward 处理）
 		<-b.Ctx().Done()
 		return nil
@@ -286,10 +284,6 @@ func (b *Bridge) Start() error {
 
 	// 如果源端或目标端没有数据转发器，只管理连接生命周期
 	if b.sourceForwarder == nil || b.targetForwarder == nil {
-		if b.cloudControl != nil && b.mappingID != "" {
-			go b.periodicTrafficReport()
-		}
-		// 等待 bridge 生命周期结束
 		<-b.Ctx().Done()
 		return nil
 	}
@@ -336,11 +330,6 @@ func (b *Bridge) Start() error {
 		dynamicWriter := &dynamicSourceWriter{bridge: b}
 		b.CopyWithControl(dynamicWriter, b.targetForwarder, "target->source", &b.bytesReceived)
 	}()
-
-	// 启动定期流量统计上报
-	if b.cloudControl != nil && b.mappingID != "" {
-		go b.periodicTrafficReport()
-	}
 
 	return nil
 }

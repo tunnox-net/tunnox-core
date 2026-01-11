@@ -129,6 +129,9 @@ func (s *SessionManager) StartServerTunnel(mappingID string, sourceConn net.Conn
 
 // runBridgeLifecycle 启动桥接并在结束后清理
 func (s *SessionManager) runBridgeLifecycle(tunnelID string, bridge *TunnelBridge) {
+	// 确保 bridge 在函数结束时被关闭，释放所有 goroutines
+	defer bridge.Close()
+
 	if err := bridge.Start(); err != nil {
 		corelog.Errorf("Tunnel[%s]: bridge failed: %v", tunnelID, err)
 	}
