@@ -91,6 +91,15 @@ func (c *CloudControl) DisconnectClient(clientID int64) error {
 	return c.clientService.DisconnectClient(clientID)
 }
 
+// DisconnectClientIfMatch 断开客户端连接（仅当 nodeID/connID 匹配时）
+// 用于清理过期连接时避免误删其他节点的新连接状态
+func (c *CloudControl) DisconnectClientIfMatch(clientID int64, nodeID, connID string) (bool, error) {
+	if c.clientService == nil {
+		return false, coreerrors.New(coreerrors.CodeNotConfigured, "clientService not initialized")
+	}
+	return c.clientService.DisconnectClientIfMatch(clientID, nodeID, connID)
+}
+
 // EnsureClientOnline 确保客户端在线状态存在
 // 如果 Redis 状态丢失（TTL 过期或 Redis 重启），会重建状态
 // 心跳时调用此方法代替 TouchClient，保证状态始终存在

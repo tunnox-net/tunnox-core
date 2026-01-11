@@ -12,8 +12,9 @@ type CloudControlAPI interface {
 	GetPortMapping(mappingID string) (*models.PortMapping, error)
 	UpdatePortMappingStats(mappingID string, trafficStats *stats.TrafficStats) error
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error)
-	TouchClient(clientID int64)            // 刷新客户端状态 TTL（心跳时调用）
-	DisconnectClient(clientID int64) error // 断开客户端连接（触发 webhook 通知）
+	TouchClient(clientID int64)                                      // 刷新客户端状态 TTL（心跳时调用）
+	DisconnectClient(clientID int64) error                           // 断开客户端连接（触发 webhook 通知）
+	DisconnectClientIfMatch(clientID int64, nodeID, connID string) (bool, error) // 断开连接（仅当 nodeID/connID 匹配时），用于清理过期连接
 	// EnsureClientOnline 确保客户端在线状态存在
 	// 如果 Redis 状态丢失（TTL 过期或 Redis 重启），会重建状态
 	// 心跳时调用此方法代替 TouchClient，保证状态始终存在
@@ -53,6 +54,11 @@ func (a *CloudControlAdapter) TouchClient(clientID int64) {
 // DisconnectClient 断开客户端连接（触发 webhook 通知）
 func (a *CloudControlAdapter) DisconnectClient(clientID int64) error {
 	return a.cc.DisconnectClient(clientID)
+}
+
+// DisconnectClientIfMatch 断开客户端连接（仅当 nodeID/connID 匹配时）
+func (a *CloudControlAdapter) DisconnectClientIfMatch(clientID int64, nodeID, connID string) (bool, error) {
+	return a.cc.DisconnectClientIfMatch(clientID, nodeID, connID)
 }
 
 // EnsureClientOnline 确保客户端在线状态存在（如果丢失则重建）

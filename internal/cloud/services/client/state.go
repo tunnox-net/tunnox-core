@@ -240,6 +240,89 @@ func (s *Service) DisconnectClient(clientID int64) error {
 	return nil
 }
 
+// DisconnectClientIfMatch 断开客户端连接（仅当 nodeID 和 connID 匹配时）
+//
+// 调用时机：清理过期连接时调用，避免误删其他节点的新连接状态
+//
+// 参数：
+//   - clientID: 客户端ID
+//   - nodeID: 期望的节点ID
+//   - connID: 期望的连接ID
+//
+// 返回：
+//   - bool: 是否执行了断开操作
+//   - error: 错误信息
+//
+// 说明：
+//
+//	如果 Redis 中的状态 nodeID/connID 与参数不匹配，说明客户端已在其他节点重连，
+//	此时不应删除状态，避免造成状态闪烁（在线→离线→在线）
+func (s *Service) DisconnectClientIfMatch(clientID int64, nodeID, connID string) (bool, error) {
+	// 获取当前状态
+	state, err := s.stateRepo.GetState(clientID)
+	if err != nil {
+		return false, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get client state")
+	}
+
+	if state == nil {
+		return false, nil // 已经离线，无需处理
+	}
+
+	// 检查状态是否匹配
+	if state.NodeID != nodeID || state.ConnID != connID {
+		corelog.Infof("DisconnectClientIfMatch: skipped - client %d has reconnected (state: node=%s/conn=%s, expected: node=%s/conn=%s)",
+			clientID, state.NodeID, state.ConnID, nodeID, connID)
+		return false, nil // 状态已被新连接覆盖，跳过
+	}
+
+	// 状态匹配，执行断开逻辑
+	corelog.Infof("DisconnectClientIfMatch: proceeding - client %d state matches (node=%s, conn=%s)", clientID, nodeID, connID)
+
+	// 保存最后的 IP 信息到持久化配置
+	if s.configRepo != nil && state.IPAddress != "" {
+		cfg, err := s.configRepo.GetConfig(clientID)
+		if err == nil && cfg != nil {
+			cfg.LastIPAddress = state.IPAddress
+			if err := s.configRepo.UpdateConfig(cfg); err != nil {
+				s.baseService.LogWarning("save last IP to config", err, random.Int64ToString(clientID))
+			}
+		}
+	}
+
+	// 从节点列表移除
+	if state.NodeID != "" {
+		if err := s.stateRepo.RemoveFromNodeClients(state.NodeID, clientID); err != nil {
+			s.baseService.LogWarning("remove from node clients", err)
+		}
+	}
+
+	// 删除状态
+	if err := s.stateRepo.DeleteState(clientID); err != nil {
+		return false, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to delete client state")
+	}
+
+	// 兼容性：同步到旧Repository
+	if s.clientRepo != nil {
+		if err := s.clientRepo.UpdateClientStatus(random.Int64ToString(clientID), models.ClientStatusOffline, ""); err != nil {
+			s.baseService.LogWarning("sync disconnect to legacy repo", err)
+		}
+	}
+
+	// 更新统计计数器
+	if s.statsCounter != nil && state.Status == models.ClientStatusOnline {
+		if err := s.statsCounter.IncrOnlineClients(-1); err != nil {
+			s.baseService.LogWarning("update online clients counter", err, random.Int64ToString(clientID))
+		}
+	}
+
+	corelog.Infof("Client %d disconnected from node %s (matched)", clientID, state.NodeID)
+
+	// 发布客户端下线事件
+	s.publishClientOfflineEvent(clientID)
+
+	return true, nil
+}
+
 // EnsureClientOnline 确保客户端在线状态存在
 //
 // 调用时机：每次心跳时调用，代替 TouchClient

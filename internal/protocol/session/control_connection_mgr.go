@@ -83,11 +83,15 @@ func (s *SessionManager) RemoveControlConnection(connID string) {
 	s.clientRegistry.Remove(connID)
 
 	// 如果是已认证的控制连接，通知云控层（触发 webhook）
+	// 使用 DisconnectClientIfMatch 避免多节点竞争：只有当 Redis 中的状态与当前节点/连接匹配时才删除
 	if authenticated && clientID > 0 && s.cloudControl != nil {
-		if err := s.cloudControl.DisconnectClient(clientID); err != nil {
+		disconnected, err := s.cloudControl.DisconnectClientIfMatch(clientID, s.nodeID, connID)
+		if err != nil {
 			corelog.Warnf("RemoveControlConnection: failed to disconnect client %d: %v", clientID, err)
+		} else if disconnected {
+			corelog.Infof("RemoveControlConnection: client %d disconnected from node %s", clientID, s.nodeID)
 		} else {
-			corelog.Infof("RemoveControlConnection: notified cloud control for client %d disconnect", clientID)
+			corelog.Infof("RemoveControlConnection: client %d skipped (already reconnected to another node)", clientID)
 		}
 	}
 }
@@ -150,11 +154,15 @@ func (s *SessionManager) cleanupStaleConnections() int {
 	// 委托给 clientRegistry，使用带 clientID 信息的回调
 	return s.clientRegistry.CleanupStale(s.config.HeartbeatTimeout, func(connID string, clientID int64, authenticated bool) error {
 		// 先通知云控层（触发 webhook）
+		// 使用 DisconnectClientIfMatch 避免多节点竞争：只有当 Redis 中的状态与当前节点/连接匹配时才删除
 		if authenticated && clientID > 0 && s.cloudControl != nil {
-			if err := s.cloudControl.DisconnectClient(clientID); err != nil {
+			disconnected, err := s.cloudControl.DisconnectClientIfMatch(clientID, s.nodeID, connID)
+			if err != nil {
 				corelog.Warnf("cleanupStaleConnections: failed to disconnect client %d: %v", clientID, err)
+			} else if disconnected {
+				corelog.Infof("cleanupStaleConnections: client %d disconnected from node %s", clientID, s.nodeID)
 			} else {
-				corelog.Infof("cleanupStaleConnections: notified cloud control for client %d disconnect", clientID)
+				corelog.Infof("cleanupStaleConnections: client %d skipped (already reconnected to another node)", clientID)
 			}
 		}
 		// 然后关闭连接（注意：连接已从 registry 移除，这里只清理其他资源）
