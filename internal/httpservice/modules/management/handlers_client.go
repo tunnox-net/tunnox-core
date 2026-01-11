@@ -214,7 +214,7 @@ func (m *ManagementModule) handleListClientMappings(w http.ResponseWriter, r *ht
 }
 
 // handleBindClient 绑定客户端到用户
-// POST /tunnox/v1/clients/{client_id}/bind
+// POST /tunnox/clients/{client_id}/bind
 // 请求体: { "user_id": "xxx", "secret_key": "xxx", "name": "可选名称" }
 func (m *ManagementModule) handleBindClient(w http.ResponseWriter, r *http.Request) {
 	clientID, err := getInt64PathVar(r, "client_id")
@@ -315,7 +315,7 @@ func (m *ManagementModule) handleBindClient(w http.ResponseWriter, r *http.Reque
 }
 
 // handleResetClientCredentials 重置客户端凭据
-// POST /tunnox/v1/clients/{client_id}/reset-credentials
+// POST /tunnox/clients/{client_id}/reset-credentials
 // 返回新的 SecretKey（仅此一次返回，需用户保存）
 func (m *ManagementModule) handleResetClientCredentials(w http.ResponseWriter, r *http.Request) {
 	clientID, err := getInt64PathVar(r, "client_id")
@@ -346,7 +346,7 @@ func (m *ManagementModule) handleResetClientCredentials(w http.ResponseWriter, r
 }
 
 // handleMigrateClientCredentials 迁移客户端凭据到加密存储
-// POST /tunnox/v1/clients/{client_id}/migrate-credentials
+// POST /tunnox/clients/{client_id}/migrate-credentials
 func (m *ManagementModule) handleMigrateClientCredentials(w http.ResponseWriter, r *http.Request) {
 	clientID, err := getInt64PathVar(r, "client_id")
 	if err != nil {
@@ -373,7 +373,7 @@ func (m *ManagementModule) handleMigrateClientCredentials(w http.ResponseWriter,
 }
 
 // handleGetClientQuota 获取客户端配额
-// GET /tunnox/v1/clients/{client_id}/quota
+// GET /tunnox/clients/{client_id}/quota
 func (m *ManagementModule) handleGetClientQuota(w http.ResponseWriter, r *http.Request) {
 	clientID, err := getInt64PathVar(r, "client_id")
 	if err != nil {

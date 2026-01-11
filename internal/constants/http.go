@@ -73,14 +73,14 @@ const (
 	APIPathHealth    = "/health"
 	APIPathMetrics   = "/metrics"
 	APIPathAPI       = "/api"
-	APIPathV1        = "/tunnox/v1"
-	APIPathAuth      = "/tunnox/v1/auth"
-	APIPathUsers     = "/tunnox/v1/users"
-	APIPathClients   = "/tunnox/v1/clients"
-	APIPathNodes     = "/tunnox/v1/nodes"
-	APIPathMappings  = "/tunnox/v1/mappings"
-	APIPathStats     = "/tunnox/v1/stats"
-	APIPathAnonymous = "/tunnox/v1/anonymous"
+	APIPathBase      = "/tunnox"
+	APIPathAuth      = "/tunnox/auth"
+	APIPathUsers     = "/tunnox/users"
+	APIPathClients   = "/tunnox/clients"
+	APIPathNodes     = "/tunnox/nodes"
+	APIPathMappings  = "/tunnox/mappings"
+	APIPathStats     = "/tunnox/stats"
+	APIPathAnonymous = "/tunnox/anonymous"
 )
 
 // 分页常量

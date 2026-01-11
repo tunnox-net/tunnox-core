@@ -31,7 +31,7 @@ func (h *PProfHandler) RegisterRoutes(router *mux.Router, authMiddleware mux.Mid
 		return
 	}
 
-	pprofRouter := router.PathPrefix("/tunnox/v1/debug/pprof").Subrouter()
+	pprofRouter := router.PathPrefix("/tunnox/debug/pprof").Subrouter()
 
 	if authMiddleware != nil {
 		pprofRouter.Use(authMiddleware)

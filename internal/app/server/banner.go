@@ -129,7 +129,7 @@ func displayManagementAPI(s *Server, reset func(...interface{}) string) {
 	fmt.Printf("  %-18s %s\n", bannerBold("Status:"), bannerGreen("✓ Enabled"))
 	fmt.Printf("  %-18s %s\n", bannerBold("Address:"), fmt.Sprintf("http://%s", s.config.Management.Listen))
 	fmt.Printf("  %-18s %s\n", bannerBold("Authentication:"), authType)
-	fmt.Printf("  %-18s %s\n", bannerBold("Base Path:"), bannerFaint("/tunnox/v1"))
+	fmt.Printf("  %-18s %s\n", bannerBold("Base Path:"), bannerFaint("/tunnox"))
 	fmt.Println()
 
 	// 显示已启用的模块
@@ -142,7 +142,7 @@ func displayManagementAPI(s *Server, reset func(...interface{}) string) {
 	}
 
 	if s.config.Management.PProf.Enabled {
-		fmt.Printf("    • %s %s\n", "PProf", bannerFaint("(/tunnox/v1/debug/pprof/)"))
+		fmt.Printf("    • %s %s\n", "PProf", bannerFaint("(/tunnox/debug/pprof/)"))
 	}
 	fmt.Println()
 }

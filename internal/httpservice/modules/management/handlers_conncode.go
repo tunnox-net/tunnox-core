@@ -55,7 +55,7 @@ type ActivateConnectionCodeResponse struct {
 }
 
 // handleCreateConnectionCode 创建连接码
-// POST /tunnox/v1/connection-codes
+// POST /tunnox/connection-codes
 func (m *ManagementModule) handleCreateConnectionCode(w http.ResponseWriter, r *http.Request) {
 	var req CreateConnectionCodeRequest
 	if err := parseJSONBody(r, &req); err != nil {
@@ -117,7 +117,7 @@ func (m *ManagementModule) handleCreateConnectionCode(w http.ResponseWriter, r *
 }
 
 // handleListConnectionCodes 列出连接码
-// GET /tunnox/v1/connection-codes?target_client_id=xxx
+// GET /tunnox/connection-codes?target_client_id=xxx
 func (m *ManagementModule) handleListConnectionCodes(w http.ResponseWriter, r *http.Request) {
 	// 获取查询参数
 	targetClientIDStr := r.URL.Query().Get("target_client_id")
@@ -174,7 +174,7 @@ func (m *ManagementModule) handleListConnectionCodes(w http.ResponseWriter, r *h
 }
 
 // handleGetConnectionCode 获取连接码详情
-// GET /tunnox/v1/connection-codes/{code}
+// GET /tunnox/connection-codes/{code}
 func (m *ManagementModule) handleGetConnectionCode(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	code := vars["code"]
@@ -218,7 +218,7 @@ func (m *ManagementModule) handleGetConnectionCode(w http.ResponseWriter, r *htt
 }
 
 // handleActivateConnectionCode 激活连接码
-// POST /tunnox/v1/connection-codes/activate
+// POST /tunnox/connection-codes/activate
 func (m *ManagementModule) handleActivateConnectionCode(w http.ResponseWriter, r *http.Request) {
 	var req ActivateConnectionCodeRequest
 	if err := parseJSONBody(r, &req); err != nil {
@@ -270,7 +270,7 @@ func (m *ManagementModule) handleActivateConnectionCode(w http.ResponseWriter, r
 }
 
 // handleRevokeConnectionCode 撤销连接码
-// DELETE /tunnox/v1/connection-codes/{code}
+// DELETE /tunnox/connection-codes/{code}
 func (m *ManagementModule) handleRevokeConnectionCode(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	code := vars["code"]

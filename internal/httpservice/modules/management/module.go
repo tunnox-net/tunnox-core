@@ -90,7 +90,7 @@ func (m *ManagementModule) SetQuotaChecker(checker quota.QuotaChecker) {
 // RegisterRoutes 注册路由
 func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 	// API 基础路径
-	api := router.PathPrefix("/tunnox/v1").Subrouter()
+	api := router.PathPrefix("/tunnox").Subrouter()
 
 	// 应用认证中间件
 	if m.config.Auth.Type != "none" {
@@ -160,7 +160,7 @@ func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 		m.registerPProfRoutes(router)
 	}
 
-	corelog.Infof("ManagementModule: registered API routes at /tunnox/v1/*")
+	corelog.Infof("ManagementModule: registered API routes at /tunnox/*")
 }
 
 // Start 启动模块
@@ -244,7 +244,7 @@ func (m *ManagementModule) registerPProfRoutes(router *mux.Router) {
 	}
 
 	pprofHandler.RegisterRoutes(router, authMiddleware)
-	corelog.Infof("ManagementModule: pprof enabled at /tunnox/v1/debug/pprof/")
+	corelog.Infof("ManagementModule: pprof enabled at /tunnox/debug/pprof/")
 }
 
 // respondJSONTyped 发送 JSON 响应

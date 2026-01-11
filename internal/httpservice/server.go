@@ -202,7 +202,7 @@ func (s *HTTPService) Stop() error {
 
 // registerHealthRoutes 注册健康检查路由
 func (s *HTTPService) registerHealthRoutes() {
-	healthRouter := s.router.PathPrefix("/tunnox/v1").Subrouter()
+	healthRouter := s.router.PathPrefix("/tunnox").Subrouter()
 	healthRouter.HandleFunc("/health", s.handleHealth).Methods("GET")
 	healthRouter.HandleFunc("/healthz", s.handleHealthz).Methods("GET")
 	healthRouter.HandleFunc("/ready", s.handleReady).Methods("GET")
@@ -317,11 +317,11 @@ func (s *HTTPService) handleLandingPage(w http.ResponseWriter, r *http.Request) 
 
 // logEndpoints 打印端点信息
 func (s *HTTPService) logEndpoints() {
-	corelog.Infof("HTTPService: API base path: http://%s/tunnox/v1", s.config.ListenAddr)
+	corelog.Infof("HTTPService: API base path: http://%s/tunnox", s.config.ListenAddr)
 	corelog.Infof("HTTPService: Health endpoints:")
-	corelog.Infof("  - GET http://%s/tunnox/v1/health", s.config.ListenAddr)
-	corelog.Infof("  - GET http://%s/tunnox/v1/healthz", s.config.ListenAddr)
-	corelog.Infof("  - GET http://%s/tunnox/v1/ready", s.config.ListenAddr)
+	corelog.Infof("  - GET http://%s/tunnox/health", s.config.ListenAddr)
+	corelog.Infof("  - GET http://%s/tunnox/healthz", s.config.ListenAddr)
+	corelog.Infof("  - GET http://%s/tunnox/ready", s.config.ListenAddr)
 
 	for _, module := range s.modules {
 		corelog.Infof("HTTPService: Module %s enabled", module.Name())
