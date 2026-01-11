@@ -9,17 +9,14 @@ import (
 )
 
 func TestCommandIdGeneration(t *testing.T) {
-	// 创建CommandUtils实例
-	cu := NewCommandUtils(nil)
+	cu := NewTypedCommandUtils[struct{}, struct{}](nil)
 	cu.WithConnectionID("conn_123")
 
-	// 测试自动生成CommandId
 	commandId := cu.generateCommandId()
 	assert.NotEmpty(t, commandId)
 	assert.Contains(t, commandId, "cmd_")
 	assert.Contains(t, commandId, "conn_123")
 
-	// 测试手动设置CommandId
 	customId := "cmd_1234567890_conn_456"
 	cu.WithCommandId(customId)
 	assert.Equal(t, customId, cu.commandId)
@@ -128,17 +125,14 @@ func TestCommandIdValidationMiddleware(t *testing.T) {
 }
 
 func TestCommandIdInExecute(t *testing.T) {
-	// 测试CommandId生成功能
-	cu := NewCommandUtils(nil)
+	cu := NewTypedCommandUtils[struct{}, struct{}](nil)
 	cu.WithConnectionID("conn_123")
 	cu.WithCommand(packet.TcpMapCreate)
 	cu.WithRequestID("req_456")
 
-	// 测试自动生成CommandId
 	commandId := cu.generateCommandId()
 	cu.WithCommandId(commandId)
 
-	// 验证CommandId被正确设置
 	assert.Equal(t, commandId, cu.commandId)
 	assert.Contains(t, commandId, "cmd_")
 	assert.Contains(t, commandId, "conn_123")

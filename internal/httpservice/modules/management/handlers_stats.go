@@ -85,3 +85,25 @@ func (m *ManagementModule) handleGetNode(w http.ResponseWriter, r *http.Request)
 
 	respondJSONTyped(w, http.StatusOK, node)
 }
+
+// handleGetTrafficStats 获取流量统计图表数据
+func (m *ManagementModule) handleGetTrafficStats(w http.ResponseWriter, r *http.Request) {
+	if m.cloudControl == nil {
+		m.respondError(w, http.StatusInternalServerError, "cloud control not configured")
+		return
+	}
+
+	timeRange := r.URL.Query().Get("range")
+	if timeRange == "" {
+		timeRange = "1h"
+	}
+
+	stats, err := m.cloudControl.GetTrafficStats(timeRange)
+	if err != nil {
+		corelog.Errorf("ManagementModule: failed to get traffic stats: %v", err)
+		m.respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSONTyped(w, http.StatusOK, map[string]interface{}{"traffic": stats})
+}

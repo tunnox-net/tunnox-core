@@ -140,6 +140,7 @@ func (m *ManagementModule) RegisterRoutes(router *mux.Router) {
 
 	// 统计查询路由
 	api.HandleFunc("/stats", m.handleGetSystemStats).Methods("GET")
+	api.HandleFunc("/stats/traffic", m.handleGetTrafficStats).Methods("GET")
 	api.HandleFunc("/stats/users/{user_id}", m.handleGetUserStats).Methods("GET")
 
 	// 节点管理路由
