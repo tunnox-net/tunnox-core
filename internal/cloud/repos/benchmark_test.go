@@ -8,30 +8,44 @@ import (
 	"time"
 
 	"tunnox-core/internal/cloud/models"
+	"tunnox-core/internal/core/storage"
 )
 
-// =============================================================================
-// Repository 百万数据性能测试
-// =============================================================================
+func newTestClientConfigRepo() *ClientConfigRepository {
+	ctx := context.Background()
+	stor := storage.NewMemoryStorage(ctx)
+	repo := NewRepository(stor)
+	return NewClientConfigRepository(repo)
+}
 
-// TestClientConfigRepository_MillionConfigs 测试百万级客户端配置
+func newTestClientStateRepo() *ClientStateRepository {
+	ctx := context.Background()
+	stor := storage.NewMemoryStorage(ctx)
+	return NewClientStateRepository(ctx, stor)
+}
+
+func newTestPortMappingRepo() *PortMappingRepo {
+	ctx := context.Background()
+	stor := storage.NewMemoryStorage(ctx)
+	repo := NewRepository(stor)
+	return NewPortMappingRepo(repo)
+}
+
 func TestClientConfigRepository_MillionConfigs(t *testing.T) {
 	if testing.Short() {
-		t.Skip("跳过百万数据测试（使用 -short 标志）")
+		t.Skip("跳过大规模数据测试")
 	}
 
-	ctx := context.Background()
-	repo := newTestClientConfigRepoV2(ctx)
+	repo := newTestClientConfigRepo()
 
-	const count = 100_000        // 10万客户端配置
-	const usersCount = 1000      // 1000 个用户
+	const count = 100_000
+	const usersCount = 1000
 	const configsPerUser = count / usersCount
 
 	var m1 runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&m1)
 
-	// 创建配置
 	start := time.Now()
 	for i := 0; i < count; i++ {
 		userID := fmt.Sprintf("user-%d", i%usersCount)
@@ -59,7 +73,6 @@ func TestClientConfigRepository_MillionConfigs(t *testing.T) {
 	t.Logf("  QPS: %.0f/s", float64(count)/createTime.Seconds())
 	t.Logf("  内存使用: %.2f MB", float64(memUsed)/(1024*1024))
 
-	// 按 ID 获取
 	start = time.Now()
 	for i := 0; i < count; i++ {
 		_, err := repo.GetConfig(int64(i + 1))
@@ -74,7 +87,6 @@ func TestClientConfigRepository_MillionConfigs(t *testing.T) {
 	t.Logf("  平均获取: %.2f µs/op", float64(getTime.Microseconds())/float64(count))
 	t.Logf("  QPS: %.0f/s", float64(count)/getTime.Seconds())
 
-	// 按用户列出
 	start = time.Now()
 	for i := 0; i < usersCount; i++ {
 		userID := fmt.Sprintf("user-%d", i)
@@ -93,19 +105,16 @@ func TestClientConfigRepository_MillionConfigs(t *testing.T) {
 	t.Logf("  平均列出: %.2f µs/op", float64(listTime.Microseconds())/float64(usersCount))
 }
 
-// TestClientStateRepository_TenThousandStates 测试万级客户端状态
 func TestClientStateRepository_TenThousandStates(t *testing.T) {
 	if testing.Short() {
-		t.Skip("跳过大规模测试（使用 -short 标志）")
+		t.Skip("跳过大规模测试")
 	}
 
-	ctx := context.Background()
-	repo := newTestClientStateRepoV2(ctx)
+	repo := newTestClientStateRepo()
 
 	const count = 10_000
 	const nodesCount = 10
 
-	// 创建状态
 	start := time.Now()
 	for i := 0; i < count; i++ {
 		nodeID := fmt.Sprintf("node-%d", i%nodesCount)
@@ -130,7 +139,6 @@ func TestClientStateRepository_TenThousandStates(t *testing.T) {
 	t.Logf("  耗时: %v", setTime)
 	t.Logf("  平均设置: %.2f µs/op", float64(setTime.Microseconds())/float64(count))
 
-	// 按节点查询
 	start = time.Now()
 	for i := 0; i < nodesCount; i++ {
 		nodeID := fmt.Sprintf("node-%d", i)
@@ -149,7 +157,6 @@ func TestClientStateRepository_TenThousandStates(t *testing.T) {
 	t.Logf("  耗时: %v", nodeQueryTime)
 	t.Logf("  平均查询: %.2f µs/op", float64(nodeQueryTime.Microseconds())/float64(nodesCount))
 
-	// Touch 测试
 	start = time.Now()
 	for i := 0; i < count; i++ {
 		if err := repo.TouchState(int64(i + 1)); err != nil {
@@ -163,19 +170,16 @@ func TestClientStateRepository_TenThousandStates(t *testing.T) {
 	t.Logf("  平均 Touch: %.2f µs/op", float64(touchTime.Microseconds())/float64(count))
 }
 
-// TestPortMappingRepository_LargeScale 测试大规模端口映射
 func TestPortMappingRepository_LargeScale(t *testing.T) {
 	if testing.Short() {
-		t.Skip("跳过大规模测试（使用 -short 标志）")
+		t.Skip("跳过大规模测试")
 	}
 
-	ctx := context.Background()
-	repo := newTestPortMappingRepoV2(ctx)
+	repo := newTestPortMappingRepo()
 
 	const count = 50_000
 	const usersCount = 500
 
-	// 创建映射
 	start := time.Now()
 	for i := 0; i < count; i++ {
 		userID := fmt.Sprintf("user-%d", i%usersCount)
@@ -199,7 +203,6 @@ func TestPortMappingRepository_LargeScale(t *testing.T) {
 	t.Logf("  耗时: %v", createTime)
 	t.Logf("  平均创建: %.2f µs/op", float64(createTime.Microseconds())/float64(count))
 
-	// 按用户查询
 	start = time.Now()
 	for i := 0; i < usersCount; i++ {
 		userID := fmt.Sprintf("user-%d", i)
@@ -219,15 +222,8 @@ func TestPortMappingRepository_LargeScale(t *testing.T) {
 	t.Logf("  平均查询: %.2f µs/op", float64(queryTime.Microseconds())/float64(usersCount))
 }
 
-// 注意：newTestPortMappingRepoV2 函数定义在 mapping_repository_v2_test.go 中
-
-// =============================================================================
-// 基准测试
-// =============================================================================
-
 func BenchmarkClientConfigRepository_Create(b *testing.B) {
-	ctx := context.Background()
-	repo := newTestClientConfigRepoV2(ctx)
+	repo := newTestClientConfigRepo()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -243,10 +239,8 @@ func BenchmarkClientConfigRepository_Create(b *testing.B) {
 }
 
 func BenchmarkClientConfigRepository_Get(b *testing.B) {
-	ctx := context.Background()
-	repo := newTestClientConfigRepoV2(ctx)
+	repo := newTestClientConfigRepo()
 
-	// 预填充
 	for i := 0; i < 10000; i++ {
 		config := &models.ClientConfig{
 			ID:       int64(i + 1),
@@ -265,10 +259,8 @@ func BenchmarkClientConfigRepository_Get(b *testing.B) {
 }
 
 func BenchmarkClientConfigRepository_ListUser(b *testing.B) {
-	ctx := context.Background()
-	repo := newTestClientConfigRepoV2(ctx)
+	repo := newTestClientConfigRepo()
 
-	// 预填充
 	for i := 0; i < 10000; i++ {
 		config := &models.ClientConfig{
 			ID:       int64(i + 1),
@@ -287,8 +279,7 @@ func BenchmarkClientConfigRepository_ListUser(b *testing.B) {
 }
 
 func BenchmarkClientStateRepository_Set(b *testing.B) {
-	ctx := context.Background()
-	repo := newTestClientStateRepoV2(ctx)
+	repo := newTestClientStateRepo()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -305,10 +296,8 @@ func BenchmarkClientStateRepository_Set(b *testing.B) {
 }
 
 func BenchmarkClientStateRepository_Touch(b *testing.B) {
-	ctx := context.Background()
-	repo := newTestClientStateRepoV2(ctx)
+	repo := newTestClientStateRepo()
 
-	// 预填充
 	for i := 0; i < 10000; i++ {
 		state := &models.ClientRuntimeState{
 			ClientID:  int64(i + 1),
