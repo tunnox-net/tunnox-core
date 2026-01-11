@@ -65,6 +65,21 @@ func (m *WebhookManager) loadWebhooks() {
 }
 
 func (m *WebhookManager) CreateWebhook(webhook *models.Webhook) error {
+	// 去重检查：如果已存在同名且同URL的webhook，则更新而不是创建新的
+	if webhook.Name != "" && webhook.URL != "" {
+		m.mu.RLock()
+		for _, existing := range m.webhooks {
+			if existing.Name == webhook.Name && existing.URL == webhook.URL {
+				m.mu.RUnlock()
+				// 复用已存在的 ID，更新其他字段
+				webhook.ID = existing.ID
+				corelog.Infof("WebhookManager: webhook with name=%s url=%s already exists (id=%s), updating instead of creating", webhook.Name, webhook.URL, existing.ID)
+				return m.UpdateWebhook(webhook)
+			}
+		}
+		m.mu.RUnlock()
+	}
+
 	if webhook.ID == "" {
 		webhook.ID = uuid.New().String()
 	}

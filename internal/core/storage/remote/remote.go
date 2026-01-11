@@ -95,6 +95,12 @@ func (r *Storage) connect() error {
 	r.connMu.Lock()
 	defer r.connMu.Unlock()
 
+	// 关闭旧连接（如果存在），防止连接泄漏
+	if r.conn != nil {
+		r.conn.Close()
+		r.conn = nil
+	}
+
 	// 配置 gRPC 连接选项
 	opts := []grpc.DialOption{
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{

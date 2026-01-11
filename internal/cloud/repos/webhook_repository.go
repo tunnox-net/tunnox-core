@@ -2,6 +2,7 @@ package repos
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"tunnox-core/internal/cloud/models"
@@ -15,7 +16,8 @@ const (
 	webhookLogKeyPrefix = "webhook_log"
 	webhookLogListKey   = "webhook_logs:%s"
 	webhookDefaultTTL   = 0
-	webhookLogTTL       = 7 * 24 * time.Hour
+	webhookLogTTL       = 24 * time.Hour // 24小时后自动清理
+	webhookLogListMax   = 100            // 每个 webhook 最多保留 100 条日志
 )
 
 type IWebhookRepository interface {
@@ -34,6 +36,10 @@ type IWebhookRepository interface {
 type WebhookRepository struct {
 	*GenericRepositoryImpl[*models.Webhook]
 	storage storage.Storage
+
+	cleanupMu       sync.Mutex
+	cleanupPending  map[string]bool
+	cleanupDebounce time.Duration
 }
 
 func NewWebhookRepository(store storage.Storage) *WebhookRepository {
@@ -48,6 +54,8 @@ func NewWebhookRepository(store storage.Storage) *WebhookRepository {
 	return &WebhookRepository{
 		GenericRepositoryImpl: genericRepo,
 		storage:               store,
+		cleanupPending:        make(map[string]bool),
+		cleanupDebounce:       5 * time.Second,
 	}
 }
 
@@ -173,12 +181,61 @@ func (r *WebhookRepository) CreateWebhookLog(log *models.WebhookLog) error {
 		return err
 	}
 
-	if listStore, ok := r.storage.(storage.ListStore); ok {
-		listKey := fmt.Sprintf(webhookLogListKey, log.WebhookID)
-		listStore.AppendToList(listKey, log.ID)
+	listStore, ok := r.storage.(storage.ListStore)
+	if !ok {
+		return nil
 	}
 
+	listKey := fmt.Sprintf(webhookLogListKey, log.WebhookID)
+	listStore.AppendToList(listKey, log.ID)
+
+	r.scheduleCleanup(listStore, listKey)
+
 	return nil
+}
+
+func (r *WebhookRepository) scheduleCleanup(listStore storage.ListStore, listKey string) {
+	r.cleanupMu.Lock()
+	if r.cleanupPending[listKey] {
+		r.cleanupMu.Unlock()
+		return
+	}
+	r.cleanupPending[listKey] = true
+	r.cleanupMu.Unlock()
+
+	go func() {
+		time.Sleep(r.cleanupDebounce)
+
+		r.cleanupMu.Lock()
+		delete(r.cleanupPending, listKey)
+		r.cleanupMu.Unlock()
+
+		r.cleanupWebhookLogList(listStore, listKey)
+	}()
+}
+
+func (r *WebhookRepository) cleanupWebhookLogList(listStore storage.ListStore, listKey string) {
+	ids, err := listStore.GetList(listKey)
+	if err != nil || len(ids) <= webhookLogListMax {
+		return
+	}
+
+	expiredCount := len(ids) - webhookLogListMax
+	expiredIDs := make([]string, 0, expiredCount)
+	for i := 0; i < expiredCount; i++ {
+		if id, ok := ids[i].(string); ok {
+			expiredIDs = append(expiredIDs, id)
+		}
+	}
+
+	for _, id := range expiredIDs {
+		logKey := fmt.Sprintf("%s:%s", webhookLogKeyPrefix, id)
+		r.storage.Delete(logKey)
+	}
+
+	for _, id := range expiredIDs {
+		listStore.RemoveFromList(listKey, id)
+	}
 }
 
 func (r *WebhookRepository) ListWebhookLogs(webhookID string, limit int) ([]*models.WebhookLog, error) {

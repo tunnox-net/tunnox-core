@@ -106,9 +106,9 @@ func (s *Service) CreateClient(userID, clientName string) (*models.Client, error
 
 	s.baseService.LogCreated("client", fmt.Sprintf("%s (ID: %d) for user: %s", clientName, clientID, userID))
 
-	// 返回完整的Client对象（包含 SecretKeyPlaintext 用于一次性展示）
 	client := models.FromConfigAndState(config, nil, nil)
-	client.SecretKeyPlaintext = secretKeyPlaintext // 仅此一次返回明文
+	client.SecretKeyPlaintext = secretKeyPlaintext
+	client.SecretKey = secretKeyPlaintext
 	client.SecretKeyVersion = config.SecretKeyVersion
 
 	return client, nil
