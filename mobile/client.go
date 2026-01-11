@@ -118,18 +118,10 @@ func (c *TunnoxMobileClient) Close() {
 	c.cancel()
 }
 
-// SaveConfig 保存配置（ClientID 和 SecretKey）到指定文件
-// configPath: 配置文件路径
-// 返回错误信息，成功返回空字符串
-func (c *TunnoxMobileClient) SaveConfig(configPath string) string {
-	config := c.client.GetConfig()
-	if config == nil {
-		return "config is nil"
-	}
-
-	// TODO: 实现配置保存逻辑
-	// 这里需要调用 client.ConfigManager 来保存配置
-	// 但由于 gomobile 限制，我们暂时返回成功
+// SaveConfig 此方法已废弃，请使用 GetClientID() 和 GetSecretKey() 获取凭据后在移动端自行保存
+// 移动端应使用平台原生安全存储: Android 使用 EncryptedSharedPreferences, iOS 使用 Keychain
+// Deprecated: Use GetClientID() and GetSecretKey() instead
+func (c *TunnoxMobileClient) SaveConfig(_ string) string {
 	return ""
 }
 
