@@ -152,21 +152,16 @@ func TestListener_Handshake_Success(t *testing.T) {
 
 	listener := NewListener(ctx, config, &mockTunnelCreator{})
 
-	// 创建管道连接
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
 
-	// 客户端发送握手和连接请求
 	go func() {
-		// 发送认证方法
 		clientConn.Write([]byte{Version, 1, AuthNone})
 
-		// 读取认证响应
 		resp := make([]byte, 2)
 		clientConn.Read(resp)
 
-		// 发送 CONNECT 请求 (IPv4)
 		request := []byte{
 			Version, CmdConnect, 0x00, AddrIPv4,
 			192, 168, 1, 1,
@@ -177,21 +172,23 @@ func TestListener_Handshake_Success(t *testing.T) {
 		clientConn.Write(request)
 	}()
 
-	// 设置超时
 	serverConn.SetDeadline(time.Now().Add(5 * time.Second))
 
-	// 执行握手
-	host, port, err := listener.Handshake(serverConn)
+	result, err := listener.Handshake(serverConn)
 	if err != nil {
 		t.Fatalf("Handshake failed: %v", err)
 	}
 
-	if host != "192.168.1.1" {
-		t.Errorf("Expected host '192.168.1.1', got '%s'", host)
+	if result.Command != CmdConnect {
+		t.Errorf("Expected command CmdConnect, got %d", result.Command)
 	}
 
-	if port != 8080 {
-		t.Errorf("Expected port 8080, got %d", port)
+	if result.TargetHost != "192.168.1.1" {
+		t.Errorf("Expected host '192.168.1.1', got '%s'", result.TargetHost)
+	}
+
+	if result.TargetPort != 8080 {
+		t.Errorf("Expected port 8080, got %d", result.TargetPort)
 	}
 }
 
@@ -205,21 +202,16 @@ func TestListener_Handshake_Domain(t *testing.T) {
 
 	listener := NewListener(ctx, config, &mockTunnelCreator{})
 
-	// 创建管道连接
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
 
-	// 客户端发送握手和连接请求
 	go func() {
-		// 发送认证方法
 		clientConn.Write([]byte{Version, 1, AuthNone})
 
-		// 读取认证响应
 		resp := make([]byte, 2)
 		clientConn.Read(resp)
 
-		// 发送 CONNECT 请求 (域名)
 		domain := "example.com"
 		request := []byte{
 			Version, CmdConnect, 0x00, AddrDomain,
@@ -232,21 +224,19 @@ func TestListener_Handshake_Domain(t *testing.T) {
 		clientConn.Write(request)
 	}()
 
-	// 设置超时
 	serverConn.SetDeadline(time.Now().Add(5 * time.Second))
 
-	// 执行握手
-	host, port, err := listener.Handshake(serverConn)
+	result, err := listener.Handshake(serverConn)
 	if err != nil {
 		t.Fatalf("Handshake failed: %v", err)
 	}
 
-	if host != "example.com" {
-		t.Errorf("Expected host 'example.com', got '%s'", host)
+	if result.TargetHost != "example.com" {
+		t.Errorf("Expected host 'example.com', got '%s'", result.TargetHost)
 	}
 
-	if port != 443 {
-		t.Errorf("Expected port 443, got %d", port)
+	if result.TargetPort != 443 {
+		t.Errorf("Expected port 443, got %d", result.TargetPort)
 	}
 }
 
@@ -260,21 +250,16 @@ func TestListener_Handshake_IPv6(t *testing.T) {
 
 	listener := NewListener(ctx, config, &mockTunnelCreator{})
 
-	// 创建管道连接
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
 
-	// 客户端发送握手和连接请求
 	go func() {
-		// 发送认证方法
 		clientConn.Write([]byte{Version, 1, AuthNone})
 
-		// 读取认证响应
 		resp := make([]byte, 2)
 		clientConn.Read(resp)
 
-		// 发送 CONNECT 请求 (IPv6)
 		ipv6 := net.ParseIP("::1").To16()
 		request := []byte{
 			Version, CmdConnect, 0x00, AddrIPv6,
@@ -286,21 +271,19 @@ func TestListener_Handshake_IPv6(t *testing.T) {
 		clientConn.Write(request)
 	}()
 
-	// 设置超时
 	serverConn.SetDeadline(time.Now().Add(5 * time.Second))
 
-	// 执行握手
-	host, port, err := listener.Handshake(serverConn)
+	result, err := listener.Handshake(serverConn)
 	if err != nil {
 		t.Fatalf("Handshake failed: %v", err)
 	}
 
-	if host != "::1" {
-		t.Errorf("Expected host '::1', got '%s'", host)
+	if result.TargetHost != "::1" {
+		t.Errorf("Expected host '::1', got '%s'", result.TargetHost)
 	}
 
-	if port != 80 {
-		t.Errorf("Expected port 80, got %d", port)
+	if result.TargetPort != 80 {
+		t.Errorf("Expected port 80, got %d", result.TargetPort)
 	}
 }
 
@@ -314,21 +297,17 @@ func TestListener_Handshake_InvalidVersion(t *testing.T) {
 
 	listener := NewListener(ctx, config, &mockTunnelCreator{})
 
-	// 创建管道连接
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
 
-	// 客户端发送无效版本的握手
 	go func() {
-		clientConn.Write([]byte{0x04, 1, AuthNone}) // SOCKS4
+		clientConn.Write([]byte{0x04, 1, AuthNone})
 	}()
 
-	// 设置超时
 	serverConn.SetDeadline(time.Now().Add(1 * time.Second))
 
-	// 执行握手
-	_, _, err := listener.Handshake(serverConn)
+	_, err := listener.Handshake(serverConn)
 	if err == nil {
 		t.Error("Expected error for invalid version")
 	}
@@ -344,21 +323,17 @@ func TestListener_Handshake_NoAuthMethods(t *testing.T) {
 
 	listener := NewListener(ctx, config, &mockTunnelCreator{})
 
-	// 创建管道连接
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
 
-	// 客户端发送无认证方法
 	go func() {
-		clientConn.Write([]byte{Version, 0}) // 0 methods
+		clientConn.Write([]byte{Version, 0})
 	}()
 
-	// 设置超时
 	serverConn.SetDeadline(time.Now().Add(1 * time.Second))
 
-	// 执行握手
-	_, _, err := listener.Handshake(serverConn)
+	_, err := listener.Handshake(serverConn)
 	if err == nil {
 		t.Error("Expected error for no auth methods")
 	}
@@ -374,38 +349,30 @@ func TestListener_Handshake_UnsupportedCommand(t *testing.T) {
 
 	listener := NewListener(ctx, config, &mockTunnelCreator{})
 
-	// 创建管道连接
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
 
-	// 客户端发送握手和 BIND 请求
 	go func() {
-		// 发送认证方法
 		clientConn.Write([]byte{Version, 1, AuthNone})
 
-		// 读取认证响应
 		resp := make([]byte, 2)
 		clientConn.Read(resp)
 
-		// 发送 BIND 请求（不支持）
 		request := []byte{
-			Version, 0x02, 0x00, AddrIPv4, // 0x02 = BIND
+			Version, CmdBind, 0x00, AddrIPv4,
 			127, 0, 0, 1,
 			0x00, 0x50,
 		}
 		clientConn.Write(request)
 
-		// 读取错误响应
 		errResp := make([]byte, 10)
 		clientConn.Read(errResp)
 	}()
 
-	// 设置超时
 	serverConn.SetDeadline(time.Now().Add(1 * time.Second))
 
-	// 执行握手
-	_, _, err := listener.Handshake(serverConn)
+	_, err := listener.Handshake(serverConn)
 	if err == nil {
 		t.Error("Expected error for unsupported command")
 	}
@@ -421,40 +388,72 @@ func TestListener_Handshake_UnsupportedAddressType(t *testing.T) {
 
 	listener := NewListener(ctx, config, &mockTunnelCreator{})
 
-	// 创建管道连接
 	clientConn, serverConn := net.Pipe()
 	defer clientConn.Close()
 	defer serverConn.Close()
 
-	// 客户端发送握手和不支持的地址类型
 	go func() {
-		// 发送认证方法
 		clientConn.Write([]byte{Version, 1, AuthNone})
 
-		// 读取认证响应
 		resp := make([]byte, 2)
 		clientConn.Read(resp)
 
-		// 发送 CONNECT 请求（不支持的地址类型）
 		request := []byte{
-			Version, CmdConnect, 0x00, 0x05, // 0x05 = 不支持的地址类型
+			Version, CmdConnect, 0x00, 0x05,
 			127, 0, 0, 1,
 			0x00, 0x50,
 		}
 		clientConn.Write(request)
 
-		// 读取错误响应
 		errResp := make([]byte, 10)
 		clientConn.Read(errResp)
 	}()
 
-	// 设置超时
 	serverConn.SetDeadline(time.Now().Add(1 * time.Second))
 
-	// 执行握手
-	_, _, err := listener.Handshake(serverConn)
+	_, err := listener.Handshake(serverConn)
 	if err == nil {
 		t.Error("Expected error for unsupported address type")
+	}
+}
+
+func TestListener_Handshake_UDPAssociate(t *testing.T) {
+	ctx := context.Background()
+	config := &ListenerConfig{
+		ListenAddr:     ":0",
+		MappingID:      "test-mapping",
+		TargetClientID: 123,
+	}
+
+	listener := NewListener(ctx, config, &mockTunnelCreator{})
+
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	go func() {
+		clientConn.Write([]byte{Version, 1, AuthNone})
+
+		resp := make([]byte, 2)
+		clientConn.Read(resp)
+
+		request := []byte{
+			Version, CmdUDPAssoc, 0x00, AddrIPv4,
+			0, 0, 0, 0,
+			0x00, 0x00,
+		}
+		clientConn.Write(request)
+	}()
+
+	serverConn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	result, err := listener.Handshake(serverConn)
+	if err != nil {
+		t.Fatalf("Handshake failed: %v", err)
+	}
+
+	if result.Command != CmdUDPAssoc {
+		t.Errorf("Expected command CmdUDPAssoc, got %d", result.Command)
 	}
 }
 

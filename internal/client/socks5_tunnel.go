@@ -8,6 +8,7 @@ import (
 	"net"
 	"time"
 
+	"tunnox-core/internal/client/socks5"
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
@@ -125,4 +126,128 @@ type SOCKS5TunnelRequest struct {
 // SetIDGenerator 设置ID生成器（用于测试）
 func (c *SOCKS5TunnelCreatorImpl) SetIDGenerator(gen func() string) {
 	c.idGenerator = gen
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// UDP 隧道支持（用于 SOCKS5 UDP ASSOCIATE）
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// UDPRelayCreatorImpl 实现 socks5.UDPRelayCreator 接口
+type UDPRelayCreatorImpl struct {
+	client *TunnoxClient
+}
+
+func NewUDPRelayCreatorImpl(client *TunnoxClient) *UDPRelayCreatorImpl {
+	return &UDPRelayCreatorImpl{client: client}
+}
+
+func (c *UDPRelayCreatorImpl) CreateUDPRelay(
+	tcpConn net.Conn,
+	mappingID string,
+	targetClientID int64,
+	secretKey string,
+) (*net.UDPAddr, error) {
+	config := &socks5.UDPRelayConfig{
+		MappingID:      mappingID,
+		TargetClientID: targetClientID,
+		SecretKey:      secretKey,
+		BindAddr:       "127.0.0.1:0",
+	}
+
+	tunnelCreator := &UDPTunnelCreatorImpl{client: c.client}
+
+	relay, err := socks5.NewUDPRelay(c.client.Ctx(), tcpConn, config, tunnelCreator)
+	if err != nil {
+		return nil, err
+	}
+
+	return relay.GetBindAddr(), nil
+}
+
+// UDPTunnelCreatorImpl 实现 socks5.UDPTunnelCreator 接口
+type UDPTunnelCreatorImpl struct {
+	client *TunnoxClient
+}
+
+func (c *UDPTunnelCreatorImpl) CreateUDPTunnel(
+	mappingID string,
+	targetClientID int64,
+	targetHost string,
+	targetPort int,
+	secretKey string,
+) (socks5.UDPTunnelConn, error) {
+	tunnelID := fmt.Sprintf("udp-%d", time.Now().UnixNano())
+
+	serverConn, tunnelStream, err := c.client.dialTunnelWithTargetNetwork(
+		tunnelID, mappingID, secretKey, targetHost, targetPort, "udp")
+	if err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to dial UDP tunnel")
+	}
+
+	conn := &udpTunnelConn{
+		tunnelID:     tunnelID,
+		serverConn:   serverConn,
+		tunnelStream: tunnelStream,
+	}
+
+	corelog.Debugf("UDPTunnelCreator: created tunnel %s for %s:%d", tunnelID, targetHost, targetPort)
+	return conn, nil
+}
+
+// udpTunnelConn 实现 socks5.UDPTunnelConn 接口
+type udpTunnelConn struct {
+	tunnelID     string
+	serverConn   net.Conn
+	tunnelStream stream.PackageStreamer
+}
+
+func (c *udpTunnelConn) SendPacket(data []byte) error {
+	writer := c.tunnelStream.GetWriter()
+	if writer == nil {
+		writer = c.serverConn
+	}
+
+	// 长度前缀协议: 2字节长度 + 数据
+	lenBuf := make([]byte, 2)
+	lenBuf[0] = byte(len(data) >> 8)
+	lenBuf[1] = byte(len(data) & 0xFF)
+
+	if _, err := writer.Write(lenBuf); err != nil {
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write packet length")
+	}
+	if _, err := writer.Write(data); err != nil {
+		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write packet data")
+	}
+
+	return nil
+}
+
+func (c *udpTunnelConn) ReceivePacket() ([]byte, error) {
+	reader := c.tunnelStream.GetReader()
+	if reader == nil {
+		reader = c.serverConn
+	}
+
+	lenBuf := make([]byte, 2)
+	if _, err := io.ReadFull(reader, lenBuf); err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to read packet length")
+	}
+
+	packetLen := int(lenBuf[0])<<8 | int(lenBuf[1])
+	if packetLen > 65535 {
+		return nil, coreerrors.Newf(coreerrors.CodeProtocolError, "packet too large: %d", packetLen)
+	}
+
+	data := make([]byte, packetLen)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to read packet data")
+	}
+
+	return data, nil
+}
+
+func (c *udpTunnelConn) Close() error {
+	corelog.Debugf("UDPTunnelConn[%s]: closing", c.tunnelID)
+	c.tunnelStream.Close()
+	return c.serverConn.Close()
 }

@@ -36,14 +36,14 @@ func (a *BridgeAdapter) BroadcastTunnelOpen(req *packet.TunnelOpenRequest, targe
 		return fmt.Errorf("message broker not initialized")
 	}
 
-	// 构造广播消息（包含 SOCKS5 动态目标地址和 MappingID）
 	message := broker.TunnelOpenMessage{
-		ClientID:   targetClientID, // 目标客户端ID
-		TunnelID:   req.TunnelID,
-		MappingID:  req.MappingID,  // 映射ID
-		TargetHost: req.TargetHost, // SOCKS5 动态目标地址
-		TargetPort: req.TargetPort, // SOCKS5 动态目标端口
-		Timestamp:  time.Now().Unix(),
+		ClientID:      targetClientID,
+		TunnelID:      req.TunnelID,
+		MappingID:     req.MappingID,
+		TargetHost:    req.TargetHost,
+		TargetPort:    req.TargetPort,
+		TargetNetwork: req.TargetNetwork,
+		Timestamp:     time.Now().Unix(),
 	}
 
 	messageJSON, err := json.Marshal(&message)

@@ -18,18 +18,19 @@ import (
 // handleTunnelOpenRequest 处理隧道打开请求（作为目标客户端）
 func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 	var req struct {
-		TunnelID   string `json:"tunnel_id"`
-		MappingID  string `json:"mapping_id"`
-		SecretKey  string `json:"secret_key"`
-		TargetHost string `json:"target_host"`
-		TargetPort int    `json:"target_port"`
-		Protocol   string `json:"protocol"` // tcp/udp/socks5
+		TunnelID      string `json:"tunnel_id"`
+		MappingID     string `json:"mapping_id"`
+		SecretKey     string `json:"secret_key"`
+		TargetHost    string `json:"target_host"`
+		TargetPort    int    `json:"target_port"`
+		Protocol      string `json:"protocol"`       // tcp/udp/socks5
+		TargetNetwork string `json:"target_network"` // tcp/udp（传输层，用于 SOCKS5 UDP）
 
 		EnableCompression bool   `json:"enable_compression"`
 		CompressionLevel  int    `json:"compression_level"`
 		EnableEncryption  bool   `json:"enable_encryption"`
 		EncryptionMethod  string `json:"encryption_method"`
-		EncryptionKey     string `json:"encryption_key"` // hex编码
+		EncryptionKey     string `json:"encryption_key"`
 		BandwidthLimit    int64  `json:"bandwidth_limit"`
 	}
 
@@ -38,15 +39,19 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 		return
 	}
 
-	// 创建Transform配置（只用于限速）
 	transformConfig := &transform.TransformConfig{
 		BandwidthLimit: req.BandwidthLimit,
 	}
 
-	// 根据协议类型分发
 	protocol := req.Protocol
 	if protocol == "" {
-		protocol = "tcp" // 默认 TCP
+		protocol = "tcp"
+	}
+
+	// 如果指定了 TargetNetwork=udp，强制使用 UDP 处理器
+	if req.TargetNetwork == "udp" {
+		go c.handleUDPTargetTunnel(req.TunnelID, req.MappingID, req.SecretKey, req.TargetHost, req.TargetPort, transformConfig)
+		return
 	}
 
 	switch protocol {

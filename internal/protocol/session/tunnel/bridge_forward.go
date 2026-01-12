@@ -11,6 +11,8 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/stream"
 	"tunnox-core/internal/utils/iocopy"
+
+	"golang.org/x/time/rate"
 )
 
 // ============================================================================
@@ -169,42 +171,60 @@ func CreateDataForwarder(conn interface{}, s stream.PackageStreamer) DataForward
 func (b *Bridge) CopyWithControl(dst io.Writer, src io.Reader, direction string, counter *atomic.Int64) int64 {
 	buf := make([]byte, constants.CopyBufferSize)
 	var total int64
-	var batchCounter int64 // 批量统计，减少原子操作
+	var batchCounter int64
+	var quotaCheckCounter int64
 
 	checkCounter := 0
 
 	for {
-		// 极低频率检查 context
 		checkCounter++
 		if checkCounter >= constants.ContextCheckInterval {
 			checkCounter = 0
 			select {
 			case <-b.Ctx().Done():
-				counter.Add(batchCounter) // 提交剩余统计
+				counter.Add(batchCounter)
 				return total
 			default:
 			}
 		}
 
-		// 从源端读取
 		nr, err := src.Read(buf)
 		if nr > 0 {
-			// 应用限速（如果启用）- 大多数情况下 rateLimiter 为 nil
 			if b.rateLimiter != nil {
 				if waitErr := b.rateLimiter.WaitN(b.Ctx(), nr); waitErr != nil {
 					break
 				}
 			}
 
-			// 写入目标端
 			nw, ew := dst.Write(buf[:nr])
 			if nw > 0 {
 				total += int64(nw)
 				batchCounter += int64(nw)
-				// 批量更新统计
+
+				if b.trafficMeter != nil {
+					if direction == "source->target" {
+						b.trafficMeter.AddSent(int64(nw))
+					} else {
+						b.trafficMeter.AddReceived(int64(nw))
+					}
+				}
+
 				if batchCounter >= constants.BatchUpdateThreshold {
 					counter.Add(batchCounter)
 					batchCounter = 0
+				}
+
+				quotaCheckCounter += int64(nw)
+				if b.trafficMeter != nil && quotaCheckCounter >= 1024*1024 {
+					quotaCheckCounter = 0
+					status := b.trafficMeter.GetQuotaStatus()
+					if status.Percentage >= 120 {
+						b.Close()
+						break
+					}
+					if status.Throttled && b.rateLimiter == nil {
+						b.applyQuotaThrottle(status.CurrentRate)
+					}
 				}
 			}
 			if ew != nil {
@@ -215,7 +235,6 @@ func (b *Bridge) CopyWithControl(dst io.Writer, src io.Reader, direction string,
 			}
 		}
 		if err != nil {
-			// UDP 超时错误处理
 			if netErr, ok := err.(interface {
 				Timeout() bool
 				Temporary() bool
@@ -226,11 +245,18 @@ func (b *Bridge) CopyWithControl(dst io.Writer, src io.Reader, direction string,
 		}
 	}
 
-	// 提交剩余的统计
 	if batchCounter > 0 {
 		counter.Add(batchCounter)
 	}
 	return total
+}
+
+// applyQuotaThrottle 应用配额限速
+func (b *Bridge) applyQuotaThrottle(rateLimit int64) {
+	if rateLimit <= 0 {
+		rateLimit = 100 * 1024
+	}
+	b.rateLimiter = rate.NewLimiter(rate.Limit(rateLimit), int(rateLimit*2))
 }
 
 // dynamicSourceWriter 动态获取 sourceForwarder 的 Writer 包装器

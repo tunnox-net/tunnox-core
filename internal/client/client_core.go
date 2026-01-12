@@ -136,9 +136,10 @@ func NewClientWithCLIFlags(ctx context.Context, config *ClientConfig, serverAddr
 
 	corelog.Infof("Client: instance ID generated: %s", instanceID)
 
-	// 初始化 SOCKS5 管理器（延迟初始化隧道创建器，等待 clientID 确定）
 	tunnelCreator := NewSOCKS5TunnelCreatorImpl(client)
+	udpRelayCreator := NewUDPRelayCreatorImpl(client)
 	client.socks5Manager = socks5.NewManager(client.Ctx(), config.ClientID, tunnelCreator)
+	client.socks5Manager.SetUDPRelayCreator(udpRelayCreator)
 
 	// 初始化API客户端（用于CLI）
 	// 假设Management API在服务器地址的8080端口

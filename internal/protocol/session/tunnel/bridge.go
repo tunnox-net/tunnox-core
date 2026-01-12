@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"tunnox-core/internal/core/dispose"
 	coreerrors "tunnox-core/internal/core/errors"
@@ -75,12 +76,18 @@ type Bridge struct {
 	lastReportedSent     atomic.Int64    // 上次上报的发送字节数
 	lastReportedReceived atomic.Int64    // 上次上报的接收字节数
 	cloudControl         CloudControlAPI // 用于上报流量统计
+
+	// 配额管理
+	trafficMeter  *stream.TrafficMeter  // 流量计量器（每个 Bridge 一个）
+	quotaEnforcer *stream.QuotaEnforcer // 配额执行器（全局共享）
+	clientID      int64                 // 客户端ID（用于配额检查）
 }
 
 // BridgeConfig 隧道桥接器配置
 type BridgeConfig struct {
 	TunnelID  string
 	MappingID string
+	ClientID  int64
 
 	// 统一接口（推荐）
 	SourceTunnelConn TunnelConnectionInterface
@@ -91,6 +98,9 @@ type BridgeConfig struct {
 
 	BandwidthLimit int64           // 字节/秒，0表示不限制
 	CloudControl   CloudControlAPI // 用于上报流量统计（可选）
+
+	// 配额管理
+	QuotaEnforcer *stream.QuotaEnforcer
 }
 
 // ============================================================================
@@ -136,16 +146,17 @@ func createTunnelConnection(
 
 // NewBridge 创建隧道桥接器
 func NewBridge(parentCtx context.Context, config *BridgeConfig) *Bridge {
-	// 记录配置信息用于调试
-	corelog.Infof("TunnelBridge[%s]: creating bridge - mappingID=%s, cloudControl=%v",
-		config.TunnelID, config.MappingID, config.CloudControl != nil)
+	corelog.Infof("TunnelBridge[%s]: creating bridge - mappingID=%s, clientID=%d, cloudControl=%v, quotaEnforcer=%v",
+		config.TunnelID, config.MappingID, config.ClientID, config.CloudControl != nil, config.QuotaEnforcer != nil)
 
 	bridge := &Bridge{
-		ManagerBase:  dispose.NewManager("TunnelBridge-"+config.TunnelID, parentCtx),
-		tunnelID:     config.TunnelID,
-		mappingID:    config.MappingID,
-		cloudControl: config.CloudControl,
-		ready:        make(chan struct{}),
+		ManagerBase:   dispose.NewManager("TunnelBridge-"+config.TunnelID, parentCtx),
+		tunnelID:      config.TunnelID,
+		mappingID:     config.MappingID,
+		clientID:      config.ClientID,
+		cloudControl:  config.CloudControl,
+		quotaEnforcer: config.QuotaEnforcer,
+		ready:         make(chan struct{}),
 	}
 
 	// 优先使用统一接口
@@ -184,6 +195,21 @@ func NewBridge(parentCtx context.Context, config *BridgeConfig) *Bridge {
 		corelog.Infof("TunnelBridge[%s]: bandwidth limit set to %d bytes/sec", config.TunnelID, config.BandwidthLimit)
 	}
 
+	// 初始化流量计量器（如果有配额执行器）
+	if config.QuotaEnforcer != nil && config.ClientID > 0 {
+		meterConfig := &stream.TrafficMeterConfig{
+			UserID:         config.ClientID,
+			MappingID:      config.MappingID,
+			TunnelID:       config.TunnelID,
+			ReportInterval: 30 * time.Second,
+			BandwidthLimit: config.BandwidthLimit,
+			Logger:         corelog.Default(),
+		}
+		bridge.trafficMeter = stream.NewTrafficMeter(meterConfig, bridge.Ctx())
+		config.QuotaEnforcer.RegisterMeter(bridge.trafficMeter)
+		corelog.Infof("TunnelBridge[%s]: traffic meter registered for client=%d", config.TunnelID, config.ClientID)
+	}
+
 	// 注册清理处理器
 	bridge.AddCleanHandler(func() error {
 		return bridge.cleanup(config.TunnelID)
@@ -201,6 +227,11 @@ func (b *Bridge) cleanup(tunnelID string) error {
 
 	// 上报最终流量统计
 	b.reportTrafficStats()
+
+	// 注销流量计量器
+	if b.quotaEnforcer != nil && b.mappingID != "" {
+		b.quotaEnforcer.UnregisterMeter(b.mappingID)
+	}
 
 	var errs []error
 

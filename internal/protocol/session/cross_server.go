@@ -168,12 +168,12 @@ type TunnelOpenBroadcastMessage struct {
 	TunnelID       string `json:"tunnel_id"`
 	MappingID      string `json:"mapping_id"`
 	SecretKey      string `json:"secret_key"`
-	TargetClientID int64  `json:"client_id"` // 与 broker.TunnelOpenMessage.ClientID 对应
+	TargetClientID int64  `json:"client_id"`
 	SourceNodeID   string `json:"source_node_id"`
 	Timestamp      int64  `json:"timestamp"`
-	// SOCKS5 动态目标地址
-	TargetHost string `json:"target_host,omitempty"`
-	TargetPort int    `json:"target_port,omitempty"`
+	TargetHost     string `json:"target_host,omitempty"`
+	TargetPort     int    `json:"target_port,omitempty"`
+	TargetNetwork  string `json:"target_network,omitempty"`
 }
 
 // startTunnelOpenBroadcastSubscription 启动TunnelOpen广播订阅
@@ -253,11 +253,12 @@ func (s *SessionManager) handleTunnelOpenBroadcast(msg *TunnelOpenBroadcastMessa
 
 	cmdBody := &packet.TunnelOpenRequestExtended{
 		TunnelOpenRequest: packet.TunnelOpenRequest{
-			TunnelID:   msg.TunnelID,
-			MappingID:  msg.MappingID,
-			SecretKey:  mapping.SecretKey,
-			TargetHost: targetHost,
-			TargetPort: targetPort,
+			TunnelID:      msg.TunnelID,
+			MappingID:     msg.MappingID,
+			SecretKey:     mapping.SecretKey,
+			TargetHost:    targetHost,
+			TargetPort:    targetPort,
+			TargetNetwork: msg.TargetNetwork,
 		},
 		Protocol:          string(mapping.Protocol),
 		EnableCompression: mapping.Config.EnableCompression,

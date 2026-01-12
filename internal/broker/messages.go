@@ -35,12 +35,13 @@ type ConfigPushMessage struct {
 
 // TunnelOpenMessage 跨节点隧道打开请求消息
 type TunnelOpenMessage struct {
-	ClientID   int64  `json:"client_id"` // 目标客户端ID（保持向后兼容）
-	TunnelID   string `json:"tunnel_id"`
-	MappingID  string `json:"mapping_id"` // 映射ID
-	TargetHost string `json:"target_host"`
-	TargetPort int    `json:"target_port"`
-	Timestamp  int64  `json:"timestamp"`
+	ClientID      int64  `json:"client_id"`
+	TunnelID      string `json:"tunnel_id"`
+	MappingID     string `json:"mapping_id"`
+	TargetHost    string `json:"target_host"`
+	TargetPort    int    `json:"target_port"`
+	TargetNetwork string `json:"target_network,omitempty"`
+	Timestamp     int64  `json:"timestamp"`
 }
 
 // MappingCreatedMessage 映射创建消息

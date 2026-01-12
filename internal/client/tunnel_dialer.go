@@ -20,6 +20,12 @@ func (c *TunnoxClient) dialTunnel(tunnelID, mappingID, secretKey string) (net.Co
 
 // dialTunnelWithTarget 建立隧道连接（支持 SOCKS5 动态目标地址）
 func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targetHost string, targetPort int) (net.Conn, stream.PackageStreamer, error) {
+	return c.dialTunnelWithTargetNetwork(tunnelID, mappingID, secretKey, targetHost, targetPort, "")
+}
+
+// dialTunnelWithTargetNetwork 建立隧道连接（支持 SOCKS5 动态目标地址和传输层协议）
+// targetNetwork: "tcp"（默认）或 "udp"（用于 SOCKS5 UDP ASSOCIATE）
+func (c *TunnoxClient) dialTunnelWithTargetNetwork(tunnelID, mappingID, secretKey, targetHost string, targetPort int, targetNetwork string) (net.Conn, stream.PackageStreamer, error) {
 	corelog.Debugf("Client[%s]: dialTunnelWithTarget START, tunnelID=%s, mappingID=%s", tunnelID, tunnelID, mappingID)
 
 	// 根据协议建立到服务器的连接
@@ -62,13 +68,13 @@ func (c *TunnoxClient) dialTunnelWithTarget(tunnelID, mappingID, secretKey, targ
 		return nil, nil, coreerrors.Wrap(err, coreerrors.CodeHandshakeFailed, "tunnel connection handshake failed")
 	}
 
-	// 发送 TunnelOpen（包含 SOCKS5 动态目标地址）
 	req := &packet.TunnelOpenRequest{
-		MappingID:  mappingID,
-		TunnelID:   tunnelID,
-		SecretKey:  secretKey,
-		TargetHost: targetHost, // SOCKS5 动态目标地址
-		TargetPort: targetPort, // SOCKS5 动态目标端口
+		MappingID:     mappingID,
+		TunnelID:      tunnelID,
+		SecretKey:     secretKey,
+		TargetHost:    targetHost,
+		TargetPort:    targetPort,
+		TargetNetwork: targetNetwork,
 	}
 
 	reqData, err := json.Marshal(req)

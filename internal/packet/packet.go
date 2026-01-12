@@ -282,6 +282,11 @@ type TunnelOpenRequest struct {
 	// SOCKS5 动态目标地址（仅 SOCKS5 协议使用）
 	TargetHost string `json:"target_host,omitempty"` // 动态目标主机（由 SOCKS5 协议指定）
 	TargetPort int    `json:"target_port,omitempty"` // 动态目标端口（由 SOCKS5 协议指定）
+
+	// ✨ UDP 支持（用于 SOCKS5 UDP ASSOCIATE）
+	// TargetNetwork 指定传输层协议："tcp"（默认）或 "udp"
+	// 向后兼容：空值等同于 "tcp"
+	TargetNetwork string `json:"target_network,omitempty"` // 传输层协议：tcp/udp（默认 tcp）
 }
 
 // TunnelOpenRequestExtended 扩展的隧道开启请求（包含流处理配置）

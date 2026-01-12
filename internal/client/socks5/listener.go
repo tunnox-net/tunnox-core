@@ -17,15 +17,19 @@ import (
 
 // SOCKS5 协议常量
 const (
-	Version     = 0x05
-	AuthNone    = 0x00
-	AuthNoMatch = 0xFF
-	CmdConnect  = 0x01
-	AddrIPv4    = 0x01
-	AddrDomain  = 0x03
-	AddrIPv6    = 0x04
-	RepSuccess  = 0x00
-	RepFailure  = 0x01
+	Version        = 0x05
+	AuthNone       = 0x00
+	AuthNoMatch    = 0xFF
+	CmdConnect     = 0x01
+	CmdBind        = 0x02
+	CmdUDPAssoc    = 0x03
+	AddrIPv4       = 0x01
+	AddrDomain     = 0x03
+	AddrIPv6       = 0x04
+	RepSuccess     = 0x00
+	RepFailure     = 0x01
+	RepCmdNotSupp  = 0x07
+	RepAddrNotSupp = 0x08
 )
 
 // ListenerConfig SOCKS5 监听器配置
@@ -36,11 +40,8 @@ type ListenerConfig struct {
 	SecretKey      string // 映射密钥
 }
 
-// TunnelCreator 隧道创建接口
+// TunnelCreator TCP 隧道创建接口
 type TunnelCreator interface {
-	// CreateSOCKS5Tunnel 创建 SOCKS5 隧道
-	// onSuccess 回调在隧道建立成功后、数据转发开始前调用
-	// 用于发送 SOCKS5 成功响应
 	CreateSOCKS5Tunnel(
 		userConn net.Conn,
 		mappingID string,
@@ -52,13 +53,31 @@ type TunnelCreator interface {
 	) error
 }
 
+// UDPRelayCreator UDP Relay 创建接口
+type UDPRelayCreator interface {
+	CreateUDPRelay(
+		tcpConn net.Conn,
+		mappingID string,
+		targetClientID int64,
+		secretKey string,
+	) (bindAddr *net.UDPAddr, err error)
+}
+
+// HandshakeResult SOCKS5 握手结果
+type HandshakeResult struct {
+	Command    byte
+	TargetHost string
+	TargetPort int
+}
+
 // Listener SOCKS5 代理监听器（运行在 ClientA）
 type Listener struct {
 	*dispose.ServiceBase
 
-	listener      net.Listener
-	config        *ListenerConfig
-	tunnelCreator TunnelCreator
+	listener        net.Listener
+	config          *ListenerConfig
+	tunnelCreator   TunnelCreator
+	udpRelayCreator UDPRelayCreator
 }
 
 // NewListener 创建 SOCKS5 监听器
@@ -81,6 +100,11 @@ func NewListener(
 	})
 
 	return l
+}
+
+// SetUDPRelayCreator 设置 UDP Relay 创建器（可选，启用 UDP ASSOCIATE 支持）
+func (l *Listener) SetUDPRelayCreator(creator UDPRelayCreator) {
+	l.udpRelayCreator = creator
 }
 
 // Start 启动监听
@@ -131,24 +155,32 @@ func (l *Listener) acceptLoop() {
 
 // handleConnection 处理单个连接
 func (l *Listener) handleConnection(conn net.Conn) {
-	// 设置超时
 	conn.SetDeadline(time.Now().Add(30 * time.Second))
 
-	// 1. SOCKS5 握手，获取动态目标地址
-	targetHost, targetPort, err := l.Handshake(conn)
+	result, err := l.Handshake(conn)
 	if err != nil {
 		corelog.Warnf("SOCKS5Listener: handshake failed: %v", err)
 		conn.Close()
 		return
 	}
 
-	// 清除超时
 	conn.SetDeadline(time.Time{})
 
-	corelog.Debugf("SOCKS5Listener: CONNECT %s:%d from %s",
-		targetHost, targetPort, conn.RemoteAddr())
+	switch result.Command {
+	case CmdConnect:
+		l.handleConnect(conn, result.TargetHost, result.TargetPort)
+	case CmdUDPAssoc:
+		l.handleUDPAssociate(conn)
+	default:
+		l.SendError(conn, RepCmdNotSupp)
+		conn.Close()
+	}
+}
 
-	// 2. 请求创建隧道到 ClientB
+// handleConnect 处理 TCP CONNECT 请求
+func (l *Listener) handleConnect(conn net.Conn, targetHost string, targetPort int) {
+	corelog.Debugf("SOCKS5Listener: CONNECT %s:%d from %s", targetHost, targetPort, conn.RemoteAddr())
+
 	if l.tunnelCreator == nil {
 		corelog.Errorf("SOCKS5Listener: tunnel creator not set")
 		l.SendError(conn, RepFailure)
@@ -156,13 +188,11 @@ func (l *Listener) handleConnection(conn net.Conn) {
 		return
 	}
 
-	// 发送成功响应的回调函数
-	// 只有在隧道建立成功后才调用，解决响应时机问题
 	sendSuccessCallback := func() {
 		l.SendSuccess(conn)
 	}
 
-	err = l.tunnelCreator.CreateSOCKS5Tunnel(
+	err := l.tunnelCreator.CreateSOCKS5Tunnel(
 		conn,
 		l.config.MappingID,
 		l.config.TargetClientID,
@@ -178,30 +208,55 @@ func (l *Listener) handleConnection(conn net.Conn) {
 	}
 }
 
-// Handshake SOCKS5 握手
-func (l *Listener) Handshake(conn net.Conn) (string, int, error) {
-	// 1. 读取版本和认证方法数量
+// handleUDPAssociate 处理 UDP ASSOCIATE 请求
+func (l *Listener) handleUDPAssociate(conn net.Conn) {
+	corelog.Debugf("SOCKS5Listener: UDP ASSOCIATE from %s", conn.RemoteAddr())
+
+	if l.udpRelayCreator == nil {
+		corelog.Warnf("SOCKS5Listener: UDP ASSOCIATE not supported (no relay creator)")
+		l.SendError(conn, RepCmdNotSupp)
+		conn.Close()
+		return
+	}
+
+	bindAddr, err := l.udpRelayCreator.CreateUDPRelay(
+		conn,
+		l.config.MappingID,
+		l.config.TargetClientID,
+		l.config.SecretKey,
+	)
+	if err != nil {
+		corelog.Warnf("SOCKS5Listener: failed to create UDP relay: %v", err)
+		l.SendError(conn, RepFailure)
+		conn.Close()
+		return
+	}
+
+	l.SendSuccessWithBind(conn, bindAddr)
+	corelog.Infof("SOCKS5Listener: UDP relay bound to %s", bindAddr.String())
+}
+
+// Handshake SOCKS5 握手，返回命令类型和目标地址
+func (l *Listener) Handshake(conn net.Conn) (*HandshakeResult, error) {
 	buf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read version")
+		return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read version")
 	}
 
 	if buf[0] != Version {
-		return "", 0, coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported SOCKS version: %d", buf[0])
+		return nil, coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported SOCKS version: %d", buf[0])
 	}
 
 	nmethods := int(buf[1])
 	if nmethods == 0 {
-		return "", 0, coreerrors.New(coreerrors.CodeProtocolError, "no authentication methods provided")
+		return nil, coreerrors.New(coreerrors.CodeProtocolError, "no authentication methods provided")
 	}
 
-	// 读取认证方法列表
 	methods := make([]byte, nmethods)
 	if _, err := io.ReadFull(conn, methods); err != nil {
-		return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read methods")
+		return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read methods")
 	}
 
-	// 2. 选择认证方法（当前仅支持无认证）
 	authMethod := byte(AuthNoMatch)
 	for _, m := range methods {
 		if m == AuthNone {
@@ -210,32 +265,30 @@ func (l *Listener) Handshake(conn net.Conn) (string, int, error) {
 		}
 	}
 
-	// 发送认证方法选择
 	if _, err := conn.Write([]byte{Version, authMethod}); err != nil {
-		return "", 0, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write auth method")
+		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write auth method")
 	}
 
 	if authMethod == AuthNoMatch {
-		return "", 0, coreerrors.New(coreerrors.CodeProtocolError, "no acceptable authentication method")
+		return nil, coreerrors.New(coreerrors.CodeProtocolError, "no acceptable authentication method")
 	}
 
-	// 3. 读取 CONNECT 请求
 	buf = make([]byte, 4)
 	if _, err := io.ReadFull(conn, buf); err != nil {
-		return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read request")
+		return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read request")
 	}
 
 	if buf[0] != Version {
 		l.SendError(conn, RepFailure)
-		return "", 0, coreerrors.Newf(coreerrors.CodeProtocolError, "invalid version in request: %d", buf[0])
+		return nil, coreerrors.Newf(coreerrors.CodeProtocolError, "invalid version in request: %d", buf[0])
 	}
 
-	if buf[1] != CmdConnect {
-		l.SendError(conn, 0x07) // command not supported
-		return "", 0, coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported command: %d", buf[1])
+	cmd := buf[1]
+	if cmd != CmdConnect && cmd != CmdUDPAssoc {
+		l.SendError(conn, RepCmdNotSupp)
+		return nil, coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported command: %d", cmd)
 	}
 
-	// 4. 解析目标地址
 	addrType := buf[3]
 	var targetHost string
 
@@ -243,52 +296,68 @@ func (l *Listener) Handshake(conn net.Conn) (string, int, error) {
 	case AddrIPv4:
 		addr := make([]byte, 4)
 		if _, err := io.ReadFull(conn, addr); err != nil {
-			return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read IPv4 address")
+			return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read IPv4 address")
 		}
 		targetHost = net.IP(addr).String()
 
 	case AddrDomain:
 		lenBuf := make([]byte, 1)
 		if _, err := io.ReadFull(conn, lenBuf); err != nil {
-			return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read domain length")
+			return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read domain length")
 		}
 		domain := make([]byte, lenBuf[0])
 		if _, err := io.ReadFull(conn, domain); err != nil {
-			return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read domain")
+			return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read domain")
 		}
 		targetHost = string(domain)
 
 	case AddrIPv6:
 		addr := make([]byte, 16)
 		if _, err := io.ReadFull(conn, addr); err != nil {
-			return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read IPv6 address")
+			return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read IPv6 address")
 		}
 		targetHost = net.IP(addr).String()
 
 	default:
-		l.SendError(conn, 0x08) // address type not supported
-		return "", 0, coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported address type: %d", addrType)
+		l.SendError(conn, RepAddrNotSupp)
+		return nil, coreerrors.Newf(coreerrors.CodeProtocolError, "unsupported address type: %d", addrType)
 	}
 
-	// 5. 读取端口
 	portBuf := make([]byte, 2)
 	if _, err := io.ReadFull(conn, portBuf); err != nil {
-		return "", 0, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read port")
+		return nil, coreerrors.Wrap(err, coreerrors.CodeProtocolError, "failed to read port")
 	}
 	targetPort := int(binary.BigEndian.Uint16(portBuf))
 
-	// 注意：不在这里发送成功响应
-	// 成功响应应该在隧道建立成功后发送，由 handleConnection 负责
-
-	return targetHost, targetPort, nil
+	return &HandshakeResult{
+		Command:    cmd,
+		TargetHost: targetHost,
+		TargetPort: targetPort,
+	}, nil
 }
 
-// SendSuccess 发送 SOCKS5 成功响应
+// SendSuccess 发送 SOCKS5 成功响应（绑定地址 0.0.0.0:0）
 func (l *Listener) SendSuccess(conn net.Conn) {
 	reply := []byte{
 		Version, RepSuccess, 0x00, AddrIPv4,
-		0, 0, 0, 0, // 绑定地址 (0.0.0.0)
-		0, 0, // 绑定端口 (0)
+		0, 0, 0, 0,
+		0, 0,
+	}
+	conn.Write(reply)
+}
+
+// SendSuccessWithBind 发送带绑定地址的成功响应（用于 UDP ASSOCIATE）
+func (l *Listener) SendSuccessWithBind(conn net.Conn, bindAddr *net.UDPAddr) {
+	ip := bindAddr.IP.To4()
+	if ip == nil {
+		ip = net.IPv4zero
+	}
+	port := uint16(bindAddr.Port)
+
+	reply := []byte{
+		Version, RepSuccess, 0x00, AddrIPv4,
+		ip[0], ip[1], ip[2], ip[3],
+		byte(port >> 8), byte(port & 0xFF),
 	}
 	conn.Write(reply)
 }

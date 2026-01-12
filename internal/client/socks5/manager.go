@@ -16,10 +16,11 @@ import (
 type Manager struct {
 	*dispose.ManagerBase
 
-	listeners     map[string]*Listener // mappingID -> listener
-	mu            sync.RWMutex
-	clientID      int64         // 本客户端ID
-	tunnelCreator TunnelCreator // 隧道创建器
+	listeners       map[string]*Listener
+	mu              sync.RWMutex
+	clientID        int64
+	tunnelCreator   TunnelCreator
+	udpRelayCreator UDPRelayCreator
 }
 
 // NewManager 创建 SOCKS5 管理器
@@ -76,8 +77,11 @@ func (m *Manager) AddMapping(mapping *models.PortMapping) error {
 		SecretKey:      mapping.SecretKey,
 	}
 
-	// 创建监听器
 	listener := NewListener(m.Ctx(), config, m.tunnelCreator)
+
+	if m.udpRelayCreator != nil {
+		listener.SetUDPRelayCreator(m.udpRelayCreator)
+	}
 
 	// 启动监听
 	if err := listener.Start(); err != nil {
@@ -124,12 +128,14 @@ func (m *Manager) ListMappings() []string {
 	return ids
 }
 
-// SetTunnelCreator 设置隧道创建器
 func (m *Manager) SetTunnelCreator(creator TunnelCreator) {
 	m.tunnelCreator = creator
 }
 
-// SetClientID 设置客户端ID（认证后调用）
+func (m *Manager) SetUDPRelayCreator(creator UDPRelayCreator) {
+	m.udpRelayCreator = creator
+}
+
 func (m *Manager) SetClientID(clientID int64) {
 	m.clientID = clientID
 }

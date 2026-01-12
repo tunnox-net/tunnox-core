@@ -131,6 +131,7 @@ func (s *SessionManager) notifyTargetClientToOpenTunnel(req *packet.TunnelOpenRe
 		"target_host":        targetHost,
 		"target_port":        targetPort,
 		"protocol":           string(mapping.Protocol),
+		"target_network":     req.TargetNetwork,
 		"enable_compression": mapping.Config.EnableCompression,
 		"compression_level":  mapping.Config.CompressionLevel,
 		"enable_encryption":  mapping.Config.EnableEncryption,
