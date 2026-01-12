@@ -2,8 +2,8 @@ package models
 
 import (
 	"encoding/json"
-	"fmt"
 	"time"
+
 	"tunnox-core/internal/cloud/configs"
 )
 
@@ -21,9 +21,6 @@ type TrafficStats struct {
 
 // UnmarshalJSON 自定义 JSON 反序列化，容错处理 LastUpdated 字段
 func (ts *TrafficStats) UnmarshalJSON(data []byte) error {
-	// DEBUG: 打印原始数据
-	fmt.Printf("TrafficStats.UnmarshalJSON called with data: %s\n", string(data))
-
 	// 定义辅助结构体，所有字段都用 interface{} 接收
 	type alias struct {
 		BytesSent       *int64      `json:"bytes_sent"`
@@ -37,11 +34,8 @@ func (ts *TrafficStats) UnmarshalJSON(data []byte) error {
 
 	aux := &alias{}
 	if err := json.Unmarshal(data, aux); err != nil {
-		fmt.Printf("TrafficStats.UnmarshalJSON error: %v\n", err)
 		return err
 	}
-
-	fmt.Printf("TrafficStats.UnmarshalJSON aux.BytesSent=%v, aux.BytesReceived=%v\n", aux.BytesSent, aux.BytesReceived)
 
 	// 赋值数值字段
 	if aux.BytesSent != nil {

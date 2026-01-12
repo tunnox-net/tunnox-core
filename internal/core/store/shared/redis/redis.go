@@ -218,9 +218,7 @@ func (s *RedisStore[K, V]) BatchGet(ctx context.Context, keys []K) (map[K]V, err
 		}
 		value, err := s.deserialize(data)
 		if err != nil {
-			// 记录反序列化失败的详细信息
-			fmt.Printf("RedisStore.BatchGet: failed to deserialize key %v: %v, raw data: %s\n",
-				keyMap[redisKeys[i]], err, string(data))
+			// 跳过反序列化失败的记录（可能是旧版数据格式）
 			continue
 		}
 		result[keyMap[redisKeys[i]]] = value
