@@ -221,61 +221,45 @@ func NewBridge(parentCtx context.Context, config *BridgeConfig) *Bridge {
 	return bridge
 }
 
-// cleanup 清理桥接资源
+// cleanup 清理桥接资源（连接关闭由 Close() 方法处理）
 func (b *Bridge) cleanup(tunnelID string) error {
 	corelog.Infof("TunnelBridge[%s]: cleaning up resources", tunnelID)
 
-	// 上报最终流量统计
 	b.reportTrafficStats()
 
-	// 注销流量计量器
 	if b.quotaEnforcer != nil && b.mappingID != "" {
 		b.quotaEnforcer.UnregisterMeter(b.mappingID)
 	}
 
-	var errs []error
-
-	// 释放跨节点连接（归还到池）
 	b.ReleaseCrossNodeConnection()
 
-	// 关闭统一接口连接
-	if b.sourceTunnelConn != nil {
-		if err := b.sourceTunnelConn.Close(); err != nil {
-			errs = append(errs, coreerrors.Wrap(err, coreerrors.CodeCleanupError, "source tunnel conn close error"))
-		}
-	}
-	if b.targetTunnelConn != nil {
-		if err := b.targetTunnelConn.Close(); err != nil {
-			errs = append(errs, coreerrors.Wrap(err, coreerrors.CodeCleanupError, "target tunnel conn close error"))
-		}
-	}
-
-	// 向后兼容：关闭旧接口
-	if b.sourceStream != nil && b.sourceTunnelConn == nil {
-		b.sourceStream.Close()
-	}
-	if b.targetStream != nil && b.targetTunnelConn == nil {
-		b.targetStream.Close()
-	}
-	if b.sourceConn != nil && b.sourceTunnelConn == nil {
-		if err := b.sourceConn.Close(); err != nil {
-			errs = append(errs, coreerrors.Wrap(err, coreerrors.CodeCleanupError, "source conn close error"))
-		}
-	}
-	if b.targetConn != nil && b.targetTunnelConn == nil {
-		if err := b.targetConn.Close(); err != nil {
-			errs = append(errs, coreerrors.Wrap(err, coreerrors.CodeCleanupError, "target conn close error"))
-		}
-	}
-
-	if len(errs) > 0 {
-		return coreerrors.Newf(coreerrors.CodeCleanupError, "tunnel bridge cleanup errors: %v", errs)
-	}
 	return nil
 }
 
 // Close 关闭桥接
+// 重要：必须先关闭底层连接，使阻塞在 Read() 上的 goroutine 能够退出
+// 否则 CopyWithControl 中的 src.Read(buf) 会一直阻塞，导致 goroutine 泄漏
 func (b *Bridge) Close() error {
+	// 1. 先关闭底层连接，使 CopyWithControl 中的 Read() 返回错误
+	// 这样数据转发 goroutine 才能退出
+	b.tunnelConnMu.Lock()
+	if b.sourceTunnelConn != nil {
+		b.sourceTunnelConn.Close()
+	}
+	if b.targetTunnelConn != nil {
+		b.targetTunnelConn.Close()
+	}
+	// 向后兼容：关闭旧接口连接
+	if b.sourceConn != nil && b.sourceTunnelConn == nil {
+		b.sourceConn.Close()
+	}
+	if b.targetConn != nil && b.targetTunnelConn == nil {
+		b.targetConn.Close()
+	}
+	b.tunnelConnMu.Unlock()
+
+	// 2. 然后取消 context 并运行其他清理处理器
+	// cleanup() 中的连接关闭会被忽略（已经关闭）
 	b.ManagerBase.Close()
 	return nil
 }
