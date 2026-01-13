@@ -9,6 +9,12 @@ import (
 	"tunnox-core/internal/core/errors"
 )
 
+var gzipWriterPool = sync.Pool{
+	New: func() interface{} {
+		return gzip.NewWriter(io.Discard)
+	},
+}
+
 // GzipReader Gzip解压缩读取器
 type GzipReader struct {
 	reader     io.Reader
@@ -122,16 +128,19 @@ func (w *GzipWriter) onClose() error {
 	var errs []error
 
 	if w.gWriter != nil {
+		gw := w.gWriter
+		w.gWriter = nil
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
 				}
 			}()
-			if err := w.gWriter.Close(); err != nil {
+			if err := gw.Close(); err != nil {
 				errs = append(errs, err)
 			}
+			gw.Reset(io.Discard)
+			gzipWriterPool.Put(gw)
 		}()
-		w.gWriter = nil
 	}
 
 	if w.writer != nil {
@@ -151,9 +160,10 @@ func (w *GzipWriter) onClose() error {
 func NewGzipWriter(writer io.Writer, parentCtx context.Context) *GzipWriter {
 	w := &GzipWriter{writer: writer}
 
-	// 只有在writer不为nil时才创建gzip.Writer
 	if writer != nil {
-		w.gWriter = gzip.NewWriter(writer)
+		gw := gzipWriterPool.Get().(*gzip.Writer)
+		gw.Reset(writer)
+		w.gWriter = gw
 	}
 
 	w.SetCtx(parentCtx, w.onClose)
