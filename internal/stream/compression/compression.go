@@ -41,19 +41,31 @@ func (r *GzipReader) Read(p []byte) (n int, err error) {
 }
 
 func (r *GzipReader) onClose() error {
-	if r.gzipReader != nil {
-		defer func() {
-			r.gzipReader = nil
-		}()
+	var errs []error
 
-		// 安全关闭，捕获panic
-		defer func() {
-			if rec := recover(); rec != nil {
-				// 忽略panic，避免程序崩溃
+	if r.gzipReader != nil {
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+				}
+			}()
+			if err := r.gzipReader.Close(); err != nil {
+				errs = append(errs, err)
 			}
 		}()
+		r.gzipReader = nil
+	}
 
-		return r.gzipReader.Close()
+	if r.reader != nil {
+		if closer, ok := r.reader.(io.Closer); ok {
+			if err := closer.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return errs[0]
 	}
 	return nil
 }
@@ -107,21 +119,32 @@ func (w *GzipWriter) onClose() error {
 	}
 	w.closed = true
 
-	if w.gWriter != nil {
-		defer func() {
-			w.gWriter = nil
-		}()
+	var errs []error
 
-		// 安全关闭，捕获panic
-		defer func() {
-			if r := recover(); r != nil {
-				// 忽略panic，避免程序崩溃
+	if w.gWriter != nil {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+				}
+			}()
+			if err := w.gWriter.Close(); err != nil {
+				errs = append(errs, err)
 			}
 		}()
-
-		return w.gWriter.Close()
+		w.gWriter = nil
 	}
 
+	if w.writer != nil {
+		if closer, ok := w.writer.(io.Closer); ok {
+			if err := closer.Close(); err != nil {
+				errs = append(errs, err)
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return errs[0]
+	}
 	return nil
 }
 
