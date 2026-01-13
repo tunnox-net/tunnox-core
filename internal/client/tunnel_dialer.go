@@ -98,10 +98,12 @@ func (c *TunnoxClient) dialTunnelWithTargetNetwork(tunnelID, mappingID, secretKe
 	// 等待 TunnelOpenAck（忽略心跳包）
 	corelog.Infof("Client: waiting for TunnelOpenAck, tunnelID=%s, mappingID=%s", tunnelID, mappingID)
 	var ackPkt *packet.TransferPacket
-	timeout := time.After(30 * time.Second)
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
+
 	for {
 		select {
-		case <-timeout:
+		case <-timer.C:
 			tunnelStream.Close()
 			conn.Close()
 			return nil, nil, coreerrors.New(coreerrors.CodeTimeout, "timeout waiting for tunnel open ack (30s)")

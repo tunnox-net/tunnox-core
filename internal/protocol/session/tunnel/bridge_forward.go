@@ -282,11 +282,13 @@ func (w *dynamicSourceWriter) Write(p []byte) (n int, err error) {
 
 // Start 启动桥接（高性能版本）
 func (b *Bridge) Start() error {
-	// 等待目标端连接建立（超时30秒）
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
+
 	select {
 	case <-b.ready:
 		// 目标连接已建立
-	case <-time.After(30 * time.Second):
+	case <-timer.C:
 		return coreerrors.New(coreerrors.CodeTimeout, "timeout waiting for target connection")
 	case <-b.Ctx().Done():
 		return coreerrors.New(coreerrors.CodeCancelled, "bridge cancelled before target connection")

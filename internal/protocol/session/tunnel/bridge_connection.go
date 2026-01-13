@@ -40,10 +40,13 @@ func (b *Bridge) SetSourceConnection(conn TunnelConnectionInterface) {
 
 // WaitForTarget 等待目标端连接就绪
 func (b *Bridge) WaitForTarget(timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
 	select {
 	case <-b.ready:
 		return nil
-	case <-time.After(timeout):
+	case <-timer.C:
 		return coreerrors.New(coreerrors.CodeTimeout, "timeout waiting for target connection")
 	case <-b.Ctx().Done():
 		return coreerrors.Wrap(b.Ctx().Err(), coreerrors.CodeCancelled, "context cancelled")
