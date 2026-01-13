@@ -55,35 +55,31 @@ func (ps *StreamProcessor) onClose() error {
 		}
 	}
 
-	// 关闭 writer（如果实现了 Close 方法且不是 Disposable，手动关闭）
-	// 注意：实现了 Dispose 接口的对象（如 GzipWriter）会在 context 取消时自动关闭
+	// 关闭 writer
+	// 注意：无论是否实现 Dispose 接口，都必须显式关闭
+	// 因为 GzipWriter 等组件使用的 context 可能是 StreamFactory 的全局 context
+	// 而不是 StreamProcessor 的 context，不会随 StreamProcessor 关闭自动取消
 	if ps.writer != nil {
-		// 检查是否实现了 Dispose 接口（会自动关闭，不需要手动关闭）
-		if _, isDisposable := ps.writer.(dispose.Disposable); !isDisposable {
-			// 不是 Disposable，手动关闭
-			if closer, ok := ps.writer.(interface{ Close() error }); ok {
-				if err := closer.Close(); err != nil {
-					errs = append(errs, fmt.Errorf("writer close failed: %w", err))
-				}
-			} else if closer, ok := ps.writer.(interface{ Close() }); ok {
-				closer.Close()
+		if closer, ok := ps.writer.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("writer close failed: %w", err))
 			}
+		} else if closer, ok := ps.writer.(interface{ Close() }); ok {
+			closer.Close()
 		}
 	}
 
-	// 关闭 reader（如果实现了 Close 方法且不是 Disposable，手动关闭）
-	// 注意：实现了 Dispose 接口的对象（如 GzipReader）会在 context 取消时自动关闭
+	// 关闭 reader
+	// 注意：无论是否实现 Dispose 接口，都必须显式关闭
+	// 因为 GzipReader 等组件使用的 context 可能是 StreamFactory 的全局 context
+	// 而不是 StreamProcessor 的 context，不会随 StreamProcessor 关闭自动取消
 	if ps.reader != nil {
-		// 检查是否实现了 Dispose 接口（会自动关闭，不需要手动关闭）
-		if _, isDisposable := ps.reader.(dispose.Disposable); !isDisposable {
-			// 不是 Disposable，手动关闭
-			if closer, ok := ps.reader.(interface{ Close() error }); ok {
-				if err := closer.Close(); err != nil {
-					errs = append(errs, fmt.Errorf("reader close failed: %w", err))
-				}
-			} else if closer, ok := ps.reader.(interface{ Close() }); ok {
-				closer.Close()
+		if closer, ok := ps.reader.(interface{ Close() error }); ok {
+			if err := closer.Close(); err != nil {
+				errs = append(errs, fmt.Errorf("reader close failed: %w", err))
 			}
+		} else if closer, ok := ps.reader.(interface{ Close() }); ok {
+			closer.Close()
 		}
 	}
 
