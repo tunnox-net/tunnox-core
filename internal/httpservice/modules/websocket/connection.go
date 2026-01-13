@@ -337,7 +337,7 @@ func (c *WebSocketServerConn) StartStreamModeReader() {
 		corelog.Debugf("WebSocket[%s]: StartStreamModeReader started", c.connectionID)
 		defer func() {
 			corelog.Debugf("WebSocket[%s]: StartStreamModeReader exited", c.connectionID)
-			// 关闭数据通道，让 Read() 返回 EOF（只关闭一次）
+			c.Close()
 			c.streamDataChanOnce.Do(func() {
 				close(c.streamDataChan)
 			})
