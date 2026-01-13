@@ -153,14 +153,12 @@ func (s *SessionManager) CloseConnection(connectionId string) error {
 	}
 	s.connLock.Unlock()
 
-	// 关闭底层连接
 	if conn != nil {
-		if conn.RawConn != nil {
-			conn.RawConn.Close()
-		}
-		// 关闭流处理器
 		if conn.Stream != nil {
 			conn.Stream.Close()
+		}
+		if conn.RawConn != nil {
+			conn.RawConn.Close()
 		}
 	}
 
