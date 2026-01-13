@@ -316,7 +316,9 @@ func (b *Bridge) Start() error {
 		return nil
 	}
 
-	// 任一方向的数据传输结束后，关闭整个 bridge
+	// 使用 WaitGroup 等待任一方向的数据转发完成
+	// 当任一方向完成时，关闭 bridge 并等待另一方向也完成
+	var wg sync.WaitGroup
 	var closeOnce sync.Once
 	closeBridge := func() {
 		closeOnce.Do(func() {
@@ -324,9 +326,12 @@ func (b *Bridge) Start() error {
 		})
 	}
 
+	wg.Add(2)
+
 	// 启动双向数据转发
 	// 源端 -> 目标端
 	go func() {
+		defer wg.Done()
 		defer closeBridge()
 
 		for {
@@ -353,11 +358,17 @@ func (b *Bridge) Start() error {
 
 	// 目标端 -> 源端
 	go func() {
+		defer wg.Done()
 		defer closeBridge()
 
 		dynamicWriter := &dynamicSourceWriter{bridge: b}
 		b.CopyWithControl(dynamicWriter, b.targetForwarder, "target->source", &b.bytesReceived)
 	}()
+
+	// 等待两个方向的数据转发都完成
+	// 当任一方向完成时，closeBridge() 会被调用，关闭连接
+	// 这会导致另一方向的 Read/Write 返回错误，从而也完成
+	wg.Wait()
 
 	return nil
 }
