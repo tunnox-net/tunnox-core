@@ -326,8 +326,13 @@ func (c *QuicStreamConn) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.closed)
 
-		// Close stream and capture error
-		err = (*c.stream).Close()
+		if streamErr := (*c.stream).Close(); streamErr != nil {
+			err = streamErr
+		}
+
+		if connErr := c.connection.CloseWithError(0, "stream closed"); connErr != nil && err == nil {
+			err = connErr
+		}
 	})
 	return err
 }
