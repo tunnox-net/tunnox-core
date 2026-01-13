@@ -28,6 +28,11 @@ type WebhookManager struct {
 	httpClient *http.Client
 	mu         sync.RWMutex
 	webhooks   map[string]*models.Webhook
+
+	// lastTriggeredCache 用于减少 LastTriggered 的持久化更新频率
+	// key: webhookID, value: 上次更新时间
+	lastTriggeredMu    sync.RWMutex
+	lastTriggeredCache map[string]time.Time
 }
 
 func NewWebhookManager(repo repos.IWebhookRepository, ctx context.Context) *WebhookManager {
@@ -37,7 +42,8 @@ func NewWebhookManager(repo repos.IWebhookRepository, ctx context.Context) *Webh
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		webhooks: make(map[string]*models.Webhook),
+		webhooks:           make(map[string]*models.Webhook),
+		lastTriggeredCache: make(map[string]time.Time),
 	}
 
 	m.loadWebhooks()
@@ -270,6 +276,8 @@ func (m *WebhookManager) sign(payload *models.WebhookPayload, secret string) str
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+const lastTriggeredUpdateInterval = 60 * time.Second
+
 func (m *WebhookManager) logWebhookSend(webhook *models.Webhook, payload *models.WebhookPayload, status int, respBody string, success bool, start time.Time) {
 	payloadJSON, _ := json.Marshal(payload)
 
@@ -285,13 +293,37 @@ func (m *WebhookManager) logWebhookSend(webhook *models.Webhook, payload *models
 		Duration:       time.Since(start).Milliseconds(),
 	}
 
-	if err := m.repo.CreateWebhookLog(log); err != nil {
-		corelog.Warnf("WebhookManager: failed to save webhook log: %v", err)
-	}
+	go func() {
+		if err := m.repo.CreateWebhookLog(log); err != nil {
+			corelog.Warnf("WebhookManager: failed to save webhook log: %v", err)
+		}
+	}()
+
+	m.updateLastTriggeredDebounced(webhook)
+}
+
+func (m *WebhookManager) updateLastTriggeredDebounced(webhook *models.Webhook) {
+	m.lastTriggeredMu.RLock()
+	lastUpdate, exists := m.lastTriggeredCache[webhook.ID]
+	m.lastTriggeredMu.RUnlock()
 
 	now := time.Now()
-	webhook.LastTriggered = &now
-	m.repo.UpdateWebhook(webhook)
+	if exists && now.Sub(lastUpdate) < lastTriggeredUpdateInterval {
+		return
+	}
+
+	m.lastTriggeredMu.Lock()
+	if lastUpdate, exists = m.lastTriggeredCache[webhook.ID]; exists && now.Sub(lastUpdate) < lastTriggeredUpdateInterval {
+		m.lastTriggeredMu.Unlock()
+		return
+	}
+	m.lastTriggeredCache[webhook.ID] = now
+	m.lastTriggeredMu.Unlock()
+
+	go func() {
+		webhook.LastTriggered = &now
+		m.repo.UpdateWebhook(webhook)
+	}()
 }
 
 func (m *WebhookManager) TestWebhook(webhookID string) error {
