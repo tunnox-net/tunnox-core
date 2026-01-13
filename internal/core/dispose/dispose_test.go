@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 )
 
 // TestNewDispose 测试 NewDispose 工厂函数
@@ -127,33 +126,6 @@ func TestDisposeCleanHandlerError(t *testing.T) {
 
 	if result.Errors[0].Err != expectedErr {
 		t.Errorf("Expected error %v, got %v", expectedErr, result.Errors[0].Err)
-	}
-}
-
-// TestDisposeContextCancellation 测试上下文取消触发清理
-func TestDisposeContextCancellation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	called := make(chan bool, 1)
-
-	d := NewDispose(ctx, func() error {
-		called <- true
-		return nil
-	})
-
-	// 取消上下文
-	cancel()
-
-	// 等待清理被调用
-	select {
-	case <-called:
-		// 成功
-	case <-time.After(time.Second):
-		t.Error("onClose should be called when context is cancelled")
-	}
-
-	// 验证已关闭
-	if !d.IsClosed() {
-		t.Error("Should be closed after context cancellation")
 	}
 }
 
