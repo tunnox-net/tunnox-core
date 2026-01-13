@@ -5,8 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
+	"syscall"
 
 	"tunnox-core/internal/app/server"
 	corelog "tunnox-core/internal/core/log"
@@ -106,7 +108,10 @@ func main() {
 		corelog.Fatalf("Failed to initialize logger: %v", err)
 	}
 
-	srv := server.New(config, context.Background())
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	srv := server.New(config, ctx)
 
 	// 显示启动信息横幅（在日志初始化之后，服务启动之前）
 	srv.DisplayStartupBanner(absConfigPath)
