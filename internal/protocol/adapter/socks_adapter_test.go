@@ -20,16 +20,18 @@ func TestSocksAdapterBasic(t *testing.T) {
 		t.Errorf("Expected name 'socks5', got '%s'", adapter.Name())
 	}
 
-	// 测试地址设置
-	testAddr := "localhost:1080"
+	// 测试地址设置 - 使用 :0 让系统分配随机端口
+	testAddr := "localhost:0"
 	err := adapter.Listen(testAddr)
 	if err != nil {
 		t.Fatalf("Failed to listen: %v", err)
 	}
 
-	adapter.SetAddr(testAddr)
-	if adapter.Addr() != testAddr {
-		t.Errorf("Expected address '%s', got '%s'", testAddr, adapter.Addr())
+	// 获取实际分配的地址
+	actualAddr := adapter.Addr()
+	adapter.SetAddr(actualAddr)
+	if adapter.Addr() != actualAddr {
+		t.Errorf("Expected address '%s', got '%s'", actualAddr, adapter.Addr())
 	}
 
 	// 等待一段时间让服务器启动
