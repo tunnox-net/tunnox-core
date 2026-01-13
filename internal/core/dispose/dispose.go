@@ -174,21 +174,10 @@ func (c *Dispose) SetCtx(parent context.Context, onClose func() error) {
 	c.ctx, c.cancel = context.WithCancel(curParent)
 	c.closed = false
 
-	go func() {
-		select {
-		case <-c.ctx.Done():
-			c.currentLock.Lock()
-			defer c.currentLock.Unlock()
-
-			if !c.closed {
-				result := c.runCleanHandlers()
-				if result.HasErrors() {
-					Errorf("Context cancellation cleanup failed: %v", result.Error())
-				}
-				c.closed = true
-			}
-		}
-	}()
+	// 注意：不再启动 goroutine 监听 context 取消
+	// 原因：依赖 context 取消来执行清理是不可靠的设计，会导致 goroutine 泄露
+	// 清理逻辑应该通过显式调用 Close() 方法来触发
+	// context 取消会让使用该 context 的 I/O 操作返回错误，从而触发上层调用 Close()
 }
 
 // SetCtxWithNoOpOnClose 设置上下文并使用空操作的清理回调
