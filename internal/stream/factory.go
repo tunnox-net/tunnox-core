@@ -75,20 +75,20 @@ func (sf *DefaultStreamFactory) CreateStreamProcessor(reader io.Reader, writer i
 // StreamProcessor统一处理：压缩 + 加密 + 限流
 // Transform只处理：流量统计等商业特性
 func (sf *DefaultStreamFactory) CreateStreamProcessorWithConfig(reader io.Reader, writer io.Writer, config *StreamFactoryConfig) PackageStreamer {
+	// 为每个连接创建独立的 context，确保连接关闭时子组件的 dispose goroutine 能正确退出
+	connCtx, connCancel := context.WithCancel(sf.ctx)
+
 	// 1. 加密（最内层，直接包装原始连接）
 	if config.EnableEncryption && len(config.EncryptionKey) > 0 {
-		// 创建加密器
 		encryptConfig := &encryption.EncryptConfig{
-			Method: encryption.MethodAESGCM, // 默认使用AES-256-GCM
+			Method: encryption.MethodAESGCM,
 			Key:    config.EncryptionKey,
 		}
 
 		encryptor, err := encryption.NewEncryptor(encryptConfig)
 		if err != nil {
-			// 加密初始化失败，记录错误但继续
 			corelog.Default().Warnf("Failed to create encryptor: %v", err)
 		} else {
-			// 包装reader和writer
 			if decryptReader, err := encryptor.NewDecryptReader(reader); err == nil {
 				reader = decryptReader
 			}
@@ -98,23 +98,29 @@ func (sf *DefaultStreamFactory) CreateStreamProcessorWithConfig(reader io.Reader
 		}
 	}
 
-	// 2. 压缩（在加密之外）
+	// 2. 压缩（使用连接级别的 context）
 	if config.EnableCompression {
-		reader = compression.NewGzipReader(reader, sf.ctx)
-		writer = compression.NewGzipWriter(writer, sf.ctx)
+		reader = compression.NewGzipReader(reader, connCtx)
+		writer = compression.NewGzipWriter(writer, connCtx)
 	}
 
-	// 3. 限流（最外层）
+	// 3. 限流（使用连接级别的 context）
 	if config.EnableRateLimit {
-		if rateLimiterReader, err := NewRateLimiterReader(reader, config.RateLimitBytes, sf.ctx); err == nil {
+		if rateLimiterReader, err := NewRateLimiterReader(reader, config.RateLimitBytes, connCtx); err == nil {
 			reader = rateLimiterReader
 		}
-		if rateLimiterWriter, err := NewRateLimiterWriter(writer, config.RateLimitBytes, sf.ctx); err == nil {
+		if rateLimiterWriter, err := NewRateLimiterWriter(writer, config.RateLimitBytes, connCtx); err == nil {
 			writer = rateLimiterWriter
 		}
 	}
 
-	return NewStreamProcessor(reader, writer, sf.ctx)
+	sp := NewStreamProcessor(reader, writer, connCtx)
+	// StreamProcessor 关闭时取消连接级别的 context，让子组件的 dispose goroutine 退出
+	sp.AddCleanHandler(func() error {
+		connCancel()
+		return nil
+	})
+	return sp
 }
 
 // NewRateLimiterReader 创建限速读取器
