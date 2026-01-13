@@ -239,26 +239,52 @@ func (b *Bridge) cleanup(tunnelID string) error {
 // 重要：必须先关闭底层连接，使阻塞在 Read() 上的 goroutine 能够退出
 // 否则 CopyWithControl 中的 src.Read(buf) 会一直阻塞，导致 goroutine 泄漏
 func (b *Bridge) Close() error {
-	// 1. 先关闭底层连接，使 CopyWithControl 中的 Read() 返回错误
-	// 这样数据转发 goroutine 才能退出
+	// 1. 先关闭数据转发器（包含对底层 reader/writer 的引用）
+	b.sourceConnMu.Lock()
+	if b.sourceForwarder != nil {
+		b.sourceForwarder.Close()
+		b.sourceForwarder = nil
+	}
+	b.sourceConnMu.Unlock()
+
 	b.tunnelConnMu.Lock()
+	if b.targetForwarder != nil {
+		b.targetForwarder.Close()
+		b.targetForwarder = nil
+	}
+
+	// 2. 关闭统一接口连接
 	if b.sourceTunnelConn != nil {
 		b.sourceTunnelConn.Close()
+		b.sourceTunnelConn = nil
 	}
 	if b.targetTunnelConn != nil {
 		b.targetTunnelConn.Close()
+		b.targetTunnelConn = nil
 	}
-	// 向后兼容：关闭旧接口连接
-	if b.sourceConn != nil && b.sourceTunnelConn == nil {
+
+	// 3. 关闭底层连接（确保即使 tunnelConn 为 nil 也能关闭）
+	if b.sourceConn != nil {
 		b.sourceConn.Close()
+		b.sourceConn = nil
 	}
-	if b.targetConn != nil && b.targetTunnelConn == nil {
+	if b.targetConn != nil {
 		b.targetConn.Close()
+		b.targetConn = nil
+	}
+
+	// 4. 关闭流（确保 StreamProcessor 被清理）
+	if b.sourceStream != nil {
+		b.sourceStream.Close()
+		b.sourceStream = nil
+	}
+	if b.targetStream != nil {
+		b.targetStream.Close()
+		b.targetStream = nil
 	}
 	b.tunnelConnMu.Unlock()
 
-	// 2. 然后取消 context 并运行其他清理处理器
-	// cleanup() 中的连接关闭会被忽略（已经关闭）
+	// 5. 取消 context 并运行其他清理处理器
 	b.ManagerBase.Close()
 	return nil
 }
