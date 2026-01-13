@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"tunnox-core/internal/core/dispose"
-	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream"
 
