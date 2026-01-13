@@ -335,13 +335,25 @@ func (b *Bridge) Start() error {
 		defer closeBridge()
 
 		for {
+			// 检查 context 是否已取消
+			select {
+			case <-b.Ctx().Done():
+				return
+			default:
+			}
+
 			b.sourceConnMu.RLock()
 			sourceForwarder := b.sourceForwarder
 			b.sourceConnMu.RUnlock()
 
 			if sourceForwarder == nil {
-				time.Sleep(100 * time.Millisecond)
-				continue
+				// 等待时也要检查 context
+				select {
+				case <-b.Ctx().Done():
+					return
+				case <-time.After(100 * time.Millisecond):
+					continue
+				}
 			}
 			b.CopyWithControl(b.targetForwarder, sourceForwarder, "source->target", &b.bytesSent)
 

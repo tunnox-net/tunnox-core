@@ -59,8 +59,17 @@ func (b *Bridge) periodicTrafficReport() {
 		case <-ticker.C:
 			b.reportTrafficStats()
 		case <-b.Ctx().Done():
-			// 最终上报
-			b.reportTrafficStats()
+			// 最终上报（带超时保护，避免阻塞导致 goroutine 泄漏）
+			done := make(chan struct{})
+			go func() {
+				b.reportTrafficStats()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				corelog.Warnf("TunnelBridge[%s]: final traffic report timed out", b.tunnelID)
+			}
 			return
 		}
 	}
