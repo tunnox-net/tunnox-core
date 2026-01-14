@@ -166,8 +166,6 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 		return
 	}
 
-	defer sourceForwarder.Close()
-
 	tunnelIDBytes, err := TunnelIDFromString(tunnelID)
 	if err != nil {
 		corelog.Errorf("CrossNodeListener[%s]: invalid tunnel ID: %v", tunnelID, err)
@@ -197,6 +195,7 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 		TunnelID:             tunnelID,
 		LogPrefix:            "CrossNodeListener",
 		LocalConn:            sourceForwarder,
+		LocalConnCloser:      sourceForwarder,
 		RemoteConn:           frameStream,
 		BytesSentCounter:     bytesSentPtr,
 		BytesReceivedCounter: bytesReceivedPtr,

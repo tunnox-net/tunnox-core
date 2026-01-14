@@ -50,6 +50,10 @@ type BidirectionalForwardConfig struct {
 	// 流量统计计数器（可选）
 	BytesSentCounter     *atomic.Int64 // 源端->目标端（上传）
 	BytesReceivedCounter *atomic.Int64 // 目标端->源端（下载）
+
+	// LocalConnCloser 用于关闭本地连接（可选，用于确保 TCP 四次挥手完成）
+	// 如果 LocalConn 本身实现了 io.Closer，可以不设置此字段
+	LocalConnCloser io.Closer
 }
 
 // runBidirectionalForward 执行双向数据转发
@@ -63,11 +67,24 @@ func runBidirectionalForward(config *BidirectionalForwardConfig) {
 		logPrefix = "BidirectionalForward"
 	}
 
-	closeRemote := func() {
+	closeAll := func() {
 		closeOnce.Do(func() {
+			// 关闭远程连接
 			if err := config.RemoteConn.Close(); err != nil {
 				corelog.Debugf("%s[%s]: remote close error (non-critical): %v",
 					logPrefix, config.TunnelID, err)
+			}
+			// 关闭本地连接（确保 TCP 四次挥手完成）
+			if config.LocalConnCloser != nil {
+				if err := config.LocalConnCloser.Close(); err != nil {
+					corelog.Debugf("%s[%s]: local close error (non-critical): %v",
+						logPrefix, config.TunnelID, err)
+				}
+			} else if closer, ok := config.LocalConn.(io.Closer); ok {
+				if err := closer.Close(); err != nil {
+					corelog.Debugf("%s[%s]: local close error (non-critical): %v",
+						logPrefix, config.TunnelID, err)
+				}
 			}
 		})
 	}
@@ -85,7 +102,7 @@ func runBidirectionalForward(config *BidirectionalForwardConfig) {
 	// 上传方向: localConn -> remoteConn
 	go func() {
 		defer func() {
-			closeRemote()
+			closeAll()
 			done <- struct{}{}
 		}()
 		if _, err := io.Copy(config.RemoteConn, localConn); err != nil {
@@ -97,7 +114,7 @@ func runBidirectionalForward(config *BidirectionalForwardConfig) {
 	// 下载方向: remoteConn -> localConn
 	go func() {
 		defer func() {
-			closeRemote()
+			closeAll()
 			done <- struct{}{}
 		}()
 		if _, err := io.Copy(localConn, config.RemoteConn); err != nil {

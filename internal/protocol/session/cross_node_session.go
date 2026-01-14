@@ -10,6 +10,7 @@ import (
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/packet"
+	"tunnox-core/internal/stream"
 )
 
 // ============================================================================
@@ -196,29 +197,22 @@ func (s *SessionManager) runCrossNodeDataForward(
 	netConn net.Conn,
 	crossConn *CrossNodeConn,
 ) {
-	// 确保数据转发完成后关闭本地连接
-	defer func() {
-		if netConn != nil {
-			netConn.Close()
-		}
-		if conn != nil && conn.Stream != nil {
-			conn.Stream.Close()
-		}
-	}()
-
 	// 获取本地连接：优先使用 conn.Stream 的 GetReader()/GetWriter()
 	var localConn io.ReadWriter
+	var localConnCloser io.Closer
 	if conn != nil && conn.Stream != nil {
 		reader := conn.Stream.GetReader()
 		writer := conn.Stream.GetWriter()
 		if reader != nil && writer != nil {
 			localConn = &readWriterWrapper{reader: reader, writer: writer}
+			localConnCloser = &multiCloserWithStream{netConn: netConn, stream: conn.Stream}
 		}
 	}
 
 	// 如果 Stream 不可用，回退到 netConn
 	if localConn == nil && netConn != nil {
 		localConn = netConn
+		localConnCloser = netConn
 	}
 
 	if localConn == nil {
@@ -248,10 +242,11 @@ func (s *SessionManager) runCrossNodeDataForward(
 
 	// 使用公共的双向转发逻辑
 	runBidirectionalForward(&BidirectionalForwardConfig{
-		TunnelID:   tunnelID,
-		LogPrefix:  "CrossNodeDataForward",
-		LocalConn:  localConn,
-		RemoteConn: frameStream,
+		TunnelID:        tunnelID,
+		LogPrefix:       "CrossNodeDataForward",
+		LocalConn:       localConn,
+		LocalConnCloser: localConnCloser,
+		RemoteConn:      frameStream,
 	})
 }
 
@@ -267,6 +262,22 @@ func (w *readWriterWrapper) Read(p []byte) (n int, err error) {
 
 func (w *readWriterWrapper) Write(p []byte) (n int, err error) {
 	return w.writer.Write(p)
+}
+
+// multiCloserWithStream 组合 net.Conn 和 stream.PackageStreamer
+type multiCloserWithStream struct {
+	netConn net.Conn
+	stream  stream.PackageStreamer
+}
+
+func (m *multiCloserWithStream) Close() error {
+	if m.stream != nil {
+		m.stream.Close()
+	}
+	if m.netConn != nil {
+		return m.netConn.Close()
+	}
+	return nil
 }
 
 // getNodeAddress 获取节点地址
