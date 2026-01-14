@@ -199,6 +199,12 @@ func (c *WebSocketServerConn) GetConnectionID() string {
 	return c.connectionID
 }
 
+// GetNetConn 返回底层 net.Conn（自身实现了 net.Conn 接口）
+// 这允许 Bridge 正确关闭 WebSocket 连接
+func (c *WebSocketServerConn) GetNetConn() net.Conn {
+	return c
+}
+
 // ReadAvailable 读取可用数据（不等待完整长度）- 实现 StreamDataForwarder 接口
 func (c *WebSocketServerConn) ReadAvailable(maxLength int) ([]byte, error) {
 	c.readMu.Lock()
