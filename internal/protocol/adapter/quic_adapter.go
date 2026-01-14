@@ -98,10 +98,8 @@ func (a *QuicAdapter) Listen(addr string) error {
 		return coreerrors.New(coreerrors.CodeNotConfigured, "TLS config not initialized")
 	}
 
-	// Create QUIC config
 	quicConf := &quic.Config{
-		MaxIdleTimeout:  30 * time.Second,
-		KeepAlivePeriod: 10 * time.Second,
+		MaxIdleTimeout: 30 * time.Second,
 	}
 
 	// Create UDP listener
@@ -248,8 +246,7 @@ func (a *QuicAdapter) Dial(address string) (io.ReadWriteCloser, error) {
 	}
 
 	quicConf := &quic.Config{
-		MaxIdleTimeout:  30 * time.Second,
-		KeepAlivePeriod: 10 * time.Second,
+		MaxIdleTimeout: 30 * time.Second,
 	}
 
 	conn, err := quic.DialAddr(a.Ctx(), address, tlsConf, quicConf)
