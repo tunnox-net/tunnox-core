@@ -156,9 +156,11 @@ func (s *SessionManager) CloseConnection(connectionId string) error {
 	if conn != nil {
 		if conn.Stream != nil {
 			conn.Stream.Close()
+			conn.Stream = nil
 		}
 		if conn.RawConn != nil {
 			conn.RawConn.Close()
+			conn.RawConn = nil
 		}
 	}
 

@@ -123,11 +123,14 @@ func (c *WebSocketServerConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		close(c.closed)
-		// 设置一个过去的 deadline 来强制阻塞的 ReadMessage() 立即返回
-		c.conn.SetReadDeadline(time.Now())
-		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
-		c.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
-		err = c.conn.Close()
+		if c.conn != nil {
+			// 设置一个过去的 deadline 来强制阻塞的 ReadMessage() 立即返回
+			c.conn.SetReadDeadline(time.Now())
+			closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
+			c.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
+			err = c.conn.Close()
+			c.conn = nil
+		}
 	})
 	return err
 }
