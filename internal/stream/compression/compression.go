@@ -11,7 +11,10 @@ import (
 
 var gzipWriterPool = sync.Pool{
 	New: func() interface{} {
-		return gzip.NewWriter(io.Discard)
+		w := gzip.NewWriter(io.Discard)
+		w.Write([]byte{})
+		w.Flush()
+		return w
 	},
 }
 
