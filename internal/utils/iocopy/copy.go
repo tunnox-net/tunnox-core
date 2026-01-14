@@ -15,10 +15,15 @@ import (
 )
 
 var (
-	// ErrNilReader 当 Reader 为 nil 时返回
 	ErrNilReader = errors.New("Reader cannot be nil")
-	// ErrNilWriter 当 Writer 为 nil 时返回
 	ErrNilWriter = errors.New("Writer cannot be nil")
+
+	copyBufferPool = sync.Pool{
+		New: func() interface{} {
+			buf := make([]byte, constants.CopyBufferSize)
+			return &buf
+		},
+	}
 )
 
 // CloseWriter 支持半关闭（关闭写方向）的接口
@@ -175,7 +180,10 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 			return
 		}
 
-		buf := make([]byte, constants.CopyBufferSize)
+		bufPtr := copyBufferPool.Get().(*[]byte)
+		buf := *bufPtr
+		defer copyBufferPool.Put(bufPtr)
+
 		var totalWritten int64
 		var readCount int
 		for {
@@ -221,7 +229,6 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 		corelog.Infof("%s: A→B goroutine finished, sent=%d bytes", logPrefix, totalWritten)
 	}()
 
-	// B → A：从 B 读取数据写入 A
 	go func() {
 		defer wg.Done()
 		corelog.Debugf("%s: B→A goroutine started", logPrefix)
@@ -233,7 +240,10 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 			return
 		}
 
-		buf := make([]byte, constants.CopyBufferSize)
+		bufPtr := copyBufferPool.Get().(*[]byte)
+		buf := *bufPtr
+		defer copyBufferPool.Put(bufPtr)
+
 		var totalWritten int64
 		var readCount int
 		for {

@@ -15,10 +15,20 @@ var gzipWriterPool = sync.Pool{
 	},
 }
 
-// GzipReader Gzip解压缩读取器
+// gzipReaderPool 用于复用 gzip.Reader，减少内存分配
+// 注意：gzip.Reader 需要通过 Reset(reader) 来重置底层 reader
+var gzipReaderPool = sync.Pool{
+	New: func() interface{} {
+		// 返回 nil，因为 gzip.NewReader 需要有效的 reader
+		// 实际创建在第一次使用时进行
+		return (*gzip.Reader)(nil)
+	},
+}
+
 type GzipReader struct {
 	reader     io.Reader
 	gzipReader *gzip.Reader
+	fromPool   bool
 	initOnce   sync.Once
 	initErr    error
 	dispose.Dispose
@@ -29,9 +39,16 @@ func (r *GzipReader) Read(p []byte) (n int, err error) {
 		return 0, io.EOF
 	}
 
-	// 延迟初始化，确保线程安全
 	r.initOnce.Do(func() {
 		if r.gzipReader == nil {
+			if pooled := gzipReaderPool.Get(); pooled != nil {
+				gr := pooled.(*gzip.Reader)
+				if err := gr.Reset(r.reader); err == nil {
+					r.gzipReader = gr
+					r.fromPool = true
+					return
+				}
+			}
 			r.gzipReader, r.initErr = gzip.NewReader(r.reader)
 			if r.initErr != nil {
 				r.initErr = errors.WrapError(r.initErr, "failed to create gzip reader")
@@ -50,16 +67,20 @@ func (r *GzipReader) onClose() error {
 	var errs []error
 
 	if r.gzipReader != nil {
+		gr := r.gzipReader
+		r.gzipReader = nil
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
 				}
 			}()
-			if err := r.gzipReader.Close(); err != nil {
+			if err := gr.Close(); err != nil {
 				errs = append(errs, err)
 			}
+			if r.fromPool {
+				gzipReaderPool.Put(gr)
+			}
 		}()
-		r.gzipReader = nil
 	}
 
 	if r.reader != nil {

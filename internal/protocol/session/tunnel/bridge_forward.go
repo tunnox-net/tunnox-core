@@ -15,6 +15,13 @@ import (
 	"golang.org/x/time/rate"
 )
 
+var copyBufferPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, constants.CopyBufferSize)
+		return &buf
+	},
+}
+
 // ============================================================================
 // 数据转发接口
 // ============================================================================
@@ -167,9 +174,11 @@ func CreateDataForwarder(conn interface{}, s stream.PackageStreamer) DataForward
 // 数据拷贝和转发
 // ============================================================================
 
-// CopyWithControl 带流量统计和限速的数据拷贝（极致性能优化版）
 func (b *Bridge) CopyWithControl(dst io.Writer, src io.Reader, direction string, counter *atomic.Int64) int64 {
-	buf := make([]byte, constants.CopyBufferSize)
+	bufPtr := copyBufferPool.Get().(*[]byte)
+	buf := *bufPtr
+	defer copyBufferPool.Put(bufPtr)
+
 	var total int64
 	var batchCounter int64
 	var quotaCheckCounter int64
