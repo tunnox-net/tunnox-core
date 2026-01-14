@@ -443,16 +443,23 @@ func (c *QuicStreamConn) Close() error {
 
 		if c.adapter != nil {
 			c.adapter.untrackConnection(c.connection)
+			c.adapter = nil
 		}
 
-		if streamErr := (*c.stream).Close(); streamErr != nil {
-			corelog.Warnf("QUIC: stream close error from %s: %v", c.remoteAddr, streamErr)
-			err = streamErr
+		if c.stream != nil {
+			if streamErr := (*c.stream).Close(); streamErr != nil {
+				corelog.Warnf("QUIC: stream close error from %s: %v", c.remoteAddr, streamErr)
+				err = streamErr
+			}
+			c.stream = nil
 		}
 
-		if connErr := c.connection.CloseWithError(0, "stream closed"); connErr != nil && err == nil {
-			corelog.Warnf("QUIC: connection close error from %s: %v", c.remoteAddr, connErr)
-			err = connErr
+		if c.connection != nil {
+			if connErr := c.connection.CloseWithError(0, "stream closed"); connErr != nil && err == nil {
+				corelog.Warnf("QUIC: connection close error from %s: %v", c.remoteAddr, connErr)
+				err = connErr
+			}
+			c.connection = nil
 		}
 
 		corelog.Infof("QUIC: QuicStreamConn closed from %s", c.remoteAddr)

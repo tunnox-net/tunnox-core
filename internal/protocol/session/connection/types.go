@@ -279,6 +279,7 @@ func (c *ControlConnection) Close() error {
 		return nil
 	}
 	c.Stream.Close()
+	c.Stream = nil
 	return nil
 }
 
@@ -446,6 +447,7 @@ func (t *TunnelConnection) Close() error {
 		return nil
 	}
 	t.Stream.Close()
+	t.Stream = nil
 	return nil
 }
 

@@ -98,11 +98,13 @@ func (c *TCPTunnelConnection) Close() error {
 	var errs []error
 	if c.stream != nil {
 		c.stream.Close()
+		c.stream = nil // 释放引用，允许 GC 回收
 	}
 	if c.conn != nil {
 		if err := c.conn.Close(); err != nil {
 			errs = append(errs, err)
 		}
+		c.conn = nil // 释放引用，允许 GC 回收
 	}
 	c.state.SetState(StateClosed)
 	if len(errs) > 0 {
