@@ -364,3 +364,7 @@ func (c *QuicStreamConn) SetReadDeadline(t time.Time) error {
 func (c *QuicStreamConn) SetWriteDeadline(t time.Time) error {
 	return (*c.stream).SetWriteDeadline(t)
 }
+
+func (c *QuicStreamConn) GetNetConn() net.Conn {
+	return c
+}
