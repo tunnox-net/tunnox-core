@@ -21,6 +21,14 @@ import (
 	"github.com/quic-go/quic-go"
 )
 
+// quicConnEntry 跟踪单个 QUIC 连接的状态
+type quicConnEntry struct {
+	conn       *quic.Conn
+	remoteAddr string
+	createdAt  time.Time
+	lastActive time.Time
+}
+
 // QuicAdapter handles QUIC connections
 type QuicAdapter struct {
 	BaseAdapter
@@ -29,6 +37,10 @@ type QuicAdapter struct {
 	mu        sync.Mutex
 	closed    bool
 	tlsConfig *tls.Config
+
+	// 连接跟踪
+	activeConns   map[*quic.Conn]*quicConnEntry
+	activeConnsMu sync.RWMutex
 }
 
 // NewQuicAdapter creates a new QUIC adapter
@@ -36,14 +48,14 @@ func NewQuicAdapter(parentCtx context.Context, sess session.Session) *QuicAdapte
 	adapter := &QuicAdapter{
 		BaseAdapter: BaseAdapter{},
 		connChan:    make(chan io.ReadWriteCloser, 100),
+		activeConns: make(map[*quic.Conn]*quicConnEntry),
 	}
 
 	adapter.SetName("quic")
 	adapter.SetSession(sess)
 	adapter.SetCtx(parentCtx, adapter.onClose)
-	adapter.SetProtocolAdapter(adapter) // 设置协议适配器引用，与 TCP/KCP 保持一致
+	adapter.SetProtocolAdapter(adapter)
 
-	// Generate self-signed certificate
 	adapter.tlsConfig = generateTLSConfig()
 
 	return adapter
@@ -131,6 +143,8 @@ func (a *QuicAdapter) Listen(addr string) error {
 
 // acceptConnections accepts incoming QUIC connections
 func (a *QuicAdapter) acceptConnections() {
+	go a.connectionCleanupLoop()
+
 	for {
 		select {
 		case <-a.Ctx().Done():
@@ -149,42 +163,132 @@ func (a *QuicAdapter) acceptConnections() {
 			}
 		}
 
-		corelog.Infof("QUIC: connection accepted from %s", conn.RemoteAddr())
+		remoteAddr := conn.RemoteAddr().String()
+		corelog.Infof("QUIC: connection accepted from %s", remoteAddr)
 
-		// Accept stream from connection
+		a.trackConnection(conn, remoteAddr)
+
 		go a.acceptStream(conn)
+	}
+}
+
+func (a *QuicAdapter) trackConnection(conn *quic.Conn, remoteAddr string) {
+	now := time.Now()
+	a.activeConnsMu.Lock()
+	a.activeConns[conn] = &quicConnEntry{
+		conn:       conn,
+		remoteAddr: remoteAddr,
+		createdAt:  now,
+		lastActive: now,
+	}
+	connCount := len(a.activeConns)
+	a.activeConnsMu.Unlock()
+
+	corelog.Infof("QUIC: tracking connection from %s, total active: %d", remoteAddr, connCount)
+}
+
+func (a *QuicAdapter) untrackConnection(conn *quic.Conn) {
+	a.activeConnsMu.Lock()
+	entry, exists := a.activeConns[conn]
+	if exists {
+		delete(a.activeConns, conn)
+	}
+	connCount := len(a.activeConns)
+	a.activeConnsMu.Unlock()
+
+	if exists {
+		corelog.Infof("QUIC: untracking connection from %s, total active: %d", entry.remoteAddr, connCount)
+	}
+}
+
+func (a *QuicAdapter) connectionCleanupLoop() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-a.Ctx().Done():
+			return
+		case <-ticker.C:
+			a.cleanupStaleConnections()
+		}
+	}
+}
+
+func (a *QuicAdapter) cleanupStaleConnections() {
+	a.activeConnsMu.Lock()
+	defer a.activeConnsMu.Unlock()
+
+	now := time.Now()
+	staleThreshold := 60 * time.Second
+	var staleConns []*quic.Conn
+
+	for conn, entry := range a.activeConns {
+		if now.Sub(entry.lastActive) > staleThreshold {
+			staleConns = append(staleConns, conn)
+			corelog.Warnf("QUIC: connection from %s is stale (inactive for %v), will close", entry.remoteAddr, now.Sub(entry.lastActive))
+		}
+	}
+
+	for _, conn := range staleConns {
+		entry := a.activeConns[conn]
+		delete(a.activeConns, conn)
+		conn.CloseWithError(0, "connection idle timeout")
+		corelog.Infof("QUIC: closed stale connection from %s", entry.remoteAddr)
+	}
+
+	if len(staleConns) > 0 {
+		corelog.Infof("QUIC: cleaned up %d stale connections, %d remaining", len(staleConns), len(a.activeConns))
 	}
 }
 
 // acceptStream accepts a stream from a QUIC connection
 func (a *QuicAdapter) acceptStream(conn *quic.Conn) {
+	remoteAddr := conn.RemoteAddr().String()
+	corelog.Infof("QUIC: acceptStream started for connection from %s", remoteAddr)
+
 	ctx := a.Ctx()
 	stream, err := conn.AcceptStream(ctx)
 	if err != nil {
-		corelog.Errorf("QUIC: accept stream error: %v", err)
+		corelog.Errorf("QUIC: accept stream error from %s: %v", remoteAddr, err)
+		a.untrackConnection(conn)
 		conn.CloseWithError(quic.ApplicationErrorCode(0), "failed to accept stream")
+		corelog.Infof("QUIC: connection closed after stream accept error from %s", remoteAddr)
 		return
 	}
 
-	// Wrap stream as connection
+	corelog.Infof("QUIC: stream accepted from %s", remoteAddr)
+
+	a.updateConnectionActivity(conn)
+
 	streamConn := &QuicStreamConn{
 		stream:     stream,
 		connection: conn,
-		remoteAddr: conn.RemoteAddr().String(),
+		remoteAddr: remoteAddr,
 		closed:     make(chan struct{}),
+		adapter:    a,
 	}
 
-	// Send to accept channel
 	select {
 	case a.connChan <- streamConn:
+		corelog.Infof("QUIC: stream connection queued from %s", remoteAddr)
 	case <-a.Ctx().Done():
+		corelog.Infof("QUIC: context done while queueing connection from %s, closing", remoteAddr)
 		streamConn.Close()
 		return
 	case <-time.After(5 * time.Second):
-		corelog.Errorf("QUIC: connection queue full, rejecting")
+		corelog.Errorf("QUIC: connection queue full, rejecting connection from %s", remoteAddr)
 		streamConn.Close()
 		return
 	}
+}
+
+func (a *QuicAdapter) updateConnectionActivity(conn *quic.Conn) {
+	a.activeConnsMu.Lock()
+	if entry, exists := a.activeConns[conn]; exists {
+		entry.lastActive = time.Now()
+	}
+	a.activeConnsMu.Unlock()
 }
 
 // Accept accepts a new QUIC stream connection
@@ -214,7 +318,8 @@ func (a *QuicAdapter) onClose() error {
 
 	var err error
 
-	// Close listener
+	a.closeAllTrackedConnections()
+
 	if a.listener != nil {
 		if closeErr := a.listener.Close(); closeErr != nil {
 			corelog.Errorf("QUIC listener close error: %v", closeErr)
@@ -224,7 +329,6 @@ func (a *QuicAdapter) onClose() error {
 
 	close(a.connChan)
 
-	// 调用基类清理，与 TCP/KCP 适配器保持一致
 	baseErr := a.BaseAdapter.onClose()
 	if err == nil {
 		err = baseErr
@@ -232,6 +336,17 @@ func (a *QuicAdapter) onClose() error {
 
 	corelog.Infof("QUIC adapter closed")
 	return err
+}
+
+func (a *QuicAdapter) closeAllTrackedConnections() {
+	a.activeConnsMu.Lock()
+	defer a.activeConnsMu.Unlock()
+
+	for conn, entry := range a.activeConns {
+		conn.CloseWithError(0, "adapter closing")
+		corelog.Infof("QUIC: closed tracked connection from %s on adapter shutdown", entry.remoteAddr)
+	}
+	a.activeConns = make(map[*quic.Conn]*quicConnEntry)
 }
 
 // Dial 建立 QUIC 连接（客户端）
@@ -283,6 +398,7 @@ type QuicStreamConn struct {
 	remoteAddr string
 	closeOnce  sync.Once
 	closed     chan struct{}
+	adapter    *QuicAdapter
 }
 
 // Read implements io.Reader
@@ -323,13 +439,23 @@ func (c *QuicStreamConn) Close() error {
 	c.closeOnce.Do(func() {
 		close(c.closed)
 
+		corelog.Infof("QUIC: closing QuicStreamConn from %s", c.remoteAddr)
+
+		if c.adapter != nil {
+			c.adapter.untrackConnection(c.connection)
+		}
+
 		if streamErr := (*c.stream).Close(); streamErr != nil {
+			corelog.Warnf("QUIC: stream close error from %s: %v", c.remoteAddr, streamErr)
 			err = streamErr
 		}
 
 		if connErr := c.connection.CloseWithError(0, "stream closed"); connErr != nil && err == nil {
+			corelog.Warnf("QUIC: connection close error from %s: %v", c.remoteAddr, connErr)
 			err = connErr
 		}
+
+		corelog.Infof("QUIC: QuicStreamConn closed from %s", c.remoteAddr)
 	})
 	return err
 }
