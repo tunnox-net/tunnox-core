@@ -61,8 +61,8 @@ func alignBufferSize(size int) int {
 
 // Get(size int) []byte 获取指定大小的缓冲区
 func (bp *BufferPool) Get(size int) []byte {
-	// 超过最大大小，直接分配，不放入池中
-	if size > MaxBufferSize {
+	// 超过最大大小或池已关闭，直接分配
+	if size > MaxBufferSize || bp == nil {
 		return make([]byte, size)
 	}
 
@@ -70,13 +70,19 @@ func (bp *BufferPool) Get(size int) []byte {
 	alignedSize := alignBufferSize(size)
 
 	bp.mu.RLock()
+	if bp.pools == nil {
+		bp.mu.RUnlock()
+		return make([]byte, size)
+	}
 	pool, exists := bp.pools[alignedSize]
 	bp.mu.RUnlock()
 
 	if !exists {
 		bp.mu.Lock()
-		defer bp.mu.Unlock()
-
+		if bp.pools == nil {
+			bp.mu.Unlock()
+			return make([]byte, size)
+		}
 		// 双重检查
 		if pool, exists = bp.pools[alignedSize]; !exists {
 			pool = &sync.Pool{
@@ -86,6 +92,7 @@ func (bp *BufferPool) Get(size int) []byte {
 			}
 			bp.pools[alignedSize] = pool
 		}
+		bp.mu.Unlock()
 	}
 
 	buf := pool.Get().([]byte)
@@ -101,7 +108,7 @@ func (bp *BufferPool) Get(size int) []byte {
 // Put(buf []byte) 归还缓冲区
 // 🚀 性能优化: 移除清空缓冲区操作（不必要的开销）
 func (bp *BufferPool) Put(buf []byte) {
-	if buf == nil {
+	if bp == nil || buf == nil {
 		return
 	}
 
@@ -113,6 +120,10 @@ func (bp *BufferPool) Put(buf []byte) {
 	alignedSize := alignBufferSize(actualSize)
 
 	bp.mu.RLock()
+	if bp.pools == nil {
+		bp.mu.RUnlock()
+		return
+	}
 	pool, exists := bp.pools[alignedSize]
 	bp.mu.RUnlock()
 
@@ -152,11 +163,17 @@ func (bm *BufferManager) onClose() error {
 
 // Allocate(size int) []byte 分配缓冲区
 func (bm *BufferManager) Allocate(size int) []byte {
+	if bm == nil || bm.pool == nil {
+		return make([]byte, size)
+	}
 	return bm.pool.Get(size)
 }
 
 // Release(buf []byte) 释放缓冲区
 func (bm *BufferManager) Release(buf []byte) {
+	if bm == nil || bm.pool == nil {
+		return
+	}
 	bm.pool.Put(buf)
 }
 
