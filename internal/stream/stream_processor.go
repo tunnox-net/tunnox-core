@@ -53,6 +53,7 @@ func (ps *StreamProcessor) onClose() error {
 		if result.HasErrors() {
 			errs = append(errs, fmt.Errorf("buffer manager cleanup failed: %v", result.Error()))
 		}
+		ps.bufferMgr = nil
 	}
 
 	// 关闭 writer
@@ -67,6 +68,7 @@ func (ps *StreamProcessor) onClose() error {
 		} else if closer, ok := ps.writer.(interface{ Close() }); ok {
 			closer.Close()
 		}
+		ps.writer = nil
 	}
 
 	// 关闭 reader
@@ -81,6 +83,7 @@ func (ps *StreamProcessor) onClose() error {
 		} else if closer, ok := ps.reader.(interface{ Close() }); ok {
 			closer.Close()
 		}
+		ps.reader = nil
 	}
 
 	if len(errs) > 0 {

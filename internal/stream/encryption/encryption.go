@@ -253,11 +253,18 @@ func (e *encryptWriter) Close() error {
 
 	// 3. 关闭底层 writer (如果支持)
 	var closeErr error
-	if closer, ok := e.writer.(io.Closer); ok {
-		closeErr = closer.Close()
+	if e.writer != nil {
+		if closer, ok := e.writer.(io.Closer); ok {
+			closeErr = closer.Close()
+		}
+		e.writer = nil
 	}
 
-	// 4. 返回第一个错误
+	// 4. 释放引用
+	e.buffer = nil
+	e.aead = nil
+
+	// 5. 返回第一个错误
 	if flushErr != nil {
 		return coreerrors.Wrap(flushErr, coreerrors.CodeProtocolError, "flush error during close")
 	}

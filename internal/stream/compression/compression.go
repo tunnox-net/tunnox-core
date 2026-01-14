@@ -85,6 +85,7 @@ func (r *GzipReader) onClose() error {
 				errs = append(errs, err)
 			}
 		}
+		r.reader = nil
 	}
 
 	if len(errs) > 0 {
@@ -166,6 +167,7 @@ func (w *GzipWriter) onClose() error {
 				errs = append(errs, err)
 			}
 		}
+		w.writer = nil
 	}
 
 	if len(errs) > 0 {

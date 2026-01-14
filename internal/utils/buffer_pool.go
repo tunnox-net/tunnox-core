@@ -41,6 +41,7 @@ func (bp *BufferPool) onClose() error {
 	for k := range bp.pools {
 		delete(bp.pools, k)
 	}
+	bp.pools = nil
 	return nil
 }
 
@@ -144,6 +145,7 @@ func (bm *BufferManager) onClose() error {
 		if result.HasErrors() {
 			return fmt.Errorf("buffer pool cleanup failed: %v", result.Error())
 		}
+		bm.pool = nil
 	}
 	return nil
 }
