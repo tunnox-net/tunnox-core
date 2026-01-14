@@ -358,13 +358,18 @@ func (c *WebSocketServerConn) StartStreamModeReader() {
 			default:
 			}
 
-			// 读取 WebSocket 消息
+			// 设置读取超时，防止客户端崩溃时无限阻塞
+			c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 			messageType, data, err := c.conn.ReadMessage()
 			if err != nil {
 				select {
 				case <-c.closed:
 					return
 				default:
+					// 检查是否是超时错误，超时时继续循环（检查 c.closed）
+					if netErr, ok := err.(interface{ Timeout() bool }); ok && netErr.Timeout() {
+						continue
+					}
 					if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
 						corelog.Debugf("WebSocket[%s]: connection closed normally", c.connectionID)
 						return
