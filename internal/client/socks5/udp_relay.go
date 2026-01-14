@@ -59,11 +59,12 @@ type UDPRelay struct {
 }
 
 type udpSession struct {
+	// lastActive 必须放在第一位，确保 64 位原子操作在 32 位 ARM 系统上对齐
+	lastActive int64
 	dstKey     string
 	dstHost    string
 	dstPort    int
 	tunnel     UDPTunnelConn
-	lastActive int64
 	relay      *UDPRelay
 	sendMu     sync.Mutex
 }
