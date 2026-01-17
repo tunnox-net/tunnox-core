@@ -70,6 +70,7 @@ func (c *TunnoxClient) handleTunnelOpenRequest(cmdBody string) {
 func (c *TunnoxClient) handleTCPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int,
 	transformConfig *transform.TransformConfig) {
 	const logPrefix = "Client[TCP-target]"
+
 	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
 	corelog.Infof("%s[%s]: connecting to target %s and dialing tunnel in parallel", logPrefix, tunnelID, targetAddr)
 
@@ -149,6 +150,14 @@ func (c *TunnoxClient) handleSOCKS5TargetTunnel(tunnelID, mappingID, secretKey, 
 func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, targetHost string, targetPort int,
 	transformConfig *transform.TransformConfig) {
 	const logPrefix = "Client[UDP-target]"
+
+	// DNS 请求特殊处理：使用本地 DNS 解析而不是转发
+	// 这样可以让 CDN 根据服务器 IP 返回最优节点
+	if targetPort == 53 && isDNSServer(targetHost) {
+		go c.handleLocalDNSProxy(tunnelID, mappingID, secretKey, targetHost, logPrefix)
+		return
+	}
+
 	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
 	corelog.Infof("%s[%s]: connecting to target %s and dialing tunnel in parallel", logPrefix, tunnelID, targetAddr)
 
@@ -430,4 +439,262 @@ func startCancellationWatcher(tunnelCtx context.Context, logPrefix, tunnelID str
 			}
 		}
 	}()
+}
+
+// isDNSServer 检查是否是常见的 DNS 服务器
+func isDNSServer(host string) bool {
+	dnsServers := map[string]bool{
+		"8.8.8.8":         true, // Google DNS
+		"8.8.4.4":         true, // Google DNS
+		"114.114.114.114": true, // 114 DNS
+		"114.114.115.115": true, // 114 DNS
+		"223.5.5.5":       true, // 阿里 DNS
+		"223.6.6.6":       true, // 阿里 DNS
+		"119.29.29.29":    true, // 腾讯 DNS
+		"1.1.1.1":         true, // Cloudflare DNS
+	}
+	return dnsServers[host]
+}
+
+// handleLocalDNSProxy 本地 DNS 代理
+// 接收 DNS 查询，使用本地系统 DNS 解析，返回结果
+// 这样可以让 CDN 根据服务器 IP 返回最优节点
+func (c *TunnoxClient) handleLocalDNSProxy(tunnelID, mappingID, secretKey, originalDNS, logPrefix string) {
+	corelog.Infof("%s[%s]: using local DNS proxy instead of forwarding to %s", logPrefix, tunnelID, originalDNS)
+
+	// 注册隧道到管理器
+	tunnelCtx, tunnelCancel := c.targetTunnelManager.RegisterTunnel(tunnelID, c.Ctx())
+	defer func() {
+		tunnelCancel()
+		c.targetTunnelManager.UnregisterTunnel(tunnelID)
+	}()
+
+	// 建立隧道连接
+	tunnelConn, tunnelStream, err := c.dialTunnel(tunnelID, mappingID, secretKey)
+	if err != nil {
+		corelog.Errorf("%s[%s]: failed to dial tunnel: %v", logPrefix, tunnelID, err)
+		return
+	}
+	defer tunnelConn.Close()
+
+	// 获取 Reader/Writer
+	tunnelReader := tunnelStream.GetReader()
+	tunnelWriter := tunnelStream.GetWriter()
+	if tunnelReader == nil || tunnelWriter == nil {
+		corelog.Errorf("%s[%s]: tunnel reader or writer is nil", logPrefix, tunnelID)
+		return
+	}
+
+	// 监听取消信号
+	go func() {
+		<-tunnelCtx.Done()
+		tunnelConn.Close()
+	}()
+
+	// 读取 DNS 查询包
+	buf := make([]byte, 4096)
+	for {
+		select {
+		case <-tunnelCtx.Done():
+			return
+		default:
+		}
+
+		n, err := tunnelReader.Read(buf)
+		if err != nil {
+			if err != io.EOF {
+				corelog.Debugf("%s[%s]: read error: %v", logPrefix, tunnelID, err)
+			}
+			return
+		}
+
+		if n < 12 {
+			continue // DNS 包至少 12 字节
+		}
+
+		dnsQuery := buf[:n]
+
+		// 解析 DNS 查询并用本地 DNS 解析
+		response, err := c.resolveWithLocalDNS(dnsQuery, logPrefix, tunnelID)
+		if err != nil {
+			corelog.Warnf("%s[%s]: local DNS resolve failed: %v, forwarding to %s", logPrefix, tunnelID, err, originalDNS)
+			// 失败时回退到转发
+			response, err = c.forwardDNSQuery(dnsQuery, originalDNS)
+			if err != nil {
+				corelog.Errorf("%s[%s]: DNS forward also failed: %v", logPrefix, tunnelID, err)
+				continue
+			}
+		}
+
+		// 写回响应
+		if _, err := tunnelWriter.Write(response); err != nil {
+			corelog.Debugf("%s[%s]: write response error: %v", logPrefix, tunnelID, err)
+			return
+		}
+	}
+}
+
+// resolveWithLocalDNS 使用本地系统 DNS 解析
+func (c *TunnoxClient) resolveWithLocalDNS(query []byte, logPrefix, tunnelID string) ([]byte, error) {
+	if len(query) < 12 {
+		return nil, fmt.Errorf("invalid DNS query: too short")
+	}
+
+	// 解析 DNS 查询包
+	domain, qtype, err := parseDNSQuery(query)
+	if err != nil {
+		return nil, err
+	}
+
+	corelog.Infof("%s[%s]: local DNS lookup: %s (type=%d)", logPrefix, tunnelID, domain, qtype)
+
+	// 使用系统 DNS 解析
+	var ips []net.IP
+	if qtype == 1 { // A 记录
+		addrs, err := net.LookupIP(domain)
+		if err != nil {
+			return nil, fmt.Errorf("lookup failed: %v", err)
+		}
+		for _, addr := range addrs {
+			if ipv4 := addr.To4(); ipv4 != nil {
+				ips = append(ips, ipv4)
+			}
+		}
+	} else if qtype == 28 { // AAAA 记录
+		addrs, err := net.LookupIP(domain)
+		if err != nil {
+			return nil, fmt.Errorf("lookup failed: %v", err)
+		}
+		for _, addr := range addrs {
+			if addr.To4() == nil {
+				ips = append(ips, addr)
+			}
+		}
+	} else {
+		return nil, fmt.Errorf("unsupported query type: %d", qtype)
+	}
+
+	if len(ips) == 0 {
+		return nil, fmt.Errorf("no records found for %s", domain)
+	}
+
+	corelog.Infof("%s[%s]: local DNS resolved %s -> %v", logPrefix, tunnelID, domain, ips)
+
+	// 构造 DNS 响应
+	return buildDNSResponse(query, ips, qtype)
+}
+
+// forwardDNSQuery 转发 DNS 查询到指定服务器
+func (c *TunnoxClient) forwardDNSQuery(query []byte, dnsServer string) ([]byte, error) {
+	conn, err := net.DialTimeout("udp", dnsServer+":53", 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	if _, err := conn.Write(query); err != nil {
+		return nil, err
+	}
+
+	buf := make([]byte, 4096)
+	n, err := conn.Read(buf)
+	if err != nil {
+		return nil, err
+	}
+
+	return buf[:n], nil
+}
+
+// parseDNSQuery 解析 DNS 查询包，提取域名和查询类型
+func parseDNSQuery(query []byte) (string, uint16, error) {
+	if len(query) < 12 {
+		return "", 0, fmt.Errorf("query too short")
+	}
+
+	// 跳过 DNS 头部 (12 字节)
+	offset := 12
+	var domain string
+
+	// 解析域名
+	for offset < len(query) {
+		length := int(query[offset])
+		if length == 0 {
+			offset++
+			break
+		}
+		if offset+1+length > len(query) {
+			return "", 0, fmt.Errorf("invalid domain name")
+		}
+		if domain != "" {
+			domain += "."
+		}
+		domain += string(query[offset+1 : offset+1+length])
+		offset += 1 + length
+	}
+
+	// 读取查询类型
+	if offset+2 > len(query) {
+		return "", 0, fmt.Errorf("missing query type")
+	}
+	qtype := uint16(query[offset])<<8 | uint16(query[offset+1])
+
+	return domain, qtype, nil
+}
+
+// buildDNSResponse 构造 DNS 响应包
+func buildDNSResponse(query []byte, ips []net.IP, qtype uint16) ([]byte, error) {
+	if len(query) < 12 {
+		return nil, fmt.Errorf("invalid query")
+	}
+
+	// 复制查询头部作为响应头部
+	response := make([]byte, 0, 512)
+	response = append(response, query[:2]...) // Transaction ID
+
+	// 设置标志位: QR=1 (响应), AA=0, TC=0, RD=1, RA=1, RCODE=0
+	response = append(response, 0x81, 0x80)
+
+	// QDCOUNT = 1
+	response = append(response, 0x00, 0x01)
+
+	// ANCOUNT = len(ips)
+	response = append(response, byte(len(ips)>>8), byte(len(ips)))
+
+	// NSCOUNT = 0, ARCOUNT = 0
+	response = append(response, 0x00, 0x00, 0x00, 0x00)
+
+	// 复制问题部分
+	questionEnd := 12
+	for questionEnd < len(query) {
+		if query[questionEnd] == 0 {
+			questionEnd += 5 // null + QTYPE(2) + QCLASS(2)
+			break
+		}
+		questionEnd += int(query[questionEnd]) + 1
+	}
+	response = append(response, query[12:questionEnd]...)
+
+	// 添加答案部分
+	for _, ip := range ips {
+		// 名称指针 (指向问题部分的域名)
+		response = append(response, 0xc0, 0x0c)
+
+		if qtype == 1 && ip.To4() != nil { // A 记录
+			response = append(response, 0x00, 0x01) // TYPE = A
+			response = append(response, 0x00, 0x01) // CLASS = IN
+			response = append(response, 0x00, 0x00, 0x01, 0x2c) // TTL = 300
+			response = append(response, 0x00, 0x04) // RDLENGTH = 4
+			response = append(response, ip.To4()...)
+		} else if qtype == 28 && ip.To4() == nil { // AAAA 记录
+			response = append(response, 0x00, 0x1c) // TYPE = AAAA
+			response = append(response, 0x00, 0x01) // CLASS = IN
+			response = append(response, 0x00, 0x00, 0x01, 0x2c) // TTL = 300
+			response = append(response, 0x00, 0x10) // RDLENGTH = 16
+			response = append(response, ip.To16()...)
+		}
+	}
+
+	return response, nil
 }
