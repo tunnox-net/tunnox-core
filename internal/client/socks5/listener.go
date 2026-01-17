@@ -166,10 +166,14 @@ func (l *Listener) handleConnection(conn net.Conn) {
 
 	conn.SetDeadline(time.Time{})
 
+	corelog.Infof("SOCKS5Listener: command=%d (0x%02X), target=%s:%d, udpRelayCreator=%v",
+		result.Command, result.Command, result.TargetHost, result.TargetPort, l.udpRelayCreator != nil)
+
 	switch result.Command {
 	case CmdConnect:
 		l.handleConnect(conn, result.TargetHost, result.TargetPort)
 	case CmdUDPAssoc:
+		corelog.Infof("SOCKS5Listener: received UDP ASSOCIATE request, udpRelayCreator=%v", l.udpRelayCreator != nil)
 		l.handleUDPAssociate(conn)
 	default:
 		l.SendError(conn, RepCmdNotSupp)
@@ -210,14 +214,15 @@ func (l *Listener) handleConnect(conn net.Conn, targetHost string, targetPort in
 
 // handleUDPAssociate 处理 UDP ASSOCIATE 请求
 func (l *Listener) handleUDPAssociate(conn net.Conn) {
-	corelog.Debugf("SOCKS5Listener: UDP ASSOCIATE from %s", conn.RemoteAddr())
+	corelog.Infof("SOCKS5Listener: handleUDPAssociate START from %s", conn.RemoteAddr())
 
 	if l.udpRelayCreator == nil {
-		corelog.Warnf("SOCKS5Listener: UDP ASSOCIATE not supported (no relay creator)")
+		corelog.Errorf("SOCKS5Listener: UDP ASSOCIATE not supported (udpRelayCreator is nil)")
 		l.SendError(conn, RepCmdNotSupp)
 		conn.Close()
 		return
 	}
+	corelog.Infof("SOCKS5Listener: UDP ASSOCIATE - creating UDP relay...")
 
 	bindAddr, err := l.udpRelayCreator.CreateUDPRelay(
 		conn,

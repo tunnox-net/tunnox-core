@@ -3,11 +3,19 @@ package mobile
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"tunnox-core/internal/client"
+	"tunnox-core/internal/utils"
 )
+
+func init() {
+	// 移动端输出日志到 stderr（会被 Android logcat 捕获）
+	utils.Logger.SetOutput(os.Stderr)
+	utils.Logger.SetLevel(utils.Logger.GetLevel())
+}
 
 // TunnoxMobileClient Android/iOS 可调用的客户端封装
 type TunnoxMobileClient struct {

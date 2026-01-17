@@ -145,6 +145,9 @@ const (
 	NotifyClient       CommandType = 100 // 服务端 -> 客户端 推送通知
 	NotifyClientAck    CommandType = 101 // 客户端 -> 服务端 通知确认（可选）
 	SendNotifyToClient CommandType = 102 // 客户端 -> 服务端 -> 目标客户端（C2C通知）
+
+	// ==================== DNS 类命令 (120-129) ====================
+	DNSResolve CommandType = 120 // DNS 解析请求（通过隧道转发给 targetClient）
 )
 
 // InitPacket 初始化数据包
@@ -485,4 +488,24 @@ type TrafficReportRequest struct {
 type TrafficReportResponse struct {
 	Success bool   `json:"success"`
 	Error   string `json:"error,omitempty"`
+}
+
+// ============================================================================
+// DNS 解析类数据包
+// ============================================================================
+
+// DNSResolveRequest DNS 解析请求
+// 通过 tunnox 隧道发送给 targetClient，由其使用本地 DNS 解析
+type DNSResolveRequest struct {
+	Domain         string `json:"domain"`           // 要解析的域名
+	QType          int    `json:"qtype"`            // 查询类型：1=A (IPv4), 28=AAAA (IPv6)
+	TargetClientID int64  `json:"target_client_id"` // 目标客户端 ID（-1 表示使用默认目标）
+}
+
+// DNSResolveResponse DNS 解析响应
+type DNSResolveResponse struct {
+	Success bool     `json:"success"`
+	IPs     []string `json:"ips"`             // 解析得到的 IP 地址列表
+	TTL     int      `json:"ttl"`             // TTL（秒）
+	Error   string   `json:"error,omitempty"` // 错误信息
 }

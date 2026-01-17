@@ -125,6 +125,15 @@ func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) err
 			return s.HandleSOCKS5TunnelRequest(connPacket)
 		}
 
+		// 特殊处理 DNS 解析请求
+		if connPacket.Packet.CommandPacket.CommandType == packet.DNSResolve {
+			// 检查是请求还是响应
+			if connPacket.Packet.PacketType.IsCommandResp() {
+				return s.HandleDNSResolveResponse(connPacket)
+			}
+			return s.HandleDNSResolveRequest(connPacket)
+		}
+
 		// 特殊处理流量上报
 		if connPacket.Packet.CommandPacket.CommandType == packet.TunnelTrafficReport {
 			return s.HandleTrafficReport(connPacket)

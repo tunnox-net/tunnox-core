@@ -79,8 +79,12 @@ func (m *Manager) AddMapping(mapping *models.PortMapping) error {
 
 	listener := NewListener(m.Ctx(), config, m.tunnelCreator)
 
+	corelog.Infof("SOCKS5Manager: AddMapping - udpRelayCreator=%v", m.udpRelayCreator != nil)
 	if m.udpRelayCreator != nil {
 		listener.SetUDPRelayCreator(m.udpRelayCreator)
+		corelog.Infof("SOCKS5Manager: UDP relay creator set on listener")
+	} else {
+		corelog.Warnf("SOCKS5Manager: UDP relay creator is nil - UDP ASSOCIATE will not work!")
 	}
 
 	// 启动监听

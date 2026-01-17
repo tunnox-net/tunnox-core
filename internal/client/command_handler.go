@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"net"
 
 	"tunnox-core/internal/client/notify"
 	corelog "tunnox-core/internal/core/log"
@@ -39,6 +40,10 @@ func (c *TunnoxClient) handleCommand(pkt *packet.TransferPacket) {
 	case packet.NotifyClient:
 		// 服务端推送的通知
 		c.handleNotification(pkt.CommandPacket.CommandBody)
+
+	case packet.DNSResolve:
+		// DNS 解析请求（作为 targetClient）
+		c.handleDNSResolveRequest(pkt.CommandPacket)
 	}
 }
 
@@ -246,4 +251,88 @@ func (c *TunnoxClient) RemoveNotificationHandler(handler notify.Handler) {
 // SetDefaultNotificationHandler 设置默认通知处理器（记录日志）
 func (c *TunnoxClient) SetDefaultNotificationHandler() {
 	c.AddNotificationHandler(&notify.DefaultHandler{})
+}
+
+// handleDNSResolveRequest 处理 DNS 解析请求
+// 当本客户端作为 targetClient 时，接收 DNS 解析请求并使用本地系统 DNS 进行解析
+func (c *TunnoxClient) handleDNSResolveRequest(cmd *packet.CommandPacket) {
+	var req packet.DNSResolveRequest
+	if err := json.Unmarshal([]byte(cmd.CommandBody), &req); err != nil {
+		corelog.Errorf("Client: failed to parse DNS resolve request: %v", err)
+		c.sendDNSResolveResponse(cmd.CommandId, nil, err.Error())
+		return
+	}
+
+	corelog.Debugf("Client: handling DNS resolve request for %s (qtype=%d)", req.Domain, req.QType)
+
+	// 使用系统 DNS 解析
+	addrs, err := net.LookupHost(req.Domain)
+	if err != nil {
+		corelog.Warnf("Client: DNS resolve failed for %s: %v", req.Domain, err)
+		c.sendDNSResolveResponse(cmd.CommandId, nil, err.Error())
+		return
+	}
+
+	// 根据 qtype 过滤 IP
+	var ips []string
+	for _, addr := range addrs {
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			continue
+		}
+		isIPv4 := ip.To4() != nil
+		if req.QType == 1 && isIPv4 { // A record
+			ips = append(ips, addr)
+		} else if req.QType == 28 && !isIPv4 { // AAAA record
+			ips = append(ips, addr)
+		}
+	}
+
+	// 如果请求的类型没有结果，但有其他类型的结果，也返回
+	if len(ips) == 0 && len(addrs) > 0 {
+		ips = addrs
+	}
+
+	corelog.Debugf("Client: DNS resolved %s -> %v", req.Domain, ips)
+	c.sendDNSResolveResponse(cmd.CommandId, ips, "")
+}
+
+// sendDNSResolveResponse 发送 DNS 解析响应
+func (c *TunnoxClient) sendDNSResolveResponse(commandID string, ips []string, errMsg string) {
+	resp := &packet.DNSResolveResponse{
+		Success: errMsg == "",
+		IPs:     ips,
+		TTL:     300,
+		Error:   errMsg,
+	}
+
+	respBody, err := json.Marshal(resp)
+	if err != nil {
+		corelog.Errorf("Client: failed to marshal DNS resolve response: %v", err)
+		return
+	}
+
+	respPkt := &packet.TransferPacket{
+		PacketType: packet.CommandResp,
+		CommandPacket: &packet.CommandPacket{
+			CommandType: packet.DNSResolve,
+			CommandId:   commandID,
+			CommandBody: string(respBody),
+		},
+	}
+
+	c.mu.RLock()
+	controlStream := c.controlStream
+	c.mu.RUnlock()
+
+	if controlStream == nil {
+		corelog.Errorf("Client: control stream is nil, cannot send DNS resolve response")
+		return
+	}
+
+	if _, err := controlStream.WritePacket(respPkt, true, 0); err != nil {
+		corelog.Errorf("Client: failed to send DNS resolve response: %v", err)
+	} else {
+		corelog.Debugf("Client: sent DNS resolve response for %s", commandID)
+	}
 }
