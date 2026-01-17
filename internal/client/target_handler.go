@@ -492,7 +492,8 @@ func (c *TunnoxClient) handleLocalDNSProxy(tunnelID, mappingID, secretKey, origi
 	}()
 
 	// 读取 DNS 查询包
-	buf := make([]byte, 4096)
+	// 注意：UDP 数据包在隧道中有 2 字节长度前缀（大端序）
+	buf := make([]byte, 65536)
 	for {
 		select {
 		case <-tunnelCtx.Done():
@@ -500,19 +501,31 @@ func (c *TunnoxClient) handleLocalDNSProxy(tunnelID, mappingID, secretKey, origi
 		default:
 		}
 
-		n, err := tunnelReader.Read(buf)
+		// 读取长度前缀（2字节，大端序）
+		_, err := io.ReadFull(tunnelReader, buf[:2])
 		if err != nil {
 			if err != io.EOF {
-				corelog.Debugf("%s[%s]: read error: %v", logPrefix, tunnelID, err)
+				corelog.Debugf("%s[%s]: read length prefix error: %v", logPrefix, tunnelID, err)
 			}
 			return
 		}
 
-		if n < 12 {
-			continue // DNS 包至少 12 字节
+		packetLen := int(buf[0])<<8 | int(buf[1])
+		if packetLen < 12 || packetLen > 65535 {
+			corelog.Warnf("%s[%s]: invalid DNS packet length: %d", logPrefix, tunnelID, packetLen)
+			continue
 		}
 
-		dnsQuery := buf[:n]
+		// 读取实际的 DNS 数据
+		_, err = io.ReadFull(tunnelReader, buf[:packetLen])
+		if err != nil {
+			if err != io.EOF {
+				corelog.Debugf("%s[%s]: read DNS packet error: %v", logPrefix, tunnelID, err)
+			}
+			return
+		}
+
+		dnsQuery := buf[:packetLen]
 
 		// 解析 DNS 查询并用本地 DNS 解析
 		response, err := c.resolveWithLocalDNS(dnsQuery, logPrefix, tunnelID)
@@ -526,8 +539,14 @@ func (c *TunnoxClient) handleLocalDNSProxy(tunnelID, mappingID, secretKey, origi
 			}
 		}
 
-		// 写回响应
-		if _, err := tunnelWriter.Write(response); err != nil {
+		// 写回响应（加上 2 字节长度前缀）
+		respLen := len(response)
+		respBuf := make([]byte, 2+respLen)
+		respBuf[0] = byte(respLen >> 8)
+		respBuf[1] = byte(respLen)
+		copy(respBuf[2:], response)
+
+		if _, err := tunnelWriter.Write(respBuf); err != nil {
 			corelog.Debugf("%s[%s]: write response error: %v", logPrefix, tunnelID, err)
 			return
 		}
