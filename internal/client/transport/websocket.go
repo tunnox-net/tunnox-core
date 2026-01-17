@@ -7,6 +7,7 @@ package transport
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -21,6 +22,8 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+var tlsSessionCache = tls.NewLRUClientSessionCache(128)
 
 func init() {
 	RegisterProtocol("websocket", 10, DialWebSocket) // 优先级 10（最高）
@@ -47,6 +50,9 @@ func NewWebSocketStreamConn(wsURL string) (*WebSocketStreamConn, error) {
 		HandshakeTimeout: 20 * time.Second,
 		ReadBufferSize:   constants.WebSocketBufferSize,
 		WriteBufferSize:  constants.WebSocketBufferSize,
+		TLSClientConfig: &tls.Config{
+			ClientSessionCache: tlsSessionCache,
+		},
 	}
 
 	conn, _, err := dialer.Dial(wsURL, nil)

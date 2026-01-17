@@ -18,7 +18,18 @@ type ClientConfig struct {
 	// 日志配置
 	Log LogConfig `yaml:"log"`
 
+	// 性能分析配置
+	Pprof PprofConfig `yaml:"pprof"`
+
 	// 注意：映射配置由服务器通过指令连接动态推送，不在配置文件中
+}
+
+// PprofConfig pprof 性能分析配置
+type PprofConfig struct {
+	// 是否启用 pprof HTTP 服务器
+	Enabled bool `yaml:"enabled"`
+	// pprof HTTP 服务器监听地址，例如 "localhost:6060" 或 ":6060"
+	Address string `yaml:"address"`
 }
 
 // TLSConfig TLS 配置

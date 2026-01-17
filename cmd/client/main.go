@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -134,6 +136,8 @@ func main() {
 	serverProtocolFromCLI := *protocol != ""
 	tunnoxClient := client.NewClientWithCLIFlags(ctx, config, serverAddressFromCLI, serverProtocolFromCLI, *configFile)
 
+	startPprofServer(config)
+
 	// 根据运行模式决定连接策略
 	if runInteractive {
 		runInteractiveMode(ctx, cancel, tunnoxClient, config)
@@ -218,6 +222,27 @@ func runInteractiveMode(ctx context.Context, cancel context.CancelFunc, tunnoxCl
 	corelog.Infof("Client: calling CLI.Start()...")
 	tunnoxCLI.Start()
 	corelog.Infof("Client: CLI.Start() returned")
+}
+
+// startPprofServer 启动 pprof HTTP 服务器
+func startPprofServer(config *client.ClientConfig) {
+	if !config.Pprof.Enabled {
+		return
+	}
+
+	addr := config.Pprof.Address
+	if addr == "" {
+		addr = "localhost:6060"
+	}
+
+	corelog.Infof("Starting pprof server on %s", addr)
+	fmt.Printf("📊 Pprof server: http://%s/debug/pprof/\n", addr)
+
+	go func() {
+		if err := http.ListenAndServe(addr, nil); err != nil {
+			corelog.Errorf("pprof server error: %v", err)
+		}
+	}()
 }
 
 // runDaemonMode 运行守护进程模式

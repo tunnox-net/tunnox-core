@@ -342,11 +342,10 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 	go func() {
 		defer wg.Done()
 
-		// 批量写入参数
 		const (
-			batchBufSize  = 256 * 1024       // 256KB 批量缓冲
-			flushInterval = 1 * time.Millisecond // 1ms 刷新间隔，平衡延迟和吞吐
-			readTimeout   = 500 * time.Microsecond // 500μs 读超时，快速检测无数据
+			batchBufSize  = 256 * 1024            // 256KB 批量缓冲
+			flushInterval = 10 * time.Millisecond // 10ms 刷新间隔
+			readTimeout   = 10 * time.Millisecond // 10ms 读超时，与刷新间隔对齐减少空轮询
 		)
 
 		readBuf := make([]byte, 65536)
@@ -459,10 +458,9 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 	go func() {
 		defer wg.Done()
 
-		// 批量写入参数
 		const (
-			batchSize     = 32               // 批量发送的包数量
-			flushInterval = time.Millisecond // 1ms 刷新间隔
+			batchSize     = 32                    // 批量发送的包数量
+			flushInterval = 10 * time.Millisecond // 10ms 刷新间隔
 		)
 
 		// 批量读取 + 智能解包

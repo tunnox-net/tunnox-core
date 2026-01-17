@@ -1,8 +1,9 @@
-// Package cli 提供 Tunnox 客户端的系统命令（版本、帮助、守护进程）
 package cli
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"time"
 
@@ -91,11 +92,32 @@ func formatTime(t string) string {
 // 守护进程命令 (tunnox start/stop/status)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// runStartCommand 执行 tunnox start 命令
+func (r *QuickCommandRunner) startPprofServer() {
+	if !r.config.Pprof.Enabled {
+		return
+	}
+
+	addr := r.config.Pprof.Address
+	if addr == "" {
+		addr = "localhost:6060"
+	}
+
+	corelog.Infof("Starting pprof server on %s", addr)
+	fmt.Printf("📊 Pprof server: http://%s/debug/pprof/\n", addr)
+
+	go func() {
+		if err := http.ListenAndServe(addr, nil); err != nil {
+			corelog.Errorf("pprof server error: %v", err)
+		}
+	}()
+}
+
 func (r *QuickCommandRunner) runStartCommand(args []string) (bool, error) {
 	fmt.Println()
 	fmt.Println("Starting Tunnox client in daemon mode...")
 	fmt.Println()
+
+	r.startPprofServer()
 
 	// 连接到服务器
 	if err := r.connectToServer(); err != nil {
