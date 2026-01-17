@@ -151,9 +151,9 @@ func (c *TunnoxClient) handleUDPTargetTunnel(tunnelID, mappingID, secretKey, tar
 	transformConfig *transform.TransformConfig) {
 	const logPrefix = "Client[UDP-target]"
 
-	// DNS 请求特殊处理：使用本地 DNS 解析而不是转发
+	// DNS 请求特殊处理：所有 UDP 53 端口请求都使用本地 DNS 解析
 	// 这样可以让 CDN 根据服务器 IP 返回最优节点
-	if targetPort == 53 && isDNSServer(targetHost) {
+	if targetPort == 53 {
 		go c.handleLocalDNSProxy(tunnelID, mappingID, secretKey, targetHost, logPrefix)
 		return
 	}
