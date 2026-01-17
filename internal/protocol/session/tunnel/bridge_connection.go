@@ -21,7 +21,13 @@ func (b *Bridge) SetTargetConnection(conn TunnelConnectionInterface) {
 		b.targetForwarder = CreateDataForwarder(b.targetConn, b.targetStream)
 	}
 	b.tunnelConnMu.Unlock()
-	close(b.ready)
+
+	select {
+	case <-b.ready:
+		// 已经关闭，忽略
+	default:
+		close(b.ready)
+	}
 }
 
 // SetSourceConnection 设置源端连接（统一接口）
