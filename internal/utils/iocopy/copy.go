@@ -339,21 +339,23 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 	wg.Add(2)
 
 	// UDP → Tunnel：从 UDP 读取数据包，批量写入隧道
+	// 优化：使用阻塞读取 + 独立 flush goroutine，避免频繁 SetReadDeadline 系统调用
 	go func() {
 		defer wg.Done()
 
 		const (
 			batchBufSize  = 256 * 1024            // 256KB 批量缓冲
-			flushInterval = 10 * time.Millisecond // 10ms 刷新间隔
-			readTimeout   = 10 * time.Millisecond // 10ms 读超时，与刷新间隔对齐减少空轮询
+			flushInterval = 20 * time.Millisecond // 20ms 刷新间隔
 		)
 
 		readBuf := make([]byte, 65536)
 		batchBuf := make([]byte, batchBufSize)
 		batchPos := 0
+		var batchMu sync.Mutex
+		done := make(chan struct{})
 
-		// 刷新函数：将批量缓冲写入隧道
-		flush := func() error {
+		// 刷新函数：将批量缓冲写入隧道（需要持有锁）
+		flushLocked := func() error {
 			if batchPos > 0 {
 				_, err := tunnelConn.Write(batchBuf[:batchPos])
 				if err != nil {
@@ -364,43 +366,33 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 			return nil
 		}
 
-		// 使用可复用 timer
-		flushTimer := time.NewTimer(flushInterval)
-		flushTimer.Stop()
-		defer flushTimer.Stop()
-
-		timerActive := false
-
-		for {
-			// 非阻塞尝试读取
-			if conn, ok := udpConn.(interface{ SetReadDeadline(time.Time) error }); ok {
-				conn.SetReadDeadline(time.Now().Add(readTimeout))
+		// 独立的定时刷新 goroutine
+		go func() {
+			ticker := time.NewTicker(flushInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-ticker.C:
+					batchMu.Lock()
+					flushLocked()
+					batchMu.Unlock()
+				}
 			}
+		}()
 
+		// 主循环：阻塞读取 UDP（无超时，减少系统调用）
+		for {
 			n, err := udpConn.Read(readBuf)
 			if err != nil {
-				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-					// 读超时，检查是否需要刷新
-					if timerActive {
-						select {
-						case <-flushTimer.C:
-							timerActive = false
-							if err := flush(); err != nil {
-								result.SendError = err
-								return
-							}
-						default:
-							// timer 还没到，继续读
-						}
-					}
-					continue
-				}
-				// 其他错误，刷新后退出
-				if flushErr := flush(); flushErr != nil {
+				batchMu.Lock()
+				if flushErr := flushLocked(); flushErr != nil {
 					result.SendError = flushErr
 				} else if err != io.EOF {
 					result.SendError = err
 				}
+				batchMu.Unlock()
 				break
 			}
 
@@ -408,18 +400,15 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 				continue
 			}
 
+			batchMu.Lock()
 			// 检查批量缓冲是否有足够空间
 			packetSize := 2 + n
 			if batchPos+packetSize > batchBufSize {
 				// 缓冲区满，立即刷新
-				if err := flush(); err != nil {
+				if err := flushLocked(); err != nil {
 					result.SendError = err
+					batchMu.Unlock()
 					break
-				}
-				// 停止 timer
-				if timerActive {
-					flushTimer.Stop()
-					timerActive = false
 				}
 			}
 
@@ -428,28 +417,16 @@ func UDP(udpConn io.ReadWriteCloser, tunnelConn io.ReadWriteCloser, options *Opt
 			batchBuf[batchPos+1] = byte(n)
 			copy(batchBuf[batchPos+2:], readBuf[:n])
 			batchPos += packetSize
-
 			result.BytesSent += int64(n)
-
-			// 启动刷新 timer（如果未激活）
-			if !timerActive {
-				flushTimer.Reset(flushInterval)
-				timerActive = true
-			}
 
 			// 如果批量缓冲超过一半，立即刷新（高吞吐模式）
 			if batchPos > batchBufSize/2 {
-				if err := flush(); err != nil {
-					result.SendError = err
-					break
-				}
-				if timerActive {
-					flushTimer.Stop()
-					timerActive = false
-				}
+				flushLocked()
 			}
+			batchMu.Unlock()
 		}
 
+		close(done)
 		// 半关闭写方向
 		tryCloseWrite(tunnelConn)
 	}()
