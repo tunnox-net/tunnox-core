@@ -155,3 +155,7 @@ func (r *Storage) Exists(key string) (bool, error) {
 	exists := result.Val() > 0
 	return exists, nil
 }
+
+func (r *Storage) Client() *redis.Client {
+	return r.client
+}

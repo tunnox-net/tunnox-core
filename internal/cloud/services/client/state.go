@@ -549,3 +549,7 @@ func (s *Service) GetNodeClients(nodeID string) ([]*models.Client, error) {
 	wg.Wait()
 	return clients, nil
 }
+
+func (s *Service) CleanupStaleNodeClients(nodeID string) (int64, error) {
+	return s.stateRepo.CleanupStaleClients(nodeID)
+}

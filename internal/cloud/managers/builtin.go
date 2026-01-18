@@ -73,21 +73,49 @@ func (b *BuiltinCloudControl) Stop() error {
 	return nil
 }
 
-// cleanupRoutine 清理例程
 func (b *BuiltinCloudControl) cleanupRoutine() {
 	corelog.Infof("Cleanup routine started")
 
 	for {
 		select {
 		case <-b.cleanupTicker.C:
-			// 执行清理任务
 			corelog.Debugf("Performing cleanup tasks...")
-			// 这里可以添加具体的清理逻辑
+			b.cleanupStaleNodeClients()
+
+		case <-b.done:
+			corelog.Infof("Cleanup routine stopped (done signal)")
+			return
 
 		case <-b.CloudControl.ManagerBase.Ctx().Done():
-			corelog.Infof("Cleanup routine stopped")
+			corelog.Infof("Cleanup routine stopped (context cancelled)")
 			return
 		}
+	}
+}
+
+func (b *BuiltinCloudControl) cleanupStaleNodeClients() {
+	if b.nodeService == nil || b.clientService == nil {
+		return
+	}
+
+	nodes, err := b.nodeService.GetAllNodeServiceInfo()
+	if err != nil {
+		corelog.Warnf("Failed to get nodes for cleanup: %v", err)
+		return
+	}
+
+	var totalRemoved int64
+	for _, node := range nodes {
+		removed, err := b.clientService.CleanupStaleNodeClients(node.NodeID)
+		if err != nil {
+			corelog.Warnf("Failed to cleanup stale clients for node %s: %v", node.NodeID, err)
+			continue
+		}
+		totalRemoved += removed
+	}
+
+	if totalRemoved > 0 {
+		corelog.Infof("Cleaned up %d stale clients from %d nodes", totalRemoved, len(nodes))
 	}
 }
 

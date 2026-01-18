@@ -268,18 +268,26 @@ func (r *Storage) GetExpiration(key string) (time.Duration, error) {
 	return ttl, nil
 }
 
-// CleanupExpired 清理过期数据（Redis自动处理，这里只是日志）
 func (r *Storage) CleanupExpired() error {
-	dispose.Infof("RedisStorage.CleanupExpired: Redis automatically handles expiration")
 	return nil
 }
 
-// SetNX 原子设置，仅当键不存在时
+func encodeValueForRedis(value interface{}) ([]byte, error) {
+	switch v := value.(type) {
+	case string:
+		return []byte(v), nil
+	case []byte:
+		return v, nil
+	default:
+		return json.Marshal(value)
+	}
+}
+
 func (r *Storage) SetNX(key string, value interface{}, ttl time.Duration) (bool, error) {
 	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
 	defer cancel()
 
-	jsonData, err := json.Marshal(value)
+	data, err := encodeValueForRedis(value)
 	if err != nil {
 		return false, err
 	}
@@ -289,21 +297,18 @@ func (r *Storage) SetNX(key string, value interface{}, ttl time.Duration) (bool,
 		expiration = ttl
 	}
 
-	result := r.client.SetNX(ctx, key, jsonData, expiration)
+	result := r.client.SetNX(ctx, key, data, expiration)
 	if result.Err() != nil {
 		return false, result.Err()
 	}
 
-	dispose.Infof("RedisStorage.SetNX: set key %s with NX flag, success: %v", key, result.Val())
 	return result.Val(), nil
 }
 
-// CompareAndSwap 原子比较并交换
 func (r *Storage) CompareAndSwap(key string, oldValue, newValue interface{}, ttl time.Duration) (bool, error) {
 	ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
 	defer cancel()
 
-	// 使用Lua脚本实现原子CAS操作
 	script := `
 		local key = KEYS[1]
 		local old_value = ARGV[1]
@@ -337,14 +342,14 @@ func (r *Storage) CompareAndSwap(key string, oldValue, newValue interface{}, ttl
 
 	oldValueStr := ""
 	if oldValue != nil {
-		oldValueBytes, err := json.Marshal(oldValue)
+		oldValueBytes, err := encodeValueForRedis(oldValue)
 		if err != nil {
 			return false, err
 		}
 		oldValueStr = string(oldValueBytes)
 	}
 
-	newValueBytes, err := json.Marshal(newValue)
+	newValueBytes, err := encodeValueForRedis(newValue)
 	if err != nil {
 		return false, err
 	}
@@ -359,9 +364,7 @@ func (r *Storage) CompareAndSwap(key string, oldValue, newValue interface{}, ttl
 		return false, result.Err()
 	}
 
-	success := result.Val().(int64) == 1
-	dispose.Infof("RedisStorage.CompareAndSwap: CAS operation for key %s, success: %v", key, success)
-	return success, nil
+	return result.Val().(int64) == 1, nil
 }
 
 // Watch 监听键变化（简化实现）

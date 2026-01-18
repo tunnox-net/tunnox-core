@@ -206,6 +206,11 @@ func (r *ClientStateRepository) AddToNodeClients(nodeID string, clientID int64) 
 		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to add client to node")
 	}
 
+	ttl := time.Duration(constants.TTLClientState) * time.Second
+	if err := r.storage.SetExpiration(key, ttl); err != nil {
+		corelog.Warnf("ClientStateRepository: failed to set TTL on node clients key %s: %v", key, err)
+	}
+
 	corelog.Debugf("ClientStateRepository: added client %d to node %s (score=%f)", clientID, nodeID, score)
 	return nil
 }
@@ -238,7 +243,7 @@ func (r *ClientStateRepository) CleanupStaleClients(nodeID string) (int64, error
 	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
 	staleThreshold := float64(time.Now().Add(-time.Duration(constants.TTLClientState) * time.Second).Unix())
 
-	removed, err := zsetStore.ZRemRangeByScore(key, 0, staleThreshold)
+	removed, err := zsetStore.ZRemRangeByScore(key, 0, staleThreshold-1)
 	if err != nil {
 		return 0, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to cleanup stale clients")
 	}
@@ -257,7 +262,13 @@ func (r *ClientStateRepository) TouchNodeClient(nodeID string, clientID int64) e
 
 	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
 	score := float64(time.Now().Unix())
-	return zsetStore.ZAdd(key, clientID, score)
+	if err := zsetStore.ZAdd(key, clientID, score); err != nil {
+		return err
+	}
+
+	ttl := time.Duration(constants.TTLClientState) * time.Second
+	_ = r.storage.SetExpiration(key, ttl)
+	return nil
 }
 
 func (r *ClientStateRepository) getNodeClientsLegacy(nodeID string) ([]int64, error) {

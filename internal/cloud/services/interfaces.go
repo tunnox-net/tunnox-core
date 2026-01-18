@@ -65,10 +65,10 @@ type ClientService interface {
 	UpdateClient(client *models.Client) error
 	DeleteClient(clientID int64) error
 	UpdateClientStatus(clientID int64, status models.ClientStatus, nodeID string) error
-	ConnectClient(clientID int64, nodeID, connID, ipAddress, protocol, version string) error                // 客户端连接（更新完整运行时状态）
-	DisconnectClient(clientID int64) error                                                                 // 客户端断开连接
-	DisconnectClientIfMatch(clientID int64, nodeID, connID string) (bool, error)                           // 断开连接（仅当 nodeID/connID 匹配时），用于清理过期连接
-	EnsureClientOnline(clientID int64, nodeID, connID, ipAddress, protocol, version string) error          // 确保客户端在线状态存在（心跳时调用，状态丢失时重建）
+	ConnectClient(clientID int64, nodeID, connID, ipAddress, protocol, version string) error      // 客户端连接（更新完整运行时状态）
+	DisconnectClient(clientID int64) error                                                        // 客户端断开连接
+	DisconnectClientIfMatch(clientID int64, nodeID, connID string) (bool, error)                  // 断开连接（仅当 nodeID/connID 匹配时），用于清理过期连接
+	EnsureClientOnline(clientID int64, nodeID, connID, ipAddress, protocol, version string) error // 确保客户端在线状态存在（心跳时调用，状态丢失时重建）
 	ListClients(userID string, clientType models.ClientType) ([]*models.Client, error)
 	ListUserClients(userID string) ([]*models.Client, error)
 	GetClientPortMappings(clientID int64) ([]*models.PortMapping, error)
@@ -76,10 +76,15 @@ type ClientService interface {
 	GetClientStats(clientID int64) (*stats.ClientStats, error)
 
 	// 凭据管理（SecretKey V3）
-	SetSecretKeyManager(mgr *security.SecretKeyManager)                                     // 设置 SecretKey 管理器
-	ResetSecretKey(clientID int64, kicker interface{ KickClient(int64, string, string) error }) (newSecretKey string, err error) // 重置 SecretKey
-	MigrateToEncrypted(clientID int64) error                                                // 迁移到加密存储
-	VerifySecretKey(clientID int64, secretKey string) (bool, error)                         // 验证 SecretKey
+	SetSecretKeyManager(mgr *security.SecretKeyManager) // 设置 SecretKey 管理器
+	ResetSecretKey(clientID int64, kicker interface {
+		KickClient(int64, string, string) error
+	}) (newSecretKey string, err error) // 重置 SecretKey
+	MigrateToEncrypted(clientID int64) error                        // 迁移到加密存储
+	VerifySecretKey(clientID int64, secretKey string) (bool, error) // 验证 SecretKey
+
+	// 节点客户端管理
+	CleanupStaleNodeClients(nodeID string) (int64, error) // 清理节点上过期的客户端
 }
 
 // PortMappingService 端口映射服务
