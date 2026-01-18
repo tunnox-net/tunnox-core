@@ -201,6 +201,17 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 		return
 	}
 
+	// 🔒 Ensure tunnel resources are cleaned up on ALL error paths
+	// This prevents connection leaks when errors occur before Tunnel object takes ownership
+	defer func() {
+		if tunnelConn != nil {
+			tunnelConn.Close()
+		}
+		if tunnelStream != nil {
+			tunnelStream.Close()
+		}
+	}()
+
 	corelog.Infof("BaseMappingHandler[%s]: tunnel %s established", h.config.MappingID, tunnelID)
 
 	// 5. 获取隧道 Reader/Writer
@@ -214,7 +225,6 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 				tunnelReader = reader
 			} else {
 				corelog.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Reader", h.config.MappingID)
-				tunnelConn.Close()
 				localConn.Close()
 				return
 			}
@@ -230,7 +240,6 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 				tunnelWriter = writer
 			} else {
 				corelog.Errorf("BaseMappingHandler[%s]: tunnelConn does not implement io.Writer", h.config.MappingID)
-				tunnelConn.Close()
 				localConn.Close()
 				return
 			}
@@ -242,10 +251,13 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	}
 
 	// 6. 包装隧道连接成 ReadWriteCloser
+	// 捕获局部副本避免闭包陷阱 - 确保 Close 时能正确关闭连接
+	connToClose := tunnelConn
+	streamToClose := tunnelStream
 	tunnelCloser := func() error {
-		tunnelStream.Close()
-		if tunnelConn != nil {
-			tunnelConn.Close()
+		streamToClose.Close()
+		if connToClose != nil {
+			connToClose.Close()
 		}
 		return nil
 	}
@@ -253,10 +265,13 @@ func (h *BaseMappingHandler) handleConnection(localConn io.ReadWriteCloser) {
 	tunnelRWC, err := iocopy.NewReadWriteCloser(tunnelReader, tunnelWriter, tunnelCloser)
 	if err != nil {
 		corelog.Errorf("BaseMappingHandler[%s]: failed to create tunnel ReadWriteCloser: %v", h.config.MappingID, err)
-		tunnelCloser()
 		localConn.Close()
 		return
 	}
+
+	// 标记所有权已转移，defer 不再需要清理
+	tunnelConn = nil
+	tunnelStream = nil
 
 	// 7. 创建新的 Tunnel 结构
 	var tun *tunnel.Tunnel

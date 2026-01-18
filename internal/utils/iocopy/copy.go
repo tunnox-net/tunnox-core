@@ -136,7 +136,7 @@ func tryCloseWrite(conn io.ReadWriteCloser) {
 //
 // 修复要点:
 // 1. 使用半关闭语义：一个方向结束时使用 CloseWrite() 通知对端 EOF
-// 2. 不在单向传输结束时关闭整个连接
+// 2. 当一个方向完成时，设置另一个方向的读取超时，避免永久阻塞
 // 3. 等待两个方向都完成后再关闭连接
 // 4. 解决高并发数据库查询时连接过早关闭导致数据截断的问题
 //
@@ -166,6 +166,8 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	var connAClosedOnce, connBClosedOnce sync.Once
+
 	corelog.Debugf("%s: starting bidirectional copy", logPrefix)
 
 	// A → B：从 A 读取数据写入 B
@@ -177,6 +179,7 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 		if err != nil {
 			corelog.Errorf("%s: A→B failed to wrap writer: %v", logPrefix, err)
 			result.SendError = err
+			connAClosedOnce.Do(func() { connA.Close() })
 			return
 		}
 
@@ -226,6 +229,10 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 		// 这样 B→A 方向仍可继续接收响应数据
 		corelog.Debugf("%s: A→B attempting half-close on connB", logPrefix)
 		tryCloseWrite(connB)
+
+		// 关闭 connB 以打断 B→A 方向可能阻塞的 Read
+		connBClosedOnce.Do(func() { connB.Close() })
+
 		corelog.Infof("%s: A→B goroutine finished, sent=%d bytes", logPrefix, totalWritten)
 	}()
 
@@ -237,6 +244,7 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 		if err != nil {
 			corelog.Errorf("%s: B→A failed to wrap reader: %v", logPrefix, err)
 			result.ReceiveError = err
+			connBClosedOnce.Do(func() { connB.Close() })
 			return
 		}
 
@@ -281,6 +289,10 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 		// 关键修复：使用半关闭通知 A 端 EOF
 		corelog.Debugf("%s: B→A attempting half-close on connA", logPrefix)
 		tryCloseWrite(connA)
+
+		// 关闭 connA 以打断 A→B 方向可能阻塞的 Read
+		connAClosedOnce.Do(func() { connA.Close() })
+
 		corelog.Infof("%s: B→A goroutine finished, received=%d bytes", logPrefix, totalWritten)
 	}()
 
@@ -291,8 +303,8 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 
 	// 在两个方向都完成后，安全地关闭连接
 	corelog.Debugf("%s: closing both connections", logPrefix)
-	connA.Close()
-	connB.Close()
+	connAClosedOnce.Do(func() { connA.Close() })
+	connBClosedOnce.Do(func() { connB.Close() })
 
 	// 执行回调
 	if options.OnComplete != nil {
