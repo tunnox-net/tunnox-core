@@ -64,9 +64,7 @@ func (w *anonymousServiceWrapper) CleanupExpiredAnonymous() error {
 	return w.Service.CleanupExpiredAnonymous()
 }
 
-// NewAnonymousService 创建匿名服务
-// 返回包装后的服务以满足 AnonymousService 接口
-func NewAnonymousService(clientRepo *repos.ClientRepository, configRepo *repos.ClientConfigRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) AnonymousService {
+func NewAnonymousService(clientRepo repos.IClientRepository, configRepo repos.IClientConfigRepository, mappingRepo repos.IPortMappingRepository, idManager *idgen.IDManager, parentCtx context.Context) AnonymousService {
 	return &anonymousServiceWrapper{
 		Service: anonymous.NewService(clientRepo, configRepo, mappingRepo, idManager, parentCtx),
 	}

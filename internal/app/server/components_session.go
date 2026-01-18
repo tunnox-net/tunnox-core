@@ -164,8 +164,18 @@ func (c *HandlersComponent) Initialize(ctx context.Context, deps *Dependencies) 
 
 	// 使用共享的 Repository 创建相关组件
 	connCodeRepo := repos.NewConnectionCodeRepository(deps.Repository)
-	portMappingRepo := repos.NewPortMappingRepo(deps.Repository)
-	portMappingService := services.NewPortMappingService(portMappingRepo, deps.IDManager, nil, ctx)
+
+	// 从 CloudControl 获取 PortMappingService（支持 PostgreSQL）
+	// CloudControl 在初始化时已根据配置选择正确的存储后端（Redis 或 PostgreSQL）
+	portMappingService := deps.CloudBuiltin.GetPortMappingService()
+
+	// 根据是否启用 PostgreSQL 选择合适的 PortMappingRepository
+	var portMappingRepo repos.IPortMappingRepository
+	if deps.PostgresStorage != nil {
+		portMappingRepo = repos.NewPgPortMappingRepository(deps.PostgresStorage)
+	} else {
+		portMappingRepo = repos.NewPortMappingRepo(deps.Repository)
+	}
 
 	// 创建 HTTP 域名映射仓库（使用默认基础域名）
 	httpDomainBaseDomains := []string{"tunnox.net", "tunnel.test.local"}

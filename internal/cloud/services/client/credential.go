@@ -34,7 +34,9 @@ type Kicker = interface {
 // 注意：
 // - 此操作不可逆，旧的 SecretKey 将无法再使用
 // - 客户端需要使用新的 SecretKey 重新连接
-func (s *Service) ResetSecretKey(clientID int64, kicker interface{ KickClient(int64, string, string) error }) (string, error) {
+func (s *Service) ResetSecretKey(clientID int64, kicker interface {
+	KickClient(int64, string, string) error
+}) (string, error) {
 	// 检查 SecretKeyManager 是否已设置
 	if s.secretKeyMgr == nil {
 		return "", coreerrors.New(coreerrors.CodeInternal, "SecretKeyManager not configured")
@@ -328,7 +330,7 @@ func (s *Service) BatchMigrateToEncrypted() (migrated, skipped int, errors map[i
 //
 // 支持两种存储模式：
 // - 加密存储（SecretKeyEncrypted）：解密后比较
-// - 明文存储（SecretKey，兼容旧数据）：直接比较
+// VerifySecretKey 验证客户端密钥（仅支持加密存储）
 func (s *Service) VerifySecretKey(clientID int64, secretKey string) (bool, error) {
 	// 获取配置
 	config, err := s.configRepo.GetConfig(clientID)
@@ -339,25 +341,20 @@ func (s *Service) VerifySecretKey(clientID int64, secretKey string) (bool, error
 		return false, coreerrors.Newf(coreerrors.CodeClientNotFound, "client %d not found", clientID)
 	}
 
-	// 优先验证加密存储
-	if config.SecretKeyEncrypted != "" {
-		if s.secretKeyMgr == nil {
-			return false, coreerrors.New(coreerrors.CodeInternal, "SecretKeyManager not configured")
-		}
-		// 解密后比较
-		decrypted, err := s.secretKeyMgr.Decrypt(config.SecretKeyEncrypted)
-		if err != nil {
-			corelog.Warnf("Client %d SecretKey decrypt failed: %v", clientID, err)
-			return false, nil // 解密失败返回验证失败，不返回错误
-		}
-		return decrypted == secretKey, nil
+	// 仅支持加密存储
+	if config.SecretKeyEncrypted == "" {
+		return false, coreerrors.Newf(coreerrors.CodeClientNotFound, "client %d has no SecretKey", clientID)
 	}
 
-	// 兼容旧数据：明文存储
-	if config.SecretKey != "" {
-		return config.SecretKey == secretKey, nil
+	if s.secretKeyMgr == nil {
+		return false, coreerrors.New(coreerrors.CodeInternal, "SecretKeyManager not configured")
 	}
 
-	// 没有任何 SecretKey
-	return false, coreerrors.Newf(coreerrors.CodeClientNotFound, "client %d has no SecretKey", clientID)
+	// 解密后比较
+	decrypted, err := s.secretKeyMgr.Decrypt(config.SecretKeyEncrypted)
+	if err != nil {
+		corelog.Warnf("Client %d SecretKey decrypt failed: %v", clientID, err)
+		return false, nil // 解密失败返回验证失败，不返回错误
+	}
+	return decrypted == secretKey, nil
 }

@@ -74,11 +74,6 @@ func (s *Service) CreateClient(userID, clientName string) (*models.Client, error
 		// 注册客户端不设置过期时间（绑定用户后永不过期）
 	}
 
-	// 兼容模式：如果没有 SecretKeyManager，存到旧字段
-	if s.secretKeyMgr == nil {
-		config.SecretKey = secretKeyPlaintext
-	}
-
 	// 保存配置到持久化存储
 	if err := s.configRepo.SaveConfig(config); err != nil {
 		return nil, s.baseService.HandleErrorWithIDReleaseInt64(err, clientID, s.idManager.ReleaseClientID, "save client config")

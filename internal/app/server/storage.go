@@ -1,10 +1,12 @@
 package server
 
 import (
+	"context"
 	"time"
 
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
+	"tunnox-core/internal/core/storage/postgres"
 )
 
 // createStorage 根据配置创建存储
@@ -131,7 +133,6 @@ func createPersistentStorage(factory *storage.StorageFactory, config *Config) (s
 	return factory.CreateStorage(hybridConfig)
 }
 
-// createMemoryStorage 创建纯内存存储
 func createMemoryStorage(factory *storage.StorageFactory) (storage.Storage, error) {
 	corelog.Infof("Using Memory Storage (No Persistence), Cache=Memory")
 
@@ -143,4 +144,37 @@ func createMemoryStorage(factory *storage.StorageFactory) (storage.Storage, erro
 	hybridConfig.HybridConfig.EnablePersistent = false
 
 	return factory.CreateStorage(hybridConfig)
+}
+
+func createPostgresStorage(ctx context.Context, config *Config) (*postgres.Storage, error) {
+	if !config.Postgres.Enabled {
+		return nil, nil
+	}
+
+	corelog.Infof("Connecting to PostgreSQL: DSN=%s, MaxConns=%d, MinConns=%d",
+		maskDSN(config.Postgres.DSN), config.Postgres.MaxConns, config.Postgres.MinConns)
+
+	pgConfig := &postgres.Config{
+		DSN:             config.Postgres.DSN,
+		MaxConns:        config.Postgres.MaxConns,
+		MinConns:        config.Postgres.MinConns,
+		MaxConnLifetime: time.Duration(config.Postgres.MaxConnLifetime) * time.Second,
+		MaxConnIdleTime: time.Duration(config.Postgres.MaxConnIdleTime) * time.Second,
+		ConnectTimeout:  time.Duration(config.Postgres.ConnectTimeout) * time.Second,
+	}
+
+	pg, err := postgres.New(ctx, pgConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	corelog.Infof("PostgreSQL connected successfully")
+	return pg, nil
+}
+
+func maskDSN(dsn string) string {
+	if len(dsn) > 30 {
+		return dsn[:30] + "..."
+	}
+	return dsn
 }

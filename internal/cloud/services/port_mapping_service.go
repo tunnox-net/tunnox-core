@@ -16,17 +16,15 @@ import (
 	"tunnox-core/internal/utils/random"
 )
 
-// portMappingService 端口映射服务实现
 type portMappingService struct {
 	*dispose.ServiceBase
 	baseService  *BaseService
-	mappingRepo  *repos.PortMappingRepo
+	mappingRepo  repos.IPortMappingRepository
 	idManager    *idgen.IDManager
 	statsCounter *stats.StatsCounter
 }
 
-// NewPortMappingService 创建端口映射服务
-func NewPortMappingService(mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, statsCounter *stats.StatsCounter, parentCtx context.Context) PortMappingService {
+func NewPortMappingService(mappingRepo repos.IPortMappingRepository, idManager *idgen.IDManager, statsCounter *stats.StatsCounter, parentCtx context.Context) PortMappingService {
 	service := &portMappingService{
 		ServiceBase:  dispose.NewService("PortMappingService", parentCtx),
 		baseService:  NewBaseService(),

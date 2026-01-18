@@ -23,21 +23,18 @@ type Notifier interface {
 	NotifyClientUpdate(clientID int64)
 }
 
-// Service 匿名服务实现
 type Service struct {
 	*dispose.ServiceBase
 	baseService  *base.Service
-	clientRepo   *repos.ClientRepository
-	configRepo   *repos.ClientConfigRepository // 新系统：用于 clientService.GetClient 读取
-	mappingRepo  *repos.PortMappingRepo
+	clientRepo   repos.IClientRepository
+	configRepo   repos.IClientConfigRepository
+	mappingRepo  repos.IPortMappingRepository
 	idManager    *idgen.IDManager
-	notifier     Notifier                    // 通知识别接口
-	secretKeyMgr *security.SecretKeyManager // SecretKey 管理器（加密存储）
+	notifier     Notifier
+	secretKeyMgr *security.SecretKeyManager
 }
 
-// NewService 创建匿名服务
-// configRepo: 新系统的客户端配置存储，确保 clientService.GetClient 能读取到匿名客户端
-func NewService(clientRepo *repos.ClientRepository, configRepo *repos.ClientConfigRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) *Service {
+func NewService(clientRepo repos.IClientRepository, configRepo repos.IClientConfigRepository, mappingRepo repos.IPortMappingRepository, idManager *idgen.IDManager, parentCtx context.Context) *Service {
 	service := &Service{
 		ServiceBase: dispose.NewService("AnonymousService", parentCtx),
 		baseService: base.NewService(),
@@ -105,7 +102,7 @@ func (s *Service) GenerateAnonymousCredentials() (*models.Client, error) {
 		UserID:             "", // 匿名用户没有UserID
 		Name:               fmt.Sprintf("Anonymous-%d", clientID),
 		AuthCode:           authCode,
-		SecretKey:          "", // 废弃字段，不再存储明文
+		SecretKey:          "",                 // 废弃字段，不再存储明文
 		SecretKeyPlaintext: secretKeyPlaintext, // 仅此一次返回给客户端
 		SecretKeyVersion:   1,
 		Status:             models.ClientStatusOffline,

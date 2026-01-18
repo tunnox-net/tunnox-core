@@ -28,14 +28,13 @@ func registerBusinessServices(c *container.Container, parentCtx context.Context)
 	return registerBusinessServicesWithConstructors(c, constructors, parentCtx)
 }
 
-// serviceConstructors 服务构造器集合
 type serviceConstructors struct {
 	newUserService        func(userRepo *repos.UserRepository, idManager *idgen.IDManager, counter *stats.StatsCounter, parentCtx context.Context) UserService
-	newClientService      func(configRepo *repos.ClientConfigRepository, stateRepo *repos.ClientStateRepository, tokenRepo *repos.ClientTokenRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, statsProvider base.StatsProvider, parentCtx context.Context) ClientService
-	newPortMappingService func(mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, counter *stats.StatsCounter, parentCtx context.Context) PortMappingService
-	newNodeService        func(nodeRepo *repos.NodeRepository, idManager *idgen.IDManager, parentCtx context.Context) NodeService
+	newClientService      func(configRepo repos.IClientConfigRepository, stateRepo repos.IClientStateRepository, tokenRepo repos.IClientTokenRepository, clientRepo repos.IClientRepository, mappingRepo repos.IPortMappingRepository, idManager *idgen.IDManager, statsProvider base.StatsProvider, parentCtx context.Context) ClientService
+	newPortMappingService func(mappingRepo repos.IPortMappingRepository, idManager *idgen.IDManager, counter *stats.StatsCounter, parentCtx context.Context) PortMappingService
+	newNodeService        func(nodeRepo repos.INodeRepository, idManager *idgen.IDManager, parentCtx context.Context) NodeService
 	newAuthService        func(clientRepo *repos.ClientRepository, nodeRepo *repos.NodeRepository, jwtProvider JWTProvider, parentCtx context.Context) AuthService
-	newAnonymousService   func(clientRepo *repos.ClientRepository, configRepo *repos.ClientConfigRepository, mappingRepo *repos.PortMappingRepo, idManager *idgen.IDManager, parentCtx context.Context) AnonymousService
+	newAnonymousService   func(clientRepo repos.IClientRepository, configRepo repos.IClientConfigRepository, mappingRepo repos.IPortMappingRepository, idManager *idgen.IDManager, parentCtx context.Context) AnonymousService
 	newConnectionService  func(connRepo *repos.ConnectionRepo, idManager *idgen.IDManager, parentCtx context.Context) ConnectionService
-	newStatsService       func(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository, parentCtx context.Context) StatsService
+	newStatsService       func(userRepo repos.IUserRepository, clientRepo repos.IClientRepository, mappingRepo repos.IPortMappingRepository, nodeRepo repos.INodeRepository, parentCtx context.Context) StatsService
 }

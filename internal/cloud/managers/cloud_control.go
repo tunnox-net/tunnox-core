@@ -200,3 +200,9 @@ func (c *CloudControl) SetSecretKeyManager(mgr *security.SecretKeyManager) {
 		corelog.Warnf("CloudControl: clientService is nil, cannot inject SecretKeyManager")
 	}
 }
+
+// GetPortMappingService 获取端口映射服务
+// 用于其他组件需要直接访问 PortMappingService 的场景（如 ConnectionCodeService）
+func (c *CloudControl) GetPortMappingService() services.PortMappingService {
+	return c.portMappingService
+}

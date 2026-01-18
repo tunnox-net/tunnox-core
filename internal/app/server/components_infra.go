@@ -45,6 +45,14 @@ func (c *StorageComponent) Initialize(ctx context.Context, deps *Dependencies) e
 	// 创建共享的 Repository
 	deps.Repository = repos.NewRepository(serverStorage)
 
+	if deps.Config.Postgres.Enabled {
+		pgStorage, err := createPostgresStorage(ctx, deps.Config)
+		if err != nil {
+			return fmt.Errorf("failed to create postgres storage: %w", err)
+		}
+		deps.PostgresStorage = pgStorage
+	}
+
 	// 确定存储类型用于日志
 	storageType := "memory"
 	if deps.Config.Storage.Enabled {
@@ -53,6 +61,9 @@ func (c *StorageComponent) Initialize(ctx context.Context, deps *Dependencies) e
 		storageType = "redis"
 	} else if deps.Config.Persistence.Enabled {
 		storageType = "hybrid"
+	}
+	if deps.Config.Postgres.Enabled {
+		storageType += "+postgres"
 	}
 
 	corelog.Infof("Storage initialized: type=%s", storageType)
@@ -131,16 +142,20 @@ func (c *CloudControlComponent) Initialize(ctx context.Context, deps *Dependenci
 	}
 
 	cloudControlConfig := managers.DefaultConfig()
-	cloudControlConfig.NodeID = deps.NodeID // 使用运行时分配的 NodeID
+	cloudControlConfig.NodeID = deps.NodeID
 
-	// 使用带完整 Services 的工厂方法创建 CloudControl
-	// 使用共享的 Repository 确保 Management API 和 CloudControl 使用同一套数据
-	cloudControl := factories.NewBuiltinCloudControlWithRepo(ctx, cloudControlConfig, deps.Storage, deps.Repository)
+	var cloudControl *managers.BuiltinCloudControl
+	if deps.PostgresStorage != nil {
+		cloudControl = factories.NewBuiltinCloudControlWithPostgres(ctx, cloudControlConfig, deps.Storage, deps.PostgresStorage)
+		corelog.Infof("CloudControl initialized with PostgreSQL storage")
+	} else {
+		cloudControl = factories.NewBuiltinCloudControlWithRepo(ctx, cloudControlConfig, deps.Storage, deps.Repository)
+		corelog.Infof("CloudControl initialized with shared repository")
+	}
 
 	deps.CloudControl = cloudControl
 	deps.CloudBuiltin = cloudControl
 
-	corelog.Infof("CloudControl initialized with shared repository")
 	return nil
 }
 

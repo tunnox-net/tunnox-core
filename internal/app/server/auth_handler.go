@@ -196,11 +196,6 @@ func (h *ServerAuthHandler) handleChallengePhase1(conn session.ControlConnection
 
 	// 检查客户端是否有加密的 SecretKey
 	if config.SecretKeyEncrypted == "" {
-		// 兼容旧数据：如果没有加密的 SecretKey，使用明文 SecretKey 验证（回退到旧逻辑）
-		if config.SecretKey != "" {
-			corelog.Warnf("ServerAuthHandler: client %d using legacy plaintext SecretKey (needs migration)", req.ClientID)
-			return h.handleLegacyAuth(conn, req, config, ip)
-		}
 		corelog.Errorf("ServerAuthHandler: client %d has no SecretKey configured", req.ClientID)
 		return &packet.HandshakeResponse{
 			Success: false,
@@ -225,9 +220,9 @@ func (h *ServerAuthHandler) handleChallengePhase1(conn session.ControlConnection
 
 	// 返回挑战
 	return &packet.HandshakeResponse{
-		Success:      false,         // 认证尚未完成
-		NeedResponse: true,          // 需要客户端响应
-		Challenge:    challenge,     // 发送挑战
+		Success:      false,     // 认证尚未完成
+		NeedResponse: true,      // 需要客户端响应
+		Challenge:    challenge, // 发送挑战
 		Message:      "Challenge sent, please respond with HMAC",
 	}, nil
 }
@@ -279,40 +274,6 @@ func (h *ServerAuthHandler) handleChallengePhase2(conn session.ControlConnection
 	return &packet.HandshakeResponse{
 		Success: true,
 		Message: "Authentication successful",
-	}, nil
-}
-
-// handleLegacyAuth 处理旧版认证（明文 SecretKey，用于数据迁移过渡期）
-func (h *ServerAuthHandler) handleLegacyAuth(conn session.ControlConnectionInterface, req *packet.HandshakeRequest, config *models.ClientConfig, ip string) (*packet.HandshakeResponse, error) {
-	// 旧版使用 Token 字段传递 SecretKey
-	if config.SecretKey != req.Token {
-		corelog.Warnf("ServerAuthHandler: legacy auth failed for client %d", req.ClientID)
-		if h.bruteForceProtector != nil {
-			h.bruteForceProtector.RecordFailure(ip)
-		}
-		return &packet.HandshakeResponse{
-			Success: false,
-			Error:   "Invalid credentials",
-		}, fmt.Errorf("invalid secret key")
-	}
-
-	corelog.Infof("ServerAuthHandler: client %d authenticated via legacy SecretKey", req.ClientID)
-
-	// 认证成功，清除失败记录
-	if h.bruteForceProtector != nil {
-		h.bruteForceProtector.RecordSuccess(ip)
-	}
-
-	// 更新连接状态
-	conn.SetClientID(req.ClientID)
-	conn.SetAuthenticated(true)
-
-	// 更新运行时状态
-	h.updateClientRuntimeState(conn, req.ClientID, req, ip)
-
-	return &packet.HandshakeResponse{
-		Success: true,
-		Message: "Authentication successful (legacy mode - please update client)",
 	}, nil
 }
 

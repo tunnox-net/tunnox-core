@@ -12,14 +12,12 @@ import (
 // 向后兼容：别名到 client.Service
 type clientService = client.Service
 
-// NewClientService 创建客户端服务
-// 向后兼容：委托到 client.NewService
 func NewClientService(
-	configRepo *repos.ClientConfigRepository,
-	stateRepo *repos.ClientStateRepository,
-	tokenRepo *repos.ClientTokenRepository,
-	clientRepo *repos.ClientRepository,
-	mappingRepo *repos.PortMappingRepo,
+	configRepo repos.IClientConfigRepository,
+	stateRepo repos.IClientStateRepository,
+	tokenRepo repos.IClientTokenRepository,
+	clientRepo repos.IClientRepository,
+	mappingRepo repos.IPortMappingRepository,
 	idManager *idgen.IDManager,
 	statsProvider StatsProvider,
 	parentCtx context.Context,

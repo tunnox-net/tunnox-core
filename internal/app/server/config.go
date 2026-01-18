@@ -86,6 +86,17 @@ type StorageConfig struct {
 	Timeout int    `yaml:"timeout"` // 秒
 }
 
+// PostgresConfig PostgreSQL 配置
+type PostgresConfig struct {
+	Enabled         bool   `yaml:"enabled"`
+	DSN             string `yaml:"dsn"`
+	MaxConns        int32  `yaml:"max_conns"`
+	MinConns        int32  `yaml:"min_conns"`
+	MaxConnLifetime int    `yaml:"max_conn_lifetime"`  // 秒
+	MaxConnIdleTime int    `yaml:"max_conn_idle_time"` // 秒
+	ConnectTimeout  int    `yaml:"connect_timeout"`    // 秒
+}
+
 // PlatformConfig 云控平台配置
 type PlatformConfig struct {
 	Enabled bool   `yaml:"enabled"`
@@ -109,6 +120,7 @@ type Config struct {
 	Redis       RedisConfig       `yaml:"redis"`
 	Persistence PersistenceConfig `yaml:"persistence"`
 	Storage     StorageConfig     `yaml:"storage"`
+	Postgres    PostgresConfig    `yaml:"postgres"`
 	Platform    PlatformConfig    `yaml:"platform"`
 	Security    SecurityConfig    `yaml:"security"`
 }
@@ -264,6 +276,26 @@ func ValidateConfig(config *Config) error {
 		config.Storage.Timeout = 10
 	}
 
+	// 验证 Postgres 配置
+	if config.Postgres.Enabled && config.Postgres.DSN == "" {
+		return coreerrors.New(coreerrors.CodeConfigError, "postgres.dsn is required when postgres.enabled is true")
+	}
+	if config.Postgres.MaxConns <= 0 {
+		config.Postgres.MaxConns = 20
+	}
+	if config.Postgres.MinConns <= 0 {
+		config.Postgres.MinConns = 5
+	}
+	if config.Postgres.MaxConnLifetime <= 0 {
+		config.Postgres.MaxConnLifetime = 1800
+	}
+	if config.Postgres.MaxConnIdleTime <= 0 {
+		config.Postgres.MaxConnIdleTime = 300
+	}
+	if config.Postgres.ConnectTimeout <= 0 {
+		config.Postgres.ConnectTimeout = 10
+	}
+
 	// 验证 Platform 配置
 	if config.Platform.Enabled && config.Platform.URL == "" {
 		return coreerrors.New(coreerrors.CodeConfigError, "platform.url is required when platform.enabled is true")
@@ -383,6 +415,15 @@ func GetDefaultConfig() *Config {
 			URL:     "http://tunnox-storage:8080",
 			Token:   "",
 			Timeout: 10,
+		},
+		Postgres: PostgresConfig{
+			Enabled:         false,
+			DSN:             "",
+			MaxConns:        20,
+			MinConns:        5,
+			MaxConnLifetime: 1800,
+			MaxConnIdleTime: 300,
+			ConnectTimeout:  10,
 		},
 		Platform: PlatformConfig{
 			Enabled: false,

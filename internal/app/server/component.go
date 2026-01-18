@@ -11,6 +11,7 @@ import (
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/node"
 	"tunnox-core/internal/core/storage"
+	"tunnox-core/internal/core/storage/postgres"
 	"tunnox-core/internal/health"
 	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/protocol"
@@ -46,8 +47,9 @@ type Dependencies struct {
 	Config *Config
 
 	// 基础设施层
-	Storage   storage.Storage
-	IDManager *idgen.IDManager
+	Storage         storage.Storage
+	PostgresStorage *postgres.Storage // PostgreSQL 直连存储（用于结构化数据）
+	IDManager       *idgen.IDManager
 
 	// 云控制层
 	CloudControl managers.CloudControlAPI

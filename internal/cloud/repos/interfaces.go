@@ -105,6 +105,9 @@ type IPortMappingRepository interface {
 
 	// AddMappingToList 添加映射到全局映射列表
 	AddMappingToList(mapping *models.PortMapping) error
+
+	// CleanupMappingIndexesByData 根据 mapping 数据清理索引
+	CleanupMappingIndexesByData(mapping *models.PortMapping) error
 }
 
 // IConnectionRepository 连接数据访问接口

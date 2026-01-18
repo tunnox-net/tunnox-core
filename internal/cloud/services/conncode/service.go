@@ -44,8 +44,8 @@ type Service struct {
 	connCodeRepo *repos.ConnectionCodeRepository
 
 	// Services
-	portMappingService PortMappingService         // 统一使用 PortMappingService
-	portMappingRepo    *repos.PortMappingRepo // 用于查询客户端映射
+	portMappingService PortMappingService           // 统一使用 PortMappingService
+	portMappingRepo    repos.IPortMappingRepository // 用于查询客户端映射（支持 Redis 和 PostgreSQL）
 
 	// 连接码生成器
 	generator *Generator
@@ -73,7 +73,7 @@ func DefaultConfig() *Config {
 func NewService(
 	connCodeRepo *repos.ConnectionCodeRepository,
 	portMappingService PortMappingService,
-	portMappingRepo *repos.PortMappingRepo,
+	portMappingRepo repos.IPortMappingRepository,
 	config *Config,
 	ctx context.Context,
 ) *Service {

@@ -93,11 +93,14 @@ func (c *CloudControl) Authenticate(req *models.AuthRequest) (*models.AuthRespon
 	}
 
 	// 验证密钥（如果提供）
-	if req.SecretKey != "" && client.SecretKey != req.SecretKey {
-		return &models.AuthResponse{
-			Success: false,
-			Message: "Invalid secret key",
-		}, nil
+	if req.SecretKey != "" {
+		valid, err := c.clientService.VerifySecretKey(req.ClientID, req.SecretKey)
+		if err != nil || !valid {
+			return &models.AuthResponse{
+				Success: false,
+				Message: "Invalid secret key",
+			}, nil
+		}
 	}
 
 	// 更新客户端状态

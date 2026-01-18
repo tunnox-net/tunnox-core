@@ -35,7 +35,7 @@ type ActivateConnectionCodeRequest = conncode.ActivateRequest
 func NewConnectionCodeService(
 	connCodeRepo *repos.ConnectionCodeRepository,
 	portMappingService PortMappingService,
-	portMappingRepo *repos.PortMappingRepo,
+	portMappingRepo repos.IPortMappingRepository,
 	config *ConnectionCodeServiceConfig,
 	ctx context.Context,
 ) *ConnectionCodeService {

@@ -8,6 +8,7 @@ import (
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/idgen"
 	"tunnox-core/internal/core/storage"
+	"tunnox-core/internal/core/storage/postgres"
 )
 
 // CreateBuiltinCloudControlDeps 创建内置云控所需的完整依赖
@@ -81,5 +82,50 @@ func NewBuiltinCloudControlWithStorageAndServices(parentCtx context.Context, con
 // 这确保 CloudControl 与其他组件（如 Management API）共享同一个 Repository 实例
 func NewBuiltinCloudControlWithRepo(parentCtx context.Context, config *managers.ControlConfig, stor storage.Storage, repo *repos.Repository) *managers.BuiltinCloudControl {
 	deps := CreateBuiltinCloudControlDepsWithRepo(stor, repo, parentCtx)
+	return managers.NewBuiltinCloudControlWithDeps(parentCtx, config, stor, deps)
+}
+
+func CreateBuiltinCloudControlDepsWithPostgres(stor storage.Storage, pg *postgres.Storage, parentCtx context.Context) *managers.CloudControlDeps {
+	repo := repos.NewRepository(stor)
+
+	userRepo := repos.NewUserRepository(repo)
+	clientRepo := repos.NewClientRepository(repo)
+	connRepo := repos.NewConnectionRepo(parentCtx, repo)
+
+	configRepo := repos.NewPgClientConfigRepository(pg)
+	mappingRepo := repos.NewPgPortMappingRepository(pg)
+	nodeRepo := repos.NewPgNodeRepository(pg)
+
+	stateRepo := repos.NewClientStateRepository(parentCtx, stor)
+	tokenRepo := repos.NewClientTokenRepository(parentCtx, stor)
+
+	idManager := idgen.NewIDManager(stor, parentCtx)
+	statsProvider, _ := services.NewSimpleStatsProvider(stor, parentCtx)
+
+	userService := services.NewUserService(userRepo, idManager, statsProvider.GetCounter(), parentCtx)
+	clientService := services.NewClientService(
+		configRepo, stateRepo, tokenRepo,
+		clientRepo, mappingRepo,
+		idManager, statsProvider, parentCtx,
+	)
+	portMappingService := services.NewPortMappingService(mappingRepo, idManager, statsProvider.GetCounter(), parentCtx)
+	nodeService := services.NewNodeService(nodeRepo, idManager, parentCtx)
+	connService := services.NewConnectionService(connRepo, idManager, parentCtx)
+	anonymousService := services.NewAnonymousService(clientRepo, configRepo, mappingRepo, idManager, parentCtx)
+	statsService := services.NewstatsService(userRepo, clientRepo, mappingRepo, nodeRepo, parentCtx)
+
+	return &managers.CloudControlDeps{
+		UserService:        userService,
+		ClientService:      clientService,
+		PortMappingService: portMappingService,
+		NodeService:        nodeService,
+		ConnectionService:  connService,
+		AnonymousService:   anonymousService,
+		StatsService:       statsService,
+	}
+}
+
+func NewBuiltinCloudControlWithPostgres(parentCtx context.Context, config *managers.ControlConfig, stor storage.Storage, pg *postgres.Storage) *managers.BuiltinCloudControl {
+	deps := CreateBuiltinCloudControlDepsWithPostgres(stor, pg, parentCtx)
 	return managers.NewBuiltinCloudControlWithDeps(parentCtx, config, stor, deps)
 }

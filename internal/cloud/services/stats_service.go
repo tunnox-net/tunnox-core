@@ -9,17 +9,15 @@ import (
 	coreerrors "tunnox-core/internal/core/errors"
 )
 
-// statsService 统计服务实现
 type statsService struct {
 	*dispose.ServiceBase
-	userRepo    *repos.UserRepository
-	clientRepo  *repos.ClientRepository
-	mappingRepo *repos.PortMappingRepo
-	nodeRepo    *repos.NodeRepository
+	userRepo    repos.IUserRepository
+	clientRepo  repos.IClientRepository
+	mappingRepo repos.IPortMappingRepository
+	nodeRepo    repos.INodeRepository
 }
 
-// NewstatsService 创建新的统计服务实现
-func NewstatsService(userRepo *repos.UserRepository, clientRepo *repos.ClientRepository, mappingRepo *repos.PortMappingRepo, nodeRepo *repos.NodeRepository, parentCtx context.Context) StatsService {
+func NewstatsService(userRepo repos.IUserRepository, clientRepo repos.IClientRepository, mappingRepo repos.IPortMappingRepository, nodeRepo repos.INodeRepository, parentCtx context.Context) StatsService {
 	service := &statsService{
 		ServiceBase: dispose.NewService("statsService", parentCtx),
 		userRepo:    userRepo,
