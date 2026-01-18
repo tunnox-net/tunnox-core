@@ -67,8 +67,7 @@ func (r *GzipReader) onClose() error {
 		r.gzipReader = nil
 		func() {
 			defer func() {
-				if rec := recover(); rec != nil {
-				}
+				_ = recover()
 			}()
 			if err := gr.Close(); err != nil {
 				errs = append(errs, err)
@@ -150,8 +149,7 @@ func (w *GzipWriter) onClose() error {
 		w.gWriter = nil
 		func() {
 			defer func() {
-				if r := recover(); r != nil {
-				}
+				_ = recover()
 			}()
 			if err := gw.Close(); err != nil {
 				errs = append(errs, err)

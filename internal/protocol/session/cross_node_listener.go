@@ -202,17 +202,6 @@ func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBrid
 	})
 }
 
-// getBridgeIDs 获取所有 bridge ID（用于调试）
-func (l *CrossNodeListener) getBridgeIDs() []string {
-	l.sessionMgr.bridgeLock.RLock()
-	defer l.sessionMgr.bridgeLock.RUnlock()
-	ids := make([]string, 0, len(l.sessionMgr.tunnelBridges))
-	for id := range l.sessionMgr.tunnelBridges {
-		ids = append(ids, id)
-	}
-	return ids
-}
-
 // handleHTTPProxy 处理跨节点 HTTP 代理请求
 func (l *CrossNodeListener) handleHTTPProxy(_ context.Context, conn *net.TCPConn, data []byte) {
 	corelog.Infof("CrossNodeListener: handling HTTP proxy request, dataLen=%d", len(data))

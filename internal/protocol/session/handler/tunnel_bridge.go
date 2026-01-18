@@ -116,9 +116,8 @@ func (h *TunnelBridgeHandlerImpl) HandleExistingBridge(
 	if netConn == nil && conn != nil && conn.Stream != nil {
 		reader := conn.Stream.GetReader()
 		writer := conn.Stream.GetWriter()
-		if reader == nil || writer == nil {
-			// 该协议不支持桥接（如 HTTP 长轮询），数据已通过协议本身传输
-		}
+		_ = reader
+		_ = writer
 	}
 
 	// ✅ 判断是源端还是目标端连接，更新对应的连接
@@ -136,8 +135,14 @@ func (h *TunnelBridgeHandlerImpl) HandleExistingBridge(
 	}
 
 	// 创建统一接口连接
-	clientID := h.sessionManager.ExtractClientID(conn.Stream, netConn)
-	tunnelConn := h.sessionManager.CreateTunnelConnection(conn.ID, netConn, conn.Stream, clientID, req.MappingID, req.TunnelID)
+	var connStream stream.PackageStreamer
+	var connID string
+	if conn != nil {
+		connStream = conn.Stream
+		connID = conn.ID
+	}
+	clientID := h.sessionManager.ExtractClientID(connStream, netConn)
+	tunnelConn := h.sessionManager.CreateTunnelConnection(connID, netConn, connStream, clientID, req.MappingID, req.TunnelID)
 
 	if isSourceClient {
 		// 源端重连，更新 sourceConn
@@ -191,9 +196,8 @@ func (h *TunnelBridgeHandlerImpl) HandleSourceBridge(
 		if netConn == nil && sourceStream != nil {
 			reader := sourceStream.GetReader()
 			writer := sourceStream.GetWriter()
-			if reader == nil || writer == nil {
-				// 该协议不支持桥接（如 HTTP 长轮询），数据已通过协议本身传输
-			}
+			_ = reader
+			_ = writer
 		}
 	}
 
@@ -240,13 +244,19 @@ func (h *TunnelBridgeHandlerImpl) HandleTargetBridge(
 	}
 
 	// 创建统一接口连接
-	clientID := h.sessionManager.ExtractClientID(conn.Stream, netConn)
-	tunnelConn := h.sessionManager.CreateTunnelConnection(conn.ID, netConn, conn.Stream, clientID, req.MappingID, req.TunnelID)
+	var connStream stream.PackageStreamer
+	var connID string
+	if conn != nil {
+		connStream = conn.Stream
+		connID = conn.ID
+	}
+	clientID := h.sessionManager.ExtractClientID(connStream, netConn)
+	tunnelConn := h.sessionManager.CreateTunnelConnection(connID, netConn, connStream, clientID, req.MappingID, req.TunnelID)
 
 	// 设置目标端连接
 	bridge.SetTargetConnection(tunnelConn)
 
-	// ✅ 切换到流模式（通过接口调用，协议无关）
+	// 切换到流模式（通过接口调用，协议无关）
 	if conn != nil && conn.Stream != nil {
 		reader := conn.Stream.GetReader()
 		if streamModeConn, ok := reader.(interface {

@@ -123,7 +123,7 @@ func (t *TCPConnectionTimeout) IsReadTimeout(err error) bool {
 		return false
 	}
 	netErr, ok := err.(net.Error)
-	return ok && netErr.Timeout() && netErr.Temporary()
+	return ok && netErr.Timeout()
 }
 
 func (t *TCPConnectionTimeout) IsWriteTimeout(err error) bool {
@@ -194,7 +194,7 @@ func (e *TCPConnectionError) IsRetryable(err error) bool {
 	if !ok {
 		return false
 	}
-	return netErr.Timeout() || netErr.Temporary()
+	return netErr.Timeout()
 }
 
 func (e *TCPConnectionError) ShouldClose(err error) bool {
@@ -206,9 +206,9 @@ func (e *TCPConnectionError) ShouldClose(err error) bool {
 	}
 	netErr, ok := err.(net.Error)
 	if !ok {
-		return false
+		return true
 	}
-	return !netErr.Temporary()
+	return !netErr.Timeout()
 }
 
 func (e *TCPConnectionError) IsTemporary(err error) bool {
@@ -216,7 +216,7 @@ func (e *TCPConnectionError) IsTemporary(err error) bool {
 		return false
 	}
 	netErr, ok := err.(net.Error)
-	return ok && netErr.Temporary()
+	return ok && netErr.Timeout()
 }
 
 func (e *TCPConnectionError) ClassifyError(err error) ErrorType {
@@ -233,10 +233,7 @@ func (e *TCPConnectionError) ClassifyError(err error) ErrorType {
 	if netErr.Timeout() {
 		return ErrorTimeout
 	}
-	if netErr.Temporary() {
-		return ErrorNetwork
-	}
-	return ErrorUnknown
+	return ErrorNetwork
 }
 
 func (e *TCPConnectionError) GetLastError() error {

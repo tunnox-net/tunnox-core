@@ -135,11 +135,8 @@ func (m *StreamManager) CreateStreamWithConfig(config StreamConfig, reader io.Re
 		return nil, err
 	}
 
-	// 应用配置
-	if config.EnableCompression {
-		// 这里可以创建包装的压缩流
-		// 暂时返回基础流，后续可以扩展
-	}
+	// TODO: Apply compression config when config.EnableCompression is true
+	_ = config.EnableCompression
 
 	return stream, nil
 }

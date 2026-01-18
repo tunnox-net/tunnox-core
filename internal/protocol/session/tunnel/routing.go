@@ -129,8 +129,7 @@ func (t *RoutingTable) LookupWaitingTunnel(ctx context.Context, tunnelID string)
 
 	// 检查是否过期
 	if time.Now().After(state.ExpiresAt) {
-		// 已过期，删除并返回错误
-		t.storage.Delete(key)
+		_ = t.storage.Delete(key)
 		return nil, ErrExpired
 	}
 

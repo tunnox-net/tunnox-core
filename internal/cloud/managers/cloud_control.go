@@ -10,7 +10,6 @@ import (
 	"tunnox-core/internal/cloud/distributed"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/core/dispose"
-	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/idgen"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/core/storage"
@@ -102,21 +101,6 @@ func NewCloudControl(parentCtx context.Context, config *ControlConfig, storage s
 		portMappingService: deps.PortMappingService,
 	}
 	return base
-}
-
-// handleErrorWithIDRelease 处理需要释放ID的错误
-// 这是一个通用的错误处理模式，用于在操作失败时自动释放已分配的ID
-func (c *CloudControl) handleErrorWithIDRelease(err error, id int64, releaseFunc func(int64) error, message string) error {
-	if err == nil {
-		return nil
-	}
-
-	// 释放ID（忽略释放错误，主流程已失败）
-	if releaseFunc != nil {
-		_ = releaseFunc(id)
-	}
-
-	return coreerrors.Wrap(err, coreerrors.CodeInternal, message)
 }
 
 // Close 实现 CloudControlAPI 接口的 Close 方法

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"sync"
-	"time"
 
 	"tunnox-core/internal/constants"
 	"tunnox-core/internal/core/dispose"
@@ -123,24 +122,5 @@ func (cm *ConfigManager) notifyWatchers(config *ControlConfig) {
 
 	for _, watcher := range watchers {
 		watcher.OnConfigChanged(config)
-	}
-}
-
-// watchConfigChanges 监听配置变更
-func (cm *ConfigManager) watchConfigChanges() {
-	ticker := time.NewTicker(30 * time.Second) // 每30秒检查一次配置变更
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			// 使用 ConfigManager 自身的 context，遵循 dispose 层次结构
-			if err := cm.LoadConfig(cm.Ctx()); err != nil {
-				// 记录错误但不中断监听
-				continue
-			}
-		case <-cm.Ctx().Done():
-			return
-		}
 	}
 }

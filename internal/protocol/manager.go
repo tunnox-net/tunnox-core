@@ -55,23 +55,3 @@ func (pm *ProtocolManager) StartAll() error {
 func (pm *ProtocolManager) CloseAll() error {
 	return pm.dispose.CloseWithError()
 }
-
-func (pm *ProtocolManager) onClose() error {
-	hasAdapters := len(pm.adapters) > 0
-
-	if hasAdapters {
-		var lastErr error
-		for _, adapter := range pm.adapters {
-			if err := adapter.Close(); err != nil {
-				corelog.Errorf("Failed to close adapter %s: %v", adapter.Name(), err)
-				lastErr = err
-			}
-		}
-		if lastErr != nil {
-			return lastErr
-		}
-	}
-
-	pm.adapters = nil
-	return nil
-}

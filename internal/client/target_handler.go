@@ -344,7 +344,7 @@ func waitForTCPConnections(
 	genericCh := make(chan targetResultHandler[net.Conn], 1)
 	go func() {
 		result := <-targetCh
-		genericCh <- targetResultHandler[net.Conn]{conn: result.conn, err: result.err}
+		genericCh <- targetResultHandler[net.Conn](result)
 	}()
 	return waitForConnectionsGeneric(tunnelCtx, genericCh, tunnelCh, logPrefix, tunnelID, targetAddr)
 }
@@ -356,11 +356,10 @@ func waitForUDPConnections(
 	tunnelCh <-chan tunnelResult,
 	logPrefix, tunnelID, targetAddr string,
 ) (*net.UDPConn, net.Conn, stream.PackageStreamer, bool) {
-	// 转换 channel 类型
 	genericCh := make(chan targetResultHandler[*net.UDPConn], 1)
 	go func() {
 		result := <-targetCh
-		genericCh <- targetResultHandler[*net.UDPConn]{conn: result.conn, err: result.err}
+		genericCh <- targetResultHandler[*net.UDPConn](result)
 	}()
 	return waitForConnectionsGeneric(tunnelCtx, genericCh, tunnelCh, logPrefix, tunnelID, targetAddr)
 }

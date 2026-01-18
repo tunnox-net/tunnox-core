@@ -233,7 +233,7 @@ func (m *Manager) cleanupStaleConnections() {
 
 	for _, connID := range staleConnIDs {
 		m.logger.Warnf("ConnectionManager: closing stale connection %s", connID)
-		m.CloseConnection(connID)
+		_ = m.CloseConnection(connID)
 	}
 
 	if len(staleConnIDs) > 0 {

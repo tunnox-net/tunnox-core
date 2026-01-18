@@ -11,28 +11,6 @@ import (
 	"tunnox-core/internal/packet"
 )
 
-// sendTunnelOpenResponse 发送隧道打开响应
-func (s *SessionManager) sendTunnelOpenResponse(conn ControlConnectionInterface, resp *packet.TunnelOpenAckResponse) error {
-	// 序列化响应
-	respData, err := json.Marshal(resp)
-	if err != nil {
-		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal tunnel open response")
-	}
-
-	// 构造响应包
-	respPacket := &packet.TransferPacket{
-		PacketType: packet.TunnelOpenAck,
-		Payload:    respData,
-	}
-
-	// 发送响应
-	if _, err := conn.GetStream().WritePacket(respPacket, false, 0); err != nil {
-		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to write tunnel open response")
-	}
-
-	return nil
-}
-
 // sendTunnelOpenResponseDirect 直接发送隧道打开响应（使用types.Connection）
 func (s *SessionManager) sendTunnelOpenResponseDirect(conn *types.Connection, resp *packet.TunnelOpenAckResponse) error {
 	// 序列化响应

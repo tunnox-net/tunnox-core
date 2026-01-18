@@ -37,7 +37,11 @@ func (s *SessionManager) GetControlConnectionByClientID(clientID int64) *Control
 
 // GetControlConnectionInterface 根据 ClientID 获取指令连接（返回接口用于API）
 func (s *SessionManager) GetControlConnectionInterface(clientID int64) ControlConnectionInterface {
-	return s.GetControlConnectionByClientID(clientID)
+	conn := s.GetControlConnectionByClientID(clientID)
+	if conn == nil {
+		return nil
+	}
+	return conn
 }
 
 // KickOldControlConnection 踢掉旧的指令连接

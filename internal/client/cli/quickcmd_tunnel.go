@@ -123,7 +123,7 @@ func (r *QuickCommandRunner) createHTTPDomainAndWait(targetAddress string, extra
 			return false, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to generate subdomain")
 		}
 		subdomain = genResp.Subdomain
-		fullDomain = genResp.FullDomain
+		_ = genResp.FullDomain
 	}
 
 	// 创建 HTTP 域名映射

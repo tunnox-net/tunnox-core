@@ -279,14 +279,3 @@ func (m *multiCloserWithStream) Close() error {
 	}
 	return nil
 }
-
-// getNodeAddress 获取节点地址
-func (s *SessionManager) getNodeAddress(nodeID string) (string, error) {
-	if s.tunnelRouting != nil {
-		addr, err := s.tunnelRouting.GetNodeAddress(nodeID)
-		if err == nil && addr != "" {
-			return addr, nil
-		}
-	}
-	return nodeID + ":50052", nil
-}

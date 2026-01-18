@@ -105,7 +105,7 @@ func (tu *DefaultTimeUtils) IsExpired(t time.Time) bool {
 
 // GetTimeUntil 获取距离指定时间的剩余时间
 func (tu *DefaultTimeUtils) GetTimeUntil(t time.Time) time.Duration {
-	return t.Sub(time.Now())
+	return time.Until(t)
 }
 
 // TimeConstants 时间常量

@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	coreerrors "tunnox-core/internal/core/errors"
@@ -10,7 +9,6 @@ import (
 
 	"tunnox-core/internal/broker"
 	"tunnox-core/internal/cloud/managers"
-	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
 	"tunnox-core/internal/cloud/services"
 	"tunnox-core/internal/constants"
@@ -186,32 +184,4 @@ func (s *Server) RunWithContext(ctx context.Context) error {
 
 	// 使用服务管理器运行（包含信号处理和优雅关闭）
 	return s.serviceManager.RunWithContext(ctx)
-}
-
-// registerCurrentNode 注册当前节点到 CloudControl
-func (s *Server) registerCurrentNode(nodeID, address string) error {
-	now := time.Now()
-	nodeModel := &models.Node{
-		ID:        nodeID,
-		Name:      fmt.Sprintf("Node-%s", nodeID),
-		Address:   address,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-
-	if s.cloudBuiltin != nil {
-		return s.cloudBuiltin.RegisterNodeDirect(nodeModel)
-	}
-	return coreerrors.New(coreerrors.CodeNotConfigured, "cloudBuiltin not initialized")
-}
-
-// getRemoteStorage 获取 RemoteStorage 实例（如果存在）
-func (s *Server) getRemoteStorage() *storage.RemoteStorage {
-	if s.storage == nil {
-		return nil
-	}
-	if hybrid, ok := s.storage.(*storage.HybridStorage); ok {
-		return hybrid.GetRemoteStorage()
-	}
-	return nil
 }

@@ -306,18 +306,6 @@ func (h *ActivateConnectionCodeHandler) Handle(ctx *command.CommandContext) (*co
 // 辅助方法
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// getClientID 从上下文中获取客户端ID
-func (h *ConnectionCodeCommandHandlers) getClientID(ctx *command.CommandContext) int64 {
-	if h.sessionMgr == nil {
-		return 0
-	}
-	controlConn := h.sessionMgr.GetControlConnection(ctx.ConnectionID)
-	if controlConn == nil {
-		return 0
-	}
-	return controlConn.ClientID
-}
-
 // getClientID 获取客户端ID（处理器方法）
 func (h *GenerateConnectionCodeHandler) getClientID(ctx *command.CommandContext) int64 {
 	if h.sessionMgr == nil {

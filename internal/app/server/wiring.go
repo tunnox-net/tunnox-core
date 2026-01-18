@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"time"
-	"tunnox-core/internal/broker"
+
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/httpservice"
 	"tunnox-core/internal/httpservice/modules/domainproxy"
@@ -48,37 +48,6 @@ func (s *Server) registerServices() {
 
 }
 
-// createMessageBroker 创建消息代理
-func (s *Server) createMessageBroker(ctx context.Context) broker.MessageBroker {
-	// 根据配置决定使用哪种消息代理
-	brokerType := "memory"
-	var redisConfig *broker.RedisBrokerConfig
-
-	if s.config.Redis.Enabled {
-		brokerType = "redis"
-		redisConfig = &broker.RedisBrokerConfig{
-			Addrs:       []string{s.config.Redis.Addr},
-			Password:    s.config.Redis.Password,
-			DB:          s.config.Redis.DB,
-			ClusterMode: false,
-			PoolSize:    10,
-		}
-	}
-
-	brokerConfig := &broker.BrokerConfig{
-		Type:   broker.BrokerType(brokerType),
-		NodeID: s.nodeID,
-		Redis:  redisConfig,
-	}
-
-	mb, err := broker.NewMessageBroker(ctx, brokerConfig)
-	if err != nil {
-		corelog.Fatalf("Failed to create message broker: %v", err)
-	}
-
-	return mb
-}
-
 // setupProtocolAdapters 设置协议适配器
 func (s *Server) setupProtocolAdapters() error {
 	// 获取启用的协议配置
@@ -110,13 +79,12 @@ func (s *Server) setupProtocolAdapters() error {
 
 		// 注册到管理器
 		s.protocolMgr.Register(adapter)
-		registeredProtocols = append(registeredProtocols, protocolName)
+		_ = append(registeredProtocols, protocolName) // 记录已注册的协议
 	}
 
 	return nil
 }
 
-// getEnabledProtocols 获取启用的协议配置
 func (s *Server) getEnabledProtocols() map[string]ProtocolConfig {
 	enabled := make(map[string]ProtocolConfig)
 
@@ -129,7 +97,9 @@ func (s *Server) getEnabledProtocols() map[string]ProtocolConfig {
 	return enabled
 }
 
-// 创建统一 HTTP 服务
+// createHTTPService creates the unified HTTP service (unused - kept for future use)
+//
+//nolint:unused
 func (s *Server) createHTTPService(ctx context.Context) *httpservice.HTTPService {
 	// 检查协议是否在 server.protocols 中启用
 	websocketEnabled := false

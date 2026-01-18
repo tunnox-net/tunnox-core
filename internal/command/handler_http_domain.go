@@ -2,7 +2,6 @@ package command
 
 import (
 	"math/rand"
-	"time"
 )
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -56,7 +55,4 @@ func generateRandomSubdomain() string {
 	return "s" + string(result)
 }
 
-func init() {
-	// 初始化随机数种子
-	rand.Seed(time.Now().UnixNano())
-}
+// Go 1.20+ 自动处理随机数种子，无需手动初始化

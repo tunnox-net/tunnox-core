@@ -154,7 +154,7 @@ func (cm *CleanupManager) AcquireCleanupTask(ctx context.Context, taskType strin
 }
 
 // CompleteCleanupTask 完成清理任务
-func (cm *CleanupManager) CompleteCleanupTask(ctx context.Context, taskType string, err error) error {
+func (cm *CleanupManager) CompleteCleanupTask(ctx context.Context, taskType string, taskErr error) error {
 	taskID := fmt.Sprintf("cleanup_%s", taskType)
 	lockKey := fmt.Sprintf("lock:cleanup_task:%s", taskID)
 

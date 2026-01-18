@@ -45,7 +45,7 @@ func (c *CLI) cmdGenerateCode(args []string) {
 		c.output.Info("SOCKS5 proxy selected (dynamic targets)")
 	} else {
 		// TCP/UDP 需要输入目标地址（只需输入 host:port，协议会自动添加）
-		prompt := fmt.Sprintf("Target Address (e.g., 192.168.1.10:8080): ")
+		prompt := "Target Address (e.g., 192.168.1.10:8080): "
 
 		for {
 			addr, err := c.promptInput(prompt)

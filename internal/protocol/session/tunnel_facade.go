@@ -63,14 +63,6 @@ func NewTunnelRoutingTable(s storage.Storage, ttl time.Duration) *TunnelRoutingT
 	return tunnel.NewRoutingTable(s, ttl)
 }
 
-// createDataForwarder 创建数据转发器（内部使用）
-func createDataForwarder(conn interface{}, s stream.PackageStreamer) DataForwarder {
-	if netConn, ok := conn.(net.Conn); ok {
-		return tunnel.CreateDataForwarder(netConn, s)
-	}
-	return tunnel.CreateDataForwarder(conn, s)
-}
-
 // ============================================================================
 // 初始化 - 注册隧道连接工厂
 // ============================================================================
