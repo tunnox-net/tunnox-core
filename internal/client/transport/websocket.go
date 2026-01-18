@@ -145,14 +145,20 @@ func (c *WebSocketStreamConn) Write(p []byte) (int, error) {
 }
 
 // Close implements io.Closer
+// 关键修复：设置短读取超时以确保阻塞的 ReadMessage() 能被及时中断
 func (c *WebSocketStreamConn) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		close(c.closed)
 
-		// Send close message
+		// 关键：先设置一个非常短的读取超时
+		// 这会导致任何阻塞的 ReadMessage() 立即返回超时错误
+		// 必须在 Close() 之前设置，否则阻塞的 read 可能不会立即返回
+		c.conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+
+		// Send close message (best effort, with short timeout)
 		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
-		c.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
+		c.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(100*time.Millisecond))
 
 		err = c.conn.Close()
 		corelog.Debugf("WebSocket: connection closed")
