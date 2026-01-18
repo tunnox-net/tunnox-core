@@ -35,13 +35,12 @@ func NewIDManager(storage storage.Storage, parentCtx context.Context) *IDManager
 	// ClientID 使用 int64 类型，生成完全随机的 8 位数字
 	manager.clientIDGen = NewStorageIDGenerator[int64](storage, "", "tunnox:id:used:client", parentCtx)
 
-	// 其他 ID 使用 string 类型，生成带前缀的随机字符串
 	manager.nodeIDGen = NewStorageIDGenerator[string](storage, PrefixNodeID, "tunnox:id:used:node", parentCtx)
-	manager.connectionIDGen = NewStorageIDGenerator[string](storage, PrefixConnectionID, "tunnox:id:used:conn", parentCtx)
+	manager.connectionIDGen = NewUUIDGenerator(PrefixConnectionID)
 	manager.portMappingIDGen = NewStorageIDGenerator[string](storage, PrefixPortMappingID, "tunnox:id:used:pmap", parentCtx)
-	manager.portMappingInstanceIDGen = NewStorageIDGenerator[string](storage, PrefixPortMappingInstanceID, "tunnox:id:used:pmi", parentCtx)
+	manager.portMappingInstanceIDGen = NewUUIDGenerator(PrefixPortMappingInstanceID)
 	manager.userIDGen = NewStorageIDGenerator[string](storage, PrefixUserID, "tunnox:id:used:user", parentCtx)
-	manager.tunnelIDGen = NewStorageIDGenerator[string](storage, PrefixTunnelID, "tunnox:id:used:tunnel", parentCtx)
+	manager.tunnelIDGen = NewUUIDGenerator(PrefixTunnelID)
 
 	manager.SetCtx(parentCtx, manager.onClose)
 	return manager

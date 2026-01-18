@@ -79,11 +79,9 @@ func TestIDManager_Basic(t *testing.T) {
 		// 连接ID应该不同
 		assert.NotEqual(t, connID1, connID2)
 
-		// 验证格式：conn_randomString
-		parts1 := strings.Split(connID1, "_")
-		assert.Len(t, parts1, 2)
-		assert.Equal(t, "conn", parts1[0])
-		assert.Len(t, parts1[1], 8) // 随机字符串
+		// 验证格式：conn_uuid (UUID v7 格式)
+		assert.True(t, strings.HasPrefix(connID1, "conn_"))
+		assert.GreaterOrEqual(t, len(connID1), 41) // conn_ + UUID (36 chars)
 
 		// 连接ID不需要释放
 		err = manager.ReleaseConnectionID(connID1)
@@ -122,25 +120,18 @@ func TestIDManager_Basic(t *testing.T) {
 		tunnelID, err := manager.GenerateTunnelID()
 		require.NoError(t, err)
 
-		// 验证格式：tun_randomString
+		// tun_ + UUID v7 格式
 		assert.True(t, strings.HasPrefix(tunnelID, "tun_"))
-		parts := strings.Split(tunnelID, "_")
-		assert.Len(t, parts, 2)
-		assert.Equal(t, "tun", parts[0])
+		assert.GreaterOrEqual(t, len(tunnelID), 40) // tun_ + UUID (36 chars)
 
-		// 验证随机部分（8位）
-		assert.Len(t, parts[1], 8)
-
-		// 检查唯一性
+		// UUID generator 不跟踪已使用的 ID
 		used, err := manager.IsTunnelIDUsed(tunnelID)
 		require.NoError(t, err)
-		assert.True(t, used)
+		assert.False(t, used) // UUID always returns false
 
-		// 释放ID
 		err = manager.ReleaseTunnelID(tunnelID)
 		require.NoError(t, err)
 
-		// 检查释放后状态
 		used, err = manager.IsTunnelIDUsed(tunnelID)
 		require.NoError(t, err)
 		assert.False(t, used)
@@ -369,10 +360,8 @@ func TestIDManager_FormatConsistency(t *testing.T) {
 		tunnelID, err := manager.GenerateTunnelID()
 		require.NoError(t, err)
 
-		// 验证格式：tun_randomString
-		parts := strings.Split(tunnelID, "_")
-		assert.Len(t, parts, 2)
-		assert.Equal(t, "tun", parts[0])
-		assert.Len(t, parts[1], 8) // 随机字符串
+		// tun_ + UUID v7 格式
+		assert.True(t, strings.HasPrefix(tunnelID, "tun_"))
+		assert.GreaterOrEqual(t, len(tunnelID), 40)
 	})
 }

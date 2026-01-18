@@ -252,30 +252,16 @@ type IClientTokenRepository interface {
 	RefreshToken(token *models.ClientToken) error
 }
 
-// IClientStateRepository 客户端状态数据访问接口
-//
-// 管理客户端运行时状态的缓存操作
 type IClientStateRepository interface {
-	// GetState 获取客户端状态
 	GetState(clientID int64) (*models.ClientRuntimeState, error)
-
-	// SetState 设置客户端状态
 	SetState(state *models.ClientRuntimeState) error
-
-	// DeleteState 删除客户端状态
 	DeleteState(clientID int64) error
-
-	// TouchState 更新客户端心跳时间
 	TouchState(clientID int64) error
-
-	// GetNodeClients 获取指定节点的所有在线客户端ID列表
 	GetNodeClients(nodeID string) ([]int64, error)
-
-	// AddToNodeClients 将客户端添加到节点的客户端列表
 	AddToNodeClients(nodeID string, clientID int64) error
-
-	// RemoveFromNodeClients 从节点的客户端列表中移除客户端
 	RemoveFromNodeClients(nodeID string, clientID int64) error
+	CleanupStaleClients(nodeID string) (int64, error)
+	TouchNodeClient(nodeID string, clientID int64) error
 }
 
 // IClientConfigRepository 客户端配置数据访问接口

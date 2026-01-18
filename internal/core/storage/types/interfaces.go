@@ -152,6 +152,35 @@ type CASStore interface {
 	CompareAndSwap(key string, oldValue, newValue any, ttl time.Duration) (bool, error)
 }
 
+// SortedSetStore 有序集合操作扩展接口（可选）
+// 使用 score 作为排序依据，适用于需要按时间戳排序的场景
+// 例如：节点客户端列表（score = 最后心跳时间戳），可以高效清理过期成员
+type SortedSetStore interface {
+	// ZAdd 添加或更新成员的 score
+	// key: 有序集合的键
+	// member: 成员值（会被转换为字符串）
+	// score: 分数（通常是 Unix 时间戳）
+	ZAdd(key string, member any, score float64) error
+
+	// ZRem 移除成员
+	ZRem(key string, member any) error
+
+	// ZRange 按 score 范围获取成员
+	// minScore, maxScore: 分数范围（-inf 和 +inf 用于无界查询）
+	// 返回按 score 升序排列的成员列表
+	ZRangeByScore(key string, minScore, maxScore float64) ([]string, error)
+
+	// ZRemRangeByScore 按 score 范围删除成员
+	// 常用于清理过期数据，如 minScore=-inf, maxScore=过期时间戳
+	ZRemRangeByScore(key string, minScore, maxScore float64) (int64, error)
+
+	// ZScore 获取成员的 score
+	ZScore(key string, member any) (float64, bool, error)
+
+	// ZCard 获取成员数量
+	ZCard(key string) (int64, error)
+}
+
 // WatchableStore 监听扩展接口（可选）
 // 用于键变化通知
 //

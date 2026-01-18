@@ -34,7 +34,6 @@ var (
 	ErrInvalidType = types.ErrInvalidType
 )
 
-// 核心接口类型（从 types 子包导出）
 type (
 	Storage           = types.Storage
 	FullStorage       = types.FullStorage
@@ -45,6 +44,7 @@ type (
 	WatchableStore    = types.WatchableStore
 	PersistentStorage = types.PersistentStorage
 	CacheStorage      = types.CacheStorage
+	SortedSetStore    = types.SortedSetStore
 )
 
 // ============================================================================
@@ -90,11 +90,11 @@ type TypedPersistentAdapter[T any] = types.TypedPersistentAdapter[T]
 
 // 存储实现类型别名
 type (
-	MemoryStorage  = memory.Storage
-	RedisStorage   = redisstorage.Storage
-	RemoteStorage  = remote.Storage
-	HybridStorage  = hybrid.Storage
-	JSONStorage    = jsonstorage.Storage
+	MemoryStorage = memory.Storage
+	RedisStorage  = redisstorage.Storage
+	RemoteStorage = remote.Storage
+	HybridStorage = hybrid.Storage
+	JSONStorage   = jsonstorage.Storage
 )
 
 // 配置类型别名

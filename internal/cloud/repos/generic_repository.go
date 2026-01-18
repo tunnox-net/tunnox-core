@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/sync/singleflight"
 	"tunnox-core/internal/core/dispose"
 	coreerrors "tunnox-core/internal/core/errors"
 	"tunnox-core/internal/core/storage"
@@ -32,9 +33,12 @@ type GenericRepository[T any] interface {
 }
 
 // GenericRepositoryImpl 泛型Repository实现
+// 使用 singleflight 防止缓存击穿：当多个 goroutine 同时请求同一个 key 时，
+// 只有一个会真正执行查询，其他等待结果共享
 type GenericRepositoryImpl[T any] struct {
 	*Repository
 	getIDFunc func(T) (string, error)
+	sf        singleflight.Group // 防缓存击穿
 }
 
 // NewGenericRepository 创建泛型Repository
@@ -62,58 +66,77 @@ func (r *GenericRepositoryImpl[T]) Save(entity T, keyPrefix string, ttl time.Dur
 	return r.storage.Set(key, string(data), ttl)
 }
 
-// Create 创建实体（仅创建，不允许覆盖）
 func (r *GenericRepositoryImpl[T]) Create(entity T, keyPrefix string, ttl time.Duration) error {
 	id, err := r.getEntityID(entity)
 	if err != nil {
 		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "get entity ID failed")
 	}
 
-	// 检查实体是否已存在
 	_, err = r.Get(id, keyPrefix)
 	if err == nil {
-		// 如果获取成功，说明实体已存在
 		return coreerrors.Newf(coreerrors.CodeAlreadyExists, "entity with ID %s already exists", id)
+	}
+
+	if !errors.Is(err, storage.ErrKeyNotFound) && !coreerrors.IsCode(err, coreerrors.CodeNotFound) {
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to check existence")
 	}
 
 	return r.Save(entity, keyPrefix, ttl)
 }
 
-// Update 更新实体（仅更新，不允许创建）
 func (r *GenericRepositoryImpl[T]) Update(entity T, keyPrefix string, ttl time.Duration) error {
 	id, err := r.getEntityID(entity)
 	if err != nil {
 		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "get entity ID failed")
 	}
 
-	// 检查实体是否存在
 	_, err = r.Get(id, keyPrefix)
 	if err != nil {
-		return coreerrors.Newf(coreerrors.CodeNotFound, "entity with ID %s does not exist", id)
+		if errors.Is(err, storage.ErrKeyNotFound) || coreerrors.IsCode(err, coreerrors.CodeNotFound) {
+			return coreerrors.Newf(coreerrors.CodeNotFound, "entity with ID %s does not exist", id)
+		}
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to check existence")
 	}
 
 	return r.Save(entity, keyPrefix, ttl)
 }
 
 // Get 获取实体
+// 使用 singleflight 防止缓存击穿：当多个 goroutine 同时请求同一个 key 时，
+// 只有一个会真正执行查询，其他等待结果共享
 func (r *GenericRepositoryImpl[T]) Get(id string, keyPrefix string) (T, error) {
-	var entity T
-
+	var zero T
 	key := fmt.Sprintf("%s:%s", keyPrefix, id)
-	data, err := r.storage.Get(key)
+
+	// 使用 singleflight 防止缓存击穿
+	// 当缓存失效时，多个 goroutine 同时请求同一个 key，只有一个会执行实际查询
+	result, err, _ := r.sf.Do(key, func() (interface{}, error) {
+		data, err := r.storage.Get(key)
+		if err != nil {
+			return zero, err
+		}
+
+		entityData, ok := data.(string)
+		if !ok {
+			return zero, coreerrors.New(coreerrors.CodeStorageError, "invalid entity data type")
+		}
+
+		var entity T
+		if err := json.Unmarshal([]byte(entityData), &entity); err != nil {
+			return zero, coreerrors.Wrap(err, coreerrors.CodeStorageError, "unmarshal entity failed")
+		}
+
+		return entity, nil
+	})
+
 	if err != nil {
-		return entity, err
+		return zero, err
 	}
 
-	entityData, ok := data.(string)
+	entity, ok := result.(T)
 	if !ok {
-		return entity, coreerrors.New(coreerrors.CodeStorageError, "invalid entity data type")
+		return zero, coreerrors.Newf(coreerrors.CodeStorageError, "unexpected result type: %T", result)
 	}
-
-	if err := json.Unmarshal([]byte(entityData), &entity); err != nil {
-		return entity, coreerrors.Wrap(err, coreerrors.CodeStorageError, "unmarshal entity failed")
-	}
-
 	return entity, nil
 }
 

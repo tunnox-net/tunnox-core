@@ -164,25 +164,109 @@ func (r *ClientStateRepository) TouchState(clientID int64) error {
 	return r.SetState(state)
 }
 
-// ============================================================================
-// 节点客户端列表管理
-// ============================================================================
-
-// GetNodeClients 获取指定节点的所有在线客户端ID列表
-//
-// 参数：
-//   - nodeID: 节点ID
-//
-// 返回：
-//   - []int64: 客户端ID列表
-//   - error: 错误信息
 func (r *ClientStateRepository) GetNodeClients(nodeID string) ([]int64, error) {
+	zsetStore, ok := r.storage.(storage.SortedSetStore)
+	if !ok {
+		return r.getNodeClientsLegacy(nodeID)
+	}
+
+	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
+	activeThreshold := float64(time.Now().Add(-time.Duration(constants.TTLClientState) * time.Second).Unix())
+	maxScore := float64(time.Now().Unix())
+
+	members, err := zsetStore.ZRangeByScore(key, activeThreshold, maxScore)
+	if err != nil {
+		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get node clients")
+	}
+
+	clientIDs := make([]int64, 0, len(members))
+	for _, member := range members {
+		var clientID int64
+		if _, err := fmt.Sscanf(member, "%d", &clientID); err == nil {
+			clientIDs = append(clientIDs, clientID)
+		}
+	}
+	return clientIDs, nil
+}
+
+func (r *ClientStateRepository) AddToNodeClients(nodeID string, clientID int64) error {
+	if nodeID == "" {
+		return coreerrors.New(coreerrors.CodeInvalidParam, "node_id is empty")
+	}
+
+	zsetStore, ok := r.storage.(storage.SortedSetStore)
+	if !ok {
+		return r.addToNodeClientsLegacy(nodeID, clientID)
+	}
+
+	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
+	score := float64(time.Now().Unix())
+
+	if err := zsetStore.ZAdd(key, clientID, score); err != nil {
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to add client to node")
+	}
+
+	corelog.Debugf("ClientStateRepository: added client %d to node %s (score=%f)", clientID, nodeID, score)
+	return nil
+}
+
+func (r *ClientStateRepository) RemoveFromNodeClients(nodeID string, clientID int64) error {
+	if nodeID == "" {
+		return nil
+	}
+
+	zsetStore, ok := r.storage.(storage.SortedSetStore)
+	if !ok {
+		return r.removeFromNodeClientsLegacy(nodeID, clientID)
+	}
+
+	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
+	if err := zsetStore.ZRem(key, clientID); err != nil {
+		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to remove client from node")
+	}
+
+	corelog.Debugf("ClientStateRepository: removed client %d from node %s", clientID, nodeID)
+	return nil
+}
+
+func (r *ClientStateRepository) CleanupStaleClients(nodeID string) (int64, error) {
+	zsetStore, ok := r.storage.(storage.SortedSetStore)
+	if !ok {
+		return 0, nil
+	}
+
+	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
+	staleThreshold := float64(time.Now().Add(-time.Duration(constants.TTLClientState) * time.Second).Unix())
+
+	removed, err := zsetStore.ZRemRangeByScore(key, 0, staleThreshold)
+	if err != nil {
+		return 0, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to cleanup stale clients")
+	}
+
+	if removed > 0 {
+		corelog.Infof("ClientStateRepository: cleaned up %d stale clients from node %s", removed, nodeID)
+	}
+	return removed, nil
+}
+
+func (r *ClientStateRepository) TouchNodeClient(nodeID string, clientID int64) error {
+	zsetStore, ok := r.storage.(storage.SortedSetStore)
+	if !ok {
+		return nil
+	}
+
+	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
+	score := float64(time.Now().Unix())
+	return zsetStore.ZAdd(key, clientID, score)
+}
+
+func (r *ClientStateRepository) getNodeClientsLegacy(nodeID string) ([]int64, error) {
 	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
 
 	value, err := r.storage.Get(key)
 	if err != nil {
 		if err == storage.ErrKeyNotFound {
-			return []int64{}, nil // 空列表
+			return []int64{}, nil
 		}
 		return nil, coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to get node clients")
 	}
@@ -193,42 +277,24 @@ func (r *ClientStateRepository) GetNodeClients(nodeID string) ([]int64, error) {
 			return nil, coreerrors.Wrap(err, coreerrors.CodeInvalidData, "failed to unmarshal client IDs")
 		}
 	}
-
 	return clientIDs, nil
 }
 
-// AddToNodeClients 将客户端添加到节点的客户端列表
-//
-// 参数：
-//   - nodeID: 节点ID
-//   - clientID: 客户端ID
-//
-// 返回：
-//   - error: 错误信息
-func (r *ClientStateRepository) AddToNodeClients(nodeID string, clientID int64) error {
-	if nodeID == "" {
-		return coreerrors.New(coreerrors.CodeInvalidParam, "node_id is empty")
-	}
-
+func (r *ClientStateRepository) addToNodeClientsLegacy(nodeID string, clientID int64) error {
 	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
 
-	// 获取当前列表
-	clientIDs, err := r.GetNodeClients(nodeID)
+	clientIDs, err := r.getNodeClientsLegacy(nodeID)
 	if err != nil {
 		return err
 	}
 
-	// 检查是否已存在
 	for _, id := range clientIDs {
 		if id == clientID {
-			return nil // 已存在，无需重复添加
+			return nil
 		}
 	}
 
-	// 添加到列表
 	clientIDs = append(clientIDs, clientID)
-
-	// 序列化并保存
 	jsonBytes, _ := json.Marshal(clientIDs)
 	ttl := time.Duration(constants.TTLNodeClients) * time.Second
 
@@ -236,32 +302,18 @@ func (r *ClientStateRepository) AddToNodeClients(nodeID string, clientID int64) 
 		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to save node clients")
 	}
 
-	corelog.Debugf("ClientStateRepository: added client %d to node %s", clientID, nodeID)
+	corelog.Debugf("ClientStateRepository: added client %d to node %s (legacy)", clientID, nodeID)
 	return nil
 }
 
-// RemoveFromNodeClients 从节点的客户端列表中移除客户端
-//
-// 参数：
-//   - nodeID: 节点ID
-//   - clientID: 客户端ID
-//
-// 返回：
-//   - error: 错误信息
-func (r *ClientStateRepository) RemoveFromNodeClients(nodeID string, clientID int64) error {
-	if nodeID == "" {
-		return nil // 空nodeID，忽略
-	}
-
+func (r *ClientStateRepository) removeFromNodeClientsLegacy(nodeID string, clientID int64) error {
 	key := fmt.Sprintf("%s%s", constants.KeyPrefixRuntimeNodeClients, nodeID)
 
-	// 获取当前列表
-	clientIDs, err := r.GetNodeClients(nodeID)
+	clientIDs, err := r.getNodeClientsLegacy(nodeID)
 	if err != nil {
 		return err
 	}
 
-	// 过滤掉指定clientID
 	newIDs := make([]int64, 0, len(clientIDs))
 	for _, id := range clientIDs {
 		if id != clientID {
@@ -269,12 +321,10 @@ func (r *ClientStateRepository) RemoveFromNodeClients(nodeID string, clientID in
 		}
 	}
 
-	// 如果列表为空，删除key
 	if len(newIDs) == 0 {
 		return r.storage.Delete(key)
 	}
 
-	// 保存新列表
 	jsonBytes, _ := json.Marshal(newIDs)
 	ttl := time.Duration(constants.TTLNodeClients) * time.Second
 
@@ -282,6 +332,6 @@ func (r *ClientStateRepository) RemoveFromNodeClients(nodeID string, clientID in
 		return coreerrors.Wrap(err, coreerrors.CodeStorageError, "failed to save node clients")
 	}
 
-	corelog.Debugf("ClientStateRepository: removed client %d from node %s", clientID, nodeID)
+	corelog.Debugf("ClientStateRepository: removed client %d from node %s (legacy)", clientID, nodeID)
 	return nil
 }

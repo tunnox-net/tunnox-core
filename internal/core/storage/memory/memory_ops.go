@@ -2,6 +2,7 @@ package memory
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -505,4 +506,195 @@ func (m *Storage) QueryByPrefix(prefix string, limit int) (map[string]string, er
 	}
 
 	return result, nil
+}
+
+type sortedSetMember struct {
+	Member string
+	Score  float64
+}
+
+func (m *Storage) ZAdd(key string, member any, score float64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.data == nil {
+		m.data = make(map[string]*StorageItem)
+	}
+
+	memberStr := toMemberString(member)
+
+	item, exists := m.data[key]
+	if !exists {
+		item = &StorageItem{
+			Value:      make([]sortedSetMember, 0),
+			Expiration: time.Time{},
+		}
+		m.data[key] = item
+	}
+
+	members, ok := item.Value.([]sortedSetMember)
+	if !ok {
+		members = make([]sortedSetMember, 0)
+	}
+
+	for i, m := range members {
+		if m.Member == memberStr {
+			members[i].Score = score
+			item.Value = members
+			return nil
+		}
+	}
+
+	members = append(members, sortedSetMember{Member: memberStr, Score: score})
+	item.Value = members
+	return nil
+}
+
+func (m *Storage) ZRem(key string, member any) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.data == nil {
+		return nil
+	}
+
+	item, exists := m.data[key]
+	if !exists {
+		return nil
+	}
+
+	members, ok := item.Value.([]sortedSetMember)
+	if !ok {
+		return nil
+	}
+
+	memberStr := toMemberString(member)
+	newMembers := make([]sortedSetMember, 0, len(members))
+	for _, m := range members {
+		if m.Member != memberStr {
+			newMembers = append(newMembers, m)
+		}
+	}
+	item.Value = newMembers
+	return nil
+}
+
+func (m *Storage) ZRangeByScore(key string, minScore, maxScore float64) ([]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.data == nil {
+		return []string{}, nil
+	}
+
+	item, exists := m.data[key]
+	if !exists {
+		return []string{}, nil
+	}
+
+	members, ok := item.Value.([]sortedSetMember)
+	if !ok {
+		return []string{}, nil
+	}
+
+	var result []string
+	for _, member := range members {
+		if member.Score >= minScore && member.Score <= maxScore {
+			result = append(result, member.Member)
+		}
+	}
+	return result, nil
+}
+
+func (m *Storage) ZRemRangeByScore(key string, minScore, maxScore float64) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.data == nil {
+		return 0, nil
+	}
+
+	item, exists := m.data[key]
+	if !exists {
+		return 0, nil
+	}
+
+	members, ok := item.Value.([]sortedSetMember)
+	if !ok {
+		return 0, nil
+	}
+
+	newMembers := make([]sortedSetMember, 0, len(members))
+	var removed int64
+	for _, member := range members {
+		if member.Score >= minScore && member.Score <= maxScore {
+			removed++
+		} else {
+			newMembers = append(newMembers, member)
+		}
+	}
+	item.Value = newMembers
+	return removed, nil
+}
+
+func (m *Storage) ZScore(key string, member any) (float64, bool, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.data == nil {
+		return 0, false, nil
+	}
+
+	item, exists := m.data[key]
+	if !exists {
+		return 0, false, nil
+	}
+
+	members, ok := item.Value.([]sortedSetMember)
+	if !ok {
+		return 0, false, nil
+	}
+
+	memberStr := toMemberString(member)
+	for _, mem := range members {
+		if mem.Member == memberStr {
+			return mem.Score, true, nil
+		}
+	}
+	return 0, false, nil
+}
+
+func (m *Storage) ZCard(key string) (int64, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.data == nil {
+		return 0, nil
+	}
+
+	item, exists := m.data[key]
+	if !exists {
+		return 0, nil
+	}
+
+	members, ok := item.Value.([]sortedSetMember)
+	if !ok {
+		return 0, nil
+	}
+
+	return int64(len(members)), nil
+}
+
+func toMemberString(member any) string {
+	switch v := member.(type) {
+	case string:
+		return v
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case int:
+		return fmt.Sprintf("%d", v)
+	default:
+		data, _ := json.Marshal(member)
+		return string(data)
+	}
 }

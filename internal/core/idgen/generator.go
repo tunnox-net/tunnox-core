@@ -52,21 +52,34 @@ type IDGenerator[T any] interface {
 	Close() error
 }
 
+// DefaultIDTTL 默认 ID 标记 TTL（30天）
+// 持久化 ID（如 ClientID、UserID）的标记会在此时间后过期
+// 这是一个安全措施，防止 Redis 内存无限增长
+// 实际的唯一性由 PostgreSQL 的唯一约束保证
+const DefaultIDTTL = 30 * 24 * time.Hour
+
 // StorageIDGenerator 基于Storage的泛型ID生成器 (Renamed from StorageBasedIDGenerator)
 type StorageIDGenerator[T any] struct {
 	storage   storage.Storage
 	prefix    string
 	keyPrefix string
+	ttl       time.Duration
 	mu        sync.RWMutex
 	dispose.Dispose
 }
 
-// NewStorageIDGenerator 创建基于Storage的ID生成器 (Renamed from NewStorageBasedIDGenerator)
+// NewStorageIDGenerator 创建基于Storage的ID生成器
 func NewStorageIDGenerator[T any](storage storage.Storage, prefix, keyPrefix string, parentCtx context.Context) *StorageIDGenerator[T] {
+	return NewStorageIDGeneratorWithTTL[T](storage, prefix, keyPrefix, DefaultIDTTL, parentCtx)
+}
+
+// NewStorageIDGeneratorWithTTL 创建带自定义 TTL 的 ID 生成器
+func NewStorageIDGeneratorWithTTL[T any](storage storage.Storage, prefix, keyPrefix string, ttl time.Duration, parentCtx context.Context) *StorageIDGenerator[T] {
 	generator := &StorageIDGenerator[T]{
 		storage:   storage,
 		prefix:    prefix,
 		keyPrefix: keyPrefix,
+		ttl:       ttl,
 	}
 	generator.SetCtxWithNoOpOnClose(parentCtx)
 	return generator
@@ -156,14 +169,10 @@ func (g *StorageIDGenerator[T]) tryMarkAsUsed(id T) (bool, error) {
 		return false, err
 	}
 
-	// 检查 storage 是否支持 CASStore 接口（SetNX 原子操作）
 	if casStore, ok := g.storage.(storage.CASStore); ok {
-		// 使用 SetNX 原子操作：仅当 key 不存在时设置成功
-		return casStore.SetNX(key, string(data), 0)
+		return casStore.SetNX(key, string(data), g.ttl)
 	}
 
-	// 回退到非原子操作（单节点内存存储场景，有锁保护）
-	// 注意：这种方式在分布式场景下仍有竞态风险，但内存存储通常是单节点的
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -175,7 +184,7 @@ func (g *StorageIDGenerator[T]) tryMarkAsUsed(id T) (bool, error) {
 		return false, nil
 	}
 
-	if err := g.storage.Set(key, string(data), 0); err != nil {
+	if err := g.storage.Set(key, string(data), g.ttl); err != nil {
 		return false, err
 	}
 	return true, nil

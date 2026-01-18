@@ -3,7 +3,11 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"math"
 	"time"
+
+	goredis "github.com/redis/go-redis/v9"
 	"tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/core/dispose"
 	"tunnox-core/internal/core/storage/types"
@@ -425,4 +429,107 @@ func (r *Storage) GetKeyCount() (int64, error) {
 	}
 
 	return result.Val(), nil
+}
+
+func (r *Storage) ZAdd(key string, member any, score float64) error {
+	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+	defer cancel()
+
+	memberStr, err := toMemberString(member)
+	if err != nil {
+		return err
+	}
+
+	return r.client.ZAdd(ctx, key, goredis.Z{
+		Score:  score,
+		Member: memberStr,
+	}).Err()
+}
+
+func (r *Storage) ZRem(key string, member any) error {
+	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+	defer cancel()
+
+	memberStr, err := toMemberString(member)
+	if err != nil {
+		return err
+	}
+
+	return r.client.ZRem(ctx, key, memberStr).Err()
+}
+
+func (r *Storage) ZRangeByScore(key string, minScore, maxScore float64) ([]string, error) {
+	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+	defer cancel()
+
+	result, err := r.client.ZRangeByScore(ctx, key, &goredis.ZRangeBy{
+		Min: formatScore(minScore),
+		Max: formatScore(maxScore),
+	}).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
+
+func (r *Storage) ZRemRangeByScore(key string, minScore, maxScore float64) (int64, error) {
+	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+	defer cancel()
+
+	return r.client.ZRemRangeByScore(ctx, key, formatScore(minScore), formatScore(maxScore)).Result()
+}
+
+func (r *Storage) ZScore(key string, member any) (float64, bool, error) {
+	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+	defer cancel()
+
+	memberStr, err := toMemberString(member)
+	if err != nil {
+		return 0, false, err
+	}
+
+	score, err := r.client.ZScore(ctx, key, memberStr).Result()
+	if err == ErrRedisNil {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+
+	return score, true, nil
+}
+
+func (r *Storage) ZCard(key string) (int64, error) {
+	ctx, cancel := context.WithTimeout(r.ctx, 5*time.Second)
+	defer cancel()
+
+	return r.client.ZCard(ctx, key).Result()
+}
+
+func toMemberString(member any) (string, error) {
+	switch v := member.(type) {
+	case string:
+		return v, nil
+	case int64:
+		return fmt.Sprintf("%d", v), nil
+	case int:
+		return fmt.Sprintf("%d", v), nil
+	default:
+		data, err := json.Marshal(member)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+}
+
+func formatScore(score float64) string {
+	if score == math.Inf(-1) {
+		return "-inf"
+	}
+	if score == math.Inf(1) {
+		return "+inf"
+	}
+	return fmt.Sprintf("%f", score)
 }
