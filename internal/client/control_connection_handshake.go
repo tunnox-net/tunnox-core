@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	coreerrors "tunnox-core/internal/core/errors"
@@ -29,6 +30,7 @@ func computeChallengeResponse(secretKey, challenge string) string {
 
 // sendHandshake 发送握手请求（使用控制连接）
 func (c *TunnoxClient) sendHandshake() error {
+	fmt.Printf("[DEBUG] sendHandshake called, connectionType=control, protocol=%s\n", c.config.Server.Protocol)
 	corelog.Infof("Client: sendHandshake called, controlStream=%p", c.controlStream)
 	return c.sendHandshakeOnStream(c.controlStream, "control", c.config.Server.Protocol)
 }
@@ -185,6 +187,7 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 func (c *TunnoxClient) sendHandshakeRequest(stream stream.PackageStreamer, req *packet.HandshakeRequest) (*packet.HandshakeResponse, error) {
 	reqData, _ := json.Marshal(req)
 	// 调试：打印发送的 JSON
+	fmt.Printf("[DEBUG] sendHandshakeRequest JSON: %s\n", string(reqData))
 	corelog.Infof("Client: sendHandshakeRequest sending JSON: %s", string(reqData))
 	handshakePkt := &packet.TransferPacket{
 		PacketType: packet.Handshake,

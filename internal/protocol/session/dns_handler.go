@@ -5,7 +5,6 @@ package session
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"sync"
 	"time"
 
@@ -390,41 +389,6 @@ func (s *SessionManager) HandleDNSQueryRequest(connPacket *types.StreamPacket) e
 
 	// 3. 获取目标客户端的控制连接
 	targetConn := s.GetControlConnectionByClientID(targetClientID)
-	if targetConn == nil || targetConn.Stream == nil {
-		// 回退：遍历所有连接查找目标客户端（某些协议可能没有注册为控制连接）
-		corelog.Debugf("DNSQueryHandler: target client %d not in clientIDMap, trying fallback lookup", targetClientID)
-		allConns := s.ListConnections()
-		for _, c := range allConns {
-			if c.Stream != nil {
-				reader := c.Stream.GetReader()
-				if clientIDConn, ok := reader.(interface {
-					GetClientID() int64
-				}); ok {
-					connClientID := clientIDConn.GetClientID()
-					if connClientID == targetClientID {
-						// 找到目标客户端的连接，创建临时控制连接
-						var remoteAddr net.Addr
-						if c.RawConn != nil {
-							remoteAddr = c.RawConn.RemoteAddr()
-						}
-						protocol := c.Protocol
-						tempConn := NewControlConnection(c.ID, c.Stream, remoteAddr, protocol)
-						tempConn.SetClientID(targetClientID)
-						tempConn.SetAuthenticated(true)
-						// 注册为控制连接
-						s.RegisterControlConnection(tempConn)
-						// 更新 clientIDMap（确保后续查询可以直接找到）
-						if err := s.UpdateControlConnectionAuth(c.ID, targetClientID, ""); err != nil {
-							corelog.Warnf("DNSQueryHandler: failed to update client registry: %v", err)
-						}
-						targetConn = tempConn
-						corelog.Infof("DNSQueryHandler: found target client %d via fallback lookup, connID=%s", targetClientID, c.ID)
-						break
-					}
-				}
-			}
-		}
-	}
 	if targetConn == nil || targetConn.Stream == nil {
 		corelog.Errorf("DNSQueryHandler: target client %d not connected", targetClientID)
 		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "target client not connected")
