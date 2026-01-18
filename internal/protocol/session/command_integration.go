@@ -134,6 +134,15 @@ func (s *SessionManager) handleCommandPacket(connPacket *types.StreamPacket) err
 			return s.HandleDNSResolveRequest(connPacket)
 		}
 
+		// 特殊处理 DNS 原始报文查询请求（通过控制通道）
+		if connPacket.Packet.CommandPacket.CommandType == packet.DNSQuery {
+			// 检查是请求还是响应
+			if connPacket.Packet.PacketType.IsCommandResp() {
+				return s.HandleDNSQueryResponse(connPacket)
+			}
+			return s.HandleDNSQueryRequest(connPacket)
+		}
+
 		// 特殊处理流量上报
 		if connPacket.Packet.CommandPacket.CommandType == packet.TunnelTrafficReport {
 			return s.HandleTrafficReport(connPacket)

@@ -148,6 +148,7 @@ const (
 
 	// ==================== DNS 类命令 (120-129) ====================
 	DNSResolve CommandType = 120 // DNS 解析请求（通过隧道转发给 targetClient）
+	DNSQuery   CommandType = 121 // DNS 原始报文查询（通过控制通道，支持完整DNS报文）
 )
 
 // InitPacket 初始化数据包
@@ -266,8 +267,8 @@ type HandshakeResponse struct {
 	SecretKey    string `json:"secret_key,omitempty"`    // 分配的SecretKey（首次握手，仅返回一次）
 	ConnectionID string `json:"connection_id,omitempty"` // 服务端分配的ConnectionID（HTTP长轮询专用）
 	// 挑战-响应认证（V3协议）
-	Challenge    string `json:"challenge,omitempty"`      // 服务端发送的随机挑战
-	NeedResponse bool   `json:"need_response,omitempty"`  // 是否需要客户端发送挑战响应
+	Challenge    string `json:"challenge,omitempty"`     // 服务端发送的随机挑战
+	NeedResponse bool   `json:"need_response,omitempty"` // 是否需要客户端发送挑战响应
 }
 
 // TunnelOpenRequest 隧道打开请求（映射连接认证）
@@ -477,11 +478,11 @@ type HTTPDomainListResponse struct {
 
 // TrafficReportRequest 流量上报请求（客户端 -> 服务器）
 type TrafficReportRequest struct {
-	MappingID     string `json:"mapping_id"`      // 映射ID
-	BytesSent     int64  `json:"bytes_sent"`      // 本次上报周期发送的字节数
-	BytesReceived int64  `json:"bytes_received"`  // 本次上报周期接收的字节数
-	Connections   int64  `json:"connections"`     // 当前活跃连接数
-	Timestamp     int64  `json:"timestamp"`       // 上报时间戳（Unix毫秒）
+	MappingID     string `json:"mapping_id"`     // 映射ID
+	BytesSent     int64  `json:"bytes_sent"`     // 本次上报周期发送的字节数
+	BytesReceived int64  `json:"bytes_received"` // 本次上报周期接收的字节数
+	Connections   int64  `json:"connections"`    // 当前活跃连接数
+	Timestamp     int64  `json:"timestamp"`      // 上报时间戳（Unix毫秒）
 }
 
 // TrafficReportResponse 流量上报响应
@@ -508,4 +509,21 @@ type DNSResolveResponse struct {
 	IPs     []string `json:"ips"`             // 解析得到的 IP 地址列表
 	TTL     int      `json:"ttl"`             // TTL（秒）
 	Error   string   `json:"error,omitempty"` // 错误信息
+}
+
+// DNSQueryRequest DNS 原始报文查询请求
+// 通过控制通道发送，支持完整的DNS报文转发
+type DNSQueryRequest struct {
+	QueryID        string `json:"query_id"`         // 查询ID（用于匹配响应）
+	TargetClientID int64  `json:"target_client_id"` // 目标客户端ID
+	DNSServer      string `json:"dns_server"`       // DNS服务器地址（如 "119.29.29.29:53"）
+	RawQuery       []byte `json:"raw_query"`        // 原始DNS查询报文
+}
+
+// DNSQueryResponse DNS 原始报文查询响应
+type DNSQueryResponse struct {
+	QueryID   string `json:"query_id"`        // 查询ID
+	Success   bool   `json:"success"`         // 是否成功
+	RawAnswer []byte `json:"raw_answer"`      // 原始DNS响应报文
+	Error     string `json:"error,omitempty"` // 错误信息
 }

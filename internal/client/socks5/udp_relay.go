@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	udpRelayMaxPacketSize = 65535
-	udpSessionIdleTimeout = 60 * time.Second
+	udpRelayMaxPacketSize  = 65535
+	udpSessionIdleTimeout  = 60 * time.Second
 	maxUDPSessionsPerRelay = 128
 )
 
@@ -28,6 +28,16 @@ type UDPTunnelCreator interface {
 		targetPort int,
 		secretKey string,
 	) (UDPTunnelConn, error)
+}
+
+// DNSQueryHandler DNS查询处理接口
+// 通过控制通道发送DNS查询，避免UDP隧道的不稳定性
+type DNSQueryHandler interface {
+	// QueryDNS 发送DNS查询并返回响应
+	// dnsServer: DNS服务器地址（如 "119.29.29.29:53"）
+	// rawQuery: 原始DNS查询报文
+	// 返回: 原始DNS响应报文
+	QueryDNS(targetClientID int64, dnsServer string, rawQuery []byte) ([]byte, error)
 }
 
 type UDPTunnelConn interface {
@@ -50,6 +60,7 @@ type UDPRelay struct {
 	tcpConn       net.Conn
 	udpConn       *net.UDPConn
 	tunnelCreator UDPTunnelCreator
+	dnsHandler    DNSQueryHandler // DNS查询处理器（通过控制通道）
 
 	clientAddr   *net.UDPAddr
 	clientAddrMu sync.RWMutex
@@ -113,6 +124,11 @@ func NewUDPRelay(
 
 func (r *UDPRelay) GetBindAddr() *net.UDPAddr {
 	return r.udpConn.LocalAddr().(*net.UDPAddr)
+}
+
+// SetDNSHandler 设置DNS查询处理器
+func (r *UDPRelay) SetDNSHandler(handler DNSQueryHandler) {
+	r.dnsHandler = handler
 }
 
 func (r *UDPRelay) watchTCPConnection() {
@@ -180,6 +196,12 @@ func (r *UDPRelay) handlePacket(data []byte) {
 		return
 	}
 
+	// 检测DNS请求（端口53），通过控制通道处理
+	if dstPort == 53 && r.dnsHandler != nil {
+		r.handleDNSQuery(dstHost, dstPort, payload)
+		return
+	}
+
 	session, err := r.getOrCreateSession(dstHost, dstPort)
 	if err != nil {
 		corelog.Warnf("UDPRelay: failed to create session for %s:%d: %v", dstHost, dstPort, err)
@@ -193,6 +215,34 @@ func (r *UDPRelay) handlePacket(data []byte) {
 	if err != nil {
 		corelog.Warnf("UDPRelay: failed to send to tunnel: %v", err)
 		r.removeSession(session.dstKey)
+	}
+}
+
+// handleDNSQuery 通过控制通道处理DNS查询
+func (r *UDPRelay) handleDNSQuery(dstHost string, dstPort int, payload []byte) {
+	dnsServer := fmt.Sprintf("%s:%d", dstHost, dstPort)
+
+	// 通过控制通道发送DNS查询
+	response, err := r.dnsHandler.QueryDNS(r.config.TargetClientID, dnsServer, payload)
+	if err != nil {
+		corelog.Warnf("UDPRelay: DNS query failed for %s: %v", dnsServer, err)
+		return
+	}
+
+	// 构造UDP响应包
+	packet := r.buildUDPHeader(dstHost, dstPort, response)
+
+	// 发送给客户端
+	r.clientAddrMu.RLock()
+	clientAddr := r.clientAddr
+	r.clientAddrMu.RUnlock()
+
+	if clientAddr != nil {
+		if _, err := r.udpConn.WriteToUDP(packet, clientAddr); err != nil {
+			corelog.Warnf("UDPRelay: failed to send DNS response to client: %v", err)
+		} else {
+			corelog.Debugf("UDPRelay: DNS query via control channel success, server=%s, responseLen=%d", dnsServer, len(response))
+		}
 	}
 }
 

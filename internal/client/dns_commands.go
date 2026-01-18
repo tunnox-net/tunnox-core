@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/google/uuid"
+
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/packet"
 )
@@ -70,4 +72,71 @@ func (c *TunnoxClient) ResolveDNSSimple(domain string, targetClientID int64) (st
 	}
 
 	return resp.IPs[0], ""
+}
+
+// QueryDNS 通过控制通道发送原始 DNS 查询
+// 实现 socks5.DNSQueryHandler 接口
+// targetClientID: 目标客户端 ID（执行 DNS 查询的客户端）
+// dnsServer: DNS 服务器地址（如 "119.29.29.29:53"）
+// rawQuery: 原始 DNS 查询报文
+// 返回: 原始 DNS 响应报文
+func (c *TunnoxClient) QueryDNS(targetClientID int64, dnsServer string, rawQuery []byte) ([]byte, error) {
+	if !c.IsConnected() {
+		return nil, &dnsError{msg: "not connected to server"}
+	}
+
+	// 生成唯一查询ID
+	queryID := uuid.New().String()
+
+	req := &packet.DNSQueryRequest{
+		QueryID:        queryID,
+		TargetClientID: targetClientID,
+		DNSServer:      dnsServer,
+		RawQuery:       rawQuery,
+	}
+
+	// 创建带超时的 context (DNS 查询应该快速完成)
+	ctx, cancel := context.WithTimeout(c.Ctx(), 5*time.Second)
+	defer cancel()
+
+	corelog.Debugf("Client: sending DNS query via control channel, queryID=%s, target=%d, server=%s, queryLen=%d",
+		queryID, targetClientID, dnsServer, len(rawQuery))
+
+	// 发送命令并等待响应
+	cmdResp, err := c.sendCommandAndWaitResponseWithContext(ctx, &CommandRequest{
+		CommandType: packet.DNSQuery,
+		RequestBody: req,
+		EnableTrace: false,
+	})
+
+	if err != nil {
+		corelog.Warnf("Client: DNS query failed, queryID=%s: %v", queryID, err)
+		return nil, &dnsError{msg: err.Error()}
+	}
+
+	// 解析响应
+	var resp packet.DNSQueryResponse
+	if err := json.Unmarshal([]byte(cmdResp.Data), &resp); err != nil {
+		corelog.Errorf("Client: failed to parse DNS query response: %v", err)
+		return nil, &dnsError{msg: "failed to parse DNS response"}
+	}
+
+	if !resp.Success {
+		corelog.Warnf("Client: DNS query returned error, queryID=%s: %s", queryID, resp.Error)
+		return nil, &dnsError{msg: resp.Error}
+	}
+
+	corelog.Debugf("Client: DNS query success via control channel, queryID=%s, responseLen=%d",
+		queryID, len(resp.RawAnswer))
+
+	return resp.RawAnswer, nil
+}
+
+// dnsError DNS 查询错误
+type dnsError struct {
+	msg string
+}
+
+func (e *dnsError) Error() string {
+	return e.msg
 }

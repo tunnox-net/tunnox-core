@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"net"
+	"time"
 
 	"tunnox-core/internal/client/notify"
 	corelog "tunnox-core/internal/core/log"
@@ -44,6 +45,10 @@ func (c *TunnoxClient) handleCommand(pkt *packet.TransferPacket) {
 	case packet.DNSResolve:
 		// DNS 解析请求（作为 targetClient）
 		c.handleDNSResolveRequest(pkt.CommandPacket)
+
+	case packet.DNSQuery:
+		// DNS 原始报文查询请求（作为 targetClient，执行实际的 DNS 查询）
+		c.handleDNSQueryRequest(pkt.CommandPacket)
 	}
 }
 
@@ -251,6 +256,91 @@ func (c *TunnoxClient) RemoveNotificationHandler(handler notify.Handler) {
 // SetDefaultNotificationHandler 设置默认通知处理器（记录日志）
 func (c *TunnoxClient) SetDefaultNotificationHandler() {
 	c.AddNotificationHandler(&notify.DefaultHandler{})
+}
+
+// handleDNSQueryRequest 处理 DNS 原始报文查询请求
+// 当本客户端作为 targetClient 时，接收原始 DNS 查询报文并转发给指定的 DNS 服务器
+func (c *TunnoxClient) handleDNSQueryRequest(cmd *packet.CommandPacket) {
+	var req packet.DNSQueryRequest
+	if err := json.Unmarshal([]byte(cmd.CommandBody), &req); err != nil {
+		corelog.Errorf("Client: failed to parse DNS query request: %v", err)
+		c.sendDNSQueryResponse(cmd.CommandId, req.QueryID, nil, err.Error())
+		return
+	}
+
+	corelog.Debugf("Client: handling DNS query request, queryID=%s, server=%s, queryLen=%d",
+		req.QueryID, req.DNSServer, len(req.RawQuery))
+
+	// 向指定的 DNS 服务器发送查询
+	conn, err := net.DialTimeout("udp", req.DNSServer, 3*time.Second)
+	if err != nil {
+		corelog.Warnf("Client: failed to connect to DNS server %s: %v", req.DNSServer, err)
+		c.sendDNSQueryResponse(cmd.CommandId, req.QueryID, nil, err.Error())
+		return
+	}
+	defer conn.Close()
+
+	// 设置读写超时
+	conn.SetDeadline(time.Now().Add(3 * time.Second))
+
+	// 发送 DNS 查询
+	if _, err := conn.Write(req.RawQuery); err != nil {
+		corelog.Warnf("Client: failed to send DNS query to %s: %v", req.DNSServer, err)
+		c.sendDNSQueryResponse(cmd.CommandId, req.QueryID, nil, err.Error())
+		return
+	}
+
+	// 读取响应
+	buf := make([]byte, 4096)
+	n, err := conn.Read(buf)
+	if err != nil {
+		corelog.Warnf("Client: failed to read DNS response from %s: %v", req.DNSServer, err)
+		c.sendDNSQueryResponse(cmd.CommandId, req.QueryID, nil, err.Error())
+		return
+	}
+
+	corelog.Debugf("Client: DNS query success, queryID=%s, responseLen=%d", req.QueryID, n)
+	c.sendDNSQueryResponse(cmd.CommandId, req.QueryID, buf[:n], "")
+}
+
+// sendDNSQueryResponse 发送 DNS 原始报文查询响应
+func (c *TunnoxClient) sendDNSQueryResponse(commandID, queryID string, rawAnswer []byte, errMsg string) {
+	resp := &packet.DNSQueryResponse{
+		QueryID:   queryID,
+		Success:   errMsg == "",
+		RawAnswer: rawAnswer,
+		Error:     errMsg,
+	}
+
+	respBody, err := json.Marshal(resp)
+	if err != nil {
+		corelog.Errorf("Client: failed to marshal DNS query response: %v", err)
+		return
+	}
+
+	respPkt := &packet.TransferPacket{
+		PacketType: packet.CommandResp,
+		CommandPacket: &packet.CommandPacket{
+			CommandType: packet.DNSQuery,
+			CommandId:   commandID,
+			CommandBody: string(respBody),
+		},
+	}
+
+	c.mu.RLock()
+	controlStream := c.controlStream
+	c.mu.RUnlock()
+
+	if controlStream == nil {
+		corelog.Errorf("Client: control stream is nil, cannot send DNS query response")
+		return
+	}
+
+	if _, err := controlStream.WritePacket(respPkt, true, 0); err != nil {
+		corelog.Errorf("Client: failed to send DNS query response: %v", err)
+	} else {
+		corelog.Debugf("Client: sent DNS query response for %s", queryID)
+	}
 }
 
 // handleDNSResolveRequest 处理 DNS 解析请求

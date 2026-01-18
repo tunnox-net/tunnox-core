@@ -161,6 +161,11 @@ func (c *UDPRelayCreatorImpl) CreateUDPRelay(
 		return nil, err
 	}
 
+	// 设置 DNS 查询处理器，将 DNS 请求通过控制通道转发（而非不稳定的 UDP 隧道）
+	// TunnoxClient 实现了 socks5.DNSQueryHandler 接口
+	relay.SetDNSHandler(c.client)
+	corelog.Infof("UDPRelayCreator: DNS handler set for mapping %s (via control channel)", mappingID)
+
 	return relay.GetBindAddr(), nil
 }
 
