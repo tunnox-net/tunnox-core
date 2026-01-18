@@ -184,6 +184,8 @@ func (c *TunnoxClient) sendHandshakeOnStream(stream stream.PackageStreamer, conn
 // sendHandshakeRequest 发送握手请求并等待响应
 func (c *TunnoxClient) sendHandshakeRequest(stream stream.PackageStreamer, req *packet.HandshakeRequest) (*packet.HandshakeResponse, error) {
 	reqData, _ := json.Marshal(req)
+	// 调试：打印发送的 JSON
+	corelog.Infof("Client: sendHandshakeRequest sending JSON: %s", string(reqData))
 	handshakePkt := &packet.TransferPacket{
 		PacketType: packet.Handshake,
 		Payload:    reqData,
