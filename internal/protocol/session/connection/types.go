@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"tunnox-core/internal/core/types"
 	"tunnox-core/internal/protocol/session/buffer"
 	"tunnox-core/internal/stream"
 )
@@ -352,9 +351,6 @@ type TunnelConnection struct {
 	Protocol      string   // 协议类型
 	CreatedAt     time.Time
 	LastActiveAt  time.Time
-
-	// 底层连接（用于兼容）
-	baseConn *types.Connection
 
 	// Phase 2: 隧道迁移支持
 	sendBuffer    *TunnelSendBuffer    // 发送缓冲区（支持重传）

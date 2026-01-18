@@ -39,9 +39,6 @@ type ManagementModule struct {
 	// pprof 自动抓取器
 	pprofCapture *PProfCapture
 
-	// 认证中间件
-	authMiddleware mux.MiddlewareFunc
-
 	// 配额检查器（云服务模式启用）
 	quotaChecker quota.QuotaChecker
 }

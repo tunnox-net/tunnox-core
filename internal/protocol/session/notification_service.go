@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
 	"tunnox-core/internal/command"
@@ -21,7 +20,6 @@ type NotificationService struct {
 	*dispose.ServiceBase
 
 	registry *ClientRegistry // 客户端注册表
-	mu       sync.RWMutex
 }
 
 // NewNotificationService 创建通知服务

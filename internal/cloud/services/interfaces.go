@@ -36,15 +36,6 @@ type ClientKicker interface {
 	KickClient(clientID int64, reason, message string) error
 }
 
-// anonymousNotifierAdapter 用于适配 services.ClientNotifier 到 anonymous.Notifier
-type anonymousNotifierAdapter struct {
-	notifier ClientNotifier
-}
-
-func (a *anonymousNotifierAdapter) NotifyClientUpdate(clientID int64) {
-	a.notifier.NotifyClientUpdate(clientID)
-}
-
 // UserService 用户管理服务
 type UserService interface {
 	CreateUser(username, email string, platformUserID int64) (*models.User, error) // platformUserID: Platform 用户 ID（BIGINT，用于双向关联）

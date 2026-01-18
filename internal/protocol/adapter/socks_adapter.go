@@ -57,7 +57,6 @@ type SocksAdapter struct {
 	authEnabled bool
 	ctx         context.Context
 	cancel      context.CancelFunc
-	connMutex   sync.RWMutex
 }
 
 // SocksConfig SOCKS5 配置

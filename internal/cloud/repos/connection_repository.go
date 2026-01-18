@@ -33,11 +33,6 @@ func NewConnectionRepo(parentCtx context.Context, repo *Repository) *ConnectionR
 	return cr
 }
 
-// getEntityID 获取连接ID
-func (r *ConnectionRepo) getEntityID(connInfo *models.ConnectionInfo) (string, error) {
-	return connInfo.ConnID, nil
-}
-
 func (cr *ConnectionRepo) onClose() error {
 	if cr.GenericRepositoryImpl != nil {
 		return cr.GenericRepositoryImpl.Repository.Dispose.Close()

@@ -1,16 +1,12 @@
 package mapping
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"time"
 
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
 	"tunnox-core/internal/stream/transform"
-
-	"golang.org/x/time/rate"
 )
 
 // determineCloseReason 根据错误类型判断关闭原因
@@ -84,20 +80,6 @@ func (h *BaseMappingHandler) checkConnectionQuota() error {
 	return nil
 }
 
-// wrapConnectionForControl 包装连接以进行速率限制和流量统计
-func (h *BaseMappingHandler) wrapConnectionForControl(
-	conn io.ReadWriteCloser,
-	direction string,
-) io.ReadWriteCloser {
-	return &controlledConn{
-		ReadWriteCloser: conn,
-		rateLimiter:     h.rateLimiter,
-		stats:           h.trafficStats,
-		direction:       direction,
-		ctx:             h.Ctx(), // 使用 handler 的 context，确保能接收退出信号
-	}
-}
-
 // createTransformer 创建流转换器
 // 注意：压缩和加密已移至StreamProcessor，Transform只处理限速
 func (h *BaseMappingHandler) createTransformer() error {
@@ -153,59 +135,4 @@ func (h *BaseMappingHandler) reportStats() {
 				h.config.MappingID, bytesSent, bytesReceived)
 		}
 	}
-}
-
-// controlledConn 包装的连接（带速率限制和流量统计）
-type controlledConn struct {
-	io.ReadWriteCloser
-	rateLimiter *rate.Limiter
-	stats       *TrafficStats
-	direction   string          // "local" or "tunnel"
-	ctx         context.Context // context 用于接收退出信号
-}
-
-func (c *controlledConn) Read(p []byte) (n int, err error) {
-	// 速率限制（如果启用）
-	if c.rateLimiter != nil {
-		if err := c.rateLimiter.WaitN(c.ctx, len(p)); err != nil {
-			return 0, err
-		}
-	}
-
-	// 读取数据
-	n, err = c.ReadWriteCloser.Read(p)
-
-	// 流量统计
-	if n > 0 {
-		if c.direction == "tunnel" {
-			c.stats.BytesReceived.Add(int64(n))
-		} else {
-			c.stats.BytesSent.Add(int64(n))
-		}
-	}
-
-	return n, err
-}
-
-func (c *controlledConn) Write(p []byte) (n int, err error) {
-	// 速率限制（如果启用）
-	if c.rateLimiter != nil {
-		if err := c.rateLimiter.WaitN(c.ctx, len(p)); err != nil {
-			return 0, err
-		}
-	}
-
-	// 写入数据
-	n, err = c.ReadWriteCloser.Write(p)
-
-	// 流量统计
-	if n > 0 {
-		if c.direction == "tunnel" {
-			c.stats.BytesSent.Add(int64(n))
-		} else {
-			c.stats.BytesReceived.Add(int64(n))
-		}
-	}
-
-	return n, err
 }

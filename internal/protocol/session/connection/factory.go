@@ -26,27 +26,6 @@ func CreateTunnelConnection(
 	return NewTCPTunnelConnection(connID, netConn, clientID, mappingID, tunnelID, stream)
 }
 
-// extractProtocol 从 net.Conn 提取协议类型
-func extractProtocol(netConn net.Conn) string {
-	if netConn != nil {
-		addr := netConn.RemoteAddr()
-		if addr != nil {
-			network := addr.Network()
-			switch network {
-			case "tcp", "tcp4", "tcp6":
-				return "tcp"
-			case "kcp":
-				return "kcp"
-			case "ws", "wss":
-				return "websocket"
-			case "quic":
-				return "quic"
-			}
-		}
-	}
-	return "tcp"
-}
-
 // extractClientID 从 stream 或 net.Conn 提取 clientID
 func extractClientID(stream stream.PackageStreamer, netConn net.Conn) int64 {
 	if stream != nil {

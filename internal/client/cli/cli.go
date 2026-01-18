@@ -197,18 +197,6 @@ func (c *CLI) moveCursorToInputArea() {
 	fmt.Printf("\033[%d;1H", c.headerHeight+1)
 }
 
-// redrawHeader 重绘头部（在需要时调用）
-func (c *CLI) redrawHeader() {
-	// 保存当前光标位置
-	fmt.Print("\033[s")
-
-	// 绘制头部
-	c.drawHeader()
-
-	// 恢复光标位置
-	fmt.Print("\033[u")
-}
-
 // executeCommand 执行命令
 func (c *CLI) executeCommand(commandLine string) {
 	// 解析命令

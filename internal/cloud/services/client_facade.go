@@ -8,10 +8,6 @@ import (
 	"tunnox-core/internal/core/idgen"
 )
 
-// clientService 客户端服务实现
-// 向后兼容：别名到 client.Service
-type clientService = client.Service
-
 func NewClientService(
 	configRepo repos.IClientConfigRepository,
 	stateRepo repos.IClientStateRepository,

@@ -101,7 +101,6 @@ func (t *TransientProvider) Close() error {
 type Container struct {
 	services map[string]ServiceProvider
 	mu       sync.RWMutex
-	ctx      context.Context
 	dispose.Dispose
 }
 

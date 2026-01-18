@@ -135,9 +135,6 @@ func (rg *DefaultGenerator) GenerateID(prefix string) (string, error) {
 	return prefix + "_" + randomPart, nil
 }
 
-// 全局默认随机数生成器实例
-var defaultGenerator = NewDefaultGenerator()
-
 // Bytes 生成指定长度的随机字节
 func Bytes(length int) ([]byte, error) {
 	bytes := make([]byte, length)

@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"time"
 
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/cloud/repos"
@@ -86,15 +85,4 @@ func (a *portMappingServiceAdapter) UpdatePortMappingStats(mappingID string, sta
 		return a.svc.UpdatePortMappingStats(mappingID, trafficStats)
 	}
 	return nil
-}
-
-// 为了避免循环导入，定义一个本地的 TrafficStats 包装
-type localTrafficStats struct {
-	BytesSent     int64
-	BytesReceived int64
-	LastUpdated   time.Time
-}
-
-func (s *localTrafficStats) GetBytesSent() int64 {
-	return s.BytesSent
 }

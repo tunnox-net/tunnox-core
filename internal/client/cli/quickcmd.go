@@ -23,7 +23,6 @@ type QuickCommandRunner struct {
 	config         *client.ClientConfig
 	configFilePath string // 配置文件路径（用于保存凭据）
 	output         *Output
-	interactive    bool
 }
 
 // NewQuickCommandRunner 创建快捷命令执行器

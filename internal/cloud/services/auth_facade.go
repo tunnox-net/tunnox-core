@@ -7,10 +7,6 @@ import (
 	"tunnox-core/internal/cloud/services/auth"
 )
 
-// authService 认证服务实现
-// 向后兼容：别名到 auth.Service
-type authService = auth.Service
-
 // JWTTokenInfo JWT令牌信息
 // 向后兼容：别名到 auth.JWTTokenInfo
 type JWTTokenInfo = auth.JWTTokenInfo

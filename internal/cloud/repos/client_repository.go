@@ -1,15 +1,12 @@
 package repos
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
 	constants2 "tunnox-core/internal/cloud/constants"
 	"tunnox-core/internal/cloud/models"
 	"tunnox-core/internal/constants"
-	coreerrors "tunnox-core/internal/core/errors"
-	"tunnox-core/internal/core/storage"
 )
 
 // 编译时接口断言，确保 ClientRepository 实现了 IClientRepository 接口
@@ -106,26 +103,6 @@ func (r *ClientRepository) ListAllClients() ([]*models.Client, error) {
 // AddClientToList 添加客户端到全局客户端列表
 func (r *ClientRepository) AddClientToList(client *models.Client) error {
 	return r.AddToList(client, constants.KeyPrefixClientList)
-}
-
-// saveUserClients 保存用户客户端列表
-func (r *ClientRepository) saveUserClients(userID string, clients []*models.Client) error {
-	key := fmt.Sprintf("%s:%s", constants.KeyPrefixUserClients, userID)
-	var data []interface{}
-
-	for _, client := range clients {
-		clientData, err := json.Marshal(client)
-		if err != nil {
-			return err
-		}
-		data = append(data, string(clientData))
-	}
-
-	listStore, ok := r.storage.(storage.ListStore)
-	if !ok {
-		return coreerrors.New(coreerrors.CodeNotConfigured, "storage does not support list operations")
-	}
-	return listStore.SetList(key, data, constants2.DefaultUserDataTTL)
 }
 
 // TouchClient 刷新客户端的LastSeen和延长过期时间

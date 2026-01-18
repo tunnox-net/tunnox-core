@@ -441,21 +441,6 @@ func startCancellationWatcher(tunnelCtx context.Context, logPrefix, tunnelID str
 	}()
 }
 
-// isDNSServer 检查是否是常见的 DNS 服务器
-func isDNSServer(host string) bool {
-	dnsServers := map[string]bool{
-		"8.8.8.8":         true, // Google DNS
-		"8.8.4.4":         true, // Google DNS
-		"114.114.114.114": true, // 114 DNS
-		"114.114.115.115": true, // 114 DNS
-		"223.5.5.5":       true, // 阿里 DNS
-		"223.6.6.6":       true, // 阿里 DNS
-		"119.29.29.29":    true, // 腾讯 DNS
-		"1.1.1.1":         true, // Cloudflare DNS
-	}
-	return dnsServers[host]
-}
-
 // handleLocalDNSProxy 本地 DNS 代理
 // 接收 DNS 查询，使用本地系统 DNS 解析，返回结果
 // 这样可以让 CDN 根据服务器 IP 返回最优节点
@@ -701,16 +686,16 @@ func buildDNSResponse(query []byte, ips []net.IP, qtype uint16) ([]byte, error) 
 		response = append(response, 0xc0, 0x0c)
 
 		if qtype == 1 && ip.To4() != nil { // A 记录
-			response = append(response, 0x00, 0x01) // TYPE = A
-			response = append(response, 0x00, 0x01) // CLASS = IN
+			response = append(response, 0x00, 0x01)             // TYPE = A
+			response = append(response, 0x00, 0x01)             // CLASS = IN
 			response = append(response, 0x00, 0x00, 0x01, 0x2c) // TTL = 300
-			response = append(response, 0x00, 0x04) // RDLENGTH = 4
+			response = append(response, 0x00, 0x04)             // RDLENGTH = 4
 			response = append(response, ip.To4()...)
 		} else if qtype == 28 && ip.To4() == nil { // AAAA 记录
-			response = append(response, 0x00, 0x1c) // TYPE = AAAA
-			response = append(response, 0x00, 0x01) // CLASS = IN
+			response = append(response, 0x00, 0x1c)             // TYPE = AAAA
+			response = append(response, 0x00, 0x01)             // CLASS = IN
 			response = append(response, 0x00, 0x00, 0x01, 0x2c) // TTL = 300
-			response = append(response, 0x00, 0x10) // RDLENGTH = 16
+			response = append(response, 0x00, 0x10)             // RDLENGTH = 16
 			response = append(response, ip.To16()...)
 		}
 	}

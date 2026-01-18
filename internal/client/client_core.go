@@ -68,9 +68,6 @@ type TunnoxClient struct {
 	// 隧道连接池（用于复用隧道连接，提高并发性能）
 	tunnelPool *TunnelPool
 
-	// 配置请求控制（防止重复请求）
-	configRequesting atomic.Bool
-
 	// readLoop 控制（防止重复启动）
 	readLoopRunning atomic.Bool
 

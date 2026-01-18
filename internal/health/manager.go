@@ -182,13 +182,3 @@ func (m *HealthManager) GetHealthInfo() *HealthInfo {
 		AcceptingNewConns: m.status == HealthStatusHealthy,
 	}
 }
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Dispose 集成
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-func (m *HealthManager) onClose() error {
-	// 标记为不健康
-	m.SetStatus(HealthStatusUnhealthy)
-	return nil
-}
