@@ -18,6 +18,8 @@ const (
 	FrameTypeAck          byte = 0x04 // 确认帧
 	FrameTypeHTTPProxy    byte = 0x05 // HTTP 代理请求
 	FrameTypeHTTPResponse byte = 0x06 // HTTP 代理响应
+	FrameTypeDNSQuery     byte = 0x07 // DNS 查询请求
+	FrameTypeDNSResponse  byte = 0x08 // DNS 查询响应
 )
 
 // 帧头大小常量

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	coreerrors "tunnox-core/internal/core/errors"
 	corelog "tunnox-core/internal/core/log"
+	"tunnox-core/internal/packet"
 	"tunnox-core/internal/protocol/httptypes"
 )
 
@@ -118,6 +120,8 @@ func (l *CrossNodeListener) handleConnection(ctx context.Context, conn net.Conn)
 		l.handleTargetReady(ctx, tcpConn, tunnelIDStr, data)
 	case FrameTypeHTTPProxy:
 		l.handleHTTPProxy(ctx, tcpConn, data)
+	case FrameTypeDNSQuery:
+		l.handleDNSQuery(ctx, tcpConn, data)
 	default:
 		corelog.Warnf("CrossNodeListener: unknown frame type %d", frameType)
 	}
@@ -262,6 +266,113 @@ func (l *CrossNodeListener) sendHTTPProxyError(conn *net.TCPConn, requestID stri
 	var emptyTunnelID [16]byte
 	if err := WriteFrame(conn, emptyTunnelID, FrameTypeHTTPResponse, respData); err != nil {
 		corelog.Errorf("CrossNodeListener: failed to send error response: %v", err)
+	}
+}
+
+// handleDNSQuery 处理跨节点 DNS 查询请求
+func (l *CrossNodeListener) handleDNSQuery(ctx context.Context, conn *net.TCPConn, data []byte) {
+	var dnsMsg DNSQueryMessage
+	if err := json.Unmarshal(data, &dnsMsg); err != nil {
+		corelog.Errorf("CrossNodeListener: failed to unmarshal DNS query message: %v", err)
+		l.sendDNSError(conn, "", "invalid request format")
+		return
+	}
+
+	corelog.Infof("CrossNodeListener: handling DNS query for client %d, commandID=%s", dnsMsg.TargetClientID, dnsMsg.CommandID)
+
+	// 查找目标客户端
+	targetConn := l.sessionMgr.GetControlConnectionByClientID(dnsMsg.TargetClientID)
+	if targetConn == nil || targetConn.Stream == nil {
+		corelog.Errorf("CrossNodeListener: target client %d not found", dnsMsg.TargetClientID)
+		l.sendDNSError(conn, dnsMsg.CommandID, "target client not connected")
+		return
+	}
+
+	// 解析原始 DNS 请求
+	var req packet.DNSQueryRequest
+	if err := json.Unmarshal(dnsMsg.Request, &req); err != nil {
+		corelog.Errorf("CrossNodeListener: failed to parse DNS request: %v", err)
+		l.sendDNSError(conn, dnsMsg.CommandID, "invalid DNS request")
+		return
+	}
+
+	// 注册等待响应
+	queryMgr := getDNSQueryManager()
+	waitCh := queryMgr.RegisterRequest(dnsMsg.CommandID)
+	defer queryMgr.UnregisterRequest(dnsMsg.CommandID)
+
+	// 转发到目标客户端
+	forwardPkt := &packet.TransferPacket{
+		PacketType: packet.JsonCommand,
+		CommandPacket: &packet.CommandPacket{
+			CommandType: packet.DNSQuery,
+			CommandId:   dnsMsg.CommandID,
+			CommandBody: string(dnsMsg.Request),
+		},
+	}
+
+	if _, err := targetConn.Stream.WritePacket(forwardPkt, true, 0); err != nil {
+		corelog.Errorf("CrossNodeListener: failed to forward DNS request to client: %v", err)
+		l.sendDNSError(conn, dnsMsg.CommandID, "failed to forward request")
+		return
+	}
+
+	// 等待响应（5 秒超时）
+	resp, err := queryMgr.WaitForResponse(ctx, dnsMsg.CommandID, waitCh, 5*time.Second)
+	if err != nil {
+		corelog.Errorf("CrossNodeListener: DNS query timeout: %v", err)
+		l.sendDNSError(conn, dnsMsg.CommandID, "DNS query timeout")
+		return
+	}
+
+	l.sendDNSResponse(conn, dnsMsg.CommandID, resp)
+}
+
+// sendDNSError 发送 DNS 错误响应
+func (l *CrossNodeListener) sendDNSError(conn *net.TCPConn, commandID string, errMsg string) {
+	respMsg := &DNSQueryResponseMessage{
+		CommandID: commandID,
+		Error:     errMsg,
+	}
+
+	respData, err := json.Marshal(respMsg)
+	if err != nil {
+		corelog.Errorf("CrossNodeListener: failed to marshal DNS error response: %v", err)
+		return
+	}
+
+	var emptyTunnelID [16]byte
+	if err := WriteFrame(conn, emptyTunnelID, FrameTypeDNSResponse, respData); err != nil {
+		corelog.Errorf("CrossNodeListener: failed to send DNS error response: %v", err)
+	}
+}
+
+// sendDNSResponse 发送 DNS 响应
+func (l *CrossNodeListener) sendDNSResponse(conn *net.TCPConn, commandID string, resp *packet.DNSQueryResponse) {
+	respBody, err := json.Marshal(resp)
+	if err != nil {
+		corelog.Errorf("CrossNodeListener: failed to marshal DNS response: %v", err)
+		l.sendDNSError(conn, commandID, "failed to marshal response")
+		return
+	}
+
+	respMsg := &DNSQueryResponseMessage{
+		CommandID: commandID,
+		Response:  respBody,
+	}
+
+	respData, err := json.Marshal(respMsg)
+	if err != nil {
+		corelog.Errorf("CrossNodeListener: failed to marshal DNS response message: %v", err)
+		l.sendDNSError(conn, commandID, "failed to marshal response message")
+		return
+	}
+
+	var emptyTunnelID [16]byte
+	if err := WriteFrame(conn, emptyTunnelID, FrameTypeDNSResponse, respData); err != nil {
+		corelog.Errorf("CrossNodeListener: failed to send DNS response: %v", err)
+	} else {
+		corelog.Infof("CrossNodeListener: sent DNS response for commandID=%s", commandID)
 	}
 }
 

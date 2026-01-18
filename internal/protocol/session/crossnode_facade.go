@@ -57,6 +57,8 @@ const (
 	FrameTypeAck          = crossnode.FrameTypeAck
 	FrameTypeHTTPProxy    = crossnode.FrameTypeHTTPProxy
 	FrameTypeHTTPResponse = crossnode.FrameTypeHTTPResponse
+	FrameTypeDNSQuery     = crossnode.FrameTypeDNSQuery
+	FrameTypeDNSResponse  = crossnode.FrameTypeDNSResponse
 
 	// 帧大小常量
 	FrameHeaderSize = crossnode.FrameHeaderSize

@@ -387,11 +387,12 @@ func (s *SessionManager) HandleDNSQueryRequest(connPacket *types.StreamPacket) e
 		}
 	}
 
-	// 3. 获取目标客户端的控制连接
+	// 3. 获取目标客户端的控制连接（先查本地，再查跨节点）
 	targetConn := s.GetControlConnectionByClientID(targetClientID)
 	if targetConn == nil || targetConn.Stream == nil {
-		corelog.Errorf("DNSQueryHandler: target client %d not connected", targetClientID)
-		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "target client not connected")
+		// 本地未找到，尝试跨节点转发
+		corelog.Debugf("DNSQueryHandler: target client %d not on local node, trying cross-node", targetClientID)
+		return s.handleDNSQueryCrossNode(connPacket, cmd, &req, targetClientID)
 	}
 
 	// 4. 注册等待响应
@@ -428,6 +429,115 @@ func (s *SessionManager) HandleDNSQueryRequest(connPacket *types.StreamPacket) e
 
 	// 7. 将响应发送回请求客户端
 	return s.sendDNSQueryResponse(connPacket, cmd.CommandId, resp)
+}
+
+// handleDNSQueryCrossNode 跨节点转发 DNS 查询
+func (s *SessionManager) handleDNSQueryCrossNode(connPacket *types.StreamPacket, cmd *packet.CommandPacket, req *packet.DNSQueryRequest, targetClientID int64) error {
+	// 1. 检查跨节点组件是否可用
+	if s.connStateStore == nil || s.crossNodePool == nil {
+		corelog.Errorf("DNSQueryHandler: cross-node components not available for client %d", targetClientID)
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "target client not connected")
+	}
+
+	// 2. 从 Redis 查找目标客户端所在节点
+	targetNodeID, _, err := s.connStateStore.FindClientNode(s.Ctx(), targetClientID)
+	if err != nil {
+		corelog.Errorf("DNSQueryHandler: failed to find node for client %d: %v", targetClientID, err)
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "target client not connected")
+	}
+
+	// 3. 如果目标节点是本节点但连接不存在，说明状态不一致
+	if targetNodeID == s.nodeID {
+		corelog.Errorf("DNSQueryHandler: client %d state inconsistent (on local node but not found)", targetClientID)
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "target client not connected (state inconsistent)")
+	}
+
+	corelog.Infof("DNSQueryHandler: forwarding DNS query to node %s for client %d", targetNodeID, targetClientID)
+
+	// 4. 获取跨节点连接
+	crossConn, err := s.crossNodePool.Get(s.Ctx(), targetNodeID)
+	if err != nil {
+		corelog.Errorf("DNSQueryHandler: failed to get cross-node connection to %s: %v", targetNodeID, err)
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "failed to connect to target node")
+	}
+	defer s.crossNodePool.Put(crossConn)
+
+	// 5. 构建跨节点 DNS 查询消息
+	dnsMsg := &DNSQueryMessage{
+		CommandID:      cmd.CommandId,
+		TargetClientID: targetClientID,
+		Request:        []byte(cmd.CommandBody),
+		SourceConnID:   connPacket.ConnectionID,
+		SourceNodeID:   s.nodeID,
+	}
+
+	msgBody, err := json.Marshal(dnsMsg)
+	if err != nil {
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "failed to marshal request")
+	}
+
+	// 6. 发送 DNS 查询请求帧
+	tcpConn := crossConn.GetTCPConn()
+	if tcpConn == nil {
+		crossConn.MarkBroken()
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "cross-node connection is nil")
+	}
+
+	var emptyTunnelID [16]byte
+	if err := WriteFrame(tcpConn, emptyTunnelID, FrameTypeDNSQuery, msgBody); err != nil {
+		crossConn.MarkBroken()
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "failed to send cross-node request")
+	}
+
+	// 7. 等待响应（5 秒超时）
+	tcpConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	defer tcpConn.SetReadDeadline(time.Time{})
+
+	_, frameType, respData, err := ReadFrame(tcpConn)
+	if err != nil {
+		crossConn.MarkBroken()
+		corelog.Errorf("DNSQueryHandler: failed to read cross-node response: %v", err)
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "DNS query timeout")
+	}
+
+	if frameType != FrameTypeDNSResponse {
+		crossConn.MarkBroken()
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "unexpected response type")
+	}
+
+	// 8. 解析响应并转发
+	var respMsg DNSQueryResponseMessage
+	if err := json.Unmarshal(respData, &respMsg); err != nil {
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "failed to parse response")
+	}
+
+	if respMsg.Error != "" {
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, respMsg.Error)
+	}
+
+	// 9. 解析原始 DNS 响应
+	var resp packet.DNSQueryResponse
+	if err := json.Unmarshal(respMsg.Response, &resp); err != nil {
+		return s.sendDNSQueryError(connPacket, cmd.CommandId, req.QueryID, "failed to parse DNS response")
+	}
+
+	return s.sendDNSQueryResponse(connPacket, cmd.CommandId, &resp)
+}
+
+// DNSQueryMessage 跨节点 DNS 查询消息
+type DNSQueryMessage struct {
+	CommandID      string `json:"command_id"`
+	TargetClientID int64  `json:"target_client_id"`
+	Request        []byte `json:"request"`
+	SourceConnID   string `json:"source_conn_id"`
+	SourceNodeID   string `json:"source_node_id"`
+}
+
+// DNSQueryResponseMessage 跨节点 DNS 查询响应消息
+type DNSQueryResponseMessage struct {
+	CommandID string `json:"command_id"`
+	Response  []byte `json:"response"`
+	Error     string `json:"error,omitempty"`
 }
 
 // HandleDNSQueryResponse 处理来自 targetClient 的 DNS 查询响应
