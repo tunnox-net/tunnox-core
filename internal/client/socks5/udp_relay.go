@@ -197,9 +197,13 @@ func (r *UDPRelay) handlePacket(data []byte) {
 	}
 
 	// 检测DNS请求（端口53），通过控制通道处理
-	if dstPort == 53 && r.dnsHandler != nil {
-		r.handleDNSQuery(dstHost, dstPort, payload)
-		return
+	if dstPort == 53 {
+		if r.dnsHandler != nil {
+			corelog.Infof("UDPRelay: DNS request detected, routing via control channel to %s:%d", dstHost, dstPort)
+			r.handleDNSQuery(dstHost, dstPort, payload)
+			return
+		}
+		corelog.Warnf("UDPRelay: DNS request to %s:%d but dnsHandler is nil, falling back to UDP tunnel", dstHost, dstPort)
 	}
 
 	session, err := r.getOrCreateSession(dstHost, dstPort)

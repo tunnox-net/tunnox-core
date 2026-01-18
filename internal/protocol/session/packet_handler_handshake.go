@@ -26,6 +26,10 @@ func (s *SessionManager) handleHandshake(connPacket *types.StreamPacket) error {
 		}
 	}
 
+	// 调试：记录收到的 ConnectionType
+	corelog.Infof("Handshake: received request - ClientID=%d, ConnectionType=%q, Version=%s, Protocol=%s",
+		req.ClientID, req.ConnectionType, req.Version, req.Protocol)
+
 	isControlConnection := req.ConnectionType != "tunnel"
 	if req.ConnectionType == "" {
 		isControlConnection = true

@@ -474,10 +474,26 @@ func (s *SessionManager) sendDNSQueryResponse(connPacket *types.StreamPacket, co
 		return coreerrors.New(coreerrors.CodeConnectionError, "source connection not found")
 	}
 
-	// 序列化响应
+	// 序列化 DNSQueryResponse
 	respBody, err := json.Marshal(resp)
 	if err != nil {
 		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal response")
+	}
+
+	// 构建响应数据（符合 ResponseManager 期望的格式）
+	// 格式: {"success": true, "command_id": "...", "data": "...DNSQueryResponse JSON..."}
+	responseData := map[string]interface{}{
+		"success":    resp.Success,
+		"command_id": commandID,
+		"data":       string(respBody), // DNSQueryResponse JSON 作为 data 字段
+	}
+	if resp.Error != "" {
+		responseData["error"] = resp.Error
+	}
+
+	responseBody, err := json.Marshal(responseData)
+	if err != nil {
+		return coreerrors.Wrap(err, coreerrors.CodeInternal, "failed to marshal response data")
 	}
 
 	// 构建响应包
@@ -486,7 +502,7 @@ func (s *SessionManager) sendDNSQueryResponse(connPacket *types.StreamPacket, co
 		CommandPacket: &packet.CommandPacket{
 			CommandType: packet.DNSQuery,
 			CommandId:   commandID,
-			CommandBody: string(respBody),
+			CommandBody: string(responseBody),
 		},
 	}
 
