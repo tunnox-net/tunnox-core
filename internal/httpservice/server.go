@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"tunnox-core/internal/cloud/managers"
@@ -285,8 +286,16 @@ func (s *HTTPService) registerLandingPage() {
 	s.router.HandleFunc("/", s.handleLandingPage).Methods("GET", "HEAD")
 }
 
-// handleLandingPage 返回简单的欢迎页面
 func (s *HTTPService) handleLandingPage(w http.ResponseWriter, r *http.Request) {
+	if s.isDomainProxyRequest(r) {
+		for _, module := range s.modules {
+			if module.Name() == "DomainProxy" {
+				module.(http.Handler).ServeHTTP(w, r)
+				return
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`<!DOCTYPE html>
@@ -336,4 +345,30 @@ func (s *HTTPService) GetRouter() *mux.Router {
 // GetConfig 获取配置
 func (s *HTTPService) GetConfig() *HTTPServiceConfig {
 	return s.config
+}
+
+func (s *HTTPService) isDomainProxyRequest(r *http.Request) bool {
+	if s.deps == nil {
+		return false
+	}
+
+	host := r.Host
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+
+	if s.deps.HTTPDomainMappingRepo != nil {
+		_, err := s.deps.HTTPDomainMappingRepo.LookupByDomain(r.Context(), host)
+		if err == nil {
+			return true
+		}
+	}
+
+	if s.domainRegistry != nil {
+		if _, found := s.domainRegistry.LookupByHost(r.Host); found {
+			return true
+		}
+	}
+
+	return false
 }
