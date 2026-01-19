@@ -192,10 +192,13 @@ func (p *NodeConnectionPool) Remove(conn *Conn) {
 	if conn == nil {
 		return
 	}
-	if conn.IsInUse() {
+	wasInUse := conn.IsInUse()
+	if wasInUse {
 		atomic.AddInt32(&p.inUse, -1)
 	}
 	atomic.AddInt32(&p.active, -1)
+	corelog.Infof("NodeConnectionPool[%s].Remove: wasInUse=%v, active=%d, inUse=%d",
+		p.nodeID, wasInUse, atomic.LoadInt32(&p.active), atomic.LoadInt32(&p.inUse))
 }
 
 // CleanupIdle 清理空闲连接

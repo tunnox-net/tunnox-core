@@ -145,6 +145,7 @@ func (p *Pool) Put(conn *Conn) {
 // CloseConn 关闭连接（不归还，直接销毁）
 func (p *Pool) CloseConn(conn *Conn) {
 	if conn == nil {
+		corelog.Warnf("CrossNodePool.CloseConn: conn is nil")
 		return
 	}
 
@@ -155,10 +156,14 @@ func (p *Pool) CloseConn(conn *Conn) {
 	p.poolsLock.RUnlock()
 
 	if exists {
+		corelog.Infof("CrossNodePool.CloseConn: removing conn from pool for node %s", conn.nodeID)
 		nodePool.Remove(conn)
+	} else {
+		corelog.Warnf("CrossNodePool.CloseConn: pool not found for node %s", conn.nodeID)
 	}
 
 	conn.Close()
+	corelog.Infof("CrossNodePool.CloseConn: closed conn for node %s (totalClosed=%d)", conn.nodeID, atomic.LoadInt64(&p.totalClosed))
 }
 
 // getOrCreateNodePool 获取或创建节点连接池
