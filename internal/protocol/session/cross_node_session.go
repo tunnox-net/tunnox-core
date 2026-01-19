@@ -184,35 +184,68 @@ func (s *SessionManager) forwardToSourceNode(
 	}
 
 	// 3. 启动数据转发（零拷贝）
+	corelog.Infof("CrossNode[%s]: about to start runCrossNodeDataForward goroutine, connID=%s, netConn=%v",
+		req.TunnelID, conn.ID, netConn != nil)
 	go s.runCrossNodeDataForward(req.TunnelID, conn, netConn, crossConn)
 
 	// 4. 返回特殊错误，让 readLoop 退出（连接已被跨节点转发接管）
+	corelog.Infof("CrossNode[%s]: returning CodeTunnelModeSwitch to let readLoop exit", req.TunnelID)
 	return coreerrors.New(coreerrors.CodeTunnelModeSwitch, "tunnel target connected via cross-node forwarding, switching to stream mode")
 }
 
 // runCrossNodeDataForward 运行跨节点数据转发（零拷贝）
+// 重要：使用简单的 io.Copy 直接传输数据，不使用 FrameStream
+// 连接用完即关闭，不复用（避免复杂的生命周期管理问题）
 func (s *SessionManager) runCrossNodeDataForward(
 	tunnelID string,
 	conn *types.Connection,
 	netConn net.Conn,
 	crossConn *CrossNodeConn,
 ) {
-	// 获取本地连接：优先使用 conn.Stream 的 GetReader()/GetWriter()
+	corelog.Infof("CrossNodeDataForward[%s]: goroutine started, connID=%s, netConn=%v",
+		tunnelID, conn.ID, netConn != nil)
+
+	// 数据转发完成后：关闭连接（不复用）
+	defer func() {
+		if crossConn != nil {
+			// 重要：必须通过 crossNodePool.CloseConn() 关闭，
+			// 这样才能正确递减连接池计数器（active/inUse）
+			// 直接调用 crossConn.Close() 不会递减计数器，导致连接池耗尽
+			s.crossNodePool.CloseConn(crossConn)
+		}
+		s.MarkTunnelClosed(tunnelID)
+		corelog.Infof("CrossNodeDataForward[%s]: cleanup completed", tunnelID)
+	}()
+
+	// 确保数据转发完成后关闭本地连接
+	// 这样 Target 客户端的 BidirectionalCopy 才能正确收到 EOF 并结束
+	defer func() {
+		if netConn != nil {
+			netConn.Close()
+		}
+		if conn != nil && conn.Stream != nil {
+			conn.Stream.Close()
+		}
+	}()
+
+	// 获取本地连接
+	// 重要：优先使用 conn.Stream 的 GetReader()/GetWriter()
+	// 这样才能和 Target 客户端的 tunnelStream 正确对接
 	var localConn io.ReadWriter
-	var localConnCloser io.Closer
+	var localNetConn net.Conn // 用于半关闭
 	if conn != nil && conn.Stream != nil {
 		reader := conn.Stream.GetReader()
 		writer := conn.Stream.GetWriter()
 		if reader != nil && writer != nil {
 			localConn = &readWriterWrapper{reader: reader, writer: writer}
-			localConnCloser = &multiCloserWithStream{netConn: netConn, stream: conn.Stream}
 		}
 	}
 
 	// 如果 Stream 不可用，回退到 netConn
 	if localConn == nil && netConn != nil {
 		localConn = netConn
-		localConnCloser = netConn
+		localNetConn = netConn
+		corelog.Warnf("CrossNodeDataForward[%s]: falling back to netConn as localConn", tunnelID)
 	}
 
 	if localConn == nil {
@@ -220,34 +253,50 @@ func (s *SessionManager) runCrossNodeDataForward(
 		return
 	}
 
-	// 解析 TunnelID
-	tunnelIDBytes, err := TunnelIDFromString(tunnelID)
-	if err != nil {
-		corelog.Errorf("CrossNodeDataForward[%s]: invalid tunnel ID: %v", tunnelID, err)
+	// 获取跨节点 TCP 连接（用于零拷贝）
+	tcpConn := crossConn.GetTCPConn()
+	if tcpConn == nil {
+		corelog.Errorf("CrossNodeDataForward[%s]: tcpConn is nil", tunnelID)
 		return
 	}
 
-	// 创建 FrameStream
-	frameStream := NewFrameStreamWithTracker(crossConn, tunnelIDBytes, s)
+	corelog.Infof("CrossNodeDataForward[%s]: starting data forward", tunnelID)
 
-	// 数据转发完成后：清理资源并归还连接
-	defer func() {
-		s.MarkTunnelClosed(tunnelID)
-		if !frameStream.IsBroken() {
-			crossConn.Release()
-		} else {
-			crossConn.Close()
+	// 双向数据转发（直接使用 io.Copy，不用 FrameStream）
+	done := make(chan struct{}, 2)
+
+	// 本地 -> 跨节点
+	go func() {
+		defer func() { done <- struct{}{} }()
+		n, err := io.Copy(tcpConn, localConn)
+		if err != nil && err != io.EOF {
+			corelog.Debugf("CrossNodeDataForward[%s]: local->crossNode error: %v", tunnelID, err)
+		}
+		corelog.Infof("CrossNodeDataForward[%s]: local->crossNode finished, bytes=%d", tunnelID, n)
+		// 关键：使用半关闭通知对端 EOF
+		tcpConn.CloseWrite()
+	}()
+
+	// 跨节点 -> 本地
+	go func() {
+		defer func() { done <- struct{}{} }()
+		n, err := io.Copy(localConn, tcpConn)
+		if err != nil && err != io.EOF {
+			corelog.Debugf("CrossNodeDataForward[%s]: crossNode->local error: %v", tunnelID, err)
+		}
+		corelog.Infof("CrossNodeDataForward[%s]: crossNode->local finished, bytes=%d", tunnelID, n)
+		// 关键：对本地连接使用半关闭（如果支持）
+		if localNetConn != nil {
+			if tcpLocal, ok := localNetConn.(*net.TCPConn); ok {
+				tcpLocal.CloseWrite()
+			}
 		}
 	}()
 
-	// 使用公共的双向转发逻辑
-	runBidirectionalForward(&BidirectionalForwardConfig{
-		TunnelID:        tunnelID,
-		LogPrefix:       "CrossNodeDataForward",
-		LocalConn:       localConn,
-		LocalConnCloser: localConnCloser,
-		RemoteConn:      frameStream,
-	})
+	// 等待两个方向都完成
+	<-done
+	<-done
+	corelog.Infof("CrossNodeDataForward[%s]: data forward completed", tunnelID)
 }
 
 // readWriterWrapper 包装 Reader 和 Writer

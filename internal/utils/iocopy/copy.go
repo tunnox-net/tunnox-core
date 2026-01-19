@@ -225,13 +225,10 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 		corelog.Debugf("%s: A→B closing writerB", logPrefix)
 		writerB.Close()
 
-		// 关键修复：使用半关闭通知 B 端 EOF，而不是完全关闭
-		// 这样 B→A 方向仍可继续接收响应数据
+		// 使用半关闭通知 B 端 EOF
+		// 注意：不要完全关闭连接，让 B→A 方向继续完成
 		corelog.Debugf("%s: A→B attempting half-close on connB", logPrefix)
 		tryCloseWrite(connB)
-
-		// 关闭 connB 以打断 B→A 方向可能阻塞的 Read
-		connBClosedOnce.Do(func() { connB.Close() })
 
 		corelog.Infof("%s: A→B goroutine finished, sent=%d bytes", logPrefix, totalWritten)
 	}()
@@ -286,12 +283,10 @@ func Bidirectional(connA, connB io.ReadWriteCloser, options *Options) *Result {
 			}
 		}
 
-		// 关键修复：使用半关闭通知 A 端 EOF
+		// 使用半关闭通知 A 端 EOF
+		// 注意：不要完全关闭连接，让 A→B 方向继续完成
 		corelog.Debugf("%s: B→A attempting half-close on connA", logPrefix)
 		tryCloseWrite(connA)
-
-		// 关闭 connA 以打断 A→B 方向可能阻塞的 Read
-		connAClosedOnce.Do(func() { connA.Close() })
 
 		corelog.Infof("%s: B→A goroutine finished, received=%d bytes", logPrefix, totalWritten)
 	}()

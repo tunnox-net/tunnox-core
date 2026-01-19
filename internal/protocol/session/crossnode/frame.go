@@ -12,14 +12,17 @@ import (
 
 // 帧类型常量
 const (
-	FrameTypeData         byte = 0x01 // 数据帧
-	FrameTypeTargetReady  byte = 0x02 // Target 就绪通知
-	FrameTypeClose        byte = 0x03 // 关闭通知
-	FrameTypeAck          byte = 0x04 // 确认帧
-	FrameTypeHTTPProxy    byte = 0x05 // HTTP 代理请求
-	FrameTypeHTTPResponse byte = 0x06 // HTTP 代理响应
-	FrameTypeDNSQuery     byte = 0x07 // DNS 查询请求
-	FrameTypeDNSResponse  byte = 0x08 // DNS 查询响应
+	FrameTypeData            byte = 0x01 // 数据帧
+	FrameTypeTargetReady     byte = 0x02 // Target 就绪通知
+	FrameTypeClose           byte = 0x03 // 关闭通知（双向关闭）
+	FrameTypeAck             byte = 0x04 // 确认帧
+	FrameTypeHTTPProxy       byte = 0x05 // HTTP 代理请求
+	FrameTypeHTTPResponse    byte = 0x06 // HTTP 代理响应
+	FrameTypeDNSQuery        byte = 0x07 // DNS 查询请求 (deprecated, use FrameTypeCommand)
+	FrameTypeDNSResponse     byte = 0x08 // DNS 查询响应 (deprecated, use FrameTypeCommandResponse)
+	FrameTypeEOF             byte = 0x09 // 半关闭通知（单方向结束，用于支持 HTTP 请求-响应模式）
+	FrameTypeCommand         byte = 0x10 // 通用命令请求（统一跨节点命令转发）
+	FrameTypeCommandResponse byte = 0x11 // 通用命令响应
 )
 
 // 帧头大小常量
@@ -196,4 +199,25 @@ type HTTPProxyResponseMessage struct {
 	RequestID string `json:"request_id"` // 请求ID
 	Response  []byte `json:"response"`   // 序列化的 HTTPProxyResponse
 	Error     string `json:"error"`      // 错误信息
+}
+
+// CommandMessage 通用跨节点命令消息
+// 用于统一处理所有需要跨节点转发的命令
+type CommandMessage struct {
+	CommandID      string `json:"command_id"`       // 命令ID（用于匹配响应）
+	CommandType    byte   `json:"command_type"`     // 命令类型（对应 packet.CommandType）
+	TargetClientID int64  `json:"target_client_id"` // 目标客户端ID
+	SourceNodeID   string `json:"source_node_id"`   // 源节点ID（用于响应路由）
+	SourceConnID   string `json:"source_conn_id"`   // 源连接ID（用于响应路由）
+	Payload        []byte `json:"payload"`          // 命令载荷（序列化的命令体）
+}
+
+// CommandResponseMessage 通用跨节点命令响应消息
+type CommandResponseMessage struct {
+	CommandID    string `json:"command_id"`     // 命令ID（用于匹配请求）
+	CommandType  byte   `json:"command_type"`   // 命令类型
+	Success      bool   `json:"success"`        // 是否成功
+	Payload      []byte `json:"payload"`        // 响应载荷
+	Error        string `json:"error"`          // 错误信息
+	SourceConnID string `json:"source_conn_id"` // 源连接ID（用于响应路由）
 }

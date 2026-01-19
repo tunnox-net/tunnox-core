@@ -81,7 +81,11 @@ func (c *TunnoxClient) ResolveDNSSimple(domain string, targetClientID int64) (st
 // rawQuery: 原始 DNS 查询报文
 // 返回: 原始 DNS 响应报文
 func (c *TunnoxClient) QueryDNS(targetClientID int64, dnsServer string, rawQuery []byte) ([]byte, error) {
+	corelog.Infof("Client: QueryDNS called, targetClientID=%d, dnsServer=%s, queryLen=%d, isConnected=%v",
+		targetClientID, dnsServer, len(rawQuery), c.IsConnected())
+
 	if !c.IsConnected() {
+		corelog.Warnf("Client: QueryDNS failed - not connected to server")
 		return nil, &dnsError{msg: "not connected to server"}
 	}
 
@@ -99,7 +103,7 @@ func (c *TunnoxClient) QueryDNS(targetClientID int64, dnsServer string, rawQuery
 	ctx, cancel := context.WithTimeout(c.Ctx(), 5*time.Second)
 	defer cancel()
 
-	corelog.Debugf("Client: sending DNS query via control channel, queryID=%s, target=%d, server=%s, queryLen=%d",
+	corelog.Infof("Client: sending DNS query via control channel, queryID=%s, target=%d, server=%s, queryLen=%d",
 		queryID, targetClientID, dnsServer, len(rawQuery))
 
 	// 发送命令并等待响应
@@ -126,7 +130,7 @@ func (c *TunnoxClient) QueryDNS(targetClientID int64, dnsServer string, rawQuery
 		return nil, &dnsError{msg: resp.Error}
 	}
 
-	corelog.Debugf("Client: DNS query success via control channel, queryID=%s, responseLen=%d",
+	corelog.Infof("Client: DNS query success via control channel, queryID=%s, responseLen=%d",
 		queryID, len(resp.RawAnswer))
 
 	return resp.RawAnswer, nil

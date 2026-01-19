@@ -146,6 +146,9 @@ type SessionManager struct {
 	closedTunnels   map[string]time.Time // tunnelID -> 关闭时间
 	closedTunnelsMu sync.RWMutex
 
+	// 命令响应管理器（用于跨节点命令的请求/响应匹配）
+	commandResponseMgr *CommandResponseManager
+
 	*dispose.ManagerBase
 }
 
@@ -213,6 +216,9 @@ func NewSessionManagerWithConfig(idManager *idgen.IDManager, parentCtx context.C
 		// Manager 级组件使用 ManagerBase
 		ManagerBase: dispose.NewManager("SessionManager", parentCtx),
 	}
+
+	// 初始化命令响应管理器
+	session.commandResponseMgr = NewCommandResponseManager()
 
 	// 添加资源清理回调
 	session.AddCleanHandler(session.onClose)

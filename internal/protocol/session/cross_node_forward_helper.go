@@ -40,6 +40,12 @@ func (c *CountingReadWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
+// HalfCloser 支持半关闭的接口
+// 用于支持 HTTP 请求-响应模式：发送完请求后仍需接收响应
+type HalfCloser interface {
+	CloseWrite() error
+}
+
 // BidirectionalForwardConfig 双向转发配置
 type BidirectionalForwardConfig struct {
 	TunnelID   string
@@ -58,18 +64,21 @@ type BidirectionalForwardConfig struct {
 
 // runBidirectionalForward 执行双向数据转发
 // 这是 cross_node_session.go 和 cross_node_listener.go 的公共逻辑
+// 支持半关闭语义：当一个方向完成时，发送半关闭信号而不是关闭整个连接
 func runBidirectionalForward(config *BidirectionalForwardConfig) {
 	done := make(chan struct{}, 2)
 	var closeOnce sync.Once
+	var uploadDone, downloadDone int32 // 原子标记
 
 	logPrefix := config.LogPrefix
 	if logPrefix == "" {
 		logPrefix = "BidirectionalForward"
 	}
 
+	// closeAll 在两个方向都完成后关闭所有连接
 	closeAll := func() {
 		closeOnce.Do(func() {
-			// 关闭远程连接
+			// 关闭远程连接（完全关闭）
 			if err := config.RemoteConn.Close(); err != nil {
 				corelog.Debugf("%s[%s]: remote close error (non-critical): %v",
 					logPrefix, config.TunnelID, err)
@@ -102,27 +111,54 @@ func runBidirectionalForward(config *BidirectionalForwardConfig) {
 	// 上传方向: localConn -> remoteConn
 	go func() {
 		defer func() {
-			closeAll()
+			atomic.StoreInt32(&uploadDone, 1)
+			// 上传完成后，发送半关闭信号（如果支持）
+			// 这告诉对端"我发送完毕，但仍在等待你的数据"
+			if halfCloser, ok := config.RemoteConn.(HalfCloser); ok {
+				if err := halfCloser.CloseWrite(); err != nil {
+					corelog.Debugf("%s[%s]: remote half-close error (non-critical): %v",
+						logPrefix, config.TunnelID, err)
+				} else {
+					corelog.Debugf("%s[%s]: sent half-close signal (upload done, waiting for download)",
+						logPrefix, config.TunnelID)
+				}
+			}
+			// 如果下载方向也完成了，关闭所有连接
+			if atomic.LoadInt32(&downloadDone) == 1 {
+				closeAll()
+			}
 			done <- struct{}{}
 		}()
-		if _, err := io.Copy(config.RemoteConn, localConn); err != nil {
-			corelog.Debugf("%s[%s]: upload copy ended: %v",
-				logPrefix, config.TunnelID, err)
-		}
+		n, err := io.Copy(config.RemoteConn, localConn)
+		corelog.Infof("%s[%s]: upload copy ended: copied=%d bytes, err=%v",
+			logPrefix, config.TunnelID, n, err)
 	}()
 
 	// 下载方向: remoteConn -> localConn
 	go func() {
 		defer func() {
-			closeAll()
+			atomic.StoreInt32(&downloadDone, 1)
+			// 如果上传方向也完成了，关闭所有连接
+			if atomic.LoadInt32(&uploadDone) == 1 {
+				closeAll()
+			}
 			done <- struct{}{}
 		}()
-		if _, err := io.Copy(localConn, config.RemoteConn); err != nil {
-			corelog.Debugf("%s[%s]: download copy ended: %v",
-				logPrefix, config.TunnelID, err)
-		}
+		// 调试：记录 localConn 的类型
+		corelog.Debugf("%s[%s]: download starting, localConn type=%T, remoteConn type=%T",
+			logPrefix, config.TunnelID, localConn, config.RemoteConn)
+		n, err := io.Copy(localConn, config.RemoteConn)
+		corelog.Infof("%s[%s]: download copy ended: copied=%d bytes, err=%v",
+			logPrefix, config.TunnelID, n, err)
 	}()
 
 	<-done
+	corelog.Infof("%s[%s]: first direction completed, waiting for second direction",
+		logPrefix, config.TunnelID)
 	<-done
+	corelog.Infof("%s[%s]: both directions completed, closing all connections",
+		logPrefix, config.TunnelID)
+
+	// 确保在函数返回前关闭所有连接
+	closeAll()
 }

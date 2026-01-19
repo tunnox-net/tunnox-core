@@ -81,11 +81,15 @@ func NewPool(
 
 // Get 获取到目标节点的连接
 func (p *Pool) Get(ctx context.Context, targetNodeID string) (*Conn, error) {
+	corelog.Debugf("CrossNodePool.Get: requesting connection to node %s", targetNodeID)
+
 	if p.IsClosed() {
+		corelog.Warnf("CrossNodePool.Get: pool is closed")
 		return nil, coreerrors.New(coreerrors.CodeUnavailable, "pool is closed")
 	}
 
 	if targetNodeID == p.nodeID {
+		corelog.Warnf("CrossNodePool.Get: cannot connect to self (nodeID=%s)", p.nodeID)
 		return nil, coreerrors.New(coreerrors.CodeInvalidRequest, "cannot connect to self")
 	}
 
@@ -94,11 +98,21 @@ func (p *Pool) Get(ctx context.Context, targetNodeID string) (*Conn, error) {
 	// 获取或创建节点连接池
 	nodePool, err := p.getOrCreateNodePool(targetNodeID)
 	if err != nil {
+		corelog.Errorf("CrossNodePool.Get: failed to get/create node pool for %s: %v", targetNodeID, err)
 		return nil, err
 	}
 
+	corelog.Debugf("CrossNodePool.Get: got node pool for %s, getting connection...", targetNodeID)
+
 	// 从节点池获取连接
-	return nodePool.Get(ctx)
+	conn, err := nodePool.Get(ctx)
+	if err != nil {
+		corelog.Errorf("CrossNodePool.Get: failed to get connection from pool for %s: %v", targetNodeID, err)
+		return nil, err
+	}
+
+	corelog.Infof("CrossNodePool.Get: successfully got connection to node %s", targetNodeID)
+	return conn, nil
 }
 
 // Put 归还连接到池
@@ -192,6 +206,7 @@ func (p *Pool) getOrCreateNodePool(nodeID string) (*NodeConnectionPool, error) {
 func (p *Pool) getNodeAddress(nodeID string) (string, error) {
 	if p.storage == nil {
 		// 默认使用节点 ID 作为主机名，跨节点 TCP 端口为 50052
+		corelog.Warnf("CrossNodePool.getNodeAddress: storage is nil, using fallback address %s:50052", nodeID)
 		return fmt.Sprintf("%s:50052", nodeID), nil
 	}
 
@@ -200,17 +215,23 @@ func (p *Pool) getNodeAddress(nodeID string) (string, error) {
 	if err != nil {
 		if err == storage.ErrKeyNotFound {
 			// 默认使用节点 ID 作为主机名
+			corelog.Warnf("CrossNodePool.getNodeAddress: key %s not found in storage, using fallback address %s:50052", key, nodeID)
 			return fmt.Sprintf("%s:50052", nodeID), nil
 		}
+		corelog.Errorf("CrossNodePool.getNodeAddress: failed to get key %s: %v", key, err)
 		return "", err
 	}
 
 	switch v := value.(type) {
 	case string:
+		corelog.Infof("CrossNodePool.getNodeAddress: resolved %s -> %s (string)", nodeID, v)
 		return v, nil
 	case []byte:
-		return string(v), nil
+		addr := string(v)
+		corelog.Infof("CrossNodePool.getNodeAddress: resolved %s -> %s (bytes)", nodeID, addr)
+		return addr, nil
 	default:
+		corelog.Warnf("CrossNodePool.getNodeAddress: unexpected value type %T for key %s, using fallback", value, key)
 		return fmt.Sprintf("%s:50052", nodeID), nil
 	}
 }

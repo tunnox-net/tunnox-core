@@ -187,16 +187,27 @@ func (b *BaseAdapter) handleConnection(adapter ProtocolAdapter, conn io.ReadWrit
 
 // cleanupConnection 清理连接资源
 func (b *BaseAdapter) cleanupConnection(state *connectionState, conn io.ReadWriteCloser) {
+	connID := ""
+	if state.streamConn != nil {
+		connID = state.streamConn.ID
+	}
+	corelog.Debugf("cleanupConnection: connID=%s, streamConn=%v, shouldCloseConn=%v",
+		connID, state.streamConn != nil, state.shouldCloseConn)
+
 	// 清理 SessionManager 中的连接（如果已创建，忽略关闭错误，连接可能已关闭）
 	if state.streamConn != nil && b.session != nil {
+		corelog.Debugf("cleanupConnection: calling CloseConnection for connID=%s", connID)
 		_ = b.session.CloseConnection(state.streamConn.ID)
 	}
 
 	// 关闭底层连接（如果不是持久连接，忽略关闭错误，连接可能已关闭）
 	if state.shouldCloseConn {
+		corelog.Debugf("cleanupConnection: closing underlying connection for connID=%s", connID)
 		if closer, ok := conn.(interface{ Close() error }); ok {
 			_ = closer.Close()
 		}
+	} else {
+		corelog.Debugf("cleanupConnection: NOT closing underlying connection (shouldCloseConn=false)")
 	}
 }
 
@@ -321,6 +332,7 @@ func (b *BaseAdapter) handlePacketAndCheckModeSwitch(state *connectionState, pkt
 	if err := b.session.HandlePacket(streamPacket); err != nil {
 		if isTunnelOpenPacket && b.isTunnelModeSwitch(err) {
 			connID := state.streamConn.ID
+			corelog.Infof("Connection %s: detected TunnelModeSwitch, setting shouldCloseConn=false, streamConn=nil", connID)
 			state.shouldCloseConn = false
 			// 注意：对于隧道连接，streamConn 会被转移到隧道管理，不需要在这里关闭
 			state.streamConn = nil

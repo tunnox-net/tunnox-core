@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -98,7 +99,15 @@ func (l *CrossNodeListener) acceptLoop(ctx context.Context) {
 
 // handleConnection 处理跨节点连接
 func (l *CrossNodeListener) handleConnection(ctx context.Context, conn net.Conn) {
-	defer conn.Close()
+	// 注意：不在此处 defer conn.Close()
+	// 对于 TargetReady 类型的连接，连接的生命周期由 runBridgeForward 管理
+	// 对于其他类型（HTTP/DNS/Command），在处理完成后关闭
+	shouldCloseConn := true
+	defer func() {
+		if shouldCloseConn {
+			conn.Close()
+		}
+	}()
 
 	tcpConn, ok := conn.(*net.TCPConn)
 	if !ok {
@@ -117,11 +126,15 @@ func (l *CrossNodeListener) handleConnection(ctx context.Context, conn net.Conn)
 
 	switch frameType {
 	case FrameTypeTargetReady:
+		// TargetReady 连接的生命周期由 runBridgeForward 管理，不在此处关闭
+		shouldCloseConn = false
 		l.handleTargetReady(ctx, tcpConn, tunnelIDStr, data)
 	case FrameTypeHTTPProxy:
 		l.handleHTTPProxy(ctx, tcpConn, data)
 	case FrameTypeDNSQuery:
 		l.handleDNSQuery(ctx, tcpConn, data)
+	case FrameTypeCommand:
+		l.handleCommand(ctx, tcpConn, data)
 	default:
 		corelog.Warnf("CrossNodeListener: unknown frame type %d", frameType)
 	}
@@ -161,49 +174,75 @@ func (l *CrossNodeListener) handleTargetReady(ctx context.Context, conn *net.TCP
 }
 
 // runBridgeForward 运行 Bridge 数据转发
+// runBridgeForward 运行 Bridge 数据转发
+// 重要：使用简单的 io.Copy 直接传输数据，不使用 FrameStream
+// 连接用完即关闭（避免复杂的生命周期管理问题）
 func (l *CrossNodeListener) runBridgeForward(tunnelID string, bridge *TunnelBridge, crossConn *CrossNodeConn) {
-	defer bridge.Close()
+	defer bridge.ReleaseCrossNodeConnection()
 
+	// 关键：数据转发完成后关闭 Bridge，触发生命周期结束
+	// 这样 bridge.Start() 会从 <-b.Ctx().Done() 返回
+	defer func() {
+		corelog.Infof("CrossNodeListener[%s]: closing bridge after data forward completion", tunnelID)
+		bridge.Close()
+		l.sessionMgr.MarkTunnelClosed(tunnelID)
+	}()
+
+	// 获取源端数据转发器
 	sourceForwarder := bridge.GetSourceForwarder()
 	if sourceForwarder == nil {
 		corelog.Errorf("CrossNodeListener[%s]: sourceForwarder is nil", tunnelID)
 		return
 	}
 
-	tunnelIDBytes, err := TunnelIDFromString(tunnelID)
-	if err != nil {
-		corelog.Errorf("CrossNodeListener[%s]: invalid tunnel ID: %v", tunnelID, err)
+	// 关键：确保数据转发完成后关闭源端连接
+	// 这样 Listen 端客户端的 BidirectionalCopy 才能正确收到 EOF 并结束
+	defer sourceForwarder.Close()
+
+	// 获取跨节点 TCP 连接
+	tcpConn := crossConn.GetTCPConn()
+	if tcpConn == nil {
+		corelog.Errorf("CrossNodeListener[%s]: tcpConn is nil", tunnelID)
 		return
 	}
 
-	frameStream := NewFrameStreamWithTracker(crossConn, tunnelIDBytes, l.sessionMgr)
+	corelog.Infof("CrossNodeListener[%s]: starting data forward, sourceForwarder type=%T", tunnelID, sourceForwarder)
 
-	defer func() {
-		l.sessionMgr.MarkTunnelClosed(tunnelID)
-		if !frameStream.IsBroken() {
-			corelog.Debugf("CrossNodeListener[%s]: releasing connection to pool", tunnelID)
-			crossConn.Release()
-		} else {
-			corelog.Warnf("CrossNodeListener[%s]: connection broken, closing", tunnelID)
-			crossConn.Close()
+	// 双向数据转发（直接使用 io.Copy，不用 FrameStream）
+	done := make(chan struct{}, 2)
+
+	// 源端 -> 跨节点
+	go func() {
+		defer func() { done <- struct{}{} }()
+		n, err := io.Copy(tcpConn, sourceForwarder)
+		if err != nil && err != io.EOF {
+			corelog.Debugf("CrossNodeListener[%s]: source->crossNode error: %v", tunnelID, err)
 		}
-		bridge.ReleaseCrossNodeConnection()
+		corelog.Infof("CrossNodeListener[%s]: source->crossNode finished, bytes=%d", tunnelID, n)
+		// 关键：使用半关闭通知对端 EOF
+		tcpConn.CloseWrite()
 	}()
 
-	// 获取 Bridge 的流量计数器引用
-	bytesSentPtr := bridge.GetBytesSentPtr()
-	bytesReceivedPtr := bridge.GetBytesReceivedPtr()
+	// 跨节点 -> 源端
+	go func() {
+		defer func() { done <- struct{}{} }()
+		n, err := io.Copy(sourceForwarder, tcpConn)
+		if err != nil && err != io.EOF {
+			corelog.Debugf("CrossNodeListener[%s]: crossNode->source error: %v", tunnelID, err)
+		}
+		corelog.Infof("CrossNodeListener[%s]: crossNode->source finished, bytes=%d", tunnelID, n)
+		// 关键：对源端连接使用半关闭（如果支持）
+		if closer, ok := sourceForwarder.(interface{ CloseWrite() error }); ok {
+			closer.CloseWrite()
+		} else if tcpSource, ok := sourceForwarder.(*net.TCPConn); ok {
+			tcpSource.CloseWrite()
+		}
+	}()
 
-	// 使用公共的双向转发逻辑（带流量统计）
-	runBidirectionalForward(&BidirectionalForwardConfig{
-		TunnelID:             tunnelID,
-		LogPrefix:            "CrossNodeListener",
-		LocalConn:            sourceForwarder,
-		LocalConnCloser:      sourceForwarder,
-		RemoteConn:           frameStream,
-		BytesSentCounter:     bytesSentPtr,
-		BytesReceivedCounter: bytesReceivedPtr,
-	})
+	// 等待两个方向都完成
+	<-done
+	<-done
+	corelog.Infof("CrossNodeListener[%s]: data forward completed", tunnelID)
 }
 
 // handleHTTPProxy 处理跨节点 HTTP 代理请求
@@ -402,5 +441,108 @@ func (l *CrossNodeListener) sendHTTPProxyResponse(conn *net.TCPConn, requestID s
 		corelog.Errorf("CrossNodeListener: failed to send HTTP response: %v", err)
 	} else {
 		corelog.Infof("CrossNodeListener: sent HTTP proxy response for requestID=%s", requestID)
+	}
+}
+
+// ============================================================================
+// 通用命令处理（统一跨节点命令转发）
+// ============================================================================
+
+// handleCommand 处理通用跨节点命令
+// 这是统一的跨节点命令处理入口，支持任何类型的命令
+func (l *CrossNodeListener) handleCommand(ctx context.Context, conn *net.TCPConn, data []byte) {
+	var cmdMsg CommandMessage
+	if err := json.Unmarshal(data, &cmdMsg); err != nil {
+		corelog.Errorf("CrossNodeListener: failed to parse command message: %v", err)
+		return
+	}
+
+	corelog.Infof("CrossNodeListener: handling command type=%d for client %d, commandID=%s",
+		cmdMsg.CommandType, cmdMsg.TargetClientID, cmdMsg.CommandID)
+
+	// 查找目标客户端的 control 连接
+	targetConn := l.sessionMgr.GetControlConnectionByClientID(cmdMsg.TargetClientID)
+	if targetConn == nil || targetConn.Stream == nil {
+		corelog.Errorf("CrossNodeListener: target client %d not found", cmdMsg.TargetClientID)
+		l.sendCommandError(conn, cmdMsg.CommandID, cmdMsg.CommandType, "target client not connected")
+		return
+	}
+
+	// 注册等待响应
+	waitCh := l.sessionMgr.commandResponseMgr.Register(cmdMsg.CommandID)
+	defer l.sessionMgr.commandResponseMgr.Unregister(cmdMsg.CommandID)
+
+	// 构建并转发命令到目标客户端
+	forwardPkt := &packet.TransferPacket{
+		PacketType: packet.JsonCommand,
+		CommandPacket: &packet.CommandPacket{
+			CommandType: packet.CommandType(cmdMsg.CommandType),
+			CommandId:   cmdMsg.CommandID,
+			CommandBody: string(cmdMsg.Payload),
+		},
+	}
+
+	if _, err := targetConn.Stream.WritePacket(forwardPkt, true, 0); err != nil {
+		corelog.Errorf("CrossNodeListener: failed to forward command to client: %v", err)
+		l.sendCommandError(conn, cmdMsg.CommandID, cmdMsg.CommandType, "failed to forward command")
+		return
+	}
+
+	// 等待响应（使用上下文的超时，默认 30 秒）
+	timeoutCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	resp, err := l.sessionMgr.commandResponseMgr.Wait(timeoutCtx, cmdMsg.CommandID, waitCh, 30*time.Second)
+	if err != nil {
+		corelog.Errorf("CrossNodeListener: command timeout: %v", err)
+		l.sendCommandError(conn, cmdMsg.CommandID, cmdMsg.CommandType, "command timeout")
+		return
+	}
+
+	l.sendCommandResponse(conn, cmdMsg.CommandID, cmdMsg.CommandType, resp)
+}
+
+// sendCommandError 发送命令错误响应
+func (l *CrossNodeListener) sendCommandError(conn *net.TCPConn, commandID string, commandType byte, errMsg string) {
+	respMsg := &CommandResponseMessage{
+		CommandID:   commandID,
+		CommandType: commandType,
+		Success:     false,
+		Error:       errMsg,
+	}
+
+	respData, err := json.Marshal(respMsg)
+	if err != nil {
+		corelog.Errorf("CrossNodeListener: failed to marshal command error response: %v", err)
+		return
+	}
+
+	var emptyTunnelID [16]byte
+	if err := WriteFrame(conn, emptyTunnelID, FrameTypeCommandResponse, respData); err != nil {
+		corelog.Errorf("CrossNodeListener: failed to send command error response: %v", err)
+	}
+}
+
+// sendCommandResponse 发送命令响应
+func (l *CrossNodeListener) sendCommandResponse(conn *net.TCPConn, commandID string, commandType byte, resp *packet.CommandPacket) {
+	respMsg := &CommandResponseMessage{
+		CommandID:   commandID,
+		CommandType: commandType,
+		Success:     true,
+		Payload:     []byte(resp.CommandBody),
+	}
+
+	respData, err := json.Marshal(respMsg)
+	if err != nil {
+		corelog.Errorf("CrossNodeListener: failed to marshal command response: %v", err)
+		l.sendCommandError(conn, commandID, commandType, "failed to marshal response")
+		return
+	}
+
+	var emptyTunnelID [16]byte
+	if err := WriteFrame(conn, emptyTunnelID, FrameTypeCommandResponse, respData); err != nil {
+		corelog.Errorf("CrossNodeListener: failed to send command response: %v", err)
+	} else {
+		corelog.Infof("CrossNodeListener: sent command response for commandID=%s", commandID)
 	}
 }

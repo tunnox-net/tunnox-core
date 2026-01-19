@@ -181,9 +181,23 @@ func (l *Listener) handleConnection(conn net.Conn) {
 	}
 }
 
+// VirtualDNSIP 虚拟 DNS IP，用于拦截 DNS 请求
+// 与 Android VpnService 中的 VIRTUAL_DNS_IP 保持一致
+const VirtualDNSIP = "10.0.0.1"
+
 // handleConnect 处理 TCP CONNECT 请求
 func (l *Listener) handleConnect(conn net.Conn, targetHost string, targetPort int) {
 	corelog.Debugf("SOCKS5Listener: CONNECT %s:%d from %s", targetHost, targetPort, conn.RemoteAddr())
+
+	// 拦截发往虚拟 DNS IP 的 DoT 请求 (TCP 853)
+	// 返回失败让系统回退到 UDP DNS，然后由 UDPRelay 通过控制通道处理
+	if targetHost == VirtualDNSIP && targetPort == 853 {
+		corelog.Infof("SOCKS5Listener: intercepting DoT request to virtual DNS %s:%d, rejecting to force UDP fallback",
+			targetHost, targetPort)
+		l.SendError(conn, RepFailure)
+		conn.Close()
+		return
+	}
 
 	if l.tunnelCreator == nil {
 		corelog.Errorf("SOCKS5Listener: tunnel creator not set")

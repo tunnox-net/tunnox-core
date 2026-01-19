@@ -53,35 +53,37 @@ func NewNodeConnectionPool(
 
 // Get 获取连接
 func (p *NodeConnectionPool) Get(ctx context.Context) (*Conn, error) {
-	// 支持多次重试，从池中获取健康的连接
-	maxRetries := 3
-	for retry := 0; retry < maxRetries; retry++ {
-		// 先尝试从池中获取
-		select {
-		case conn := <-p.conns:
-			if conn != nil {
-				// 完整的健康检查
-				if conn.IsHealthy() {
-					conn.MarkInUse()
-					atomic.AddInt32(&p.inUse, 1)
-					corelog.Debugf("NodeConnectionPool[%s]: reused connection from pool", p.nodeID)
-					return conn, nil
-				}
-				// 连接不健康，关闭并继续重试
-				corelog.Debugf("NodeConnectionPool[%s]: connection unhealthy, closing (retry %d/%d)",
-					p.nodeID, retry+1, maxRetries)
-				conn.Close()
-				atomic.AddInt32(&p.active, -1)
-				continue
+	corelog.Debugf("NodeConnectionPool[%s]: Get called, active=%d, inUse=%d, maxConns=%d",
+		p.nodeID, atomic.LoadInt32(&p.active), atomic.LoadInt32(&p.inUse), p.config.MaxConns)
+
+	// 快速尝试从池中获取一个健康的连接（只尝试1次，不健康就创建新的）
+	select {
+	case conn := <-p.conns:
+		if conn != nil {
+			// 完整的健康检查
+			if conn.IsHealthy() {
+				conn.MarkInUse()
+				atomic.AddInt32(&p.inUse, 1)
+				corelog.Debugf("NodeConnectionPool[%s]: reused connection from pool", p.nodeID)
+				return conn, nil
 			}
-		default:
-			// 池中没有可用连接，跳出重试循环
-			break
+			// 连接不健康，关闭并直接创建新连接（不重试）
+			corelog.Debugf("NodeConnectionPool[%s]: connection unhealthy, closing and creating new",
+				p.nodeID)
+			conn.Close()
+			atomic.AddInt32(&p.active, -1)
 		}
+	default:
+		// 池中没有可用连接
+		corelog.Debugf("NodeConnectionPool[%s]: pool empty, will create new connection", p.nodeID)
 	}
 
+	// 创建新连接
 	// 检查是否可以创建新连接
-	if atomic.LoadInt32(&p.active) >= int32(p.config.MaxConns) {
+	activeCount := atomic.LoadInt32(&p.active)
+	if activeCount >= int32(p.config.MaxConns) {
+		corelog.Warnf("NodeConnectionPool[%s]: max connections reached (%d >= %d), waiting for available connection",
+			p.nodeID, activeCount, p.config.MaxConns)
 		// 等待可用连接
 		select {
 		case conn := <-p.conns:
@@ -98,14 +100,17 @@ func (p *NodeConnectionPool) Get(ctx context.Context) (*Conn, error) {
 			// 连接不健康，递归重试
 			return p.Get(ctx)
 		case <-ctx.Done():
+			corelog.Warnf("NodeConnectionPool[%s]: context cancelled while waiting for connection", p.nodeID)
 			return nil, ctx.Err()
 		case <-time.After(p.config.DialTimeout):
+			corelog.Errorf("NodeConnectionPool[%s]: timeout waiting for connection (waited %v)", p.nodeID, p.config.DialTimeout)
 			return nil, coreerrors.New(coreerrors.CodeTimeout, "timeout waiting for connection")
 		}
 	}
 
 	// 创建新连接
-	corelog.Debugf("NodeConnectionPool[%s]: creating new connection (active=%d)", p.nodeID, atomic.LoadInt32(&p.active))
+	corelog.Infof("NodeConnectionPool[%s]: creating new connection (active=%d, maxConns=%d)",
+		p.nodeID, activeCount, p.config.MaxConns)
 	return p.createConnection(ctx)
 }
 
@@ -118,6 +123,8 @@ func (p *NodeConnectionPool) createConnection(ctx context.Context) (*Conn, error
 	}
 	p.mu.Unlock()
 
+	corelog.Infof("NodeConnectionPool[%s]: dialing %s (timeout=%v)", p.nodeID, p.nodeAddr, p.config.DialTimeout)
+
 	// 建立 TCP 连接
 	dialCtx, cancel := context.WithTimeout(ctx, p.config.DialTimeout)
 	defer cancel()
@@ -125,6 +132,7 @@ func (p *NodeConnectionPool) createConnection(ctx context.Context) (*Conn, error
 	var d net.Dialer
 	netConn, err := d.DialContext(dialCtx, "tcp", p.nodeAddr)
 	if err != nil {
+		corelog.Errorf("NodeConnectionPool[%s]: failed to dial %s: %v", p.nodeID, p.nodeAddr, err)
 		return nil, coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to dial node")
 	}
 

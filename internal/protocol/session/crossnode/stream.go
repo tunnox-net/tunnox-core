@@ -3,10 +3,45 @@ package crossnode
 
 import (
 	"io"
+	"net"
+	"strings"
 	"sync"
 
 	coreerrors "tunnox-core/internal/core/errors"
 )
+
+// isConnectionClosedError 检查错误是否表示连接已关闭（正常或异常）
+// 这些错误不应该导致连接被标记为 broken，因为是预期的关闭行为
+func isConnectionClosedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if err == io.EOF {
+		return true
+	}
+	// 检查网络错误
+	if netErr, ok := err.(net.Error); ok {
+		// 超时不算关闭
+		if netErr.Timeout() {
+			return false
+		}
+	}
+	// 检查常见的连接关闭错误消息
+	errStr := err.Error()
+	closedErrors := []string{
+		"connection reset by peer",
+		"broken pipe",
+		"use of closed network connection",
+		"connection refused",
+		"EOF",
+	}
+	for _, ce := range closedErrors {
+		if strings.Contains(errStr, ce) {
+			return true
+		}
+	}
+	return false
+}
 
 // TunnelStateTracker 用于跟踪 tunnel 状态（检查 tunnel 是否已关闭）
 type TunnelStateTracker interface {
@@ -79,7 +114,20 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 	for {
 		tunnelID, frameType, data, err := ReadFrame(tcpConn)
 		if err != nil {
-			s.conn.MarkBroken()
+			// 判断是否应该标记连接为 broken：
+			// 1. 如果我们已经发送了 EOF（writeEOF=true），说明我们已经完成发送，
+			//    对端关闭连接是预期行为，不标记 broken
+			// 2. 如果错误表示连接正常/异常关闭（EOF、connection reset 等），
+			//    这是 TCP 层面的正常关闭，不标记 broken
+			// 3. 只有真正的网络错误（如超时、协议错误等）才标记 broken
+			if !s.writeEOF && !isConnectionClosedError(err) {
+				s.conn.MarkBroken()
+			}
+			// 如果是连接关闭，设置 readEOF 并返回 EOF
+			if isConnectionClosedError(err) {
+				s.readEOF = true
+				return 0, io.EOF
+			}
 			return 0, err
 		}
 
@@ -108,7 +156,13 @@ func (s *FrameStream) Read(p []byte) (n int, err error) {
 			}
 			return n, nil
 
+		case FrameTypeEOF:
+			// 半关闭：对端的写入方向结束，但我们仍可以写入
+			s.readEOF = true
+			return 0, io.EOF
+
 		case FrameTypeClose:
+			// 全关闭：整个连接结束
 			s.readEOF = true
 			return 0, io.EOF
 
@@ -165,6 +219,32 @@ func (s *FrameStream) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+// CloseWrite 半关闭数据流的写入方向
+// 发送 FrameTypeEOF 帧通知对端"我这边发送完毕，但仍在等待你的数据"
+// 用于支持 HTTP 请求-响应模式：客户端发送完请求后等待响应
+func (s *FrameStream) CloseWrite() error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+
+	if s.writeEOF {
+		return nil // 已经关闭过了
+	}
+
+	tcpConn := s.conn.GetTCPConn()
+	if tcpConn == nil {
+		return coreerrors.New(coreerrors.CodeNetworkError, "connection is nil")
+	}
+
+	// 发送 FrameTypeEOF 帧（空数据）- 半关闭
+	if err := WriteFrame(tcpConn, s.tunnelID, FrameTypeEOF, nil); err != nil {
+		s.conn.MarkBroken()
+		return err
+	}
+
+	s.writeEOF = true
+	return nil
+}
+
 // Close 关闭数据流（实现 io.Closer）
 // 发送 FrameTypeClose 帧通知对端 tunnel 结束
 // 注意：这不会关闭底层 TCP 连接，连接将被归还到池
@@ -181,7 +261,7 @@ func (s *FrameStream) Close() error {
 		return coreerrors.New(coreerrors.CodeNetworkError, "connection is nil")
 	}
 
-	// 发送 FrameTypeClose 帧（空数据）
+	// 发送 FrameTypeClose 帧（空数据）- 全关闭
 	if err := WriteFrame(tcpConn, s.tunnelID, FrameTypeClose, nil); err != nil {
 		s.conn.MarkBroken()
 		return err

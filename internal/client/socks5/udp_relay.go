@@ -189,6 +189,9 @@ func (r *UDPRelay) readLoop() {
 	}
 }
 
+// DefaultDNSServer 默认 DNS 服务器（当使用虚拟 DNS IP 时）
+const DefaultDNSServer = "119.29.29.29"
+
 func (r *UDPRelay) handlePacket(data []byte) {
 	dstHost, dstPort, payload, err := r.parseUDPHeader(data)
 	if err != nil {
@@ -199,8 +202,16 @@ func (r *UDPRelay) handlePacket(data []byte) {
 	// 检测DNS请求（端口53），通过控制通道处理
 	if dstPort == 53 {
 		if r.dnsHandler != nil {
-			corelog.Infof("UDPRelay: DNS request detected, routing via control channel to %s:%d", dstHost, dstPort)
-			r.handleDNSQuery(dstHost, dstPort, payload)
+			// 如果目标是虚拟 DNS IP，替换为真正的 DNS 服务器
+			actualDNSHost := dstHost
+			originalHost := dstHost // 保留原始地址用于构造响应
+			if dstHost == VirtualDNSIP {
+				actualDNSHost = DefaultDNSServer
+				corelog.Infof("UDPRelay: DNS request to virtual DNS %s, using actual DNS server %s",
+					dstHost, actualDNSHost)
+			}
+			corelog.Infof("UDPRelay: DNS request detected, routing via control channel to %s:%d", actualDNSHost, dstPort)
+			r.handleDNSQuery(actualDNSHost, dstPort, payload, originalHost)
 			return
 		}
 		corelog.Warnf("UDPRelay: DNS request to %s:%d but dnsHandler is nil, falling back to UDP tunnel", dstHost, dstPort)
@@ -223,8 +234,15 @@ func (r *UDPRelay) handlePacket(data []byte) {
 }
 
 // handleDNSQuery 通过控制通道处理DNS查询
-func (r *UDPRelay) handleDNSQuery(dstHost string, dstPort int, payload []byte) {
+// dstHost: 实际 DNS 服务器地址（用于查询）
+// dstPort: DNS 端口
+// payload: DNS 查询报文
+// responseHost: 响应包的源地址（用于构造响应，可能是虚拟 DNS IP）
+func (r *UDPRelay) handleDNSQuery(dstHost string, dstPort int, payload []byte, responseHost string) {
 	dnsServer := fmt.Sprintf("%s:%d", dstHost, dstPort)
+
+	corelog.Infof("UDPRelay: handleDNSQuery called, dnsServer=%s, targetClientID=%d, payloadLen=%d, responseHost=%s",
+		dnsServer, r.config.TargetClientID, len(payload), responseHost)
 
 	// 通过控制通道发送DNS查询
 	response, err := r.dnsHandler.QueryDNS(r.config.TargetClientID, dnsServer, payload)
@@ -233,8 +251,8 @@ func (r *UDPRelay) handleDNSQuery(dstHost string, dstPort int, payload []byte) {
 		return
 	}
 
-	// 构造UDP响应包
-	packet := r.buildUDPHeader(dstHost, dstPort, response)
+	// 构造UDP响应包（使用原始目标地址作为响应源地址）
+	packet := r.buildUDPHeader(responseHost, dstPort, response)
 
 	// 发送给客户端
 	r.clientAddrMu.RLock()

@@ -45,20 +45,28 @@ type HTTPProxyMessage = crossnode.HTTPProxyMessage
 // HTTPProxyResponseMessage HTTP代理响应消息（类型别名）
 type HTTPProxyResponseMessage = crossnode.HTTPProxyResponseMessage
 
+// CommandMessage 通用跨节点命令消息（类型别名）
+type CommandMessage = crossnode.CommandMessage
+
+// CommandResponseMessage 通用跨节点命令响应消息（类型别名）
+type CommandResponseMessage = crossnode.CommandResponseMessage
+
 // ============================================================================
 // crossnode 常量重新导出
 // ============================================================================
 
 const (
 	// 帧类型常量
-	FrameTypeData         = crossnode.FrameTypeData
-	FrameTypeTargetReady  = crossnode.FrameTypeTargetReady
-	FrameTypeClose        = crossnode.FrameTypeClose
-	FrameTypeAck          = crossnode.FrameTypeAck
-	FrameTypeHTTPProxy    = crossnode.FrameTypeHTTPProxy
-	FrameTypeHTTPResponse = crossnode.FrameTypeHTTPResponse
-	FrameTypeDNSQuery     = crossnode.FrameTypeDNSQuery
-	FrameTypeDNSResponse  = crossnode.FrameTypeDNSResponse
+	FrameTypeData            = crossnode.FrameTypeData
+	FrameTypeTargetReady     = crossnode.FrameTypeTargetReady
+	FrameTypeClose           = crossnode.FrameTypeClose
+	FrameTypeAck             = crossnode.FrameTypeAck
+	FrameTypeHTTPProxy       = crossnode.FrameTypeHTTPProxy
+	FrameTypeHTTPResponse    = crossnode.FrameTypeHTTPResponse
+	FrameTypeDNSQuery        = crossnode.FrameTypeDNSQuery
+	FrameTypeDNSResponse     = crossnode.FrameTypeDNSResponse
+	FrameTypeCommand         = crossnode.FrameTypeCommand
+	FrameTypeCommandResponse = crossnode.FrameTypeCommandResponse
 
 	// 帧大小常量
 	FrameHeaderSize = crossnode.FrameHeaderSize
