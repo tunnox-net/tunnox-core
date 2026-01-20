@@ -264,11 +264,20 @@ func (c *HandlersComponent) Initialize(ctx context.Context, deps *Dependencies) 
 		deps.SessionMgr.SetConnectionStateStore(connStateStore)
 		corelog.Infof("ConnectionStateStore initialized for node %s", deps.NodeID)
 
-		// ✅ 创建并注入 CrossNodePool（跨节点连接池）
+		// ✅ 创建并注入 CrossNodePool（跨节点连接池）- 保留用于兼容
 		crossNodePoolConfig := session.DefaultCrossNodePoolConfig()
 		crossNodePool := session.NewCrossNodePool(ctx, deps.Storage, deps.NodeID, crossNodePoolConfig)
 		deps.SessionMgr.SetCrossNodePool(crossNodePool)
 		corelog.Infof("CrossNodePool initialized for node %s", deps.NodeID)
+
+		// ✅ 创建并注入 TunnelConnectionManager（专用连接模型，替代连接池）
+		tunnelConnMgrConfig := session.DefaultTunnelConnectionManagerConfig()
+		tunnelConnMgr := session.NewTunnelConnectionManager(
+			tunnelRouting.GetNodeAddress, // 使用 RoutingTable 的 GetNodeAddress 方法
+			tunnelConnMgrConfig,
+		)
+		deps.SessionMgr.SetTunnelConnectionManager(tunnelConnMgr)
+		corelog.Infof("TunnelConnectionManager initialized for node %s (dedicated connection model)", deps.NodeID)
 
 		// ✅ 创建并启动 CrossNodeListener（跨节点连接监听器）
 		crossNodeListener := session.NewCrossNodeListener(deps.SessionMgr, 50052)

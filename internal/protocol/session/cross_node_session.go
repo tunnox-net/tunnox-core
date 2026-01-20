@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"time"
@@ -29,9 +30,10 @@ func (s *SessionManager) handleCrossNodeTargetConnection(
 		corelog.Errorf("CrossNode[%s]: TunnelRoutingTable not configured", req.TunnelID)
 		return coreerrors.New(coreerrors.CodeUnavailable, "TunnelRoutingTable not configured")
 	}
-	if s.crossNodePool == nil {
-		corelog.Errorf("CrossNode[%s]: CrossNodePool not configured", req.TunnelID)
-		return coreerrors.New(coreerrors.CodeUnavailable, "CrossNodePool not configured")
+	// 优先使用专用连接管理器，回退到连接池
+	if s.tunnelConnMgr == nil && s.crossNodePool == nil {
+		corelog.Errorf("CrossNode[%s]: neither TunnelConnectionManager nor CrossNodePool configured", req.TunnelID)
+		return coreerrors.New(coreerrors.CodeUnavailable, "cross-node connection manager not configured")
 	}
 
 	// 2. 设置超时上下文
@@ -161,64 +163,103 @@ func (s *SessionManager) forwardToSourceNode(
 		Success:  true,
 	})
 
-	// 1. 从连接池获取跨节点连接
-	crossConn, err := s.crossNodePool.Get(ctx, routingState.SourceNodeID)
-	if err != nil {
-		corelog.Errorf("CrossNode[%s]: failed to get cross-node connection: %v", req.TunnelID, err)
-		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to get cross-node connection")
+	// 获取客户端地址和目标地址（用于连接标识）
+	remoteAddr := ""
+	if netConn != nil && netConn.RemoteAddr() != nil {
+		remoteAddr = netConn.RemoteAddr().String()
+	}
+	target := ""
+	if req.TargetHost != "" {
+		target = fmt.Sprintf("%s:%d", req.TargetHost, req.TargetPort)
+	}
+
+	// 1. 创建专用跨节点连接（不使用连接池）
+	var tcpConn *net.TCPConn
+	var err error
+
+	if s.tunnelConnMgr != nil {
+		// 使用专用连接管理器（推荐）
+		tcpConn, err = s.tunnelConnMgr.CreateDedicatedConnection(
+			ctx,
+			req.TunnelID,
+			routingState.SourceNodeID,
+			remoteAddr,
+			target,
+		)
+		if err != nil {
+			corelog.Errorf("CrossNode[%s]: failed to create dedicated connection: %v", req.TunnelID, err)
+			return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to create dedicated connection")
+		}
+	} else {
+		// 回退到连接池（兼容旧代码）
+		crossConn, poolErr := s.crossNodePool.Get(ctx, routingState.SourceNodeID)
+		if poolErr != nil {
+			corelog.Errorf("CrossNode[%s]: failed to get cross-node connection: %v", req.TunnelID, poolErr)
+			return coreerrors.Wrap(poolErr, coreerrors.CodeNetworkError, "failed to get cross-node connection")
+		}
+		tcpConn = crossConn.GetTCPConn()
+		// 标记为 broken，防止归还到连接池
+		crossConn.MarkBroken()
 	}
 
 	// 2. 发送 TargetTunnelReady 消息
 	tunnelID, err := TunnelIDFromString(req.TunnelID)
 	if err != nil {
 		corelog.Errorf("CrossNode[%s]: invalid tunnel ID format: %v", req.TunnelID, err)
-		crossConn.Release()
+		s.closeCrossNodeConnection(req.TunnelID, tcpConn)
 		return coreerrors.Wrap(err, coreerrors.CodeInvalidParam, "invalid tunnel ID format")
 	}
 	readyData := EncodeTargetReadyMessage(req.TunnelID, s.nodeID)
-	if err := WriteFrame(crossConn.GetTCPConn(), tunnelID, FrameTypeTargetReady, readyData); err != nil {
+	if err := WriteFrame(tcpConn, tunnelID, FrameTypeTargetReady, readyData); err != nil {
 		corelog.Errorf("CrossNode[%s]: failed to send target ready message: %v", req.TunnelID, err)
-		crossConn.MarkBroken()
-		s.crossNodePool.CloseConn(crossConn)
+		s.closeCrossNodeConnection(req.TunnelID, tcpConn)
 		return coreerrors.Wrap(err, coreerrors.CodeNetworkError, "failed to send target ready message")
 	}
 
 	// 3. 启动数据转发（零拷贝）
 	corelog.Infof("CrossNode[%s]: about to start runCrossNodeDataForward goroutine, connID=%s, netConn=%v",
 		req.TunnelID, conn.ID, netConn != nil)
-	go s.runCrossNodeDataForward(req.TunnelID, conn, netConn, crossConn)
+	go s.runCrossNodeDataForwardDedicated(req.TunnelID, conn, netConn, tcpConn)
 
 	// 4. 返回特殊错误，让 readLoop 退出（连接已被跨节点转发接管）
 	corelog.Infof("CrossNode[%s]: returning CodeTunnelModeSwitch to let readLoop exit", req.TunnelID)
 	return coreerrors.New(coreerrors.CodeTunnelModeSwitch, "tunnel target connected via cross-node forwarding, switching to stream mode")
 }
 
-// runCrossNodeDataForward 运行跨节点数据转发（零拷贝）
-// 重要：使用简单的 io.Copy 直接传输数据，不使用 FrameStream
-// 连接用完即关闭，不复用（避免复杂的生命周期管理问题）
-func (s *SessionManager) runCrossNodeDataForward(
+// closeCrossNodeConnection 关闭跨节点连接
+func (s *SessionManager) closeCrossNodeConnection(tunnelID string, tcpConn *net.TCPConn) {
+	if s.tunnelConnMgr != nil {
+		s.tunnelConnMgr.CloseTunnel(tunnelID)
+	} else if tcpConn != nil {
+		tcpConn.Close()
+	}
+}
+
+// runCrossNodeDataForwardDedicated 运行跨节点数据转发（专用连接模型）
+// 使用简单的 io.Copy 直接传输数据
+// 连接生命周期与隧道绑定，隧道结束时自动关闭
+func (s *SessionManager) runCrossNodeDataForwardDedicated(
 	tunnelID string,
 	conn *types.Connection,
 	netConn net.Conn,
-	crossConn *CrossNodeConn,
+	tcpConn *net.TCPConn,
 ) {
-	corelog.Infof("CrossNodeDataForward[%s]: goroutine started, connID=%s, netConn=%v",
+	corelog.Infof("CrossNodeDataForward[%s]: goroutine started (dedicated mode), connID=%s, netConn=%v",
 		tunnelID, conn.ID, netConn != nil)
 
-	// 数据转发完成后：关闭连接（不复用）
+	// 数据转发完成后：关闭专用连接
 	defer func() {
-		if crossConn != nil {
-			// 重要：必须通过 crossNodePool.CloseConn() 关闭，
-			// 这样才能正确递减连接池计数器（active/inUse）
-			// 直接调用 crossConn.Close() 不会递减计数器，导致连接池耗尽
-			s.crossNodePool.CloseConn(crossConn)
+		// 通过 TunnelConnectionManager 关闭（如果使用）
+		if s.tunnelConnMgr != nil {
+			s.tunnelConnMgr.CloseTunnel(tunnelID)
+		} else if tcpConn != nil {
+			tcpConn.Close()
 		}
 		s.MarkTunnelClosed(tunnelID)
-		corelog.Infof("CrossNodeDataForward[%s]: cleanup completed", tunnelID)
+		corelog.Infof("CrossNodeDataForward[%s]: cleanup completed (dedicated mode)", tunnelID)
 	}()
 
 	// 确保数据转发完成后关闭本地连接
-	// 这样 Target 客户端的 BidirectionalCopy 才能正确收到 EOF 并结束
 	defer func() {
 		if netConn != nil {
 			netConn.Close()
@@ -229,10 +270,8 @@ func (s *SessionManager) runCrossNodeDataForward(
 	}()
 
 	// 获取本地连接
-	// 重要：优先使用 conn.Stream 的 GetReader()/GetWriter()
-	// 这样才能和 Target 客户端的 tunnelStream 正确对接
 	var localConn io.ReadWriter
-	var localNetConn net.Conn // 用于半关闭
+	var localNetConn net.Conn
 	if conn != nil && conn.Stream != nil {
 		reader := conn.Stream.GetReader()
 		writer := conn.Stream.GetWriter()
@@ -241,7 +280,6 @@ func (s *SessionManager) runCrossNodeDataForward(
 		}
 	}
 
-	// 如果 Stream 不可用，回退到 netConn
 	if localConn == nil && netConn != nil {
 		localConn = netConn
 		localNetConn = netConn
@@ -253,16 +291,14 @@ func (s *SessionManager) runCrossNodeDataForward(
 		return
 	}
 
-	// 获取跨节点 TCP 连接（用于零拷贝）
-	tcpConn := crossConn.GetTCPConn()
 	if tcpConn == nil {
 		corelog.Errorf("CrossNodeDataForward[%s]: tcpConn is nil", tunnelID)
 		return
 	}
 
-	corelog.Infof("CrossNodeDataForward[%s]: starting data forward", tunnelID)
+	corelog.Infof("CrossNodeDataForward[%s]: starting data forward (dedicated mode)", tunnelID)
 
-	// 双向数据转发（直接使用 io.Copy，不用 FrameStream）
+	// 双向数据转发
 	done := make(chan struct{}, 2)
 
 	// 本地 -> 跨节点
@@ -273,8 +309,11 @@ func (s *SessionManager) runCrossNodeDataForward(
 			corelog.Debugf("CrossNodeDataForward[%s]: local->crossNode error: %v", tunnelID, err)
 		}
 		corelog.Infof("CrossNodeDataForward[%s]: local->crossNode finished, bytes=%d", tunnelID, n)
-		// 关键：使用半关闭通知对端 EOF
 		tcpConn.CloseWrite()
+		// 更新活动时间
+		if s.tunnelConnMgr != nil {
+			s.tunnelConnMgr.UpdateActivity(tunnelID)
+		}
 	}()
 
 	// 跨节点 -> 本地
@@ -285,7 +324,96 @@ func (s *SessionManager) runCrossNodeDataForward(
 			corelog.Debugf("CrossNodeDataForward[%s]: crossNode->local error: %v", tunnelID, err)
 		}
 		corelog.Infof("CrossNodeDataForward[%s]: crossNode->local finished, bytes=%d", tunnelID, n)
-		// 关键：对本地连接使用半关闭（如果支持）
+		if localNetConn != nil {
+			if tcpLocal, ok := localNetConn.(*net.TCPConn); ok {
+				tcpLocal.CloseWrite()
+			}
+		}
+		// 更新活动时间
+		if s.tunnelConnMgr != nil {
+			s.tunnelConnMgr.UpdateActivity(tunnelID)
+		}
+	}()
+
+	// 等待两个方向都完成
+	<-done
+	<-done
+	corelog.Infof("CrossNodeDataForward[%s]: data forward completed (dedicated mode)", tunnelID)
+}
+
+// runCrossNodeDataForward 运行跨节点数据转发（连接池模型 - 兼容旧代码）
+// Deprecated: 推荐使用 runCrossNodeDataForwardDedicated
+func (s *SessionManager) runCrossNodeDataForward(
+	tunnelID string,
+	conn *types.Connection,
+	netConn net.Conn,
+	crossConn *CrossNodeConn,
+) {
+	corelog.Infof("CrossNodeDataForward[%s]: goroutine started (pool mode), connID=%s, netConn=%v",
+		tunnelID, conn.ID, netConn != nil)
+
+	defer func() {
+		if crossConn != nil && s.crossNodePool != nil {
+			s.crossNodePool.CloseConn(crossConn)
+		}
+		s.MarkTunnelClosed(tunnelID)
+		corelog.Infof("CrossNodeDataForward[%s]: cleanup completed (pool mode)", tunnelID)
+	}()
+
+	defer func() {
+		if netConn != nil {
+			netConn.Close()
+		}
+		if conn != nil && conn.Stream != nil {
+			conn.Stream.Close()
+		}
+	}()
+
+	var localConn io.ReadWriter
+	var localNetConn net.Conn
+	if conn != nil && conn.Stream != nil {
+		reader := conn.Stream.GetReader()
+		writer := conn.Stream.GetWriter()
+		if reader != nil && writer != nil {
+			localConn = &readWriterWrapper{reader: reader, writer: writer}
+		}
+	}
+
+	if localConn == nil && netConn != nil {
+		localConn = netConn
+		localNetConn = netConn
+	}
+
+	if localConn == nil {
+		corelog.Errorf("CrossNodeDataForward[%s]: no valid localConn", tunnelID)
+		return
+	}
+
+	tcpConn := crossConn.GetTCPConn()
+	if tcpConn == nil {
+		corelog.Errorf("CrossNodeDataForward[%s]: tcpConn is nil", tunnelID)
+		return
+	}
+
+	done := make(chan struct{}, 2)
+
+	go func() {
+		defer func() { done <- struct{}{} }()
+		n, err := io.Copy(tcpConn, localConn)
+		if err != nil && err != io.EOF {
+			corelog.Debugf("CrossNodeDataForward[%s]: local->crossNode error: %v", tunnelID, err)
+		}
+		corelog.Infof("CrossNodeDataForward[%s]: local->crossNode finished, bytes=%d", tunnelID, n)
+		tcpConn.CloseWrite()
+	}()
+
+	go func() {
+		defer func() { done <- struct{}{} }()
+		n, err := io.Copy(localConn, tcpConn)
+		if err != nil && err != io.EOF {
+			corelog.Debugf("CrossNodeDataForward[%s]: crossNode->local error: %v", tunnelID, err)
+		}
+		corelog.Infof("CrossNodeDataForward[%s]: crossNode->local finished, bytes=%d", tunnelID, n)
 		if localNetConn != nil {
 			if tcpLocal, ok := localNetConn.(*net.TCPConn); ok {
 				tcpLocal.CloseWrite()
@@ -293,10 +421,9 @@ func (s *SessionManager) runCrossNodeDataForward(
 		}
 	}()
 
-	// 等待两个方向都完成
 	<-done
 	<-done
-	corelog.Infof("CrossNodeDataForward[%s]: data forward completed", tunnelID)
+	corelog.Infof("CrossNodeDataForward[%s]: data forward completed (pool mode)", tunnelID)
 }
 
 // readWriterWrapper 包装 Reader 和 Writer

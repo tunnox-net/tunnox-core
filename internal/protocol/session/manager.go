@@ -120,7 +120,12 @@ type SessionManager struct {
 	tunnelRouting *TunnelRoutingTable
 
 	// CrossNodePool（跨节点连接池）
+	// Deprecated: 推荐使用 tunnelConnMgr
 	crossNodePool *CrossNodePool
+
+	// TunnelConnectionManager（跨节点隧道专用连接管理器）
+	// 每个隧道使用专用连接，生命周期与隧道绑定
+	tunnelConnMgr *TunnelConnectionManager
 
 	// CrossNodeListener（跨节点连接监听器）
 	crossNodeListener *CrossNodeListener

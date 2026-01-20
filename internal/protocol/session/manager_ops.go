@@ -65,6 +65,17 @@ func (s *SessionManager) GetCrossNodePool() *CrossNodePool {
 	return s.crossNodePool
 }
 
+// SetTunnelConnectionManager 设置隧道连接管理器（专用连接模型）
+func (s *SessionManager) SetTunnelConnectionManager(mgr *TunnelConnectionManager) {
+	s.tunnelConnMgr = mgr
+	corelog.Infof("SessionManager: TunnelConnectionManager configured")
+}
+
+// GetTunnelConnectionManager 获取隧道连接管理器
+func (s *SessionManager) GetTunnelConnectionManager() *TunnelConnectionManager {
+	return s.tunnelConnMgr
+}
+
 // SetCrossNodeListener 设置跨节点连接监听器
 func (s *SessionManager) SetCrossNodeListener(listener *CrossNodeListener) {
 	s.crossNodeListener = listener
