@@ -134,6 +134,12 @@ func LoadConfig(configPath string) (*Config, error) {
 		corelog.Infof("Using default configuration (no config file generated)")
 		config := GetDefaultConfig()
 		ApplyEnvOverrides(config)
+
+		// 验证配置并设置默认值（包括自动生成 Security 密钥）
+		if err := ValidateConfig(config); err != nil {
+			return nil, err
+		}
+
 		return config, nil
 	}
 
